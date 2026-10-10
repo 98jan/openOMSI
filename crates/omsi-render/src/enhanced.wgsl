@@ -184,7 +184,9 @@ struct Surface {
 // map is one of the tiles under the far shadow map (lib.rs `LampShadow`), looking down from
 // the lamp's head; a few taps of it soften the edge, as the lamp's glowing bowl does.
 // (the player's headlamps - marked so, see `light_marks` - share the tile marked -2: one
-// map from between them along the road, lib.rs `passes::headlamp_shadow`)
+// map from between them along the road, lib.rs `passes::headlamp_shadow`; it is read once
+// for the pair, `own_shadow`)
+var<private> own_shadow: f32;
 fn lamp_shadow_at(li: u32, p: vec3<f32>, n: vec3<f32>, thin: bool) -> f32 {
     var k = 4u;
     let own = light_marks(lights[li]).x > 0.5;
@@ -195,6 +197,9 @@ fn lamp_shadow_at(li: u32, p: vec3<f32>, n: vec3<f32>, thin: bool) -> f32 {
     }
     if (k > 3u) {
         return 1.0;
+    }
+    if (own && own_shadow >= 0.0) {
+        return own_shadow;
     }
     let d = distance(p, lights[li].pos.xyz);
     // (off the surface by a texel or so of the map there; a leaf card towards the lamp)
@@ -219,6 +224,9 @@ fn lamp_shadow_at(li: u32, p: vec3<f32>, n: vec3<f32>, thin: bool) -> f32 {
             let a = (base + vec2<f32>(f32(x), f32(y)) * 1.25) / dims;
             sum = sum + textureSampleCompareLevel(t_shadow_far, s_shadow, a, ndc.z - 0.00002);
         }
+    }
+    if (own) {
+        own_shadow = sum / 9.0;
     }
     return sum / 9.0;
 }
@@ -277,6 +285,7 @@ var<private> lamp_ground: vec3<f32>;
 fn lamp_light(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, sf: Surface, thin: bool, shadows: bool, film: vec3<f32>) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
     lamp_ground = vec3<f32>(0.0);
+    own_shadow = -1.0;
     // the lamps' light on the ground round the point (a horizontal surface's, unshadowed:
     // the ground the point looks down at is wider than its own shadow)
     var ground_e = vec3<f32>(0.0);
