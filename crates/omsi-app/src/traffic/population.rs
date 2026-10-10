@@ -335,6 +335,10 @@ impl Traffic {
             self.pull_out_parked(view, world, renderer, scene, center);
             self.park_in(world, center);
         }
+        if self.sim.debug_population {
+            let a = &self.sim.admission;
+            log::info!("population t={:.1}: street target {street_target}, {} cars, {} dormant; admission: {} admitted, refused {:?}, retried {:?}, {} waiting; removals {:?}", self.sim.time, self.sim.cars.len(), self.sim.dormant.len(), a.admitted, a.denied, a.retried, a.len(), self.sim.removals);
+        }
         self.sim.initial = false;
     }
 
@@ -424,18 +428,23 @@ impl Traffic {
         self.sim.admission.new_network(generation);
         // (the first population, the world as it loads, fills the roads at once: a few
         // rounds of requests, each a pass of its own)
-        let rounds = if self.sim.initial { 8 } else { 1 };
+        let rounds = if self.sim.initial { 16 } else { 1 };
         let mut placed = 0;
         for _ in 0..rounds {
             let want_now = want.saturating_sub(placed);
             let before = placed;
             // the requests: places along the lanes near the centre, as many as metres of lane
-            // (times its density), several for each car wanted (in open country most places are
-            // in sight), at most what one pass looks at, none at a place being left alone after
-            // its refusals (`admission`)
+            // (times its density), as many as one pass looks at whatever the number wanted (in
+            // open country most places are in sight: a few asked for a car or two found none,
+            // and the count lagged), none at a place being left alone after its refusals
+            // (`admission`)
             let (mut asked, mut attempts) = (0, 0);
-            let ask = (want_now * 8).min(omsi_sim::ai_traffic::admission::EXAMINE_PER_PASS);
-            while want_now > 0 && asked < ask && attempts < want_now * 12 {
+            if self.sim.initial {
+                self.sim.admission.forget_refusals();
+            }
+            // (one pass's worth waiting at most: what waits is looked at first)
+            let ask = omsi_sim::ai_traffic::admission::EXAMINE_PER_PASS.saturating_sub(self.sim.admission.waiting(class));
+            while want_now > 0 && asked < ask && attempts < omsi_sim::ai_traffic::admission::EXAMINE_PER_PASS * 12 {
                 attempts += 1;
                 let x = self.rand_f() as f32 * total_w;
                 let lane = candidates[cumulative.partition_point(|&c| c < x).min(candidates.len() - 1)].0;
