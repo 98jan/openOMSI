@@ -107,6 +107,24 @@ pub(crate) fn save_stations(list: &[(String, String)]) -> std::io::Result<()> {
     std::fs::write(&p, with_stations(&text, list))
 }
 
+/// The setting of the radio's effects named `key` (`radio_speaker`, `radio_hiss`,
+/// `radio_dropouts`) in `fx`: its key as written to the settings, and its amount.
+pub(crate) fn fx_setting<'a>(fx: &'a mut omsi_audio::radio_fx::RadioFxParams, key: &str) -> (&'static str, &'a mut f32) {
+    match key {
+        "radio_speaker" => ("radio_speaker", &mut fx.speaker),
+        "radio_hiss" => ("radio_hiss", &mut fx.hiss),
+        _ => ("radio_dropouts", &mut fx.dropouts),
+    }
+}
+
+/// The options' slider `key` of the radio's effects set to `v` (in steps of a hundredth):
+/// the key and value kept for the next game.
+pub(crate) fn set_fx_setting(fx: &mut omsi_audio::radio_fx::RadioFxParams, key: &str, v: f32) -> (&'static str, String) {
+    let (key, at) = fx_setting(fx, key);
+    *at = ((v * 100.0).round() / 100.0).clamp(0.0, 1.0);
+    (key, at.to_string())
+}
+
 fn config_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     Some(PathBuf::from(home).join(".openomsi").join("radio.cfg"))

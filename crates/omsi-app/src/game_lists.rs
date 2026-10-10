@@ -1262,9 +1262,7 @@ fn option_now(app: &App, verb: &str, arg: &str) -> Option<f32> {
         "vol_ai" => s.vol_ai,
         "vol_scenery" => s.vol_scenery,
         "vol_ambient" => s.vol_ambient,
-        "radio_speaker" => s.radio_fx.speaker,
-        "radio_hiss" => s.radio_fx.hiss,
-        "radio_dropouts" => s.radio_fx.dropouts,
+        "radio_speaker" | "radio_hiss" | "radio_dropouts" => *crate::radio::fx_setting(&mut s.radio_fx.clone(), verb).1,
         "wheel_range" => s.wheel_range,
         "wheel_lock" => s.wheel_lock,
         "triple_width_mm" => s.triple.width_mm,
@@ -1415,13 +1413,7 @@ fn option_set(app: &mut App, verb: &str, arg: &str, v: f32) -> Option<(&'static 
             app.settings.vol_ambient = (v * 100.0).round() / 100.0;
             Some(("vol_ambient", app.settings.vol_ambient.to_string()))
         }
-        "radio_speaker" | "radio_hiss" | "radio_dropouts" => {
-            let v = ((v * 100.0).round() / 100.0).clamp(0.0, 1.0);
-            let fx = &mut app.settings.radio_fx;
-            let (key, at) = match verb { "radio_speaker" => ("radio_speaker", &mut fx.speaker), "radio_hiss" => ("radio_hiss", &mut fx.hiss), _ => ("radio_dropouts", &mut fx.dropouts) };
-            *at = v;
-            Some((key, v.to_string()))
-        }
+        "radio_speaker" | "radio_hiss" | "radio_dropouts" => Some(crate::radio::set_fx_setting(&mut app.settings.radio_fx, verb, v)),
         "wheel_range" => {
             app.settings.wheel_range = v.round();
             Some(("wheel_range", app.settings.wheel_range.to_string()))

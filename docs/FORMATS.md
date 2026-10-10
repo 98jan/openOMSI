@@ -702,6 +702,14 @@ onlytypes end types_prefered number_tour.
   Hz and is silent below DirectSound's 100 Hz. The rear section of an articulated bus has
   its own `[sound]` (on a pusher the engine is there) and plays it on the shared scripts'
   triggers and variables.
+* The player's bus's outside entries heard in its cab (`[viewpoint]` without 2) come in at
+  `Snd_OutsideVol` of their volume as in Omsi.exe, and openOMSI also takes their treble away
+  through what is shut: a low-pass at some 500 Hz with everything closed, rising evenly in
+  octaves to the whole range at `Snd_OutsideVol` 0.95 and none from there (Omsi.exe has no
+  filter; the traffic heard from the cab keeps it as Omsi.exe does, `0.2 + Snd_OutsideVol`
+  of its volume). Walking in or out through a door, the cab's entries and the street's are
+  mixed by how far inside the bus's box the eyes are (0.4 m in: all cab), and the traffic's
+  cab level with them.
 * `AutoClutch` (system variable) is 1 unless the options say `[no_automaticClutch]`: the
   manual-gearbox scripts (F90, T3, the Sprinter, PAZ and LAZ mods) work their clutch
   themselves then; at 0 a gear put in without the clutch pedal is thrown out at once.
@@ -843,6 +851,8 @@ Depot (.hof) callbacks: `GetRouteIndex(code)` (code = line×100 + route → `[in
 index), `GetRouteTerminusIndex(route)`, `GetTerminusCode(idx)`, `GetTerminusIndex(code)`,
 `GetTerminusString(idx, n)`, `GetBusstopCount(route)`, `GetRouteBusstopIdent(route, k)`,
 `GetBusstopIndex("ident")`, `GetBusstopString(idx, n)`, `GetDepotStringGlobal(n)`.
+openOMSI adds `GetRadioName` and `GetRadioSong` (no arguments, a string each): the bus
+radio's station and title, empty while it is off.
 `[addterminus]`/`[addterminus_allexit]` records are code, ident, then `stringcount_terminus`
 strings (no separate station line in any shipped file). AI buses get their destination the
 original way: string `SetLineTo` + `AI_target_index` (terminus index) and the

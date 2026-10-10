@@ -165,6 +165,14 @@ then x, y, z of the device, as usual); OMSI 2 still takes the last of them.
 - Script variables and string variables have no count limit.
 - Lua plugins can read and write script variables, fire triggers and react to game events:
   see [Plugins](PLUGINS.md).
+- `(M.V.GetRadioName)` and `(M.V.GetRadioSong)` put what the bus radio plays on the string
+  stack: the station's name (as the stream gives it in `icy-name`, else as the station list
+  names it) and the title it gives (`StreamTitle`); both empty while the radio is off or the
+  station says nothing. Not in OMSI 2: check for an empty string.
+- The developer tools (**Ctrl+Shift+D**, see the [user guide](USER_GUIDE.md#developer-tools))
+  show and hold the variables, draw the paths, places, boxes, axles, lights, mirrors and views
+  over the bus, and read its paths.cfg, `[passengercabin]`, sound.cfg, `.bus`, model.cfg and
+  constfiles again while it drives.
 
 ## Radio: a map's stations and a bus's display
 
