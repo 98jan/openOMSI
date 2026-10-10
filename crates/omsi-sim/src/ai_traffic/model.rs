@@ -464,6 +464,10 @@ pub fn personality(state: &mut AiState, seed: u64, heavy: bool) {
     state.decel = if heavy { 1.6 } else { 2.0 + 0.8 * r(35) };
     state.accept_gap = 3.0 + 2.5 * r(43);
     state.reaction = 0.4 + 0.8 * r(51);
+    // the hardest braking of ordinary driving: a lorry's or a bus's driver stays further
+    // under the emergency stop's ceiling than a car's
+    let r2 = (((seed >> 7) ^ (seed >> 41)) & 0xff) as f32 / 255.0;
+    state.ordinary_brake = if heavy { 4.5 } else { 4.6 + 0.8 * r2 };
 }
 
 /// Cruising speed of an AI aircraft where its flight path sets no limit (km/h): an

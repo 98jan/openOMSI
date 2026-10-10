@@ -1195,15 +1195,16 @@ impl TrafficSim {
             }
             return None;
         }
-        if debug && car.state.acc < -4.5 {
-            // hard braking is for emergencies: say what asked for it
+        if debug && (car.state.acc < -4.5 || car.state.emergency_began) {
+            // hard braking is for emergencies: say what asked for it (and whether the
+            // collision-prevention channel had to take over)
             let who = match lead.and_then(|l| l.1) {
                 Some(usize::MAX) => "the player".to_string(),
                 Some(_) => format!("car {}", lead_id.unwrap_or(0)),
                 None if lead.is_some() => "a parked car".to_string(),
                 None => "-".to_string(),
             };
-            log::info!("t={:.2}: car {} brakes {:.1} m/s² at {:.1} m/s on lane {lane_now} s {s_now:.2} (len {:.1}): lead {:?} ({who}), stop {:?} (light {:?}, junction {:?}, merge {:?})", self.time, car.id, car.state.acc, speed_before, self.net.lanes[lane_now].length(), lead_now, stop_at.map(|x| x - car.state.front), light.map(|x| x - car.state.front), yield_at.map(|x| x - car.state.front), merge_wait);
+            log::info!("t={:.2}: car {} brakes {:.1} m/s²{} at {:.1} m/s on lane {lane_now} s {s_now:.2} (len {:.1}): lead {:?} ({who}), stop {:?} (light {:?}, junction {:?}, merge {:?})", self.time, car.id, car.state.acc, if car.state.emergency { " (emergency)" } else { "" }, speed_before, self.net.lanes[lane_now].length(), lead_now, stop_at.map(|x| x - car.state.front), light.map(|x| x - car.state.front), yield_at.map(|x| x - car.state.front), merge_wait);
         }
         if car.state.lane != lane_before
             && self.first_turner.is_none()

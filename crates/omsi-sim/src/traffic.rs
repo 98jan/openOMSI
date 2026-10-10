@@ -2034,6 +2034,75 @@ pub struct AiState {
     /// At most this much acceleration for now (m/s²): edging out round something standing
     /// close ahead.
     pub accel_cap: Option<f32>,
+    /// The hardest braking of ordinary driving (m/s²): a light that turned yellow late, a
+    /// car pulling in close ahead. Needing more than this is an emergency (`command`).
+    pub ordinary_brake: f32,
+    /// The hardest the vehicle brakes at all (m/s²): the ceiling of the emergency channel.
+    pub emergency_brake: f32,
+    /// How fast the ordinary command may grow (m/s³): a driver eases off the brake and
+    /// onto the throttle again, rather than letting the brake go in one step.
+    pub jerk: f32,
+    /// The acceleration commanded in the last step (m/s²): where the jerk limit starts from.
+    pub cmd: f32,
+    /// The last step's command came from the collision-prevention channel (braking harder
+    /// than `ordinary_brake` was needed), and that step began such a run (an emergency is
+    /// counted once, however many steps it lasts).
+    pub emergency: bool,
+    pub emergency_began: bool,
+    /// The body as the last step left it, seen from the way (see `BodyLink`).
+    pub body: BodyLink,
+    /// A small move of the way within the lane (m, + = right) that the body asks for to
+    /// keep a corner off something beside it (`ai_traffic::scenery`): the S-curve in
+    /// progress as `lateral_ramp`, (from, to, odometer at its start, its length in m). It
+    /// bends only the way the body steers along, not the lateral place the planners see.
+    pub nudge_ramp: (f32, f32, f32, f32),
+}
+
+/// How the body stood after the last step, seen from the planner's way: how far the planner
+/// is ahead of the body's own place on that way (m, negative behind it), how fast the body
+/// went (m/s), and whether the body was found on the way at all (see
+/// `ai_traffic::body_link`). Until a body has stepped nothing is known and nothing holds
+/// the planner.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct BodyLink {
+    pub known: bool,
+    pub on_way: bool,
+    pub lead: f32,
+    pub speed: f32,
+}
+
+/// The planner may be this far ahead of its body along the way (m) before it waits for it:
+/// a body held back (by a wall it would not drive into, by something it hit) is not left
+/// behind by its own plan. Run on further, the plan was a lane ahead of the car within
+/// seconds, and everything the car decided was decided for a place it was not at.
+pub const BODY_MAX_LEAD: f32 = 2.0;
+/// Within this lead (m) the planner and the body are where they should be, and the plan
+/// keeps its own speed (the body catches up with it within a step or two).
+pub const BODY_SLACK: f32 = 0.5;
+
+/// A driver's behaviour envelope, with its units: how hard they like to speed up and brake,
+/// how hard ordinary driving may brake, the ceiling of an emergency stop, how fast they
+/// change their command, the time gap and the standstill gap they keep, how long they take
+/// to move off. Each car's comes from its seed (`ai_traffic::model::personality`) and
+/// stays with the car.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Envelope {
+    /// m/s²
+    pub comfort_accel: f32,
+    /// m/s²
+    pub comfort_brake: f32,
+    /// m/s²
+    pub ordinary_brake: f32,
+    /// m/s²
+    pub emergency_brake: f32,
+    /// m/s³
+    pub jerk: f32,
+    /// s
+    pub headway: f32,
+    /// m
+    pub standstill_gap: f32,
+    /// s
+    pub reaction: f32,
 }
 
 /// What a car keeps its distance to: the gap from its front bumper to the thing (m), how
@@ -2100,6 +2169,21 @@ pub fn ramp_progress_for(side: f32, clear: f32) -> f32 {
 
 /// Hardest braking of an AI driver (m/s²): an emergency stop.
 pub const MAX_BRAKE: f32 = 8.0;
+/// The hardest braking of ordinary driving (m/s²), before a car's own seed varies it.
+pub const ORDINARY_BRAKE: f32 = 5.0;
+/// How fast a driver eases the ordinary command off the brake and onto the throttle (m/s³).
+pub const JERK: f32 = 8.0;
+/// A car over its speed limit (a lower one has begun, or the profile down to it) sheds
+/// this much of the excess a second (1/s): the free road's term alone fell to nothing as the
+/// speed neared the limit, and a car crept down to the new limit for a hundred metres.
+const LIMIT_GAIN: f32 = 2.0;
+/// Standing this close to where it has to stop (m, beyond the gap it keeps there), a car
+/// stays where it is: the model's pull towards the exact spot moved it on by a few
+/// centimetres at a time, the brake lights going on and off.
+const STANDSTILL_SLACK: f32 = 0.75;
+/// Out of an emergency once the braking needed is this much (m/s²) under the ordinary
+/// maximum again: right at the boundary the channel went on and off every step.
+const EMERGENCY_HYSTERESIS: f32 = 0.5;
 /// Gap a car leaves before a stop line or a stop point (m).
 const STOP_LINE_GAP: f32 = 0.6;
 
@@ -2189,7 +2273,7 @@ impl LaneSeq {
 
 impl AiState {
     pub fn new(lane: usize, s: f32, seed: u64) -> AiState {
-        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None }
+        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None, ordinary_brake: ORDINARY_BRAKE, emergency_brake: MAX_BRAKE, jerk: JERK, cmd: 0.0, emergency: false, emergency_began: false, body: BodyLink::default(), nudge_ramp: (0.0, 0.0, 0.0, 1.0) }
     }
 
     fn rand(&mut self) -> u64 {
@@ -2603,6 +2687,11 @@ impl AiState {
             }
         }
         let mut acc = a * (1.0 - (v / v0).powi(4)).max(-1.5 * b / a);
+        if v > v0 {
+            // over the limit: back down to it in proportion to the excess, not by the free
+            // road's term, which fades out as the speed nears the limit
+            acc = acc.min(-(LIMIT_GAIN * (v - v0)).min(1.5 * b));
+        }
         // bends: follow the speed profile `curve_speed` lays out (it assumes 2 m/s² of
         // braking), blending in over the last metre per second above it
         let bend = self.curve_speed(net);
@@ -2648,6 +2737,63 @@ impl AiState {
         out.clamp(-MAX_BRAKE, a)
     }
 
+    /// The driver's envelope (see `Envelope`).
+    pub fn envelope(&self) -> Envelope {
+        Envelope {
+            comfort_accel: self.accel,
+            comfort_brake: self.decel,
+            ordinary_brake: self.ordinary_brake,
+            emergency_brake: self.emergency_brake,
+            jerk: self.jerk,
+            headway: self.headway,
+            standstill_gap: self.min_gap,
+            reaction: self.reaction,
+        }
+    }
+
+    /// The acceleration the driver commands for the next `dt` seconds (m/s²), from what
+    /// the model wants (`desired_accel`) in two channels. Ordinarily the command stays
+    /// within the envelope: no harder than `ordinary_brake`, and it grows by at most `jerk`
+    /// a second (more braking goes on at once). Where
+    /// braking harder than the ordinary maximum is needed, the collision-prevention channel
+    /// takes over: up to `emergency_brake`, at once, and said (`emergency`,
+    /// `emergency_began`) - before, such a stop was only the model's output clipped at the
+    /// ceiling, and nobody could tell it from a firm brake. A car standing within
+    /// `STANDSTILL_SLACK` of where it has to stop stays there.
+    pub fn command(&mut self, net: &Network, dt: f32, lead: Option<Lead>, stop: Option<f32>) -> f32 {
+        let want = self.desired_accel(net, lead, stop);
+        let was = self.emergency;
+        let limit = -self.ordinary_brake.max(self.decel);
+        self.emergency = want < limit || (was && want < limit + EMERGENCY_HYSTERESIS);
+        self.emergency_began = self.emergency && !was;
+        if self.emergency {
+            return want.max(-self.emergency_brake.max(self.ordinary_brake));
+        }
+        let mut target = want.max(limit);
+        let from = if was { want.max(self.cmd) } else { self.cmd };
+        if self.speed < 0.05 {
+            let at_stop = stop.is_some_and(|d| d - self.front - STOP_LINE_GAP < STANDSTILL_SLACK);
+            let at_lead = lead.is_some_and(|l| l.speed < 0.3 && l.gap < self.min_gap + STANDSTILL_SLACK);
+            if at_stop || at_lead {
+                target = target.min(0.0);
+            }
+            if target <= 0.0 {
+                return target;
+            }
+            // (moving off from rest starts from nothing)
+            let step = self.jerk * dt;
+            return from.max(0.0) + (target - from.max(0.0)).clamp(-step, step);
+        }
+        let step = self.jerk * dt;
+        if target < from {
+            // (more braking goes on at once: put on at `jerk` too, the queue rolling past
+            // the side road in `scenario_tests` closed up behind each car that braked and
+            // never left the side road's car a gap)
+            return target;
+        }
+        from + (target - from).clamp(-step, step)
+    }
+
     /// Advance along the network with the car ahead (`lead`) and a stop point (`stop`,
     /// distance from the car's origin). False at a dead end.
     pub fn drive(&mut self, net: &Network, dt: f32, lead: Option<Lead>, stop: Option<f32>) -> bool {
@@ -2659,7 +2805,7 @@ impl AiState {
         if net.lanes.get(self.lane).is_none() {
             return false;
         }
-        let mut acc = self.desired_accel(net, lead, stop);
+        let mut acc = self.command(net, dt, lead, stop);
         if let Some(cap) = self.accel_cap {
             acc = acc.min(cap);
         }
@@ -2685,6 +2831,7 @@ impl AiState {
         } else if self.speed > 0.5 {
             self.held = false;
         }
+        self.cmd = acc;
         let v0 = self.speed;
         let v1 = (v0 + acc * dt).max(0.0);
         self.speed = v1;

@@ -790,3 +790,151 @@ fn moving_back_in_clears_the_oncoming_lane_part_way() {
     assert_eq!(ramp_progress_for(2.0, 2.5), 1.0);
     assert!(ramp_progress_for(3.3, 1.5) < t);
 }
+
+/// Straight lanes north, one after the other, with these lengths and limits (km/h).
+fn straight_road(pieces: &[(f64, f32)]) -> Network {
+    let mut lanes = Vec::new();
+    let mut y = 0.0;
+    for &(len, kmh) in pieces {
+        let mut l = LaneBuilder::arc(DVec3::new(0.0, y, 0.0), 0.0, len, 0.0, 0.0, LaneKind::Street, 3.0);
+        l.speed_limit_kmh = kmh;
+        lanes.push(l);
+        y += len;
+    }
+    let mut net = Network { lanes, ..Default::default() };
+    net.link(1.5);
+    net
+}
+
+/// A follower at its time gap behind a leader that brakes as a driver brakes for a light
+/// (2.5 m/s²) to a standstill: the ordinary channel is enough all the way, nothing comes
+/// near the ordinary maximum and the follower stops at a gap.
+#[test]
+fn a_leader_braking_comfortably_needs_no_emergency() {
+    let net = straight_road(&[(900.0, 50.0)]);
+    for seed in [3u64, 0x5151, 0xbeef] {
+        let mut car = AiState::new(0, 0.0, seed);
+        car.speed = 13.0;
+        car.plan_next(&net);
+        let mut lead_v = 13.0f32;
+        let mut lead_s = car.front + car.min_gap + car.headway * 13.0 + 2.5;
+        let dt = 0.02;
+        let (mut closest, mut hardest, mut emergencies) = (f32::MAX, 0.0f32, 0);
+        for k in 0..2000 {
+            let braking = k > 100 && lead_v > 0.0;
+            if braking {
+                lead_v = (lead_v - 2.5 * dt).max(0.0);
+            }
+            lead_s += lead_v * dt;
+            let gap = lead_s - 2.5 - (car.s + car.front);
+            closest = closest.min(gap);
+            car.drive(&net, dt, Some(Lead { gap, speed: lead_v, acc: if braking { -2.5 } else { 0.0 } }), None);
+            hardest = hardest.min(car.acc);
+            emergencies += car.emergency_began as u32;
+        }
+        assert_eq!(emergencies, 0, "seed {seed}: the collision-prevention channel took over");
+        assert!(hardest > -car.ordinary_brake + 1.0, "seed {seed}: braked at {hardest:.2} m/s²");
+        assert!(closest > car.min_gap * 0.6, "seed {seed}: came within {closest:.2} m");
+        assert!(car.speed < 0.01);
+    }
+}
+
+/// Something standing turns up 16 m ahead of a car at 50 km/h (it needs 6 m/s²): the
+/// collision-prevention channel takes over, once, brakes harder than the ordinary maximum
+/// and the car stops short of it.
+#[test]
+fn an_emergency_stop_is_its_own_channel_and_stays_clear() {
+    let net = straight_road(&[(900.0, 50.0)]);
+    let mut car = AiState::new(0, 0.0, 9);
+    car.speed = 13.9;
+    car.cmd = 0.0;
+    car.plan_next(&net);
+    let wall = car.s + car.front + 16.0;
+    let (mut closest, mut hardest, mut began) = (f32::MAX, 0.0f32, 0);
+    for _ in 0..600 {
+        let gap = wall - (car.s + car.front);
+        closest = closest.min(gap);
+        car.drive(&net, 0.02, Some(Lead { gap, speed: 0.0, acc: 0.0 }), None);
+        hardest = hardest.min(car.acc);
+        began += car.emergency_began as u32;
+    }
+    assert_eq!(began, 1, "one emergency, counted once");
+    assert!(hardest < -car.ordinary_brake, "it braked at {hardest:.2} m/s² only");
+    assert!(hardest >= -car.emergency_brake - 1e-3);
+    assert!(closest > 0.3, "came within {closest:.2} m");
+    assert!(car.speed < 0.01 && !car.emergency);
+}
+
+/// A car coming to its line, or up to a car standing ahead, stops there and stays: no
+/// creeping on by centimetres once it stands, the brake lights on all the while.
+#[test]
+fn a_stop_is_reached_without_creeping_or_flicker() {
+    let net = straight_road(&[(900.0, 50.0)]);
+    for (seed, v, behind) in [(3u64, 13.9f32, false), (77, 6.0, false), (0x1234, 2.0, false), (3, 13.9, true), (77, 6.0, true), (0x4321, 1.0, true)] {
+        let mut car = AiState::new(0, 0.0, seed);
+        car.speed = v;
+        car.plan_next(&net);
+        let mut line = 70.0f32;
+        let mut stood: Option<f32> = None;
+        let mut flips = 0;
+        let mut last_braking = true;
+        for k in 0..3000 {
+            // (the car ahead rolls on by 40 cm once everybody stands: the one behind stays)
+            if behind && k == 2000 {
+                line += 0.4;
+            }
+            // a line, or the back of a car standing there
+            let (lead, stop) = if behind { (Some(Lead { gap: line - car.s - car.front, speed: 0.0, acc: 0.0 }), None) } else { (None, Some(line - car.s)) };
+            car.drive(&net, 0.02, lead, stop);
+            match stood {
+                None if car.speed < 0.01 => stood = Some(car.s),
+                Some(_) => {
+                    flips += (car.braking != last_braking) as u32;
+                    last_braking = car.braking;
+                }
+                None => {}
+            }
+        }
+        let at = stood.expect("it stopped");
+        assert!((car.s - at).abs() < 0.01, "seed {seed}: crept {:.3} m on after stopping", car.s - at);
+        assert_eq!(flips, 0, "seed {seed}: the brake lights went on and off");
+        let front = car.s + car.front;
+        let want = if behind { line - 0.4 - car.min_gap } else { line };
+        assert!(front <= want + 0.3 && front > want - 1.5, "seed {seed}: front at {front:.2}, wanted at {want}");
+    }
+}
+
+/// A 30 zone after a 50 one: the car is down to 30 km/h where it begins, braking gently,
+/// and a car over a limit gets down to it within a couple of seconds rather than creeping
+/// towards it.
+#[test]
+fn a_lower_limit_ahead_is_met_in_time_and_without_creeping() {
+    let net = straight_road(&[(200.0, 50.0), (400.0, 30.0)]);
+    let mut car = AiState::new(0, 20.0, 5);
+    car.speed = 50.0 / 3.6;
+    car.decel = 2.2;
+    car.desire = 1.0;
+    car.plan_next(&net);
+    let limit = 30.0 / 3.6;
+    let mut entered = None;
+    let mut hardest = 0.0f32;
+    for _ in 0..1500 {
+        car.drive(&net, 0.02, None, None);
+        hardest = hardest.min(car.acc);
+        if car.lane == 1 && entered.is_none() {
+            entered = Some(car.speed);
+        }
+    }
+    let v = entered.expect("reached the 30 zone");
+    assert!(v < limit + 0.7, "entered at {:.1} km/h", v * 3.6);
+    assert!(hardest > -car.decel, "braked at {hardest:.2} m/s²");
+    // put on a 30 lane at 40 km/h: within the limit after two seconds, not still above it
+    let mut fast = AiState::new(1, 10.0, 6);
+    fast.speed = 40.0 / 3.6;
+    fast.desire = 1.0;
+    fast.plan_next(&net);
+    for _ in 0..100 {
+        fast.drive(&net, 0.02, None, None);
+    }
+    assert!(fast.speed < limit + 0.1, "{:.2} km/h after 2 s", fast.speed * 3.6);
+}
