@@ -1353,6 +1353,8 @@ pub struct Scene {
     mesh_pages: Vec<MeshPage>,
     changed_mark: Vec<bool>,
     origin_moved: bool,
+    /// ... and up or down: the vehicles' roof heights in their parameters are redone too.
+    origin_moved_z: bool,
     cache_bounds: bool,
     bounds_meshes: Vec<bool>,
     /// The meshes ever reshaped (skinned), and the instances drawing one of them, so that a
@@ -3267,6 +3269,7 @@ impl Renderer {
             mesh_pages: Vec::new(),
             changed_mark: Vec::new(),
             origin_moved: false,
+            origin_moved_z: false,
             cache_bounds: !omsi_cfg::flags::OMSI_NO_BOUNDS_CACHE.is_set(),
             bounds_meshes: Vec::new(),
             bounds_known: Vec::new(),
@@ -5089,9 +5092,12 @@ impl Renderer {
     /// Choose the render origin. Everything is re-uploaded when it moves.
     pub fn set_render_origin(&self, scene: &mut Scene, origin: DVec3) {
         if scene.render_origin != origin {
-            if origin.z != scene.render_origin.z || scene.model_buf.is_none() {
+            if scene.model_buf.is_none() {
                 scene.dirty = true;
             } else {
+                // (up or down as well: only the translations and the vehicles' roof heights
+                // depend on it - a hill climbed past the origin's reach rebuilt everything)
+                scene.origin_moved_z |= origin.z != scene.render_origin.z;
                 scene.origin_moved = true;
             }
             scene.render_origin = origin;
@@ -5894,9 +5900,8 @@ impl Renderer {
                 // 1.25 a legacy pulled decal, 0.9 an OMSI-ordered surface (weather
                 // classification without view-space pull), 0.75 a painted ground layer;
                 // below -500 a vehicle part, -(5000 + the roof height relative to origin)
-                if let Some(roof) = i.roof.filter(|_| !i.blob && !i.surface) {
-                    let z = (i.origin - ro).z as f32 + i.transform.transform_point3(Vec3::new(0.0, 0.0, roof)).z;
-                    -(5000.0 + z.clamp(-4000.0, 4000.0))
+                if let Some(code) = Self::roof_code(i, ro) {
+                    code
                 } else {
                     surface_instance_code(
                         i.blob,
@@ -5910,12 +5915,22 @@ impl Renderer {
         }
     }
 
+    /// A vehicle part's roof height relative to the render origin, as its parameters
+    /// carry it (see `instance_entries`).
+    fn roof_code(i: &Instance, ro: DVec3) -> Option<f32> {
+        let roof = i.roof.filter(|_| !i.blob && !i.surface)?;
+        let z = (i.origin - ro).z as f32 + i.transform.transform_point3(Vec3::new(0.0, 0.0, roof)).z;
+        Some(-(5000.0 + z.clamp(-4000.0, 4000.0)))
+    }
+
     pub fn prepare(&self, scene: &mut Scene) {
         Self::prepare_bounds(scene);
         scene.bind_groups.clear();
+        let moved_z = std::mem::take(&mut scene.origin_moved_z);
         if std::mem::take(&mut scene.origin_moved) && !scene.dirty {
             let ro = scene.render_origin;
             let n = scene.uploaded_entries as usize;
+            let params_known = n * 2 <= scene.cpu_params.len();
             for i in &scene.instances[..scene.uploaded_instances] {
                 let t = (Mat4::from_translation((i.origin - ro).as_vec3()) * i.transform).w_axis.to_array();
                 let (b, k) = (i.base as usize, i.slot_alpha.len());
@@ -5923,11 +5938,19 @@ impl Renderer {
                     for m in &mut scene.cpu_models[b..b + k] {
                         m[3] = t;
                     }
+                    if let (true, true, Some(code)) = (moved_z, params_known, Self::roof_code(i, ro)) {
+                        for p in scene.cpu_params[b * 2..(b + k) * 2].iter_mut().skip(1).step_by(2) {
+                            p[3] = code;
+                        }
+                    }
                 }
             }
-            match scene.model_buf.as_ref() {
-                Some(buf) if (n * 64) as u64 <= buf.size() && n <= scene.cpu_models.len() => {
+            match (scene.model_buf.as_ref(), scene.params_buf.as_ref()) {
+                (Some(buf), Some(pbuf)) if (n * 64) as u64 <= buf.size() && n <= scene.cpu_models.len() && (!moved_z || (params_known && (n * 32) as u64 <= pbuf.size())) => {
                     buf.write(&self.queue, 0, bytemuck::cast_slice(&scene.cpu_models[..n]));
+                    if moved_z {
+                        pbuf.write(&self.queue, 0, bytemuck::cast_slice(&scene.cpu_params[..n * 2]));
+                    }
                 }
                 _ => scene.dirty = true,
             }
