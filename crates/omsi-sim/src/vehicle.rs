@@ -1405,11 +1405,12 @@ impl VehicleInstance {
     /// see `resolve_scenery_freetex_name`); taken for a variable's name it matches nothing and
     /// the plate stays empty. See `Program::text_texture_var`.
     pub fn text_texture_string(&self, field: &str) -> String {
-        self.ty
-            .program
-            .text_texture_var(field)
-            .map(|i| self.state.str_vars[i as usize].clone())
-            .unwrap_or_default()
+        self.text_texture_str(field).to_string()
+    }
+
+    /// [`Self::text_texture_string`] without a copy.
+    pub fn text_texture_str(&self, field: &str) -> &str {
+        self.ty.program.text_texture_var(field).map(|i| self.state.str_vars[i as usize].as_str()).unwrap_or("")
     }
 
     /// Re-render changed text textures; returns the indices with a pending image.
@@ -1419,10 +1420,11 @@ impl VehicleInstance {
         if let Some(id) = self.ty.program.var("Refresh_Strings") {
             self.state.vars[id as usize] = 0.0;
         }
-        for i in 0..self.text_textures.len() {
-            let field = self.text_textures[i].def.variable.clone();
-            let text = self.text_texture_string(&field);
-            if self.text_textures[i].update(&text) {
+        // (the field and the text are read where they are: both were copied for every text
+        // texture every frame)
+        for (i, t) in self.text_textures.iter_mut().enumerate() {
+            let text = self.ty.program.text_texture_var(&t.def.variable).map(|v| self.state.str_vars[v as usize].as_str()).unwrap_or("");
+            if t.update(text) {
                 changed.push(i);
             }
         }
@@ -3873,8 +3875,7 @@ impl TrailerPart {
     pub fn update_text_textures(&mut self, main: &VehicleInstance) -> Vec<usize> {
         let mut changed = Vec::new();
         for (i, t) in self.text_textures.iter_mut().enumerate() {
-            let text = main.text_texture_string(&t.def.variable);
-            if t.update(&text) {
+            if t.update(main.text_texture_str(&t.def.variable)) {
                 changed.push(i);
             }
         }
