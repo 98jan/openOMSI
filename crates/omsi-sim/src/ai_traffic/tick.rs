@@ -390,6 +390,7 @@ impl TrafficSim {
         let (stop_at, why) = self.stop_points(i, ts, &way, lead, light, yield_at, merge_wait, keep_back);
         let (stop_at, why) = self.service_and_park(i, ts, &way, kerb_swerve, park, stop_at, why);
         let (stop_at, why) = self.end_of_way(i, ts, &way, stop_at, why);
+        let (stop_at, why) = self.scenery_stop(i, ts, stop_at, why);
         self.drive_car(i, ts, lead, stop_at, why, light, yield_at, merge_wait)
     }
 
@@ -1074,15 +1075,15 @@ impl TrafficSim {
             }
             return None;
         }
-        if debug && car.state.acc < -4.5 {
-            // hard braking is for emergencies: say what asked for it
+        if debug && (car.state.acc < -4.5 || car.state.emergency_began) {
+            // hard braking is for emergencies: say what asked for it (and if the emergency channel did)
             let who = match lead.and_then(|l| l.1) {
                 Some(usize::MAX) => "the player".to_string(),
                 Some(_) => format!("car {}", lead_id.unwrap_or(0)),
                 None if lead.is_some() => "a parked car".to_string(),
                 None => "-".to_string(),
             };
-            log::info!("t={:.2}: car {} brakes {:.1} m/s² at {:.1} m/s on lane {lane_now} s {s_now:.2} (len {:.1}): lead {:?} ({who}), stop {:?} (light {:?}, junction {:?}, merge {:?})", self.time, car.id, car.state.acc, speed_before, self.net.lanes[lane_now].length(), lead_now, stop_at.map(|x| x - car.state.front), light.map(|x| x - car.state.front), yield_at.map(|x| x - car.state.front), merge_wait);
+            log::info!("t={:.2}: car {} brakes {:.1} m/s²{} at {:.1} m/s on lane {lane_now} s {s_now:.2} (len {:.1}): lead {:?} ({who}), stop {:?} (light {:?}, junction {:?}, merge {:?})", self.time, car.id, car.state.acc, if car.state.emergency { " (emergency)" } else { "" }, speed_before, self.net.lanes[lane_now].length(), lead_now, stop_at.map(|x| x - car.state.front), light.map(|x| x - car.state.front), yield_at.map(|x| x - car.state.front), merge_wait);
         }
         if car.state.lane != lane_before
             && self.first_turner.is_none()
@@ -1149,14 +1150,14 @@ impl TrafficSim {
         {
             use rayon::prelude::*;
             let net = &self.net;
-            type Work<'a> = (&'a AiState, &'a mut AiBody, &'a mut VehicleInstance, &'a mut AiFrame, &'a mut std::collections::VecDeque<(f64, DVec3)>, &'a mut f32);
+            type Work<'a> = (&'a mut AiState, &'a mut AiBody, &'a mut VehicleInstance, &'a mut AiFrame, &'a mut std::collections::VecDeque<(f64, DVec3)>, &'a mut f32, &'a mut super::scenery::SceneryGuard);
             let mut work: Vec<Work> = self
                 .cars
                 .iter_mut()
                 .zip(frames.iter_mut())
                 .filter_map(|(c, f)| {
                     let f = f.as_mut()?;
-                    Some((&c.state, &mut c.body, &mut c.vehicle, f, &mut c.rail_trail, &mut c.ai_secs))
+                    Some((&mut c.state, &mut c.body, &mut c.vehicle, f, &mut c.rail_trail, &mut c.ai_secs, &mut c.guard))
                 })
                 .collect();
             work.sort_by(|a, b| b.5.total_cmp(a.5));
@@ -1171,7 +1172,7 @@ impl TrafficSim {
             // (a few cars per job: every job handed out wakes a worker, and the waking cost
             // the main thread more than a car's work)
             jobs.into_par_iter().flatten_iter()
-                .for_each(|(state, body, vehicle, frame, trail, secs)| {
+                .for_each(|(state, body, vehicle, frame, trail, secs, guard)| {
                     let t0 = std::time::Instant::now();
                     let ground = vehicle.ground.clone();
                     let contact = vehicle.contact.clone();
@@ -1181,9 +1182,10 @@ impl TrafficSim {
                     }
                     let trail = &*trail;
                     let behind = |d: f64| rail_behind(trail, state, net, d);
-                    body.step(
-                        dt,
-                        state.speed,
+                    // (watched near the scenery, and where it got to for the planner's next step)
+                    let link = guard.step(
+                        body,
+                        (state, net, dt),
                         &|d| if rail && d < 0.0 { behind(-d as f64) } else { state.way_point(net, d) },
                         ground
                             .as_ref()
@@ -1196,6 +1198,7 @@ impl TrafficSim {
                         // came along, not dragged round the bends like a road trailer
                         vehicle.retrail(0.0, &|d| Some(behind(d)));
                     }
+                    state.body = link;
                     frame.steer_deg = body.steer;
                     let t1 = std::time::Instant::now();
                     vehicle.update_ai(dt, frame);

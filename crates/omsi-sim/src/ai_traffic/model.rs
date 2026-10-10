@@ -154,6 +154,8 @@ pub struct AiCar {
     pub deadlock_tried: f32,
     /// Its sideways moves (`lateral`): what it wishes, its last lane change.
     pub sideways: super::lateral::Sideways,
+    /// Its body's watch over the scenery (see `scenery`).
+    pub guard: super::scenery::SceneryGuard,
 }
 
 /// A free parking space beside a lane that a car means to park in: the space of parked car
@@ -466,6 +468,10 @@ pub fn personality(state: &mut AiState, seed: u64, heavy: bool) {
     state.decel = if heavy { 1.6 } else { 2.0 + 0.8 * r(35) };
     state.accept_gap = 3.0 + 2.5 * r(43);
     state.reaction = 0.4 + 0.8 * r(51);
+    // the hardest braking of ordinary driving: a lorry's or a bus's driver stays further
+    // under the emergency stop's ceiling than a car's
+    let r2 = (((seed >> 7) ^ (seed >> 41)) & 0xff) as f32 / 255.0;
+    state.ordinary_brake = if heavy { 4.5 } else { 4.6 + 0.8 * r2 };
 }
 
 /// Cruising speed of an AI aircraft where its flight path sets no limit (km/h): an
@@ -638,6 +644,7 @@ impl TrafficSim {
             park: None,
             seed,
             scheme,
+            guard: Default::default(),
         });
         if kind != LaneKind::Air {
             let i = self.cars.len() - 1;

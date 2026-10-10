@@ -118,6 +118,7 @@ impl Traffic {
             deadlock_tried: f32::MIN,
             sideways: Default::default(),
             park: None,
+            guard: Default::default(),
         });
         view.insert(id, render);
         self.sim.cars.len() - 1
