@@ -999,6 +999,26 @@ impl TrafficSim {
                         continue;
                     }
                     let o_prio = prio(o);
+                    // Rolled into the junction without a claim of its own (on this meeting
+                    // place's lane either: the others give way to one), a car that gives way
+                    // here and can still stop before the meeting place does not pull out in
+                    // front of one with the right of way that is too close to stop for it
+                    // without braking hard: decided only by being inside, a car turning out of
+                    // a side road drove into the crossing ahead of a main road's car at
+                    // 50 km/h a few seconds off, which had to stop in an emergency and ran into
+                    // it (Spandau). It waits until that one is by, not for a gap in the stream -
+                    // and not for one that gives way itself (to this car, perhaps: the two
+                    // waited for each other at Grundorf).
+                    let they_cannot_stop = theirs < o.state.speed * o.state.speed / (2.0 * o.state.decel.max(1.0)) + o.state.speed + 2.0;
+                    if jn.inside && !committed && !car.reserved.contains(&l) && !waiting_inside && must_yield && !me_prio && my_room > v * v / MAX_BRAKE && o.state.speed > 3.0 && !o.yielding && !waits_short && they_cannot_stop && t_j < t_clear + 1.0 {
+                        hard = true;
+                        by = by.or(Some(o.id));
+                        hold(true, o.id, Hold::Rule, &mut holds, &mut stop_at);
+                        if explain {
+                            why.push(format!("car {} with the right of way arrives at {l}/{m} in {t_j:.1} s, too close to stop for this one", o.id));
+                        }
+                        continue;
+                    }
                     // A driver going into a slow queue that lets him in, and the driver of
                     // that queue letting him: both judge it by `lets_in` of the queue's car.
                     let other_lets_in = long_waiter && must_yield && !o_prio && lets_in(o.state.speed, o.state.decel, theirs);
@@ -1033,10 +1053,18 @@ impl TrafficSim {
                         // that gets there first goes first, a tie goes to the lower number.
                         // Otherwise two cars standing at their lines, each with a claim,
                         // waited for each other for good.
-                        let first = if me_decided {
-                            t_j < t_mine - 0.3 || ((t_j - t_mine).abs() <= 0.3 && o.id < me_id)
-                        } else {
+                        // (but of two that are close, the one that can no longer stop firmly
+                        // goes before one that still can: on a tie broken by number, a car on
+                        // the main road at 50 km/h a dozen metres off stopped in an
+                        // emergency for one that rolled out at walking pace)
+                        let i_must_go = my_room < firm_stop(v);
+                        let they_must_go = theirs < firm_stop(o.state.speed);
+                        let first = if !me_decided {
                             true
+                        } else if i_must_go != they_must_go && (t_j - t_mine).abs() <= 1.0 {
+                            they_must_go
+                        } else {
+                            t_j < t_mine - 0.3 || ((t_j - t_mine).abs() <= 0.3 && o.id < me_id)
                         };
                         if first && t_j < t_clear * if me_decided { 1.0 } else { patience } + 1.0 {
                             hard = true;
