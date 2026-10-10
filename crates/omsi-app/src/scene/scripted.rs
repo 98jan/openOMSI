@@ -552,19 +552,31 @@ impl World {
             if let (true, Some(stop)) = (o.arrivals, o.var_parent) {
                 wanted.push(stop);
                 let now = boards.clock.as_ref().map(|c| c.time).unwrap_or(0.0);
-                o.inst.host.arrivals = boards
-                    .by_stop
-                    .get(&stop)
-                    .map(|l| {
-                        l.iter()
+                // The list changes about once a second, the times to go every frame: the
+                // same buses keep their names and only count down (the whole list was made
+                // anew, its names copied, every frame for every board).
+                let arrivals = &mut o.inst.host.arrivals;
+                match boards.by_stop.get(&stop) {
+                    Some(l)
+                        if arrivals.len() == l.len()
+                            && arrivals.iter().zip(l).all(|(a, (line, terminus, _))| a.line == *line && a.terminus == *terminus) =>
+                    {
+                        for (a, (_, _, t)) in arrivals.iter_mut().zip(l) {
+                            a.due = (t - now) as f32;
+                        }
+                    }
+                    Some(l) => {
+                        *arrivals = l
+                            .iter()
                             .map(|(line, terminus, t)| omsi_sim::host::Arrival {
                                 line: line.clone(),
                                 terminus: terminus.clone(),
                                 due: (t - now) as f32,
                             })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                            .collect();
+                    }
+                    None => arrivals.clear(),
+                }
             }
             // an HTML page that asks for departures by stop name
             if !o.htmls.is_empty() && dist < HTML_OBJECT_NEAR && !o.inst.host.html_departure_wants.is_empty() {
