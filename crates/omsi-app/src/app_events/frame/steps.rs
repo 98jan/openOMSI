@@ -57,7 +57,7 @@ pub(crate) fn deliver_player_impacts(p: &mut Player, traffic: Option<&mut traffi
 pub(crate) fn gloomy_weather(weather: Option<&omsi_content::weather::Weather>) -> bool {
     weather.map(|w| {
         let (kind, rate) = precip_of(w);
-        w.fog.0 < 600.0 || (kind != 0 && rate > 0.05) || w.clouds.0.trim().to_ascii_lowercase().starts_with("overcast")
+        w.fog.0 < 600.0 || (kind != 0 && rate > 0.05) || w.clouds.0.trim().as_bytes().get(..8).is_some_and(|p| p.eq_ignore_ascii_case(b"overcast"))
     }).unwrap_or(false)
 }
 
