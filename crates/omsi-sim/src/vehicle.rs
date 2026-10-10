@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 mod damage;
+mod pax_vars;
+pub use pax_vars::PaxVars;
 pub use damage::{BrokenGlass, DynamicImpact, VehicleDent};
 
 /// Scripts often test a stopped bus with `!Velocity_Ground`, so do not expose tiny solver drift.
@@ -1048,6 +1050,9 @@ pub struct VehicleInstance {
     v_accel: [Option<omsi_script::VarId>; 3],
     v_wheels: Vec<[[Option<omsi_script::VarId>; 5]; 2]>,
     v_springfactor: Vec<[Option<omsi_script::VarId>; 2]>,
+    /// The passengers' door variables, looked up on first use (see `pax_vars`); made
+    /// again when the vehicle gains a variable.
+    pax_vars: std::sync::OnceLock<PaxVars>,
 }
 
 impl VehicleInstance {
@@ -1309,6 +1314,7 @@ impl VehicleInstance {
             ai_visuals_missed: 0.0,
             var_index,
             props_plan: PropsPlan::default(),
+            pax_vars: std::sync::OnceLock::new(),
         }
     }
 
@@ -2088,6 +2094,7 @@ impl VehicleInstance {
             let id = self.state.vars.len() as omsi_script::VarId;
             self.state.vars.push(v);
             self.var_index.insert(name.to_ascii_lowercase(), id);
+            self.pax_vars = std::sync::OnceLock::new();
         }
     }
 

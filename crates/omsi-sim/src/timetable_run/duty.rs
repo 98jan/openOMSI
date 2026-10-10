@@ -633,28 +633,16 @@ impl PlayerDuty {
         let mut passenger_door_open = false;
         for i in 0..16 {
             for kind in ["Entry", "Exit"] {
-                let name = format!("PAX_{kind}{i}_Open");
-                if bus.has_script_var(&name)
-                    || bus
-                        .ty
-                        .program
-                        .var(&name)
-                        .is_some_and(|id| bus.ty.program.stores(id))
-                {
+                if bus.pax_reports_open(kind, i) {
                     reports_passenger_doors = true;
-                    passenger_door_open |= bus.var(&name).unwrap_or(0.0) > 0.5;
+                    passenger_door_open |= bus.pax_open(kind, i).unwrap_or(0.0) > 0.5;
                 }
             }
         }
         if reports_passenger_doors {
             passenger_door_open
         } else {
-            (0..8).any(|i| {
-                bus.var(&format!("door_{i}"))
-                    .or_else(|| bus.var(&format!("door{i}")))
-                    .unwrap_or(0.0)
-                    > 0.5
-            })
+            (0..8).any(|i| bus.door_anim(i).unwrap_or(0.0) > 0.5)
         }
     }
 
