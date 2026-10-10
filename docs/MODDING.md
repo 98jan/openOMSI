@@ -87,6 +87,40 @@ Normal, roughness, metalness and occlusion maps beside a texture, up to 4096 × 
   `[spotlight]`'s, it is not moved onto the vehicle's front. A rear section's model may have
   its own; their variables are the bus's.
 
+- `[spotlight_cookie]` in the `model.cfg` is a lamp whose beam is a picture: what it would
+  show on a wall in front of it, its brightness and colour every way the lamp shines. One
+  value a line: position (x, y, z), direction (x, y, z), red, green, blue, range, the angle the
+  picture covers across and the one up and down (degrees), the picture, the switching variable;
+  then, if you want them, the fade time in seconds, a variable that turns the lamp to the
+  right (degrees) and one that turns it up (degrees):
+
+  ```
+  [spotlight_cookie]
+  0.9
+  5.85
+  0.75
+  0
+  1
+  -0.04
+  255
+  250
+  235
+  80
+  70
+  30
+  lowbeam_right.png
+  lights_main
+  0.15
+  cornering_yaw
+  ```
+
+  The picture's right is the lamp's right as seen from behind it. White is as bright as a
+  headlamp's beam at its strongest, black is no light. The enhanced graphics draw up to eight
+  different pictures at once; the classic graphics, and a lamp whose picture is missing, light
+  a plain cone round the picture's field instead.
+- With shadows on, the player's headlamps cast shadows too (Enhanced): the
+  lamps on the front that light the road share one shadow map, taken from between them.
+
 ## Screens: static cameras
 
 `[add_camera_reflexion_static]` in the `.bus` adds a camera for a screen - a CCTV monitor

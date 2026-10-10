@@ -800,7 +800,32 @@ Regional = https://example.org/regional.mp3 | 97.9
   after the far `[LOD] 0` mesh, and no stock model repeats a light in two levels.
 * `[spotlight]` (vehicle): pos, dir, rgb, range, inner, outer; the active one is chosen by the
   `Spot_Select` variable (negative = none). `[spotlight_2]` (openOMSI, see MODDING.md): the same twelve
-  numbers, a switching variable and a no-mirror flag; any number lit at once. `[interiorlight] variable range r g b x y z`.
+  numbers, a switching variable and a no-mirror flag; any number lit at once. `[spotlight_cookie]`
+  (openOMSI, below): a lamp whose beam is a picture. `[interiorlight] variable range r g b x y z`.
+* `[spotlight_cookie]` (openOMSI; Omsi.exe skips it): a lamp whose light is a picture of its
+  beam - the beam as it would show on a wall square to the lamp, its brightness and colour every
+  way within the field the picture covers. One value a line: x, y, z (the lamp, vehicle frame:
+  x right, y ahead, z up), the direction's x, y, z, red, green, blue (0..255, the picture's
+  colours times these), range (m, as a `[spotlight]`'s: 100 is a low beam's reach, more reaches
+  further), the whole angle the picture covers across and up and down (degrees), the picture
+  (looked for as the model's textures are), the switching variable (0 off, 1 full, in between
+  dimmed; a number is a constant). Three more lines may follow, each where given (a blank line or
+  the next keyword ends the block): the seconds it takes to come to 63 % of a new brightness
+  (0 at once), a variable that turns it to the right about the vehicle's up axis (degrees: a
+  cornering lamp) and one that turns it up about its own horizontal axis (degrees: headlamp
+  levelling). The picture's right is the lamp's right seen from behind it, its top up; where it
+  is white the lamp is as bright as a headlamp's beam at its strongest, black is no light, and
+  nothing reaches outside its field. Only the enhanced picture draws the picture, eight
+  different pictures (or fields) at once at most, each taken down to 64 x 64; a lamp beyond
+  them, one whose picture is missing, and the classic picture light the cone round the picture
+  instead. A lamp aimed along the road on the player's vehicle shares the headlamps' shadow
+  (see below). A rear section's model may have its own; their variables are the bus's.
+* Shadows of the player's headlamps (Enhanced, with shadows on): the lamps on
+  the front of the player's vehicle that light the road (the `[spotlight]` `Spot_Select` picks,
+  `[spotlight_2]` and `[spotlight_cookie]` lamps aimed along the road) are taken together as one
+  source between them and get one of the four shadow maps the street lamps share, looking along
+  the road from there: what stands in their light throws its shadow ahead. The vehicle's own
+  parts cast none into it.
 * `[maplight] x y z r g b radius` (scenery): point light at night, full within `radius`,
   inverse-square beyond, out of range at six times it. The colour is the brightness: a petrol
   station's red sign declares 0.1 red over a 20 m core and is meant to glow by its pumps, not

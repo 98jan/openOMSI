@@ -183,10 +183,13 @@ struct Surface {
 // How much of street lamp `li` reaches the point (1 for a lamp without a shadow map): its
 // map is one of the tiles under the far shadow map (lib.rs `LampShadow`), looking down from
 // the lamp's head; a few taps of it soften the edge, as the lamp's glowing bowl does.
+// (the player's headlamps - marked so, see `light_marks` - share the tile marked -2: one
+// map from between them along the road, lib.rs `passes::headlamp_shadow`)
 fn lamp_shadow_at(li: u32, p: vec3<f32>, n: vec3<f32>, thin: bool) -> f32 {
     var k = 4u;
+    let own = light_marks(lights[li]).x > 0.5;
     for (var j = 0u; j < 4u; j = j + 1u) {
-        if (camera.lamp_shadow[j] >= 0.0 && u32(camera.lamp_shadow[j]) == li) {
+        if ((camera.lamp_shadow[j] >= 0.0 && u32(camera.lamp_shadow[j]) == li) || (own && camera.lamp_shadow[j] < -1.5)) {
             k = j;
         }
     }
@@ -218,6 +221,48 @@ fn lamp_shadow_at(li: u32, p: vec3<f32>, n: vec3<f32>, thin: bool) -> f32 {
         }
     }
     return sum / 9.0;
+}
+
+// A light cookie layer's texels a side (lib.rs `cookies::COOKIE_SIZE`).
+const COOKIE_SIZE: u32 = 32u;
+
+// The enhanced path's marks on a light (lib.rs `prepare_lights`, carried in `pos.w` below
+// zero): x 1 for one of the player's headlamps, y 1 + the layer of its beam's picture
+// (0: none).
+fn light_marks(l: PointLight) -> vec2<f32> {
+    let m = max(-l.pos.w, 0.0);
+    let own = select(0.0, 1.0, m > 15.5);
+    return vec2<f32>(own, m - own * 16.0);
+}
+
+// A light cookie's texel (x, y) of the layer whose records start at `base`.
+fn cookie_texel(base: u32, x: u32, y: u32) -> vec3<f32> {
+    let i = min(y, COOKIE_SIZE - 1u) * COOKIE_SIZE + min(x, COOKIE_SIZE - 1u);
+    let rec = lights[base + i / 4u];
+    let k = i % 4u;
+    return select(select(rec.pos.xyz, rec.color.xyz, k == 1u), select(rec.dir.xyz, rec.extra.xyz, k == 3u), k >= 2u);
+}
+
+// What a lamp with a picture of its beam (`[spotlight_cookie]`) sends towards `t` (unit,
+// from the lamp): the picture's light there, as the beam would show on a wall square to
+// the lamp - the picture's right towards the lamp's right as seen from behind it, its top
+// up - and nothing outside the field it covers (`camera.cookies`: x, y its half angles'
+// tangents, z where its layer starts in the light buffer, four linear texels a record),
+// filtered between its four nearest texels.
+fn cookie_light(t: vec3<f32>, l: PointLight) -> vec3<f32> {
+    let f = l.dir.xyz;
+    let ahead = dot(t, f);
+    let rc = cross(f, vec3<f32>(0.0, 0.0, 1.0));
+    let r = select(vec3<f32>(1.0, 0.0, 0.0), normalize(rc), dot(rc, rc) > 1e-8);
+    let layer = camera.cookies[min(u32(light_marks(l).y - 0.5), 7u)];
+    let q = vec2<f32>(dot(t, r), dot(t, cross(r, f))) / (max(ahead, 1e-3) * max(layer.xy, vec2<f32>(1e-3)));
+    let st = clamp(vec2<f32>(q.x * 0.5 + 0.5, 0.5 - q.y * 0.5) * f32(COOKIE_SIZE) - vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(f32(COOKIE_SIZE) - 1.0));
+    let c0 = vec2<u32>(st);
+    let w = st - floor(st);
+    let base = u32(layer.z);
+    let top = mix(cookie_texel(base, c0.x, c0.y), cookie_texel(base, c0.x + 1u, c0.y), w.x);
+    let bottom = mix(cookie_texel(base, c0.x, c0.y + 1u), cookie_texel(base, c0.x + 1u, c0.y + 1u), w.x);
+    return select(vec3<f32>(0.0), mix(top, bottom, w.y), ahead > 1e-3 && all(abs(q) < vec2<f32>(1.0)));
 }
 
 // The radiance of the street round the point as the lamps light it (`lamp_light` leaves it
@@ -275,11 +320,18 @@ fn lamp_light(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, sf: Surface, thin: bool,
         let q = dist2 / (range * range);
         let window = (1.0 - q * q) * (1.0 - q * q);
         var e = core * core / sqrt(dist2 * dist2 + core * core * core * core) * window;
+        // (a lamp's picture of its beam: its colour that way, see `cookie_light`)
+        var tint = vec3<f32>(1.0);
         if (l.extra.z != 0.0) {
             e = headlamp(-ld, l.dir.xyz, l.extra.z > 0.0) / max(dist2, 0.3) * window;
         } else if (l.dir.w > -1.5) {
             let cd = dot(-ld, l.dir.xyz);
-            e = e * smoothstep(l.dir.w, l.extra.x, cd);
+            if (light_marks(l).y > 0.5) {
+                tint = cookie_light(-ld, l);
+                e = e * step(1e-4, max(tint.r, max(tint.g, tint.b)));
+            } else {
+                e = e * smoothstep(l.dir.w, l.extra.x, cd);
+            }
         } else if (l.dir.z < -0.5) {
             // a lamp in a housing (a street lamp's head, a platform's light): its reflector
             // sends the light down and out, its housing keeps it from the sky - a few per
@@ -292,7 +344,7 @@ fn lamp_light(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, sf: Surface, thin: bool,
         if (e <= 0.0) {
             continue;
         }
-        var irr = l.color.rgb * l.color.w * enh.lights.y * e;
+        var irr = l.color.rgb * tint * l.color.w * enh.lights.y * e;
         let nl = dot(n, ld);
         ground_e = ground_e + irr * max(ld.z, 0.0);
         // Ground bounce is unshadowed. A lamp behind an ordinary surface contributes

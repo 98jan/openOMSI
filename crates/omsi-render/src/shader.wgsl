@@ -35,6 +35,10 @@ struct Camera {
     inside2_a: vec4<f32>,
     inside2_b: vec4<f32>,
     inside2_c: vec4<f32>,
+    // Enhanced: the field each light cookie layer covers (xy: the tangents of its half
+    // angles across and up; z: its first record in the light buffer), see enhanced.wgsl
+    // `cookie_light`
+    cookies: array<vec4<f32>, 8>,
 };
 
 // 1 when the point lies inside the player's vehicle (its [boundingbox], shrunk a little so

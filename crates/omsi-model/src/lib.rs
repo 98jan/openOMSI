@@ -7,6 +7,11 @@
 use omsi_cfg::{CfgFile, CfgReader, Entry};
 use std::path::{Path, PathBuf};
 
+mod extensions;
+pub use extensions::SpotlightCookie;
+#[cfg(test)]
+mod extension_tests;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnimOrigin {
     Trans([f32; 3]),
@@ -447,6 +452,7 @@ pub struct Model {
     pub particle_emitters: Vec<ParticleEmitter>,
     pub spotlights: Vec<Spotlight>,
     pub spotlights_2: Vec<Spotlight2>,
+    pub spotlight_cookies: Vec<SpotlightCookie>,
     pub interior_lights: Vec<InteriorLight>,
     /// `[light]` legacy lights (raw).
     pub lights: Vec<Vec<String>>,
@@ -497,45 +503,6 @@ impl Model {
         }
         m.tidy_interior_lamps();
         m
-    }
-
-    /// Keep in each mesh's `[illumination_interior]` only the lamps that exist, each once.
-    /// `-1` is how the stock files write "no lamp" (the SD202 lists four of them for its
-    /// outer meshes) and goes without a word; an index past the model's `[interiorlight]`s
-    /// or one written twice is a mistake of the file - said once for the whole model, with
-    /// the first such mesh, rather than met again by every frame's lamp code.
-    pub fn tidy_interior_lamps(&mut self) {
-        let n = self.interior_lights.len() as i64;
-        let mut first_bad: Option<(String, Vec<i32>)> = None;
-        let mut bad_meshes = 0;
-        for mesh in &mut self.meshes {
-            let mut kept: Vec<i32> = Vec::with_capacity(mesh.illumination_interior.len());
-            let mut bad = false;
-            for &k in &mesh.illumination_interior {
-                if k == -1 {
-                    continue;
-                }
-                if (k as i64) < 0 || k as i64 >= n || kept.contains(&k) {
-                    bad = true;
-                    continue;
-                }
-                kept.push(k);
-            }
-            // (the list a mesh gets without a line of its own, 0 to 3, is no mistake of the
-            // file; nor is anything in a model without lamps, an AI car's copy of a bus)
-            let implicit = mesh.illumination_interior == [0, 1, 2, 3];
-            if bad && !implicit && n > 0 {
-                bad_meshes += 1;
-                first_bad.get_or_insert_with(|| (mesh.file.clone(), mesh.illumination_interior.clone()));
-            }
-            mesh.illumination_interior = kept;
-        }
-        if let Some((file, list)) = first_bad {
-            log::warn!(
-                "{}: [illumination_interior] of {bad_meshes} mesh(es) names lamps that do not exist or names one twice (first {file}: {list:?}, {n} [interiorlight]s); those entries are left out",
-                self.path.display()
-            );
-        }
     }
 
     /// Handle one `[newanim]` sub-command line (one of [`ANIM_TOKENS`]): it goes to the
@@ -873,6 +840,7 @@ impl Model {
                 };
                 self.spotlights_2.push(Spotlight2 { values, variable, mirrored });
             }
+            "spotlight_cookie" => self.spotlight_cookies.push(SpotlightCookie::read(r)),
             "interiorlight" => {
                 let variable = r.str().to_string();
                 let range = r.f32();
@@ -1392,56 +1360,6 @@ mod tests {
         assert_eq!(item.lightmap.as_ref().map(|l| l.0.as_str()), Some("zielbeleuchtung.bmp"));
         let base = m.meshes[0].materials.iter().find(|x| !x.item).unwrap();
         assert!(base.lightmap.is_none(), "the lit map is the item's only");
-    }
-
-    /// Commands between a `[matl_change]` and its first `[matl_item]` change the slot's own
-    /// material, as Omsi.exe's reader does: an LED matrix that opens its change first keeps
-    /// its `[matl_alpha]` (unlit dots see-through) whether the variable picks the item or not.
-    #[test]
-    fn commands_after_a_matl_change_go_to_the_slot() {
-        let text = "[mesh]\nmatrix.o3d\n[matl_change]\nled.bmp\n0\nmatrix_on\n[matl_alpha]\n2\n[useScriptTexture]\n0\n[matl_item]\n[matl_lightmap]\nled_lit.bmp\nmatrix_on\n[matl_item]\n";
-        let m = Model::parse(&CfgFile::from_str("model.cfg", text));
-        let mats = &m.meshes[0].materials;
-        let base = mats.iter().find(|x| !x.item && x.change.is_none()).expect("the slot's own material");
-        assert_eq!((base.texture.as_str(), base.alpha, base.alpha_set), ("led.bmp", 2, true));
-        assert_eq!(base.use_script_texture, Some(0));
-        let change = mats.iter().find(|x| !x.item && x.change.is_some()).unwrap();
-        assert!(!change.alpha_set && change.use_script_texture.is_none(), "{change:?}");
-        let items: Vec<&MaterialDef> = mats.iter().filter(|x| x.item).collect();
-        assert_eq!(items.len(), 2);
-        assert!(items.iter().all(|i| i.alpha == 2 && i.use_script_texture == Some(0)));
-        assert!(items[0].lightmap.is_some());
-        assert!(items[1].lightmap.is_none(), "a second item starts from the slot, not from the item before");
-        // a plain [matl] of the slot written before the change is the one changed
-        let text = "[mesh]\nm.o3d\n[matl]\nled.bmp\n0\n[matl_envmap]\ne.bmp\n0.2\n[matl_change]\nled.bmp\n0\nv\n[matl_alpha]\n1\n[matl_item]\n";
-        let m = Model::parse(&CfgFile::from_str("model.cfg", text));
-        let plain: Vec<&MaterialDef> = m.meshes[0].materials.iter().filter(|x| !x.item && x.change.is_none()).collect();
-        assert_eq!(plain.len(), 1);
-        assert!(plain[0].envmap.is_some() && plain[0].alpha == 1);
-    }
-
-    /// `[illumination_interior]` keeps the lamps that exist, each once; `-1` means none.
-    #[test]
-    fn interior_lamp_lists_keep_existing_lamps_once() {
-        let lamps = "[interiorlight]\na\n1\n255\n255\n255\n0\n0\n2\n".repeat(3);
-        let text = format!("{lamps}[mesh]\na.o3d\n[illumination_interior]\n0\n-1\n-1\n-1\n[mesh]\nb.o3d\n[illumination_interior]\n2\n7\n2\n1\n[mesh]\nc.o3d\n");
-        let m = Model::parse(&CfgFile::from_str("model.cfg", &text));
-        let lists: Vec<&[i32]> = m.meshes.iter().map(|x| x.illumination_interior.as_slice()).collect();
-        assert_eq!(lists, vec![&[0][..], &[2, 1][..], &[2, 1][..]]);
-        // the list a mesh has without a line: what exists of 0..3
-        let m = Model::parse(&CfgFile::from_str("model.cfg", &format!("{lamps}[mesh]\na.o3d\n")));
-        assert_eq!(m.meshes[0].illumination_interior, vec![0, 1, 2]);
-    }
-
-    /// `[led_glow_effect]` is the slot's, kept in 0..1, and an item takes it from the slot.
-    #[test]
-    fn led_glow_effect_belongs_to_the_slot() {
-        let text = "[mesh]\nm.o3d\n[matl]\nled.bmp\n0\n[led_glow_effect]\n0.4\n[matl]\nflip.bmp\n0\n[led_glow_effect]\n3\n[matl_change]\nled.bmp\n0\nv\n[matl_item]\n";
-        let m = Model::parse(&CfgFile::from_str("model.cfg", text));
-        let of = |t: &str, item: bool| m.meshes[0].materials.iter().find(|x| x.texture == t && x.item == item && x.change.is_none() == !item).and_then(|x| x.led_glow);
-        assert_eq!(of("led.bmp", false), Some(0.4));
-        assert_eq!(of("flip.bmp", false), Some(1.0));
-        assert_eq!(of("led.bmp", true), Some(0.4));
     }
 
     #[test]
