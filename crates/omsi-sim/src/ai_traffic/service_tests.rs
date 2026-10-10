@@ -335,3 +335,32 @@ fn pulling_out_of_a_bay_waits_for_a_car_close_behind() {
         }
     }
 }
+
+/// Something comes to stand in the berth after the bus was handed it (a car stopping there,
+/// a queue at the lights beyond): the bus waits behind it, and after a long wait serves the
+/// stop where it stands - nobody waits ahead of it - rather than miss it.
+#[test]
+fn a_holder_kept_short_of_its_point_serves_from_there_after_a_long_wait() {
+    let f = Fixture::new();
+    let mut t = road(&f);
+    let bus = add_bus(&mut t, &f, 1, 200.0, 8.0, 0.0);
+    let mut put = None;
+    let logs = run(&mut t, &[bus], 80.0, |t, time| {
+        let held = car(t, bus).bus.as_ref().unwrap().held_berth().is_some();
+        if held && put.is_none() {
+            put = Some((add_car(t, &f, 60, STOP_S + 1.0, 0.0), time));
+        }
+        if let Some((id, _)) = put {
+            if let Some(c) = t.cars.iter_mut().find(|c| c.id == id) {
+                c.state.speed = 0.0;
+                c.state.max_speed_kmh = 0.0;
+            }
+        }
+    });
+    assert!(put.is_some());
+    assert_eq!(logs[0].opened_at.len(), 1, "{:?}", logs[0]);
+    assert!((SERVE_HERE_LONG_TEST..12.0).contains(&logs[0].opened_at[0]), "served {:.1} m before the point", logs[0].opened_at[0]);
+    assert!(car(&t, bus).bus.as_ref().unwrap().missed.is_empty());
+}
+
+const SERVE_HERE_LONG_TEST: f32 = 2.5;

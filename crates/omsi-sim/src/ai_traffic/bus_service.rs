@@ -173,9 +173,10 @@ const DOCK_SPEED: f32 = 0.1;
 const SERVE_HERE_LONG: f32 = 2.5;
 const SERVE_HERE_LAT: f32 = 0.8;
 const SERVE_HERE_AFTER: f32 = 1.5;
-/// At rest this long where it cannot dock from (across, or short of a berth something has
-/// stood in since it was handed it, within `UNREACHABLE_NEAR` m), the stop is missed: it
-/// drives on rather than back up or stand there for good.
+/// At rest this long at its point but where it cannot dock from (across), the stop is
+/// missed: it drives on rather than back up or stand there for good. Held short of its point
+/// (within `UNREACHABLE_NEAR` m) by something that came to stand in the berth, it serves the
+/// stop from there after `berths::BLOCKED_LONG`.
 const UNREACHABLE_AFTER: f32 = 8.0;
 const UNREACHABLE_NEAR: f32 = 12.0;
 /// Pulling out of a bay is held for traffic only when the bus stands this far or more off
@@ -912,10 +913,17 @@ impl BusService {
                 self.miss(vehicle, ctx, berths, Some(key), "overshot");
                 continue;
             }
-            let short_of_it = d < UNREACHABLE_NEAR && !ctx.berth.free;
-            if self.rest_t >= UNREACHABLE_AFTER && (d.abs() < SERVE_HERE_LONG || short_of_it) {
+            if self.rest_t >= UNREACHABLE_AFTER && d.abs() < SERVE_HERE_LONG {
                 self.miss(vehicle, ctx, berths, Some(key), "cannot get to it");
                 continue;
+            }
+            // something came to stand in the berth after it was handed it (a queue at the
+            // lights beyond the stop, a car pulled in): the first bus serves the stop where it
+            // stands, short of its point, once it has waited for long - nobody waits ahead
+            if self.rest_t >= super::berths::BLOCKED_LONG && !ctx.berth.free && (0.0..UNREACHABLE_NEAR).contains(&d) {
+                self.near_d = f32::INFINITY;
+                self.arrive(ctx, stop.depart, (st.lane, st.s));
+                return Some(st.front);
             }
             self.near_d = d;
             return (d < STOP_REACH).then(|| d.max(0.0) + st.front - 0.3);
