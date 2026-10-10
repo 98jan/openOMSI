@@ -33,7 +33,7 @@ use omsi_sim::ai_traffic::viewer::*;
 use crate::view_sync::traffic::{depart_parked, release_car_render, TrafficView};
 
 pub use omsi_sim::ai_traffic::AI_SCHEMES;
-pub(crate) use omsi_sim::ai_traffic::model::{vehicle_bodies, AiCar, BusSetup, DormantCar, ParkPlan, PlayerBox};
+pub(crate) use omsi_sim::ai_traffic::model::{vehicle_bodies, AiCar, BusSetup, ParkPlan, PlayerBox};
 pub(crate) use setup::warm_up;
 pub(crate) use omsi_sim::ai_traffic::viewer::Viewer;
 

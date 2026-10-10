@@ -9,13 +9,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A vehicle type with no model and no scripts, in a folder of its own (12 m as a bus,
 /// 4.5 m as a car).
-struct Fixture {
+pub(super) struct Fixture {
     dir: std::path::PathBuf,
-    ty: Arc<VehicleType>,
+    pub(super) ty: Arc<VehicleType>,
 }
 
 impl Fixture {
-    fn new() -> Fixture {
+    pub(super) fn new() -> Fixture {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!("omsi-traffic-service-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
         std::fs::create_dir_all(&dir).unwrap();
@@ -37,7 +37,7 @@ const STOP_S: f32 = 300.0;
 const STOP_ID: i64 = 77;
 
 /// One straight road north, 1.5 km long (lane 0), and the road back beside it (lane 1).
-fn road(f: &Fixture) -> TrafficSim {
+pub(super) fn road(f: &Fixture) -> TrafficSim {
     let north = LaneBuilder::arc(DVec3::ZERO, 0.0, 1500.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let south = LaneBuilder::arc(DVec3::new(-3.5, 1500.0, 0.0), 180.0, 1500.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let mut net = Network { lanes: vec![north, south], ..Default::default() };
@@ -65,7 +65,7 @@ fn add_bus(t: &mut TrafficSim, f: &Fixture, id: u64, s: f32, speed: f32, depart:
     t.place_car(vehicle, LaneKind::Street, 0, s, f.ty.clone(), id * 0x101, None, Some(id), Some(speed), Some(setup))
 }
 
-fn add_car(t: &mut TrafficSim, f: &Fixture, id: u64, s: f32, speed: f32) -> u64 {
+pub(super) fn add_car(t: &mut TrafficSim, f: &Fixture, id: u64, s: f32, speed: f32) -> u64 {
     let vehicle = VehicleInstance::new(f.ty.clone(), crate::VehicleHost::new(crate::SimClock::default()));
     t.place_car(vehicle, LaneKind::Street, 0, s, f.ty.clone(), id * 0x77, None, Some(id), Some(speed), None)
 }

@@ -148,6 +148,7 @@ impl TrafficSim {
             others_now: Vec::new(),
             berths: Default::default(),
             removals: [0; Removal::COUNT],
+            admission: Default::default(),
         };
         t.sort_parked(parked_cars, lanes);
         t

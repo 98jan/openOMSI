@@ -221,7 +221,7 @@ impl Traffic {
         while i < self.sim.cars.len() {
             match self.sim.cars[i].park {
                 Some(p) if p.done => {
-                    let c = self.sim.cars.swap_remove(i);
+                    let c = self.sim.take_off(i, omsi_sim::ai_traffic::control::Removal::Finished);
                     if world.return_parked(renderer, scene, p.key) {
                         if let Some(list) = self.sim.parked.get_mut(&p.lane) {
                             list.push((p.s, p.lat));

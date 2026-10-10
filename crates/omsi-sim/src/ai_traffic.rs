@@ -6,6 +6,7 @@
 //! and sound like, and taking the lanes and the vehicle types from the world, is omsi-app's
 //! `traffic` (its `Traffic` is a `TrafficSim` with its pictures and sounds).
 
+pub mod admission;
 pub mod berths;
 pub mod bus_service;
 pub mod control;
@@ -30,6 +31,8 @@ pub mod viewer;
 mod scenario_tests;
 #[cfg(test)]
 mod service_tests;
+#[cfg(test)]
+mod population_tests;
 #[cfg(test)]
 mod tests;
 
@@ -272,4 +275,6 @@ pub struct TrafficSim {
     pub berths: berths::Berths,
     /// Cars taken off the road, by `Removal` (diagnostics).
     pub removals: [u64; Removal::COUNT],
+    /// The requests to put vehicles on the road, and their answers (`admission`).
+    pub admission: admission::Admission,
 }
