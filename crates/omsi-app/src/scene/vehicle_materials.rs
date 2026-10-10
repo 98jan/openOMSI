@@ -159,6 +159,39 @@ pub(super) fn find_vehicle_freetex(name: &str, dirs: &[&Path]) -> Option<PathBuf
     omsi_texture::find_texture(&rel, dirs)
 }
 
+/// Whether `key` is the cache key `sync_materials` makes of the free texture `name` under
+/// the light maps `mask`: the name lower-cased (ASCII), then `#` and the mask if there is
+/// one.
+fn freetex_key_is(key: Option<&str>, name: &str, mask: Option<u32>) -> bool {
+    let Some(key) = key.map(str::as_bytes) else {
+        return false;
+    };
+    let name = name.as_bytes();
+    let Some((head, rest)) = key.split_at_checked(name.len()) else {
+        return false;
+    };
+    if !head.iter().zip(name).all(|(k, n)| *k == n.to_ascii_lowercase()) {
+        return false;
+    }
+    match mask {
+        None => rest.is_empty(),
+        Some(m) => {
+            let mut digits = [0u8; 10];
+            let mut at = digits.len();
+            let mut v = m;
+            loop {
+                at -= 1;
+                digits[at] = b'0' + (v % 10) as u8;
+                v /= 10;
+                if v == 0 {
+                    break;
+                }
+            }
+            rest.first() == Some(&b'#') && rest[1..] == digits[at..]
+        }
+    }
+}
+
 pub(super) fn sync_materials(
     renderer: &Renderer,
     scene: &mut Scene,
@@ -186,8 +219,19 @@ pub(super) fn sync_materials(
         // over the display, and a new picture came with the last map whatever its variable.
         let lights = &mut v.lights;
         for f in &mut v.free {
-            let name = vehicle.str_var(&f.var);
-            let name = name.trim().to_string();
+            // (the string read in place and compared with the key it made last time: the
+            // name was copied, lower-cased and formatted for every free texture of every
+            // vehicle each frame, though it changes only when a display does)
+            let current = vehicle
+                .ty
+                .program
+                .str_var(&f.var)
+                .and_then(|i| vehicle.state.str_vars.get(i as usize))
+                .map_or("", |s| s.trim());
+            if freetex_key_is(f.current.as_deref(), current, mask) {
+                continue;
+            }
+            let name = current.to_string();
             let key = match mask {
                 Some(m) => format!("{}#{m}", name.to_ascii_lowercase()),
                 None => name.to_ascii_lowercase(),
@@ -1058,4 +1102,43 @@ pub(super) fn slot_overlays_another(mesh: &MeshData, slot: usize) -> bool {
         }
     }
     own.len() >= 3 && own.iter().filter(|k| others.contains(*k)).count() * 10 >= own.len() * 9
+}
+
+#[cfg(test)]
+mod freetex_key_tests {
+    use super::freetex_key_is;
+
+    /// The key as `sync_materials` makes it.
+    fn key(name: &str, mask: Option<u32>) -> String {
+        match mask {
+            Some(m) => format!("{}#{m}", name.to_ascii_lowercase()),
+            None => name.to_ascii_lowercase(),
+        }
+    }
+
+    #[test]
+    fn matches_the_key_made_of_the_same_name() {
+        for name in ["", "Anz_Linie.BMP", "x#0", "Ä_Ziel", "a/b\\c"] {
+            for mask in [None, Some(0), Some(3), Some(10), Some(u32::MAX)] {
+                assert!(freetex_key_is(Some(&key(name, mask)), name, mask), "{name:?} {mask:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn differs_from_any_other_key() {
+        let names = ["", "x", "X#0", "x#0", "xy", "y", "Ä", "ä"];
+        let masks = [None, Some(0), Some(3), Some(30)];
+        for a in names {
+            for ma in masks {
+                for b in names {
+                    for mb in masks {
+                        let same = key(a, ma) == key(b, mb);
+                        assert_eq!(freetex_key_is(Some(&key(a, ma)), b, mb), same, "{a:?} {ma:?} / {b:?} {mb:?}");
+                    }
+                }
+            }
+        }
+        assert!(!freetex_key_is(None, "", None));
+    }
 }
