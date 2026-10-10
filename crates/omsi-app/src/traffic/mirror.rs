@@ -116,6 +116,7 @@ impl Traffic {
             yield_to: None,
             deadlock_pass: f32::MIN,
             deadlock_tried: f32::MIN,
+            sideways: Default::default(),
             park: None,
         });
         view.insert(id, render);

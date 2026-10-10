@@ -145,6 +145,8 @@ impl TrafficSim {
             sim_accum: 0.0,
             frame_alpha: 1.0,
             pose_before: HashMap::new(),
+            change_claims: Vec::new(),
+            scenery_probe: None,
             others_now: Vec::new(),
         };
         t.sort_parked(parked_cars, lanes);

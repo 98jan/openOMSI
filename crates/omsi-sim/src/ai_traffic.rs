@@ -13,6 +13,7 @@ pub mod fixed_step;
 pub mod density;
 pub mod dormant;
 pub mod junctions;
+pub mod lateral;
 pub mod light_paths;
 pub mod lights;
 pub mod mirror;
@@ -29,6 +30,8 @@ pub mod viewer;
 mod scenario_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod lateral_tests;
 
 use crate::ai_motion::{
     back_in_ramp, pull_out_ramps, AiBody, MotionKind, BACK_IN_LAT_ACCEL, PULL_OUT_ACCEL,
@@ -48,6 +51,7 @@ use std::sync::Arc;
 
 use dormant::*;
 use junctions::*;
+use lateral::*;
 use lights::*;
 use model::*;
 use obstacles::*;
@@ -264,4 +268,10 @@ pub struct TrafficSim {
     pub frame_alpha: f32,
     /// Every car's parts as they stood before the last step, by id (see `fixed_step`).
     pub pose_before: HashMap<u64, Vec<fixed_step::PartPose>>,
+    /// The lane changes the cars' ways require and those begun this step (see
+    /// `lateral::ChangeClaim`).
+    pub change_claims: Vec<lateral::ChangeClaim>,
+    /// Asks whether a box touches the scenery, for the cars' manoeuvres (`ghost_blocked`);
+    /// None: the player's collision world (`occluders`) is asked.
+    pub scenery_probe: Option<lateral::SceneryProbe>,
 }

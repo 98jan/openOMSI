@@ -1952,7 +1952,7 @@ const PLAN_LANES: usize = 10;
 /// the way is bent so that it has no step (half the gap on each side).
 const JOINT_BLEND: f32 = 6.0;
 /// Seconds of signalling before a lane change begins to move sideways.
-const SIGNAL_BEFORE_CHANGE: f32 = 1.2;
+pub const SIGNAL_BEFORE_CHANGE: f32 = 1.2;
 
 /// One AI vehicle moving on the network: where it is along its lanes and which way it is
 /// going. The body that follows this way is `ai_motion::AiBody`.

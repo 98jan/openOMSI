@@ -152,6 +152,8 @@ pub struct AiCar {
     pub deadlock_pass: f32,
     /// When it was last chosen so.
     pub deadlock_tried: f32,
+    /// Its sideways moves (`lateral`): what it wishes, its last lane change.
+    pub sideways: super::lateral::Sideways,
 }
 
 /// A free parking space beside a lane that a car means to park in: the space of parked car
@@ -632,6 +634,7 @@ impl TrafficSim {
             yield_to: None,
             deadlock_pass: f32::MIN,
             deadlock_tried: f32::MIN,
+            sideways: Default::default(),
             park: None,
             seed,
             scheme,

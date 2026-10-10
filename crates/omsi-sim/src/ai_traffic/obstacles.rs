@@ -11,6 +11,9 @@ pub const PEOPLE_LEVEL: f64 = 2.5;
 /// is not in it (m): the road under a bridge is some 4.5 m below the deck.
 pub const BODY_LEVEL: f64 = 3.0;
 
+/// What a manoeuvre's way keeps clear of what stands beside it (m, `ghost_blocked`).
+pub const GHOST_CLEARANCE: f64 = 0.2;
+
 /// How far ahead a car looks for other vehicles at least (m).
 pub const LOOK_AHEAD: f32 = 70.0;
 /// ... and at most, when it is fast.
@@ -328,6 +331,119 @@ impl TrafficSim {
             d += step;
         }
         None
+    }
+
+    /// Would car `i`, driven along `way(d)` (the point of its origin `d` metres on, for d
+    /// in 0..`len`), run into anything there: the body of a vehicle standing (or of one
+    /// moving that would still be in the way within the first second), the player's or a
+    /// LAN player's vehicle standing, the boxes `extra` (parked cars), somebody on foot,
+    /// the scenery (`scenery_blocks`)? In every place the body is the whole rectangle,
+    /// turned as the car will be turned there - along the line from where its rear axle
+    /// will be - so the corner that swings out of an S-bend counts, not the middle of its
+    /// way only. What touches the car where it stands now is not the manoeuvre's doing and
+    /// is left out, as is `skip`, what it pulls out round (its own steering is measured
+    /// against that, `AiBody::sweep_clearance`; `usize::MAX` the player's bus). Moving
+    /// vehicles further on are the lane's gaps' business (`can_merge`, `oncoming_block`).
+    /// Returns what is in the way.
+    pub fn ghost_blocked(&self, i: usize, way: &dyn Fn(f32) -> DVec3, len: f32, feet: &super::foot_grid::Feet, skip: Option<usize>, extra: &[Obb]) -> Option<String> {
+        let car = &self.cars[i];
+        let st = &car.state;
+        let (front, rear, hw) = (st.front as f64, st.rear as f64, car.half_width as f64);
+        let height = car.vehicle.ty.def.bounding_box.map(|b| b[2] as f64).filter(|h| *h > 0.5).unwrap_or(1.5);
+        let pivot = (st.rear * 0.6).clamp(1.0, 3.0);
+        let h = car.vehicle.heading.to_radians();
+        let heading_fwd = DVec2::new(h.sin(), h.cos());
+        let ghost = |d: f32| -> Footprint {
+            let p = way(d);
+            let fwd = (p - way(d - pivot)).truncate().normalize_or_zero();
+            let fwd = if fwd == DVec2::ZERO { heading_fwd } else { fwd };
+            Footprint { car: usize::MAX, center: p.truncate() + fwd * ((front - rear) * 0.5), fwd, right: DVec2::new(fwd.y, -fwd.x), half_len: (front + rear) * 0.5, half_w: hw, speed: 0.0, z: p.z }
+        };
+        let pos = car.vehicle.position.truncate();
+        let reach = len as f64 + front + 10.0;
+        let start = ghost(0.0);
+        let margin = GHOST_CLEARANCE * 0.5;
+        let bodies: Vec<&Footprint> = feet
+            .near(pos, reach)
+            .filter(|f| f.car != i && Some(f.car) != skip && (f.center - pos).length() < reach + f.half_len + f.half_w)
+            .filter(|f| !start.overlaps(f, 0.0))
+            .collect();
+        let players: Vec<Footprint> = if skip == Some(usize::MAX) {
+            Vec::new()
+        } else {
+            self.player
+                .iter()
+                .chain(self.others_now.iter())
+                .filter(|p| p.4.abs() < 0.5 && (p.0.truncate() - pos).length() < reach + p.2 as f64)
+                .map(|&(c, ph, hl, phw, _)| {
+                    let hr = ph.to_radians();
+                    Footprint { car: usize::MAX, center: c.truncate(), fwd: DVec2::new(hr.sin(), hr.cos()), right: DVec2::new(hr.cos(), -hr.sin()), half_len: hl as f64, half_w: phw as f64, speed: 0.0, z: c.z }
+                })
+                .filter(|f| !start.overlaps(f, 0.0))
+                .collect()
+        };
+        let parked: Vec<Footprint> = extra.iter().map(|b| Footprint::from_obb(usize::MAX, b, 0.0)).filter(|f| !start.overlaps(f, 0.0)).collect();
+        let people: Vec<&(DVec3, DVec2, bool)> = self.people.iter().filter(|(p, _, _)| (p.truncate() - pos).length() < reach + 3.0).collect();
+        let v = st.speed.max(3.0);
+        let mut d = 0.0f32;
+        let mut k = 0usize;
+        while d <= len {
+            let g = ghost(d);
+            let t = d / v;
+            for f in &bodies {
+                if (f.z - g.z).abs() > BODY_LEVEL {
+                    continue;
+                }
+                let mut at = **f;
+                if f.speed.abs() > 0.5 {
+                    if t > 1.0 {
+                        continue;
+                    }
+                    at.center += f.fwd * (f.speed * t) as f64;
+                }
+                if g.overlaps(&at, margin) {
+                    return Some(format!("the body of car {} {d:.1} m on", self.cars[f.car].id));
+                }
+            }
+            if let Some(f) = players.iter().find(|f| (f.z - g.z).abs() < 4.0 && g.overlaps(f, margin)) {
+                return Some(format!("a player's vehicle at ({:.1}, {:.1})", f.center.x, f.center.y));
+            }
+            if parked.iter().any(|f| g.overlaps(f, margin)) {
+                return Some(format!("a parked car {d:.1} m on"));
+            }
+            for (p, pv, _) in &people {
+                if (p.z - g.z).abs() > PEOPLE_LEVEL {
+                    continue;
+                }
+                let rel = p.truncate() + *pv * t.min(2.0) as f64 - g.center;
+                if rel.dot(g.fwd).abs() <= g.half_len + 0.3 && rel.dot(g.right).abs() <= g.half_w + 0.3 {
+                    return Some(format!("somebody on foot {d:.1} m on"));
+                }
+            }
+            if k.is_multiple_of(2) {
+                let p = way(d);
+                let mut b = Obb::vehicle(p.truncate(), g.fwd.x.atan2(g.fwd.y).to_degrees(), front, rear, hw);
+                b.z0 = p.z + 0.15;
+                b.z1 = p.z + height;
+                if self.scenery_blocks(&b) {
+                    return Some(format!("the scenery {d:.1} m on"));
+                }
+            }
+            d += 1.0;
+            k += 1;
+        }
+        None
+    }
+
+    /// Does the box (with its heights) touch the scenery: the map's objects with a
+    /// collision box or mesh? Asked through `scenery_probe` where the game has set one,
+    /// else in the player's collision world (`occluders`); without either, no.
+    pub fn scenery_blocks(&self, b: &Obb) -> bool {
+        match (&self.scenery_probe, &self.occluders) {
+            (Some(probe), _) => probe(b),
+            (None, Some(world)) => world.hit(b).is_some(),
+            _ => false,
+        }
     }
 
     /// Where the player's vehicle is in car `i`'s way: the gap to it and how fast it moves
