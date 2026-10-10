@@ -9,6 +9,7 @@
 pub mod bus_service;
 pub mod control;
 pub mod deadlock;
+pub mod fixed_step;
 pub mod density;
 pub mod dormant;
 pub mod junctions;
@@ -257,4 +258,10 @@ pub struct TrafficSim {
     pub others_now: Vec<PlayerBox>,
     /// `OMSI_TRAFFIC_STATS`: the flow statistics of the run (see `stats`).
     pub stats: Option<Box<stats::TrafficStats>>,
+    /// The frame time not yet run as a step (s, see `fixed_step`).
+    pub sim_accum: f64,
+    /// How far this frame's picture is from the step before the last to the last (0..1).
+    pub frame_alpha: f32,
+    /// Every car's parts as they stood before the last step, by id (see `fixed_step`).
+    pub pose_before: HashMap<u64, Vec<fixed_step::PartPose>>,
 }

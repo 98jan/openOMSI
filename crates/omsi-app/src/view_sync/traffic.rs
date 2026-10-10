@@ -241,9 +241,13 @@ impl Traffic {
         for r in std::mem::take(&mut view.released) {
             world.release_vehicle(renderer, scene, r);
         }
+        // (drawn between the traffic's last two steps, where this frame falls: see
+        // `TrafficSim::advance`; back where they stand once drawn)
+        let actual = self.sim.show_between();
         self.sync_drivers(view, world, renderer, scene);
         self.sync_lamps(world, renderer, scene);
         self.sync_cars(view, world, renderer, scene);
+        self.sim.show_actual(actual);
     }
 
     /// The traffic light lamps (see `sync`).

@@ -445,3 +445,57 @@ fn way_lanes_are_what_they_were() {
     }
     assert!(checked > 1000);
 }
+
+/// Every car of the scene as it stands: id, lane, distance along it and speed.
+fn snapshot(t: &TrafficSim) -> Vec<(u64, usize, f32, f32)> {
+    let mut v: Vec<_> = t.cars.iter().map(|c| (c.id, c.state.lane, c.state.s, c.state.speed)).collect();
+    v.sort_by_key(|x| x.0);
+    v
+}
+
+/// Four cars at a crossroads without priorities and one queued behind them, placed in
+/// `order` (with fixed ids, so that only their places in the list differ).
+fn busy_crossroads(f: &Fixture, order: &[usize]) -> TrafficSim {
+    let mut t = traffic(f, crossroads(150.0));
+    let cars = [(0, 135.0), (1, 135.0), (2, 135.0), (3, 135.0), (0, 120.0)];
+    for &k in order {
+        let (lane, s) = cars[k];
+        let vehicle = VehicleInstance::new(f.ty.clone(), crate::VehicleHost::new(crate::SimClock::default()));
+        t.place_car(vehicle, LaneKind::Street, lane, s, f.ty.clone(), 0x51 + k as u64 * 0x1000, None, Some(100 + k as u64), Some(4.0), None);
+    }
+    t
+}
+
+#[test]
+fn the_same_scene_drives_the_same_at_any_frame_rate() {
+    let f = Fixture::new();
+    let run_at = |fps: f32| {
+        let mut t = busy_crossroads(&f, &[0, 1, 2, 3, 4]);
+        for _ in 0..(20.0 * fps).round() as usize {
+            t.advance(1.0 / fps, None);
+        }
+        snapshot(&t)
+    };
+    let slow = run_at(30.0);
+    assert_eq!(slow, run_at(60.0));
+    assert_eq!(slow, run_at(144.0));
+    // (and the scene did move)
+    assert!(slow.iter().any(|c| c.1 >= 8), "{slow:?}");
+}
+
+#[test]
+fn the_order_the_cars_stand_in_the_list_decides_nothing() {
+    let f = Fixture::new();
+    let run = |order: &[usize]| {
+        let mut t = busy_crossroads(&f, order);
+        for _ in 0..1000 {
+            t.advance(SIM_DT_TEST, None);
+        }
+        snapshot(&t)
+    };
+    let a = run(&[0, 1, 2, 3, 4]);
+    assert_eq!(a, run(&[4, 3, 2, 1, 0]));
+    assert_eq!(a, run(&[2, 4, 0, 3, 1]));
+}
+
+const SIM_DT_TEST: f32 = super::fixed_step::SIM_DT;

@@ -3482,8 +3482,8 @@ pub struct TrailerPart {
     ground_lift: f32,
     /// The part's pitch (degrees, nose up) and lean (degrees, as the vehicle's `bank`) as
     /// it travels (not turned round for a reversed part), and the eased height of its axle.
-    pitch: f32,
-    bank: f32,
+    pub(crate) pitch: f32,
+    pub(crate) bank: f32,
     axle_z: Option<f64>,
     /// How fast the axle's height moves (m/s), for the road part's springs (see `follow`).
     axle_vz: f64,

@@ -142,6 +142,9 @@ impl TrafficSim {
             lan_eyes: Vec::new(),
             retired: Vec::new(),
             stats: stats::TrafficStats::from_env(),
+            sim_accum: 0.0,
+            frame_alpha: 1.0,
+            pose_before: HashMap::new(),
             others_now: Vec::new(),
         };
         t.sort_parked(parked_cars, lanes);

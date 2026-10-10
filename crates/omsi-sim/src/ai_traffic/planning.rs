@@ -231,7 +231,7 @@ impl TrafficSim {
                                 || ((t_them - t_me).abs() <= 0.4
                                     && !kept
                                     && other.merge_after != Some(self.cars[i].id)
-                                    && j < i)
+                                    && other.id < self.cars[i].id)
                         };
                         if first {
                             // behind it at the joint; while it is not past yet, wait short of

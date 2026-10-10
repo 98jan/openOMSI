@@ -87,12 +87,18 @@ impl TrafficSim {
         self.break_lead_pairs();
         self.break_rings();
         let ts = TickScene { dt, debug, player, player_standing, others, feet, by_lane, coming, walkers };
-        for (i, frame) in frames.iter_mut().enumerate() {
+        // (the cars plan one after the other, in the order of their ids: in the order they
+        // stand in the list, which a removal reshuffles, two runs of one session decided
+        // differently where one car's plan reads what another's did this step)
+        let mut order: Vec<usize> = (0..self.cars.len()).collect();
+        order.sort_unstable_by_key(|&i| self.cars[i].id);
+        for i in order {
             match self.plan_car(i, &ts, &mut reservations) {
-                Some(f) => *frame = Some(f),
+                Some(f) => frames[i] = Some(f),
                 None => remove.push(i),
             }
         }
+        remove.sort_unstable();
         let others = ts.others;
         self.set_visibility();
         let t_par = std::time::Instant::now();
