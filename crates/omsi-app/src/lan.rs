@@ -3113,6 +3113,7 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
             if schema.table_hash() != manifest.table || rv.remote_schema.as_ref() == Some(&schema) { continue; }
             if rv.local_schema.is_none() { rv.local_schema = Some(variable_schema::for_vehicle(&rv.vehicle)); }
             let local = rv.local_schema.as_ref().expect("just made");
+            let previous_texture_vars = rv.vars.as_ref().map(|t| t.hash).unwrap_or_else(|| local.table_hash());
             if local.table_hash() != manifest.table {
                 rv.vars = variable_schema::mapping(&rv.vehicle.ty.program, local, &schema);
                 rv.synced.clear();
@@ -3124,6 +3125,12 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
                 }
             } else {
                 rv.vars = Some(var_table(&rv.vehicle.ty.program));
+            }
+            if rv.vars.as_ref().map(|t| t.hash) != Some(previous_texture_vars) {
+                // The approved variable table changed (or became incompatible). A fresh
+                // cookie prevents old pixels being applied while the owner initializes it.
+                rv.texture_subscription = None;
+                lan.unsubscribe_script_textures(manifest.id);
             }
             rv.remote_schema = Some(schema);
         }
@@ -3157,9 +3164,12 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
     }
 }
 
-/// The declared surfaces and script variable layout must agree as well as the bus path.
+/// Bus path and declared surfaces must agree; the seed is the owner's variable table.
 fn script_texture_table(bus: &str, program: &omsi_script::Program, surfaces: &[(i32, i32)]) -> u32 {
-    let mut hash = var_table(program).hash;
+    script_texture_table_for_vars(bus, var_table(program).hash, surfaces)
+}
+
+fn script_texture_table_for_vars(bus: &str, mut hash: u32, surfaces: &[(i32, i32)]) -> u32 {
     for b in bus.replace('\\', "/").bytes().map(|b| b.to_ascii_lowercase())
         .chain(std::iter::once(0))
         .chain((surfaces.len() as u32).to_le_bytes())
@@ -3168,6 +3178,25 @@ fn script_texture_table(bus: &str, program: &omsi_script::Program, surfaces: &[(
         hash = (hash ^ b as u32).wrapping_mul(0x0100_0193);
     }
     hash
+}
+
+/// Differing tables can use the owner's texture hash only after the same model/sound
+/// compatibility check that authorized the name mapping in `sync_vars`.
+fn script_texture_subscription_table(
+    bus: &str,
+    program: &omsi_script::Program,
+    surfaces: &[(i32, i32)],
+    schema: Option<&omsi_net::var_schema::Schema>,
+    mapped: Option<&VarTable>,
+) -> Option<u32> {
+    let local = var_table(program).hash;
+    let owner = match schema {
+        Some(schema) if schema.table_hash() != local => {
+            mapped.filter(|table| table.hash == schema.table_hash())?.hash
+        }
+        _ => local,
+    };
+    Some(script_texture_table_for_vars(bus, owner, surfaces))
 }
 
 fn publish_script_textures(lan: &mut LanSession, game: &mut LanGame, player: Option<&mut Player>, bus: &str) {
@@ -3191,8 +3220,12 @@ fn receive_script_textures(lan: &mut LanSession, game: &mut LanGame) {
     for (&id, rv) in &mut game.remotes {
         // A stand-in is another vehicle, never a target for the owner's pixels.
         if rv.stand_in || rv.vehicle.host.script_textures.is_empty() { continue; }
+        if rv.remote_schema.is_some() && rv.vars.is_none() { continue; }
         if rv.texture_subscription.is_none_or(|s| s.2 != lan.welcomes) {
-            let table = script_texture_table(&rv.made_as.0, &rv.vehicle.ty.program, &rv.vehicle.ty.model.script_textures);
+            let Some(table) = script_texture_subscription_table(
+                &rv.made_as.0, &rv.vehicle.ty.program, &rv.vehicle.ty.model.script_textures,
+                rv.remote_schema.as_ref(), rv.vars.as_ref(),
+            ) else { continue; };
             let cookie = lan.subscribe_script_textures(id, table);
             rv.texture_subscription = Some((cookie, table, lan.welcomes));
         }
@@ -4102,6 +4135,55 @@ mod tests {
         assert_ne!(hash, script_texture_table("Vehicles/Bus/main.bus", &program, &surfaces[..1]));
         program.declare_script_var("other_display_mode");
         assert_ne!(hash, script_texture_table("Vehicles/Bus/main.bus", &program, &surfaces));
+    }
+
+    fn texture_test_schema(program: &omsi_script::Program) -> omsi_net::var_schema::Schema {
+        let table = var_table(program);
+        omsi_net::var_schema::Schema {
+            floats: table.floats.iter().map(|i| program.var_names[*i as usize].to_ascii_lowercase()).collect(),
+            strings: table.strings.iter().map(|i| program.str_var_names[*i as usize].to_ascii_lowercase()).collect(),
+            model: vec!["f:display_mode".into()],
+            sound: vec!["f:display_mode".into()],
+        }
+    }
+
+    #[test]
+    fn compatible_script_texture_layout_uses_the_owners_variable_hash() {
+        let mut local = omsi_script::Program::default();
+        local.declare_script_var("display_mode");
+        let mut owner = local.clone();
+        owner.declare_script_var("internal_extra");
+        owner.declare_str_var("unused_string");
+        let local_schema = texture_test_schema(&local);
+        let owner_schema = texture_test_schema(&owner);
+        let mapping = variable_schema::mapping(&local, &local_schema, &owner_schema).expect("compatible configs");
+        let bus = "Vehicles/Bus/main.bus";
+        let surfaces = [(128, 32), (64, 16)];
+        let expected = script_texture_table(bus, &owner, &surfaces);
+        assert_ne!(expected, script_texture_table(bus, &local, &surfaces));
+        assert_eq!(script_texture_subscription_table(bus, &local, &surfaces, Some(&owner_schema), Some(&mapping)), Some(expected));
+        // An unchecked or missing mapping never opts a differing table into pixel transfer.
+        assert_eq!(script_texture_subscription_table(bus, &local, &surfaces, Some(&owner_schema), None), None);
+        let stale = var_table(&local);
+        assert_eq!(script_texture_subscription_table(bus, &local, &surfaces, Some(&owner_schema), Some(&stale)), None);
+        // Declared slot counts and sizes still form part of the subscription table.
+        assert_ne!(script_texture_subscription_table(bus, &local, &surfaces[..1], Some(&owner_schema), Some(&mapping)), Some(expected));
+        assert_ne!(script_texture_subscription_table(bus, &local, &[(256, 32), (64, 16)], Some(&owner_schema), Some(&mapping)), Some(expected));
+    }
+
+    #[test]
+    fn differing_script_texture_tables_reject_incompatible_model_or_sound_refs() {
+        let mut local = omsi_script::Program::default();
+        local.declare_script_var("display_mode");
+        let mut owner = local.clone(); owner.declare_script_var("extra");
+        let local_schema = texture_test_schema(&local);
+        for sound in [false, true] {
+            let mut schema = texture_test_schema(&owner);
+            if sound { schema.sound.push("f:extra".into()); } else { schema.model.push("f:extra".into()); }
+            let mapping = variable_schema::mapping(&local, &local_schema, &schema);
+            assert!(mapping.is_none());
+            assert_eq!(script_texture_subscription_table("bus.bus", &local, &[(128, 32)], Some(&schema), mapping.as_ref()), None);
+        }
     }
 
     #[test]

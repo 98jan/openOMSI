@@ -880,8 +880,12 @@ platform.
 
 **Script textures.** Matrix displays and other `[scripttexture]` surfaces come from the
 player driving that bus. The local scripts of a remote bus cannot redraw or load these
-surfaces. Both games must have the same bus, script variable layout and declared texture
-slots; a stand-in receives no texture data. Initialization sends a losslessly compressed
+surfaces. Both games must have the same bus and declared texture slots. If their script
+variable tables differ, texture synchronization uses the same model and sound variable
+compatibility check as variable synchronization; extra internal variables do not prevent
+it. For differing variable tables, incompatible model/sound references prevent transfer.
+Declared slot counts and dimensions must still agree, and a stand-in receives no texture
+data. Initialization sends a losslessly compressed
 RGBA image, then only changed RGBA pixel runs and mipmap settings are sent. Changes are
 fragmented, acknowledged and retried until complete, and applied atomically; a late join,
 recreated vehicle or newly sized surface receives initialization again. Only images
