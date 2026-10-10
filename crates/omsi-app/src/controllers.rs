@@ -1692,9 +1692,9 @@ fn wheel_force(f: &FfInput, x: f32, x0: f32, t: &mut f32, k_springs: f32, k_effe
     // a smooth extra torque, tapered away at larger angles. It crosses zero
     // continuously so there is no fixed kick when the wheel passes the centre.
     let centre_return = 0.025 * x / (x * x + 0.004 * 0.004).sqrt() / (1.0 + (x / 0.12).powi(4));
-    // A physical wheel needs a middle even when parked: half the centring is there at a
-    // standstill, the rest builds up as the bus rolls.
-    let spring = -(spring_strength * x / (0.5 + 1.15 * x.abs()) + centre_return) * (0.5 + 0.5 * rolling);
+    // The tyre cannot self-align the steering while the bus is stationary. Preserve
+    // parking drag against wheel movement, and bring the spring back as it rolls.
+    let spring = -(spring_strength * x / (0.5 + 1.15 * x.abs()) + centre_return) * rolling;
     let road_align = -(f.lateral_accel / 9.81).clamp(-0.45, 0.45) * 0.25 * (v / 5.0).clamp(0.0, 1.0) * rolling;
     // Assisted steering should not demand ever more hand force near full lock.
     let lock_assist = 1.0 / (1.0 + 0.55 * x * x);
@@ -2345,7 +2345,7 @@ mod button_tests {
     }
 
     #[test]
-    fn a_parked_wheel_has_a_gentle_middle() {
+    fn a_parked_wheel_has_no_self_centering_force() {
         let mut t = 0.0;
         for kmh in [-0.5, -0.1, 0.0, 0.1, 0.5] {
             // Residual lateral acceleration from the body's suspension is no force when parked.
@@ -2354,7 +2354,7 @@ mod button_tests {
             for x in [0.2, 0.5, 1.0] {
                 let right = super::wheel_force(&f, x, x, &mut t, 1.0, 0.0);
                 let left = super::wheel_force(&f, -x, -x, &mut t, 1.0, 0.0);
-                assert!(right < -0.02 && right > -0.2, "kmh={kmh}, steering={x}: {right}");
+                assert_eq!(right, 0.0, "kmh={kmh}, steering={x}: {right}");
                 assert_eq!(right, -left, "kmh={kmh}, steering={x}");
             }
         }
@@ -2367,7 +2367,7 @@ mod button_tests {
         for x in [-0.5, 0.5] {
             let right = super::wheel_force(&f, x, x - 0.01, &mut t, 1.0, 0.0);
             let left = super::wheel_force(&f, x, x + 0.01, &mut t, 1.0, 0.0);
-            // (the parked centring adds the same pull to both)
+            // The drag opposes wheel motion in either direction.
             assert!(right < left, "{right} {left}");
         }
     }
