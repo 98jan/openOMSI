@@ -6,6 +6,7 @@
 //! and sound like, and taking the lanes and the vehicle types from the world, is omsi-app's
 //! `traffic` (its `Traffic` is a `TrafficSim` with its pictures and sounds).
 
+pub mod berths;
 pub mod bus_service;
 pub mod control;
 pub mod deadlock;
@@ -28,6 +29,8 @@ pub mod viewer;
 #[cfg(test)]
 mod scenario_tests;
 #[cfg(test)]
+mod service_tests;
+#[cfg(test)]
 mod tests;
 
 use crate::ai_motion::{
@@ -46,6 +49,7 @@ use hashbrown::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use control::Removal;
 use dormant::*;
 use junctions::*;
 use lights::*;
@@ -264,4 +268,8 @@ pub struct TrafficSim {
     pub frame_alpha: f32,
     /// Every car's parts as they stood before the last step, by id (see `fixed_step`).
     pub pose_before: HashMap<u64, Vec<fixed_step::PartPose>>,
+    /// The stops' berths: which timetable bus holds which, who queues for it (`berths`).
+    pub berths: berths::Berths,
+    /// Cars taken off the road, by `Removal` (diagnostics).
+    pub removals: [u64; Removal::COUNT],
 }

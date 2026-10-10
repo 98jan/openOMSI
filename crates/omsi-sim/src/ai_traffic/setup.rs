@@ -146,6 +146,8 @@ impl TrafficSim {
             frame_alpha: 1.0,
             pose_before: HashMap::new(),
             others_now: Vec::new(),
+            berths: Default::default(),
+            removals: [0; Removal::COUNT],
         };
         t.sort_parked(parked_cars, lanes);
         t
