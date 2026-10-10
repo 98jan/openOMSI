@@ -221,6 +221,22 @@ pub(super) enum BlendFade {
     Partial,
 }
 
+/// How a slot declared `alpha` is drawn, given what its picture has to blend by (`fade`):
+/// nothing - opaque; a cut-out - alpha-tested. A cut-out alpha has nothing to blend by either,
+/// and a blend leaves the slot without depth: every road and pavement spline of the map is
+/// drawn in the phase AFTER the `[rendertype] surface` object, and a no-write blend let them
+/// come straight over it and eat its picture (the parked Hong Kong buses). Alpha-tested, the
+/// solid part of the object writes depth and the cut-away part is discarded, which is the
+/// picture Omsi.exe shows.
+pub(super) fn blend_alpha(alpha: omsi_render::AlphaMode, fade: Option<BlendFade>) -> omsi_render::AlphaMode {
+    use omsi_render::AlphaMode;
+    match (alpha, fade) {
+        (AlphaMode::Blend, Some(BlendFade::Solid)) => AlphaMode::Opaque,
+        (AlphaMode::Blend, Some(BlendFade::Cutout)) => AlphaMode::Test,
+        _ => alpha,
+    }
+}
+
 /// How the picture at `path` reads as the transparency of a `[matl_alpha] 2` slot (read once
 /// per file). A slot whose picture has nothing to blend by is drawn opaque (the GG2 signs'
 /// pictures, `directions\temp_1.png`, `terminal_east_2.tga`, are 255 throughout), and one

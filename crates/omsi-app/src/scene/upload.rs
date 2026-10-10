@@ -423,17 +423,7 @@ impl World {
                     let dirs_ref: Vec<&Path> = dirs.iter().map(|p| p.as_path()).collect();
                     omsi_texture::find_texture(&m.texture, &dirs_ref).map(|p| super::staging::picture_blend_fade(&p))
                 };
-                let alpha = match (alpha, blend_fade) {
-                    (AlphaMode::Blend, Some(super::staging::BlendFade::Solid)) => AlphaMode::Opaque,
-                    // A cut-out alpha has nothing to blend by either, and a blend leaves the
-                    // slot without depth: every road and pavement spline of the map is drawn in
-                    // the phase AFTER the `[rendertype] surface` object, and a no-write blend
-                    // let them come straight over it and eat its picture (the parked Hong Kong
-                    // buses). Alpha-tested, the solid part of the object writes depth and the
-                    // cut-away part is discarded, which is the picture Omsi.exe shows.
-                    (AlphaMode::Blend, Some(super::staging::BlendFade::Cutout)) => AlphaMode::Test,
-                    _ => alpha,
-                };
+                let alpha = super::staging::blend_alpha(alpha, blend_fade);
                 // [matl_envmap]: the same reflection rule as on vehicles (factor x mask; a
                 // texture without an alpha channel reads as a full mask)
                 let envmap = match slot_ov.iter().find_map(|o| o.envmap.clone()) {
