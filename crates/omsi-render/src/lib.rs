@@ -9146,7 +9146,11 @@ impl DevicePoller {
         let thread = std::thread::Builder::new()
             .name("omsi-gpu-poll".into())
             .spawn(move || {
-                let pause = std::time::Duration::from_millis(1);
+                // (every 4 ms: a frame's own submits run the same upkeep, and this thread
+                // only takes the freeing of finished work off the frame's thread; polling
+                // every millisecond, a few dozen times a frame, it fought the frame's thread
+                // for the queue's lock - a third of its time was spent spinning on it)
+                let pause = std::time::Duration::from_millis(4);
                 while !flag.load(std::sync::atomic::Ordering::Relaxed) {
                     let _ = device.poll(wgpu::PollType::Poll);
                     std::thread::sleep(pause);
