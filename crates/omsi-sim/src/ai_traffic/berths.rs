@@ -117,7 +117,9 @@ impl Berths {
             }
         }
         self.released += released;
-        self.berths.retain(|_, b| b.holder.is_some() || !b.asks.is_empty() || b.blocked_since.is_some());
+        // (a berth nobody holds or asks for is forgotten, and with it since when something
+        // stood in it: the next bus to come times that afresh)
+        self.berths.retain(|_, b| b.holder.is_some() || !b.asks.is_empty());
         false
     }
 
