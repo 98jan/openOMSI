@@ -52,7 +52,7 @@ impl App {
                 // Physical head tracking controls the view without an added automatic turn.
                 p.steer_look = if vr_on || tracked.is_some() { 0.0 } else {
                     crate::player::steering_view_yaw(p.steer_look, p.vehicle.physics.controls.steering, dt,
-                                                     self.settings.steer_look && self.view == "driver", self.settings.steer_look_angle, self.settings.steer_look_response)
+                                                     self.settings.steer_look && crate::player::steering_follows(&self.view, p.cam_choice), self.settings.steer_look_angle, self.settings.steer_look_response)
                 };
                 let mut tracked_rot = None;
                 if let Some(t) = tracked {
@@ -124,9 +124,10 @@ impl App {
                 };
                 let mut cam = p.camera_look(&self.view, &base, head_look, self.cam.orbit);
                 finish(&mut cam);
-                // Smooth cockpit camera switch (arrow keys): the glide mixes the camera left and the one
-                // taken in the bus's own frame (ease-out over CAM_BLEND_SECS); the bus's motion and
-                // the head go on top afterwards, so nothing of the last frame's picture is needed.
+                // Smooth cockpit camera switch (arrow keys): the camera left comes closer to the one
+                // taken in the bus's own frame each frame, as in Omsi.exe (`cam_approach`); the bus's
+                // motion and the head go on top afterwards, so nothing of the last frame's picture is
+                // needed.
                 let mut cam = self.blend_cab_camera(cam, prev_cam, head_look, zoom, &finish, dt);
                 let Some(p) = self.player.as_mut() else { return };
                 if self.view == "outside" && self.settings.camera_collision {
@@ -214,7 +215,7 @@ impl App {
         if self.view == "driver" && mine {
             if let Some((look_from, zoom_from, t, _)) = self.cam.f1_reset.clone() {
                 let (look, zoom, done) =
-                    crate::input_script::reset_blend(look_from, zoom_from, t + dt);
+                    crate::input_script::reset_blend(look_from, zoom_from, t + crate::cam_approach::step(dt));
                 if done {
                     self.cam.look = (0.0, 0.0);
                     self.cam.view_zoom.remove(&self.view);
@@ -222,7 +223,7 @@ impl App {
                 } else {
                     self.cam.look = look;
                     self.cam.view_zoom.insert(self.view.clone(), zoom);
-                    self.cam.f1_reset = Some((look_from, zoom_from, t + dt, cur));
+                    self.cam.f1_reset = Some((look_from, zoom_from, t + crate::cam_approach::step(dt), cur));
                 }
             }
         } else if let Some((.., key)) = self.cam.f1_reset.take() {
@@ -257,7 +258,7 @@ impl App {
         let target = if inside_view { p.driver_local(head_look) } else { None };
         let mut started = false;
         if let Some(to) = target.as_ref() {
-            if (entering || left) && crate::app::CAM_BLEND_SECS > 0.0 && self.settings.driverview_smooth {
+            if (entering || left) && self.settings.driverview_smooth {
                 let from = if entering {
                     // (what `driver_world` adds to every frame - the head and the seat - is
                     // taken off the walker's eyes, and the zoom `finish` applies again off
@@ -279,7 +280,6 @@ impl App {
                     // (a far jump is another bus, not another camera of this one)
                     if d.length() < 25.0 {
                         self.cam.cam_blend.from = Some(from);
-                        self.cam.cam_blend.t = 0.0;
                         started = true;
                     }
                 }
@@ -290,24 +290,19 @@ impl App {
         let from_now = self.cam.cam_blend.from.clone();
         match (target.as_ref(), from_now.as_ref()) {
             (Some(to), Some(from)) => {
-                // (the frame that starts the glide does not count, and a long frame
-                // adds no more than a 30th of a second)
-                if !started {
-                    self.cam.cam_blend.t += dt.min(crate::app::CAM_BLEND_MAX_DT) / crate::app::CAM_BLEND_SECS;
-                }
-                if self.cam.cam_blend.t >= 1.0 {
-                    // (the hand-over to the plain camera: the glide ends exactly on it (k = 1),
-                    // so the curve's tail is not left over to twitch; only what the two ways
-                    // of making the camera might still differ in is eased out)
-                    let mut last = p.driver_world(&crate::app::blend_local(from, to, 1.0));
-                    finish(&mut last);
-                    self.cam.cam_blend.carry = Some(crate::app::CamCarry::between(&last, &cam));
+                // (the frame that starts the glide does not count)
+                let now = if started { from.clone() } else { crate::cam_approach::approach(from, to, dt) };
+                let mut here = p.driver_world(&now);
+                finish(&mut here);
+                if crate::cam_approach::settled(&now, to) {
+                    // (the hand-over to the plain camera: what is left of the way, and what
+                    // the two ways of making the camera might still differ in, is eased out)
+                    self.cam.cam_blend.carry = Some(crate::app::CamCarry::between(&here, &cam));
                     self.cam.cam_blend.from = None;
                 } else {
-                    let mixed = crate::app::blend_local(from, to, self.cam.cam_blend.progress());
-                    cam = p.driver_world(&mixed);
-                    finish(&mut cam);
-                    shown = Some(mixed);
+                    cam = here;
+                    self.cam.cam_blend.from = Some(now.clone());
+                    shown = Some(now);
                 }
             }
             _ => self.cam.cam_blend.from = None,

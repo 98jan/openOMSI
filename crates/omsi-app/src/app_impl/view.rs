@@ -109,17 +109,10 @@ pub(crate) const ZOOM_INTENT_F1: f32 = 0.56;
 pub(crate) const ZOOM_INTENT: f32 = 0.70;
 
 /// Eased Space return for the F1 head: look and zoom glide home on the same
-/// ease-out as the viewpoint switch instead of teleporting. `t` seconds in;
-/// returns the current look, zoom and done. Pure (tested below).
+/// curve as the viewpoint switch instead of teleporting (`cam_approach::home`).
+/// `t` seconds in; returns the current look, zoom and done.
 pub(crate) fn reset_blend(look_from: (f32, f32), zoom_from: f32, t: f32) -> ((f32, f32), f32, bool) {
-    let x = (t / crate::app::CAM_BLEND_SECS).clamp(0.0, 1.0);
-    let u = 1.0 - x;
-    let s = 1.0 - u * u * u;
-    (
-        (look_from.0 * (1.0 - s), look_from.1 * (1.0 - s)),
-        zoom_from + (1.0 - zoom_from) * s,
-        x >= 1.0,
-    )
+    crate::cam_approach::home(look_from, zoom_from, t)
 }
 
 #[cfg(test)]
@@ -143,7 +136,7 @@ mod look_tests {
         assert_eq!((look, zoom, done), ((30.0, -10.0), 0.5, false));
         let (look, zoom, done) = super::reset_blend((30.0, -10.0), 0.5, 0.27);
         assert!(look.0 > 3.0 && look.0 < 27.0 && zoom > 0.5 && zoom < 1.0 && !done);
-        let (look, zoom, done) = super::reset_blend((30.0, -10.0), 0.5, 0.54);
+        let (look, zoom, done) = super::reset_blend((30.0, -10.0), 0.5, 2.0);
         assert_eq!((look, zoom, done), ((0.0, 0.0), 1.0, true));
         assert!(super::reset_blend((30.0, -10.0), 0.5, 5.0).2);
     }

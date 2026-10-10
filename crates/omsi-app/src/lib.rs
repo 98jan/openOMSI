@@ -35,6 +35,7 @@ mod ambience;
 mod soundscape;
 mod wheel_surface;
 mod camera_arm;
+mod cam_approach;
 mod career;
 mod describe;
 mod editor;
