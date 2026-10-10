@@ -125,6 +125,16 @@ pub(crate) fn set_fx_setting(fx: &mut omsi_audio::radio_fx::RadioFxParams, key: 
     (key, at.to_string())
 }
 
+/// The options' rows of the radio's effects (the Sound tab), with their percentages.
+pub(crate) fn option_rows(app: &crate::App, pct: &dyn Fn(f32) -> String) -> [Option<(String, String)>; 3] {
+    use crate::game_lists::slider_row;
+    [
+        slider_row(app, "radio_speaker", "Radio: small speaker", "The bus radio through a small dashboard speaker: no deep bass, no bright treble", pct),
+        slider_row(app, "radio_hiss", "Radio: FM hiss", "The hiss and crackle of a weak FM signal", pct),
+        slider_row(app, "radio_dropouts", "Radio: signal dropouts", "Now and then the signal is lost for a moment", pct),
+    ]
+}
+
 fn config_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     Some(PathBuf::from(home).join(".openomsi").join("radio.cfg"))

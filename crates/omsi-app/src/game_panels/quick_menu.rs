@@ -104,11 +104,11 @@ pub(crate) fn click(app: &mut crate::App, id: &str) {
             crate::game_lists::option_do(app, "nav_arrows", "", crate::game_lists::Move::Next);
         }
         "time" => {
-            let tab = crate::game_lists::world_tab(app, "Time");
+            let tab = crate::game_lists::tab_of(app, crate::game_lists::ListKind::World(0), "Time");
             app.open_list(crate::game_lists::ListKind::World(tab));
         }
         "weather" => {
-            let tab = crate::game_lists::world_tab(app, "Weather");
+            let tab = crate::game_lists::tab_of(app, crate::game_lists::ListKind::World(0), "Weather");
             app.open_list(crate::game_lists::ListKind::World(tab));
         }
         "summary" => {

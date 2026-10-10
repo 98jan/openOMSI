@@ -2511,11 +2511,9 @@ fn options_pages(app: &App) -> Vec<Page> {
         slider_row(app, "vol_scenery", "Surroundings", "How loud the sounds of the scenery are", &pct),
         switch_row(app, "doppler", "Doppler effect", "Approaching sounds higher, receding ones lower"),
         pick("pax_voices", "Passenger voices", "What passengers say"),
-        slider_row(app, "radio_speaker", "Radio: small speaker", "The bus radio through a small dashboard speaker: no deep bass, no bright treble", &pct),
-        slider_row(app, "radio_hiss", "Radio: FM hiss", "The hiss and crackle of a weak FM signal", &pct),
-        slider_row(app, "radio_dropouts", "Radio: signal dropouts", "Now and then the signal is lost for a moment", &pct),
     ]
         .into_iter()
+        .chain(crate::radio::option_rows(app, &pct))
         .flatten()
         .collect();
     let mut camera: Vec<(String, String)> = vec![
@@ -2787,13 +2785,10 @@ fn pages_of(app: &App, kind: &ListKind) -> Option<(Vec<Page>, usize)> {
     Some((pages, tab))
 }
 
-/// Which tab of the Options window is the one titled `title` (the first if none is).
-pub(crate) fn options_tab(app: &App, title: &str) -> usize {
-    pages_of(app, &ListKind::Options(0)).and_then(|(pages, _)| pages.iter().position(|p| p.0 == title)).unwrap_or(0)
+/// Which tab of a window (`kind`: Options, World ...) is the one titled `title` (the first if none is).
+pub(crate) fn tab_of(app: &App, kind: ListKind, title: &str) -> usize {
+    pages_of(app, &kind).and_then(|(pages, _)| pages.iter().position(|p| p.0 == title)).unwrap_or(0)
 }
-
-/// Which tab of the world's window is the one titled `title` (the first if none is).
-pub(crate) fn world_tab(app: &App, title: &str) -> usize { pages_of(app, &ListKind::World(0)).and_then(|(pages, _)| pages.iter().position(|p| p.0 == title)).unwrap_or(0) }
 
 type TitlesCache = Option<(ListKind, bool, std::time::Instant, (Vec<String>, usize))>;
 

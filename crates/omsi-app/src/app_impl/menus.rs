@@ -165,7 +165,7 @@ impl App {
             "options" => self.open_list(crate::game_lists::ListKind::Options(0)),
             "controls" => self.open_list(crate::game_lists::ListKind::Controls),
             "camera" => {
-                let tab = crate::game_lists::options_tab(self, "Camera");
+                let tab = crate::game_lists::tab_of(self, crate::game_lists::ListKind::Options(0), "Camera");
                 self.open_list(crate::game_lists::ListKind::Options(tab));
             }
             "vehicle" => self.open_list(crate::game_lists::ListKind::Vehicle(0)),
