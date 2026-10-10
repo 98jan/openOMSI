@@ -167,6 +167,8 @@ pub struct AiCar {
     /// It goes from a side road's line into a slow queue that lets it in (`junctions`):
     /// the queue holds back for it while it holds its claim.
     pub courtesy: bool,
+    /// Its horn (`horn`): presentation only.
+    pub horn: super::horn::Horn,
 }
 
 /// A free parking space beside a lane that a car means to park in: the space of parked car
@@ -652,6 +654,7 @@ impl TrafficSim {
             exit_claim: None,
             holds: Vec::new(),
             courtesy: false,
+            horn: Default::default(),
             park: None,
             seed,
             scheme,

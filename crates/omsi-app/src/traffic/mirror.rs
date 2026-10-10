@@ -121,6 +121,7 @@ impl Traffic {
             exit_claim: None,
             holds: Vec::new(),
             courtesy: false,
+            horn: Default::default(),
             park: None,
         });
         view.insert(id, render);

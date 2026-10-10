@@ -102,6 +102,7 @@ impl TrafficSim {
             }
         }
         remove.sort_unstable();
+        self.sound_horns(ts.player, ts.player_standing);
         let others = ts.others;
         self.set_visibility();
         let t_par = std::time::Instant::now();
