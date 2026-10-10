@@ -341,11 +341,12 @@ impl TrafficSim {
     /// turned as the car will be turned there - along the line from where its rear axle
     /// will be - so the corner that swings out of an S-bend counts, not the middle of its
     /// way only. What touches the car where it stands now is not the manoeuvre's doing and
-    /// is left out, as is `skip`, what it pulls out round (its own steering is measured
-    /// against that, `AiBody::sweep_clearance`; `usize::MAX` the player's bus). Moving
-    /// vehicles further on are the lane's gaps' business (`can_merge`, `oncoming_block`).
+    /// is left out, as is `skip`: what it pulls out round (its own steering is measured
+    /// against that, `AiBody::sweep_clearance`; `usize::MAX` the player's bus), the cars
+    /// ahead in its own lane that it follows anyway. Moving vehicles further on are the
+    /// lane's gaps' business (`can_merge`, `oncoming_block`).
     /// Returns what is in the way.
-    pub fn ghost_blocked(&self, i: usize, way: &dyn Fn(f32) -> DVec3, len: f32, feet: &super::foot_grid::Feet, skip: Option<usize>, extra: &[Obb]) -> Option<String> {
+    pub fn ghost_blocked(&self, i: usize, way: &dyn Fn(f32) -> DVec3, len: f32, feet: &super::foot_grid::Feet, skip: &[usize], extra: &[Obb]) -> Option<String> {
         let car = &self.cars[i];
         let st = &car.state;
         let (front, rear, hw) = (st.front as f64, st.rear as f64, car.half_width as f64);
@@ -365,10 +366,10 @@ impl TrafficSim {
         let margin = GHOST_CLEARANCE * 0.5;
         let bodies: Vec<&Footprint> = feet
             .near(pos, reach)
-            .filter(|f| f.car != i && Some(f.car) != skip && (f.center - pos).length() < reach + f.half_len + f.half_w)
+            .filter(|f| f.car != i && !skip.contains(&f.car) && (f.center - pos).length() < reach + f.half_len + f.half_w)
             .filter(|f| !start.overlaps(f, 0.0))
             .collect();
-        let players: Vec<Footprint> = if skip == Some(usize::MAX) {
+        let players: Vec<Footprint> = if skip.contains(&usize::MAX) {
             Vec::new()
         } else {
             self.player

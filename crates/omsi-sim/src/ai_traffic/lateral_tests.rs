@@ -218,6 +218,32 @@ fn a_wish_to_change_lanes_holds_before_the_car_moves_over() {
 }
 
 #[test]
+fn a_car_overtakes_on_a_road_built_of_short_pieces() {
+    // two lanes north made of 40 m spline pieces: the move carries on across the joints,
+    // so a car stuck behind a slow one closes up and goes past it (held to the end of each
+    // piece, it never found the room)
+    let f = Fixture::new();
+    let mut lanes = Vec::new();
+    for k in 0..40 {
+        lanes.push(street(-3.5, k as f64 * 40.0, 0.0, 40.0));
+        lanes.push(street(0.0, k as f64 * 40.0, 0.0, 40.0));
+    }
+    let pairs: Vec<(usize, usize)> = (0..40).map(|k| (2 * k, 2 * k + 1)).collect();
+    let mut t = traffic(&f, net_of(lanes, &pairs));
+    let slow = add_car(&mut t, &f, 3, 10.0, 0x515, Some(4.0));
+    let me = add_car(&mut t, &f, 1, 10.0, 0x616, Some(10.0));
+    car_mut(&mut t, slow).state.max_speed_kmh = 15.0;
+    let mut past = false;
+    for _ in 0..(40.0 / DT) as usize {
+        t.tick(DT, None);
+        let (a, b) = (car(&t, me).unwrap(), car(&t, slow).unwrap());
+        past |= a.vehicle.position.y > b.vehicle.position.y + 10.0;
+        assert_eq!(any_overlap(&t, 0.1), None, "bodies overlap at t={:.2}", t.time);
+    }
+    assert!(past, "it stayed behind the slow car");
+}
+
+#[test]
 fn cars_on_a_two_lane_road_do_not_swing_from_lane_to_lane() {
     // a dozen cars of all speeds on a long two-lane road: no car changes back within
     // `NO_SWING_BACK` of a change, and no two cars begin a change into one lane near each

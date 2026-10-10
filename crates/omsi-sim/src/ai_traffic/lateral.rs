@@ -441,9 +441,20 @@ impl TrafficSim {
         let blocked = if car.is_rail() {
             None
         } else {
+            // (what stands ahead in its own lane it keeps behind anyway, the way it follows
+            // it: the trajectory reaches it only if the car does not slow down for it)
+            let mut skip: Vec<usize> = skip.into_iter().collect();
+            let own = std::iter::once((st.lane, -st.s)).chain(st.upcoming().scan(self.net.lanes[st.lane].length() - st.s, |d, l| {
+                let at = *d;
+                *d += self.net.lanes[l].length();
+                Some((l, at))
+            }));
+            for (l, dl) in own.take_while(|e| e.1 < len) {
+                skip.extend(ts.by_lane.get(&l).into_iter().flatten().filter(|e| !e.3 && e.0 != i && dl + e.1 > 0.0).map(|e| e.0));
+            }
             let net = &self.net;
             let way = |d: f32| hyp.way_point(net, d);
-            self.ghost_blocked(i, &way, len, &ts.feet, skip, &[])
+            self.ghost_blocked(i, &way, len, &ts.feet, &skip, &[])
         };
         if let Some(what) = blocked {
             if ts.debug {
@@ -508,8 +519,12 @@ impl TrafficSim {
             return None;
         }
         let lane = &self.net.lanes[st.lane];
-        // the indicator, the move and a little margin must fit into what is left of the lane
-        if lane.length() - st.s < (st.speed * 5.5 + 10.0).max(40.0) {
+        // the indicator, the move and a little margin must fit in before the next junction
+        // (a move not over at a joint of the road carries on across it, `AiState::drive`:
+        // held to the end of the spline piece, the wish that has to hold for a moment first
+        // came too late on the short pieces of Spandau's six-lane roads)
+        let need = (st.speed * 5.5 + 10.0).max(40.0);
+        if self.open_road_ahead(st, need) < need {
             return None;
         }
         let turn = st.planned_next.map(|n| self.net.lanes[n].turn).unwrap_or(0);
@@ -543,6 +558,22 @@ impl TrafficSim {
             && self.net.lanes[side].length() - s_side > 40.0
             && self.open_run(st, side, s_side, CLOSING_LOOK) >= CLOSING_LOOK)
             .then_some((side, keep_dir, false))
+    }
+
+    /// How far car state `st` can drive on along its way before the next junction (or the
+    /// end of what it has planned), counted up to `limit` (m from its origin).
+    fn open_road_ahead(&self, st: &AiState, limit: f32) -> f32 {
+        let mut d = self.net.lanes[st.lane].length() - st.s;
+        if !self.net.crossings[st.lane].is_empty() {
+            return 0.0;
+        }
+        for l in st.upcoming() {
+            if d >= limit || !self.net.crossings[l].is_empty() {
+                break;
+            }
+            d += self.net.lanes[l].length();
+        }
+        d.min(limit)
     }
 
     /// A pass on the other half of the road: given up before it got out (held there for

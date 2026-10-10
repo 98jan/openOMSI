@@ -1218,7 +1218,7 @@ impl TrafficSim {
             let dir = (base.way_point(net, d + 1.0) - p).truncate().normalize_or_zero();
             p + DVec3::new(dir.y, -dir.x, 0.0) * lat(d) as f64
         };
-        self.ghost_blocked(i, &way, until + back + st.front, feet, plan.who, extra)
+        self.ghost_blocked(i, &way, until + back + st.front, feet, plan.who.as_slice(), extra)
     }
 
     /// May random traffic drive on `lane` at all (`[rule] no_cars`, `trafficdensity 0`)?
