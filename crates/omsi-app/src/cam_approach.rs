@@ -106,7 +106,8 @@ mod tests {
     #[test]
     fn the_view_turns_the_short_way_round() {
         let c = approach(&cam(0.0, 170.0, 60.0), &cam(0.0, -170.0, 60.0), 0.2);
-        assert!(c.yaw > 170.0 && c.yaw < 190.0, "{}", c.yaw);
+        let yaw = c.yaw.rem_euclid(360.0);
+        assert!(yaw > 170.0 && yaw < 190.0, "{}", c.yaw);
     }
 
     #[test]
