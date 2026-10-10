@@ -117,7 +117,8 @@ impl Traffic {
             deadlock_pass: f32::MIN,
             deadlock_tried: f32::MIN,
             park: None,
-        });
+            guard: Default::default(),
+            });
         view.insert(id, render);
         self.sim.cars.len() - 1
     }

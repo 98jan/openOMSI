@@ -388,6 +388,7 @@ impl TrafficSim {
         let (stop_at, why) = self.stop_points(i, ts, &way, lead, light, yield_at, merge_wait, keep_back);
         let (stop_at, why) = self.service_and_park(i, ts, &way, kerb_swerve, stop_at, why);
         let (stop_at, why) = self.end_of_way(i, ts, &way, stop_at, why);
+        let (stop_at, why) = self.scenery_stop(i, ts, stop_at, why);
         self.drive_car(i, ts, lead, stop_at, why, light, yield_at, merge_wait)
     }
 
@@ -1196,8 +1197,7 @@ impl TrafficSim {
             return None;
         }
         if debug && (car.state.acc < -4.5 || car.state.emergency_began) {
-            // hard braking is for emergencies: say what asked for it (and whether the
-            // collision-prevention channel had to take over)
+            // hard braking is for emergencies: say what asked for it (and if the emergency channel did)
             let who = match lead.and_then(|l| l.1) {
                 Some(usize::MAX) => "the player".to_string(),
                 Some(_) => format!("car {}", lead_id.unwrap_or(0)),
@@ -1271,14 +1271,14 @@ impl TrafficSim {
         {
             use rayon::prelude::*;
             let net = &self.net;
-            type Work<'a> = (&'a mut AiState, &'a mut AiBody, &'a mut VehicleInstance, &'a mut AiFrame, &'a mut std::collections::VecDeque<(f64, DVec3)>, &'a mut f32);
+            type Work<'a> = (&'a mut AiState, &'a mut AiBody, &'a mut VehicleInstance, &'a mut AiFrame, &'a mut std::collections::VecDeque<(f64, DVec3)>, &'a mut f32, &'a mut super::scenery::SceneryGuard);
             let mut work: Vec<Work> = self
                 .cars
                 .iter_mut()
                 .zip(frames.iter_mut())
                 .filter_map(|(c, f)| {
                     let f = f.as_mut()?;
-                    Some((&mut c.state, &mut c.body, &mut c.vehicle, f, &mut c.rail_trail, &mut c.ai_secs))
+                    Some((&mut c.state, &mut c.body, &mut c.vehicle, f, &mut c.rail_trail, &mut c.ai_secs, &mut c.guard))
                 })
                 .collect();
             work.sort_by(|a, b| b.5.total_cmp(a.5));
@@ -1293,7 +1293,7 @@ impl TrafficSim {
             // (a few cars per job: every job handed out wakes a worker, and the waking cost
             // the main thread more than a car's work)
             jobs.into_par_iter().flatten_iter()
-                .for_each(|(state, body, vehicle, frame, trail, secs)| {
+                .for_each(|(state, body, vehicle, frame, trail, secs, guard)| {
                     let t0 = std::time::Instant::now();
                     let ground = vehicle.ground.clone();
                     let contact = vehicle.contact.clone();
@@ -1302,28 +1302,24 @@ impl TrafficSim {
                         record_rail_trail(trail, state.odometer as f64, state.way_point(net, 0.0));
                     }
                     let trail = &*trail;
-                    {
-                        let state = &*state;
-                        let behind = |d: f64| rail_behind(trail, state, net, d);
-                        body.step(
-                            dt,
-                            state.speed,
-                            &|d| if rail && d < 0.0 { behind(-d as f64) } else { state.way_point(net, d) },
-                            ground
-                                .as_ref()
-                                .map(|g| g.as_ref() as &dyn Fn(f64, f64) -> Option<f64>),
-                            contact.as_deref(),
-                        );
-                    }
-                    // where the body got to, for the planner's next step
-                    state.body = super::body_link::link(state, net, body);
+                    let behind = |d: f64| rail_behind(trail, state, net, d);
+                    // (watched near the scenery, and where it got to for the planner's next step)
+                    let link = guard.step(
+                        body,
+                        (state, net, dt),
+                        &|d| if rail && d < 0.0 { behind(-d as f64) } else { state.way_point(net, d) },
+                        ground
+                            .as_ref()
+                            .map(|g| g.as_ref() as &dyn Fn(f64, f64) -> Option<f64>),
+                        contact.as_deref(),
+                    );
                     body.apply(vehicle);
                     if rail && !vehicle.trailers.is_empty() {
                         // the coupled cars (a train's, a tram's sections) on the track it
                         // came along, not dragged round the bends like a road trailer
-                        let state = &*state;
-                        vehicle.retrail(0.0, &|d| Some(rail_behind(trail, state, net, d)));
+                        vehicle.retrail(0.0, &|d| Some(behind(d)));
                     }
+                    state.body = link;
                     frame.steer_deg = body.steer;
                     let t1 = std::time::Instant::now();
                     vehicle.update_ai(dt, frame);

@@ -152,6 +152,8 @@ pub struct AiCar {
     pub deadlock_pass: f32,
     /// When it was last chosen so.
     pub deadlock_tried: f32,
+    /// Its body's watch over the scenery (see `scenery`).
+    pub guard: super::scenery::SceneryGuard,
 }
 
 /// A free parking space beside a lane that a car means to park in: the space of parked car
@@ -639,6 +641,7 @@ impl TrafficSim {
             park: None,
             seed,
             scheme,
+            guard: Default::default(),
         });
         if kind != LaneKind::Air {
             let i = self.cars.len() - 1;

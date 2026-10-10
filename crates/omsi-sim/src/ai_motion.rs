@@ -175,6 +175,10 @@ pub struct AiBody {
     /// How fast the body's rotation point went along its heading in the last step (m/s):
     /// the planner's speed, less what held the body back, plus its catching up.
     pub moved: f32,
+    /// How far ahead the driver looks along the way to steer, as a share of the usual
+    /// (`drive`): 1, or what a corner caught on something is worked free with
+    /// (`ai_traffic::scenery`).
+    pub look_scale: f32,
     /// Longitudinal and lateral acceleration (m/s², forward / right positive).
     pub a_long: f32,
     pub a_lat: f32,
@@ -293,6 +297,7 @@ impl AiBody {
             steer_cmd: 0.0,
             last_speed: 0.0,
             moved: 0.0,
+            look_scale: 1.0,
             a_long: 0.0,
             a_lat: 0.0,
             yaw_rate: 0.0,
@@ -425,7 +430,7 @@ impl AiBody {
         // the planner's position along the way leads; the body keeps up with it
         let along = (target - self.rear).dot(fwd) as f32;
         let v = if speed < 0.02 && along.abs() < 0.05 { 0.0 } else { (speed + 1.5 * along).clamp(0.0, speed + 3.0) };
-        let look = (1.2 * self.wheelbase).max(3.5) + 0.6 * speed.min(20.0);
+        let look = ((1.2 * self.wheelbase).max(3.5) + 0.6 * speed.min(20.0)) * self.look_scale.clamp(0.25, 2.0);
         let g = way(self.rot_long + look).truncate() - self.rear;
         let alpha = (g.dot(right) as f32).atan2(g.dot(fwd) as f32).clamp(-FRAC_PI_2, FRAC_PI_2);
         let reach = (g.length() as f32).max(1.0);
@@ -689,6 +694,44 @@ impl AiBody {
             best = best.min(gap(&body));
         }
         best
+    }
+
+    /// Drive a copy of this body along a way it has not taken yet, at `speed` (m/s, at least
+    /// walking pace), and show `visit` each pose with the distance driven: every `step`
+    /// metres for the first 20 m, twice that beyond, as far as `distance` or until `visit`
+    /// says stop (true). The steering is the real one (`drive`: its rate, its lock, the
+    /// pure pursuit cutting a bend), so the poses are where this body will be, not where
+    /// its way is. `way(d)` is the point `d` metres along the new way from where the
+    /// vehicle's planner is now.
+    pub fn predict(&self, way: &dyn Fn(f32) -> DVec3, speed: f32, step: f32, distance: f32, visit: &mut dyn FnMut(f32, &AiBody) -> bool) {
+        if self.kind != MotionKind::Road {
+            return;
+        }
+        let mut body = self.clone();
+        let v = speed.max(1.5);
+        let mut x = 0.0f32;
+        while x < distance {
+            let ds = if x < 20.0 { step } else { 2.0 * step };
+            x += ds;
+            let at = x;
+            body.drive(ds / v, v, &|d| way(at + d));
+            if visit(x, &body) {
+                return;
+            }
+        }
+    }
+
+    /// Take a step back: the pose before it (`before`), the wheels still turned as they
+    /// were turned in it. A body whose step ran into something stands where it was; had the
+    /// steering gone back with the pose, the next step turned the same corner into the same
+    /// thing again.
+    pub fn take_back(&mut self, before: AiBody) {
+        let (steer, steer_cmd, look_scale) = (self.steer, self.steer_cmd, self.look_scale);
+        *self = before;
+        self.steer = steer;
+        self.steer_cmd = steer_cmd;
+        self.look_scale = look_scale;
+        self.moved = 0.0;
     }
 
     /// Hand the pose to the vehicle: position and attitude, the accelerations its scripts

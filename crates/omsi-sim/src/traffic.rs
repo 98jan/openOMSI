@@ -2548,7 +2548,7 @@ impl AiState {
                 h += wrap_deg(ht - h) * k;
             }
         }
-        let lat = self.lateral_at(self.odometer + d);
+        let lat = self.lateral_at(self.odometer + d) + self.nudge_at(self.odometer + d);
         if lat.abs() > 1e-3 {
             let hr = (h as f64).to_radians();
             p += DVec3::new(hr.cos(), -hr.sin(), 0.0) * lat as f64;
@@ -2607,6 +2607,22 @@ impl AiState {
     fn lateral_at(&self, x: f32) -> f32 {
         let (from, to, x0, len) = self.lateral_ramp;
         from + (to - from) * smooth01((x - x0) / len.max(0.1))
+    }
+
+    /// The body's nudge within the lane when the odometer reads `x` (see `nudge_ramp`).
+    pub fn nudge_at(&self, x: f32) -> f32 {
+        let (from, to, x0, len) = self.nudge_ramp;
+        from + (to - from) * smooth01((x - x0) / len.max(0.1))
+    }
+
+    /// Nudge the way `to` metres to the side (+ = right) over the next `len` metres, from
+    /// where the nudge is now.
+    pub fn nudge_to(&mut self, to: f32, len: f32) {
+        if (self.nudge_ramp.1 - to).abs() < 1e-3 {
+            return;
+        }
+        let from = self.nudge_at(self.odometer);
+        self.nudge_ramp = (from, to, self.odometer, len.max(1.0));
     }
 
     /// The first turn (1 left, 2 right) on the way within `within` metres, with the

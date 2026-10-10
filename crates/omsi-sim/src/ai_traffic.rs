@@ -22,6 +22,7 @@ pub mod obstacles;
 pub mod foot_grid;
 pub mod parked;
 pub mod planning;
+pub mod scenery;
 pub mod setup;
 pub mod stats;
 pub mod tick;
@@ -261,6 +262,9 @@ pub struct TrafficSim {
     pub others_now: Vec<PlayerBox>,
     /// `OMSI_TRAFFIC_STATS`: the flow statistics of the run (see `stats`).
     pub stats: Option<Box<stats::TrafficStats>>,
+    /// The scenery the traffic drives through: what a car stood for, or could not steer
+    /// free of, for `scenery::PATIENCE` seconds (a path the map lays through an object).
+    pub scenery_through: Vec<Obb>,
     /// The frame time not yet run as a step (s, see `fixed_step`).
     pub sim_accum: f64,
     /// How far this frame's picture is from the step before the last to the last (0..1).

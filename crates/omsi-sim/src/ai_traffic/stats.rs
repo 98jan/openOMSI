@@ -286,6 +286,9 @@ impl TrafficSim {
             if c.state.emergency_began {
                 s.window.emergency_commands += 1;
             }
+            if c.guard.rejected {
+                s.window.rejected_steps += 1;
+            }
             // (from walking pace on: a car creeping at its line that stops again shows -8
             // m/s² for a frame, which is a jerk but no near miss; counted apart)
             if c.state.acc < HARD_BRAKE && acc >= HARD_BRAKE {
