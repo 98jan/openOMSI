@@ -527,13 +527,29 @@ fn host_and_clients_exchange_complete_variable_tables() {
     let values: Vec<f32> = (0..600).map(|k| k as f32 + 0.5).collect();
     let string_ids: Vec<u16> = (0..20).collect();
     let strings: Vec<String> = (0..20).map(|k| format!("{k}:{}", "árvíz".repeat(if k == 19 { 600 } else { 60 }))).collect();
+    let schema = var_schema::Schema { floats: (0..300).map(|i| format!("variable_{i:04}")).collect(), ..Default::default() };
+    let schema_text = schema.encode().unwrap();
+    let mut received_schemas = [false; 3];
     let mut received = [vars::VarsIn::default(), vars::VarsIn::default(), vars::VarsIn::default()];
     for _ in 0..30 {
+        host.send_var_schema(schema.table_hash(), &schema_text, 0.1);
+        a.send_var_schema(schema.table_hash(), &schema_text, 0.1);
         host.send_vars(99, &ids, &values, &string_ids, &strings, 0.1);
         a.send_vars(99, &ids, &values, &string_ids, &strings, 0.1);
         host.tick(0.1, &poses[0]);
         a.tick(0.1, &poses[1]);
         b.tick(0.1, &poses[2]);
+        let a_id = a.my_id;
+        let host_id = host.my_id;
+        for (slot, session, owner) in [(0, &mut host, a_id), (1, &mut a, host_id), (2, &mut b, a_id)] {
+            for manifest in session.take_var_schemas() {
+                if manifest.id != owner { continue; }
+                for (_, text) in manifest.strings {
+                    assert_eq!(var_schema::Schema::decode(&text), Some(schema.clone()));
+                    received_schemas[slot] = true;
+                }
+            }
+        }
         for v in host.take_vars().into_iter().filter(|v| v.id == a.my_id) {
             assert_eq!(v.table, 99);
             received[0].floats.extend(v.floats);
@@ -548,6 +564,7 @@ fn host_and_clients_exchange_complete_variable_tables() {
             received[2].strings.extend(v.strings);
         }
     }
+    assert_eq!(received_schemas, [true; 3]);
     for got in received {
         let floats: std::collections::HashMap<_, _> = got.floats.into_iter().collect();
         let texts: std::collections::HashMap<_, _> = got.strings.into_iter().collect();

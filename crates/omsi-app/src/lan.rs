@@ -19,6 +19,8 @@
 //! code to show it with a copy button. `<instance>` is the id the launcher gives the game in
 //! `OMSI_INSTANCE`, else the process id.
 
+mod variable_schema;
+
 use crate::scene::{self, World};
 use crate::{Args, Player};
 use glam::DVec3;
@@ -504,6 +506,8 @@ pub struct RemoteVehicle {
     /// Every variable of theirs as it came (`omsi_net::vars`), pinned each frame, and their
     /// strings, matched by canonical names for the same variable table.
     vars: Option<VarTable>,
+    local_schema: Option<omsi_net::var_schema::Schema>,
+    remote_schema: Option<omsi_net::var_schema::Schema>,
     synced: hashbrown::HashMap<u32, f32>,
     synced_strings: hashbrown::HashMap<u32, String>,
     /// Subscription cookie, table hash, and welcome generation for owner-only textures.
@@ -629,6 +633,7 @@ pub struct LanGame {
     failed: hashbrown::HashMap<(u32, String), std::time::Instant>,
     /// Our vehicle's variable table (by its program), for `omsi_net::vars`.
     my_vars: Option<(usize, Arc<VarTable>)>,
+    my_var_schema: Option<String>,
     vars_log: f32,
     my_texture_table: Option<(usize, u32)>,
 }
@@ -2675,6 +2680,8 @@ fn new_remote(
         offset: None,
         play: Default::default(),
         vars: None,
+        local_schema: None,
+        remote_schema: None,
         synced: Default::default(),
         synced_strings: Default::default(),
         texture_subscription: None,
@@ -3057,6 +3064,7 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
         if game.my_vars.as_ref().map(|m| m.0) != Some(key) {
             let t = var_table(program);
             log::info!("LAN: {} variables and {} strings of our bus go to the others (table {:08x})", t.floats.len(), t.strings.len(), t.hash);
+            game.my_var_schema = variable_schema::for_vehicle(&p.vehicle).encode();
             game.my_vars = Some((key, Arc::new(t)));
         }
         let t = game.my_vars.as_ref().map(|m| m.1.clone()).expect("just made");
@@ -3067,6 +3075,7 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
         let float_ids: Vec<u16> = (0..t.floats.len()).map(|i| i as u16).collect();
         let string_ids: Vec<u16> = (0..t.strings.len()).map(|i| i as u16).collect();
         lan.send_vars(t.hash, &float_ids, &floats, &string_ids, &strings, dt);
+        if let Some(schema) = &game.my_var_schema { lan.send_var_schema(t.hash, schema, dt); }
         // `OMSI_DEBUG_VAR_SYNC=<variable>`: ours every two seconds, theirs as it came
         if let Some(name) = omsi_cfg::flags::OMSI_DEBUG_VAR_SYNC.var() {
             game.vars_log += dt;
@@ -3080,22 +3089,41 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
             }
         }
     }
+    for manifest in lan.take_var_schemas() {
+        let Some(rv) = game.remotes.get_mut(&manifest.id) else { continue };
+        if rv.stand_in { continue; }
+        for (index, text) in manifest.strings {
+            if index != 0 { continue; }
+            let Some(schema) = omsi_net::var_schema::Schema::decode(&text) else { continue };
+            if schema.table_hash() != manifest.table || rv.remote_schema.as_ref() == Some(&schema) { continue; }
+            if rv.local_schema.is_none() { rv.local_schema = Some(variable_schema::for_vehicle(&rv.vehicle)); }
+            let local = rv.local_schema.as_ref().expect("just made");
+            if local.table_hash() != manifest.table {
+                rv.vars = variable_schema::mapping(&rv.vehicle.ty.program, local, &schema);
+                rv.synced.clear();
+                rv.synced_strings.clear();
+                if rv.vars.is_some() {
+                    log::info!("LAN: player {} variable tables differ; model and sound variables agree, synchronizing common names", manifest.id);
+                } else {
+                    log::warn!("LAN: player {} variable tables differ and model/sound variable references are incompatible; variable synchronization disabled", manifest.id);
+                }
+            } else {
+                rv.vars = Some(var_table(&rv.vehicle.ty.program));
+            }
+            rv.remote_schema = Some(schema);
+        }
+    }
     for v in lan.take_vars() {
         let Some(rv) = game.remotes.get_mut(&v.id) else { continue };
-        if rv.stand_in {
-            continue;
-        }
+        if rv.stand_in { continue; }
         if rv.vars.is_none() {
+            // Equal full tables work immediately. Differing tables wait for the
+            // complete recovered manifest; their indices must never be guessed.
             let t = var_table(&rv.vehicle.ty.program);
-            if t.hash != v.table {
-                log::warn!("LAN: player {} variable table mismatch: received {:08x}, local {:08x}; check that both games use the same bus files", v.id, v.table, t.hash);
-            }
-            rv.vars = Some(t);
+            if t.hash == v.table { rv.vars = Some(t); }
         }
         let Some(t) = rv.vars.as_ref() else { continue };
-        if t.hash != v.table {
-            continue;
-        }
+        if t.hash != v.table { continue; }
         let (nf, ns) = (rv.vehicle.state.vars.len(), rv.vehicle.state.str_vars.len());
         for (id, x) in v.floats {
             if let Some(&local) = t.floats.get(id as usize) {

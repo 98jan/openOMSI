@@ -10,7 +10,8 @@
 //! who joins late sees the whole state. Strings go the same way.
 //!
 //! A message names the vehicle's variable table by a hash of its variables' names (the
-//! game's): a copy made from other files (another version of the bus) takes nothing.
+//! game's). When tables differ the game can use the separate name manifest to
+//! map common variables, after verifying model and sound configuration references.
 //!
 //! ```text
 //! byte 0     0xB5 (no text message starts with it)

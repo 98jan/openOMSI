@@ -80,6 +80,7 @@ pub mod bridge;
 pub mod wire;
 pub mod world;
 pub mod vars;
+pub mod var_schema;
 pub mod scripttex;
 pub mod ai_context;
 pub mod ws;
@@ -109,7 +110,8 @@ pub use wire::{
 /// Older peers cannot render remote script textures after local drawing is disabled.
 /// 8: canonical full variable tables and versioned, fragmented strings.
 /// 9: paged authoritative AI timetables and system script context.
-pub const PROTOCOL: u32 = 9;
+/// 10: recoverable variable-name manifests and model/sound compatibility fallback.
+pub const PROTOCOL: u32 = 10;
 /// (omsi-plugin's `MULTIPLAYER_PORTS` keeps `omsi.send` off this one and the `PORT_RANGE` after it.)
 pub const DEFAULT_PORT: u16 = 27015;
 /// Ports a host tries after the default one when that is taken (a second session on the
@@ -1428,6 +1430,9 @@ pub struct LanSession {
     world_in: Vec<(Instant, world::WorldFrame)>,
     /// Every script variable of our vehicle going out (`vars.rs`), and the others' coming in.
     var_sender: vars::VarSender,
+    schema_sender: vars::VarSender,
+    schema_receiver: vars::VarReceiver,
+    schemas_in: Vec<vars::VarsIn>,
     vars_in: Vec<vars::VarsIn>,
     var_receiver: vars::VarReceiver,
     ai_context_in: Vec<Vec<u8>>,
@@ -1535,6 +1540,9 @@ impl LanSession {
             received: 0,
             world_in: Vec::new(),
             var_sender: vars::VarSender::default(),
+            schema_sender: vars::VarSender::default(),
+            schema_receiver: vars::VarReceiver::default(),
+            schemas_in: Vec::new(),
             script_textures: scripttex::Sync::default(),
             vars_in: Vec::new(),
             var_receiver: vars::VarReceiver::default(),
@@ -2297,6 +2305,7 @@ impl LanSession {
         let peers: Vec<u32> = self.peers.keys().copied().collect();
         self.script_textures.retain_peers(&peers);
         self.var_receiver.retain_peers(&peers);
+        self.schema_receiver.retain_peers(&peers);
         if self.connected {
             for packet in self.script_textures.tick(PROTOCOL as u8, self.my_id, dt) {
                 self.route_script_texture(&packet);
@@ -2589,6 +2598,12 @@ impl LanSession {
                 self.on_script_texture(&data, from);
                 continue;
             }
+            if data[0] == var_schema::MAGIC {
+                let mut packet = data.to_vec();
+                packet[0] = vars::VARS_MAGIC;
+                self.on_variable_packet(&packet, from, true);
+                continue;
+            }
             if data[0] == vars::VARS_MAGIC {
                 self.on_vars(&data, from);
                 continue;
@@ -2876,6 +2891,20 @@ impl LanSession {
         }
     }
 
+    /// Repeat the name manifest using independently recovered string fragments.
+    pub fn send_var_schema(&mut self, table: u32, schema: &str, dt: f32) {
+        let texts = [schema.to_owned()];
+        for mut packet in self.schema_sender.tick(PROTOCOL as u8, self.my_id, table, &[], &[], &[0], &texts, dt) {
+            packet[0] = var_schema::MAGIC;
+            match self.role {
+                Role::Host => self.broadcast(&packet, None),
+                Role::Client => { if let Some(host) = self.host { self.send(&packet, host); } }
+            }
+        }
+    }
+
+    pub fn take_var_schemas(&mut self) -> Vec<vars::VarsIn> { std::mem::take(&mut self.schemas_in) }
+
     /// Host-only AI script context pages, alongside the shared world poses.
     pub fn send_ai_context(&self, to: u32, data: &[u8]) {
         if self.role != Role::Host || data.len() > MAX_DATAGRAM { return; }
@@ -2890,6 +2919,10 @@ impl LanSession {
     }
 
     fn on_vars(&mut self, data: &[u8], from: SocketAddr) {
+        self.on_variable_packet(data, from, false);
+    }
+
+    fn on_variable_packet(&mut self, data: &[u8], from: SocketAddr, schema: bool) {
         let Some(v) = vars::decode(data, PROTOCOL as u8) else { return };
         if v.id == self.my_id || v.id == 0 {
             return;
@@ -2900,7 +2933,13 @@ impl LanSession {
                 if self.checked_peer(v.id, from, VAR_RATE, PeerTraffic::Variables).is_none() {
                     return;
                 }
-                self.broadcast(data, Some(v.id));
+                if schema {
+                    let mut packet = data.to_vec();
+                    packet[0] = var_schema::MAGIC;
+                    self.broadcast(&packet, Some(v.id));
+                } else {
+                    self.broadcast(data, Some(v.id));
+                }
             }
             Role::Client => {
                 if !self.peers.contains_key(&v.id) {
@@ -2908,7 +2947,12 @@ impl LanSession {
                 }
             }
         }
-        let Some(v) = self.var_receiver.receive(data, PROTOCOL as u8) else { return };
+        let receiver = if schema { &mut self.schema_receiver } else { &mut self.var_receiver };
+        let Some(v) = receiver.receive(data, PROTOCOL as u8) else { return };
+        if schema {
+            if self.schemas_in.len() < 128 && !v.strings.is_empty() { self.schemas_in.push(v); }
+            return;
+        }
         // (a game that stopped reading does not pile them up without end)
         if self.vars_in.len() < 1024 {
             self.vars_in.push(v);
