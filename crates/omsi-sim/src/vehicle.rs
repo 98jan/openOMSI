@@ -15,7 +15,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 mod damage;
+mod engine_vars;
 mod pax_vars;
+use engine_vars::Ev;
 pub use pax_vars::PaxVars;
 pub use damage::{BrokenGlass, DynamicImpact, VehicleDent};
 
@@ -1053,6 +1055,8 @@ pub struct VehicleInstance {
     /// The passengers' door variables, looked up on first use (see `pax_vars`); made
     /// again when the vehicle gains a variable.
     pax_vars: std::sync::OnceLock<PaxVars>,
+    /// The engine's own variables (see `engine_vars`), the same way.
+    engine_ids: std::sync::OnceLock<engine_vars::EngineVarIds>,
 }
 
 impl VehicleInstance {
@@ -1315,6 +1319,7 @@ impl VehicleInstance {
             var_index,
             props_plan: PropsPlan::default(),
             pax_vars: std::sync::OnceLock::new(),
+            engine_ids: std::sync::OnceLock::new(),
         }
     }
 
@@ -2098,6 +2103,7 @@ impl VehicleInstance {
             self.state.vars.push(v);
             self.var_index.insert(name.to_ascii_lowercase(), id);
             self.pax_vars = std::sync::OnceLock::new();
+            self.engine_ids = std::sync::OnceLock::new();
         }
     }
 
@@ -2172,9 +2178,9 @@ impl VehicleInstance {
         // a dry duty adds a few percent, a wet one soils the bus in a couple of hours
         // a dry duty of a couple of hours shows; a wet one soils the bus in half an hour
         self.dirt = (self.dirt + dt * speed * (8.0e-5 + 1.2e-3 * rain)).clamp(0.0, 1.0);
-        self.set_engine_var("Dirt_Norm", self.dirt);
+        self.set_engine_ev(Ev::DirtNorm, self.dirt);
         // spray off a wet road, dust off a dry one
-        self.set_engine_var("DirtRate", speed * (1.5e-4 + 6.0e-3 * rain));
+        self.set_engine_ev(Ev::DirtRate, speed * (1.5e-4 + 6.0e-3 * rain));
         // rain soaks the glass in a few seconds; without it the film dries in about a minute.
         // Snow builds the film up the same way: `rain.osc` only ever adds `PrecipRate *
         // Timegap` and clamps at 1 - it never asks what is falling - so in the original the
@@ -2183,14 +2189,14 @@ impl VehicleInstance {
         // "haze", the panes stayed clear in the thickest snowfall and the wipers had
         // nothing to do (#883).
         let rate = if rain > 0.0 { rain * 0.25 } else { -0.02 };
-        self.set_engine_var("PrecipRate", rate);
+        self.set_engine_ev(Ev::PrecipRate, rate);
         // the state of the road, for the tyre sounds and the wheel spray
-        self.set_engine_var("StreetCond", self.host.street_cond);
+        self.set_engine_ev(Ev::StreetCond, self.host.street_cond);
         // what is coupled to this vehicle (the train scripts light their ends by it: a head
         // lamp only where nothing is coupled, the tail lamps at the last car)
-        self.set_engine_var("train_frontcoupling", 0.0);
-        self.set_engine_var("train_backcoupling", if self.trailers.is_empty() { 0.0 } else { 1.0 });
-        self.set_engine_var("train_me_reverse", 0.0);
+        self.set_engine_ev(Ev::TrainFrontCoupling, 0.0);
+        self.set_engine_ev(Ev::TrainBackCoupling, if self.trailers.is_empty() { 0.0 } else { 1.0 });
+        self.set_engine_ev(Ev::TrainMeReverse, 0.0);
         // and for the tyres' grip
         let mu = road_grip(self.host.street_cond, self.host.temperature);
         if let Some(rb) = self.rigid.as_mut() {
@@ -2225,11 +2231,11 @@ impl VehicleInstance {
         }
         // (the sum is split, not the parts: 0.7 km + 0.5 km is 1 km 200 m, not 0 km 1200 m)
         let total = self.odometer_km();
-        self.set_engine_var("kmcounter_km", total.trunc() as f32);
-        self.set_engine_var("kmcounter_m", (total.fract() * 1000.0) as f32);
-        self.set_engine_var("humans_count", self.host.humans_count);
-        self.set_engine_var("schedule_active", self.host.schedule_active);
-        self.set_engine_var("precipType", self.host.precip_type);
+        self.set_engine_ev(Ev::KmCounterKm, total.trunc() as f32);
+        self.set_engine_ev(Ev::KmCounterM, (total.fract() * 1000.0) as f32);
+        self.set_engine_ev(Ev::HumansCount, self.host.humans_count);
+        self.set_engine_ev(Ev::ScheduleActive, self.host.schedule_active);
+        self.set_engine_ev(Ev::PrecipType, self.host.precip_type);
         // A bus whose scripts keep their own cabin air (`heizung.osc` of the stock buses and
         // their descendants: they integrate the temperature from heat flows) is left to
         // them; only the relative humidity comes from their temperature and humidity. An
@@ -2237,9 +2243,9 @@ impl VehicleInstance {
         // went to infinity within a second, and its engine with it.
         let owns = |name: &str| self.ty.program.var(name).is_some_and(|v| self.ty.program.stores(v));
         if owns("Cabinair_Temp") {
-            if let (Some(t), Some(hum)) = (self.var("Cabinair_Temp"), self.var("Cabinair_absHum")) {
+            if let (Some(t), Some(hum)) = (self.ev(Ev::CabinTemp), self.ev(Ev::CabinAbsHum)) {
                 if !owns("Cabinair_relHum") && t.is_finite() && t > -237.0 {
-                    self.set_engine_var("Cabinair_relHum", relative_humidity(t, hum));
+                    self.set_engine_ev(Ev::CabinRelHum, relative_humidity(t, hum));
                 }
             }
             return;
@@ -2247,7 +2253,7 @@ impl VehicleInstance {
         let out = self.host.temperature;
         let (mut t, mut hum, last) = self.cabin_air.unwrap_or((out.clamp(18.0, 25.0), 9.0, f32::NAN));
         // a script of the bus's own wrote the cabin temperature: that is what it is now
-        if let Some(cur) = self.var("Cabinair_Temp") {
+        if let Some(cur) = self.ev(Ev::CabinTemp) {
             if !last.is_nan() && (cur - last).abs() > 1e-4 {
                 t = cur;
             }
@@ -2260,9 +2266,9 @@ impl VehicleInstance {
         hum += (out_hum - hum) * (dt / 300.0).min(1.0);
         // relative humidity: against the saturation (Magnus) at the cabin temperature
 
-        self.set_engine_var("Cabinair_Temp", t);
-        self.set_engine_var("Cabinair_absHum", hum);
-        self.set_engine_var("Cabinair_relHum", relative_humidity(t, hum));
+        self.set_engine_ev(Ev::CabinTemp, t);
+        self.set_engine_ev(Ev::CabinAbsHum, hum);
+        self.set_engine_ev(Ev::CabinRelHum, relative_humidity(t, hum));
         self.cabin_air = Some((t, hum, t));
     }
 
@@ -2563,30 +2569,30 @@ impl VehicleInstance {
         let station = match ai.at_station {
             1 => 1.0,
             -1 => -1.0,
-            _ => match self.var("AI_Scheduled_AtStation") {
+            _ => match self.ev(Ev::AiAtStation) {
                 Some(v) if v.abs() > 0.5 => -1.0,
                 _ => 0.0,
             },
         };
-        for (name, v) in [
-            ("AI", 1.0),
-            ("AI_Blinker_L", matches!(ai.blinker, 1 | 3) as i32 as f32),
-            ("AI_Blinker_R", matches!(ai.blinker, 2 | 3) as i32 as f32),
-            ("AI_Brakelight", ai.brake as i32 as f32),
-            ("AI_Light", ai.lights as i32 as f32),
+        for (ev, v) in [
+            (Ev::Ai, 1.0),
+            (Ev::AiBlinkerL, matches!(ai.blinker, 1 | 3) as i32 as f32),
+            (Ev::AiBlinkerR, matches!(ai.blinker, 2 | 3) as i32 as f32),
+            (Ev::AiBrakelight, ai.brake as i32 as f32),
+            (Ev::AiLight, ai.lights as i32 as f32),
             // (the engine's field +0x638: an AI bus lights its saloon when it drives with
             // its lights on - the LiAZ's `lights_AI` switches both saloon circuits on it)
-            ("AI_Interiorlight", ai.lights as i32 as f32),
-            ("AI_Engine", if ai.engine_off { -1.0 } else { 1.0 }),
-            ("AI_Scheduled_AtStation", station),
+            (Ev::AiInteriorlight, ai.lights as i32 as f32),
+            (Ev::AiEngine, if ai.engine_off { -1.0 } else { 1.0 }),
+            (Ev::AiAtStation, station),
             // Which side's doors: OMSI hands the stop's side to the script, and a vehicle
             // with doors on both sides opens only the platform's (the BRT stops in
             // Urumqi61 lie left, the ordinary ones right). Off a stop it is 0 (OMSI's
             // default), so a script that reads it there does the same as ever.
-            ("AI_Scheduled_AtStation_Side", ai.at_station_side),
-            ("TrafficPriorityWarningNeeded", ai.priority_warning as i32 as f32),
+            (Ev::AiAtStationSide, ai.at_station_side),
+            (Ev::PriorityWarning, ai.priority_warning as i32 as f32),
         ] {
-            self.set_var(name, v);
+            self.set_ev(ev, v);
         }
         for &(id, v) in inputs.iter().chain(pinned) {
             self.put(Some(id), v);
