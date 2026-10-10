@@ -390,8 +390,17 @@ impl World {
             return;
         }
         let mut scripted = self.scripted.lock();
+        // The objects asked for, found in one pass over the list - the first of each id, as
+        // a search would find it: every train asks for the points of its next five lanes on
+        // every frame, and each of them was a search of all the scripted objects.
+        let mut owners: HashMap<i64, Option<usize>> = requests.iter().map(|&(id, _)| (id, None)).collect();
+        for (i, o) in scripted.iter().enumerate() {
+            if let Some(slot) = owners.get_mut(&o.map_id) {
+                slot.get_or_insert(i);
+            }
+        }
         for &(id, path) in requests {
-            let Some(o) = scripted.iter_mut().find(|o| o.map_id == id) else { continue };
+            let Some(o) = owners.get(&id).copied().flatten().map(|i| &mut scripted[i]) else { continue };
             if let Some(Some(d)) = o.ty.sco.path_switch_dir.get(path as usize) {
                 let was = o.inst.var("Switch");
                 if o.inst.set_var("Switch", *d as f32) && was != Some(*d as f32) && omsi_cfg::flags::OMSI_DEBUG_SWITCHES.is_set() {
