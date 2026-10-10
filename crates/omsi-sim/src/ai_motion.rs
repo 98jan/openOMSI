@@ -172,6 +172,9 @@ pub struct AiBody {
     pub steer: f32,
     steer_cmd: f32,
     last_speed: f32,
+    /// How fast the body's rotation point went along its heading in the last step (m/s):
+    /// the planner's speed, less what held the body back, plus its catching up.
+    pub moved: f32,
     /// Longitudinal and lateral acceleration (m/s², forward / right positive).
     pub a_long: f32,
     pub a_lat: f32,
@@ -289,6 +292,7 @@ impl AiBody {
             steer: 0.0,
             steer_cmd: 0.0,
             last_speed: 0.0,
+            moved: 0.0,
             a_long: 0.0,
             a_lat: 0.0,
             yaw_rate: 0.0,
@@ -308,6 +312,17 @@ impl AiBody {
             suspension: vec![[0.0; 2]; axle_count],
             contact_z: Vec::new(),
         }
+    }
+
+    /// Where the line the body turns about is (world x east, y north) and how far it lies
+    /// along the body from the vehicle's origin (m): the point of the body that follows the
+    /// way's point `rotation_long()` metres along it.
+    pub fn rotation_at(&self) -> DVec2 {
+        self.rear
+    }
+
+    pub fn rotation_long(&self) -> f32 {
+        self.rot_long
     }
 
     /// Put the body onto its way, standing still and straight. `way(d)` is the point `d`
@@ -444,6 +459,7 @@ impl AiBody {
             self.steer_cmd += (want - self.steer_cmd).clamp(-rate, rate);
             self.steer += (self.steer_cmd - self.steer) * (dt / 0.08).min(1.0);
         }
+        self.moved = v;
         let k = self.steer.to_radians().tan() / self.wheelbase;
         let dpsi = (v * dt * k) as f64;
         let mid = dir(self.heading + dpsi.to_degrees() * 0.5);

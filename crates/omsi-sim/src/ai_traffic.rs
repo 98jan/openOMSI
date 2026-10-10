@@ -6,6 +6,7 @@
 //! and sound like, and taking the lanes and the vehicle types from the world, is omsi-app's
 //! `traffic` (its `Traffic` is a `TrafficSim` with its pictures and sounds).
 
+pub mod body_link;
 pub mod bus_service;
 pub mod control;
 pub mod deadlock;
@@ -25,6 +26,8 @@ pub mod setup;
 pub mod stats;
 pub mod tick;
 pub mod viewer;
+#[cfg(test)]
+mod body_tests;
 #[cfg(test)]
 mod scenario_tests;
 #[cfg(test)]

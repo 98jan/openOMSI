@@ -2805,6 +2805,14 @@ impl AiState {
         if net.lanes.get(self.lane).is_none() {
             return false;
         }
+        // The body owns the pose (`ai_traffic::body_link`): while it lags behind the plan,
+        // or stands off its way, the command starts from the body's own speed, and the
+        // plan goes no further than `BODY_MAX_LEAD` ahead of it.
+        let body = self.body;
+        if body.known && (body.lead > BODY_SLACK || !body.on_way) {
+            self.speed = self.speed.min(body.speed.max(0.0));
+        }
+        let room = if body.known { (BODY_MAX_LEAD - body.lead).max(0.0) } else { f32::INFINITY };
         let mut acc = self.command(net, dt, lead, stop);
         if let Some(cap) = self.accel_cap {
             acc = acc.min(cap);
@@ -2833,12 +2841,17 @@ impl AiState {
         }
         self.cmd = acc;
         let v0 = self.speed;
-        let v1 = (v0 + acc * dt).max(0.0);
+        let mut v1 = (v0 + acc * dt).max(0.0);
+        let mut ds = (v0 + v1) * 0.5 * dt;
+        if ds > room {
+            // (waiting for the body: at its pace)
+            ds = room;
+            v1 = v1.min(body.speed.max(0.0));
+        }
         self.speed = v1;
         self.acc = if dt > 0.0 { (v1 - v0) / dt } else { 0.0 };
         // brake lights: braking, or holding the car on the brake
         self.braking = acc < -0.6 || (v1 < 0.3 && self.held);
-        let ds = (v0 + v1) * 0.5 * dt;
         self.s += ds;
         self.odometer += ds;
         // lane change: signal, glide over to the neighbour, then continue there

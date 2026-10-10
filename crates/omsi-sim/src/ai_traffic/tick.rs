@@ -1271,14 +1271,14 @@ impl TrafficSim {
         {
             use rayon::prelude::*;
             let net = &self.net;
-            type Work<'a> = (&'a AiState, &'a mut AiBody, &'a mut VehicleInstance, &'a mut AiFrame, &'a mut std::collections::VecDeque<(f64, DVec3)>, &'a mut f32);
+            type Work<'a> = (&'a mut AiState, &'a mut AiBody, &'a mut VehicleInstance, &'a mut AiFrame, &'a mut std::collections::VecDeque<(f64, DVec3)>, &'a mut f32);
             let mut work: Vec<Work> = self
                 .cars
                 .iter_mut()
                 .zip(frames.iter_mut())
                 .filter_map(|(c, f)| {
                     let f = f.as_mut()?;
-                    Some((&c.state, &mut c.body, &mut c.vehicle, f, &mut c.rail_trail, &mut c.ai_secs))
+                    Some((&mut c.state, &mut c.body, &mut c.vehicle, f, &mut c.rail_trail, &mut c.ai_secs))
                 })
                 .collect();
             work.sort_by(|a, b| b.5.total_cmp(a.5));
@@ -1302,21 +1302,27 @@ impl TrafficSim {
                         record_rail_trail(trail, state.odometer as f64, state.way_point(net, 0.0));
                     }
                     let trail = &*trail;
-                    let behind = |d: f64| rail_behind(trail, state, net, d);
-                    body.step(
-                        dt,
-                        state.speed,
-                        &|d| if rail && d < 0.0 { behind(-d as f64) } else { state.way_point(net, d) },
-                        ground
-                            .as_ref()
-                            .map(|g| g.as_ref() as &dyn Fn(f64, f64) -> Option<f64>),
-                        contact.as_deref(),
-                    );
+                    {
+                        let state = &*state;
+                        let behind = |d: f64| rail_behind(trail, state, net, d);
+                        body.step(
+                            dt,
+                            state.speed,
+                            &|d| if rail && d < 0.0 { behind(-d as f64) } else { state.way_point(net, d) },
+                            ground
+                                .as_ref()
+                                .map(|g| g.as_ref() as &dyn Fn(f64, f64) -> Option<f64>),
+                            contact.as_deref(),
+                        );
+                    }
+                    // where the body got to, for the planner's next step
+                    state.body = super::body_link::link(state, net, body);
                     body.apply(vehicle);
                     if rail && !vehicle.trailers.is_empty() {
                         // the coupled cars (a train's, a tram's sections) on the track it
                         // came along, not dragged round the bends like a road trailer
-                        vehicle.retrail(0.0, &|d| Some(behind(d)));
+                        let state = &*state;
+                        vehicle.retrail(0.0, &|d| Some(rail_behind(trail, state, net, d)));
                     }
                     frame.steer_deg = body.steer;
                     let t1 = std::time::Instant::now();
