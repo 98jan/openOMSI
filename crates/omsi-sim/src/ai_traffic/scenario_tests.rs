@@ -211,12 +211,11 @@ fn side_road_crossing(v: f32, spacing: f32, secs: f32) -> Option<f32> {
 #[test]
 fn a_side_road_car_gets_into_a_main_road_that_never_leaves_a_gap() {
     // a queue rolling past at 3 or 5 m/s, a car every 9 m: never a gap any driver takes.
-    // After its long wait the side road's car keeps a claim on its way, the cars not yet
-    // at the junction let it across (it used to stand there for good: its claim was taken
-    // for a stalled car's and held nobody back)
+    // After its long wait the queue's drivers let the side road's car in (`lets_in`; it
+    // used to stand there for good)
     for v in [3.0, 5.0] {
         let at = side_road_crossing(v, 9.0, 150.0);
-        assert!(at.is_some_and(|t| t < LONG_WAIT_CLAIM + 40.0), "queue at {v} m/s: across after {at:?} s");
+        assert!(at.is_some_and(|t| t < COURTESY_WAIT + 40.0), "queue at {v} m/s: across after {at:?} s");
     }
     // a queue that crawls (1-1.5 m/s) leaves room enough between its cars
     assert!(side_road_crossing(1.5, 7.5, 150.0).is_some_and(|t| t < 40.0));

@@ -74,6 +74,9 @@ impl TrafficSim {
             .collect();
         let debug = omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set();
         self.stats_before();
+        for c in self.cars.iter_mut() {
+            c.tail = body_tail(c);
+        }
         let (by_lane, coming, mut reservations) = self.occupancy();
         self.request_lights(player);
         let walkers = self.walker_requests();
@@ -85,7 +88,7 @@ impl TrafficSim {
         let mut frames: Vec<Option<AiFrame>> = vec![None; self.cars.len()];
         let feet = super::foot_grid::Feet::new(self.footprints());
         self.break_lead_pairs();
-        self.break_rings();
+        self.resolve_waits();
         let ts = TickScene { dt, debug, player, player_standing, others, feet, by_lane, coming, walkers };
         // (the cars plan one after the other, in the order of their ids: in the order they
         // stand in the list, which a removal reshuffles, two runs of one session decided
@@ -119,12 +122,12 @@ impl TrafficSim {
 
     /// Where every car is: its lane with its lateral place (and the lane a passing car is
     /// over on, where it counts for the oncoming traffic), the cars coming to each junction
-    /// lane and the junction lanes each has claimed.
-    fn occupancy(&self) -> (ByLane, Coming, Claims) {
+    /// lane, the junction lanes each has claimed and the room promised on the exits.
+    fn occupancy(&self) -> (ByLane, Coming, ClaimBook) {
         let mut by_lane: HashMap<usize, Vec<(usize, f32, f32, bool)>> = HashMap::new();
         // cars coming to a junction lane: (car, distance from its origin to the lane start)
         let mut coming: HashMap<usize, Vec<(usize, f32)>> = HashMap::new();
-        let mut reservations: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut reservations = ClaimBook::default();
         for (i, c) in self.cars.iter().enumerate() {
             by_lane
                 .entry(c.state.lane)
@@ -134,7 +137,7 @@ impl TrafficSim {
             // or follows that lane waits until it is out (a bus that had turned into the next
             // lane with its front used to count as gone from the junction it still filled)
             if let Some(p) = c.state.prev_lane {
-                if c.state.s < c.state.rear + 1.0 && c.state.change.is_none() {
+                if c.state.s < c.tail + 1.0 && c.state.change.is_none() {
                     by_lane.entry(p).or_default().push((
                         i,
                         self.net.lanes[p].length() + c.state.s,
@@ -143,6 +146,8 @@ impl TrafficSim {
                     ));
                 }
             }
+            // (and on the junction lanes further back that a long body still covers)
+            tail_bodies(&self.net, i, c, &mut by_lane);
             if let Some(ch) = c.state.change {
                 by_lane
                     .entry(ch.to)
@@ -197,9 +202,7 @@ impl TrafficSim {
                     coming.entry(l).or_default().push((i, d));
                 }
             }
-            for &l in &c.reserved {
-                reservations.entry(l).or_default().push(i);
-            }
+            reservations.add_car(i, c);
         }
         (by_lane, coming, reservations)
     }
@@ -379,7 +382,7 @@ impl TrafficSim {
 
     /// Car `i`'s plan for this tick and its drive: its frame for the body and the scripts,
     /// None when it ran out of road (it is taken off).
-    fn plan_car(&mut self, i: usize, ts: &TickScene, reservations: &mut Claims) -> Option<AiFrame> {
+    fn plan_car(&mut self, i: usize, ts: &TickScene, reservations: &mut ClaimBook) -> Option<AiFrame> {
         let (lead, player, player_standing) = self.car_lead(i, ts);
         let (lead, parked_ahead, parked_box, kerb_swerve) = self.kerb_and_squeeze(i, lead, &ts.by_lane);
         let (standing, obstacle_len, at_stop, keep_back) = self.keep_back(i, lead, parked_ahead, player, player_standing);
@@ -748,7 +751,7 @@ impl TrafficSim {
 
     /// Merging, the lights and the right of way at the junction ahead: (where the merge
     /// holds car `i`, its way ahead, where a light holds it, where it gives way).
-    fn right_of_way(&mut self, i: usize, ts: &TickScene, lead: LeadOf, reservations: &mut Claims) -> RightOfWay {
+    fn right_of_way(&mut self, i: usize, ts: &TickScene, lead: LeadOf, reservations: &mut ClaimBook) -> RightOfWay {
         let (by_lane, coming, walkers, dt) = (&ts.by_lane, &ts.coming, &ts.walkers, ts.dt);
         let merge_wait = self.plan_route_change(i, by_lane);
         let way = self.way_lanes(&self.cars[i].state, 200.0);
@@ -794,20 +797,17 @@ impl TrafficSim {
             ),
             None => {
                 self.cars[i].exit_wait = false;
+                self.cars[i].holds.clear();
+                self.keep_tail_claims(i, &way);
                 let old = std::mem::take(&mut self.cars[i].reserved);
-                for l in old {
-                    if let Some(list) = reservations.get_mut(&l) {
-                        list.retain(|&c| c != i);
-                    }
-                }
+                reservations.release(i, &old);
                 None
             }
         };
-        // what it has claimed and is through no longer counts
+        // what it has claimed and is through with no longer counts once its tail is off it
+        self.keep_tail_claims(i, &way);
         {
             let car = &mut self.cars[i];
-            let on_way: Vec<usize> = way.iter().map(|w| w.0).collect();
-            car.reserved.retain(|l| on_way.contains(l));
             car.yielding = yield_at.is_some();
             car.wait_at = yield_at;
             let st = &mut car.state;

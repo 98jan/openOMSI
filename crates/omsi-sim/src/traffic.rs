@@ -805,6 +805,13 @@ impl Network {
         (n, walks)
     }
 
+    /// Do signs decide between lanes `a` and `b` (different `[rule] priority`, or a ring
+    /// and its entry), rather than right-before-left or who turns across whom?
+    pub fn signed(&self, a: usize, b: usize) -> bool {
+        let (la, lb) = (&self.lanes[a], &self.lanes[b]);
+        (la.priority - lb.priority).abs() > 0.5 || la.ring != lb.ring
+    }
+
     /// Must a vehicle on lane `a` let one on lane `b` go first where they meet? The path with
     /// the higher `[rule] priority` goes first; between equals, a left turn waits for the
     /// oncoming traffic, and otherwise the one coming from the right has the right of way

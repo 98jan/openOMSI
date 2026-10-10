@@ -115,8 +115,12 @@ impl Traffic {
             consist_reversed: false,
             waits_on: None,
             yield_to: None,
-            deadlock_pass: f32::MIN,
-            deadlock_tried: f32::MIN,
+            yield_pass: f32::MIN,
+            tail_claims: Vec::new(),
+            tail: 0.0,
+            exit_claim: None,
+            holds: Vec::new(),
+            courtesy: false,
             park: None,
         });
         view.insert(id, render);
