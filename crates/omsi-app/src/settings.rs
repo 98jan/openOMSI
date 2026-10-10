@@ -454,32 +454,20 @@ impl Settings {
 
     pub fn load() -> Settings {
         let Some(p) = Self::path() else { return Settings::default() };
-        // The file as read last, while its size and time of change are as they were: a
-        // start asked for the settings some twenty times, and each time read and parsed the
-        // file anew. Whoever writes it (the menus, the launcher, an editor) changes its time,
-        // and the next call reads it again.
-        type Read = (PathBuf, Option<(std::time::SystemTime, u64)>, Settings);
-        static LAST: parking_lot::Mutex<Option<Read>> = parking_lot::Mutex::new(None);
-        let stamp = match std::fs::metadata(&p) {
-            Ok(m) => m.modified().ok().map(|t| (t, m.len())),
-            // (no file: the defaults, until one is written)
-            Err(_) => Some((std::time::SystemTime::UNIX_EPOCH, u64::MAX)),
-        };
-        if let Some((path, Some(was), s)) = LAST.lock().as_ref() {
-            if *path == p && Some(*was) == stamp {
-                return s.clone();
-            }
-        }
-        let s = Self::read(&p);
-        *LAST.lock() = Some((p, stamp, s.clone()));
-        s
-    }
-
-    fn read(p: &std::path::Path) -> Settings {
-        let mut text = std::fs::read_to_string(p).unwrap_or_default();
+        let mut text = std::fs::read_to_string(&p).unwrap_or_default();
         // OMSI_GRAPHICS=vanilla|vanilla_plus|enhanced: another renderer for one run
         if let Some(g) = omsi_cfg::flags::OMSI_GRAPHICS.var() {
             text.push_str(&format!("\ngraphics={g}\n"));
+        }
+        // The settings made of the text read last, while the file says just the same: a
+        // start asked for them some twenty times, and each time parsed the file anew.
+        // (Compared by its text, not its time of change: a menu's change saved and read
+        // back within the same second must not be missed.)
+        static LAST: parking_lot::Mutex<Option<(PathBuf, String, Settings)>> = parking_lot::Mutex::new(None);
+        if let Some((path, was, s)) = LAST.lock().as_ref() {
+            if *path == p && *was == text {
+                return s.clone();
+            }
         }
         let mut s = Self::from_text(&text);
         // OMSI_SAFE_GPU=<n>: the game was started again after its graphics device was lost
@@ -488,6 +476,7 @@ impl Settings {
             s.apply_safe_gpu(n);
         }
         log::info!("settings from {}: msaa {} af {} ssao {} shadows {} ({}) navigator {} graphics {} post aa {} vsync {} render scale {} boarding {} min object size {} max object distance {} max fps {}", p.display(), s.msaa, s.anisotropy, s.ssao, s.shadows, s.shadow_size, s.navigator, s.graphics, s.post_aa, s.vsync, s.render_scale_text(), s.boarding, s.min_obj_size, s.object_distance(), s.max_fps);
+        *LAST.lock() = Some((p, text, s.clone()));
         s
     }
 
