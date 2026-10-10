@@ -387,3 +387,61 @@ fn cars_still_cross_a_finite_exit_when_its_short_return_is_not_chosen() {
     }
     assert!(crossed.iter().all(|&n| n > 0), "a usable exit lost its traffic: {crossed:?}");
 }
+
+/// `way_lanes` as it was: the plan copied whole, then walked.
+fn way_lanes_reference(t: &TrafficSim, st: &crate::traffic::AiState, within: f32) -> Vec<(usize, f32)> {
+    let mut out = vec![(st.lane, -st.s)];
+    let mut d = t.net.lanes[st.lane].length() - st.s;
+    let plan: Vec<usize> = match st.change {
+        Some(c) => std::iter::once(c.to).chain(st.change_plan.iter().copied()).collect(),
+        None => st.upcoming().collect(),
+    };
+    if let Some(c) = st.change {
+        out.clear();
+        out.push((c.to, -c.s_to));
+        d = t.net.lanes[c.to].length() - c.s_to;
+        for &l in plan.iter().skip(1) {
+            if d > within {
+                break;
+            }
+            out.push((l, d));
+            d += t.net.lanes[l].length();
+        }
+        return out;
+    }
+    for l in plan {
+        if d > within {
+            break;
+        }
+        out.push((l, d));
+        d += t.net.lanes[l].length();
+    }
+    out
+}
+
+/// The way's lanes come out as before, for cars on their way through a junction and for
+/// a car halfway over into another lane.
+#[test]
+fn way_lanes_are_what_they_were() {
+    let f = Fixture::new();
+    let mut t = traffic(&f, crossroads(150.0));
+    for k in 0..4 {
+        add_car(&mut t, &f, k, 100.0 + 10.0 * k as f32, 0x77 + k as u64, Some(8.0));
+    }
+    let mut checked = 0;
+    for _ in 0..200 {
+        t.tick(0.05, None);
+        for c in &t.cars {
+            let mut changing = c.state.clone();
+            changing.change = Some(crate::traffic::LaneChange { to: (c.state.lane + 4) % t.net.lanes.len(), t: 0.3, length: 20.0, s_to: 3.0, dir: 1, wait: 0.0, bypass: false });
+            changing.change_plan = vec![8, 9, 10];
+            for st in [&c.state, &changing] {
+                for within in [0.0, 30.0, 60.0, 100.0, 200.0, 1000.0] {
+                    assert_eq!(t.way_lanes(st, within), way_lanes_reference(&t, st, within));
+                    checked += 1;
+                }
+            }
+        }
+    }
+    assert!(checked > 1000);
+}

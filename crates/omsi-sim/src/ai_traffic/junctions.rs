@@ -300,29 +300,17 @@ impl TrafficSim {
     /// The lanes of a car's way with their distance from its origin: the current lane (at
     /// minus `s`) and the plan, up to `within` metres.
     pub fn way_lanes(&self, st: &AiState, within: f32) -> Vec<(usize, f32)> {
-        let mut out = vec![(st.lane, -st.s)];
-        let mut d = self.net.lanes[st.lane].length() - st.s;
-        let plan: Vec<usize> = match st.change {
-            Some(c) => std::iter::once(c.to)
-                .chain(st.change_plan.iter().copied())
-                .collect(),
-            None => st.upcoming().collect(),
-        };
-        if let Some(c) = st.change {
+        // (the plan is walked as far as `within` reaches: it was copied whole first, for
+        // each of the several times a car asks every tick)
+        let mut out = Vec::with_capacity(8);
+        let (first, from, rest): (usize, f32, &mut dyn Iterator<Item = usize>) = match st.change {
             // over on the new lane: its distances count from the same place
-            out.clear();
-            out.push((c.to, -c.s_to));
-            d = self.net.lanes[c.to].length() - c.s_to;
-            for &l in plan.iter().skip(1) {
-                if d > within {
-                    break;
-                }
-                out.push((l, d));
-                d += self.net.lanes[l].length();
-            }
-            return out;
-        }
-        for l in plan {
+            Some(c) => (c.to, c.s_to, &mut st.change_plan.iter().copied()),
+            None => (st.lane, st.s, &mut st.upcoming()),
+        };
+        out.push((first, -from));
+        let mut d = self.net.lanes[first].length() - from;
+        for l in rest {
             if d > within {
                 break;
             }
