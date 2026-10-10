@@ -44,6 +44,7 @@ impl PeopleSim {
             }
             self.pax_tick(i, dt, world, buses, bus_ix, at_stops, player_bus, taken_ticket, remove);
         }
+        self.merge_manual_door_requests(dt, buses);
         // (where every passenger stands: in a bus's frame, or the world's - and the people
         // walking the pavement, among them a rider who has just stepped off, still on the
         // step until they are clear of the door. Not those who stand where they got off

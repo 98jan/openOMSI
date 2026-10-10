@@ -59,6 +59,7 @@ pub mod pednet;
 pub mod spawn;
 pub mod populate;
 pub mod buses;
+pub mod door_requests;
 pub mod tick;
 pub mod walk;
 pub mod report;
@@ -88,6 +89,7 @@ use pednet::*;
 // The module's API, at the paths it always had in omsi-app (some only returned, never named
 // outside).
 pub use avatar::{AvatarCmd, SeatSpot};
+pub use door_requests::DoorRequest;
 pub use bodies::{BodyOp, BodyOps};
 pub use mirror::{placed_bus_id, remote_bus_id, remote_bus_player, LanPerson, MirrorPose};
 pub use model::{BusId, DoorWants, Eye, Footfall, PeopleSim, Person, Place, State, VoiceLine};

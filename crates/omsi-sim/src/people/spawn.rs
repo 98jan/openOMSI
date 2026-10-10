@@ -133,6 +133,7 @@ impl PeopleSim {
             avatar_cmds: HashMap::new(),
             avatar_hidden: HashMap::new(),
             last_buses: Vec::new(),
+            manual_door_requests: HashMap::new(),
             avatar_only: false,
             driver_away: false,
             stop_targets: None,

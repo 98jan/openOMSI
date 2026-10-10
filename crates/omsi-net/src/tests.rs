@@ -1722,3 +1722,32 @@ fn a_season_with_its_phase_crosses_the_wire() {
         assert_eq!(WorldInfo::from_fields(&parts, 0).season, season);
     }
 }
+
+#[test]
+fn repeated_passenger_requests_reach_the_vehicle_owner_and_ai_host() {
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let addr = SocketAddr::from(([127, 0, 0, 1], host.local_addr().unwrap().port()));
+    let mut a = LanSession::join_addr(vec![addr], None, "a", world("m")).unwrap();
+    let mut b = LanSession::join_addr(vec![addr], None, "b", world("m")).unwrap();
+    let poses = [pose(100.0), pose(200.0), pose(300.0)];
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 150, |sessions|
+        find(sessions[2], 200.0).is_some() && find(sessions[0], 300.0).is_some());
+    assert!(a.connected && b.connected);
+    let player_request = "pax_request player 0 entry 2";
+    let ai_request = "pax_request ai 7 exit 1";
+    for _ in 0..2 {
+        a.command(b.my_id, player_request);
+        a.command(host.my_id, ai_request);
+        host.tick(0.2, &poses[0]);
+        b.tick(0.2, &poses[2]);
+        assert!(host.take_commands().contains(&(a.my_id, ai_request.to_owned())));
+        assert!(b.take_commands().contains(&(a.my_id, player_request.to_owned())));
+        // Discarding the first received state does not lose the active request:
+        // the next refresh still carries the whole target and door index.
+    }
+    let false_source: SocketAddr = "127.0.0.1:29001".parse().unwrap();
+    let message = format!("CMD|{}|{}|{player_request}", a.my_id, b.my_id);
+    host.on_command(&message.split('|').collect::<Vec<_>>(), false_source);
+    b.tick(0.2, &poses[2]);
+    assert!(b.take_commands().is_empty(), "another address cannot request a door for this player");
+}

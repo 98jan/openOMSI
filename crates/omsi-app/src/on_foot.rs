@@ -11,6 +11,8 @@
 //! feet on the ground, turning, sitting down on a seat and getting up are the passengers'
 //! own, eased as theirs are; the camera eases into each new view instead of cutting.
 
+mod door_requests;
+
 use crate::humans::{AvatarCmd, BusId, Humans};
 use crate::App;
 use glam::{DVec2, DVec3};
@@ -86,6 +88,8 @@ pub(crate) struct OnFoot {
     pub kneel: bool,
     /// How far down the eyes are on their way (0 standing .. 1 kneeling).
     pub crouch: f32,
+    pub door_request: Option<omsi_sim::people::DoorRequest>,
+    pub door_request_send: f32,
 }
 
 /// What a walk leads to once walked.
@@ -366,6 +370,8 @@ impl App {
             arrive: None,
             kneel: false,
             crouch: 0.0,
+            door_request: None,
+            door_request_send: 0.0,
         });
         self.view = "foot".into();
         self.service_msg = Some(("On foot: W A S D walk, Shift runs, C kneels, F4 free camera / F1 back, G sits down (by the driver's place: back at the wheel), Ctrl+Shift+G steps out of the bus".into(), 7.0));
@@ -496,6 +502,8 @@ impl App {
             arrive: None,
             kneel: false,
             crouch: 0.0,
+            door_request: None,
+            door_request_send: 0.0,
         });
         self.view = "foot".into();
     }
@@ -860,7 +868,10 @@ impl App {
         let Some(mut f) = self.session.on_foot.take() else { return };
         let dt64 = dt as f64;
         f.ease_crouch(dt);
-        let key = |k: KeyCode| self.input.keys.contains(&k);
+        let shift = self.input.keys.contains(&KeyCode::ShiftLeft) || self.input.keys.contains(&KeyCode::ShiftRight);
+        let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
+        let alt = self.input.keys.contains(&KeyCode::AltLeft) || self.input.keys.contains(&KeyCode::AltRight);
+        let key = |k: KeyCode| self.input.keys.contains(&k) && !self.passenger_request_key(k, shift, ctrl, alt);
         if key(KeyCode::ArrowLeft) {
             f.yaw -= 90.0 * dt;
         }
@@ -1273,6 +1284,8 @@ mod tests {
             arrive: None,
             kneel: false,
             crouch: 0.0,
+            door_request: None,
+            door_request_send: 0.0,
         }
     }
 

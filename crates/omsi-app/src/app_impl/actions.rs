@@ -112,6 +112,7 @@ impl App {
         if self.vr_action(name) { return true; }
         match name {
             "sim_pause" => self.toggle_pause(),
+            "pax_door_request" => self.request_passenger_door(),
             // the menu Esc opens (a controller has no Esc): pressed again, it closes the menu
             // and whatever list it had open, as leaving them with Esc does
             "open_menu" => {

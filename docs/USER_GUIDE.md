@@ -823,6 +823,16 @@ disable this fallback. References absent from both programs still compare by nam
 late joiners. `OMSI_NO_VAR_SYNC=1`
 switches it off, `OMSI_DEBUG_VAR_SYNC=<variable>` logs what arrives for one variable.
 
+**Request a passenger door.** While on foot, press Ctrl+Alt+S within 3.2 metres of
+an entry point outside a bus, or an exit point inside the bus you are riding.
+The request feeds that door's `PAX_Entry<n>_Req` or `PAX_Exit<n>_Req`, alongside
+simulated passengers. It remains active until the door opens or you leave the point,
+change buses or start stepping through a door. AI buses and other players' buses
+support this; an exit request also asks an AI bus to serve its next stop.
+Change or clear the combination in Controls → Keyboard → Game and camera under
+"Passenger: request entry / exit". Multiplayer requests go to the bus's owner
+(or to the host for AI), repeat while active, and expire if updates stop.
+
 **AI scripts in LAN play.** AI vehicles read the current game date, time, runtime,
 weather and sun through `L.S.*`, including during initialization. Collision inputs and
 wear remain specific to each vehicle. Clients receive the host's AI script context,

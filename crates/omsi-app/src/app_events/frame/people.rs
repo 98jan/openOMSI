@@ -13,6 +13,7 @@ impl App {
         *self.perf.profile.entry("lan").or_default() += __t.elapsed().as_secs_f64();
         // the player on foot, and the other players walking about
         self.tick_on_foot(if self.paused { 0.0 } else { dt });
+        self.tick_passenger_door_request(dt);
         self.sync_remote_walkers();
         let __t = Instant::now();
         let sight = self.camera.as_ref().zip(self.gfx.surface.as_ref())

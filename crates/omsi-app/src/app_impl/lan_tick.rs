@@ -58,6 +58,10 @@ impl App {
     pub(crate) fn lan_command(&mut self, from: u32, text: &str) {
         let Some(lan) = self.net.lan.as_ref() else { return };
         let my_id = lan.my_id;
+        if let Some(request) = text.strip_prefix("pax_request ") {
+            self.receive_passenger_door_request(from, request);
+            return;
+        }
         if let Some(ev) = text.strip_prefix("trigger ") {
             // a switch worked by a passenger of ours: only by one who is in our bus
             let aboard = lan.peers().find(|p| p.pose.id == from).and_then(|p| p.pose.walker).and_then(|w| w.aboard).map(|a| a.owner == my_id).unwrap_or(false);

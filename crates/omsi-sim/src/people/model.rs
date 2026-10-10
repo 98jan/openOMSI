@@ -355,6 +355,7 @@ pub struct PeopleSim {
     pub avatar_hidden: HashMap<u32, bool>,
     /// The buses of the last tick (for the avatars' seats and doors).
     pub last_buses: Vec<BusNow>,
+    pub(super) manual_door_requests: HashMap<u32, (super::DoorRequest, f32)>,
     /// Only avatars: nobody else is put on the map (the passengers are off).
     pub avatar_only: bool,
     /// The player has got up and left the wheel: a standing bus with a door open is left

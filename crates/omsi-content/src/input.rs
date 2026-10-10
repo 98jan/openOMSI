@@ -128,6 +128,9 @@ impl KeyboardCfg {
         if !self.game.iter().any(|b| b.action.eq_ignore_ascii_case("view_toggle_interior")) {
             self.game.push(KeyBinding { action: "view_toggle_interior".into(), scan_code: 0, modifier: 0 });
         }
+        if !self.game.iter().any(|b| b.action.eq_ignore_ascii_case("pax_door_request")) {
+            self.game.push(KeyBinding { action: "pax_door_request".into(), scan_code: 31, modifier: KEY_CTRL | KEY_ALT });
+        }
         // map-wide bus radio in multiplayer (hold): X when free, else unbound (#1230)
         if !self.game.iter().any(|b| b.action.eq_ignore_ascii_case("voice_radio")) {
             let x_free = !taken(&self, 45);
@@ -291,6 +294,20 @@ mod tests {
         assert_eq!(key(&cfg, "chat_open"), vec![(53, 0)]);
         let moved = KeyboardCfg { game: vec![KeyBinding { action: "chat_open".into(), scan_code: 20, modifier: KEY_CTRL }], ..Default::default() }.with_game_defaults();
         assert_eq!(key(&moved, "chat_open"), vec![(20, KEY_CTRL)]);
+    }
+
+    #[test]
+    fn passenger_request_key_has_ctrl_alt_s_and_preserves_custom_or_cleared_bindings() {
+        let action = "pax_door_request";
+        let cfg = KeyboardCfg::default().with_game_defaults().with_game_defaults();
+        let bindings: Vec<_> = cfg.game.iter().filter(|b| b.action == action).collect();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!((bindings[0].scan_code, bindings[0].modifier), (31, KEY_CTRL | KEY_ALT));
+        for scan_code in [0, 44] {
+            let custom = KeyBinding { action: action.into(), scan_code, modifier: KEY_SHIFT };
+            let cfg = KeyboardCfg { game: vec![custom.clone()], ..Default::default() }.with_game_defaults();
+            assert_eq!(cfg.game.iter().filter(|b| b.action == action).collect::<Vec<_>>(), vec![&custom]);
+        }
     }
 
     #[test]
