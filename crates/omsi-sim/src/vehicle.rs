@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 mod damage;
+mod reload;
 pub use damage::{BrokenGlass, DynamicImpact, VehicleDent};
 
 /// Scripts often test a stopped bus with `!Velocity_Ground`, so do not expose tiny solver drift.
@@ -165,6 +166,7 @@ pub struct SkinBone {
 }
 
 /// One mesh of the vehicle model ready for rendering.
+#[derive(Clone)]
 pub struct VehicleMesh {
     pub def_index: usize,
     /// The mesh, or (for a type loaded with [`VehicleType::load_ai`]) only its material
@@ -182,6 +184,7 @@ pub struct VehicleMesh {
     pub keep_winding: bool,
 }
 
+#[derive(Clone)]
 pub struct VehicleType {
     pub def: Vehicle,
     pub model: Model,
