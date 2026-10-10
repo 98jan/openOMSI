@@ -557,6 +557,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             hidden_frames: 0,
             stand_in: None,
             sim_view: Default::default(),
+            starting: None,
         },
         window: None,
         renderer: None,
