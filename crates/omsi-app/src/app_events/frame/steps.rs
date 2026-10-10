@@ -461,8 +461,8 @@ pub(crate) fn departure_boards(
 
 /// The mirror panels follow the bus's mirrors (their aspects and glass from the world).
 pub(crate) fn mirror_hud_sync(hud: &mut crate::mirror_hud::MirrorHud, world: &World, p: &Player, mode: u8) {
-    hud.set_aspects(world.mirror_aspect.lock().clone());
-    hud.set_glass(world.mirror_glass.lock().clone());
+    hud.set_aspects(&world.mirror_aspect.lock());
+    hud.set_glass(&world.mirror_glass.lock());
     hud.sync(p, mode);
 }
 
