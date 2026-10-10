@@ -184,6 +184,7 @@ impl TrafficSim {
                     heading: heading as f64,
                     at: self.time,
                     dormant: Some(d.id),
+                    tries: 0,
                 })
             })
             .collect()

@@ -86,12 +86,25 @@ pub const SPAWN_GAP: f64 = 14.0;
 pub const BACKOFF_AFTER: u32 = 3;
 pub const BACKOFF_SHORT: f32 = 0.5;
 pub const BACKOFF_LONG: f32 = 3.0;
+/// A place is the stretch of `ENTRANCE_SPAN` metres of a lane it lies in: a refusal leaves
+/// that stretch alone, not the whole lane (a long country road holds many cars, and one car
+/// standing on it barred it all).
+pub const ENTRANCE_SPAN: f32 = 40.0;
+
+fn entrance(lane: usize, s: f32) -> (usize, i32) {
+    (lane, (s / ENTRANCE_SPAN).floor() as i32)
+}
+
+/// A request told to retry this many times is given up (`Denial::Expired`).
+pub const MAX_TRIES: u8 = 3;
+
 /// A request not admitted within this long is dropped (s): the population asks afresh.
 pub const REQUEST_TTL: f32 = 10.0;
-/// Nor in line with one admitted in the same pass, ahead or behind it, nearer than this (m):
-/// the one behind would have to brake hard for the other at once (as `TrafficSim::spawn_gap`
-/// keeps a new car out of the way of one on the road).
-pub const SPAWN_IN_LINE: f64 = 40.0;
+/// Nor in line with one admitted in the same pass, one ahead of the other, nearer than this
+/// (m): the one behind, at its first speed of 0.7 the limit, has room enough to fall in
+/// behind without braking hard (40 m, as first chosen, left Grundorf's first population a
+/// third short; the cars on the road keep their own distance by `TrafficSim::spawn_gap`).
+pub const SPAWN_IN_LINE: f64 = 25.0;
 
 /// A vehicle asked to be put on the road.
 #[derive(Debug, Clone)]
@@ -108,6 +121,8 @@ pub struct Request {
     pub at: f32,
     /// A dormant car waking up: its id.
     pub dormant: Option<u64>,
+    /// Times it was told to retry.
+    pub tries: u8,
 }
 
 /// What is left of each class's budget in this pass (None: no limit).
@@ -147,7 +162,7 @@ struct Entrance {
 #[derive(Debug, Clone, Default)]
 pub struct Admission {
     queue: VecDeque<Request>,
-    entrances: BTreeMap<usize, Entrance>,
+    entrances: BTreeMap<(usize, i32), Entrance>,
     next_ticket: u64,
     generation: u64,
     /// How often each answer was given (diagnostics, `OMSI_DEBUG_POPULATION`).
@@ -176,9 +191,21 @@ impl Admission {
         }
     }
 
-    /// Whether lane `lane` is being left alone at `now` after its refusals.
-    pub fn backing_off(&self, lane: usize, now: f32) -> bool {
-        self.entrances.get(&lane).is_some_and(|e| e.until > now)
+    /// Requests of `class` waiting.
+    pub fn waiting(&self, class: Class) -> usize {
+        self.queue.iter().filter(|r| r.class == class).count()
+    }
+
+    /// The first population: the places refused a moment ago may be asked again at once
+    /// (nobody watches the world load; each round tries other places beside them).
+    pub fn forget_refusals(&mut self) {
+        self.entrances.clear();
+    }
+
+    /// Whether the place `s` metres along lane `lane` is being left alone at `now` after its
+    /// refusals.
+    pub fn backing_off(&self, lane: usize, s: f32, now: f32) -> bool {
+        self.entrances.get(&entrance(lane, s)).is_some_and(|e| e.until > now)
     }
 
     /// Ask for a vehicle of `class` at `s` metres along `lane` (at `pos`). Its ticket, or why
@@ -186,20 +213,20 @@ impl Admission {
     pub fn submit(&mut self, now: f32, class: Class, (lane, s): (usize, f32), (pos, heading): (DVec3, f64), dormant: Option<u64>) -> Result<u64, Denial> {
         let refused = if self.queue.len() >= QUEUE_CAP {
             Denial::QueueFull
-        } else if self.backing_off(lane, now) {
+        } else if self.backing_off(lane, s, now) {
             Denial::Backoff
         } else {
             let ticket = self.next_ticket;
             self.next_ticket += 1;
-            self.queue.push_back(Request { ticket, class, lane, s, pos, heading, at: now, dormant });
+            self.queue.push_back(Request { ticket, class, lane, s, pos, heading, at: now, dormant, tries: 0 });
             return Ok(ticket);
         };
         self.denied[refused as usize] += 1;
         Err(refused)
     }
 
-    fn refused(&mut self, lane: usize, now: f32) {
-        let e = self.entrances.entry(lane).or_default();
+    fn refused(&mut self, lane: usize, s: f32, now: f32) {
+        let e = self.entrances.entry(entrance(lane, s)).or_default();
         e.refused += 1;
         e.until = now + if e.refused >= BACKOFF_AFTER { BACKOFF_LONG } else { BACKOFF_SHORT };
     }
@@ -223,7 +250,7 @@ impl Admission {
                 kept.push_back(r);
                 continue;
             }
-            if self.backing_off(r.lane, now) && now - r.at < REQUEST_TTL {
+            if self.backing_off(r.lane, r.s, now) && now - r.at < REQUEST_TTL {
                 // (its place is left alone a while: its turn comes again after that)
                 kept.push_back(r);
                 continue;
@@ -240,19 +267,28 @@ impl Admission {
                 Verdict::Admit => {
                     self.admitted += 1;
                     budgets.take(r.class);
-                    self.entrances.remove(&r.lane);
+                    self.entrances.remove(&entrance(r.lane, r.s));
                     admitted.push(r);
                 }
                 Verdict::Deny(d) => {
                     self.denied[d as usize] += 1;
                     if d != Denial::AtCapacity {
-                        self.refused(r.lane, now);
+                        self.refused(r.lane, r.s, now);
                     }
                 }
                 Verdict::Retry(why) => {
                     self.retried[why as usize] += 1;
-                    self.refused(r.lane, now);
-                    kept.push_back(r);
+                    self.refused(r.lane, r.s, now);
+                    let mut r = r;
+                    r.tries += 1;
+                    if r.tries < MAX_TRIES {
+                        kept.push_back(r);
+                    } else {
+                        // (a place that would not do several times is given up: waiting in
+                        // front, it took the turns of fresh places, and the queue filled
+                        // with them)
+                        self.denied[Denial::Expired as usize] += 1;
+                    }
                 }
             }
         }
@@ -279,6 +315,11 @@ fn too_close(a: &Request, b: &Request) -> bool {
     let rel = b.pos - a.pos;
     if rel.length() < SPAWN_GAP {
         return true;
+    }
+    // (dormant cars wake at the speed they drove at, one behind the other as they went:
+    // the plain gap is enough between them)
+    if a.class == Class::Dormant && b.class == Class::Dormant {
+        return false;
     }
     [a.heading, b.heading].iter().any(|h| {
         let h = h.to_radians();
@@ -397,14 +438,14 @@ mod tests {
         }
         assert!(a.len() <= BACKOFF_AFTER as usize, "{} waiting", a.len());
         assert!(taken <= BACKOFF_AFTER as usize + 1, "{taken} taken");
-        assert!(a.backing_off(5, now));
+        assert!(a.backing_off(5, 0.0, now));
         assert!(a.denied[Denial::Backoff as usize] > 0);
         // another place is not held up by it
         assert!(a.submit(now, Class::Street, (6, 0.0), (at(500.0), 0.0), None).is_ok());
         let admitted = a.pass(now, true, &mut street(10), |r| if r.lane == 6 { Verdict::Admit } else { Verdict::Retry(Retry::NoGap) });
         assert_eq!(admitted.len(), 1);
         // and an admission there clears its record
-        assert!(!a.backing_off(6, now));
+        assert!(!a.backing_off(6, 0.0, now));
     }
 
     /// Each class has a budget of its own, refusals say why, and a LAN client admits nobody.
@@ -447,14 +488,14 @@ mod tests {
         a.submit(now, Class::Street, (2, 0.0), (at(0.0), 0.0), None).unwrap();
         a.new_network(1);
         assert!(a.is_empty());
-        assert!(!a.backing_off(1, now));
+        assert!(!a.backing_off(1, 0.0, now));
     }
 
     /// A batch (dormant cars waking) is decided in its order, against its budget and the
     /// ones admitted before.
     #[test]
     fn a_batch_wakes_in_order_without_overlaps() {
-        let r = |k: u64, x: f64| Request { ticket: k, class: Class::Dormant, lane: 0, s: 0.0, pos: at(x), heading: 0.0, at: 0.0, dormant: Some(k) };
+        let r = |k: u64, x: f64| Request { ticket: k, class: Class::Dormant, lane: 0, s: 0.0, pos: at(x), heading: 0.0, at: 0.0, dormant: Some(k), tries: 0 };
         let reqs = [r(1, 0.0), r(2, 5.0), r(3, 50.0), r(4, 100.0)];
         let mut b = Budgets::default();
         b.set(Class::Dormant, Some(2));
@@ -465,8 +506,8 @@ mod tests {
     /// behind would brake hard for the other at once. Side by side on two roads they may.
     #[test]
     fn two_admitted_in_line_keep_their_distance() {
-        let r = |k: u64, x: f64, y: f64| Request { ticket: k, class: Class::Street, lane: k as usize, s: 0.0, pos: DVec3::new(x, y, 0.0), heading: 0.0, at: 0.0, dormant: None };
-        let reqs = [r(1, 0.0, 0.0), r(2, 0.0, 30.0), r(3, 10.0, 25.0), r(4, 0.0, 50.0)];
+        let r = |k: u64, x: f64, y: f64| Request { ticket: k, class: Class::Street, lane: k as usize, s: 0.0, pos: DVec3::new(x, y, 0.0), heading: 0.0, at: 0.0, dormant: None, tries: 0 };
+        let reqs = [r(1, 0.0, 0.0), r(2, 0.0, 20.0), r(3, 10.0, 45.0), r(4, 0.0, 70.0)];
         let v = decide_batch(&reqs, &mut street(10), |_| Verdict::Admit);
         assert_eq!(v, vec![Verdict::Admit, Verdict::Retry(Retry::NoGap), Verdict::Admit, Verdict::Admit]);
     }
