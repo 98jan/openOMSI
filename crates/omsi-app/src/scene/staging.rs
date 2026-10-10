@@ -1051,7 +1051,7 @@ pub(super) struct TypeGpu {
     pub(super) variants: Vec<(usize, usize, MaterialId, MaterialId, String)>,
     /// Dynamic texture overrides, made only for combinations that placed scripts use.
     /// Rows align with LOD 0 meshes and material slots; each entry holds (base, item).
-    pub(super) dynamic_texture_variants: HashMap<Vec<usize>, Vec<Vec<Option<(MaterialId, MaterialId)>>>>,
+    pub(super) dynamic_texture_variants: HashMap<Vec<usize>, Arc<Vec<Vec<Option<(MaterialId, MaterialId)>>>>>,
     /// Lower LODs: (min size, max size, meshes).
     pub(super) lods: Vec<(f32, f32, Vec<(MeshId, Vec<MaterialId>)>)>,
     pub(super) materials: Vec<MaterialId>,

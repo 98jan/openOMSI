@@ -136,7 +136,8 @@ impl World {
                 *e = e.max(aspects.get(&n).copied().unwrap_or(0.0));
             }
         }
-        let ids: hashbrown::HashSet<i64> = self.signal_routes.iter().flat_map(|r| std::iter::once(r.signal.0).chain(r.dist_signal)).collect();
+        // (the signals of the routes, gathered once when the map opened)
+        let ids = &self.signal_ids;
         let mut scripted = self.scripted.lock();
         for o in scripted.iter_mut() {
             if !ids.contains(&o.map_id) {
@@ -389,8 +390,17 @@ impl World {
             return;
         }
         let mut scripted = self.scripted.lock();
+        // The objects asked for, found in one pass over the list - the first of each id, as
+        // a search would find it: every train asks for the points of its next five lanes on
+        // every frame, and each of them was a search of all the scripted objects.
+        let mut owners: HashMap<i64, Option<usize>> = requests.iter().map(|&(id, _)| (id, None)).collect();
+        for (i, o) in scripted.iter().enumerate() {
+            if let Some(slot) = owners.get_mut(&o.map_id) {
+                slot.get_or_insert(i);
+            }
+        }
         for &(id, path) in requests {
-            let Some(o) = scripted.iter_mut().find(|o| o.map_id == id) else { continue };
+            let Some(o) = owners.get(&id).copied().flatten().map(|i| &mut scripted[i]) else { continue };
             if let Some(Some(d)) = o.ty.sco.path_switch_dir.get(path as usize) {
                 let was = o.inst.var("Switch");
                 if o.inst.set_var("Switch", *d as f32) && was != Some(*d as f32) && omsi_cfg::flags::OMSI_DEBUG_SWITCHES.is_set() {
@@ -495,7 +505,7 @@ impl World {
             Arc<ObjectType>,
             Vec<usize>,
             Vec<usize>,
-            HashMap<(usize, usize), bool>,
+            Vec<((usize, usize), bool)>,
         )> = Vec::new();
         // First what every object's script is given (in order: the light programs and the
         // boards are read here), then the scripts themselves, side by side on the worker
@@ -542,19 +552,31 @@ impl World {
             if let (true, Some(stop)) = (o.arrivals, o.var_parent) {
                 wanted.push(stop);
                 let now = boards.clock.as_ref().map(|c| c.time).unwrap_or(0.0);
-                o.inst.host.arrivals = boards
-                    .by_stop
-                    .get(&stop)
-                    .map(|l| {
-                        l.iter()
+                // The list changes about once a second, the times to go every frame: the
+                // same buses keep their names and only count down (the whole list was made
+                // anew, its names copied, every frame for every board).
+                let arrivals = &mut o.inst.host.arrivals;
+                match boards.by_stop.get(&stop) {
+                    Some(l)
+                        if arrivals.len() == l.len()
+                            && arrivals.iter().zip(l).all(|(a, (line, terminus, _))| a.line == *line && a.terminus == *terminus) =>
+                    {
+                        for (a, (_, _, t)) in arrivals.iter_mut().zip(l) {
+                            a.due = (t - now) as f32;
+                        }
+                    }
+                    Some(l) => {
+                        *arrivals = l
+                            .iter()
                             .map(|(line, terminus, t)| omsi_sim::host::Arrival {
                                 line: line.clone(),
                                 terminus: terminus.clone(),
                                 due: (t - now) as f32,
                             })
-                            .collect()
-                    })
-                    .unwrap_or_default();
+                            .collect();
+                    }
+                    None => arrivals.clear(),
+                }
             }
             // an HTML page that asks for departures by stop name
             if !o.htmls.is_empty() && dist < HTML_OBJECT_NEAR && !o.inst.host.html_departure_wants.is_empty() {
@@ -736,7 +758,12 @@ impl World {
                     };
                     for (slot, pair) in row.iter().enumerate() {
                         let Some((base, item)) = pair else { continue };
-                        let item_on = switches.get(&(mesh_inst, slot)).copied().unwrap_or(false);
+                        // (the last switch of a slot, as a map collected from them kept it)
+                        let item_on = switches
+                            .iter()
+                            .rev()
+                            .find(|(k, _)| *k == (mesh_inst, slot))
+                            .is_some_and(|&(_, on)| on);
                         renderer.set_material(
                             scene,
                             mesh_inst,

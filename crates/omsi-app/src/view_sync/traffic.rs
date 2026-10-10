@@ -443,6 +443,9 @@ impl Traffic {
                 c.vehicle.set_var("Envir_Brightness", b);
             }
         }
+        // one buffer for the per-mesh alpha of every car: a fresh copy for each mesh of each
+        // car was thousands of small allocations a frame in a busy street
+        let mut alpha: Vec<f32> = Vec::new();
         for c in &mut self.sim.cars {
             let Some(r) = view.cars.get_mut(&c.id) else { continue };
             let (render, trailer_renders) = (&mut r.body, &mut r.trailers);
@@ -522,7 +525,8 @@ impl Traffic {
                 // translucent and reveals the interior through its panels.  Opaque slots
                 // are never allowed to be faded by a dynamic alpha value; windows and
                 // explicitly alpha-tested/blended slots retain their authored behavior.
-                let mut alpha = p.slot_alpha.clone();
+                alpha.clear();
+                alpha.extend_from_slice(&p.slot_alpha);
                 for (slot, mat) in scene.instances[*inst].materials.iter().enumerate() {
                     if scene
                         .materials
@@ -546,7 +550,8 @@ impl Traffic {
                     let def = &t.ty.model.meshes[t.ty.meshes[i].def_index];
                     let vp = def.viewpoint;
                     let vp_ok = vp == 0 || vp & 4 != 0;
-                    let mut alpha = p.slot_alpha.clone();
+                    alpha.clear();
+                    alpha.extend_from_slice(&p.slot_alpha);
                     for (slot, mat) in scene.instances[*inst].materials.iter().enumerate() {
                         if scene
                             .materials

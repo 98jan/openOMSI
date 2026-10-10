@@ -459,6 +459,16 @@ impl Settings {
         if let Some(g) = omsi_cfg::flags::OMSI_GRAPHICS.var() {
             text.push_str(&format!("\ngraphics={g}\n"));
         }
+        // The settings made of the text read last, while the file says just the same: a
+        // start asked for them some twenty times, and each time parsed the file anew.
+        // (Compared by its text, not its time of change: a menu's change saved and read
+        // back within the same second must not be missed.)
+        static LAST: parking_lot::Mutex<Option<(PathBuf, String, Settings)>> = parking_lot::Mutex::new(None);
+        if let Some((path, was, s)) = LAST.lock().as_ref() {
+            if *path == p && *was == text {
+                return s.clone();
+            }
+        }
         let mut s = Self::from_text(&text);
         // OMSI_SAFE_GPU=<n>: the game was started again after its graphics device was lost
         // (see `App::restart_after_device_loss`): lighter on the card each time
@@ -466,6 +476,7 @@ impl Settings {
             s.apply_safe_gpu(n);
         }
         log::info!("settings from {}: msaa {} af {} ssao {} shadows {} ({}) navigator {} graphics {} post aa {} vsync {} render scale {} boarding {} min object size {} max object distance {} max fps {}", p.display(), s.msaa, s.anisotropy, s.ssao, s.shadows, s.shadow_size, s.navigator, s.graphics, s.post_aa, s.vsync, s.render_scale_text(), s.boarding, s.min_obj_size, s.object_distance(), s.max_fps);
+        *LAST.lock() = Some((p, text, s.clone()));
         s
     }
 

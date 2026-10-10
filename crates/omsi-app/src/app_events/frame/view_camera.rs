@@ -9,8 +9,11 @@ impl App {
     pub(super) fn frame_view_camera(&mut self, dt: f32) {
         if self.view != "free" && self.view != "foot" {
             let Some(p) = self.player.as_mut() else { return };
-            let key = crate::input_script::look_key_of(&self.view, Some(p.cam_choice));
-            crate::input_script::swap_view_look(&mut self.cam.look, &mut self.cam.view_looks, &mut self.cam.look_view, &key);
+            // (the key made only when the view changed: `swap_view_look` does nothing else)
+            if !crate::input_script::look_key_is(&self.cam.look_view, &self.view, Some(p.cam_choice)) {
+                let key = crate::input_script::look_key_of(&self.view, Some(p.cam_choice));
+                crate::input_script::swap_view_look(&mut self.cam.look, &mut self.cam.view_looks, &mut self.cam.look_view, &key);
+            }
             if let Some(cam) = self.camera.as_ref() {
                 let cam = *cam;
                 // (the seat kept for this bus, when one is: see `bus_seats`)
