@@ -860,3 +860,27 @@ fn the_ring_goes_before_the_entry_where_the_map_sets_no_priorities() {
     net.lanes[0].priority = 192.0;
     assert!(!net.must_yield(0, 1));
 }
+
+#[test]
+fn two_turns_sweeping_past_each_other_meet_where_they_pass() {
+    // two gentle bends of one junction object from opposite sides, bowing towards each
+    // other: 1.5 m apart at their middles, never crossing
+    let key = |path: u16| Some(LaneKey { tile: (0, 0), id: 1, path });
+    let arc = |x: f64, y: f64, h: f64| LaneBuilder::arc(DVec3::new(x, y, 0.0), h, 25.0 * 0.824, 25.0, 0.0, LaneKind::Street, 3.0);
+    let net_of = |dy: f64| {
+        let mut a = arc(-10.0, -2.84, 66.4);
+        let mut b = arc(10.0, 2.84 + dy, 246.4);
+        for (l, k) in [(&mut a, 0), (&mut b, 1)] {
+            l.source = 2;
+            l.key = key(k);
+        }
+        let mut net = Network { lanes: vec![a, b], ..Default::default() };
+        net.link(1.5);
+        net
+    };
+    let net = net_of(0.0);
+    let c = net.crossings[0].iter().find(|c| c.other == 1).expect("a meeting place where they pass");
+    assert!(!c.merge && (c.at - net.lanes[0].length() * 0.5).abs() < 2.0, "{c:?}");
+    // bends well apart do not meet
+    assert!(net_of(5.0).crossings[0].is_empty());
+}
