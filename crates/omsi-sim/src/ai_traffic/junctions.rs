@@ -112,7 +112,9 @@ impl ClaimBook {
                 list.push(i);
             }
         }
-        if let Some((exit, need, at)) = c.exit_claim.filter(|e| e.0 != c.state.lane) {
+        // (only a car still holding its claims is going there: one queued or waiting at a
+        // line far back promised nothing)
+        if let Some((exit, need, at)) = c.exit_claim.filter(|e| e.0 != c.state.lane && !c.reserved.is_empty()) {
             self.exits.entry(exit).or_default().push((i, need, at));
         }
     }
@@ -543,9 +545,11 @@ impl TrafficSim {
             if entry - st.front > decide + 20.0 {
                 let old = std::mem::take(&mut self.cars[i].reserved);
                 book.release(i, &old);
-                self.cars[i].exit_claim = None;
                 self.cars[i].courtesy = false;
             }
+            // (no room on the exit is kept for a car that has not got to deciding)
+            self.cars[i].exit_claim = None;
+            book.release(i, &[]);
             self.cars[i].exit_wait = false;
             return None;
         }
@@ -585,7 +589,7 @@ impl TrafficSim {
         // (a driver let in keeps counting on it while he holds his claim)
         let long_waiter = (!jn.inside && !queued && wait > COURTESY_WAIT) || (self.cars[i].courtesy && committed);
         let w = self.weigh_crossings(i, jn, way, on_lane, coming, &book.lanes, walkers, committed, patience, long_waiter, explain, stop_at);
-        let Weighing { hard, mut ruled, mut soft, mut why, stop_at, by, courtesy, mut holds, people, only_oncoming, oncoming_meet, let_in, nearest, sign_yield } = w;
+        let Weighing { hard, mut ruled, mut soft, mut why, stop_at, by, mut courtesy, mut holds, people, only_oncoming, oncoming_meet, let_in, nearest, sign_yield } = w;
         // A left turn across the oncoming traffic at a signal pulls into the junction up to
         // where it meets that traffic and waits there, as drivers do, rather than at the
         // line: waiting at the line, one car got across a cycle (on the yellow) and the turn
@@ -621,10 +625,12 @@ impl TrafficSim {
         // the circle of cars that only give way to each other this one has been chosen to
         // end (`deadlock`): the right of way does not hold it (bodies, people, the lights
         // and a full exit still do)
+        // (and a driver who let somebody in that way takes his right of way back)
         if self.cars[i].yield_pass > self.time {
             ruled = false;
             soft.clear();
-            holds.retain(|h| h.1 != Hold::Rule);
+            courtesy = false;
+            holds.retain(|h| !matches!(h.1, Hold::Rule | Hold::Courtesy));
         }
         let need = st.front + self.cars[i].tail + st.min_gap + if self.cars[i].exit_wait { EXIT_HYSTERESIS } else { 0.0 };
         let (exit_full, exit_car) = if jn.inside { (false, None) } else { self.exit_room(i, jn, way, lead, on_lane, book, need, committed, started || cannot_stop_comfortably, &mut why) };
@@ -1073,7 +1079,7 @@ impl TrafficSim {
                     if waiter && !must_yield && self.net.must_yield(m, l) && !me_prio && lets_in(v, st.decel, my_room) {
                         courtesy = true;
                         by = by.or(Some(o.id));
-                        hold(false, o.id, Hold::Rule, &mut holds, &mut stop_at);
+                        hold(false, o.id, Hold::Courtesy, &mut holds, &mut stop_at);
                         if jn.inside {
                             stop_at = Some(stop_at.unwrap_or(f32::MAX).min(point - c.before));
                         }

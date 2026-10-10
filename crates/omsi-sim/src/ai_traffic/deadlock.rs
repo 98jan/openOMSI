@@ -29,6 +29,8 @@ pub enum Hold {
     Claim,
     /// It has the right of way.
     Rule,
+    /// It waits at its line, and this car (with the right of way) lets it in.
+    Courtesy,
     /// It is the last of the queue on this car's exit, or ahead on the way with no room
     /// behind it beyond the junction.
     Exit,
@@ -46,6 +48,8 @@ pub const YIELD_PASS: f32 = 12.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Circle {
     Legal,
+    /// One of them lets another in that waits, in the end, for it.
+    Courtesy,
     StaleClaims,
     Yielding,
     Full,
@@ -114,6 +118,8 @@ pub fn circles(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
 pub fn classify(red: bool, all_standing: bool, holds: &[Hold]) -> Circle {
     if red {
         Circle::Legal
+    } else if holds.contains(&Hold::Courtesy) {
+        Circle::Courtesy
     } else if !holds.is_empty() && holds.iter().all(|h| *h == Hold::Claim) {
         Circle::StaleClaims
     } else if all_standing && !holds.is_empty() && holds.iter().all(|h| *h == Hold::Rule) {
@@ -201,6 +207,20 @@ impl TrafficSim {
                         }
                     }
                 }
+                Circle::Courtesy => {
+                    // Letting somebody in is a favour, never owed: a driver who lets in a
+                    // car that waits, round the circle, for him takes his right of way back
+                    // (the queue behind him held the room on the exit the other car waited
+                    // for, Grundorf at 17:00). Bodies, lights and a full exit still hold him.
+                    for &k in &part {
+                        if kinds[k].iter().any(|e| e.1 == Hold::Courtesy && part.binary_search(&e.0).is_ok()) {
+                            self.cars[k].yield_pass = self.time + YIELD_PASS;
+                            if debug {
+                                log::info!("t={:.1}: car {} lets in a car that waits for it in turn ({:?}): it goes", self.time, self.cars[k].id, members.iter().map(|m| m.2).collect::<Vec<_>>());
+                            }
+                        }
+                    }
+                }
                 Circle::Legal | Circle::Full => {}
             }
         }
@@ -237,6 +257,9 @@ mod tests {
         // a body in the way is physically full, never forced
         assert_eq!(classify(false, true, &[Rule, Body]), Circle::Full);
         assert_eq!(classify(false, true, &[Claim, Lead]), Circle::Full);
+        // a queue waiting behind a driver who lets in a car that waits for the queue
+        assert_eq!(classify(false, true, &[Lead, Lead, Courtesy, Exit]), Circle::Courtesy);
+        assert_eq!(classify(true, true, &[Lead, Courtesy, Exit]), Circle::Legal);
     }
 
     #[test]

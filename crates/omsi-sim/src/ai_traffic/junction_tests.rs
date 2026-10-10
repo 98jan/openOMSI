@@ -838,3 +838,19 @@ fn the_car_that_cannot_stop_goes_first() {
     o.speed = 2.0;
     assert!(!too_close_to_pull_out(1.7, 2.6, &o, false, 3.0, 1.0, 4.0), "slow enough to stop");
 }
+
+#[test]
+fn a_driver_letting_in_a_car_that_waits_for_his_queue_takes_his_right_of_way_back() {
+    use super::deadlock::Hold;
+    // car 0 lets car 1 in, car 1 waits for room on its exit held by car 2, car 2 and
+    // car 3 queue behind car 0: the one letting in goes, nobody else is pushed
+    let f = Fixture::new();
+    let mut t = circle_of_four(&f, Hold::Lead, [3.0; 4]);
+    t.cars[0].holds[0].1 = Hold::Courtesy;
+    t.cars[1].holds[0].1 = Hold::Exit;
+    t.cars[2].holds = vec![(t.cars[3].id, Hold::Lead)];
+    t.cars[3].holds = vec![(t.cars[0].id, Hold::Lead)];
+    t.resolve_waits();
+    let going: Vec<usize> = (0..4).filter(|&k| t.cars[k].yield_pass > t.time).collect();
+    assert_eq!(going, vec![0]);
+}
