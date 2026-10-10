@@ -407,6 +407,12 @@ impl ApplicationHandler for App {
             return;
         }
         crate::game_lists::flush_settings(false);
+        // The window hidden until its first picture goes on from here: Windows sends no paint
+        // message to a hidden window, so a redraw asked for never came and it was never shown.
+        if self.starts_hidden() {
+            self.drive_window_start(event_loop);
+            return;
+        }
         if let Some(w) = &self.window {
             w.request_redraw();
         }

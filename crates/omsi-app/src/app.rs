@@ -249,6 +249,11 @@ impl App {
         self.drive_window_start(event_loop);
     }
 
+    /// The window still hidden at its start, waiting for its first picture (see `create_window`).
+    pub(crate) fn starts_hidden(&self) -> bool {
+        self.gfx.starting.as_ref().is_some_and(|ws| ws.show)
+    }
+
     /// The window's start while its renderer is being built (see `create_window`): a plain
     /// picture in the loading screen's colour now and then, the window shown with the first
     /// one, and once the renderer - and the map opened meanwhile - is there, the rest of the

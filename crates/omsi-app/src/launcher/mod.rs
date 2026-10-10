@@ -597,7 +597,7 @@ impl ApplicationHandler for Launcher {
         // Device given up while a game runs: still need a redraw when the game ends so the
         // device is opened again (Occluded alone used to leave the resting picture forever).
         let resume_needed = !mobile::mobile() && !self.device_open() && !self.state.in_game();
-        let occluded = self.occluded && self.shot.is_none() && !resting && !waking && !resume_needed
+        let occluded = self.occluded && !self.show && self.shot.is_none() && !resting && !waking && !resume_needed
             && !self.script.iter().any(|(_, c)| c.starts_with("shot"));
         let interval = if occluded {
             0.5
@@ -631,6 +631,11 @@ impl ApplicationHandler for Launcher {
                     w.request_redraw();
                 }
             }
+        } else if self.show {
+            // The window made hidden until its first picture is drawn from here: Windows sends
+            // no paint message to a hidden window, so a redraw asked for never came and the
+            // launcher never appeared.
+            self.frame(event_loop);
         } else if let Some(w) = self.window.as_ref() {
             w.request_redraw();
         }
