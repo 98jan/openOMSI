@@ -174,6 +174,8 @@ pub struct AiCar {
     pub courtesy: bool,
     /// Its horn (`horn`): presentation only.
     pub horn: super::horn::Horn,
+    /// Making way for an emergency vehicle coming up behind (`emergency`).
+    pub make_way: Option<super::emergency::MakeWay>,
 }
 
 /// A free parking space beside a lane that a car means to park in: the space of parked car
@@ -665,6 +667,7 @@ impl TrafficSim {
             holds: Vec::new(),
             courtesy: false,
             horn: Default::default(),
+            make_way: None,
             park: None,
             seed,
             scheme,

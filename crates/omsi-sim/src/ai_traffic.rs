@@ -16,6 +16,7 @@ pub mod fixed_step;
 pub mod horn;
 pub mod density;
 pub mod dormant;
+pub mod emergency;
 pub mod junctions;
 pub mod lateral;
 pub mod light_paths;
@@ -44,6 +45,8 @@ mod population_tests;
 mod tests;
 #[cfg(test)]
 mod lateral_tests;
+#[cfg(test)]
+mod emergency_tests;
 
 use crate::ai_motion::{
     back_in_ramp, pull_out_ramps, AiBody, MotionKind, BACK_IN_LAT_ACCEL, PULL_OUT_ACCEL,
@@ -219,6 +222,13 @@ pub struct TrafficSim {
     /// OMSI: priority 1000 over the types' own): cars keep out of the way it is about
     /// to take for longer.
     pub player_priority: bool,
+    /// The LAN players whose vehicles' scripts claim priority (`TrafficPriority`, as their
+    /// variables come over the network): emergency vehicles like the player's (by session id,
+    /// set before each `tick`).
+    pub other_priority: hashbrown::HashSet<u32>,
+    /// Emergency vehicles on an active drive, the cars making way for them and the junctions
+    /// kept for them (`emergency`).
+    pub emergency: emergency::Emergency,
     /// The player's indicators (0 off, 1 left, 2 right, 3 hazard; `lan::indicator`), set
     /// before each `tick`.
     pub player_blinker: u8,

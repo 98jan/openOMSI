@@ -12,9 +12,6 @@ pub const ROUTE_WAIT_MAX: f32 = 40.0;
 /// A car edging out round something standing keeps to `PULL_OUT_ACCEL` until its front is
 /// this far past the obstacle's rear (m).
 pub const CREEP_PAST: f32 = 2.0;
-/// How far ahead an emergency vehicle warns what holds it up (`TrafficPriorityWarningNeeded`,
-/// m).
-pub const PRIORITY_WARN_GAP: f32 = 60.0;
 
 /// Where every car is (see `Traffic::occupancy`): per lane, (car, distance along the lane,
 /// lateral place, out on that lane passing something).
@@ -91,6 +88,8 @@ impl TrafficSim {
         self.resolve_waits();
         self.collect_change_claims();
         let ts = TickScene { dt, debug, player, player_standing, others, feet, by_lane, coming, walkers };
+        // the emergency vehicles, who makes way for them and the junctions kept for them
+        self.emergency_begin_step(&ts);
         // (the cars plan one after the other, in the order of their ids: in the order they
         // stand in the list, which a removal reshuffles, two runs of one session decided
         // differently where one car's plan reads what another's did this step)
@@ -376,7 +375,7 @@ impl TrafficSim {
             users.extend(way_user_on(&self.net, p, self.player_blinker, player_standing, self.player_priority));
         }
         for (id, b) in others.iter().filter(|(id, _)| *id < 0xFFF0_0000) {
-            users.extend(way_user_on(&self.net, b, 0, self.others_still.get(id).copied().unwrap_or(0.0), false));
+            users.extend(way_user_on(&self.net, b, 0, self.others_still.get(id).copied().unwrap_or(0.0), self.other_priority.contains(id)));
         }
         self.way_users = users;
         (others, player_standing)
@@ -390,9 +389,10 @@ impl TrafficSim {
         let (standing, obstacle_len, at_stop, keep_back) = self.keep_back(i, lead, parked_ahead, player, player_standing);
         // where it goes across the road: decided in one place (`lateral`)
         let scene = SideScene { lead, obstacle_len, standing, parked_ahead, at_stop, player, parked_box, kerb_swerve };
-        let SideOut { merge_wait, park } = self.steer_sideways(i, ts, &scene);
+        let SideOut { merge_wait, park, make_way } = self.steer_sideways(i, ts, &scene);
         let (way, light, yield_at) = self.right_of_way(i, ts, lead, reservations);
-        let (stop_at, why) = self.stop_points(i, ts, &way, lead, light, yield_at, merge_wait, keep_back);
+        self.emergency_speed(i, &way);
+        let (stop_at, why) = self.stop_points(i, ts, &way, lead, light, yield_at, [merge_wait, make_way], keep_back);
         let (stop_at, why) = self.service_and_park(i, ts, &way, kerb_swerve, park, stop_at, why);
         let (stop_at, why) = self.end_of_way(i, ts, &way, stop_at, why);
         let (stop_at, why) = self.scenery_stop(i, ts, stop_at, why);
@@ -620,7 +620,12 @@ impl TrafficSim {
                 player.map(|p| p.2 * 2.0).unwrap_or(12.0),
                 player_standing > 10.0,
             ),
-            Some(j) if j < self.cars.len() => self.standing_queue(j),
+            Some(j) if j < self.cars.len() => {
+                let (len, long) = self.standing_queue(j);
+                // (an emergency vehicle goes round the cars standing aside for it as a whole)
+                let aside = self.cars[j].make_way.is_some_and(|w| w.from == self.cars[i].id);
+                (if aside { len.max(self.aside_queue(j, i)) } else { len }, long)
+            }
             _ => (4.8, false),
         };
         self.cars[i].lead_info = lead.and_then(|(l, who)| {
@@ -703,6 +708,8 @@ impl TrafficSim {
         } else {
             self.light_stop(i, &way)
         };
+        // (an emergency vehicle crosses against it on the movement kept for it)
+        let light = self.emergency_light(i, &way, light);
         self.cars[i].light_hold = light.is_some();
         self.cars[i].light_at = light;
         if light.is_some() && self.cars[i].state.speed < 0.5 {
@@ -787,7 +794,7 @@ impl TrafficSim {
     /// the junction, the merge, what it keeps back from, people on foot, its own pulling
     /// out of a parking space, the player's bus leaving its stop.
     #[allow(clippy::too_many_arguments)]
-    fn stop_points(&mut self, i: usize, ts: &TickScene, way: &[(usize, f32)], lead: LeadOf, light: Option<f32>, yield_at: Option<f32>, merge_wait: Option<f32>, keep_back: Option<f32>) -> (Option<f32>, (&'static str, f32)) {
+    fn stop_points(&mut self, i: usize, ts: &TickScene, way: &[(usize, f32)], lead: LeadOf, light: Option<f32>, yield_at: Option<f32>, [merge_wait, make_way]: [Option<f32>; 2], keep_back: Option<f32>) -> (Option<f32>, (&'static str, f32)) {
         let (debug, dt) = (ts.debug, ts.dt);
         let for_people = if self.net.lanes[self.cars[i].state.lane].kind == LaneKind::Air {
             None
@@ -819,12 +826,12 @@ impl TrafficSim {
         let parked_wait = (self.cars[i].pull_out > 0.0).then(|| self.cars[i].state.front + 0.1);
         // the player's bus indicating out of its stop
         let let_out = self.player.and_then(|p| self.letting_out(i, &p)).map(|g| self.cars[i].state.front + (g - 1.0).max(0.0));
-        let stop_at = [light, yield_at, merge_wait, keep_back, people, parked_wait, let_out]
+        let stop_at = [light, yield_at, merge_wait, keep_back, people, parked_wait, let_out, make_way]
             .into_iter()
             .flatten()
             .reduce(f32::min);
         let mut why: (&'static str, f32) = ("", f32::MAX);
-        for (name, v) in [("light", light), ("yield", yield_at), ("merge", merge_wait), ("keep_back", keep_back), ("people", people), ("pull_out", parked_wait), ("let_out", let_out)] {
+        for (name, v) in [("light", light), ("yield", yield_at), ("merge", merge_wait), ("keep_back", keep_back), ("people", people), ("pull_out", parked_wait), ("let_out", let_out), ("emergency", make_way)] {
             if let Some(v) = v {
                 if v < why.1 {
                     why = (name, v);
@@ -978,6 +985,7 @@ impl TrafficSim {
             .and_then(|l| l.1)
             .filter(|&j| j < self.cars.len())
             .map(|j| self.cars[j].id);
+        let priority_warning = self.priority_warning(i, lead.map(|l| l.0));
         let car = &mut self.cars[i];
         car.lead_car = lead_id;
         if car.state.speed.abs() < 0.1 && !car.at_stop() {
@@ -1111,15 +1119,9 @@ impl TrafficSim {
                 log::info!("doors t={:.1} car {} {} phase {:?} speed {:.1}: AtStation {st} door {} {} {} {} target {} {} {} halte {} timer {}", self.time, car.id, v.ty.def.type_name, car.bus.as_ref().map(|b| b.phase), car.state.speed, g("door_0"), g("door_1"), g("door_2"), g("door_3"), g("doorTarget_0"), g("doorTarget_1"), g("doorTarget_2"), g("bremse_halte_sw"), g("door_AI_timer"));
             }
         }
-        // An emergency vehicle (its script sets `TrafficPriority`, the stock ambulance)
-        // is told `TrafficPriorityWarningNeeded` while something holds it up close ahead:
-        // a car or the player's bus it catches up with or has to follow, a red light, a
-        // junction it has to wait at. Its script sounds the siren on it; without the
-        // variable it drove silent all day. (Behind a car at the same speed the siren
-        // flickered on a strict "slower".)
-        let priority_warning = car.vehicle.var("TrafficPriority").is_some_and(|v| v > 0.5)
-            && (lead_now.is_some_and(|l| l.gap < PRIORITY_WARN_GAP && l.speed < car.state.speed + 0.5)
-                || stop_at.is_some_and(|x| x - car.state.front < PRIORITY_WARN_GAP));
+        // An emergency vehicle on an active drive is told `TrafficPriorityWarningNeeded`
+        // (`priority_warning`) while it crosses against a red light or has a vehicle in its
+        // way close ahead: its script sounds the siren or the horn on it.
         Some(AiFrame {
             speed: car.state.speed,
             odometer: car.state.odometer,

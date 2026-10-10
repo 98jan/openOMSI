@@ -11,10 +11,11 @@
 //! The order, most urgent first: what is under way goes on (a lane change runs its course,
 //! a pass round something standing is finished or given up, a parking or a pull-out out of
 //! a space goes on); a timetable bus's place at its stop is its service's
-//! (`bus_service`); the way of an emergency vehicle (`emergency_way`, a hook for now); the
-//! change the car's way requires; a bus queueing for its own stop stays where it is; a
-//! change of the driver's own choosing; going round something that stands in the way; and
-//! else the middle of the lane, or a swerve round a car at the kerb.
+//! (`bus_service`); making way for an emergency vehicle (`emergency::emergency_way`); the
+//! change the car's way requires; an emergency vehicle's corridor (`emergency_corridor`); a
+//! bus queueing for its own stop stays where it is; a change of the driver's own choosing;
+//! going round something that stands in the way; and else the middle of the lane, or a
+//! swerve round a car at the kerb.
 
 use super::*;
 use super::planning::lane_open_to;
@@ -127,6 +128,8 @@ pub struct SideScene {
 pub struct SideOut {
     pub merge_wait: Option<f32>,
     pub park: Option<f32>,
+    /// Where it waits, moved aside for an emergency vehicle.
+    pub make_way: Option<f32>,
 }
 
 impl TrafficSim {
@@ -184,8 +187,13 @@ impl TrafficSim {
         };
         let settled = why.is_empty();
         // (the way of an emergency vehicle comes before anything the car wants itself)
-        if settled && self.emergency_way(i).is_some() {
-            why = "emergency";
+        if settled {
+            if let Some(stop) = self.emergency_way(i, ts, sc) {
+                why = "emergency";
+                out.make_way = stop;
+            }
+        } else {
+            self.cars[i].make_way = None;
         }
         // the change the car's way requires
         let required = if why.is_empty() { self.required_change(i) } else { None };
@@ -201,7 +209,9 @@ impl TrafficSim {
             None => self.cars[i].sideways.signalled = 0.0,
         }
         if why.is_empty() {
-            if self.queues_for_own_stop(i, sc.lead, sc.obstacle_len) {
+            if self.emergency_corridor(i, ts) {
+                why = "corridor";
+            } else if self.queues_for_own_stop(i, sc.lead, sc.obstacle_len) {
                 why = "own_stop";
             } else if self.discretionary_change(i, ts) {
                 why = "choice";
@@ -220,16 +230,13 @@ impl TrafficSim {
                 }
             }
         }
-        self.set_in_lane(i, sc.kerb_swerve, ts.debug);
+        // (aside for an emergency vehicle, or in its corridor, the place across the lane is
+        // that move's)
+        if why != "emergency" && why != "corridor" {
+            self.set_in_lane(i, sc.kerb_swerve, ts.debug);
+        }
         self.cars[i].sideways.why = if why.is_empty() { "lane" } else { why };
         out
-    }
-
-    /// The way of an emergency vehicle coming up behind: to the kerb, or the corridor on a
-    /// road of several lanes. Not built yet: nothing gives way to one sideways, and this is
-    /// where it will come in, ahead of the changes the cars' ways require.
-    pub fn emergency_way(&self, _i: usize) -> Option<f32> {
-        None
     }
 
     /// A timetable bus queueing for its own stop (what stands ahead stands at or before

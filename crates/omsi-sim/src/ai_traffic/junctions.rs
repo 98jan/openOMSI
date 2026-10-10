@@ -529,6 +529,22 @@ impl TrafficSim {
         // decided already (a claim from the steps before), or past the point where it could
         // still stop without an emergency brake
         let committed = car.reserved.contains(&jn.lanes[0].0);
+        // a junction kept for an emergency vehicle: wait at the entry (unless too close to
+        // stop there)
+        if let Some(owner) = self.emergency_entry_hold(i, jn, committed) {
+            let room = entry - st.front - 0.6;
+            if v <= 1.0 || room >= v * v / (2.0 * MAX_BRAKE * 0.7) {
+                let old = std::mem::take(&mut self.cars[i].reserved);
+                book.release(i, &old);
+                let c = &mut self.cars[i];
+                c.exit_claim = None;
+                c.courtesy = false;
+                c.exit_wait = false;
+                c.yield_to = Some(owner);
+                c.holds = vec![(owner, Hold::Claim)];
+                return Some(entry);
+            }
+        }
         // (a stop line is kept 0.6 m off)
         let line_room = entry - st.front - 0.6;
         let explain = omsi_cfg::flags::OMSI_DEBUG_JUNCTION.is_set() || omsi_cfg::flags::OMSI_DEBUG_STUCK.is_set();
@@ -710,7 +726,8 @@ impl TrafficSim {
             let all_cars = &self.cars;
             let occupied = on_lane.iter().flat_map(|(&lane, cars)| {
                 cars.iter().filter_map(move |&(j, s, _, passing)| {
-                    (!passing && j != i).then_some((lane, s - all_cars[j].tail, all_cars[j].state.speed))
+                    // (one standing aside for this emergency vehicle is no queue to it)
+                    (!passing && j != i && !self.aside_for(j, i)).then_some((lane, s - all_cars[j].tail, all_cars[j].state.speed))
                 })
             });
             if let Some((space, speed, lane)) = queued_exit_vehicle(way, exit, need_all, occupied) {
@@ -856,9 +873,13 @@ impl TrafficSim {
         let mut holds: Vec<(u64, Hold)> = Vec::new();
         let me_id = car.id;
         // (Omsi.exe: a vehicle whose script sets `TrafficPriority` takes a junction ahead of
-        // any reservation but one of a vehicle already on the path, FUN_00716970)
-        let prio = |c: &AiCar| c.vehicle.var("TrafficPriority").is_some_and(|v| v > 0.5);
+        // any reservation but one of a vehicle already on the path, FUN_00716970; here an
+        // emergency vehicle on an active drive, `emergency`)
+        let prio = |c: &AiCar| self.emergency.is_siren(c.id);
         let me_prio = prio(car);
+        // (on the movement kept for it, it waits only for who is in the junction or has
+        // decided to go: not for those that stand for it)
+        let reserved = me_prio && self.emergency.holds_movement(me_id, jn.lanes[0].0);
         let mut by: Option<u64> = None;
         let mut courtesy = false;
         let mut people = false;
@@ -968,6 +989,9 @@ impl TrafficSim {
                         .map(|r| r.contains(&j))
                         .unwrap_or(false)
                         && (!stalled || o.courtesy);
+                    if reserved && !is_on && !claimed {
+                        continue;
+                    }
                     // it waits for someone else before this meeting place (a car that gives
                     // way further on still rolls through here on its way to its line)
                     let waits_short = o.light_hold
