@@ -951,7 +951,7 @@ impl Launcher {
             }
         }
         let Some(surface) = self.surface.as_mut() else { return };
-        let frame = match surface.surface.get_current_texture() {
+        let frame = match surface.acquire() {
             wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
                 match self.renderer.as_ref() {
@@ -970,14 +970,16 @@ impl Launcher {
                 return;
             }
         };
-        let view = frame.texture.create_view(&Default::default());
+        // (ANGLE presents through an sRGB stand-in: the swapchain's own view is not the
+        // interface's target, and resolving into it was a black window on DirectX 11)
+        let view = surface.view(&device, &frame);
         if let Some(gpu) = self.gpu.as_mut() {
             let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("launcher") });
             gpu.render(&device, &queue, &mut enc, &view, (pw, ph), Some(bg), &layers, &draws);
             queue.submit([enc.finish()]);
         }
         window.pre_present_notify();
-        frame.present();
+        surface.present(&device, &queue, frame);
         self.shown = Some((verts, key, Instant::now()));
         if std::mem::take(&mut self.first_frame) {
             log::info!("launcher: first frame presented in {:.2} s", self.started.elapsed().as_secs_f64());
