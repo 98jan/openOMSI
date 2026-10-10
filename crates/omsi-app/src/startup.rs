@@ -482,6 +482,24 @@ pub(crate) struct RendererStart {
 /// deeply on big shaders (the main thread's 1 MB on Windows was not always enough on ANGLE).
 const BUILD_STACK: usize = 32 << 20;
 
+/// The pipelines are what the window waits for: built at the main thread's priority. On
+/// macOS a new thread's default quality of service had Metal's shader compiler serve it
+/// several times slower than the main thread it was built on before (0.7 s became 5-9 s for
+/// the game's renderer, with every shader in Metal's cache).
+fn as_urgent_as_the_main_thread() {
+    #[cfg(target_os = "macos")]
+    {
+        extern "C" {
+            fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
+        }
+        const QOS_CLASS_USER_INTERACTIVE: u32 = 0x21;
+        // SAFETY: plain call on the current thread with valid constants
+        unsafe {
+            pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+        }
+    }
+}
+
 impl RendererStart {
     /// The graphics device for `window`, on `instance` or the next interface and adapter that
     /// can (`instance` then becomes that one's, see `Opener`); its pipelines are
@@ -499,7 +517,10 @@ impl RendererStart {
             start.built = Some(omsi_render::catch(|| pollster::block_on(opened.finish())).unwrap_or_else(|| Err(anyhow!("failed while its pipelines were built"))));
             return Ok(start);
         }
-        let spawned = std::thread::Builder::new().name("renderer pipelines".into()).stack_size(BUILD_STACK).spawn(move || omsi_render::catch(|| pollster::block_on(opened.finish())));
+        let spawned = std::thread::Builder::new().name("renderer pipelines".into()).stack_size(BUILD_STACK).spawn(move || {
+            as_urgent_as_the_main_thread();
+            omsi_render::catch(|| pollster::block_on(opened.finish()))
+        });
         match spawned {
             Ok(h) => start.building = Some(h),
             Err(e) => start.built = Some(Err(anyhow!("no thread for the pipelines: {e}"))),
