@@ -43,6 +43,8 @@ impl App {
                 self.player.as_ref(),
                 &r.options,
             );
+            let daylight = omsi_sim::Daylight::compute(&self.clock, self.session.envir.as_ref());
+            steps::set_ai_environment(t, &self.clock, daylight, self.session.weather.as_ref(), self.session.wetness, self.paused, self.settings.auto_clutch);
             self.session.populate_t -= dt;
             if self.session.populate_t <= 0.0 && !self.paused {
                 // come back quickly while there is a backlog of departures to put out

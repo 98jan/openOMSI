@@ -2488,7 +2488,11 @@ impl VehicleInstance {
         pinned: &[(omsi_script::VarId, f32)],
         strings: &[(omsi_script::StrVarId, &str)],
     ) {
-        self.host.clock.advance(dt);
+        if self.host.external_ai_clock {
+            self.host.clock.timegap = dt;
+        } else {
+            self.host.clock.advance(dt);
+        }
         self.set_engine_var("schedule_active", self.host.schedule_active);
         self.physics.speed = ai.speed;
         self.physics.steer_deg = ai.steer_deg;

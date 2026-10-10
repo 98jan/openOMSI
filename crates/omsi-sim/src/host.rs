@@ -29,6 +29,8 @@ pub struct VehicleHost {
     /// A time of day a script wrote to `(S.S.Time)` this frame: the game's clock takes it.
     pub time_written: Option<f64>,
     pub clock: SimClock,
+    /// The game or LAN host supplies the AI clock; do not advance it a second time.
+    pub external_ai_clock: bool,
     pub mouse: (f32, f32),
     pub precip_type: f32,
     pub precip_rate: f32,
@@ -207,6 +209,12 @@ impl VehicleHost {
     pub fn scratch(&self) -> VehicleHost {
         VehicleHost {
             clock: self.clock.clone(),
+            external_ai_clock: self.external_ai_clock,
+            schedule_active: self.schedule_active,
+            humans_count: self.humans_count,
+            mouse: self.mouse,
+            coll_pos: self.coll_pos,
+            coll_energy: self.coll_energy,
             precip_type: self.precip_type,
             precip_rate: self.precip_rate,
             wind: self.wind,
@@ -230,6 +238,65 @@ impl VehicleHost {
             tt_terminus_index: self.tt_terminus_index,
             tt_busstop_index: self.tt_busstop_index,
             ..Default::default()
+        }
+    }
+
+    /// The complete system-variable context in `SysVar::ALL` order.
+    pub fn system_values(&self) -> [f32; 22] {
+        SysVar::ALL.map(|v| self.read_sys_var(v))
+    }
+
+    /// An authoritative AI frame context, available before scripts run.
+    pub fn apply_ai_system_values(&mut self, values: &[f32; 22]) {
+        for (var, value) in SysVar::ALL.into_iter().zip(values) {
+            self.set_sys_var(var, *value);
+        }
+        self.time_written = None;
+        self.external_ai_clock = true;
+    }
+
+    /// Shared environment fields; collisions, mouse picking and wear belong to this car.
+    pub fn apply_ai_globals(&mut self, values: &[f32; 22]) {
+        for (var, value) in SysVar::ALL.into_iter().zip(values) {
+            if !matches!(var, SysVar::CollPosX | SysVar::CollPosY | SysVar::CollPosZ | SysVar::CollEnergy | SysVar::MouseX | SysVar::MouseY | SysVar::WearLifespan) {
+                self.set_sys_var(var, *value);
+            }
+        }
+        self.time_written = None;
+        self.external_ai_clock = true;
+    }
+
+    fn read_sys_var(&self, v: SysVar) -> f32 {
+        match v {
+            SysVar::Timegap => self.clock.timegap,
+            SysVar::GetTime => self.clock.run_time as f32,
+            SysVar::NoSound => self.no_sound,
+            SysVar::Pause => if self.clock.paused { 1.0 } else { 0.0 },
+            // seconds since midnight ("Time in seconds", says the stock clock object): every
+            // script divides it by 3600 for the hour (IBIS and ticket printer clocks) or
+            // compares it with 28800/72000 (the Citaro's door chime by day). Handing out hours
+            // made every clock read 00:00 and the day-time checks think it was night.
+            SysVar::Time => self.clock.time as f32,
+            SysVar::Day => self.clock.day_month().0 as f32,
+            SysVar::Month => self.clock.day_month().1 as f32,
+            SysVar::Year => self.clock.year as f32,
+            SysVar::DayOfYear => self.clock.day_of_year as f32,
+            SysVar::MouseX => self.mouse.0,
+            SysVar::MouseY => self.mouse.1,
+            SysVar::PrecipType => self.precip_type,
+            SysVar::PrecipRate => self.precip_rate,
+            SysVar::CollPosX => self.coll_pos[0],
+            SysVar::CollPosY => self.coll_pos[1],
+            SysVar::CollPosZ => self.coll_pos[2],
+            // Read as often as the block likes: the stock collision block adds it to the
+            // general damage and then again to the engine's, and a value gone after the
+            // first read left the engine and the drivetrain whole after any crash.
+            SysVar::CollEnergy => self.coll_energy,
+            SysVar::WeatherTemperature => self.temperature,
+            SysVar::WeatherAbsHum => self.abs_humidity,
+            SysVar::WearLifespan => self.wear_lifespan,
+            SysVar::AutoClutch => self.auto_clutch,
+            SysVar::SunAlt => self.sun_alt,
         }
     }
 
@@ -279,39 +346,7 @@ fn arg_idx(v: f32) -> usize {
 }
 
 impl Host for VehicleHost {
-    fn sys_var(&mut self, v: SysVar) -> f32 {
-        match v {
-            SysVar::Timegap => self.clock.timegap,
-            SysVar::GetTime => self.clock.run_time as f32,
-            SysVar::NoSound => self.no_sound,
-            SysVar::Pause => if self.clock.paused { 1.0 } else { 0.0 },
-            // seconds since midnight ("Time in seconds", says the stock clock object): every
-            // script divides it by 3600 for the hour (IBIS and ticket printer clocks) or
-            // compares it with 28800/72000 (the Citaro's door chime by day). Handing out hours
-            // made every clock read 00:00 and the day-time checks think it was night.
-            SysVar::Time => self.clock.time as f32,
-            SysVar::Day => self.clock.day_month().0 as f32,
-            SysVar::Month => self.clock.day_month().1 as f32,
-            SysVar::Year => self.clock.year as f32,
-            SysVar::DayOfYear => self.clock.day_of_year as f32,
-            SysVar::MouseX => self.mouse.0,
-            SysVar::MouseY => self.mouse.1,
-            SysVar::PrecipType => self.precip_type,
-            SysVar::PrecipRate => self.precip_rate,
-            SysVar::CollPosX => self.coll_pos[0],
-            SysVar::CollPosY => self.coll_pos[1],
-            SysVar::CollPosZ => self.coll_pos[2],
-            // Read as often as the block likes: the stock collision block adds it to the
-            // general damage and then again to the engine's, and a value gone after the
-            // first read left the engine and the drivetrain whole after any crash.
-            SysVar::CollEnergy => self.coll_energy,
-            SysVar::WeatherTemperature => self.temperature,
-            SysVar::WeatherAbsHum => self.abs_humidity,
-            SysVar::WearLifespan => self.wear_lifespan,
-            SysVar::AutoClutch => self.auto_clutch,
-            SysVar::SunAlt => self.sun_alt,
-        }
-    }
+    fn sys_var(&mut self, v: SysVar) -> f32 { self.read_sys_var(v) }
 
     /// `(S.S.x)`: OMSI writes through the system variable's pointer into the engine's
     /// own value (`TXPC_calcblock_var`). What the engine sets anew every frame (the frame
@@ -748,6 +783,32 @@ mod tests {
     use super::*;
     use crate::scripttex::ScriptTexture;
     use omsi_script::{compile, CompileInput, Vm};
+
+    #[test]
+    fn ai_globals_refresh_calendar_weather_and_leave_vehicle_collision_and_wear() {
+        let mut world = VehicleHost::new(Default::default());
+        world.clock.set_date(2024, 3, 1);
+        world.clock.time = 23.0 * 3600.0;
+        world.clock.run_time = 1234.0;
+        world.temperature = -8.0;
+        world.abs_humidity = 7.25;
+        world.precip_type = 2.0;
+        world.precip_rate = 0.8;
+        world.sun_alt = -10.0;
+        let mut ai = VehicleHost::new(Default::default());
+        ai.coll_pos = [1.0, 2.0, 3.0];
+        ai.coll_energy = 42.0;
+        ai.mouse = (0.25, 0.5);
+        ai.wear_lifespan = 123.0;
+        ai.schedule_active = 1.0;
+        ai.apply_ai_globals(&world.system_values());
+        assert_eq!((ai.clock.year, ai.clock.day_of_year, ai.clock.time, ai.clock.run_time), (2024, 61, 23.0 * 3600.0, 1234.0));
+        assert_eq!((ai.temperature, ai.abs_humidity, ai.precip_type, ai.precip_rate, ai.sun_alt), (-8.0, 7.25, 2.0, 0.8, -10.0));
+        assert_eq!((ai.coll_pos, ai.coll_energy, ai.mouse, ai.wear_lifespan), ([1.0, 2.0, 3.0], 42.0, (0.25, 0.5), 123.0));
+        assert!(ai.external_ai_clock);
+        assert_eq!(ai.scratch().schedule_active, 1.0);
+        assert_eq!(ai.scratch().system_values(), ai.system_values());
+    }
 
     #[test]
     fn departure_wants_keep_the_stops_asked_most_recently() {

@@ -213,6 +213,7 @@ impl Offscreen<'_> {
             ref run_clock,
             ref envir,
             ref weather,
+            ref wetness,
             ..
         } = *self;
         if let Some(t) = traffic.as_mut() {
@@ -229,6 +230,8 @@ impl Offscreen<'_> {
                 player.as_ref(),
                 &renderer.options,
             );
+            let daylight = omsi_sim::Daylight::compute(run_clock, envir.as_ref());
+            steps::set_ai_environment(t, run_clock, daylight, Some(weather), *wetness, false, settings.auto_clutch);
             if i.is_multiple_of(60) {
                 // (following a car, the population goes with the camera)
                 let pc = if args.follow.is_some() { view_cam.position } else { center };

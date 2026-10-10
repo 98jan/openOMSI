@@ -817,6 +817,14 @@ owner's values before and after its scripts, before updating displays; pose disp
 only a fallback. Different variable-name tables (another version of the bus) take nothing. `OMSI_NO_VAR_SYNC=1`
 switches it off, `OMSI_DEBUG_VAR_SYNC=<variable>` logs what arrives for one variable.
 
+**AI scripts in LAN play.** AI vehicles read the current game date, time, runtime,
+weather and sun through `L.S.*`, including during initialization. Collision inputs and
+wear remain specific to each vehicle. Clients receive the host's AI script context,
+including `schedule_active`, the complete `GetTT*` stop list and times, current stop,
+terminus and delay. Long timetables travel in repeating pages and are installed only
+when complete, before the mirrored vehicle's initialization script runs. Trip changes
+replace the old timetable atomically; lost pages are recovered on subsequent cycles.
+
 **The host's mods.** What the host's session uses that is not in the OMSI 2 folder itself
 (its map, bus, objects, splines, AI vehicles and people from the content folder or archives,
 also a content folder inside the OMSI 2 folder) is listed with a SHA-256 per file and served
@@ -862,7 +870,7 @@ RGBA image, then only changed RGBA pixel runs and mipmap settings are sent. Chan
 fragmented, acknowledged and retried until complete, and applied atomically; a late join,
 recreated vehicle or newly sized surface receives initialization again. Only images
 released by the owner's scripts are published, never an unfinished locked drawing buffer.
-Both games need LAN protocol 8; older versions are rejected rather than showing an empty
+Both games need LAN protocol 9; older versions are rejected rather than showing an empty
 display. Texture transfers have their own rate budget, separate from vehicle movement.
 
 Windows, macOS and Linux run the same code (wgpu, winit, cpal, std UDP);

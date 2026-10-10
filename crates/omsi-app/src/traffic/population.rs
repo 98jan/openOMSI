@@ -570,6 +570,11 @@ impl Traffic {
     ) -> u64 {
         let mut host = omsi_sim::VehicleHost::new(omsi_sim::SimClock::default());
         host.font_lib = Some(world.fonts.clone());
+        if let Some((values, wind, street)) = &self.script_environment {
+            host.apply_ai_globals(values);
+            host.wind = *wind;
+            host.street_cond = *street;
+        }
         if let Some(b) = &bus {
             host.hof = b.hof.clone();
             b.timetable.install(&mut host, b.stops.first());

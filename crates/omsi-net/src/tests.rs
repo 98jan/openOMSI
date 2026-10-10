@@ -561,6 +561,39 @@ fn host_and_clients_exchange_complete_variable_tables() {
 }
 
 #[test]
+fn clients_receive_ai_script_context_only_from_the_host() {
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let addr = SocketAddr::from(([127, 0, 0, 1], host.local_addr().unwrap().port()));
+    let mut a = LanSession::join_addr(vec![addr], None, "a", world("m")).unwrap();
+    let mut b = LanSession::join_addr(vec![addr], None, "b", world("m")).unwrap();
+    let poses = [pose(100.0), pose(200.0), pose(300.0)];
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 150, |s| s[1].connected && s[2].connected && s[0].peers.len() == 2);
+    let context = ai_context::Context {
+        active: 1.0, line: "042".into(), terminus: 3,
+        stops: (0..100).map(|i| (i, format!("árvíztűrő bus stop {i}"), i as f32 * 60.0, i as f32 * 60.0 + 10.0)).collect(),
+        index: 5, delay: -12.5, system: [42.0; 22],
+    };
+    let mut receiver = ai_context::Receiver::default();
+    let mut received = None;
+    for page in 0..20 {
+        host.send_ai_context(a.my_id, &context.packet(PROTOCOL as u8, 7, page as u32, page).unwrap());
+        a.tick(0.1, &poses[1]);
+        for packet in a.take_ai_contexts() {
+            if let Some((id, value)) = receiver.receive(&packet, PROTOCOL as u8) { assert_eq!(id, 7); received = Some(value); }
+        }
+    }
+    assert_eq!(received, Some(context.clone()));
+    let packet = context.packet(PROTOCOL as u8, 8, 1, 0).unwrap();
+    // A peer cannot publish shared AI state to another peer, or to the host.
+    b.send(&packet, to_client(&a));
+    b.send(&packet, addr);
+    a.tick(0.1, &poses[1]);
+    host.tick(0.1, &poses[0]);
+    assert!(a.take_ai_contexts().is_empty());
+    assert!(host.take_ai_contexts().is_empty());
+}
+
+#[test]
 fn script_textures_initialize_and_update_through_the_host_in_both_directions() {
     use scripttex::Image;
     use std::sync::Arc;

@@ -81,6 +81,7 @@ pub mod wire;
 pub mod world;
 pub mod vars;
 pub mod scripttex;
+pub mod ai_context;
 pub mod ws;
 pub mod tunnel;
 pub mod official;
@@ -107,7 +108,8 @@ pub use wire::{
 /// 7: owner-authoritative RGBA script textures with acknowledged initialization and deltas.
 /// Older peers cannot render remote script textures after local drawing is disabled.
 /// 8: canonical full variable tables and versioned, fragmented strings.
-pub const PROTOCOL: u32 = 8;
+/// 9: paged authoritative AI timetables and system script context.
+pub const PROTOCOL: u32 = 9;
 /// (omsi-plugin's `MULTIPLAYER_PORTS` keeps `omsi.send` off this one and the `PORT_RANGE` after it.)
 pub const DEFAULT_PORT: u16 = 27015;
 /// Ports a host tries after the default one when that is taken (a second session on the
@@ -1428,6 +1430,7 @@ pub struct LanSession {
     var_sender: vars::VarSender,
     vars_in: Vec<vars::VarsIn>,
     var_receiver: vars::VarReceiver,
+    ai_context_in: Vec<Vec<u8>>,
     script_textures: scripttex::Sync,
     descs: Vec<world::Desc>,
     wants: Vec<(u32, Vec<world::EntityRef>)>,
@@ -1535,6 +1538,7 @@ impl LanSession {
             script_textures: scripttex::Sync::default(),
             vars_in: Vec::new(),
             var_receiver: vars::VarReceiver::default(),
+            ai_context_in: Vec::new(),
             descs: Vec::new(),
             wants: Vec::new(),
             claims: Vec::new(),
@@ -2537,6 +2541,12 @@ impl LanSession {
                 continue;
             }
             let data = self.buf[..n].to_vec();
+            if data[0] == ai_context::MAGIC {
+                if self.role == Role::Client && self.connected && self.ai_context_in.len() < 1024 {
+                    self.ai_context_in.push(data);
+                }
+                continue;
+            }
             if data[0] == world::WORLD_MAGIC {
                 // a client takes the world from its host (above); a host takes the people of
                 // a client's own from that client (within its rate)
@@ -2865,6 +2875,14 @@ impl LanSession {
             }
         }
     }
+
+    /// Host-only AI script context pages, alongside the shared world poses.
+    pub fn send_ai_context(&self, to: u32, data: &[u8]) {
+        if self.role != Role::Host || data.len() > MAX_DATAGRAM { return; }
+        if let Some(addr) = self.peers.get(&to).and_then(|p| p.addr) { self.send(data, addr); }
+    }
+
+    pub fn take_ai_contexts(&mut self) -> Vec<Vec<u8>> { std::mem::take(&mut self.ai_context_in) }
 
     /// The others' vehicle variables that came since the last call, oldest first.
     pub fn take_vars(&mut self) -> Vec<vars::VarsIn> {
