@@ -715,9 +715,7 @@ impl World {
                 // light, which the enhanced picture blooms (see `MaterialExtra::led`)
                 // (a page drawn as an LED panel carries its dot mask as a plain transmap)
                 // (unless the modeller has said so, `[led_glow_effect]`)
-                if d.extra.led_glow.is_none() {
-                    extra.led = (d.script_trans.is_some() || (d.script.is_some() && d.transmap.is_some())) && d.extra.led;
-                }
+                extra.led = d.extra.led && (d.extra.led_glow.is_some() || d.script_trans.is_some() || (d.script.is_some() && d.transmap.is_some()));
                 let m = renderer.add_material_extra(
                     scene,
                     tex,
