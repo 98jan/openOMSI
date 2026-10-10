@@ -92,6 +92,8 @@ pub struct AiCar {
     pub reserved: Vec<usize>,
     /// The light (controller, lamp) the driver decided to pass on yellow.
     pub amber: Option<(usize, usize)>,
+    /// That decision was taken standing first at the light's line as it went green.
+    pub amber_start: bool,
     pub passing: Option<Passing>,
     /// Finished (a dead end, the end of a timetable trip, given up): taken off the road as
     /// soon as nobody can see it.
@@ -147,15 +149,31 @@ pub struct AiCar {
     pub waits_on: Option<u64>,
     /// The vehicle (by id) it gave way to at its junction this frame.
     pub yield_to: Option<u64>,
-    /// Chosen to break a ring of cars waiting on each other (`deadlock`): until this time
-    /// it goes through its junction whatever the rules say.
-    pub deadlock_pass: f32,
-    /// When it was last chosen so.
-    pub deadlock_tried: f32,
     /// Its sideways moves (`lateral`): what it wishes, its last lane change.
     pub sideways: super::lateral::Sideways,
     /// Its body's watch over the scenery (see `scenery`).
     pub guard: super::scenery::SceneryGuard,
+    /// Chosen to end a circle of cars that all only give way to each other (`deadlock`):
+    /// until this time the right of way does not hold it at its junction (bodies, people,
+    /// lights and a full exit still do).
+    pub yield_pass: f32,
+    /// Junction lanes it has driven off whose claim it keeps while its tail is still on
+    /// them: (lane, odometer reading when its origin left the lane).
+    pub tail_claims: Vec<(usize, f32)>,
+    /// How far its body reaches back from its origin (m): `AiState::rear`, or the rear of
+    /// its last section for an articulated bus or a car with a trailer.
+    pub tail: f32,
+    /// The room it has been promised on its junction's exit: (exit lane, metres, the
+    /// odometer reading at which it gets to the exit).
+    pub exit_claim: Option<(usize, f32, f32)>,
+    /// Everybody it waits for at its junction this step, and why (the waits-for graph of
+    /// `deadlock`).
+    pub holds: Vec<(u64, super::deadlock::Hold)>,
+    /// It goes from a side road's line into a slow queue that lets it in (`junctions`):
+    /// the queue holds back for it while it holds its claim.
+    pub courtesy: bool,
+    /// Its horn (`horn`): presentation only.
+    pub horn: super::horn::Horn,
 }
 
 /// A free parking space beside a lane that a car means to park in: the space of parked car
@@ -617,6 +635,7 @@ impl TrafficSim {
             light_hold: false,
             reserved: Vec::new(),
             amber: None,
+            amber_start: false,
             passing: None,
             gone: false,
             fresh: 1.5,
@@ -638,9 +657,14 @@ impl TrafficSim {
             consist_reversed: false,
             waits_on: None,
             yield_to: None,
-            deadlock_pass: f32::MIN,
-            deadlock_tried: f32::MIN,
             sideways: Default::default(),
+            yield_pass: f32::MIN,
+            tail_claims: Vec::new(),
+            tail: 0.0,
+            exit_claim: None,
+            holds: Vec::new(),
+            courtesy: false,
+            horn: Default::default(),
             park: None,
             seed,
             scheme,

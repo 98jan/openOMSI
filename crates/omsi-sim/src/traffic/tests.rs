@@ -938,3 +938,97 @@ fn a_lower_limit_ahead_is_met_in_time_and_without_creeping() {
     }
     assert!(fast.speed < limit + 0.1, "{:.2} km/h after 2 s", fast.speed * 3.6);
 }
+
+/// A junction object of two paths: a straight one north (path 0) and one from the east
+/// crossing it square (path 1), with `[blockpath]`/`[crossingproblem]` as given.
+fn two_paths(crossing_problem: bool, block: bool) -> Network {
+    let key = |path: u16| Some(LaneKey { tile: (0, 0), id: 1, path });
+    let mut a = LaneBuilder::arc(DVec3::new(0.0, -20.0, 0.0), 0.0, 40.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    let mut b = LaneBuilder::arc(DVec3::new(20.0, 0.0, 0.0), 270.0, 40.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    for (l, k) in [(&mut a, 0), (&mut b, 1)] {
+        l.source = 2;
+        l.key = key(k);
+    }
+    a.crossing_problem = crossing_problem;
+    if block {
+        a.blocks = vec![1];
+    }
+    let mut net = Network { lanes: vec![a, b], ..Default::default() };
+    net.link(1.5);
+    net
+}
+
+#[test]
+fn a_crossing_problem_makes_the_whole_of_both_lanes_the_meeting_place() {
+    let plain = two_paths(false, false);
+    let c = plain.crossings[1][0];
+    assert!(c.other_before <= 3.0 && c.other_after <= 3.0, "{c:?}");
+    // (either lane flagged: seen from both)
+    let flagged = two_paths(true, false);
+    for (l, len) in [(0usize, 40.0f32), (1, 40.0)] {
+        let c = flagged.crossings[l][0];
+        assert!((c.at - c.before).abs() < 0.01 && (c.at + c.after - len).abs() < 0.01, "{c:?}");
+        assert!((c.other_at - c.other_before).abs() < 0.01 && (c.other_at + c.other_after - len).abs() < 0.01, "{c:?}");
+    }
+}
+
+#[test]
+fn a_blockpath_has_no_effect_as_in_omsi() {
+    // two paths that do not cross: a blockpath between them adds no meeting place
+    let key = |path: u16| Some(LaneKey { tile: (0, 0), id: 1, path });
+    let mut a = LaneBuilder::arc(DVec3::new(0.0, -20.0, 0.0), 0.0, 40.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    let mut b = LaneBuilder::arc(DVec3::new(10.0, -20.0, 0.0), 0.0, 40.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    for (l, k) in [(&mut a, 0), (&mut b, 1)] {
+        l.source = 2;
+        l.key = key(k);
+    }
+    a.blocks = vec![1];
+    let mut net = Network { lanes: vec![a, b], ..Default::default() };
+    net.link(1.5);
+    assert!(net.crossings[0].is_empty() && net.crossings[1].is_empty());
+    // and a crossing pair keeps its geometric meeting place
+    let blocked = two_paths(false, true);
+    assert_eq!(blocked.crossings[0], two_paths(false, false).crossings[0]);
+}
+
+#[test]
+fn the_ring_goes_before_the_entry_where_the_map_sets_no_priorities() {
+    // an entry from the south joining a ring lane that comes from the entry's right
+    // (from the east, heading west across it): by right-before-left the ring would go
+    // first anyway; one coming from the left is the case that matters
+    let a = LaneBuilder::arc(DVec3::new(0.0, -10.0, 0.0), 0.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    let b = LaneBuilder::arc(DVec3::new(-10.0, 0.0, 0.0), 90.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    let mut net = Network { lanes: vec![a, b], ..Default::default() };
+    net.link(1.5);
+    // b comes from a's left: a goes first by right-before-left
+    assert!(!net.must_yield(0, 1) && net.must_yield(1, 0));
+    net.lanes[1].ring = true;
+    assert!(net.must_yield(0, 1) && !net.must_yield(1, 0));
+    // the map's priorities still decide where it sets them
+    net.lanes[0].priority = 192.0;
+    assert!(!net.must_yield(0, 1));
+}
+
+#[test]
+fn two_turns_sweeping_past_each_other_meet_where_they_pass() {
+    // two gentle bends of one junction object from opposite sides, bowing towards each
+    // other: 1.5 m apart at their middles, never crossing
+    let key = |path: u16| Some(LaneKey { tile: (0, 0), id: 1, path });
+    let arc = |x: f64, y: f64, h: f64| LaneBuilder::arc(DVec3::new(x, y, 0.0), h, 25.0 * 0.824, 25.0, 0.0, LaneKind::Street, 3.0);
+    let net_of = |dy: f64| {
+        let mut a = arc(-10.0, -2.84, 66.4);
+        let mut b = arc(10.0, 2.84 + dy, 246.4);
+        for (l, k) in [(&mut a, 0), (&mut b, 1)] {
+            l.source = 2;
+            l.key = key(k);
+        }
+        let mut net = Network { lanes: vec![a, b], ..Default::default() };
+        net.link(1.5);
+        net
+    };
+    let net = net_of(0.0);
+    let c = net.crossings[0].iter().find(|c| c.other == 1).expect("a meeting place where they pass");
+    assert!(!c.merge && (c.at - net.lanes[0].length() * 0.5).abs() < 2.0, "{c:?}");
+    // bends well apart do not meet
+    assert!(net_of(5.0).crossings[0].is_empty());
+}

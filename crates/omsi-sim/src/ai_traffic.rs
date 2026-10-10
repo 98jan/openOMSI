@@ -11,6 +11,7 @@ pub mod bus_service;
 pub mod control;
 pub mod deadlock;
 pub mod fixed_step;
+pub mod horn;
 pub mod density;
 pub mod dormant;
 pub mod junctions;
@@ -32,6 +33,8 @@ pub mod viewer;
 mod body_tests;
 #[cfg(test)]
 mod scenario_tests;
+#[cfg(test)]
+mod junction_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
