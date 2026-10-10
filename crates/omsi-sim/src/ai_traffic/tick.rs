@@ -76,6 +76,7 @@ impl TrafficSim {
         for c in self.cars.iter_mut() {
             c.tail = body_tail(c);
         }
+        self.berths_begin_step();
         let (by_lane, coming, mut reservations) = self.occupancy();
         self.request_lights(player);
         let walkers = self.walker_requests();
@@ -115,7 +116,7 @@ impl TrafficSim {
         self.debug_tick(debug, player, &others, &frames);
         self.stats_after(dt, &remove);
         for i in remove.into_iter().rev() {
-            let c = self.cars.swap_remove(i);
+            let c = self.take_off(i, Removal::Finished);
             // its sounds stop and the renders go back to the world at the next sync
             self.retired.push(c.id);
         }
@@ -839,6 +840,8 @@ impl TrafficSim {
     #[allow(clippy::too_many_arguments)]
     fn service_and_park(&mut self, i: usize, ts: &TickScene, way: &[(usize, f32)], kerb_swerve: Option<f32>, park: Option<f32>, mut stop_at: Option<f32>, mut why: (&'static str, f32)) -> (Option<f32>, (&'static str, f32)) {
         let (debug, dt) = (ts.debug, ts.dt);
+        let berth = if self.cars[i].is_bus() { self.berth_scene(i, ts) } else { Default::default() };
+        let berths = &mut self.berths;
         let car = &mut self.cars[i];
         if let Some(service) = car.bus.as_mut() {
             let wanted = self.stop_wishes.as_ref().map(|(alighting, waiting)| {
@@ -856,8 +859,10 @@ impl TrafficSim {
                 kerb_swerve,
                 debug: debug || omsi_cfg::flags::OMSI_DEBUG_PAX.is_set(),
                 timed_waits_only: self.timed_waits_only,
+                time: self.time,
+                berth,
             };
-            if let Some(at) = service.step(&mut car.state, &mut car.vehicle, &ctx) {
+            if let Some(at) = service.step(&mut car.state, &mut car.vehicle, &ctx, berths) {
                 stop_at = Some(stop_at.map(|x| x.min(at)).unwrap_or(at));
                 if at < why.1 {
                     why = ("service", at);

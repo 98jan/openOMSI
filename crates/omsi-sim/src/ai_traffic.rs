@@ -7,6 +7,8 @@
 //! `traffic` (its `Traffic` is a `TrafficSim` with its pictures and sounds).
 
 pub mod body_link;
+pub mod admission;
+pub mod berths;
 pub mod bus_service;
 pub mod control;
 pub mod deadlock;
@@ -35,6 +37,9 @@ mod body_tests;
 mod scenario_tests;
 #[cfg(test)]
 mod junction_tests;
+mod service_tests;
+#[cfg(test)]
+mod population_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -56,6 +61,7 @@ use hashbrown::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use control::Removal;
 use dormant::*;
 use junctions::*;
 use lateral::*;
@@ -284,4 +290,10 @@ pub struct TrafficSim {
     /// Asks whether a box touches the scenery, for the cars' manoeuvres (`ghost_blocked`);
     /// None: the player's collision world (`occluders`) is asked.
     pub scenery_probe: Option<lateral::SceneryProbe>,
+    /// The stops' berths: which timetable bus holds which, who queues for it (`berths`).
+    pub berths: berths::Berths,
+    /// Cars taken off the road, by `Removal` (diagnostics).
+    pub removals: [u64; Removal::COUNT],
+    /// The requests to put vehicles on the road, and their answers (`admission`).
+    pub admission: admission::Admission,
 }
