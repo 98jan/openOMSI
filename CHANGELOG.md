@@ -4,6 +4,11 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.29 - 2026-10-10
+
+### Fixes
+- **Windows: the launcher opens again.** In 0.2.28 its window stayed hidden until its first picture, and Windows never asks a hidden window to draw, so the launcher never appeared. If you installed 0.2.28 on Windows, download 0.2.29 by hand: that launcher cannot update itself.
+
 ## 0.2.28 - 2026-10-10
 
 ### New

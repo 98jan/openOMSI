@@ -9,14 +9,6 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
-    # (one platform built again into the same release, its files replaced: a fix to a
-    # version already out that only one platform needs)
-    inputs:
-      only:
-        description: Platform to build again (the others keep the release's files)
-        type: choice
-        default: all
-        options: [all, windows, macos, linux, android]
 
 concurrency:
   group: release-${{ github.ref }}
@@ -49,7 +41,6 @@ jobs:
 
   windows:
     needs: version
-    if: ${{ !inputs.only || inputs.only == 'all' || inputs.only == 'windows' }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -164,7 +155,6 @@ jobs:
 
   macos:
     needs: version
-    if: ${{ !inputs.only || inputs.only == 'all' || inputs.only == 'macos' }}
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -203,7 +193,6 @@ jobs:
 
   linux:
     needs: version
-    if: ${{ !inputs.only || inputs.only == 'all' || inputs.only == 'linux' }}
     strategy:
       fail-fast: false
       matrix:
@@ -274,7 +263,6 @@ jobs:
 
   android:
     needs: version
-    if: ${{ !inputs.only || inputs.only == 'all' || inputs.only == 'android' }}
     runs-on: ubuntu-latest
     env:
       OPENOMSI_VERSION: ${{ needs.version.outputs.version }}
@@ -318,8 +306,7 @@ jobs:
           path: out/*.apk
 
   release:
-    # (the platforms not built again are skipped, not failed)
-    if: ${{ !cancelled() && !failure() && github.event_name != 'pull_request' }}
+    if: github.event_name != 'pull_request'
     needs: [version, windows, macos, linux, android]
     runs-on: ubuntu-latest
     permissions:
@@ -379,7 +366,7 @@ jobs:
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             # the same version built again (main was rewritten and pushed once more): the
             # release stays, with this build's files and notes
-            gh release upload "v$VERSION" $(ls out/*.zip out/*.apk 2>/dev/null) --clobber
+            gh release upload "v$VERSION" out/*.zip out/*.apk --clobber
             gh release edit "v$VERSION" --title "openOMSI $VERSION" --notes-file notes.md
           else
             gh release create "v$VERSION" out/*.zip out/*.apk \
