@@ -9,6 +9,9 @@ impl App {
     pub(super) fn frame_player(&mut self, dt: f32) {
         // the on-screen wheel and pedals (a phone)
         self.touch_frame(dt);
+        // a walker stepping into or out of the bus hears its cab by degrees
+        let walker = self.foot_sound_amount(dt);
+        omsi_audio::soundset::set_cab_amount(walker);
         if self.player.is_none() || self.renderer.is_none() || self.scene.is_none() {
             return;
         }

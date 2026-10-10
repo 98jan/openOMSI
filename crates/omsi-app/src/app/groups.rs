@@ -13,6 +13,9 @@ pub(crate) struct SoundState {
     pub(crate) soundscape: Option<crate::soundscape::Soundscape>,
     /// Positional voice through GreenTeaSpeak in a session (`voice`).
     pub(crate) voice: Option<crate::voice::Voice>,
+    /// How far the walker's eyes are inside the player's bus, as the sound follows them
+    /// (see `App::foot_sound_amount`); None when nobody walks about it.
+    pub(crate) foot_in: Option<f32>,
 }
 
 /// The VR headset: its session (Windows), the navigator shown in it, the cockpit pointer

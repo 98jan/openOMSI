@@ -1630,7 +1630,11 @@ impl Player {
             let v = &self.vehicle;
             // the camera decides which `[viewpoint]` entries are heard (the exterior engine
             // samples outside, the rain on the roof in the cab)
-            ss.set_inside(inside);
+            // (a walker on the way in or out through a door: by degrees, see `on_foot`)
+            match omsi_audio::soundset::walker_cab_amount() {
+                Some(w) => ss.set_inside_amount(w),
+                None => ss.set_inside(inside),
+            }
             ss.set_muffled(inside);
             ss.set_listener_vehicle(listener_follows_bus);
             // how open the bus is to the outside (doors, driver's window) for every outside
