@@ -1353,6 +1353,8 @@ pub struct Scene {
     mesh_pages: Vec<MeshPage>,
     changed_mark: Vec<bool>,
     origin_moved: bool,
+    /// ... and up or down: the vehicles' roof heights in their parameters are redone too.
+    origin_moved_z: bool,
     cache_bounds: bool,
     bounds_meshes: Vec<bool>,
     /// The meshes ever reshaped (skinned), and the instances drawing one of them, so that a
@@ -1374,10 +1376,16 @@ pub struct Scene {
     cpu_params: Vec<[f32; 4]>,
     /// The light grid and lights as last uploaded, so that unchanged ones are not sent again.
     last_grid: Vec<u32>,
-    /// The grid before that, the room the next one is made in: half a megabyte, made and
-    /// let go twice a frame (the window's picture and a mirror's), went back to the system
-    /// each time and came back as fresh pages to be faulted in.
+    /// The room the next grid is made in: half a megabyte, made and let go twice a frame
+    /// (the window's picture and a mirror's), went back to the system each time and came
+    /// back as fresh pages to be faulted in. Unused (`u32::MAX`) but for `grid_filled`.
     grid_scratch: Vec<u32>,
+    /// The cells with lamps in `grid_scratch`, and in `last_grid` (what the buffer holds).
+    grid_filled: Vec<u32>,
+    grid_sent: Vec<u32>,
+    /// The lamps in each cell while a grid is made, and the cells to compare.
+    grid_counts: Vec<u8>,
+    grid_marks: Vec<bool>,
     /// The smoke's sprites, their order and the sorted list of the last `prepare_smoke`,
     /// kept for the next: every car's exhaust is thousands of sprites, and lists made anew
     /// each time grew by copying and went back to the system (see `grid_scratch`).
@@ -2056,7 +2064,7 @@ pub struct Renderer {
     format: wgpu::TextureFormat,
     depth: Option<(wgpu::Texture, wgpu::TextureView, u32, u32)>,
     /// Multisampled colour and depth targets per size (the window, each mirror).
-    msaa_targets: HashMap<(u32, u32), (wgpu::TextureView, wgpu::TextureView)>,
+    msaa_targets: HashMap<(u32, u32), (Option<wgpu::TextureView>, wgpu::TextureView)>,
     /// Screen-space ambient occlusion: depth prepass and AO textures of the window's size.
     ao: Option<AoTargets>,
     ao_sampler: wgpu::Sampler,
@@ -2189,6 +2197,9 @@ pub struct Renderer {
     dynamic_scale: std::cell::Cell<f32>,
     /// `OMSI_DEBUG_FLICKER`: which near instances in view were drawn last frame.
     flicker: std::cell::RefCell<HashMap<usize, bool>>,
+    /// The window's main-pass bundles as last recorded, with what they were made of (see
+    /// `record_main_bundles`).
+    main_bundles: std::cell::RefCell<Option<passes::batch::MainBundles>>,
     /// Instances the main view drew last frame (a bit each): they keep being drawn a little
     /// past the size and distance limits, so that an object right at a limit does not pop
     /// in and out as the camera sways.
@@ -3003,6 +3014,7 @@ impl Renderer {
             target_use: HashMap::new(),
             dynamic_scale: std::cell::Cell::new(1.0),
             flicker: std::cell::RefCell::new(HashMap::new()),
+            main_bundles: Default::default(),
             cull_drawn: std::cell::RefCell::new(Vec::new()),
             object_sizes: Default::default(),
             object_sizes_scratch: Default::default(),
@@ -3257,6 +3269,7 @@ impl Renderer {
             mesh_pages: Vec::new(),
             changed_mark: Vec::new(),
             origin_moved: false,
+            origin_moved_z: false,
             cache_bounds: !omsi_cfg::flags::OMSI_NO_BOUNDS_CACHE.is_set(),
             bounds_meshes: Vec::new(),
             bounds_known: Vec::new(),
@@ -3274,6 +3287,10 @@ impl Renderer {
             cpu_params: Vec::new(),
             last_grid: Vec::new(),
             grid_scratch: Vec::new(),
+            grid_filled: Vec::new(),
+            grid_sent: Vec::new(),
+            grid_counts: Vec::new(),
+            grid_marks: Vec::new(),
             smoke_scratch: Default::default(),
             lamp_shadow_last: Vec::new(),
             last_lights: Vec::new(),
@@ -5075,9 +5092,12 @@ impl Renderer {
     /// Choose the render origin. Everything is re-uploaded when it moves.
     pub fn set_render_origin(&self, scene: &mut Scene, origin: DVec3) {
         if scene.render_origin != origin {
-            if origin.z != scene.render_origin.z || scene.model_buf.is_none() {
+            if scene.model_buf.is_none() {
                 scene.dirty = true;
             } else {
+                // (up or down as well: only the translations and the vehicles' roof heights
+                // depend on it - a hill climbed past the origin's reach rebuilt everything)
+                scene.origin_moved_z |= origin.z != scene.render_origin.z;
                 scene.origin_moved = true;
             }
             scene.render_origin = origin;
@@ -5398,19 +5418,21 @@ impl Renderer {
         self.hdr_targets.retain(|k, _| keep.contains(k));
     }
 
-    /// The multisampled colour and depth attachments for a target of this size.
-    fn msaa_targets(&mut self, w: u32, h: u32) -> (wgpu::TextureView, wgpu::TextureView) {
+    /// The multisampled colour (`color`: where the pass draws into it) and depth attachments
+    /// for a target of this size. The colour is made the first time it is asked for: the
+    /// Enhanced picture draws into a multisampled target of its own and only the depth is
+    /// used, and a colour of the window's size was made for nothing (130 MB at 4K with 4x).
+    fn msaa_targets(&mut self, w: u32, h: u32, color: bool) -> (Option<wgpu::TextureView>, wgpu::TextureView) {
         self.target_use.insert((w, h), std::time::Instant::now());
-        if let Some(t) = self.msaa_targets.get(&(w, h)) {
-            return t.clone();
+        if !self.msaa_targets.contains_key(&(w, h)) {
+            self.evict_targets();
         }
-        self.evict_targets();
         let size = wgpu::Extent3d {
             width: w,
             height: h,
             depth_or_array_layers: 1,
         };
-        let color = self.device.create_texture(&wgpu::TextureDescriptor {
+        let make_color = || self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("msaa colour"),
             size,
             mip_level_count: 1,
@@ -5419,7 +5441,13 @@ impl Renderer {
             format: self.format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
-        });
+        }).create_view(&Default::default());
+        if let Some(t) = self.msaa_targets.get_mut(&(w, h)) {
+            if color && t.0.is_none() {
+                t.0 = Some(make_color());
+            }
+            return t.clone();
+        }
         let depth = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("msaa depth"),
             size,
@@ -5430,10 +5458,7 @@ impl Renderer {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        let t = (
-            color.create_view(&Default::default()),
-            depth.create_view(&Default::default()),
-        );
+        let t = (color.then(make_color), depth.create_view(&Default::default()));
         self.msaa_targets.insert((w, h), t.clone());
         t
     }
@@ -5875,9 +5900,8 @@ impl Renderer {
                 // 1.25 a legacy pulled decal, 0.9 an OMSI-ordered surface (weather
                 // classification without view-space pull), 0.75 a painted ground layer;
                 // below -500 a vehicle part, -(5000 + the roof height relative to origin)
-                if let Some(roof) = i.roof.filter(|_| !i.blob && !i.surface) {
-                    let z = (i.origin - ro).z as f32 + i.transform.transform_point3(Vec3::new(0.0, 0.0, roof)).z;
-                    -(5000.0 + z.clamp(-4000.0, 4000.0))
+                if let Some(code) = Self::roof_code(i, ro) {
+                    code
                 } else {
                     surface_instance_code(
                         i.blob,
@@ -5891,12 +5915,22 @@ impl Renderer {
         }
     }
 
+    /// A vehicle part's roof height relative to the render origin, as its parameters
+    /// carry it (see `instance_entries`).
+    fn roof_code(i: &Instance, ro: DVec3) -> Option<f32> {
+        let roof = i.roof.filter(|_| !i.blob && !i.surface)?;
+        let z = (i.origin - ro).z as f32 + i.transform.transform_point3(Vec3::new(0.0, 0.0, roof)).z;
+        Some(-(5000.0 + z.clamp(-4000.0, 4000.0)))
+    }
+
     pub fn prepare(&self, scene: &mut Scene) {
         Self::prepare_bounds(scene);
         scene.bind_groups.clear();
+        let moved_z = std::mem::take(&mut scene.origin_moved_z);
         if std::mem::take(&mut scene.origin_moved) && !scene.dirty {
             let ro = scene.render_origin;
             let n = scene.uploaded_entries as usize;
+            let params_known = n * 2 <= scene.cpu_params.len();
             for i in &scene.instances[..scene.uploaded_instances] {
                 let t = (Mat4::from_translation((i.origin - ro).as_vec3()) * i.transform).w_axis.to_array();
                 let (b, k) = (i.base as usize, i.slot_alpha.len());
@@ -5904,11 +5938,19 @@ impl Renderer {
                     for m in &mut scene.cpu_models[b..b + k] {
                         m[3] = t;
                     }
+                    if let (true, true, Some(code)) = (moved_z, params_known, Self::roof_code(i, ro)) {
+                        for p in scene.cpu_params[b * 2..(b + k) * 2].iter_mut().skip(1).step_by(2) {
+                            p[3] = code;
+                        }
+                    }
                 }
             }
-            match scene.model_buf.as_ref() {
-                Some(buf) if (n * 64) as u64 <= buf.size() && n <= scene.cpu_models.len() => {
+            match (scene.model_buf.as_ref(), scene.params_buf.as_ref()) {
+                (Some(buf), Some(pbuf)) if (n * 64) as u64 <= buf.size() && n <= scene.cpu_models.len() && (!moved_z || (params_known && (n * 32) as u64 <= pbuf.size())) => {
                     buf.write(&self.queue, 0, bytemuck::cast_slice(&scene.cpu_models[..n]));
+                    if moved_z {
+                        pbuf.write(&self.queue, 0, bytemuck::cast_slice(&scene.cpu_params[..n * 2]));
+                    }
                 }
                 _ => scene.dirty = true,
             }
@@ -6207,11 +6249,31 @@ impl Renderer {
         for l in &scene.interior_lights {
             gpu_lights.push(gpu_light(l, (l.position - ro).as_vec3()));
         }
+        // The grid is made in a room kept all unused but for the cells the last one filled,
+        // which are cleared first: half a megabyte set and compared twice a frame (the
+        // window's picture and a mirror's) for the few thousand cells lamps reach.
+        let cells = side * side;
         let mut grid = std::mem::take(&mut scene.grid_scratch);
-        grid.clear();
-        grid.resize(side * side * LIGHT_CELL_CAP, u32::MAX);
+        if grid.len() != cells * LIGHT_CELL_CAP {
+            grid.clear();
+            grid.resize(cells * LIGHT_CELL_CAP, u32::MAX);
+            scene.grid_filled.clear();
+        }
+        for &c in &scene.grid_filled {
+            let base = c as usize * LIGHT_CELL_CAP;
+            grid[base..base + LIGHT_CELL_CAP].fill(u32::MAX);
+        }
+        scene.grid_filled.clear();
+        let mut counts = std::mem::take(&mut scene.grid_counts);
+        counts.clear();
+        counts.resize(cells, 0);
         for l in &scene.lights {
-            if !drawn_by(l, enhanced) {
+            // Every light the grid reaches is in the list, the other path's too (a headlight
+            // is three points for the plain shader and one spot for the enhanced): only the
+            // grid tells which a path draws. The window's Enhanced picture and its plainly
+            // shaded mirrors then send the same list, at the same places, and grids that
+            // differ only round the vehicles' lamps - not everything again twice a frame.
+            if !(l.radius > 0.0 && l.intensity > 0.0) {
                 continue;
             }
             let p = (l.position - ro).as_vec3();
@@ -6224,6 +6286,9 @@ impl Renderer {
             }
             let idx = gpu_lights.len() as u32;
             gpu_lights.push(gpu_light(l, p));
+            if !drawn_by(l, enhanced) {
+                continue;
+            }
             if lamp_shadows && enhanced && l.housed && l.intensity > 0.0 {
                 let d = (p - cam_rel).length();
                 if d < l.radius + LAMP_SHADOW_REACH {
@@ -6240,12 +6305,14 @@ impl Renderer {
             }
             for y in (y0.max(0.0) as usize)..=(y1.min(side as f32 - 1.0) as usize) {
                 for x in (x0.max(0.0) as usize)..=(x1.min(side as f32 - 1.0) as usize) {
-                    let base = (y * side + x) * LIGHT_CELL_CAP;
-                    if let Some(slot) = grid[base..base + LIGHT_CELL_CAP]
-                        .iter()
-                        .position(|v| *v == u32::MAX)
-                    {
-                        grid[base + slot] = idx;
+                    let cell = y * side + x;
+                    let n = counts[cell] as usize;
+                    if n < LIGHT_CELL_CAP {
+                        if n == 0 {
+                            scene.grid_filled.push(cell as u32);
+                        }
+                        grid[cell * LIGHT_CELL_CAP + n] = idx;
+                        counts[cell] += 1;
                     } else if omsi_cfg::flags::OMSI_DEBUG_LIGHT_GRID.is_set() {
                         log::info!("light grid: cell ({x}, {y}) full, light at ({:.1}, {:.1}) radius {:.0} {} left out", p.x, p.y, l.radius, if l.direction.length_squared() > 0.5 { "spot" } else { "point" });
                     }
@@ -6260,13 +6327,18 @@ impl Renderer {
                 extra: [0.0; 4],
             });
         }
+        scene.grid_counts = counts;
         let lbytes: &[u8] = bytemuck::cast_slice(&gpu_lights);
-        let gbytes: &[u8] = bytemuck::cast_slice(&grid);
         let mut rebuilt = false;
         match &scene.light_buf {
             Some(b) if b.size() >= lbytes.len() as u64 => {
-                if scene.last_lights != lbytes {
-                    b.write(&self.queue, 0, lbytes);
+                // (only the lights from the first that changed to the last: most stand still)
+                let unit = std::mem::size_of::<GpuPointLight>();
+                let old = &scene.last_lights;
+                let first = (0..lbytes.len() / unit).find(|k| old.get(k * unit..(k + 1) * unit) != Some(&lbytes[k * unit..(k + 1) * unit]));
+                if let Some(first) = first {
+                    let last = (first..lbytes.len() / unit).rev().find(|k| old.get(k * unit..(k + 1) * unit) != Some(&lbytes[k * unit..(k + 1) * unit])).unwrap_or(first);
+                    b.write(&self.queue, (first * unit) as u64, &lbytes[first * unit..(last + 1) * unit]);
                 }
             }
             _ => {
@@ -6277,22 +6349,49 @@ impl Renderer {
                 rebuilt = true;
             }
         }
-        match &scene.grid_buf {
-            Some(b) => {
-                if scene.last_grid != grid {
-                    b.write(&self.queue, 0, gbytes);
+        if scene.grid_buf.is_none() || scene.last_grid.len() != grid.len() {
+            let b = GpuArray::new(&self.device, "light grid", (grid.len() * 4) as u64, 4, false);
+            b.write(&self.queue, 0, bytemuck::cast_slice(&grid));
+            scene.grid_buf = Some(b);
+            scene.last_grid.clone_from(&grid);
+            scene.grid_sent.clone_from(&scene.grid_filled);
+            rebuilt = true;
+        } else if let Some(b) = &scene.grid_buf {
+            // Only the cells that differ from what the buffer holds are sent: those either
+            // grid has lamps in, compared, in runs of neighbouring cells.
+            let mut marks = std::mem::take(&mut scene.grid_marks);
+            marks.clear();
+            marks.resize(cells, false);
+            for &c in scene.grid_sent.iter().chain(&scene.grid_filled) {
+                marks[c as usize] = true;
+            }
+            let mut runs: Vec<(usize, usize)> = Vec::new();
+            for (c, m) in marks.iter().enumerate() {
+                let r = c * LIGHT_CELL_CAP..(c + 1) * LIGHT_CELL_CAP;
+                if !*m || grid[r.clone()] == scene.last_grid[r.clone()] {
+                    continue;
+                }
+                scene.last_grid[r.clone()].copy_from_slice(&grid[r]);
+                // (a gap of a few unchanged cells is sent along rather than starting another
+                // write: each makes a staging buffer of its own)
+                match runs.last_mut() {
+                    Some(run) if c - run.1 <= 8 => run.1 = c + 1,
+                    _ => runs.push((c, c + 1)),
                 }
             }
-            None => {
-                let b = GpuArray::new(&self.device, "light grid", gbytes.len() as u64, 4, false);
-                b.write(&self.queue, 0, gbytes);
-                scene.grid_buf = Some(b);
-                rebuilt = true;
+            if runs.len() > 32 {
+                runs = vec![(runs[0].0, runs[runs.len() - 1].1)];
             }
+            for (a, z) in runs {
+                let r = a * LIGHT_CELL_CAP..z * LIGHT_CELL_CAP;
+                b.write(&self.queue, (r.start * 4) as u64, bytemuck::cast_slice(&scene.last_grid[r]));
+            }
+            scene.grid_marks = marks;
+            scene.grid_sent.clone_from(&scene.grid_filled);
         }
         scene.last_lights.clear();
         scene.last_lights.extend_from_slice(lbytes);
-        scene.grid_scratch = std::mem::replace(&mut scene.last_grid, grid);
+        scene.grid_scratch = grid;
         if rebuilt {
             self.rebuild_camera_bind_group(scene);
         }
@@ -7070,11 +7169,18 @@ impl Renderer {
         // casters of each cascade, the depth prepass and the main pass. The list is built
         // and uploaded before any pass is encoded.
         clock.stage(self, "setup", "mirror.setup");
-        let mut list: Vec<u32> = Vec::new();
-        let shadow_batches = self.plan_shadow_casters(scene, &f, &sh, &mut list);
+        let mut shadow_list: Vec<u32> = Vec::new();
+        let mut shadow_batches = self.plan_shadow_casters(scene, &f, &sh, &mut shadow_list);
         clock.stage(self, "shadow items", "mirror.shadow items");
         let visible = self.cull_view(scene, &f, &mut clock);
-        let mut plan = self.batch_draws(scene, &f, &visible, list);
+        let mut plan = self.batch_draws(scene, &f, &visible, Vec::new());
+        // (the shadow casters' entries after the passes' own: the main pass's batches keep
+        // their places in the list while only the shadows change, and its bundles are kept)
+        let at = plan.list.len() as u32;
+        for b in shadow_batches.iter_mut().flatten() {
+            b.instances = b.instances.start + at..b.instances.end + at;
+        }
+        plan.list.extend_from_slice(&shadow_list);
         self.count_draws(scene, with_overlays, visible.len(), &plan, &shadow_batches);
         clock.stage(self, "items", "mirror.items");
         plan.split_rain(scene, f.glass_on);
@@ -8774,7 +8880,7 @@ struct DrawItem {
 /// entry (the vertex shader looks it up). Thousands of single draws were the biggest CPU
 /// cost of a frame - wgpu validates and records every one - and trees, lamps, fences,
 /// people and the AI cars' shared meshes collapse into a few hundred batches.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct Batch {
     pipe: u8,
     mesh: u32,
@@ -9074,7 +9180,11 @@ impl DevicePoller {
         let thread = std::thread::Builder::new()
             .name("omsi-gpu-poll".into())
             .spawn(move || {
-                let pause = std::time::Duration::from_millis(1);
+                // (every 4 ms: a frame's own submits run the same upkeep, and this thread
+                // only takes the freeing of finished work off the frame's thread; polling
+                // every millisecond, a few dozen times a frame, it fought the frame's thread
+                // for the queue's lock - a third of its time was spent spinning on it)
+                let pause = std::time::Duration::from_millis(4);
                 while !flag.load(std::sync::atomic::Ordering::Relaxed) {
                     let _ = device.poll(wgpu::PollType::Poll);
                     std::thread::sleep(pause);
@@ -9121,6 +9231,13 @@ fn run_parts<T: Send>(pool: Option<&rayon::ThreadPool>, parts: usize, f: impl Fn
         *first = Some(f(0));
     });
     out.into_iter().map(|o| o.expect("render part")).collect()
+}
+
+/// How many bundles `record_bundles` makes of `n` batches (each of the same share).
+fn bundle_parts(pool: Option<&rayon::ThreadPool>, n: usize) -> usize {
+    let max_parts = pool.map(|p| (p.current_num_threads() + 1).clamp(4, 8)).unwrap_or(4);
+    let parts = (n / 250).clamp(1, max_parts);
+    if parts == 1 { 1 } else { n.div_ceil(n.div_ceil(parts)) }
 }
 
 /// The main pass's batches as render bundles, recorded on up to four threads. Checking
@@ -9175,8 +9292,7 @@ fn record_bundles(
             }
         }
     };
-    let max_parts = pool.map(|p| (p.current_num_threads() + 1).clamp(4, 8)).unwrap_or(4);
-    let parts = (batches.len() / 250).clamp(1, max_parts);
+    let parts = bundle_parts(pool, batches.len());
     if parts == 1 {
         return record(batches).into_iter().collect();
     }
