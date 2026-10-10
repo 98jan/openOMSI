@@ -1374,10 +1374,16 @@ pub struct Scene {
     cpu_params: Vec<[f32; 4]>,
     /// The light grid and lights as last uploaded, so that unchanged ones are not sent again.
     last_grid: Vec<u32>,
-    /// The grid before that, the room the next one is made in: half a megabyte, made and
-    /// let go twice a frame (the window's picture and a mirror's), went back to the system
-    /// each time and came back as fresh pages to be faulted in.
+    /// The room the next grid is made in: half a megabyte, made and let go twice a frame
+    /// (the window's picture and a mirror's), went back to the system each time and came
+    /// back as fresh pages to be faulted in. Unused (`u32::MAX`) but for `grid_filled`.
     grid_scratch: Vec<u32>,
+    /// The cells with lamps in `grid_scratch`, and in `last_grid` (what the buffer holds).
+    grid_filled: Vec<u32>,
+    grid_sent: Vec<u32>,
+    /// The lamps in each cell while a grid is made, and the cells to compare.
+    grid_counts: Vec<u8>,
+    grid_marks: Vec<bool>,
     /// The smoke's sprites, their order and the sorted list of the last `prepare_smoke`,
     /// kept for the next: every car's exhaust is thousands of sprites, and lists made anew
     /// each time grew by copying and went back to the system (see `grid_scratch`).
@@ -3274,6 +3280,10 @@ impl Renderer {
             cpu_params: Vec::new(),
             last_grid: Vec::new(),
             grid_scratch: Vec::new(),
+            grid_filled: Vec::new(),
+            grid_sent: Vec::new(),
+            grid_counts: Vec::new(),
+            grid_marks: Vec::new(),
             smoke_scratch: Default::default(),
             lamp_shadow_last: Vec::new(),
             last_lights: Vec::new(),
@@ -6207,11 +6217,31 @@ impl Renderer {
         for l in &scene.interior_lights {
             gpu_lights.push(gpu_light(l, (l.position - ro).as_vec3()));
         }
+        // The grid is made in a room kept all unused but for the cells the last one filled,
+        // which are cleared first: half a megabyte set and compared twice a frame (the
+        // window's picture and a mirror's) for the few thousand cells lamps reach.
+        let cells = side * side;
         let mut grid = std::mem::take(&mut scene.grid_scratch);
-        grid.clear();
-        grid.resize(side * side * LIGHT_CELL_CAP, u32::MAX);
+        if grid.len() != cells * LIGHT_CELL_CAP {
+            grid.clear();
+            grid.resize(cells * LIGHT_CELL_CAP, u32::MAX);
+            scene.grid_filled.clear();
+        }
+        for &c in &scene.grid_filled {
+            let base = c as usize * LIGHT_CELL_CAP;
+            grid[base..base + LIGHT_CELL_CAP].fill(u32::MAX);
+        }
+        scene.grid_filled.clear();
+        let mut counts = std::mem::take(&mut scene.grid_counts);
+        counts.clear();
+        counts.resize(cells, 0);
         for l in &scene.lights {
-            if !drawn_by(l, enhanced) {
+            // Every light the grid reaches is in the list, the other path's too (a headlight
+            // is three points for the plain shader and one spot for the enhanced): only the
+            // grid tells which a path draws. The window's Enhanced picture and its plainly
+            // shaded mirrors then send the same list, at the same places, and grids that
+            // differ only round the vehicles' lamps - not everything again twice a frame.
+            if !(l.radius > 0.0 && l.intensity > 0.0) {
                 continue;
             }
             let p = (l.position - ro).as_vec3();
@@ -6224,6 +6254,9 @@ impl Renderer {
             }
             let idx = gpu_lights.len() as u32;
             gpu_lights.push(gpu_light(l, p));
+            if !drawn_by(l, enhanced) {
+                continue;
+            }
             if lamp_shadows && enhanced && l.housed && l.intensity > 0.0 {
                 let d = (p - cam_rel).length();
                 if d < l.radius + LAMP_SHADOW_REACH {
@@ -6240,12 +6273,14 @@ impl Renderer {
             }
             for y in (y0.max(0.0) as usize)..=(y1.min(side as f32 - 1.0) as usize) {
                 for x in (x0.max(0.0) as usize)..=(x1.min(side as f32 - 1.0) as usize) {
-                    let base = (y * side + x) * LIGHT_CELL_CAP;
-                    if let Some(slot) = grid[base..base + LIGHT_CELL_CAP]
-                        .iter()
-                        .position(|v| *v == u32::MAX)
-                    {
-                        grid[base + slot] = idx;
+                    let cell = y * side + x;
+                    let n = counts[cell] as usize;
+                    if n < LIGHT_CELL_CAP {
+                        if n == 0 {
+                            scene.grid_filled.push(cell as u32);
+                        }
+                        grid[cell * LIGHT_CELL_CAP + n] = idx;
+                        counts[cell] += 1;
                     } else if omsi_cfg::flags::OMSI_DEBUG_LIGHT_GRID.is_set() {
                         log::info!("light grid: cell ({x}, {y}) full, light at ({:.1}, {:.1}) radius {:.0} {} left out", p.x, p.y, l.radius, if l.direction.length_squared() > 0.5 { "spot" } else { "point" });
                     }
@@ -6260,13 +6295,18 @@ impl Renderer {
                 extra: [0.0; 4],
             });
         }
+        scene.grid_counts = counts;
         let lbytes: &[u8] = bytemuck::cast_slice(&gpu_lights);
-        let gbytes: &[u8] = bytemuck::cast_slice(&grid);
         let mut rebuilt = false;
         match &scene.light_buf {
             Some(b) if b.size() >= lbytes.len() as u64 => {
-                if scene.last_lights != lbytes {
-                    b.write(&self.queue, 0, lbytes);
+                // (only the lights from the first that changed to the last: most stand still)
+                let unit = std::mem::size_of::<GpuPointLight>();
+                let old = &scene.last_lights;
+                let first = (0..lbytes.len() / unit).find(|k| old.get(k * unit..(k + 1) * unit) != Some(&lbytes[k * unit..(k + 1) * unit]));
+                if let Some(first) = first {
+                    let last = (first..lbytes.len() / unit).rev().find(|k| old.get(k * unit..(k + 1) * unit) != Some(&lbytes[k * unit..(k + 1) * unit])).unwrap_or(first);
+                    b.write(&self.queue, (first * unit) as u64, &lbytes[first * unit..(last + 1) * unit]);
                 }
             }
             _ => {
@@ -6277,22 +6317,49 @@ impl Renderer {
                 rebuilt = true;
             }
         }
-        match &scene.grid_buf {
-            Some(b) => {
-                if scene.last_grid != grid {
-                    b.write(&self.queue, 0, gbytes);
+        if scene.grid_buf.is_none() || scene.last_grid.len() != grid.len() {
+            let b = GpuArray::new(&self.device, "light grid", (grid.len() * 4) as u64, 4, false);
+            b.write(&self.queue, 0, bytemuck::cast_slice(&grid));
+            scene.grid_buf = Some(b);
+            scene.last_grid.clone_from(&grid);
+            scene.grid_sent.clone_from(&scene.grid_filled);
+            rebuilt = true;
+        } else if let Some(b) = &scene.grid_buf {
+            // Only the cells that differ from what the buffer holds are sent: those either
+            // grid has lamps in, compared, in runs of neighbouring cells.
+            let mut marks = std::mem::take(&mut scene.grid_marks);
+            marks.clear();
+            marks.resize(cells, false);
+            for &c in scene.grid_sent.iter().chain(&scene.grid_filled) {
+                marks[c as usize] = true;
+            }
+            let mut runs: Vec<(usize, usize)> = Vec::new();
+            for (c, m) in marks.iter().enumerate() {
+                let r = c * LIGHT_CELL_CAP..(c + 1) * LIGHT_CELL_CAP;
+                if !*m || grid[r.clone()] == scene.last_grid[r.clone()] {
+                    continue;
+                }
+                scene.last_grid[r.clone()].copy_from_slice(&grid[r]);
+                // (a gap of a few unchanged cells is sent along rather than starting another
+                // write: each makes a staging buffer of its own)
+                match runs.last_mut() {
+                    Some(run) if c - run.1 <= 8 => run.1 = c + 1,
+                    _ => runs.push((c, c + 1)),
                 }
             }
-            None => {
-                let b = GpuArray::new(&self.device, "light grid", gbytes.len() as u64, 4, false);
-                b.write(&self.queue, 0, gbytes);
-                scene.grid_buf = Some(b);
-                rebuilt = true;
+            if runs.len() > 32 {
+                runs = vec![(runs[0].0, runs[runs.len() - 1].1)];
             }
+            for (a, z) in runs {
+                let r = a * LIGHT_CELL_CAP..z * LIGHT_CELL_CAP;
+                b.write(&self.queue, (r.start * 4) as u64, bytemuck::cast_slice(&scene.last_grid[r]));
+            }
+            scene.grid_marks = marks;
+            scene.grid_sent.clone_from(&scene.grid_filled);
         }
         scene.last_lights.clear();
         scene.last_lights.extend_from_slice(lbytes);
-        scene.grid_scratch = std::mem::replace(&mut scene.last_grid, grid);
+        scene.grid_scratch = grid;
         if rebuilt {
             self.rebuild_camera_bind_group(scene);
         }
