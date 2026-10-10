@@ -1995,9 +1995,13 @@ impl VehicleInstance {
         // the body's own (see `driven_wheels_speed`): a wheel spinning on ice or locked by
         // the brake shows on the speedometer as in OMSI.
         let wheels = rb.wheels.iter().map(|w| (w.spin, w.radius, w.driven));
-        let v = script_speed(driven_wheels_speed(wheels).unwrap_or(speed) * 3.6);
+        // (a bus standing on its brakes: the wheels' rocking of a few hundredths of a metre a
+        // second is no speed, scripts test `!Velocity` for a bus at rest)
+        let ground = script_speed(speed * 3.6);
+        let wheels = driven_wheels_speed(wheels).unwrap_or(speed) * 3.6;
+        let v = if ground == 0.0 && wheels.abs() < 0.5 { 0.0 } else { script_speed(wheels) };
         self.put(self.v_velocity, v);
-        self.put(self.v_velocity_ground, script_speed(speed * 3.6));
+        self.put(self.v_velocity_ground, ground);
         let n_wheel = rb
             .wheels
             .iter()
