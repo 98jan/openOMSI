@@ -112,35 +112,29 @@ fn engine_fed(name: &str) -> bool {
         || matches!(n.as_str(), "n_wheel" | "wetness" | "time" | "timegap")
 }
 
-/// Every variable of a vehicle type that goes to the others (`omsi_net::vars`): the
-/// variables its own varlists declare - not those every copy works out for itself
-/// (`engine_fed`), nor the engine's own (the view, the weather) - and all its strings, by
-/// their ids, with a hash of their names that tells two copies made from the same files.
+/// Canonical wire indices are sorted by name, independently of local compiler IDs.
+/// All numeric and string variables participate, including engine-fed and implicit ones.
 pub struct VarTable {
     pub hash: u32,
-    pub floats: Vec<u16>,
-    pub strings: Vec<u16>,
+    pub floats: Vec<u32>,
+    pub strings: Vec<u32>,
 }
 
 fn var_table(program: &omsi_script::Program) -> VarTable {
     let mut h: u32 = 0x811c_9dc5;
-    let mut eat = |s: &str| {
-        for b in s.bytes().chain(std::iter::once(0)) {
-            h = (h ^ b.to_ascii_lowercase() as u32).wrapping_mul(0x0100_0193);
-        }
+    let mut collect = |names: &[String], kind: u8| {
+        h = (h ^ kind as u32).wrapping_mul(0x0100_0193);
+        let mut entries: Vec<_> = names.iter().enumerate().map(|(id, name)| (name.to_ascii_lowercase(), id as u32)).collect();
+        entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        entries.into_iter().take(u16::MAX as usize + 1).map(|(name, id)| {
+            for b in name.bytes().chain(std::iter::once(0)) {
+                h = (h ^ b as u32).wrapping_mul(0x0100_0193);
+            }
+            id
+        }).collect()
     };
-    let mut floats = Vec::new();
-    for (k, n) in program.var_names.iter().enumerate().take(u16::MAX as usize) {
-        if program.script_vars.contains(&n.to_ascii_lowercase()) && !engine_fed(n) {
-            eat(n);
-            floats.push(k as u16);
-        }
-    }
-    let mut strings = Vec::new();
-    for (k, n) in program.str_var_names.iter().enumerate().take(u16::MAX as usize) {
-        eat(n);
-        strings.push(k as u16);
-    }
+    let floats = collect(&program.var_names, 0);
+    let strings = collect(&program.str_var_names, 1);
     VarTable { hash: h, floats, strings }
 }
 
@@ -508,12 +502,10 @@ pub struct RemoteVehicle {
     /// The moment of theirs drawn (see `PlayClock`).
     play: crate::lan_world::PlayClock,
     /// Every variable of theirs as it came (`omsi_net::vars`), pinned each frame, and their
-    /// strings - for the same vehicle files only (`vars`' hash); and the variables the pose
-    /// already carries, which glide instead (lamps, switches, moving parts, doors).
+    /// strings, matched by canonical names for the same variable table.
     vars: Option<VarTable>,
-    synced: hashbrown::HashMap<u16, f32>,
-    synced_strings: hashbrown::HashMap<u16, String>,
-    smooth: hashbrown::HashSet<u16>,
+    synced: hashbrown::HashMap<u32, f32>,
+    synced_strings: hashbrown::HashMap<u32, String>,
     /// Subscription cookie, table hash, and welcome generation for owner-only textures.
     texture_subscription: Option<(u64, u32, u32)>,
 }
@@ -2685,7 +2677,6 @@ fn new_remote(
         vars: None,
         synced: Default::default(),
         synced_strings: Default::default(),
-        smooth: Default::default(),
         texture_subscription: None,
     })
 }
@@ -3041,15 +3032,17 @@ fn drive_remote(rv: &mut RemoteVehicle, pose: &Pose, dt: f32, exact: bool) {
         engine_off: false,
     };
     // and every other variable of theirs, as their scripts have it (`omsi_net::vars`)
-    pinned.extend(rv.synced.iter().filter(|(id, _)| !rv.smooth.contains(*id)).map(|(id, v)| (*id as VarId, *v)));
-    rv.vehicle.update_ai_with(dt, &frame, &inputs, &pinned);
-    for (id, text) in &rv.synced_strings {
-        if let Some(s) = rv.vehicle.state.str_vars.get_mut(*id as usize) {
-            if s != text {
-                s.clone_from(text);
-            }
-        }
-    }
+    pinned.extend(rv.synced.iter().map(|(id, v)| (*id as VarId, *v)));
+    // Pose strings remain a fallback until the full value arrives. Pin them too, so
+    // local AI scripts cannot replace a stand-in's display before visual updates.
+    let display_names = display_vars(&rv.vehicle);
+    let free_names = freetex_names(&rv.vehicle.ty);
+    let strings: Vec<_> = display_names.iter().zip(&pose.texts).chain(free_names.iter().zip(&pose.freetex))
+        .filter_map(|(name, value)| rv.vehicle.ty.program.str_var(name).map(|id| (id, value.as_str())))
+        .filter(|(id, _)| !rv.synced_strings.contains_key(id))
+        .chain(rv.synced_strings.iter().map(|(id, value)| (*id, value.as_str())))
+        .collect();
+    rv.vehicle.update_ai_with_strings(dt, &frame, &inputs, &pinned, &strings);
     rv.last = pose.clone();
 }
 
@@ -3071,7 +3064,9 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
         let floats: Vec<f32> = t.floats.iter().map(|id| vars.get(*id as usize).copied().unwrap_or(0.0)).collect();
         let strs = &p.vehicle.state.str_vars;
         let strings: Vec<String> = t.strings.iter().map(|id| strs.get(*id as usize).cloned().unwrap_or_default()).collect();
-        lan.send_vars(t.hash, &t.floats, &floats, &t.strings, &strings, dt);
+        let float_ids: Vec<u16> = (0..t.floats.len()).map(|i| i as u16).collect();
+        let string_ids: Vec<u16> = (0..t.strings.len()).map(|i| i as u16).collect();
+        lan.send_vars(t.hash, &float_ids, &floats, &string_ids, &strings, dt);
         // `OMSI_DEBUG_VAR_SYNC=<variable>`: ours every two seconds, theirs as it came
         if let Some(name) = omsi_cfg::flags::OMSI_DEBUG_VAR_SYNC.var() {
             game.vars_log += dt;
@@ -3079,7 +3074,7 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
                 game.vars_log = 0.0;
                 log::info!("LAN vars: ours {name} = {:?}", p.vehicle.var(&name));
                 for (id, rv) in &game.remotes {
-                    let theirs = rv.vehicle.ty.program.var(&name).and_then(|k| rv.synced.get(&(k as u16)).copied());
+                    let theirs = rv.vehicle.ty.program.var(&name).and_then(|k| rv.synced.get(&k).copied());
                     log::info!("LAN vars: player {id}'s {name} = {theirs:?} ({} variables, {} strings taken)", rv.synced.len(), rv.synced_strings.len());
                 }
             }
@@ -3092,8 +3087,9 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
         }
         if rv.vars.is_none() {
             let t = var_table(&rv.vehicle.ty.program);
-            let tbl = &rv.table;
-            rv.smooth = tbl.lamps.iter().chain(&tbl.switches).chain(&tbl.values).map(|(_, id)| *id as u16).chain(tbl.doors.iter().map(|id| *id as u16)).chain(tbl.engine_n.map(|id| id as u16)).collect();
+            if t.hash != v.table {
+                log::warn!("LAN: player {} variable table mismatch: received {:08x}, local {:08x}; check that both games use the same bus files", v.id, v.table, t.hash);
+            }
             rv.vars = Some(t);
         }
         let Some(t) = rv.vars.as_ref() else { continue };
@@ -3102,13 +3098,17 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
         }
         let (nf, ns) = (rv.vehicle.state.vars.len(), rv.vehicle.state.str_vars.len());
         for (id, x) in v.floats {
-            if (id as usize) < nf && x.is_finite() {
-                rv.synced.insert(id, x);
+            if let Some(&local) = t.floats.get(id as usize) {
+                if (local as usize) < nf && x.is_finite() {
+                    rv.synced.insert(local, x);
+                }
             }
         }
         for (id, s) in v.strings {
-            if (id as usize) < ns {
-                rv.synced_strings.insert(id, s);
+            if let Some(&local) = t.strings.get(id as usize) {
+                if (local as usize) < ns {
+                    rv.synced_strings.insert(local, s);
+                }
             }
         }
     }
@@ -3514,6 +3514,8 @@ pub fn tick(
         if let Some(peer) = lan.peers().find(|p| p.pose.id == pose.id) {
             rv.take_samples(&peer.history);
         }
+        show_display_texts(&mut rv.vehicle, &pose.texts);
+        show_freetex(&mut rv.vehicle, &pose.freetex);
         match rv.interpolated() {
             Some(mut ip) => {
                 // (who they are, what their bus shows: the newest state's)
@@ -3528,8 +3530,6 @@ pub fn tick(
             }
             None => drive_remote(rv, &pose, dt, false),
         }
-        show_display_texts(&mut rv.vehicle, &pose.texts);
-        show_freetex(&mut rv.vehicle, &pose.freetex);
         let inside = frame.inside_of == Some(pose.id);
         sound_remote(rv, frame.audio, frame.listener, frame.muffled, inside);
     }
@@ -4038,6 +4038,34 @@ mod tests {
         assert_ne!(hash, script_texture_table("Vehicles/Bus/main.bus", &program, &surfaces[..1]));
         program.declare_script_var("other_display_mode");
         assert_ne!(hash, script_texture_table("Vehicles/Bus/main.bus", &program, &surfaces));
+    }
+
+    #[test]
+    fn all_variables_sync_by_name_independently_of_local_ids() {
+        let mut a = omsi_script::Program::default();
+        let mut b = omsi_script::Program::default();
+        let names = ["door_0", "pax_custom", "AI_Light", "implicit", "Velocity", "engine_n"];
+        for name in names { a.declare_var(name); }
+        for name in names.into_iter().rev() { b.declare_var(name); }
+        a.declare_str_var("display");
+        a.declare_str_var("path");
+        b.declare_str_var("path");
+        b.declare_str_var("DISPLAY");
+        let ta = var_table(&a);
+        let tb = var_table(&b);
+        assert_eq!(ta.hash, tb.hash);
+        assert_eq!(ta.floats.len(), names.len());
+        for (&local_a, &local_b) in ta.floats.iter().zip(&tb.floats) {
+            assert_eq!(a.var_names[local_a as usize].to_ascii_lowercase(), b.var_names[local_b as usize].to_ascii_lowercase());
+        }
+        for (&local_a, &local_b) in ta.strings.iter().zip(&tb.strings) {
+            assert_eq!(a.str_var_names[local_a as usize].to_ascii_lowercase(), b.str_var_names[local_b as usize].to_ascii_lowercase());
+        }
+        let mut different_kind = omsi_script::Program::default();
+        different_kind.declare_str_var("door_0");
+        let mut numeric = omsi_script::Program::default();
+        numeric.declare_var("door_0");
+        assert_ne!(var_table(&numeric).hash, var_table(&different_kind).hash);
     }
 
     #[test]

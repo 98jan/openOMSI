@@ -807,10 +807,14 @@ its own on top: **Ctrl + the mouse wheel** over it, or Settings → General → 
 **Every variable of the other buses.** Besides the pose, each game sends all script
 variables of its bus (floats and strings: a gearbox's state, a display's or an IBIS's text,
 a ticket printer, what a plugin or `setvar` set): ten times a second the ones that changed,
-and all of them in turn in between, so a lost datagram is mended within seconds and a
-player who joins late sees the whole state. The copy of another player's bus takes them over
-its own scripts' results (the ones its parts move smoothly by stay smooth); a copy made from
-other files than the sender's (another version of the bus) takes nothing. `OMSI_NO_VAR_SYNC=1`
+and all of them in turn in between, so lost datagrams are repaired and a player who joins
+late receives the whole state. Every numeric and string variable participates,
+including engine-fed names and variables introduced by scripts. Names determine wire indices,
+so differing local compiler IDs do not change their meaning. Strings are not cut at 255 bytes:
+values up to 1 MiB are fragmented and applied only when complete, with periodic recovery of
+lost fragments. Newer string versions reject delayed older packets. The remote copy pins the
+owner's values before and after its scripts, before updating displays; pose display text is
+only a fallback. Different variable-name tables (another version of the bus) take nothing. `OMSI_NO_VAR_SYNC=1`
 switches it off, `OMSI_DEBUG_VAR_SYNC=<variable>` logs what arrives for one variable.
 
 **The host's mods.** What the host's session uses that is not in the OMSI 2 folder itself
@@ -858,7 +862,7 @@ RGBA image, then only changed RGBA pixel runs and mipmap settings are sent. Chan
 fragmented, acknowledged and retried until complete, and applied atomically; a late join,
 recreated vehicle or newly sized surface receives initialization again. Only images
 released by the owner's scripts are published, never an unfinished locked drawing buffer.
-Both games need LAN protocol 7; older versions are rejected rather than showing an empty
+Both games need LAN protocol 8; older versions are rejected rather than showing an empty
 display. Texture transfers have their own rate budget, separate from vehicle movement.
 
 Windows, macOS and Linux run the same code (wgpu, winit, cpal, std UDP);

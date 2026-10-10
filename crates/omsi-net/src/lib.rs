@@ -106,7 +106,8 @@ pub use wire::{
 /// sound variables alone filled the 31 there was room for).
 /// 7: owner-authoritative RGBA script textures with acknowledged initialization and deltas.
 /// Older peers cannot render remote script textures after local drawing is disabled.
-pub const PROTOCOL: u32 = 7;
+/// 8: canonical full variable tables and versioned, fragmented strings.
+pub const PROTOCOL: u32 = 8;
 /// (omsi-plugin's `MULTIPLAYER_PORTS` keeps `omsi.send` off this one and the `PORT_RANGE` after it.)
 pub const DEFAULT_PORT: u16 = 27015;
 /// Ports a host tries after the default one when that is taken (a second session on the
@@ -152,9 +153,9 @@ const MAX_FIELD: usize = 64;
 /// A host takes at most this many states and this many other messages a second from one
 /// player (with bursts of as many); chat lines one a second (bursts of three).
 const STATE_RATE: (f32, f32) = (40.0, 40.0);
-// Variable deltas and key frames use at most 22 datagrams/s. They must not
+// Variable deltas, key frames and long-string fragments use at most 32 datagrams/s. They must not
 // consume the pose/world budget (otherwise normal driving drops recovery slices).
-const VAR_RATE: (f32, f32) = (30.0, 30.0);
+const VAR_RATE: (f32, f32) = (60.0, 60.0);
 const TEXTURE_RATE: (f32, f32) = (2048.0, 2048.0);
 const MESSAGE_RATE: (f32, f32) = (10.0, 20.0);
 const CHAT_RATE: (f32, f32) = (1.0, 3.0);
@@ -1426,6 +1427,7 @@ pub struct LanSession {
     /// Every script variable of our vehicle going out (`vars.rs`), and the others' coming in.
     var_sender: vars::VarSender,
     vars_in: Vec<vars::VarsIn>,
+    var_receiver: vars::VarReceiver,
     script_textures: scripttex::Sync,
     descs: Vec<world::Desc>,
     wants: Vec<(u32, Vec<world::EntityRef>)>,
@@ -1532,6 +1534,7 @@ impl LanSession {
             var_sender: vars::VarSender::default(),
             script_textures: scripttex::Sync::default(),
             vars_in: Vec::new(),
+            var_receiver: vars::VarReceiver::default(),
             descs: Vec::new(),
             wants: Vec::new(),
             claims: Vec::new(),
@@ -2289,6 +2292,7 @@ impl LanSession {
         self.receive(&mut gone);
         let peers: Vec<u32> = self.peers.keys().copied().collect();
         self.script_textures.retain_peers(&peers);
+        self.var_receiver.retain_peers(&peers);
         if self.connected {
             for packet in self.script_textures.tick(PROTOCOL as u8, self.my_id, dt) {
                 self.route_script_texture(&packet);
@@ -2886,6 +2890,7 @@ impl LanSession {
                 }
             }
         }
+        let Some(v) = self.var_receiver.receive(data, PROTOCOL as u8) else { return };
         // (a game that stopped reading does not pile them up without end)
         if self.vars_in.len() < 1024 {
             self.vars_in.push(v);

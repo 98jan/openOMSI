@@ -2476,6 +2476,18 @@ impl VehicleInstance {
         inputs: &[(omsi_script::VarId, f32)],
         pinned: &[(omsi_script::VarId, f32)],
     ) {
+        self.update_ai_with_strings(dt, ai, inputs, pinned, &[]);
+    }
+
+    /// Pin owner strings before script execution and again before visual updates.
+    pub fn update_ai_with_strings(
+        &mut self,
+        dt: f32,
+        ai: &AiFrame,
+        inputs: &[(omsi_script::VarId, f32)],
+        pinned: &[(omsi_script::VarId, f32)],
+        strings: &[(omsi_script::StrVarId, &str)],
+    ) {
         self.host.clock.advance(dt);
         self.set_engine_var("schedule_active", self.host.schedule_active);
         self.physics.speed = ai.speed;
@@ -2580,6 +2592,14 @@ impl VehicleInstance {
         for &(id, v) in inputs.iter().chain(pinned) {
             self.put(Some(id), v);
         }
+        for (id, value) in strings {
+            if let Some(s) = self.state.str_vars.get_mut(*id as usize) {
+                if s.as_str() != *value {
+                    s.clear();
+                    s.push_str(value);
+                }
+            }
+        }
         self.run_collision_trigger();
         let p = self.ty.program.clone();
         crate::timetable_run::apply_pending_destination(self);
@@ -2591,6 +2611,14 @@ impl VehicleInstance {
         self.clear_pax_requests();
         for &(id, v) in pinned {
             self.put(Some(id), v);
+        }
+        for (id, value) in strings {
+            if let Some(s) = self.state.str_vars.get_mut(*id as usize) {
+                if s.as_str() != *value {
+                    s.clear();
+                    s.push_str(value);
+                }
+            }
         }
         if self.ai_visuals {
             let dt = dt + std::mem::take(&mut self.ai_visuals_missed);
@@ -5212,6 +5240,26 @@ mod tests {
                 power > 0.0
             );
         }
+    }
+
+    #[test]
+    fn remote_strings_are_visible_to_scripts_and_restored_before_visuals() {
+        let mut v = restored_display_vehicle();
+        for def in &v.ty.model.text_textures {
+            v.text_textures.push(crate::texttex::TextTextureState::new(def.clone(), None));
+        }
+        let request = v.ty.program.str_var("line_request").unwrap();
+        let display = v.ty.program.str_var("line_display").unwrap();
+        let power = v.ty.program.var("power").unwrap();
+        // The frame copies request to display: it must see the owner request immediately.
+        v.update_ai_with_strings(0.02, &AiFrame::default(), &[], &[(power, 0.0)], &[(request, "owner request")]);
+        assert_eq!(v.str_var("line_display"), "owner request");
+        // That script result must not overwrite an independently synchronized display.
+        v.update_ai_with_strings(0.02, &AiFrame::default(), &[], &[(power, 0.0)], &[(request, "other request"), (display, "owner display")]);
+        assert_eq!(v.str_var("line_display"), "owner display");
+        assert_eq!(v.var("power"), Some(0.0));
+        v.update_text_textures();
+        assert!(v.text_textures.iter().any(|t| t.last_text.as_deref() == Some("owner display")));
     }
 
     #[test]

@@ -526,9 +526,9 @@ fn host_and_clients_exchange_complete_variable_tables() {
     let ids: Vec<u16> = (0..600).map(|k| k * 2).collect();
     let values: Vec<f32> = (0..600).map(|k| k as f32 + 0.5).collect();
     let string_ids: Vec<u16> = (0..20).collect();
-    let strings: Vec<String> = (0..20).map(|k| format!("{k}:{}", "x".repeat(240))).collect();
+    let strings: Vec<String> = (0..20).map(|k| format!("{k}:{}", "árvíz".repeat(if k == 19 { 600 } else { 60 }))).collect();
     let mut received = [vars::VarsIn::default(), vars::VarsIn::default(), vars::VarsIn::default()];
-    for _ in 0..10 {
+    for _ in 0..30 {
         host.send_vars(99, &ids, &values, &string_ids, &strings, 0.1);
         a.send_vars(99, &ids, &values, &string_ids, &strings, 0.1);
         host.tick(0.1, &poses[0]);
