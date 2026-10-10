@@ -2062,7 +2062,7 @@ pub struct Renderer {
     format: wgpu::TextureFormat,
     depth: Option<(wgpu::Texture, wgpu::TextureView, u32, u32)>,
     /// Multisampled colour and depth targets per size (the window, each mirror).
-    msaa_targets: HashMap<(u32, u32), (wgpu::TextureView, wgpu::TextureView)>,
+    msaa_targets: HashMap<(u32, u32), (Option<wgpu::TextureView>, wgpu::TextureView)>,
     /// Screen-space ambient occlusion: depth prepass and AO textures of the window's size.
     ao: Option<AoTargets>,
     ao_sampler: wgpu::Sampler,
@@ -5408,19 +5408,21 @@ impl Renderer {
         self.hdr_targets.retain(|k, _| keep.contains(k));
     }
 
-    /// The multisampled colour and depth attachments for a target of this size.
-    fn msaa_targets(&mut self, w: u32, h: u32) -> (wgpu::TextureView, wgpu::TextureView) {
+    /// The multisampled colour (`color`: where the pass draws into it) and depth attachments
+    /// for a target of this size. The colour is made the first time it is asked for: the
+    /// Enhanced picture draws into a multisampled target of its own and only the depth is
+    /// used, and a colour of the window's size was made for nothing (130 MB at 4K with 4x).
+    fn msaa_targets(&mut self, w: u32, h: u32, color: bool) -> (Option<wgpu::TextureView>, wgpu::TextureView) {
         self.target_use.insert((w, h), std::time::Instant::now());
-        if let Some(t) = self.msaa_targets.get(&(w, h)) {
-            return t.clone();
+        if !self.msaa_targets.contains_key(&(w, h)) {
+            self.evict_targets();
         }
-        self.evict_targets();
         let size = wgpu::Extent3d {
             width: w,
             height: h,
             depth_or_array_layers: 1,
         };
-        let color = self.device.create_texture(&wgpu::TextureDescriptor {
+        let make_color = || self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("msaa colour"),
             size,
             mip_level_count: 1,
@@ -5429,7 +5431,13 @@ impl Renderer {
             format: self.format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
-        });
+        }).create_view(&Default::default());
+        if let Some(t) = self.msaa_targets.get_mut(&(w, h)) {
+            if color && t.0.is_none() {
+                t.0 = Some(make_color());
+            }
+            return t.clone();
+        }
         let depth = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("msaa depth"),
             size,
@@ -5440,10 +5448,7 @@ impl Renderer {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         });
-        let t = (
-            color.create_view(&Default::default()),
-            depth.create_view(&Default::default()),
-        );
+        let t = (color.then(make_color), depth.create_view(&Default::default()));
         self.msaa_targets.insert((w, h), t.clone());
         t
     }
