@@ -527,6 +527,11 @@ impl App {
                             }
                         }
                         self.session.schedule = Some(sch);
+                    } else if !crate::rail_drive::args_rail(&self.args) && self.args.lan_join.is_none() {
+                        // (the timetable is still the map's to read and pick a duty from: a
+                        // book, nothing of it runs - see `SessionState::timetable_book`)
+                        self.session.timetable_book =
+                            Some(schedule::Schedule::new(&self.args.root, &w, &start_clock(&self.args)));
                     }
                 }
                 if self.session.traffic.is_none() {

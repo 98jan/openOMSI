@@ -576,6 +576,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             placed: Vec::new(),
             traffic: None,
             schedule: None,
+            timetable_book: None,
             humans: None,
             duty: None,
             duty_places: false,

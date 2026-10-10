@@ -404,6 +404,10 @@ pub(crate) struct SessionState {
     pub(crate) world_day: Option<(i32, Option<String>)>,
     pub(crate) traffic: Option<traffic::Traffic>,
     pub(crate) schedule: Option<schedule::Schedule>,
+    /// The map's timetable read for the menu while it does not run (timetable traffic off):
+    /// its lines and tours can be looked at and picked, as in OMSI 2. Picking a duty makes
+    /// it `schedule`, without timetable buses (`timetable_for_duty`).
+    pub(crate) timetable_book: Option<schedule::Schedule>,
     pub(crate) humans: Option<humans::Humans>,
     pub(crate) duty: Option<schedule::PlayerDuty>,
     /// The duty was told the places of the stops beyond the loaded tiles.

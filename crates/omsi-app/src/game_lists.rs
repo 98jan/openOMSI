@@ -96,7 +96,7 @@ fn route_numbers(app: &App) -> Vec<String> {
             }
         }
     }
-    if let Some(sch) = app.session.schedule.as_ref() {
+    if let Some(sch) = timetable(app) {
         for l in &sch.data.lines {
             let n = l.name.trim().to_string();
             if !n.is_empty() && !out.contains(&n) {
@@ -455,7 +455,7 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
             return out;
         }
         ListKind::Lines => {
-            if let Some(sch) = app.session.schedule.as_ref() {
+            if let Some(sch) = timetable(app) {
                 let mut lines: Vec<&omsi_timetable::Line> = sch.data.lines.iter().filter(|l| l.user_allowed && l.tours.iter().any(|t| tour_listed(sch, &l.name, t, app.clock.time))).collect();
                 lines.sort_by(|a, b| natural(&a.name, &b.name));
                 for l in lines {
@@ -467,8 +467,8 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
             }
         }
         ListKind::Tours(line, _) => {
-            if let Some(l) = app.session.schedule.as_ref().and_then(|s| s.data.lines.iter().find(|l| l.name == *line)) {
-                for t in sorted_tours(l).into_iter().filter(|t| app.session.schedule.as_ref().is_some_and(|s| tour_listed(s, line, t, app.clock.time))) {
+            if let Some(l) = timetable(app).and_then(|s| s.data.lines.iter().find(|l| l.name == *line)) {
+                for t in sorted_tours(l).into_iter().filter(|t| timetable(app).is_some_and(|s| tour_listed(s, line, t, app.clock.time))) {
                     // (the tours in order of the time they start)
                     out.push((format!("{} {}", tr("Tour"), t.number.trim()), format!("tour {}\u{1}{}", line, t.number)));
                 }
@@ -904,7 +904,7 @@ pub(crate) fn run_move(app: &mut App, kind: &ListKind, action: &str, mv: Move) -
         ListKind::Tours(_, pick) => {
             if let Some((line, tour)) = arg.split_once('\u{1}') {
                 let chosen = pick.as_ref().filter(|p| p.0 == tour).map(|p| p.1).unwrap_or(0);
-                let trip = pick.as_ref().filter(|p| p.0 == tour).map(|p| p.2).unwrap_or_else(|| app.session.schedule.as_ref().map(|s| s.tour_trip_now(line, tour, app.clock.time)).unwrap_or(0));
+                let trip = pick.as_ref().filter(|p| p.0 == tour).map(|p| p.2).unwrap_or_else(|| timetable(app).map(|s| s.tour_trip_now(line, tour, app.clock.time)).unwrap_or(0));
                 start_duty_at(app, line, tour, trip, chosen);
             }
             None
@@ -2998,7 +2998,7 @@ pub(crate) fn tour_at(app: &App, k: usize) -> Option<(String, String)> {
 /// from, the trip chosen and how many trips the tour has.
 pub(crate) fn tour_choice(app: &App, k: usize) -> Option<(usize, usize, usize, usize)> {
     let (line, tour) = tour_at(app, k)?;
-    let sch = app.session.schedule.as_ref()?;
+    let sch = timetable(app)?;
     let trips = sch.tour_trip_count(&line, &tour);
     let (stop, trip) = match app.menus.list_kind.as_ref() {
         Some(ListKind::Tours(_, Some(p))) if p.0 == tour => (p.1, p.2),
@@ -3011,7 +3011,29 @@ pub(crate) fn tour_choice(app: &App, k: usize) -> Option<(usize, usize, usize, u
 
 /// Start the tour at stop number `chosen` of trip number `trip` of the tour (the trip chosen
 /// by its time): the duty goes on from that stop, the bus stays where it is.
+/// The map's timetable as the menu reads it: the running one, else the book of a session
+/// without timetable traffic (`SessionState::timetable_book`).
+pub(crate) fn timetable(app: &App) -> Option<&crate::schedule::Schedule> {
+    app.session.schedule.as_ref().or(app.session.timetable_book.as_ref())
+}
+
+/// A duty picked from the timetable book: from now on the timetable runs for the player's
+/// duty alone - no timetable buses, as the launcher's "Disable timetable buses" with a line
+/// chosen.
+fn timetable_for_duty(app: &mut App) {
+    if app.session.schedule.is_some() {
+        return;
+    }
+    if let Some(book) = app.session.timetable_book.take() {
+        if let Some(t) = app.session.traffic.as_mut() {
+            t.no_timetable_buses = true;
+        }
+        app.session.schedule = Some(book);
+    }
+}
+
 pub(crate) fn start_duty_at(app: &mut App, line: &str, tour: &str, trip: usize, chosen: usize) {
+    timetable_for_duty(app);
     let now = app.clock.time;
     let Some((k, j)) = app.session.schedule.as_ref().and_then(|s| s.tour_trip_stops(line, tour, trip).get(chosen).map(|x| (x.0, x.1))) else {
         return start_duty(app, line, tour);
@@ -3029,9 +3051,9 @@ pub(crate) fn start_duty_at(app: &mut App, line: &str, tour: &str, trip: usize, 
     // (no teleport: the stop chosen is the one the bus drives to next)
     d.start_at_here(k, j);
     if let Some(p) = app.player.as_mut() {
+        // (the IBIS and the roller blind are the driver's to set, as in OMSI 2: picking a
+        // timetable types nothing into them - Shift+U, putting the bus into service, does)
         d.update(&mut p.vehicle, now);
-        let (trip, stop) = d.trip_for_ibis();
-        p.set_duty_destination(trip, stop);
         if let Some(w) = app.world.as_ref() {
             let mut fonts = w.fonts.lock();
             if let Err(e) = crate::schedule_paper::update_vehicle(&mut p.vehicle, &d, &mut fonts) {
@@ -3046,14 +3068,14 @@ pub(crate) fn start_duty_at(app: &mut App, line: &str, tour: &str, trip: usize, 
 }
 
 fn start_duty(app: &mut App, line: &str, tour: &str) {
+    timetable_for_duty(app);
     let (Some(w), Some(sch)) = (app.world.clone(), app.session.schedule.as_mut()) else { return };
     let now = app.clock.time;
     match sch.player_duty(&w, line, tour, now, None, false) {
         Ok(mut d) => {
             if let Some(p) = app.player.as_mut() {
+                // (nothing typed into the IBIS: see `start_duty_at`)
                 d.update(&mut p.vehicle, now);
-                let (trip, stop) = d.trip_for_ibis();
-                p.set_duty_destination(trip, stop);
                 let mut fonts = w.fonts.lock();
                 if let Err(e) = crate::schedule_paper::update_vehicle(
                     &mut p.vehicle,
