@@ -24,6 +24,34 @@ pub fn lets_in(v: f32, decel: f32, room: f32) -> bool {
     v < COURTESY_SPEED && room > v * v / (2.0 * decel.max(0.5)) + 1.0
 }
 
+/// Of two decided cars, does the other one (its arrival in s, its room to the meeting
+/// place in m, its speed, its id) go first before this one? The one that gets there first,
+/// a tie to the lower number - but of two close in time, the one that can no longer stop
+/// firmly goes before one that still can: on a tie broken by number, a car on the main road
+/// at 50 km/h a dozen metres off stopped in an emergency for one that rolled out at walking
+/// pace.
+pub fn goes_first((t_j, theirs, v_o, id_o): (f32, f32, f32, u64), (t_mine, my_room, v, me): (f32, f32, f32, u64)) -> bool {
+    let (i_must_go, they_must_go) = (my_room < firm_stop(v), theirs < firm_stop(v_o));
+    if i_must_go != they_must_go && (t_j - t_mine).abs() <= 1.0 {
+        return they_must_go;
+    }
+    t_j < t_mine - 0.3 || ((t_j - t_mine).abs() <= 0.3 && id_o < me)
+}
+
+/// A car that rolled into the junction without a claim of its own (on this meeting place's
+/// lane either: the others give way to one), gives way here and can still stop before the
+/// meeting place (at `v` m/s, `my_room` m off) does not pull out in front of one with the
+/// right of way (`o`, `theirs` m off, there in `t_j` s while this one is clear in `t_clear`)
+/// that is too close to stop for it without braking hard. Decided only by being inside, a
+/// car turning out of a side road drove into the crossing ahead of a main road's car at
+/// 50 km/h a few seconds off, which had to stop in an emergency and ran into it (Spandau).
+/// It waits until that one is by, not for a gap in the stream - and not for one that gives
+/// way itself (to this car, perhaps: the two waited for each other at Grundorf).
+pub fn too_close_to_pull_out(v: f32, my_room: f32, o: &AiState, o_yielding: bool, theirs: f32, t_j: f32, t_clear: f32) -> bool {
+    let they_cannot_stop = theirs < o.speed * o.speed / (2.0 * o.decel.max(1.0)) + o.speed + 2.0;
+    my_room > v * v / MAX_BRAKE && o.speed > 3.0 && !o_yielding && they_cannot_stop && t_j < t_clear + 1.0
+}
+
 /// Distance (m) a driver at `v` m/s needs to stop with firm braking: what decides whether
 /// a driver who gives way by a sign (a lower `[rule] priority`, an entry to a ring) can
 /// still stop before the meeting place - an early claim of his does not take the right of
@@ -1023,6 +1051,16 @@ impl TrafficSim {
                         continue;
                     }
                     let o_prio = prio(o);
+                    // (see `too_close_to_pull_out`)
+                    if jn.inside && !committed && !car.reserved.contains(&l) && !waiting_inside && must_yield && !me_prio && !waits_short && too_close_to_pull_out(v, my_room, &o.state, o.yielding, theirs, t_j, t_clear) {
+                        hard = true;
+                        by = by.or(Some(o.id));
+                        hold(true, o.id, Hold::Rule, &mut holds, &mut stop_at);
+                        if explain {
+                            why.push(format!("car {} with the right of way arrives at {l}/{m} in {t_j:.1} s, too close to stop for this one", o.id));
+                        }
+                        continue;
+                    }
                     // A driver going into a slow queue that lets him in, and the driver of
                     // that queue letting him: both judge it by `lets_in` of the queue's car.
                     let other_lets_in = long_waiter && must_yield && !o_prio && lets_in(o.state.speed, o.state.decel, theirs);
@@ -1057,11 +1095,7 @@ impl TrafficSim {
                         // that gets there first goes first, a tie goes to the lower number.
                         // Otherwise two cars standing at their lines, each with a claim,
                         // waited for each other for good.
-                        let first = if me_decided {
-                            t_j < t_mine - 0.3 || ((t_j - t_mine).abs() <= 0.3 && o.id < me_id)
-                        } else {
-                            true
-                        };
+                        let first = !me_decided || goes_first((t_j, theirs, o.state.speed, o.id), (t_mine, my_room, v, me_id));
                         if first && t_j < t_clear * if me_decided { 1.0 } else { patience } + 1.0 {
                             hard = true;
                             by = by.or(Some(o.id));
