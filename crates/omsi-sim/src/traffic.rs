@@ -2177,9 +2177,9 @@ pub const JERK: f32 = 8.0;
 /// this much of the excess a second (1/s): the free road's term alone fell to nothing as the
 /// speed neared the limit, and a car crept down to the new limit for a hundred metres.
 const LIMIT_GAIN: f32 = 2.0;
-/// Standing this close to where it has to stop (m, beyond the gap it keeps there), a car
-/// stays where it is: the model's pull towards the exact spot moved it on by a few
-/// centimetres at a time, the brake lights going on and off.
+/// Standing this close behind a standing car (m, beyond the gap it keeps to it), a car stays
+/// where it is: the model's pull towards the exact gap moved it on by a few centimetres at a
+/// time whenever the one ahead rolled on a little, the brake lights going on and off.
 const STANDSTILL_SLACK: f32 = 0.75;
 /// Out of an emergency once the braking needed is this much (m/s²) under the ordinary
 /// maximum again: right at the boundary the channel went on and off every step.
@@ -2775,7 +2775,7 @@ impl AiState {
     /// takes over: up to `emergency_brake`, at once, and said (`emergency`,
     /// `emergency_began`) - before, such a stop was only the model's output clipped at the
     /// ceiling, and nobody could tell it from a firm brake. A car standing within
-    /// `STANDSTILL_SLACK` of where it has to stop stays there.
+    /// `STANDSTILL_SLACK` of the gap it keeps behind a standing car stays there.
     pub fn command(&mut self, net: &Network, dt: f32, lead: Option<Lead>, stop: Option<f32>) -> f32 {
         let want = self.desired_accel(net, lead, stop);
         let was = self.emergency;
@@ -2788,9 +2788,10 @@ impl AiState {
         let mut target = want.max(limit);
         let from = if was { want.max(self.cmd) } else { self.cmd };
         if self.speed < 0.05 {
-            let at_stop = stop.is_some_and(|d| d - self.front - STOP_LINE_GAP < STANDSTILL_SLACK);
-            let at_lead = lead.is_some_and(|l| l.speed < 0.3 && l.gap < self.min_gap + STANDSTILL_SLACK);
-            if at_stop || at_lead {
+            // (only behind a car: up to a line the model stops where it should, and the
+            // junctions count on a car waiting right at its line - held short of it as
+            // well, a car waiting to turn and one driving through met at a Spandau junction)
+            if lead.is_some_and(|l| l.speed < 0.3 && l.gap < self.min_gap + STANDSTILL_SLACK) {
                 target = target.min(0.0);
             }
             if target <= 0.0 {
