@@ -539,29 +539,27 @@ impl World {
 pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs: &[PathBuf]) -> NavigationMap {
     use rayon::prelude::*;
     let t0 = std::time::Instant::now();
-    let scos: Mutex<HashMap<String, Option<Arc<SceneryObject>>>> = Mutex::new(HashMap::new());
+    // (each file read once: a tile that wants one being read waits for it, rather than
+    // reading it too - see `OnceByKey`)
+    type Once<T> = Arc<std::sync::OnceLock<Option<Arc<T>>>>;
+    let scos: Mutex<HashMap<String, Once<SceneryObject>>> = Mutex::new(HashMap::new());
     let sco_of = |file: &str| -> Option<Arc<SceneryObject>> {
         let key = file.trim().to_ascii_lowercase().replace('\\', "/");
-        if let Some(v) = scos.lock().get(&key) {
-            return v.clone();
-        }
-        let v = SceneryObject::load(&omsi_cfg::resolve_path(root, file)).ok().map(Arc::new);
-        scos.lock().insert(key, v.clone());
-        v
+        let cell = scos.lock().entry(key).or_default().clone();
+        cell.get_or_init(|| SceneryObject::load(&omsi_cfg::resolve_path(root, file)).ok().map(Arc::new)).clone()
     };
-    let slis: Mutex<HashMap<String, Option<Arc<Spline>>>> = Mutex::new(HashMap::new());
+    let slis: Mutex<HashMap<String, Once<Spline>>> = Mutex::new(HashMap::new());
     let sli_of = |file: &str| -> Option<Arc<Spline>> {
         // (the navigator loads `.sli` through `World::spline_type` with the same two calls)
         let key = file.trim().to_ascii_lowercase().replace('\\', "/");
-        if let Some(v) = slis.lock().get(&key) {
-            return v.clone();
-        }
-        let v = Spline::load(&omsi_cfg::resolve_path(root, file)).ok().map(|def| {
-            omsi_geometry::register_half_cant_width(file, &def);
-            Arc::new(def)
-        });
-        slis.lock().insert(key, v.clone());
-        v
+        let cell = slis.lock().entry(key).or_default().clone();
+        cell.get_or_init(|| {
+            Spline::load(&omsi_cfg::resolve_path(root, file)).ok().map(|def| {
+                omsi_geometry::register_half_cant_width(file, &def);
+                Arc::new(def)
+            })
+        })
+        .clone()
     };
     #[allow(clippy::type_complexity)]
     let parts: Vec<(Vec<Lane>, Vec<(i64, DVec3)>, Vec<(DVec3, f64, String)>, Vec<(Vec<DVec3>, f32)>)> = tiles
