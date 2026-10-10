@@ -104,6 +104,10 @@ that camera sees from the rear section.
 
 ## Models
 
+- `[led_glow_effect]` after a `[matl]` (a number from 0 to 1) says how much an LED panel's
+  dots glow in the enhanced picture: 1 the full `LED glow` setting, 0.5 half of it, 0 not at
+  all (the slot is no LED panel). Without it openOMSI guesses: a slot with a `\S:n` script
+  mask and a white light map is taken for an LED panel. See FORMATS.md.
 - `.o3d` files with 32-bit indices (the long-index flag) are drawn with their full vertex
   and face count; everything is drawn with 32-bit indices.
 - There is no limit on the number of meshes, materials, `[matl_change]` items, `[CTC]`

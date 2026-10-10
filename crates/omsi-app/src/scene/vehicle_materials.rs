@@ -596,7 +596,8 @@ pub(super) fn material_extra(
         water: false,
         display: false,
         screen: false,
-        led: false,
+        // (a scenery object's slot is an LED panel only by the modeller's word)
+        led: led_glow_effect(ov).is_some_and(|g| g > 0.0),
         led_sign: false,
         no_map_lights: false,
         tree: false,
@@ -612,6 +613,23 @@ pub(super) fn material_extra(
             .map(|o| o.border_color.map(|c| (c / 255.0).clamp(0.0, 1.0))),
         metal_ok: false,
         glow: glow_strength(ov),
+        led_glow: led_glow_effect(ov),
+    }
+}
+
+/// `[led_glow_effect] <0..1>` of a slot (an openOMSI extension, see
+/// `MaterialExtra::led_glow`): the last of its commands counts, as with the others.
+pub(super) fn led_glow_effect(ov: &[&MaterialDef]) -> Option<f32> {
+    ov.iter().rev().find_map(|o| o.led_glow)
+}
+
+/// The LED panel guess (`MaterialExtra::led`) as the modeller's `[led_glow_effect]` has it,
+/// where the slot has one: a value over 0 makes the slot an LED panel glowing with that
+/// share, 0 makes it none.
+pub(super) fn apply_led_glow_effect(extra: &mut MaterialExtra, ov: &[&MaterialDef]) {
+    if let Some(g) = led_glow_effect(ov) {
+        extra.led = g > 0.0;
+        extra.led_glow = Some(g);
     }
 }
 

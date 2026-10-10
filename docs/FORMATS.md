@@ -989,3 +989,18 @@ light map and has no glow, and the classic picture draws the slot as if the keyw
 there. A glow that is switched (a tail lamp) is a `[matl_item]` of a `[matl_change]` with the
 keyword; an item without a light map or glow of its own keeps its base material's. The last
 `[matl_glow]` of a slot counts.
+
+`[led_glow_effect] <value>` is **an openOMSI extension** too (Omsi.exe skips it): `value`, 0 to
+1, is how much of the `Led glow` setting the slot's lit dots burn with. Without it the enhanced
+picture guesses which slots are LED panels - a `\S:n` script mask (or a page's dot mask) under a
+light map that is white all over - and gives them the whole of the setting; with it the
+modeller decides: `0` the slot is no LED panel (a flipdot or an LCD the guess would take for
+one), anything over 0 it is one, glowing with that share. The dots are what the slot's alpha
+lets through, in its texture's colour, as with the guessed panels. A value outside 0..1 is
+taken to the nearer end. It belongs to the slot like the other commands (the last one counts,
+a `[matl_item]` takes it from the slot or gives its own); the classic picture does not use it.
+
+Commands between `[matl_change]` and its first `[matl_item]` belong to the slot's plain
+material, as Omsi.exe's reader has them (0x5efae8 keeps the slot's record current until the
+item): an LED matrix that opens its change first and writes `[matl_alpha] 2` and its
+`[useScriptTexture]` after it gives them to the panel itself, lit or not.

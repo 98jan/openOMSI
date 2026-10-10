@@ -98,6 +98,11 @@ pub struct MaterialDef {
     /// openOMSI extension: Omsi.exe does not know the keyword, and the classic picture draws
     /// the material as if it were not there.
     pub glow: Option<(String, f32)>,
+    /// `[led_glow_effect] <value>` (openOMSI): how much of an LED panel's glow the slot
+    /// gets, 0..1 - 0 none (a flipdot or an LCD the automatic guess took for LED dots),
+    /// 1 the full `Led glow` setting. The modeller's word replaces the guess the enhanced
+    /// picture otherwise makes from the slot's `\S:n` mask and white light map.
+    pub led_glow: Option<f32>,
     pub allcolor: Option<[f32; 14]>,
 }
 
@@ -117,7 +122,7 @@ impl MaterialDef {
         macro_rules! opt {
             ($($f:ident),*) => { $( if self.$f.is_none() { self.$f = base.$f.clone(); } )* };
         }
-        opt!(envmap, envmap_mask, bumpmap, transmap, raindropmap, texcoord_trans_x, texcoord_trans_y, use_script_texture, use_text_texture, alphascale, freetex, nightmap, glow, allcolor);
+        opt!(envmap, envmap_mask, bumpmap, transmap, raindropmap, texcoord_trans_x, texcoord_trans_y, use_script_texture, use_text_texture, alphascale, freetex, nightmap, glow, led_glow, allcolor);
         self.envmap_realtime |= base.envmap_realtime;
         if self.tex_address == TexAddress::Wrap {
             self.tex_address = base.tex_address;
@@ -1032,6 +1037,14 @@ impl Model {
                     m.glow = Some((t, v));
                 }
             }
+            "led_glow_effect" => {
+                // (a value out of 0..1 is taken to the nearer end; a line that is no number
+                // reads as 0, as any number of the format does)
+                let v = r.f32();
+                if let Some(m) = self.cur_matl() {
+                    m.led_glow = Some(if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 });
+                }
+            }
             "matl_allcolor" => {
                 let v = r.f32s::<14>();
                 if let Some(m) = self.cur_matl() {
@@ -1418,6 +1431,17 @@ mod tests {
         // the list a mesh has without a line: what exists of 0..3
         let m = Model::parse(&CfgFile::from_str("model.cfg", &format!("{lamps}[mesh]\na.o3d\n")));
         assert_eq!(m.meshes[0].illumination_interior, vec![0, 1, 2]);
+    }
+
+    /// `[led_glow_effect]` is the slot's, kept in 0..1, and an item takes it from the slot.
+    #[test]
+    fn led_glow_effect_belongs_to_the_slot() {
+        let text = "[mesh]\nm.o3d\n[matl]\nled.bmp\n0\n[led_glow_effect]\n0.4\n[matl]\nflip.bmp\n0\n[led_glow_effect]\n3\n[matl_change]\nled.bmp\n0\nv\n[matl_item]\n";
+        let m = Model::parse(&CfgFile::from_str("model.cfg", text));
+        let of = |t: &str, item: bool| m.meshes[0].materials.iter().find(|x| x.texture == t && x.item == item && x.change.is_none() == !item).and_then(|x| x.led_glow);
+        assert_eq!(of("led.bmp", false), Some(0.4));
+        assert_eq!(of("flip.bmp", false), Some(1.0));
+        assert_eq!(of("led.bmp", true), Some(0.4));
     }
 
     #[test]

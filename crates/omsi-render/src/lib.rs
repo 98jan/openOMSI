@@ -1117,6 +1117,11 @@ pub struct MaterialExtra {
     /// halo comes from its brightness as any light's does. `params2.x` is left off, so the
     /// classic picture draws the material as if the keyword were not there.
     pub glow: f32,
+    /// `[led_glow_effect]` (an openOMSI extension): the share (0..1) of the `Led glow`
+    /// setting an LED panel's dots burn with; `None` the whole of it. With the keyword
+    /// the modeller has said whether the slot is an LED panel at all (`led` follows it),
+    /// so this is only read where `led` is set.
+    pub led_glow: Option<f32>,
 }
 
 /// The textures a material's bind group samples.
@@ -4344,7 +4349,8 @@ impl Renderer {
             },
             sway: extra.sway.map_or([0.0; 4], |s| [1.0, s[0], s[1], s[2]]),
             // (no mask bound - its file missing - no glow: the slot would shine all over)
-            glow: [if lightmap.is_some() { extra.glow.max(0.0) } else { 0.0 }, 0.0, 0.0, 0.0],
+            // (y: an LED panel's share of its glow, see `MaterialExtra::led_glow`)
+            glow: [if lightmap.is_some() { extra.glow.max(0.0) } else { 0.0 }, extra.led_glow.map_or(1.0, |g| g.clamp(0.0, 1.0)), 0.0, 0.0],
         };
         let slot = |t: Option<TextureId>| {
             t.and_then(|t| scene.textures.get(t).map(|g| (t, g.gen)))
