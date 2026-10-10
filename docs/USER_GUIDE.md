@@ -850,6 +850,17 @@ and everybody sees the passengers in everybody's bus: the riders of a player's b
 with the world frames and sit in that bus in every other game (protocol 5). `crates/omsi-net` is the transport, the same on every
 platform.
 
+**Script textures.** Matrix displays and other `[scripttexture]` surfaces come from the
+player driving that bus. The local scripts of a remote bus cannot redraw or load these
+surfaces. Both games must have the same bus, script variable layout and declared texture
+slots; a stand-in receives no texture data. Initialization sends a losslessly compressed
+RGBA image, then only changed RGBA pixel runs and mipmap settings are sent. Changes are
+fragmented, acknowledged and retried until complete, and applied atomically; a late join,
+recreated vehicle or newly sized surface receives initialization again. Only images
+released by the owner's scripts are published, never an unfinished locked drawing buffer.
+Both games need LAN protocol 7; older versions are rejected rather than showing an empty
+display. Texture transfers have their own rate budget, separate from vehicle movement.
+
 Windows, macOS and Linux run the same code (wgpu, winit, cpal, std UDP);
 paths are resolved case-insensitively so Windows-style `\` references in mods work
 everywhere; settings live under `$HOME` / `%USERPROFILE%`. The same `cargo build --release`

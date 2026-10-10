@@ -84,6 +84,9 @@ pub struct VehicleHost {
     pub font_lib: Option<Arc<Mutex<FontLibrary>>>,
     /// `[scripttexture]` images drawn by the `ST*` callbacks.
     pub script_textures: Vec<ScriptTexture>,
+    /// LAN copies receive script textures from their owner; their scripts may read but
+    /// must never create, lock, load, filter, or draw these surfaces locally.
+    pub remote_script_textures: bool,
     /// Folder for `STLoadTex` paths (the vehicle directory).
     pub content_dir: std::path::PathBuf,
     /// Depot file (termini, bus stop strings, IBIS trips) behind the `Get*` callbacks.
@@ -371,6 +374,7 @@ impl Host for VehicleHost {
         if lname.starts_with("st") && debug_text() {
             log::info!("callback {name} stack {:?} strings {:?}", &stacks.st[..stacks.st.len().min(8)], stacks.sst.last());
         }
+        let draw_script_textures = !self.remote_script_textures;
         match lname {
             "getfontindex" => {
                 let font = stacks.pop_str();
@@ -405,19 +409,19 @@ impl Host for VehicleHost {
             // --- script textures (matrix displays)
             "stnewtex" => {
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.renew();
                 }
             }
             "stlock" => {
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.locked = true;
                 }
             }
             "stunlock" => {
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.unlock();
                 }
             }
@@ -426,7 +430,7 @@ impl Host for VehicleHost {
                 // immediately after STUnlock. Remember that request for the renderer; it
                 // must also refresh the chain when this matrix changes again.
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     if !t.mipmaps {
                         t.mipmaps = true;
                         t.dirty = true;
@@ -439,7 +443,7 @@ impl Host for VehicleHost {
                 let r = stacks.pop();
                 let a = stacks.pop();
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.color = [r, g, b, a].map(|c| arg_i32(c).clamp(0, 255) as u8);
                 }
             }
@@ -447,7 +451,7 @@ impl Host for VehicleHost {
                 let y = arg_i32(stacks.pop());
                 let x = arg_i32(stacks.pop());
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     let c = t.color;
                     t.put(x, y, c);
                 }
@@ -458,7 +462,7 @@ impl Host for VehicleHost {
                 let y1 = arg_i32(stacks.pop());
                 let x1 = arg_i32(stacks.pop());
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.rect(x1, y1, x2, y2);
                 }
             }
@@ -470,11 +474,12 @@ impl Host for VehicleHost {
                 let y = arg_i32(stacks.pop());
                 let x = arg_i32(stacks.pop());
                 let i = arg_idx(stacks.pop());
+                if !draw_script_textures { return; }
                 let atlas = self.font_atlas(font);
                 if debug_text() {
                     log::info!("STTextOut(tex {i}, x {x}, y {y}, font {font}, spacing {spacing}, {text:?}) atlas {:?} from {:?} bitmap {:?} {}x{} E {:?}", atlas.as_ref().map(|a| a.font.name.clone()), atlas.as_ref().map(|a| a.font.path.clone()), atlas.as_ref().map(|a| a.font.alpha.clone()), atlas.as_ref().map(|a| a.width).unwrap_or(0), atlas.as_ref().map(|a| a.height).unwrap_or(0), atlas.as_ref().and_then(|a| a.font.glyph('E').map(|g| (g.x0, g.x1, g.y))));
                 }
-                if let (Some(t), Some(a)) = (self.script_textures.get_mut(i), atlas) {
+                if let (Some(t), Some(a)) = (self.script_textures.get_mut(i).filter(|_| draw_script_textures), atlas) {
                     t.text_out(&a, x, y, spacing, arg_i32(mode) as u8, &text);
                 }
             }
@@ -506,7 +511,7 @@ impl Host for VehicleHost {
                 let b = arg_idx(stacks.pop());
                 let a = arg_idx(stacks.pop());
                 if let Some(c) = self.script_textures.get(a).map(|t| t.color) {
-                    if let Some(t) = self.script_textures.get_mut(b) {
+                    if let Some(t) = self.script_textures.get_mut(b).filter(|_| draw_script_textures) {
                         t.color = c;
                     }
                 }
@@ -514,6 +519,7 @@ impl Host for VehicleHost {
             "stloadtex" => {
                 let i = arg_idx(stacks.pop());
                 let path = stacks.pop_str();
+                if !draw_script_textures { return; }
                 // relative to the vehicle's texture folder, like every texture name of the
                 // vehicle: the Krüger matrix loads `..\..\Anzeigen\Krueger\<bitmap>`,
                 // which is `Vehicles\Anzeigen\...` seen from `Vehicles\<bus>\Texture`
@@ -528,7 +534,7 @@ impl Host for VehicleHost {
                 // (OMSI pushes nothing: a file it cannot find goes to its log only)
                 match st_load(&full) {
                     Ok(img) => {
-                        if let Some(t) = self.script_textures.get_mut(i) {
+                        if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                             t.load(img.width, img.height, &img.rgba);
                         }
                     }
@@ -780,6 +786,53 @@ mod tests {
         // a half goes to the even number, as under Delphi's control word
         assert_eq!((arg_i32(0.5), arg_i32(1.5), arg_i32(2.5), arg_i32(-0.5)), (0, 2, 2, 0));
         assert_eq!(arg_idx(-1.0), usize::MAX);
+    }
+
+    #[test]
+    fn remote_script_texture_callbacks_consume_arguments_without_drawing() {
+        let p = compile(&CompileInput::default());
+        let mut state = State::new(&p);
+        let mut host = VehicleHost::new(SimClock::default());
+        host.remote_script_textures = true;
+        let mut texture = ScriptTexture::new(2, 1);
+        texture.apply_network(2, 1, false, &[1, 2, 3, 4, 5, 6, 7, 8]);
+        host.script_textures.push(texture);
+        for (name, args) in [
+            ("STNewTex", vec![0.0]),
+            ("STLock", vec![0.0]),
+            ("STUnlock", vec![0.0]),
+            ("STFilter", vec![0.0]),
+            ("STSetColor", vec![0.0, 255.0, 255.0, 255.0, 255.0]),
+            ("STDrawPixel", vec![0.0, 0.0, 0.0]),
+            ("STDrawRect", vec![0.0, 0.0, 0.0, 1.0, 0.0]),
+        ] {
+            let mut stacks = Stacks::default();
+            for arg in args { stacks.push(arg); }
+            host.callback(name, 0, &mut stacks, &mut state);
+            assert_eq!(stacks.st, [0.0; 8], "{name} must still consume its arguments");
+        }
+        let mut stacks = Stacks::default();
+        stacks.push_str("missing.png".into());
+        stacks.push(0.0);
+        host.callback("STLoadTex", 0, &mut stacks, &mut state);
+        for arg in [0.0, 1.0, 1.0, 0.0, 2.0, 3.0] { stacks.push(arg); }
+        stacks.push_str("local text must not be drawn".into());
+        host.callback("STTextOut", 0, &mut stacks, &mut state);
+        assert_eq!(stacks.st, [0.0; 8]);
+        assert!(stacks.sst.iter().all(String::is_empty));
+        let texture = &host.script_textures[0];
+        assert_eq!(texture.rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert!(!texture.locked);
+        assert!(!texture.mipmaps);
+        assert_eq!(texture.color, [255; 4]);
+        // Reading the owner's pixels is still useful for scripts; it only selects a
+        // local read colour and cannot change the replicated image.
+        for arg in [0.0, 1.0, 0.0] { stacks.push(arg); }
+        host.callback("STReadPixel", 0, &mut stacks, &mut state);
+        stacks.push(0.0);
+        host.callback("STGetA", 0, &mut stacks, &mut state);
+        assert_eq!(stacks.pop(), 8.0);
+        assert_eq!(host.script_textures[0].rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
     }
 
     #[test]

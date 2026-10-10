@@ -514,6 +514,8 @@ pub struct RemoteVehicle {
     synced: hashbrown::HashMap<u16, f32>,
     synced_strings: hashbrown::HashMap<u16, String>,
     smooth: hashbrown::HashSet<u16>,
+    /// Subscription cookie, table hash, and welcome generation for owner-only textures.
+    texture_subscription: Option<(u64, u32, u32)>,
 }
 
 impl RemoteVehicle {
@@ -636,6 +638,7 @@ pub struct LanGame {
     /// Our vehicle's variable table (by its program), for `omsi_net::vars`.
     my_vars: Option<(usize, Arc<VarTable>)>,
     vars_log: f32,
+    my_texture_table: Option<(usize, u32)>,
 }
 
 /// What the frame knows that LAN play needs.
@@ -2574,6 +2577,7 @@ fn new_remote(
             .position(|s| s.name.eq_ignore_ascii_case(&pose.paint))
     };
     host.paint_scheme = Some(scheme);
+    host.remote_script_textures = true;
     let mut vehicle = omsi_sim::VehicleInstance::new(ty.clone(), host);
     vehicle.ground = None;
     if !ty.model.text_textures.is_empty() {
@@ -2682,6 +2686,7 @@ fn new_remote(
         synced: Default::default(),
         synced_strings: Default::default(),
         smooth: Default::default(),
+        texture_subscription: None,
     })
 }
 
@@ -3109,6 +3114,56 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
     }
 }
 
+/// The declared surfaces and script variable layout must agree as well as the bus path.
+fn script_texture_table(bus: &str, program: &omsi_script::Program, surfaces: &[(i32, i32)]) -> u32 {
+    let mut hash = var_table(program).hash;
+    for b in bus.replace('\\', "/").bytes().map(|b| b.to_ascii_lowercase())
+        .chain(std::iter::once(0))
+        .chain((surfaces.len() as u32).to_le_bytes())
+        .chain(surfaces.iter().flat_map(|(w, h)| w.to_le_bytes().into_iter().chain(h.to_le_bytes())))
+    {
+        hash = (hash ^ b as u32).wrapping_mul(0x0100_0193);
+    }
+    hash
+}
+
+fn publish_script_textures(lan: &mut LanSession, game: &mut LanGame, player: Option<&mut Player>, bus: &str) {
+    let Some(player) = player else {
+        lan.clear_script_textures();
+        game.my_texture_table = None;
+        return;
+    };
+    let key = Arc::as_ptr(&player.vehicle.ty) as usize;
+    if game.my_texture_table.map(|t| t.0) != Some(key) {
+        game.my_texture_table = Some((key, script_texture_table(bus, &player.vehicle.ty.program, &player.vehicle.ty.model.script_textures)));
+    }
+    let table = game.my_texture_table.unwrap().1;
+    let images = player.vehicle.host.script_textures.iter_mut().map(|t| {
+        t.released_image().map(|(width, height, mipmaps, rgba)| omsi_net::scripttex::Image { width, height, mipmaps, rgba })
+    }).collect();
+    lan.set_script_textures(table, images);
+}
+
+fn receive_script_textures(lan: &mut LanSession, game: &mut LanGame) {
+    for (&id, rv) in &mut game.remotes {
+        // A stand-in is another vehicle, never a target for the owner's pixels.
+        if rv.stand_in || rv.vehicle.host.script_textures.is_empty() { continue; }
+        if rv.texture_subscription.is_none_or(|s| s.2 != lan.welcomes) {
+            let table = script_texture_table(&rv.made_as.0, &rv.vehicle.ty.program, &rv.vehicle.ty.model.script_textures);
+            let cookie = lan.subscribe_script_textures(id, table);
+            rv.texture_subscription = Some((cookie, table, lan.welcomes));
+        }
+    }
+    for incoming in lan.take_script_textures() {
+        let Some(rv) = game.remotes.get_mut(&incoming.owner) else { continue };
+        if rv.stand_in || rv.texture_subscription.map(|s| (s.0, s.1)) != Some((incoming.cookie, incoming.table)) { continue; }
+        if let Some(texture) = rv.vehicle.host.script_textures.get_mut(incoming.index as usize) {
+            let image = incoming.image;
+            texture.apply_network(image.width, image.height, image.mipmaps, &image.rgba);
+        }
+    }
+}
+
 /// The outside sounds of a remote bus: made when it comes into earshot, dropped beyond.
 fn sound_remote(
     rv: &mut RemoteVehicle,
@@ -3250,6 +3305,7 @@ pub fn tick(
     }
     let gone = lan.tick(dt, &mine);
     sync_vars(lan, game, player.as_deref(), dt);
+    publish_script_textures(lan, game, player.as_deref_mut(), &mine.bus);
     game.world.tick(
         lan,
         dt,
@@ -3360,6 +3416,7 @@ pub fn tick(
         return updates;
     };
     for id in gone {
+        lan.unsubscribe_script_textures(id);
         if let Some(rv) = game.remotes.remove(&id) {
             log::info!("LAN: no longer drawing player {id} '{}'", rv.name);
             release(r, scene, w, frame.audio, rv);
@@ -3379,6 +3436,7 @@ pub fn tick(
         .filter(|id| !known.contains(id))
         .collect();
     for id in stale {
+        lan.unsubscribe_script_textures(id);
         if let Some(rv) = game.remotes.remove(&id) {
             release(r, scene, w, frame.audio, rv);
         }
@@ -3397,6 +3455,7 @@ pub fn tick(
             .map(|rv| rv.made_as.0 != pose.bus || rv.made_as.1 != pose.paint)
             .unwrap_or(false)
         {
+            lan.unsubscribe_script_textures(pose.id);
             if let Some(rv) = game.remotes.remove(&pose.id) {
                 release(r, scene, w, frame.audio, rv);
             }
@@ -3474,6 +3533,7 @@ pub fn tick(
         let inside = frame.inside_of == Some(pose.id);
         sound_remote(rv, frame.audio, frame.listener, frame.muffled, inside);
     }
+    receive_script_textures(lan, game);
     // draw them like AI traffic
     for (id, rv) in game.remotes.iter_mut() {
         if rv.driver_for.as_deref() != Some(rv.last.figure.as_str()) && !rv.stand_in {
@@ -3964,6 +4024,20 @@ mod tests {
         let c = host_clock_now(&h).unwrap();
         assert_eq!((c.year, c.day_of_year), (1990, 1));
         assert!((c.time - 1.5).abs() < 0.1, "{}", c.time);
+    }
+
+    #[test]
+    fn script_texture_tables_require_the_same_bus_surfaces_and_scripts() {
+        let mut program = omsi_script::Program::default();
+        program.declare_script_var("display_mode");
+        let surfaces = [(128, 32), (64, 16)];
+        let hash = script_texture_table("Vehicles/Bus/main.bus", &program, &surfaces);
+        assert_eq!(hash, script_texture_table("vehicles\\bus\\MAIN.bus", &program, &surfaces));
+        assert_ne!(hash, script_texture_table("Vehicles/Other/main.bus", &program, &surfaces));
+        assert_ne!(hash, script_texture_table("Vehicles/Bus/main.bus", &program, &[(128, 64), (64, 16)]));
+        assert_ne!(hash, script_texture_table("Vehicles/Bus/main.bus", &program, &surfaces[..1]));
+        program.declare_script_var("other_display_mode");
+        assert_ne!(hash, script_texture_table("Vehicles/Bus/main.bus", &program, &surfaces));
     }
 
     #[test]

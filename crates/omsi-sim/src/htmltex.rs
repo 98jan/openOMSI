@@ -464,7 +464,7 @@ impl VehicleInstance {
     }
 
     pub fn update_html_textures(&mut self) {
-        if self.html_textures.is_empty() {
+        if self.host.remote_script_textures || self.html_textures.is_empty() {
             return;
         }
         // the depot file, for the pages that start now

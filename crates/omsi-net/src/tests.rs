@@ -561,6 +561,42 @@ fn host_and_clients_exchange_complete_variable_tables() {
 }
 
 #[test]
+fn script_textures_initialize_and_update_through_the_host_in_both_directions() {
+    use scripttex::Image;
+    use std::sync::Arc;
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let addr = SocketAddr::from(([127, 0, 0, 1], host.local_addr().unwrap().port()));
+    let mut a = LanSession::join_addr(vec![addr], None, "a", world("m")).unwrap();
+    let mut b = LanSession::join_addr(vec![addr], None, "b", world("m")).unwrap();
+    let poses = [pose(100.0), pose(200.0), pose(300.0)];
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 150, |s| {
+        find(s[2], 200.0).is_some() && find(s[1], 100.0).is_some()
+    });
+    assert!(a.connected && b.connected);
+    let host_image = Image { width: 2, height: 1, mipmaps: false, rgba: Arc::new(vec![1, 2, 3, 4, 5, 6, 7, 8]) };
+    let mut client_image = Image { width: 64, height: 64, mipmaps: true, rgba: Arc::new((0..64 * 64 * 4).map(|k| ((k * 107 + k / 13) % 256) as u8).collect()) };
+    host.set_script_textures(7, vec![Some(host_image.clone())]);
+    a.set_script_textures(8, vec![Some(client_image.clone())]);
+    host.subscribe_script_textures(a.my_id, 8);
+    a.subscribe_script_textures(host.my_id, 7);
+    b.subscribe_script_textures(host.my_id, 7);
+    b.subscribe_script_textures(a.my_id, 8);
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 60, |_| false);
+    assert_eq!(host.take_script_textures()[0].image, client_image);
+    assert_eq!(a.take_script_textures()[0].image, host_image);
+    let received = b.take_script_textures();
+    assert_eq!(received.len(), 2);
+    assert_eq!(received.iter().find(|i| i.owner == a.my_id).unwrap().image, client_image);
+    assert_eq!(received.iter().find(|i| i.owner == host.my_id).unwrap().image, host_image);
+    Arc::make_mut(&mut client_image.rgba)[3] = 123;
+    a.set_script_textures(8, vec![Some(client_image.clone())]);
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 30, |_| false);
+    assert_eq!(host.take_script_textures()[0].image, client_image);
+    assert_eq!(b.take_script_textures()[0].image, client_image);
+    assert!(a.take_script_textures().is_empty(), "unchanged host textures are not resent");
+}
+
+#[test]
 fn host_and_two_clients_exchange_states() {
     let mut host =
         LanSession::host(28100, "host", world("maps/Grundorf/global.cfg"), true).unwrap();

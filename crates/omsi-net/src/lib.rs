@@ -80,6 +80,7 @@ pub mod bridge;
 pub mod wire;
 pub mod world;
 pub mod vars;
+pub mod scripttex;
 pub mod ws;
 pub mod tunnel;
 pub mod official;
@@ -103,7 +104,9 @@ pub use wire::{
 /// passed on to the other players.
 /// 6: up to 63 sound and moving-part values in a state (a 6-bit count: the AA-FR Agora's
 /// sound variables alone filled the 31 there was room for).
-pub const PROTOCOL: u32 = 6;
+/// 7: owner-authoritative RGBA script textures with acknowledged initialization and deltas.
+/// Older peers cannot render remote script textures after local drawing is disabled.
+pub const PROTOCOL: u32 = 7;
 /// (omsi-plugin's `MULTIPLAYER_PORTS` keeps `omsi.send` off this one and the `PORT_RANGE` after it.)
 pub const DEFAULT_PORT: u16 = 27015;
 /// Ports a host tries after the default one when that is taken (a second session on the
@@ -152,6 +155,7 @@ const STATE_RATE: (f32, f32) = (40.0, 40.0);
 // Variable deltas and key frames use at most 22 datagrams/s. They must not
 // consume the pose/world budget (otherwise normal driving drops recovery slices).
 const VAR_RATE: (f32, f32) = (30.0, 30.0);
+const TEXTURE_RATE: (f32, f32) = (2048.0, 2048.0);
 const MESSAGE_RATE: (f32, f32) = (10.0, 20.0);
 const CHAT_RATE: (f32, f32) = (1.0, 3.0);
 // ---------------------------------------------------------------------------------------
@@ -1233,6 +1237,7 @@ pub enum LanEvent {
 enum PeerTraffic {
     State,
     Variables,
+    Textures,
     Message,
 }
 
@@ -1279,6 +1284,7 @@ pub struct Peer {
     state_at: Instant,
     states: Bucket,
     variables: Bucket,
+    textures: Bucket,
     messages: Bucket,
     chat: Bucket,
     /// Datagrams of this player the host threw away (too many at once).
@@ -1303,6 +1309,7 @@ impl Peer {
             state_at: now,
             states: Bucket::new(STATE_RATE.1),
             variables: Bucket::new(VAR_RATE.1),
+            textures: Bucket::new(TEXTURE_RATE.1),
             messages: Bucket::new(MESSAGE_RATE.1),
             chat: Bucket::new(CHAT_RATE.1),
             dropped: 0,
@@ -1419,6 +1426,7 @@ pub struct LanSession {
     /// Every script variable of our vehicle going out (`vars.rs`), and the others' coming in.
     var_sender: vars::VarSender,
     vars_in: Vec<vars::VarsIn>,
+    script_textures: scripttex::Sync,
     descs: Vec<world::Desc>,
     wants: Vec<(u32, Vec<world::EntityRef>)>,
     claims: Vec<(u32, Vec<u32>)>,
@@ -1522,6 +1530,7 @@ impl LanSession {
             received: 0,
             world_in: Vec::new(),
             var_sender: vars::VarSender::default(),
+            script_textures: scripttex::Sync::default(),
             vars_in: Vec::new(),
             descs: Vec::new(),
             wants: Vec::new(),
@@ -2278,6 +2287,13 @@ impl LanSession {
             self.send_own(dt, mine);
         }
         self.receive(&mut gone);
+        let peers: Vec<u32> = self.peers.keys().copied().collect();
+        self.script_textures.retain_peers(&peers);
+        if self.connected {
+            for packet in self.script_textures.tick(PROTOCOL as u8, self.my_id, dt) {
+                self.route_script_texture(&packet);
+            }
+        }
         // time out the silent: a player who has sent no state yet is still loading
         let now = Instant::now();
         let silent: Vec<u32> = self
@@ -2555,6 +2571,10 @@ impl LanSession {
                 self.on_state(&data, from);
                 continue;
             }
+            if data[0] == scripttex::MAGIC {
+                self.on_script_texture(&data, from);
+                continue;
+            }
             if data[0] == vars::VARS_MAGIC {
                 self.on_vars(&data, from);
                 continue;
@@ -2751,6 +2771,7 @@ impl LanSession {
         let ok = match traffic {
             PeerTraffic::State => peer.states.take(rate),
             PeerTraffic::Variables => peer.variables.take(rate),
+            PeerTraffic::Textures => peer.textures.take(rate),
             PeerTraffic::Message => peer.messages.take(rate),
         };
         if !ok {
@@ -2765,6 +2786,62 @@ impl LanSession {
         }
         peer.last_seen = Instant::now();
         Some(peer)
+    }
+
+    /// Released surfaces of our own vehicle. The transport retains an acknowledged
+    /// baseline per subscriber and sends only pixel changes after initialization.
+    pub fn set_script_textures(&mut self, table: u32, images: Vec<Option<scripttex::Image>>) {
+        self.script_textures.set_local(table, images);
+    }
+
+    pub fn clear_script_textures(&mut self) {
+        self.script_textures.clear_local();
+    }
+
+    pub fn subscribe_script_textures(&mut self, owner: u32, table: u32) -> u64 {
+        self.script_textures.subscribe(owner, table)
+    }
+
+    pub fn unsubscribe_script_textures(&mut self, owner: u32) {
+        self.script_textures.unsubscribe(owner);
+    }
+
+    pub fn take_script_textures(&mut self) -> Vec<scripttex::Incoming> {
+        self.script_textures.take_incoming()
+    }
+
+    fn route_script_texture(&self, data: &[u8]) {
+        let Some(a) = scripttex::address(data, PROTOCOL as u8) else { return };
+        match self.role {
+            Role::Host => {
+                if let Some(to) = self.peers.get(&a.to).and_then(|p| p.addr) {
+                    self.send(data, to);
+                }
+            }
+            Role::Client => {
+                if let Some(host) = self.host { self.send(data, host); }
+            }
+        }
+    }
+
+    fn on_script_texture(&mut self, data: &[u8], from: SocketAddr) {
+        let Some(a) = scripttex::address(data, PROTOCOL as u8) else { return };
+        if a.from == self.my_id || a.from == 0 || a.to == 0 { return; }
+        match self.role {
+            Role::Host => {
+                if self.checked_peer(a.from, from, TEXTURE_RATE, PeerTraffic::Textures).is_none() { return; }
+                if a.to != self.my_id {
+                    self.route_script_texture(data);
+                    return;
+                }
+            }
+            Role::Client => {
+                if a.to != self.my_id || !self.peers.contains_key(&a.from) { return; }
+            }
+        }
+        for reply in self.script_textures.receive(PROTOCOL as u8, self.my_id, data) {
+            self.route_script_texture(&reply);
+        }
     }
 
     /// Every script variable of our vehicle (see `vars.rs`): `float_ids[k]` holds

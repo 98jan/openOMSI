@@ -15,6 +15,8 @@ pub struct ScriptTexture {
     /// Last image released by STUnlock, retained even when the script locks again
     /// before the renderer runs (the Atron AFR4 keeps its drawing buffer locked).
     pending: Option<Vec<u8>>,
+    /// Latest released image, independent of the renderer consuming its upload.
+    released: Option<(u32, u32, bool, Arc<Vec<u8>>)>,
     /// `STFilter` was called after this texture was unlocked. OMSI then generates a mip
     /// chain, which keeps a distant matrix or IBIS screen stable instead of sampling its
     /// full-resolution pixels directly.
@@ -36,6 +38,7 @@ impl ScriptTexture {
             dirty: true,
             locked: false,
             pending: None,
+            released: None,
             mipmaps: false,
             color: [255, 255, 255, 255],
             declared: (w, h),
@@ -69,6 +72,7 @@ impl ScriptTexture {
             return false;
         }
         self.rgba = rgba;
+        self.publish();
         self.locked = false;
         self.pending = Some(self.rgba.clone());
         self.dirty = false;
@@ -80,9 +84,38 @@ impl ScriptTexture {
         self.dirty = true;
     }
 
+    fn publish(&mut self) {
+        if self.released.as_ref().is_some_and(|(w, h, mips, rgba)| (*w, *h, *mips) == (self.width, self.height, self.mipmaps) && **rgba == self.rgba) { return; }
+        self.released = Some((self.width, self.height, self.mipmaps, Arc::new(self.rgba.clone())));
+    }
+
+    /// Network readers see only a released image, even if drawing resumed before upload.
+    pub fn released_image(&mut self) -> Option<(u32, u32, bool, Arc<Vec<u8>>)> {
+        if !self.locked && (self.dirty || self.released.is_none()) {
+            self.publish();
+        }
+        self.released.clone()
+    }
+
+    /// Apply an owner's committed RGBA image without running local ST callbacks.
+    pub fn apply_network(&mut self, width: u32, height: u32, mipmaps: bool, rgba: &[u8]) -> bool {
+        let Some(len) = (width as usize).checked_mul(height as usize).and_then(|n| n.checked_mul(4)) else { return false };
+        if width == 0 || height == 0 || len > 16 * 1024 * 1024 || rgba.len() != len { return false; }
+        self.width = width;
+        self.height = height;
+        self.mipmaps = mipmaps;
+        self.rgba = rgba.to_vec();
+        self.locked = false;
+        self.pending = None;
+        self.dirty = true;
+        self.publish();
+        true
+    }
+
     pub fn unlock(&mut self) {
         self.locked = false;
         if self.dirty {
+            self.publish();
             self.pending = Some(self.rgba.clone());
             self.dirty = false;
         }
@@ -92,6 +125,7 @@ impl ScriptTexture {
     /// for the next unlock; those must not replace the image just released.
     pub fn take_upload(&mut self) -> Option<Vec<u8>> {
         if !self.locked && self.dirty {
+            self.publish();
             self.dirty = false;
             self.pending = None;
             Some(self.rgba.clone())
@@ -222,6 +256,35 @@ pub struct FontTable {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn networking_keeps_the_last_released_image_after_upload_and_during_locked_drawing() {
+        let mut t = ScriptTexture::new(1, 1);
+        t.put(0, 0, [1, 2, 3, 4]);
+        t.unlock();
+        assert_eq!(t.take_upload(), Some(vec![1, 2, 3, 4]));
+        t.locked = true;
+        t.put(0, 0, [5, 6, 7, 8]);
+        assert_eq!(t.released_image().unwrap().3.as_slice(), &[1, 2, 3, 4]);
+        t.unlock();
+        t.locked = true;
+        t.put(0, 0, [9; 4]);
+        assert_eq!(t.released_image().unwrap().3.as_slice(), &[5, 6, 7, 8]);
+        assert_eq!(t.take_upload(), Some(vec![5, 6, 7, 8]));
+        assert_eq!(t.released_image().unwrap().3.as_slice(), &[5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn a_network_surface_preserves_rgba_dimensions_and_mipmaps() {
+        let mut t = ScriptTexture::new(1, 1);
+        assert!(!t.apply_network(u32::MAX, u32::MAX, false, &[]));
+        assert!(!t.apply_network(2, 1, false, &[0; 4]));
+        let rgba = [1, 2, 3, 4, 5, 6, 7, 8];
+        assert!(t.apply_network(2, 1, true, &rgba));
+        assert_eq!((t.width, t.height, t.mipmaps, t.locked), (2, 1, true, false));
+        assert_eq!(t.take_upload().as_deref(), Some(rgba.as_slice()));
+        assert_eq!(t.released_image().unwrap().3.as_slice(), rgba);
+    }
 
     /// A picture saved with a situation goes up as the script's own would (#1559).
     #[test]
