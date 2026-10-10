@@ -151,7 +151,7 @@ pub struct Launcher {
     map_gen: u64,
     /// The picture last shown (its interface, layers, preview and atlas) and when: idle,
     /// the same picture is not drawn and shown again (see `frame`).
-    shown: Option<(Vec<omsi_ui::Vertex>, String, Instant)>,
+    shown: Option<(Vec<omsi_ui::Vertex>, Option<String>, Instant)>,
     /// The window has the keyboard / is hidden: without focus it is drawn ten times a
     /// second, hidden not at all (a game started from it is being played).
     focused: bool,
@@ -837,12 +837,11 @@ impl Launcher {
         self.update_discord();
         self.update_tick(event_loop);
         // the preview shows the chosen bus in the chosen light
-        let c = &self.state.choice;
-        let look = showroom::Look { root: std::path::PathBuf::from(&self.state.config.root), map: c.map.clone(), bus: c.bus.clone(), paint: c.paint.clone(), weather: c.weather.clone(), time: c.time, date: c.date.clone() };
         // (not while a game runs: the launcher looked at meanwhile loads no bus onto the card;
         // nor before the first frame is shown, which the bus's loading would hold up)
-        if !self.first_frame && !look.bus.is_empty() && !look.map.is_empty() && !self.state.in_game() {
-            self.showroom.want(look);
+        let c = &self.state.choice;
+        if !self.first_frame && !c.bus.is_empty() && !c.map.is_empty() && !self.state.in_game() {
+            self.showroom.want_choice(&self.state.config.root, c);
         }
         if let Some(r) = self.renderer.as_ref() {
             self.showroom.update(r, dt);
@@ -925,8 +924,10 @@ impl Launcher {
         // and DirectX 11 cost as much as a frame of the game's interface. Once a second it is
         // drawn all the same.
         // (the map is drawn every frame it is open: its markers follow the mouse)
-        let key = format!("{pw}x{ph} {} {} {} {layers:?} {ranges:?}", self.preview_gen, self.showroom.drawn, self.ui.atlas.generation);
         let idle = self.last_input.elapsed().as_secs_f32() > 3.0 && self.dragging.is_none() && self.shot.is_none() && self.map_rect.is_none();
+        // (the picture's key is written out only when idle: every layer and range formatted
+        // each frame, for a comparison made only then; the first idle frame is shown again)
+        let key = idle.then(|| format!("{pw}x{ph} {} {} {} {layers:?} {ranges:?}", self.preview_gen, self.showroom.drawn, self.ui.atlas.generation));
         if idle && self.shown.as_ref().is_some_and(|(v, k, at)| *v == verts && *k == key && at.elapsed().as_secs_f32() < 1.0) {
             self.check_exit(event_loop);
             return;
@@ -1093,7 +1094,7 @@ impl Launcher {
         });
         // a phone: the launcher made for it, not the desktop's pages
         if mobile {
-            if self.page == Page::Setup && !omsi_cfg::missing_original_essentials(std::path::Path::new(&self.state.config.root)).is_empty() && self.phone.page.is_none() {
+            if self.page == Page::Setup && self.phone.page.is_none() && root_incomplete(&self.state.config.root) {
                 self.phone.tab = phone::Tab::More;
                 self.phone.page = Some(Page::Setup);
             }
@@ -1381,6 +1382,22 @@ impl Launcher {
     }
 }
 
+
+/// Whether `root` lacks some of the original game (`missing_original_essentials`), looked at
+/// again at most once a second: asked every frame of the phone's Setup page, it looked for
+/// every essential file of the installation each time.
+fn root_incomplete(root: &str) -> bool {
+    static LAST: std::sync::Mutex<Option<(String, Instant, bool)>> = std::sync::Mutex::new(None);
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((r, at, v)) = last.as_ref() {
+        if r == root && at.elapsed().as_secs_f32() < 1.0 {
+            return *v;
+        }
+    }
+    let v = !omsi_cfg::missing_original_essentials(std::path::Path::new(root)).is_empty();
+    *last = Some((root.to_string(), Instant::now(), v));
+    v
+}
 
 /// The showroom's renderer: a bus on a floor needs none of the game's costly passes - no
 /// ambient occlusion, a small shadow map, 4x MSAA for the edges whatever the game uses -
