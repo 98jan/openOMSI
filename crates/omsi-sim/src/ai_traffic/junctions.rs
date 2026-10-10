@@ -1144,30 +1144,24 @@ impl TrafficSim {
                 for u in &self.way_users {
                     let Some(&(_, dm)) = u.lanes.iter().find(|x| x.0 == m) else { continue };
                     let (verdict, t_j, t_clear) = way_user_verdict(st, u, dm, c, point, jn.inside && !waiting_inside, me_decided, me_prio, must_yield, patience);
-                    match verdict {
-                        Verdict::Free => {}
-                        Verdict::Hard => {
-                            hard = true;
-                            by = by.or(Some(super::stats::WAITS_ON_PLAYER));
-                            only_oncoming = false;
-                            if jn.inside {
-                                stop_at = Some(stop_at.unwrap_or(f32::MAX).min(point - c.before));
-                            }
-                            if explain {
-                                why.push(format!("the player's vehicle in or at the crossing of lanes {l}/{m} (arrives in {t_j:.1} s, this one is clear in {t_clear:.1} s)"));
-                            }
-                        }
-                        Verdict::Ruled => {
-                            ruled = true;
-                            by = by.or(Some(super::stats::WAITS_ON_PLAYER));
-                            only_oncoming = false;
-                            if waiting_inside {
-                                stop_at = Some(stop_at.unwrap_or(f32::MAX).min(point - c.before));
-                            }
-                            if explain {
-                                why.push(format!("the player's vehicle has the right of way at {l}/{m}, arrives in {t_j:.1} s, clear in {t_clear:.1} s"));
-                            }
-                        }
+                    // (in the way, or only having the right of way)
+                    let by_rule = match verdict {
+                        Verdict::Free => continue,
+                        Verdict::Hard => false,
+                        Verdict::Ruled => true,
+                    };
+                    *(if by_rule { &mut ruled } else { &mut hard }) = true;
+                    by = by.or(Some(super::stats::WAITS_ON_PLAYER));
+                    only_oncoming = false;
+                    if (by_rule && waiting_inside) || (!by_rule && jn.inside) {
+                        stop_at = Some(stop_at.unwrap_or(f32::MAX).min(point - c.before));
+                    }
+                    if explain {
+                        why.push(if by_rule {
+                            format!("the player's vehicle has the right of way at {l}/{m}, arrives in {t_j:.1} s, clear in {t_clear:.1} s")
+                        } else {
+                            format!("the player's vehicle in or at the crossing of lanes {l}/{m} (arrives in {t_j:.1} s, this one is clear in {t_clear:.1} s)")
+                        });
                     }
                 }
             }
