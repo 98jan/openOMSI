@@ -123,6 +123,7 @@ impl Traffic {
             holds: Vec::new(),
             courtesy: false,
             horn: Default::default(),
+            make_way: None,
             park: None,
             guard: Default::default(),
         });

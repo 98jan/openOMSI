@@ -2110,7 +2110,19 @@ pub struct AiState {
     /// progress as `lateral_ramp`, (from, to, odometer at its start, its length in m). It
     /// bends only the way the body steers along, not the lateral place the planners see.
     pub nudge_ramp: (f32, f32, f32, f32),
+    /// An emergency vehicle on an active drive (`ai_traffic::emergency`): it may go over the
+    /// limit (`EMERGENCY_LIMIT_FACTOR`, at most `EMERGENCY_LIMIT_PLUS` km/h more), within its
+    /// own top speed.
+    pub priority_drive: bool,
+    /// At most this speed for now (m/s): rolling aside at walking pace for an emergency
+    /// vehicle, or one crossing against a red light on the junction kept for it.
+    pub speed_cap: Option<f32>,
 }
+
+/// An emergency vehicle on an active drive takes the speed limit times this ...
+pub const EMERGENCY_LIMIT_FACTOR: f32 = 1.3;
+/// ... but at most this many km/h over it.
+pub const EMERGENCY_LIMIT_PLUS: f32 = 20.0;
 
 /// How the body stood after the last step, seen from the planner's way: how far the planner
 /// is ahead of the body's own place on that way (m, negative behind it), how fast the body
@@ -2327,7 +2339,7 @@ impl LaneSeq {
 
 impl AiState {
     pub fn new(lane: usize, s: f32, seed: u64) -> AiState {
-        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None, ordinary_brake: ORDINARY_BRAKE, emergency_brake: MAX_BRAKE, jerk: JERK, cmd: 0.0, emergency: false, emergency_began: false, body: BodyLink::default(), nudge_ramp: (0.0, 0.0, 0.0, 1.0) }
+        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None, ordinary_brake: ORDINARY_BRAKE, emergency_brake: MAX_BRAKE, jerk: JERK, cmd: 0.0, emergency: false, emergency_began: false, body: BodyLink::default(), nudge_ramp: (0.0, 0.0, 0.0, 1.0), priority_drive: false, speed_cap: None }
     }
 
     fn rand(&mut self) -> u64 {
@@ -2734,8 +2746,20 @@ impl AiState {
         let Some(lane) = net.lanes.get(self.lane) else { return 0.0 };
         let (a, b) = (self.accel.max(0.1), self.decel.max(0.5));
         let v = self.speed;
-        let limit = |l: &Lane| (l.speed_limit_kmh * self.desire).min(self.max_speed_kmh).max(3.0) / 3.6;
+        let limit = |l: &Lane| {
+            // (the bonus is the driver's whole margin: his own liking for speed on top of it
+            // would take him past it)
+            let wanted = if self.priority_drive {
+                (l.speed_limit_kmh * EMERGENCY_LIMIT_FACTOR).min(l.speed_limit_kmh + EMERGENCY_LIMIT_PLUS)
+            } else {
+                l.speed_limit_kmh * self.desire
+            };
+            wanted.min(self.max_speed_kmh).max(3.0) / 3.6
+        };
         let mut v0 = limit(lane);
+        if let Some(cap) = self.speed_cap {
+            v0 = v0.min(cap.max(0.3));
+        }
         // a lower limit on the lanes ahead (a junction's turning lanes, a 30 zone) is
         // reached at that speed, slowing gently (1.2 m/s²) from where it has to: taken only
         // on entering the lane, the new limit threw the model into a -3 m/s² stop at every

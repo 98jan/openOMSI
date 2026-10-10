@@ -29,6 +29,9 @@ pub(crate) fn traffic_tick(
     t.other_blinkers = outline_indicators(remotes, player, placed);
     if !paused {
         t.player_priority = player.and_then(|p| p.vehicle.var("TrafficPriority")).is_some_and(|v| v > 0.5);
+        // (a LAN player's emergency vehicle: its scripts' variables come over the network,
+        // `omsi_net::vars`, for a copy of the same vehicle files)
+        t.other_priority = remotes.remotes.iter().filter(|(_, r)| r.vehicle().var("TrafficPriority").is_some_and(|v| v > 0.5)).map(|(id, _)| *id).collect();
         t.player_blinker = player.map(|p| lan::indicator(&p.vehicle)).unwrap_or(0);
         t.tick(view, dt, player.map(|p| player_outline(p)));
         world.set_switches(&t.switch_requests());

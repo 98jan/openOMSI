@@ -310,7 +310,7 @@ impl TrafficSim {
                 if let Some((ci, li)) = entry_light(&self.net, &[(lane, 0.0), (into, 0.0)], 1) {
                     if let Some(ctl) = self.lights.get(ci) {
                         let red = matches!(TrafficLightController::aspect(ctl.state(li)), Aspect::Red | Aspect::RedYellow);
-                        if red && c.amber != Some((ci, li)) {
+                        if red && c.amber != Some((ci, li)) && !self.emergency.crawling(c.id) {
                             s.window.red_runs += 1;
                             if omsi_cfg::flags::OMSI_DEBUG_STUCK.is_set() {
                                 log::info!("stats t={:.1}: car {} into lane {into} on red (light {ci}/{li}) at {:.1} m/s", s.t, c.id, c.state.speed);

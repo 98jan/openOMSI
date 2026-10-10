@@ -443,6 +443,11 @@ impl TrafficSim {
         player_standing: f32,
     ) -> bool {
         let Some((l, who)) = lead else { return false };
+        // (an emergency vehicle goes round a car making way for it, even one still slowing
+        // down to stand aside)
+        if who.is_some_and(|j| j < self.cars.len() && self.cars[j].make_way.is_some_and(|w| w.from == self.cars[i].id)) && l.speed < 3.0 {
+            return true;
+        }
         if l.speed.abs() > 0.3 {
             return false;
         }
@@ -585,12 +590,15 @@ impl TrafficSim {
             return;
         }
         let st = &car.state;
+        // (an emergency vehicle going round a car making way for it: after a second, or on
+        // the move)
+        let aside = lead.and_then(|l| l.1).is_some_and(|j| j < self.cars.len() && self.cars[j].make_way.is_some_and(|w| w.from == car.id));
         // a parked car is known from afar: the driver pulls out while still rolling up to
         // it; anything else is waited behind for a moment first
-        let rolling = parked && st.speed > 0.5;
+        let rolling = (parked || aside) && st.speed > 0.5;
         if car.passing.is_some()
             || st.change.is_some()
-            || (car.stopped < 3.0 && !rolling)
+            || (car.stopped < if aside { 1.0 } else { 3.0 } && !rolling)
             || !standing
             || car.yielding
             || car.at_stop()
@@ -600,6 +608,9 @@ impl TrafficSim {
         }
         let Some((lead, who)) = lead else { return };
         let gap = lead.gap;
+        // (one still slowing down gets further on meanwhile)
+        let obstacle_len = obstacle_len + if aside { lead.speed * 4.0 } else { 0.0 };
+        let parked = parked || aside;
         // (`OMSI_DEBUG_PASS`: why a car standing behind something does not go round it,
         // twice a second)
         let debug_pass = omsi_cfg::flags::OMSI_DEBUG_PASS.is_set()
