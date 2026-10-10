@@ -505,7 +505,7 @@ impl World {
             Arc<ObjectType>,
             Vec<usize>,
             Vec<usize>,
-            HashMap<(usize, usize), bool>,
+            Vec<((usize, usize), bool)>,
         )> = Vec::new();
         // First what every object's script is given (in order: the light programs and the
         // boards are read here), then the scripts themselves, side by side on the worker
@@ -758,7 +758,12 @@ impl World {
                     };
                     for (slot, pair) in row.iter().enumerate() {
                         let Some((base, item)) = pair else { continue };
-                        let item_on = switches.get(&(mesh_inst, slot)).copied().unwrap_or(false);
+                        // (the last switch of a slot, as a map collected from them kept it)
+                        let item_on = switches
+                            .iter()
+                            .rev()
+                            .find(|(k, _)| *k == (mesh_inst, slot))
+                            .is_some_and(|&(_, on)| on);
                         renderer.set_material(
                             scene,
                             mesh_inst,
