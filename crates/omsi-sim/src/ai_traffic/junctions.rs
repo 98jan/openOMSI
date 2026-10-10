@@ -695,7 +695,12 @@ impl TrafficSim {
                     // A stalled car neither claims an imminent arrival nor accelerates
                     // freely in the arrival prediction, even without a reservation.
                     // (queued: right behind a car that stands - not at its own line)
-                    let queued = o.lead_info.is_some_and(|(lid, gap)| gap < 8.0 && self.cars.iter().find(|x| x.id == lid).is_some_and(|x| x.state.speed < 1.0));
+                    // (the car ahead by the tick's index, not a search of every car for every
+                    // car at every meeting place; one it does not know is looked for as before)
+                    let car_by_id = |id: u64| {
+                        self.index_of.get(&id).and_then(|&k| self.cars.get(k)).filter(|x| x.id == id).or_else(|| self.cars.iter().find(|x| x.id == id))
+                    };
+                    let queued = o.lead_info.is_some_and(|(lid, gap)| gap < 8.0 && car_by_id(lid).is_some_and(|x| x.state.speed < 1.0));
                     let stalled = (o.stopped > 4.0 && o.state.speed < 0.1) || o.crawl >= 8.0 || (o.state.speed < 1.5 && queued);
                     // (one that has waited long at its line keeps a claim on its way while
                     // it stands, `junction_stop`: that claim counts, standing or not.
