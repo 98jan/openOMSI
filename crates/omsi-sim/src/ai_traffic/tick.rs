@@ -63,6 +63,7 @@ impl TrafficSim {
         self.day_time += dt as f64 * self.time_scale;
         self.last_dt = dt;
         self.held_at_red = 0;
+        self.player_turn = player_turn_of(self.player_turn, self.player, player, dt);
         self.player = player;
         self.geo_prev = self.cars.iter_mut().map(|c| c.geo_block.take()).collect();
         self.index_of = self
