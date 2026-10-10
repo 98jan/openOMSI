@@ -2781,38 +2781,34 @@ impl VehicleInstance {
         // Dirt_Wiped in its cfg without putting the name in the script varlist; the
         // generic alphascale fallback is 1.0 in that case, which makes Dreck.tga an
         // opaque full-body decal. Resolve these values explicitly for every vehicle.
-        for (i, vm) in self.ty.meshes.iter().enumerate() {
-            let def = &self.ty.model.meshes[vm.def_index];
-            for m in &def.materials {
-                let Some(name) = m.alphascale.as_deref().map(str::trim) else {
-                    continue;
-                };
-                // (compared in place: a lower-case copy per material and frame of every AI
-                // vehicle was a steady stream of allocations)
-                let value = if name.eq_ignore_ascii_case("dirt_norm") {
-                    Some(self.dirt)
-                } else if name.eq_ignore_ascii_case("dirt_wiped") {
-                    Some(self.var("Dirt_Wiped").unwrap_or(0.0))
-                } else {
-                    None
-                };
-                let Some(value) = value else { continue };
-                if let Some(slot) = override_slot(&vm.materials, m) {
-                    if let Some(alpha) = self.mesh_props[i].slot_alpha.get_mut(slot) {
-                        *alpha = value.clamp(0.0, 1.0);
-                    }
-                }
+        // (the overlays and their slots are found once, in the plan: every material of every
+        // mesh was compared by name each frame of every AI vehicle)
+        for &(i, slot, wiped) in &self.props_plan.dirt {
+            let value = if wiped {
+                PropSource::value(self.props_plan.dirt_wiped.map(PropSource::Var).unwrap_or(PropSource::Missing), &self.state.vars, 0.0)
+            } else {
+                self.dirt
+            };
+            if let Some(alpha) = self.mesh_props[i].slot_alpha.get_mut(slot) {
+                *alpha = value.clamp(0.0, 1.0);
             }
         }
         // the lamps come on and go out with their `timeconst`
         let mut lf = std::mem::take(&mut self.light_fade);
         let mut part_fades: Vec<Vec<f32>> = self.trailers.iter_mut().map(|t| std::mem::take(&mut t.light_fade)).collect();
+        // (the vehicle's own lights by the plan's sources; the coupled parts' - which read
+        // this vehicle's variables too - by name)
         let value = |n: &str| -> f32 { n.trim().parse::<f32>().ok().or_else(|| self.var(n.trim())).unwrap_or(0.0) };
-        let fade = |model: &omsi_model::Model, fades: &mut Vec<f32>| {
+        let (own_lights, vars) = (&self.props_plan.lights, &self.state.vars);
+        let fade = |model: &omsi_model::Model, fades: &mut Vec<f32>, own: bool| {
             let mut k = 0;
             for md in &model.meshes {
                 for l in &md.light_enh_2 {
-                    let target = (value(&l.variable) * if l.factor > 0.0 { l.factor } else { 1.0 }).clamp(0.0, 2.0);
+                    let v = match own_lights.get(k).filter(|_| own) {
+                        Some(src) => src.value(vars, 0.0),
+                        None => value(&l.variable),
+                    };
+                    let target = (v * if l.factor > 0.0 { l.factor } else { 1.0 }).clamp(0.0, 2.0);
                     // (a NaN stays NaN through clamp: the lamp's glow was drawn black on Windows)
                     let target = if target.is_finite() { target } else { 0.0 };
                     if fades.len() <= k {
@@ -2832,9 +2828,9 @@ impl VehicleInstance {
                 }
             }
         };
-        fade(&self.ty.model, &mut lf);
+        fade(&self.ty.model, &mut lf, true);
         for (t, f) in self.trailers.iter().zip(part_fades.iter_mut()) {
-            fade(&t.ty.model, f);
+            fade(&t.ty.model, f, false);
         }
         self.light_fade = lf;
         for (t, f) in self.trailers.iter_mut().zip(part_fades) {
@@ -3168,6 +3164,13 @@ struct MeshPlan {
 #[derive(Debug, Clone, Default)]
 struct PropsPlan {
     meshes: Vec<MeshPlan>,
+    /// The dirt overlays (`[alphascale] Dirt_Norm` / `Dirt_Wiped`): (mesh, slot, whether
+    /// `Dirt_Wiped`), and where `Dirt_Wiped` is.
+    dirt: Vec<(usize, usize, bool)>,
+    dirt_wiped: Option<usize>,
+    /// What each `[light_enh_2]` of the vehicle's own model follows, in order: a number or
+    /// a variable (one the vehicle does not have reads 0).
+    lights: Vec<PropSource>,
     /// Size of the variable table the plan was resolved against (engine variables such
     /// as `Dirt_Norm` join it later, and an `[alphascale]` on one must then find it).
     vars_seen: usize,
@@ -3233,6 +3236,36 @@ impl PropsPlan {
                     }
                 }
                 plan
+            })
+            .collect();
+        self.dirt.clear();
+        for (i, vm) in ty.meshes.iter().enumerate() {
+            for m in &ty.model.meshes[vm.def_index].materials {
+                let Some(name) = m.alphascale.as_deref().map(str::trim) else { continue };
+                let wiped = if name.eq_ignore_ascii_case("dirt_norm") {
+                    false
+                } else if name.eq_ignore_ascii_case("dirt_wiped") {
+                    true
+                } else {
+                    continue;
+                };
+                if let Some(slot) = override_slot(&vm.materials, m) {
+                    self.dirt.push((i, slot, wiped));
+                }
+            }
+        }
+        self.dirt_wiped = var("dirt_wiped");
+        self.lights = ty
+            .model
+            .meshes
+            .iter()
+            .flat_map(|md| &md.light_enh_2)
+            .map(|l| {
+                let n = l.variable.trim();
+                match n.parse::<f32>() {
+                    Ok(c) => PropSource::Const(c),
+                    Err(_) => var(n).map(PropSource::Var).unwrap_or(PropSource::Missing),
+                }
             })
             .collect();
         self.vars_seen = var_index.len();
@@ -5606,6 +5639,53 @@ mod tests {
         // Dirt_Norm is not declared by the scripts; the engine adds it later
         v.set_engine_var("Dirt_Norm", 0.63);
         compare(&v);
+    }
+
+    /// The plan's dirt overlays and light sources are what the names say, as the frame
+    /// looked them up before: every material by its `[alphascale]`, every lamp by number or
+    /// variable.
+    #[test]
+    #[ignore = "needs the original OMSI 2 install (OMSI_ROOT)"]
+    fn props_plan_dirt_and_lights_match_the_names() {
+        let root = original_root();
+        for bus in ["Vehicles/MAN_NL_NG/MAN_EN92_main.bus", "Vehicles/MAN_SD202/MAN_D92.bus", "Vehicles/VW_Golf_2/ai_vw_golf_2.bus"] {
+            let bus = root.join(bus);
+            require_content(&[&bus]);
+            let ty = Arc::new(VehicleType::load(&root, &bus).expect("bus"));
+            let mut v = VehicleInstance::new(ty, VehicleHost::new(crate::SimClock::default()));
+            for (k, x) in v.state.vars.iter_mut().enumerate() {
+                *x = (k % 7) as f32 * 0.3;
+            }
+            let mut dirt = Vec::new();
+            for (i, vm) in v.ty.meshes.iter().enumerate() {
+                for m in &v.ty.model.meshes[vm.def_index].materials {
+                    let Some(name) = m.alphascale.as_deref().map(str::trim) else { continue };
+                    let wiped = match name.to_ascii_lowercase().as_str() {
+                        "dirt_norm" => false,
+                        "dirt_wiped" => true,
+                        _ => continue,
+                    };
+                    if let Some(slot) = override_slot(&vm.materials, m) {
+                        dirt.push((i, slot, wiped));
+                    }
+                }
+            }
+            let lights: Vec<f32> = v
+                .ty
+                .model
+                .meshes
+                .iter()
+                .flat_map(|md| &md.light_enh_2)
+                .map(|l| l.variable.trim().parse::<f32>().ok().or_else(|| v.var(l.variable.trim())).unwrap_or(0.0))
+                .collect();
+            let mut plan = PropsPlan::default();
+            plan.refresh(&v.ty, &v.var_index);
+            assert_eq!(plan.dirt, dirt, "{}", bus.display());
+            let planned: Vec<f32> = plan.lights.iter().map(|s| s.value(&v.state.vars, 0.0)).collect();
+            assert_eq!(planned, lights, "{}", bus.display());
+            assert_eq!(plan.dirt_wiped.map(|i| v.state.vars[i]), v.var("Dirt_Wiped"));
+            assert!(!lights.is_empty(), "{}: no lamps", bus.display());
+        }
     }
 
     #[test]
