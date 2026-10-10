@@ -123,6 +123,7 @@ impl Launcher {
         self.dev = Some((renderer.device.clone(), renderer.queue.clone(), renderer.format()));
         self.renderer = Some(renderer);
     }
+
     /// The graphics device was lost (#274: an AMD Radeon's DX12 driver gave up while the
     /// preview's textures went up, and the launcher then drew on the dead device, with
     /// thousands of errors a second): everything made on it goes, the other interface is
