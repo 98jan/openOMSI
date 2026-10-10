@@ -24,6 +24,10 @@ impl App {
                         self.settings.seat = saved.seat;
                         self.settings.seat_pitch_deg = saved.seat_pitch_deg;
                     }
+                    // (the view editor's turn and field of view kept for it, `views.cfg`)
+                    let def = &p.vehicle.ty.def;
+                    let std = def.cameras_driver.get(def.camera_std % def.cameras_driver.len().max(1));
+                    (self.cam.view_yaw, self.cam.view_fov) = std.map_or((0.0, None), |c| crate::game_panels::view_editor::stored(&bus, c));
                     self.session.seat_bus = bus;
                 }
                 p.seat = glam::Vec3::from_array(self.settings.seat);
@@ -84,6 +88,10 @@ impl App {
                     self.settings.seat_pitch_deg,
                     vr_on,
                 );
+                // the view editor's turn and field of view: the standard driver's camera's
+                let own_view = self.view == "driver" && self.player.as_ref().is_some_and(|p| p.cam_choice.0 == 0) && !vr_on;
+                let head_look = if own_view { (head_look.0 + self.cam.view_yaw, head_look.1) } else { head_look };
+                let view_fov = self.cam.view_fov.filter(|_| own_view);
                 // what turns the bus's own camera into the picture: the head's turn,
                 // the field of view setting and the zoom (for the camera left in a
                 // switch as well as for the one taken)
@@ -114,8 +122,11 @@ impl App {
                         c.pitch = (c.pitch + r[1]).clamp(-89.0, 89.0);
                         c.roll += r[2];
                     }
-                    // Settings → Field of view (0: the bus's own cameras)
-                    if fov_setting >= 20.0 {
+                    // Settings → Field of view (0: the bus's own cameras); the view editor's for
+                    // this bus before it
+                    if let Some(f) = view_fov {
+                        c.fov_deg = f.min(120.0);
+                    } else if fov_setting >= 20.0 {
                         c.fov_deg = fov_setting.min(120.0);
                     }
                     if let Some(z) = zoom {

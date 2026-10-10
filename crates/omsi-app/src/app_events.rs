@@ -145,6 +145,10 @@ impl ApplicationHandler for App {
                         if self.plugin_typing_key(code, event.text.as_deref()) {
                             return;
                         }
+                        // the game's panels: the field typed into, Esc closing the one on top
+                        if self.game_panel_key(code, event.text.as_deref()) {
+                            return;
+                        }
                     }
                 }
                 if event.state == ElementState::Pressed && self.menus.menu_edit_icao {
@@ -299,6 +303,11 @@ impl ApplicationHandler for App {
                 // while the plugins' panels have the mouse its clicks are theirs, none the bus's
                 if self.plugin_focus() {
                     self.plugin_click(state == ElementState::Pressed);
+                    return;
+                }
+                self.alt_tap_spoilt();
+                // ... and the game's own panels' (the quick menu, the forms, the editor)
+                if self.game_panel_click(state == ElementState::Pressed) {
                     return;
                 }
                 if self.input.touch.enabled {
