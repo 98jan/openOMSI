@@ -217,8 +217,19 @@ fn past_by(st: &AiState, net: &Network, ri: usize, s: f32) -> f32 {
     let origin = if ri >= st.route_index {
         -st.route_distance(net, ri, s)
     } else {
-        let between: f32 = (ri + 1..st.route_index).filter_map(|k| st.route.get(k)).map(|&l| net.lanes[l].length()).sum();
-        st.s + between + net.lanes[st.route[ri]].length() - s
+        // the point carried on to the lane the bus is on, as `AiState::route_distance` goes
+        // the other way: a lane's length on to the next, the offset to a lane beside (a route
+        // that moves over to the lane beside at a stop)
+        let mut x = s;
+        for k in ri..st.route_index.min(st.route.len().saturating_sub(1)) {
+            let (a, b) = (st.route[k], st.route[k + 1]);
+            if net.parallel(a, b) {
+                x += net.beside_delta(a, b);
+            } else {
+                x -= net.lanes[a].length();
+            }
+        }
+        st.s - x
     };
     origin - st.rear
 }
@@ -1319,5 +1330,25 @@ mod tests {
             assert_eq!(service.trip_done(), done, "the track runs on: {route_on}");
             assert!(service.stops.is_empty());
         }
+    }
+    /// A route that moves over to the lane beside at its stop (a stop lane of a junction
+    /// object): the bus on the lane beside is as far past the stop as it is along, not a
+    /// whole lane further - it keeps its berth until its rear has left it.
+    #[test]
+    fn the_way_past_a_stop_counts_a_lane_beside_as_beside() {
+        let key = |path: u16| Some(crate::traffic::LaneKey { tile: (0, 0), id: 9, path });
+        let mut a = crate::traffic::LaneBuilder::arc(glam::DVec3::ZERO, 0.0, 100.0, 0.0, 0.0, LaneKind::Street, 3.0);
+        let mut b = crate::traffic::LaneBuilder::arc(glam::DVec3::new(3.5, 0.0, 0.0), 0.0, 100.0, 0.0, 0.0, LaneKind::Street, 3.0);
+        a.key = key(0);
+        b.key = key(1);
+        let net = Network { lanes: vec![a, b], ..Default::default() };
+        assert!(net.parallel(0, 1));
+        let mut st = AiState::new(1, 21.5, 1);
+        st.route = vec![0, 1];
+        st.route_index = 1;
+        let past = past_by(&st, &net, 0, 21.4);
+        assert!((past - (0.1 - st.rear)).abs() < 1e-3, "{past}");
+        st.s = 21.4 + st.rear + 2.0;
+        assert!(past_by(&st, &net, 0, 21.4) > super::super::berths::CLEAR_PAST);
     }
 }
