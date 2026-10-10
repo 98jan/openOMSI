@@ -500,6 +500,7 @@ pub fn collect(
             log::info!("smoke: {} particles from objects, first at ({:.1}, {:.1}, {:.1}) size {:.2} alpha {:.2}", scene.smoke.len(), p.position.x, p.position.y, p.position.z, p.size, p.alpha);
         }
     }
+    let vehicle_smoke = scene.smoke.len();
     for v in vehicles {
         vehicle_lights(v, &mut scene.coronas, &mut scene.lights, night);
         particle_sprites(&v.particles, &mut scene.smoke, &mut scene.coronas);
@@ -507,6 +508,7 @@ pub fn collect(
             particle_sprites(&t.particles, &mut scene.smoke, &mut scene.coronas);
         }
     }
+    crate::puddles::keep_out_of_cab(vehicles, camera_pos, &mut scene.smoke, vehicle_smoke);
     // the lamps' cones in fog: drawn only while the visibility is
     // under 2 km, the fan's radius 2 m times 3 sqrt(100 / visibility) times the glow's
     // strength ((1 - ambient)^2 + 0.8) 0.6 brightness and the light's size; its colour the
