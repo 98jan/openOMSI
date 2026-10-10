@@ -92,6 +92,8 @@ pub struct AiCar {
     pub reserved: Vec<usize>,
     /// The light (controller, lamp) the driver decided to pass on yellow.
     pub amber: Option<(usize, usize)>,
+    /// That decision was taken standing first at the light's line as it went green.
+    pub amber_start: bool,
     pub passing: Option<Passing>,
     /// Finished (a dead end, the end of a timetable trip, given up): taken off the road as
     /// soon as nobody can see it.
@@ -609,6 +611,7 @@ impl TrafficSim {
             light_hold: false,
             reserved: Vec::new(),
             amber: None,
+            amber_start: false,
             passing: None,
             gone: false,
             fresh: 1.5,

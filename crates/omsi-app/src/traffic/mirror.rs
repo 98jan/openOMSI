@@ -91,6 +91,7 @@ impl Traffic {
             light_hold: false,
             reserved: Vec::new(),
             amber: None,
+            amber_start: false,
             passing: None,
             gone: false,
             fresh: 0.0,

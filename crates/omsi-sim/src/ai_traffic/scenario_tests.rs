@@ -8,13 +8,13 @@ use crate::traffic::{LaneBuilder, LaneKey};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A vehicle type with no model and no scripts, in a folder of its own.
-struct Fixture {
-    dir: std::path::PathBuf,
-    ty: Arc<VehicleType>,
+pub(super) struct Fixture {
+    pub(super) dir: std::path::PathBuf,
+    pub(super) ty: Arc<VehicleType>,
 }
 
 impl Fixture {
-    fn new() -> Fixture {
+    pub(super) fn new() -> Fixture {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let dir = std::env::temp_dir().join(format!(
             "omsi-traffic-scenario-{}-{}",
@@ -35,19 +35,19 @@ impl Drop for Fixture {
     }
 }
 
-fn traffic(f: &Fixture, mut net: Network) -> TrafficSim {
+pub(super) fn traffic(f: &Fixture, mut net: Network) -> TrafficSim {
     net.build_grid();
     net.compute_reach();
     let random = RandomTypes { types: Vec::new(), groups: Vec::new(), group_curves: false, group_uvg: Vec::new(), uvg_defaults: Vec::new() };
     TrafficSim::assemble(&f.dir, net, random, Vec::new(), HashMap::new(), (Vec::new(), Vec::new()), Vec::new(), (1.0, 0), 0)
 }
 
-fn add_car(t: &mut TrafficSim, f: &Fixture, lane: usize, s: f32, seed: u64, speed: Option<f32>) -> u64 {
+pub(super) fn add_car(t: &mut TrafficSim, f: &Fixture, lane: usize, s: f32, seed: u64, speed: Option<f32>) -> u64 {
     let vehicle = VehicleInstance::new(f.ty.clone(), crate::VehicleHost::new(crate::SimClock::default()));
     t.place_car(vehicle, LaneKind::Street, lane, s, f.ty.clone(), seed, None, None, speed, None)
 }
 
-fn street(start: DVec3, heading: f64, length: f64) -> crate::traffic::Lane {
+pub(super) fn street(start: DVec3, heading: f64, length: f64) -> crate::traffic::Lane {
     LaneBuilder::arc(start, heading, length, 0.0, 0.0, LaneKind::Street, 3.0)
 }
 
@@ -55,7 +55,7 @@ fn street(start: DVec3, heading: f64, length: f64) -> crate::traffic::Lane {
 /// 150 m of road before each of its paths and `exit` m after: lanes 0..4 the roads in
 /// (from the south, west, north, east), 4..8 the junction's paths, 8..12 the roads out.
 /// Without priorities: everybody gives way to the right.
-fn crossroads(exit: f64) -> Network {
+pub(super) fn crossroads(exit: f64) -> Network {
     let half = 12.0;
     let o = 1.75;
     // (start of the junction path, heading) north, east, south, west bound
@@ -88,14 +88,14 @@ fn crossroads(exit: f64) -> Network {
     net
 }
 
-fn run(t: &mut TrafficSim, secs: f32) {
+pub(super) fn run(t: &mut TrafficSim, secs: f32) {
     for _ in 0..(secs / 0.05) as usize {
         t.tick(0.05, None);
     }
 }
 
 /// The car's front, metres past the junction's middle along its own road (+ = through).
-fn past_middle(t: &TrafficSim, id: u64) -> Option<f64> {
+pub(super) fn past_middle(t: &TrafficSim, id: u64) -> Option<f64> {
     let c = t.cars.iter().find(|c| c.id == id)?;
     let h = c.vehicle.heading.to_radians();
     let fwd = DVec2::new(h.sin(), h.cos());
@@ -154,7 +154,7 @@ fn the_exit_counts_a_crawling_queue_where_it_will_stop() {
 /// A main road west to east (lane 0 in, the junction's path 1, lane 2 out) and a side road
 /// from the south (lane 3) whose path through the junction (4) crosses it, `[rule]`
 /// priorities as the stock maps set them.
-fn side_road() -> Network {
+pub(super) fn side_road() -> Network {
     let key = |path: u16| Some(LaneKey { tile: (0, 0), id: 2, path });
     let main_in = street(DVec3::new(-200.0, 0.0, 0.0), 90.0, 190.0);
     let mut main_j = street(DVec3::new(-10.0, 0.0, 0.0), 90.0, 20.0);
@@ -447,7 +447,7 @@ fn way_lanes_are_what_they_were() {
 }
 
 /// Every car of the scene as it stands: id, lane, distance along it and speed.
-fn snapshot(t: &TrafficSim) -> Vec<(u64, usize, f32, f32)> {
+pub(super) fn snapshot(t: &TrafficSim) -> Vec<(u64, usize, f32, f32)> {
     let mut v: Vec<_> = t.cars.iter().map(|c| (c.id, c.state.lane, c.state.s, c.state.speed)).collect();
     v.sort_by_key(|x| x.0);
     v
