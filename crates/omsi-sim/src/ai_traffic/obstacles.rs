@@ -236,7 +236,7 @@ impl TrafficSim {
     pub fn body_in_way(
         &self,
         i: usize,
-        feet: &[Footprint],
+        feet: &super::foot_grid::Feet,
         by_lane: &HashMap<usize, Vec<(usize, f32, f32, bool)>>,
     ) -> Option<(Lead, usize)> {
         let car = &self.cars[i];
@@ -267,7 +267,7 @@ impl TrafficSim {
         };
         let me = car.id;
         let near: Vec<&Footprint> = feet
-            .iter()
+            .near(pos, reach as f64 + 2.0)
             .filter(|f| f.car != i && !rounding.contains(&f.car) && (f.z - z).abs() < BODY_LEVEL + 6.0)
             .filter(|f| (f.center - pos).length() < reach as f64 + f.half_len + f.half_w + 2.0)
             .filter(|f| {

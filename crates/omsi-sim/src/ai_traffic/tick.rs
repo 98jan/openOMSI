@@ -40,7 +40,7 @@ pub struct TickScene {
     /// Seconds the player's vehicle has stood.
     pub player_standing: f32,
     pub others: Vec<(u32, PlayerBox)>,
-    pub feet: Vec<Footprint>,
+    pub feet: super::foot_grid::Feet,
     pub by_lane: ByLane,
     /// Cars coming to a junction lane: (car, distance from its origin to the lane start).
     pub coming: Coming,
@@ -82,7 +82,7 @@ impl TrafficSim {
         let t_plan = std::time::Instant::now();
         let mut remove = Vec::new();
         let mut frames: Vec<Option<AiFrame>> = vec![None; self.cars.len()];
-        let feet = self.footprints();
+        let feet = super::foot_grid::Feet::new(self.footprints());
         self.break_lead_pairs();
         self.break_rings();
         let ts = TickScene { dt, debug, player, player_standing, others, feet, by_lane, coming, walkers };

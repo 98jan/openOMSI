@@ -17,6 +17,7 @@ pub mod lights;
 pub mod mirror;
 pub mod model;
 pub mod obstacles;
+pub mod foot_grid;
 pub mod parked;
 pub mod planning;
 pub mod setup;
