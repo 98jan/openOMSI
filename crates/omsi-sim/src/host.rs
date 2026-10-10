@@ -807,11 +807,10 @@ impl Host for VehicleHost {
     }
     fn sound_trigger_vars(&mut self, name: &str, id: NameId, vars: &[f32]) {
         self.sound_trigger(name, id);
-        if !self.snapshot_triggers.is_empty() {
-            let key = name.to_ascii_lowercase();
-            if self.snapshot_triggers.contains(&key) {
-                self.fired_trigger_vars.push((key, vars.to_vec()));
-            }
+        // (asked in place; the lower-case name is made only for a trigger that is kept - a
+        // copy was made for every trigger fired by a vehicle with such sounds)
+        if !self.snapshot_triggers.is_empty() && omsi_script::compile::with_lower(name, |k| self.snapshot_triggers.contains(k)) {
+            self.fired_trigger_vars.push((name.to_ascii_lowercase(), vars.to_vec()));
         }
     }
 
@@ -857,6 +856,18 @@ mod tests {
         }
         assert_eq!(host.unknown_callbacks(), ["no_such_callback".to_string()]);
         assert_eq!(stacks.st[..3], [0.0; 3]);
+    }
+
+    /// A trigger whose sounds read variables keeps them as they stand (by its lower-case
+    /// name, whatever case the script writes); the others only fire.
+    #[test]
+    fn a_snapshot_trigger_keeps_the_variables() {
+        let mut host = VehicleHost::new(SimClock::default());
+        host.snapshot_triggers.insert("ev_door_open".to_string());
+        host.sound_trigger_vars("EV_Door_Open", 0, &[1.0, 2.0]);
+        host.sound_trigger_vars("ev_other", 1, &[3.0]);
+        assert_eq!(host.fired_triggers, ["EV_Door_Open", "ev_other"]);
+        assert_eq!(host.fired_trigger_vars, vec![("ev_door_open".to_string(), vec![1.0, 2.0])]);
     }
 
     #[test]
