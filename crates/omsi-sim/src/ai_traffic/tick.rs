@@ -5,6 +5,9 @@ use super::*;
 
 pub const AI_JOB_SECS: f32 = 50e-6;
 
+/// Seconds a random car stands before it gives up and leaves out of sight (Omsi.exe: 200).
+pub const GIVE_UP_STOOD: f32 = 200.0;
+
 /// Seconds a timetable bus waits where the route it has ends for the rest of its route
 /// (tiles bring it as they load) before it gives the trip up (see `Traffic::tick`).
 pub const ROUTE_WAIT_MAX: f32 = 40.0;
@@ -996,10 +999,12 @@ impl TrafficSim {
             car.progress.1 += dt;
         }
         let stood = car.stopped.max(car.progress.1);
-        // a random car that has stood for a minute without a light or a junction
-        // holding it has given up: it leaves as soon as nobody sees it
-        // (one yielding for minutes is in a gridlock nobody else will end)
-        if (stood > 60.0 && !car.yielding || stood > 150.0) && !car.is_bus() && !car.light_hold && !car.gone
+        // a random car that has stood for long has given up: it leaves as soon as nobody
+        // sees it. Omsi.exe deletes random traffic after 200 s standing (FUN_007d9128,
+        // inst+0x870 > 200); taken off after a minute, the cars waiting at a side road's
+        // line for a gap in a busy main road were taken away one after the other (their
+        // giving way flickers off for a step as the gap is weighed again), Grundorf.
+        if stood > GIVE_UP_STOOD && !car.is_bus() && !car.light_hold && !car.gone
         {
             car.gone = true;
             if let Some(s) = self.stats.as_mut() {

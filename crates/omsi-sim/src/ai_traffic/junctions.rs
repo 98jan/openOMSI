@@ -897,8 +897,10 @@ impl TrafficSim {
                 // there as at a line
                 let waiting_inside = jn.inside && v < 0.5 && my_room > 0.0 && must_yield;
                 // (rolled over its line to stop before the meeting place, it is not decided)
-                let me_decided = (committed && !me_yields_by_sign) || (jn.inside && !waiting_inside && !(me_yields_by_sign && committed));
-                let sign_hold = me_yields_by_sign && committed;
+                let me_decided = (committed && !me_yields_by_sign) || (jn.inside && !waiting_inside && !me_yields_by_sign);
+                // (judged alike claimed or not: a car too fast for its line but able to stop
+                // before the meeting place claimed and gave up its claim by turns)
+                let sign_hold = me_yields_by_sign;
                 let mut hold = |hard_: bool, o: u64, kind: Hold, holds: &mut Vec<(u64, Hold)>, stop_at: &mut Option<f32>| {
                     holds.push((o, kind));
                     sign_yield |= sign_hold;
@@ -1005,7 +1007,7 @@ impl TrafficSim {
                         continue;
                     }
                     let waiter = (o.courtesy && claimed)
-                        || (o.yielding && o.state.yield_time > COURTESY_WAIT && o.wait_at.is_some() && !queued && theirs < 15.0);
+                        || (o.yielding && o.state.yield_time > COURTESY_WAIT && !queued && o.wait_at.is_some_and(|w| w - o.state.front < 3.0));
                     if waiter && !must_yield && self.net.must_yield(m, l) && !me_prio && lets_in(v, st.decel, my_room) {
                         courtesy = true;
                         by = by.or(Some(o.id));
