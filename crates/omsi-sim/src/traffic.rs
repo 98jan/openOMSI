@@ -94,9 +94,21 @@ pub struct Lane {
     /// paths coming out of a side road and leave the rest alone, so an unmarked path sits
     /// in between at `DEFAULT_PRIORITY`.
     pub priority: f32,
-    /// Other `[path]`s of its object this lane blocks while taken (`[blockpath]`), beyond
-    /// the places where they cross.
+    /// Other `[path]`s of its object named by `[blockpath]`. Kept as the map has them, but
+    /// without effect: in Omsi.exe 2.3.004 the loader builds the entries (FUN_007a0e54,
+    /// 0x7a2ba4) and the only reader (FUN_00710ee0, 0x71100f) walks a list of vehicles that
+    /// nothing ever fills (`TPathGroup+0x14`, set to length 0 in its constructor
+    /// FUN_00710e98 and never written again), so a blockpath never holds anybody in the
+    /// original either. No stock map places an object that has one.
     pub blocks: Vec<u16>,
+    /// `[crossingproblem]` (segment +0x1a2 in Omsi.exe): where this path and one crossing it
+    /// meet, a vehicle holding either of them blocks the other for as long as it holds it,
+    /// not only until it has passed the crossing point (the look-ahead FUN_00716970 skips its
+    /// "already past the crossing" test for such a pair, 0x718013). Spandau sets it on T
+    /// junctions whose paths run side by side rather than cleanly across each other.
+    pub crossing_problem: bool,
+    /// Part of a roundabout's ring (see `rings::find_rings`).
+    pub ring: bool,
 }
 
 /// Priority of a path without a `[rule] priority`.
@@ -310,7 +322,7 @@ impl LaneBuilder {
     pub fn curve(points: Vec<DVec3>, headings: Vec<f32>, curvature: Vec<f32>, kind: LaneKind, width: f32) -> Lane {
         let dist = cumulative(&points);
         let speed_limit_kmh = if kind == LaneKind::Air { AIR_NO_LIMIT_KMH } else { 50.0 };
-        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, rule_trucks: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new() }
+        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, rule_trucks: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new(), crossing_problem: false, ring: false }
     }
 
     /// Lane from bare points: headings from the neighbouring points on both sides (the
@@ -756,22 +768,17 @@ impl Network {
                     let joint = ends < 1.5 || (ends < MEET_DIST && a.next.iter().any(|n| b.next.contains(n)));
                     let merge = joint && (a.start() - b.start()).truncate().length() > 3.0;
                     let place = if merge { Some((a.length(), b.length())) } else { polyline_crossing(a, b) };
-                    // `[blockpath]`: the object says the two are in each other's way even
-                    // where their lines do not cross - the whole of both is the meeting place
-                    let (pa, pb) = (a.key.map(|k| k.path).unwrap_or(u16::MAX), b.key.map(|k| k.path).unwrap_or(u16::MAX));
-                    if place.is_none() && (a.blocks.contains(&pb) || b.blocks.contains(&pa)) {
-                        let (la, lb) = (a.length(), b.length());
-                        self.conflicts[i].push(j);
-                        self.conflicts[j].push(i);
-                        self.crossings[i].push(Crossing { other: j, at: la * 0.5, other_at: lb * 0.5, merge: false, before: la * 0.5, after: la * 0.5, other_before: lb * 0.5, other_after: lb * 0.5 });
-                        self.crossings[j].push(Crossing { other: i, at: lb * 0.5, other_at: la * 0.5, merge: false, before: lb * 0.5, after: lb * 0.5, other_before: la * 0.5, other_after: la * 0.5 });
-                        n += 1;
-                        continue;
-                    }
+                    // (`[blockpath]` adds no meeting place: it never had an effect in Omsi.exe,
+                    // see `Lane::blocks`)
                     if let Some((sa, sb)) = place {
                         // (after a joint the two are in one lane, and follow each other)
-                        let (ab, aa) = if merge { (meeting_extent(a, sa, b).0, 0.5) } else { meeting_extent(a, sa, b) };
-                        let (bb, ba) = if merge { (meeting_extent(b, sb, a).0, 0.5) } else { meeting_extent(b, sb, a) };
+                        let (mut ab, mut aa) = if merge { (meeting_extent(a, sa, b).0, 0.5) } else { meeting_extent(a, sa, b) };
+                        let (mut bb, mut ba) = if merge { (meeting_extent(b, sb, a).0, 0.5) } else { meeting_extent(b, sb, a) };
+                        if a.crossing_problem || b.crossing_problem {
+                            // the meeting place is the whole of both lanes: a vehicle on
+                            // either holds the other until its tail has left its lane
+                            (ab, aa, bb, ba) = (sa, a.length() - sa, sb, b.length() - sb);
+                        }
                         self.conflicts[i].push(j);
                         self.conflicts[j].push(i);
                         self.crossings[i].push(Crossing { other: j, at: sa, other_at: sb, merge, before: ab, after: aa, other_before: bb, other_after: ba });
@@ -791,6 +798,10 @@ impl Network {
             }
         }
         let walks: usize = self.walks[first..].iter().map(|w| w.len()).sum();
+        let rings = rings::find_rings(self, first);
+        if rings > 0 {
+            log::info!("path network: {rings} roundabout rings");
+        }
         (n, walks)
     }
 
@@ -809,6 +820,13 @@ impl Network {
         }
         if (la.priority - lb.priority).abs() > 0.5 {
             return la.priority < lb.priority;
+        }
+        // Where the map sets no priorities on a roundabout the ring goes before the entry
+        // (StVO §8(1a), and how drivers everywhere take a ring). Omsi.exe has no ring rule:
+        // there it is first come, first served unless the map gives the ring a higher
+        // `[rule] priority`; right-before-left would give the entry the way here.
+        if la.ring != lb.ring {
+            return lb.ring;
         }
         let rel = wrap_deg(lb.start_heading() - la.start_heading());
         // (the turn across the oncoming traffic: left, or right when driving on the left)
@@ -2785,6 +2803,8 @@ impl AiState {
         true
     }
 }
+
+mod rings;
 
 #[cfg(test)]
 mod tests;
