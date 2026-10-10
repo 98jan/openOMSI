@@ -498,6 +498,35 @@ fn polyline_crossing(a: &Lane, b: &Lane) -> Option<(f32, f32)> {
     None
 }
 
+/// Where two lanes of a junction that do not cross pass so close that two vehicles on
+/// them would touch (centre lines nearer than `NEAR_PASS`): two turns from opposite sides
+/// sweeping past each other in the middle of a junction. The distance along each at their
+/// closest, away from the ends (a fork or a joint is not such a place). Without it the two
+/// cars met there with nothing to sort out who goes first.
+fn near_pass(a: &Lane, b: &Lane) -> Option<(f32, f32)> {
+    if (a.start() - b.start()).truncate().length() < 3.0 || (a.end() - b.end()).truncate().length() < 3.0 {
+        return None;
+    }
+    let mut best: Option<(f64, f32, f32)> = None;
+    for (k, p) in a.points.iter().enumerate() {
+        let sa = a.dist[k];
+        if sa < 1.0 || sa > a.length() - 1.0 {
+            continue;
+        }
+        let Some((sb, d)) = b.nearest_point(*p) else { continue };
+        if sb < 1.0 || sb > b.length() - 1.0 {
+            continue;
+        }
+        if best.is_none_or(|x| d < x.0) {
+            best = Some((d, sa, sb));
+        }
+    }
+    best.filter(|x| x.0 < NEAR_PASS).map(|x| (x.1, x.2))
+}
+
+/// Centre lines of two lanes closer than this pass too close for two cars (m).
+pub const NEAR_PASS: f64 = 2.0;
+
 /// Grid cell size of `Network::grid` (m).
 pub const GRID_CELL: f64 = 50.0;
 
@@ -767,7 +796,7 @@ impl Network {
                     let ends = (a.end() - b.end()).truncate().length();
                     let joint = ends < 1.5 || (ends < MEET_DIST && a.next.iter().any(|n| b.next.contains(n)));
                     let merge = joint && (a.start() - b.start()).truncate().length() > 3.0;
-                    let place = if merge { Some((a.length(), b.length())) } else { polyline_crossing(a, b) };
+                    let place = if merge { Some((a.length(), b.length())) } else { polyline_crossing(a, b).or_else(|| near_pass(a, b)) };
                     // (`[blockpath]` adds no meeting place: it never had an effect in Omsi.exe,
                     // see `Lane::blocks`)
                     if let Some((sa, sb)) = place {
