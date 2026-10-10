@@ -52,6 +52,10 @@ pub struct Traffic {
     riding_sounds: Option<(u64, omsi_audio::SoundSet)>,
     /// `[sound_ai]` configurations by file.
     sound_cfgs: HashMap<std::path::PathBuf, Option<Arc<omsi_vehicle::SoundCfg>>>,
+    /// What each vehicle definition (by its file) is heard with, its paths resolved once:
+    /// a car waiting for its clips looked them all up on the disk again every frame, and a
+    /// car without a usable sound configuration did so as long as it was near.
+    sound_plans: HashMap<std::path::PathBuf, Option<Arc<audio::SoundPlan>>>,
 }
 
 impl std::ops::Deref for Traffic {
@@ -77,6 +81,7 @@ impl Traffic {
             orphan_sounds: Vec::new(),
             riding_sounds: None,
             sound_cfgs: HashMap::new(),
+            sound_plans: HashMap::new(),
         }
     }
 
