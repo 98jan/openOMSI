@@ -20,6 +20,7 @@
 //! `OMSI_INSTANCE`, else the process id.
 
 mod variable_schema;
+mod sound_sync;
 
 use crate::scene::{self, World};
 use crate::{Args, Player};
@@ -154,6 +155,17 @@ fn outside_entry(e: &omsi_vehicle::SoundEntry) -> bool {
         || e.conditions.iter().any(|c| hit(&c.variable))
 }
 
+/// Supplement sound_ai without losing the other names of a multi-trigger entry.
+fn supplemental_sound_entry(
+    entry: &omsi_vehicle::SoundEntry,
+    present: &dyn Fn(&str) -> bool,
+) -> Option<omsi_vehicle::SoundEntry> {
+    if entry.triggers.is_empty() { return outside_entry(entry).then(|| entry.clone()); }
+    let mut entry = entry.clone();
+    entry.triggers.retain(|t| !present(t));
+    (!entry.triggers.is_empty()).then_some(entry)
+}
+
 fn fnv1a(data: &[u8]) -> u32 {
     let mut h: u32 = 0x811c_9dc5;
     for b in data {
@@ -260,8 +272,9 @@ impl SyncTable {
                 let entries: Vec<omsi_vehicle::SoundEntry> = cfg
                     .sounds
                     .iter()
-                    .filter(|e| outside_entry(e))
-                    .cloned()
+                    .filter_map(|entry| supplemental_sound_entry(entry, &|trigger| sounds.iter().any(|(ai, _)| {
+                        ai.sounds.iter().any(|entry| entry.triggers.iter().any(|t| t.trim().eq_ignore_ascii_case(trigger.trim())))
+                    })))
                     .collect();
                 if !entries.is_empty() {
                     sounds.push((
@@ -605,6 +618,7 @@ pub enum WorldUpdate {
 #[derive(Default)]
 pub struct LanGame {
     pub remotes: hashbrown::HashMap<u32, RemoteVehicle>,
+    pending_sounds: Vec<(omsi_net::sounds::Incoming, f32)>,
     pub chat: Chat,
     /// The chat's lines (name, text) not yet handed to the plugins (`lan_chat`).
     pub plugin_chat: Vec<(String, String)>,
@@ -2575,6 +2589,7 @@ fn new_remote(
     };
     host.paint_scheme = Some(scheme);
     host.remote_script_textures = true;
+    host.remote_sound_triggers = true;
     let mut vehicle = omsi_sim::VehicleInstance::new(ty.clone(), host);
     vehicle.ground = None;
     if !ty.model.text_textures.is_empty() {
@@ -3201,8 +3216,13 @@ fn sound_remote(
     inside: bool,
 ) {
     let fired: Vec<String> = std::mem::take(&mut rv.vehicle.host.fired_triggers);
+    let fired_vars = std::mem::take(&mut rv.vehicle.host.fired_trigger_vars);
     let fired_files: Vec<(String, String)> =
         std::mem::take(&mut rv.vehicle.host.fired_file_triggers);
+    let at_fire = |t: &str, n: &str| -> Option<f32> {
+        let vals = &fired_vars.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case(t))?.1;
+        rv.vehicle.var_slot(n).and_then(|i| vals.get(i).copied())
+    };
     let (Some(audio), Some(at)) = (audio, listener) else {
         return;
     };
@@ -3228,7 +3248,7 @@ fn sound_remote(
             // `Snd_OutsideVol`, not the walker's own bus's (or 1 without one): riding along
             // the exterior engine drowned the cab (#1759)
             omsi_audio::soundset::set_outside_open(Some(v.var("Snd_OutsideVol").unwrap_or(0.0)));
-            ss.update(audio, &|n| v.var(n), &xf, &fired);
+            ss.update_fired(audio, &|n| v.var(n), &xf, &fired, &at_fire);
             for (t, f) in &fired_files {
                 ss.play_file_trigger(audio, t, f, &|n| v.var(n), &xf);
             }
@@ -3274,7 +3294,7 @@ fn sound_remote(
     let v = &rv.vehicle;
     for ss in rv.sounds.iter_mut() {
         ss.set_muffled(muffled);
-        ss.update(audio, &|n| v.var(n), &xf, &fired);
+        ss.update_fired(audio, &|n| v.var(n), &xf, &fired, &at_fire);
         ss.update_parts(audio, &|n| v.var(n), &|i| v.trailers.get(i).map(|t| t.world_transform()), &fired);
         for (t, f) in &fired_files {
             ss.play_file_trigger(audio, t, f, &|n| v.var(n), &xf);
@@ -3331,7 +3351,9 @@ pub fn tick(
             lan.answer_joins();
         }
     }
+    sound_sync::publish(lan, game, player.as_deref_mut(), traffic.as_deref_mut(), args);
     let gone = lan.tick(dt, &mine);
+    sound_sync::receive(lan, game, dt);
     sync_vars(lan, game, player.as_deref(), dt);
     publish_script_textures(lan, game, player.as_deref_mut(), &mine.bus);
     game.world.tick(
@@ -3346,6 +3368,7 @@ pub fn tick(
         view,
         player.as_deref().map(|p| p.vehicle.position),
     );
+    sound_sync::apply_ai(game, traffic.as_deref_mut(), args);
     // the host's world: taken over at a late welcome, the clock kept in step
     if let (Role::Client, Some(clock)) = (lan.role, frame.clock) {
         if lan.welcomes != game.adopted && lan.welcome.is_some() {
@@ -3559,6 +3582,7 @@ pub fn tick(
             None => drive_remote(rv, &pose, dt, false),
         }
         let inside = frame.inside_of == Some(pose.id);
+        sound_sync::apply_player(&mut game.pending_sounds, pose.id, rv);
         sound_remote(rv, frame.audio, frame.listener, frame.muffled, inside);
     }
     receive_script_textures(lan, game);
@@ -4052,6 +4076,18 @@ mod tests {
         let c = host_clock_now(&h).unwrap();
         assert_eq!((c.year, c.day_of_year), (1990, 1));
         assert!((c.time - 1.5).abs() < 0.1, "{}", c.time);
+    }
+
+    #[test]
+    fn exterior_sound_supplements_keep_each_missing_trigger_without_duplicate_voices() {
+        let entry = omsi_vehicle::SoundEntry {
+            triggers: vec!["horn".into(), "door_hit".into(), "announcement".into()],
+            ..Default::default()
+        };
+        let added = supplemental_sound_entry(&entry, &|t| t.eq_ignore_ascii_case("HORN")).unwrap();
+        assert_eq!(added.triggers, vec!["door_hit", "announcement"]);
+        assert!(supplemental_sound_entry(&entry, &|_| true).is_none());
+        assert!(supplemental_sound_entry(&omsi_vehicle::SoundEntry::default(), &|_| false).is_none());
     }
 
     #[test]

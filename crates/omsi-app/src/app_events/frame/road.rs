@@ -82,6 +82,8 @@ impl App {
             steps::set_ai_daylight(t, daylight, gloomy);
             let __t2 = Instant::now();
             let rail = self.player.as_ref().and_then(|p| p.rail.as_ref()).map(|r| (r.lane, r.along));
+            let capture_sounds = self.net.lan.as_ref().is_some_and(|lan| lan.role == omsi_net::Role::Host);
+            for c in &mut t.sim.cars { c.vehicle.host.capture_sound_triggers = capture_sounds; }
             steps::traffic_tick(t, &mut self.gfx.sim_view.traffic, w, dt, self.paused, self.player.as_ref(), &self.net.remotes, &self.session.placed, rail);
             *self.perf.profile.entry("traffic.tick").or_default() +=
                 __t2.elapsed().as_secs_f64();

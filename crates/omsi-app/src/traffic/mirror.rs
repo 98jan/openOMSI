@@ -52,6 +52,7 @@ impl Traffic {
         heading: f64,
     ) -> usize {
         let mut host = omsi_sim::VehicleHost::new(omsi_sim::SimClock::default());
+        host.remote_sound_triggers = true;
         host.font_lib = Some(world.fonts.clone());
         host.hof = hof;
         if let Some((_, wind, street)) = &self.script_environment {

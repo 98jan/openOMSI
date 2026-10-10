@@ -73,6 +73,11 @@ pub struct VehicleHost {
     pub auto_clutch: f32,
     pub no_sound: f32,
     pub fired_triggers: Vec<String>,
+    /// Mirrors accept sound events from their owner, never from their local scripts.
+    pub remote_sound_triggers: bool,
+    /// Enabled by LAN for vehicles this machine owns. Independent of local audio drains.
+    pub capture_sound_triggers: bool,
+    pub network_sound_triggers: Vec<(String, Option<String>, Option<Vec<f32>>)>,
     /// Triggers (lower case) whose sounds read variables in their volume curves: when one
     /// fires, the variables of that moment are kept in `fired_trigger_vars` (the door's
     /// hit sound reads `doorSpeed_<n>`, which the script turns round right after it).
@@ -175,6 +180,16 @@ fn ambient_weather() -> Option<(f32, f32)> {
 }
 
 impl VehicleHost {
+    fn record_network_sound(&mut self, name: &str, file: Option<&str>) {
+        if self.capture_sound_triggers {
+            if self.network_sound_triggers.len() < 512 {
+                self.network_sound_triggers.push((name.to_owned(), file.map(str::to_owned), None));
+            } else {
+                log::warn!("LAN sound event queue is full");
+            }
+        }
+    }
+
     /// A page asked for the departures of stop `key` (trimmed, lower case). The game keeps the
     /// stops asked most recently: one asked again moves to the back, a new one past the limit
     /// pushes out the one asked longest ago. (A fixed first-come list stayed full for good, and
@@ -748,16 +763,26 @@ impl Host for VehicleHost {
     fn sound_trigger_file(&mut self, name: &str, file: &str) {
         // `" " (T.F.ev_nbs_on)` is how the MB_C2 gearbox script says "no sound" (every
         // frame in neutral, 80 times a minute per bus at Ahlheim): nothing to play
-        if file.trim().is_empty() {
+        if self.remote_sound_triggers || file.trim().is_empty() {
             return;
         }
+        self.record_network_sound(name, Some(file));
         self.fired_file_triggers.push((name.to_string(), file.to_string()));
     }
     fn sound_trigger(&mut self, name: &str, _id: NameId) {
+        if self.remote_sound_triggers { return; }
+        self.record_network_sound(name, None);
         self.fired_triggers.push(name.to_string());
     }
     fn sound_trigger_vars(&mut self, name: &str, id: NameId, vars: &[f32]) {
+        if self.remote_sound_triggers { return; }
+        let network_count = self.network_sound_triggers.len();
         self.sound_trigger(name, id);
+        if self.network_sound_triggers.len() > network_count {
+            if let Some((_, _, snapshot)) = self.network_sound_triggers.last_mut() {
+                *snapshot = Some(vars.to_vec());
+            }
+        }
         if !self.snapshot_triggers.is_empty() {
             let key = name.to_ascii_lowercase();
             if self.snapshot_triggers.contains(&key) {
@@ -783,6 +808,26 @@ mod tests {
     use super::*;
     use crate::scripttex::ScriptTexture;
     use omsi_script::{compile, CompileInput, Vm};
+
+    #[test]
+    fn network_sound_events_survive_audio_drains_and_mirrors_cannot_generate_them() {
+        let mut h = VehicleHost::default();
+        h.capture_sound_triggers = true;
+        h.sound_trigger_vars("door", 0, &[5.0, 1.0]);
+        h.sound_trigger_file("announcement", "../Announcements/stop.wav");
+        h.sound_trigger_file("announcement", " ");
+        h.fired_triggers.clear(); h.fired_file_triggers.clear();
+        assert_eq!(h.network_sound_triggers, vec![
+            ("door".into(), None, Some(vec![5.0, 1.0])),
+            ("announcement".into(), Some("../Announcements/stop.wav".into()), None),
+        ]);
+        h.network_sound_triggers.clear(); h.remote_sound_triggers = true;
+        h.snapshot_triggers.insert("door".into());
+        h.sound_trigger_vars("door", 0, &[7.0]);
+        h.sound_trigger_file("announcement", "stop.wav");
+        assert!(h.fired_triggers.is_empty()); assert!(h.fired_file_triggers.is_empty());
+        assert!(h.fired_trigger_vars.is_empty()); assert!(h.network_sound_triggers.is_empty());
+    }
 
     #[test]
     fn ai_globals_refresh_calendar_weather_and_leave_vehicle_collision_and_wear() {

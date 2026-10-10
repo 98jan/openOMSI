@@ -3,6 +3,10 @@
 use super::*;
 
 impl Traffic {
+    pub(crate) fn has_sound_set(&self, id: u64) -> bool {
+        self.sounds.contains_key(&id) || self.riding_sounds.as_ref().is_some_and(|r| r.0 == id)
+    }
+
     /// Play the `[sound_ai]` sets of the cars near `listener` (others are silenced).
     /// `street_cond` is the state of the road (see `VehicleHost::street_cond`): the stock
     /// AI sound configuration fades `WetLane_1`/`WetLane_2` in with it, which is what a car
@@ -166,7 +170,7 @@ impl Traffic {
         }
         if let Some((_, ss)) = self.riding_sounds.as_mut() {
             let fired = std::mem::take(&mut c.vehicle.host.fired_triggers);
-            c.vehicle.host.fired_trigger_vars.clear();
+            let fired_vars = std::mem::take(&mut c.vehicle.host.fired_trigger_vars);
             let fired_files = std::mem::take(&mut c.vehicle.host.fired_file_triggers);
             let v = &c.vehicle;
             ss.set_inside(true);
@@ -175,7 +179,11 @@ impl Traffic {
             // (how open this bus is to the street, for its own outside sounds and the traffic's)
             omsi_audio::soundset::set_outside_open(Some(v.var("Snd_OutsideVol").unwrap_or(0.0)));
             let xf = v.world_transform();
-            ss.update(audio, &|n| v.var(n), &xf, &fired);
+            let at_fire = |t: &str, n: &str| -> Option<f32> {
+                let vals = &fired_vars.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case(t))?.1;
+                v.var_slot(n).and_then(|i| vals.get(i).copied())
+            };
+            ss.update_fired(audio, &|n| v.var(n), &xf, &fired, &at_fire);
             for (t, f) in &fired_files {
                 ss.play_file_trigger(audio, t, f, &|n| v.var(n), &xf);
             }

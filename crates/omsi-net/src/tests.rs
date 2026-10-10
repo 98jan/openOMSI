@@ -1751,3 +1751,36 @@ fn repeated_passenger_requests_reach_the_vehicle_owner_and_ai_host() {
     b.tick(0.2, &poses[2]);
     assert!(b.take_commands().is_empty(), "another address cannot request a door for this player");
 }
+
+#[test]
+fn sound_events_relay_between_clients_and_host_ai_without_echo_or_spoofing() {
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let port = host.local_addr().unwrap().port().to_string();
+    let mut a = LanSession::join(&port, "a", world("m"), Duration::from_secs(1)).unwrap();
+    let mut b = LanSession::join(&port, "b", world("m"), Duration::from_secs(1)).unwrap();
+    let poses = [pose(1.0), pose(2.0), pose(3.0)];
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 80, |s| s.iter().all(|s| s.peers.len() == 2));
+    assert_eq!(a.peers.len(), 2);
+    let tl = sounds::Event { ai: 0, bus: "Vehicles/x.bus".into(), trigger: "door".into(), file: None, values: vec![("doorSpeed".into(), 5.0)] };
+    let tf = sounds::Event { trigger: "announcement".into(), file: Some("..\\Announcements\\árvíztűrő.wav".into()), values: Vec::new(), ..tl.clone() };
+    a.publish_sound(tl.clone()); a.publish_sound(tf.clone());
+    let ai = sounds::Event { ai: 77, trigger: "horn".into(), ..tl.clone() };
+    host.publish_sound(ai.clone());
+    // A client cannot originate AI events.
+    b.publish_sound(sounds::Event { ai: 88, ..tl.clone() });
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 40, |_| false);
+    let hs = host.take_sounds(); let as_ = a.take_sounds(); let bs = b.take_sounds();
+    assert_eq!(hs.iter().map(|s| &s.event).collect::<Vec<_>>(), vec![&tl, &tf]);
+    assert!(hs.iter().all(|s| s.owner == a.my_id));
+    assert_eq!(as_.len(), 1); assert_eq!(as_[0].event, ai);
+    assert_eq!(bs.iter().filter(|s| s.owner == a.my_id).map(|s| &s.event).collect::<Vec<_>>(), vec![&tl, &tf]);
+    assert!(bs.iter().any(|s| s.owner == 1 && s.event == ai)); assert_eq!(bs.len(), 3);
+    // Authentication uses the socket address as well as the claimed player ID.
+    let mut fake = sounds::Sync::default(); fake.publish(&[host.my_id], tl);
+    for packet in fake.tick(PROTOCOL as u8, b.my_id, 0.0) {
+        host.on_sound(&packet, host.peers[&a.my_id].addr.unwrap());
+    }
+    assert!(host.take_sounds().is_empty());
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 10, |_| false);
+    assert!(host.take_sounds().is_empty()); assert!(a.take_sounds().is_empty()); assert!(b.take_sounds().is_empty());
+}

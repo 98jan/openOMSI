@@ -83,6 +83,7 @@ pub mod vars;
 pub mod var_schema;
 pub mod scripttex;
 pub mod ai_context;
+pub mod sounds;
 pub mod ws;
 pub mod tunnel;
 pub mod official;
@@ -111,7 +112,8 @@ pub use wire::{
 /// 8: canonical full variable tables and versioned, fragmented strings.
 /// 9: paged authoritative AI timetables and system script context.
 /// 10: recoverable variable-name manifests and model/sound compatibility fallback.
-pub const PROTOCOL: u32 = 10;
+/// 11: reliable, ordered owner-authored T.L and T.F sound events.
+pub const PROTOCOL: u32 = 11;
 /// (omsi-plugin's `MULTIPLAYER_PORTS` keeps `omsi.send` off this one and the `PORT_RANGE` after it.)
 pub const DEFAULT_PORT: u16 = 27015;
 /// Ports a host tries after the default one when that is taken (a second session on the
@@ -161,6 +163,7 @@ const STATE_RATE: (f32, f32) = (40.0, 40.0);
 // consume the pose/world budget (otherwise normal driving drops recovery slices).
 const VAR_RATE: (f32, f32) = (60.0, 60.0);
 const TEXTURE_RATE: (f32, f32) = (2048.0, 2048.0);
+const SOUND_RATE: (f32, f32) = (512.0, 2048.0);
 const MESSAGE_RATE: (f32, f32) = (10.0, 20.0);
 const CHAT_RATE: (f32, f32) = (1.0, 3.0);
 // ---------------------------------------------------------------------------------------
@@ -1243,6 +1246,7 @@ enum PeerTraffic {
     State,
     Variables,
     Textures,
+    Sounds,
     Message,
 }
 
@@ -1290,6 +1294,7 @@ pub struct Peer {
     states: Bucket,
     variables: Bucket,
     textures: Bucket,
+    sounds: Bucket,
     messages: Bucket,
     chat: Bucket,
     /// Datagrams of this player the host threw away (too many at once).
@@ -1315,6 +1320,7 @@ impl Peer {
             states: Bucket::new(STATE_RATE.1),
             variables: Bucket::new(VAR_RATE.1),
             textures: Bucket::new(TEXTURE_RATE.1),
+            sounds: Bucket::new(SOUND_RATE.1),
             messages: Bucket::new(MESSAGE_RATE.1),
             chat: Bucket::new(CHAT_RATE.1),
             dropped: 0,
@@ -1437,6 +1443,7 @@ pub struct LanSession {
     var_receiver: vars::VarReceiver,
     ai_context_in: Vec<Vec<u8>>,
     script_textures: scripttex::Sync,
+    sounds: sounds::Sync,
     descs: Vec<world::Desc>,
     wants: Vec<(u32, Vec<world::EntityRef>)>,
     claims: Vec<(u32, Vec<u32>)>,
@@ -1544,6 +1551,7 @@ impl LanSession {
             schema_receiver: vars::VarReceiver::default(),
             schemas_in: Vec::new(),
             script_textures: scripttex::Sync::default(),
+            sounds: sounds::Sync::default(),
             vars_in: Vec::new(),
             var_receiver: vars::VarReceiver::default(),
             ai_context_in: Vec::new(),
@@ -2304,9 +2312,13 @@ impl LanSession {
         self.receive(&mut gone);
         let peers: Vec<u32> = self.peers.keys().copied().collect();
         self.script_textures.retain_peers(&peers);
+        self.sounds.retain_peers(&peers);
         self.var_receiver.retain_peers(&peers);
         self.schema_receiver.retain_peers(&peers);
         if self.connected {
+            for packet in self.sounds.tick(PROTOCOL as u8, self.my_id, dt) {
+                self.route_sound(&packet);
+            }
             for packet in self.script_textures.tick(PROTOCOL as u8, self.my_id, dt) {
                 self.route_script_texture(&packet);
             }
@@ -2594,6 +2606,10 @@ impl LanSession {
                 self.on_state(&data, from);
                 continue;
             }
+            if data[0] == sounds::MAGIC {
+                self.on_sound(&data, from);
+                continue;
+            }
             if data[0] == scripttex::MAGIC {
                 self.on_script_texture(&data, from);
                 continue;
@@ -2801,6 +2817,7 @@ impl LanSession {
             PeerTraffic::State => peer.states.take(rate),
             PeerTraffic::Variables => peer.variables.take(rate),
             PeerTraffic::Textures => peer.textures.take(rate),
+            PeerTraffic::Sounds => peer.sounds.take(rate),
             PeerTraffic::Message => peer.messages.take(rate),
         };
         if !ok {
@@ -2837,6 +2854,37 @@ impl LanSession {
 
     pub fn take_script_textures(&mut self) -> Vec<scripttex::Incoming> {
         self.script_textures.take_incoming()
+    }
+
+    pub fn publish_sound(&mut self, event: sounds::Event) {
+        if !self.connected || (event.ai != 0 && self.role != Role::Host) { return; }
+        let peers: Vec<u32> = self.peers.keys().copied().collect();
+        self.sounds.publish(&peers, event);
+    }
+
+    pub fn take_sounds(&mut self) -> Vec<sounds::Incoming> {
+        self.sounds.take_incoming().into_iter().filter(|s| s.event.ai == 0 || s.owner == 1).collect()
+    }
+
+    fn route_sound(&self, data: &[u8]) {
+        let Some(a) = sounds::address(data, PROTOCOL as u8) else { return; };
+        match self.role {
+            Role::Host => if let Some(to) = self.peers.get(&a.to).and_then(|p| p.addr) { self.send(data, to); },
+            Role::Client => if let Some(host) = self.host { self.send(data, host); },
+        }
+    }
+
+    fn on_sound(&mut self, data: &[u8], from: SocketAddr) {
+        let Some(a) = sounds::address(data, PROTOCOL as u8) else { return; };
+        if a.from == self.my_id || a.from == 0 || a.to == 0 { return; }
+        match self.role {
+            Role::Host => {
+                if self.checked_peer(a.from, from, SOUND_RATE, PeerTraffic::Sounds).is_none() { return; }
+                if a.to != self.my_id { self.route_sound(data); return; }
+            }
+            Role::Client => if a.to != self.my_id || !self.peers.contains_key(&a.from) { return; },
+        }
+        if let Some(reply) = self.sounds.receive(PROTOCOL as u8, self.my_id, data) { self.route_sound(&reply); }
     }
 
     fn route_script_texture(&self, data: &[u8]) {

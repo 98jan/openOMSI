@@ -11,6 +11,10 @@ impl App {
         let Some(lan) = self.net.lan.as_mut() else {
             // (the session is over: the plugin is told so)
             self.sound.voice = None;
+            if let Some(p) = self.player.as_mut() {
+                p.vehicle.host.capture_sound_triggers = false;
+                p.vehicle.host.network_sound_triggers.clear();
+            }
             return;
         };
         let duty = self

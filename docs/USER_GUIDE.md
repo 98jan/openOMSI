@@ -886,8 +886,18 @@ RGBA image, then only changed RGBA pixel runs and mipmap settings are sent. Chan
 fragmented, acknowledged and retried until complete, and applied atomically; a late join,
 recreated vehicle or newly sized surface receives initialization again. Only images
 released by the owner's scripts are published, never an unfinished locked drawing buffer.
-Both games need LAN protocol 10; older versions are rejected rather than showing an empty
+Both games need LAN protocol 11; older versions are rejected rather than showing an empty
 display. Texture transfers have their own rate budget, separate from vehicle movement.
+
+**Script sound events.** `(T.L.name)` and `(T.F.name)` come from the player driving
+that bus; AI vehicles receive their sound events from the host. Remote scripts cannot
+start these sounds themselves. Events are fragmented when necessary, acknowledged,
+retried and delivered in order without duplicate playback. T.L volume curves receive
+the variable values at the instant of the trigger. T.F sends the trigger name and the
+script's file path; the receiving game resolves and plays its own installed audio file.
+Audio files are never transferred. A replacement bus does not receive the old bus's
+events; a stand-in plays none. Sounds retain the local sound configuration's interior,
+exterior and spatial playback rules. New players do not replay earlier sound events.
 
 Windows, macOS and Linux run the same code (wgpu, winit, cpal, std UDP);
 paths are resolved case-insensitively so Windows-style `\` references in mods work
