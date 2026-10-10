@@ -127,6 +127,7 @@ impl World {
             light_map_atlas: Mutex::new(None),
             parked_live: std::sync::atomic::AtomicUsize::new(0),
             parked_max: crate::settings::Settings::load().ai_max_parked as i64,
+            signal_ids: signal_routes.iter().flat_map(|r| std::iter::once(r.signal.0).chain(r.dist_signal)).collect(),
             signal_routes,
             particle_objects: Mutex::new(HashMap::new()),
             fonts: Arc::new(Mutex::new(omsi_sim::texttex::FontLibrary::new(root))),

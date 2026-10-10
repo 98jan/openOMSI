@@ -145,6 +145,8 @@ pub struct World {
     /// The map's `signalroutes.cfg` (unit `mc_fahrstrasse`): which track pieces each railway
     /// signal protects, its distant signal, the next signal and a speed limit.
     pub signal_routes: Vec<omsi_map::ailists::SignalRoute>,
+    /// The objects `signal_routes` names as signals or distant signals (`set_signals`).
+    pub(super) signal_ids: hashbrown::HashSet<i64>,
     /// Chrono folders active on the sim date, in order, and the merged AI lists / date.
     /// The chrono scenarios in force on the sim date (changed at midnight: `set_date`).
     pub chrono_dirs: parking_lot::RwLock<Vec<PathBuf>>,

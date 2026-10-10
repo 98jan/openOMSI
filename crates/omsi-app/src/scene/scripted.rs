@@ -136,7 +136,8 @@ impl World {
                 *e = e.max(aspects.get(&n).copied().unwrap_or(0.0));
             }
         }
-        let ids: hashbrown::HashSet<i64> = self.signal_routes.iter().flat_map(|r| std::iter::once(r.signal.0).chain(r.dist_signal)).collect();
+        // (the signals of the routes, gathered once when the map opened)
+        let ids = &self.signal_ids;
         let mut scripted = self.scripted.lock();
         for o in scripted.iter_mut() {
             if !ids.contains(&o.map_id) {
