@@ -90,6 +90,12 @@ impl App {
             dt,
         });
         crate::game_controller_menu::frame(self);
+        // In the photo mode the wheel, the pedals and the joystick do nothing: its camera
+        // listens to a gamepad of its own (`photo::pad`), and a wheel's axes and buttons went
+        // on turning the view and switching things while the picture was being framed.
+        if self.photo.is_some() {
+            return (crate::controllers::Analog::default(), Vec::new());
+        }
         (analog, actions)
     }
 
