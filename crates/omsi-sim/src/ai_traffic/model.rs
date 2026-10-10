@@ -159,8 +159,9 @@ pub struct AiCar {
     /// How far its body reaches back from its origin (m): `AiState::rear`, or the rear of
     /// its last section for an articulated bus or a car with a trailer.
     pub tail: f32,
-    /// The room it has been promised on its junction's exit: (exit lane, metres).
-    pub exit_claim: Option<(usize, f32)>,
+    /// The room it has been promised on its junction's exit: (exit lane, metres, the
+    /// odometer reading at which it gets to the exit).
+    pub exit_claim: Option<(usize, f32, f32)>,
     /// Everybody it waits for at its junction this step, and why (the waits-for graph of
     /// `deadlock`).
     pub holds: Vec<(u64, super::deadlock::Hold)>,

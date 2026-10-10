@@ -593,7 +593,7 @@ fn the_ring_does_not_give_way_to_an_entry_that_can_still_stop() {
     // the entry's car has claimed its way early, 30 m off at 8 m/s
     let f = Fixture::new();
     // (the ring car at the ring's own bend speed)
-    let (mut t, entry, ring) = at_the_ring(&f, 0, 8.0, 4.3);
+    let (mut t, entry, ring) = at_the_ring(&f, 1, 5.0, 4.3);
     {
         let c = t.cars.iter_mut().find(|c| c.id == entry).unwrap();
         c.state.s = 75.0;

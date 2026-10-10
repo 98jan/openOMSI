@@ -169,10 +169,9 @@ impl TrafficSim {
                 h.sharp = sharp;
                 if let Some(who) = stuck {
                     h.stuck += dt;
-                    if h.stuck >= patience(seed, bus) && h.again == f32::MAX && ready {
-                        honk = true;
-                        at_whom = Some(who);
-                    } else if now >= h.again && ready {
+                    // (the first honk once his patience has run out, then the repeats)
+                    let due = if h.again == f32::MAX { h.stuck >= patience(seed, bus) } else { now >= h.again };
+                    if due && ready {
                         honk = true;
                         at_whom = Some(who);
                     }
