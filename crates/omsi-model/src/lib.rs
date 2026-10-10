@@ -534,8 +534,32 @@ impl Model {
         self.meshes.last_mut()
     }
 
+    /// The material the `matl_*` commands act on: the last one selected - except right after
+    /// a `[matl_change]`, where Omsi.exe goes on with the slot's own material until the first
+    /// `[matl_item]` (0x5efae8: the change keeps the slot's record as the current one, and the
+    /// item later starts as a copy of it). An LED matrix that opens its change first and
+    /// writes `[matl_alpha]` and its script texture after it gives them to the slot itself:
+    /// kept on the change record, the slot stayed opaque and every dot of the panel shone.
+    /// A slot without a `[matl]` of its own gets one here, as Omsi.exe has a record for every
+    /// material of the mesh.
     fn cur_matl(&mut self) -> Option<&mut MaterialDef> {
-        self.meshes.last_mut().and_then(|m| m.materials.last_mut())
+        let mesh = self.meshes.last_mut()?;
+        let (texture, index) = match mesh.materials.last() {
+            Some(d) if !d.item && d.change.is_some() => (d.texture.clone(), d.index),
+            _ => return mesh.materials.last_mut(),
+        };
+        let base = |d: &MaterialDef| !d.item && d.change.is_none() && d.index == index && d.texture.eq_ignore_ascii_case(&texture);
+        let k = match mesh.materials.iter().rposition(base) {
+            Some(k) => k,
+            None => {
+                // (before the change, which stays the last record: the commands after this
+                // one still find it)
+                let at = mesh.materials.len() - 1;
+                mesh.materials.insert(at, MaterialDef { texture, index, ..Default::default() });
+                at
+            }
+        };
+        mesh.materials.get_mut(k)
     }
 
     /// Handle one model.cfg keyword. Returns `false` when the keyword is not part of the
@@ -842,7 +866,10 @@ impl Model {
                 // the variant of the preceding [matl_change]: starts as a copy of the base
                 // material, the following matl_* keywords change the variant only
                 if let Some(mesh) = self.cur_mesh() {
-                    if let Some(change) = mesh.materials.last().filter(|m| m.change.is_some()).cloned() {
+                    // (a second item starts from the slot's material as well, not from the
+                    // item before it: 0x5efae8 copies the record the [matl_change] picked)
+                    let open = mesh.materials.last().is_some_and(|m| m.change.is_some());
+                    if let Some(change) = mesh.materials.iter().rev().find(|m| open && m.change.is_some() && !m.item).cloned() {
                         // inherit the plain [matl] of the same slot (alpha, transmap, ...)
                         let base = mesh
                             .materials
@@ -850,11 +877,12 @@ impl Model {
                             .rev()
                             .find(|m| !m.item && m.change.is_none() && m.texture.eq_ignore_ascii_case(&change.texture) && m.index == change.index)
                             .cloned();
-                        // ... and what the [matl_change] (or the item before) set on top: Omsi.exe
-                        // copies the whole material record into the new item (0x5efae8 ->
-                        // 0x40a058), its free texture, scrolling and border with it. Copied from
-                        // the plain [matl] alone, the SD77's lit roller blind (`lights_stand`)
-                        // lost its destination text and scrolling with the lights on (#1419).
+                        // - with what was set after the [matl_change], which went to that
+                        // [matl] (see `cur_matl`): Omsi.exe copies the whole material record
+                        // into the new item (0x5efae8 -> 0x40a058), its
+                        // free texture, scrolling and border with it. Without them the SD77's
+                        // lit roller blind (`lights_stand`) lost its destination text and
+                        // scrolling with the lights on (#1419).
                         let mut item = change.clone();
                         if let Some(base) = base {
                             item.inherit(&base);
@@ -1311,6 +1339,32 @@ mod tests {
         assert_eq!(item.lightmap.as_ref().map(|l| l.0.as_str()), Some("zielbeleuchtung.bmp"));
         let base = m.meshes[0].materials.iter().find(|x| !x.item).unwrap();
         assert!(base.lightmap.is_none(), "the lit map is the item's only");
+    }
+
+    /// Commands between a `[matl_change]` and its first `[matl_item]` change the slot's own
+    /// material, as Omsi.exe's reader does: an LED matrix that opens its change first keeps
+    /// its `[matl_alpha]` (unlit dots see-through) whether the variable picks the item or not.
+    #[test]
+    fn commands_after_a_matl_change_go_to_the_slot() {
+        let text = "[mesh]\nmatrix.o3d\n[matl_change]\nled.bmp\n0\nmatrix_on\n[matl_alpha]\n2\n[useScriptTexture]\n0\n[matl_item]\n[matl_lightmap]\nled_lit.bmp\nmatrix_on\n[matl_item]\n";
+        let m = Model::parse(&CfgFile::from_str("model.cfg", text));
+        let mats = &m.meshes[0].materials;
+        let base = mats.iter().find(|x| !x.item && x.change.is_none()).expect("the slot's own material");
+        assert_eq!((base.texture.as_str(), base.alpha, base.alpha_set), ("led.bmp", 2, true));
+        assert_eq!(base.use_script_texture, Some(0));
+        let change = mats.iter().find(|x| !x.item && x.change.is_some()).unwrap();
+        assert!(!change.alpha_set && change.use_script_texture.is_none(), "{change:?}");
+        let items: Vec<&MaterialDef> = mats.iter().filter(|x| x.item).collect();
+        assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|i| i.alpha == 2 && i.use_script_texture == Some(0)));
+        assert!(items[0].lightmap.is_some());
+        assert!(items[1].lightmap.is_none(), "a second item starts from the slot, not from the item before");
+        // a plain [matl] of the slot written before the change is the one changed
+        let text = "[mesh]\nm.o3d\n[matl]\nled.bmp\n0\n[matl_envmap]\ne.bmp\n0.2\n[matl_change]\nled.bmp\n0\nv\n[matl_alpha]\n1\n[matl_item]\n";
+        let m = Model::parse(&CfgFile::from_str("model.cfg", text));
+        let plain: Vec<&MaterialDef> = m.meshes[0].materials.iter().filter(|x| !x.item && x.change.is_none()).collect();
+        assert_eq!(plain.len(), 1);
+        assert!(plain[0].envmap.is_some() && plain[0].alpha == 1);
     }
 
     #[test]
