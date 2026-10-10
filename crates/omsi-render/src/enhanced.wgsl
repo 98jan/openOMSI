@@ -220,6 +220,10 @@ fn lamp_shadow_at(li: u32, p: vec3<f32>, n: vec3<f32>, thin: bool) -> f32 {
     return sum / 9.0;
 }
 
+// The radiance of the street round the point as the lamps light it (`lamp_light` leaves it
+// here): what a reflection pointing at the street and the walls beside it sees at night.
+var<private> lamp_ground: vec3<f32>;
+
 // The point and spot lights of the pixel's grid cell: diffuse and specular.
 // `thin`: foliage, lit from whichever side the lamp is on (see the sun below).
 // `film`: a wet road's film of water - x how much of the surface it is (0: none), y how
@@ -227,6 +231,7 @@ fn lamp_shadow_at(li: u32, p: vec3<f32>, n: vec3<f32>, thin: bool) -> f32 {
 // sky is (`refl_rough`, `wet_share` in fs_enhanced), not by the dry surface's own lobe.
 fn lamp_light(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, sf: Surface, thin: bool, shadows: bool, film: vec3<f32>) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
+    lamp_ground = vec3<f32>(0.0);
     // the lamps' light on the ground round the point (a horizontal surface's, unshadowed:
     // the ground the point looks down at is wider than its own shadow)
     var ground_e = vec3<f32>(0.0);
@@ -323,7 +328,29 @@ fn lamp_light(p: vec3<f32>, n: vec3<f32>, v: vec3<f32>, sf: Surface, thin: bool,
     let rho = mix(0.18, 0.75, snow) * mix(1.0, 0.6, clamp(enh.weather.x, 0.0, 1.0) * (1.0 - snow));
     let seen = select((1.0 - clamp(n.z, -1.0, 1.0)) * 0.5, 0.5, thin);
     sum = sum + ground_e * rho * seen * sf.albedo / PI;
+    lamp_ground = ground_e * rho / PI;
     return sum;
+}
+
+// The relief a rough surface has under its microfacets - asphalt's grit and chippings, a
+// paving stone's dressing, a cobble's dome (slopes of a quarter and more, at millimetres to
+// centimetres) - shadows and masks itself (Smith's function for that slope spread,
+// height-correlated) towards a light and an eye low over it. GGX's own roughness is the
+// grain under that; on its own it let a low sun's grazing glint off every rough road and
+// wall shine white towards the camera, where a real road keeps it dull. The spread grows
+// with the rougher surface, and with the patch the pixel covers: farther off, the road's
+// waves and ruts are under the pixel too. A smooth surface is left as it is.
+fn relief_masking(nl: f32, nv: f32, rough: f32, footprint: f32) -> f32 {
+    let s2 = 0.0625 * smoothstep(0.45, 0.85, rough) + 0.02 * smoothstep(0.01, 0.12, footprint) * smoothstep(0.45, 0.7, rough);
+    if (s2 <= 0.0) {
+        return 1.0;
+    }
+    // (Smith's Lambda for a slope variance s2: (sqrt(1 + s2 tan^2) - 1) / 2)
+    let ml = clamp(nl, 1e-3, 1.0);
+    let mv = clamp(nv, 1e-3, 1.0);
+    let ll = 0.5 * (sqrt(1.0 + s2 * (1.0 - ml * ml) / (ml * ml)) - 1.0);
+    let lv = 0.5 * (sqrt(1.0 + s2 * (1.0 - mv * mv) / (mv * mv)) - 1.0);
+    return 1.0 / (1.0 + ll + lv);
 }
 
 // The light inside a cab relative to the average light outside: a bus's big windows let in
@@ -912,6 +939,8 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     sf.f0 = f0;
     sf.rough = rough;
     let nv = clamp(dot(n, v), 1e-4, 1.0);
+    // (how wide a patch of the surface the pixel covers, m: see `relief_masking`)
+    let relief_footprint = length(dpdx(in.world)) + length(dpdy(in.world));
     // --- the sun
     let s = camera.sun_dir.xyz;
     let nl = dot(n, s);
@@ -950,7 +979,12 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             // the sun is a disc, not a point: no highlight sharper than it
             let a = max(rough * rough, 0.012);
             let h = normalize(s + v);
-            let spec = d_ggx(max(dot(n, h), 0.0), a) * v_smith(nv, nl, a) * f_schlick(f0, dot(v, h));
+            var spec = d_ggx(max(dot(n, h), 0.0), a) * v_smith(nv, nl, a) * f_schlick(f0, dot(v, h));
+            // (a rough, unpolished surface's own relief hides its glint from a low sun: see
+            // `relief_masking`; glass, paint, chrome, water and a wet film keep theirs)
+            if (!glass && !reflective_env && !is_water && metal < 0.5) {
+                spec = spec * relief_masking(nl, nv, rough, relief_footprint);
+            }
             direct = e_sun * nl * (sf.albedo / PI * (vec3<f32>(1.0) - f_schlick(f0, nl)) + spec);
         }
     }
@@ -1041,14 +1075,22 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     if (reflective_env) {
         // OMSI's photographed environment gives the reflection its structure (trees,
         // houses, the street), the probe its light
-        // Looked up by the reflection's direction in the world, not in the camera's frame
-        // as Direct3D's sphere map does: taken from the camera, what a standing bus
-        // mirrored changed whenever the view turned - one picture from one angle,
-        // another from the next, trees sliding in from nowhere. Height gives the photo's
-        // rows (sky, the horizon's trees and houses, the ground), the compass direction
-        // a gentle drift across it that stays put in the world.
+        // A pane looks it up by the reflection's direction in the world, not in the
+        // camera's frame as Direct3D's sphere map does: taken from the camera, what a
+        // standing bus's windows mirrored changed whenever the view turned, trees sliding
+        // in from nowhere over the street seen through them. Height gives the photo's rows
+        // (sky, the horizon's trees and houses, the ground), the compass direction a
+        // gentle drift across it that stays put in the world.
         let az = atan2(r.y, r.x);
         var env_uv = vec2<f32>(0.5 + 0.3 * sin(az), 0.5 + 0.45 * clamp(r.z, -1.0, 1.0));
+        // The paint reads the photo as Omsi.exe's environment stage lays it on: Direct3D's
+        // sphere map of the reflection in the camera's frame (`sphere_map_uv`, 0x7ff670 sets
+        // D3DTSS_TCI_SPHEREMAP and no texture matrix), so the picture on a body turns with
+        // the camera's yaw and pitch as it does in OMSI. (A pane keeps the world's: through
+        // it the street itself is seen, and the photo turning over it read as a smear.)
+        if (!glass) {
+            env_uv = in.env_uv;
+        }
         if (material.bump.y > 0.5) {
             env_uv = env_uv + bump_offset(duv);
         }
@@ -1121,7 +1163,15 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     // (no shadows inside the player's own vehicle, whose cab the depth hardly shows, nor in
     // the probe's capture)
     let film = select(vec3<f32>(0.0), vec3<f32>(wet_road, refl_rough, wet_share), wet_only && wet_road > 0.0);
-    let lamps = lamp_light(in.world, n, v, sf, thin, !capture, film) * select(1.0, 0.0, material.params.y > 0.2 && material.params.y < 0.3);
+    // A clear pane scatters nothing: what lights it shows only in what it mirrors (the
+    // lamps' glints, the sky, the street) and in the little its tint takes from the daylight
+    // through it. Lit as a grey Lambertian layer, every lamp and the cab's own lamps laid a
+    // milky veil over the windows at night, over everything seen through them.
+    var sf_lit = sf;
+    if (glass) {
+        sf_lit.albedo = vec3<f32>(0.0);
+    }
+    let lamps = lamp_light(in.world, n, v, sf_lit, thin, !capture, film) * select(1.0, 0.0, material.params.y > 0.2 && material.params.y < 0.3);
     // [interiorlight]: OMSI adds its lamps' light to the lit meshes whatever the daylight,
     // so a switched-on saloon is brighter by day as well and only stands out more at night.
     // Taken as a lamp against the daylight exposure it vanished by day altogether.
@@ -1129,14 +1179,25 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     // grew with the night and whitened the saloon)
     // (the lamps' light does not reach into the gaps under the seats and round the
     // handrails either: without the ambient occlusion on it they glowed through there)
+    // A sphere-mapped pane or body mirrors the street round it: at night that is lit by the
+    // lamps, not by the sky the probe holds (dark then). The street's radiance under them
+    // (`lamp_ground`) is laid into the reflection where it points at the street and the
+    // walls: a bus's windows and paint under a street lamp show the lit street, the ones on
+    // an unlit road stay dark. (Not through the photo's structure: its bright rows are the
+    // day's sky, which the lamps do not light.)
+    if ((reflective_env || glass) && !traced) {
+        let lit_round = lamp_ground * (1.0 - open);
+        reflection = reflection + lit_round * refl_f * (1.0 - cab_view);
+    }
     let cabin_light = interior_lamps(in.world, n, in.params2.z);
-    let cabin = sf.albedo * cabin_light * mix(1.0, ao, 0.85);
+    let cabin = sf_lit.albedo * cabin_light * mix(1.0, ao, 0.85);
     var rgb = (direct + ambient + lamps) * pre + cabin;
     // A material's own emissive colour ([matl_allcolor], an .x's emissive) is the texture at
     // full brightness in Omsi.exe: shown at the screen's white, not scaled with the eye's
     // night adaptation - a texture lit that way by [matl_allcolor] glared at several times
     // white at night (#1228, #1236). (The night maps of lit windows keep their light.)
-    var emit = tex.rgb * material.emissive.rgb * clamp(enh.exposure.z * 2.0, 0.8, 1.0);
+    // (not a pane's: glass gives off no light of its own, see `sf_lit`)
+    var emit = select(tex.rgb * material.emissive.rgb * clamp(enh.exposure.z * 2.0, 0.8, 1.0), vec3<f32>(0.0), glass);
     // (the tile light map on the splines and [LightMapMapping] objects is the vanilla
     // path's: here the map's lamps light them, tinted from that map, as they light every
     // other surface - added on top it lit the roads twice, with a hard edge where a road
@@ -1160,7 +1221,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             emit = emit + nm * select(enh.exposure.z * 3.6, max(enh.exposure.z * 2.0, 0.8), switched);
         }
     }
-    if (material.params2.x > 0.5 && !terrain) {
+    if (material.params2.x > 0.5 && !terrain && !glass) {
         // [matl_lightmap]: laid onto the light with ADDSMOOTH in Omsi.exe (see the vanilla
         // shader), so it adds what the surface's own light leaves: little by day, fully at
         // night, and less where the saloon lamps light the surface already. (As an emission
