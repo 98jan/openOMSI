@@ -422,64 +422,78 @@ impl Traffic {
         let now = self.sim.time;
         let generation = self.sim.lanes_generation;
         self.sim.admission.new_network(generation);
-        // the requests: places along the lanes near the centre, as many as metres of lane
-        // (times its density), twice as many as cars wanted (a place may not do), none at a
-        // place being left alone after its refusals (`admission`)
-        let (mut asked, mut attempts) = (0, 0);
-        while want > 0 && asked < want * 2 && attempts < want * 12 {
-            attempts += 1;
-            let x = self.rand_f() as f32 * total_w;
-            let lane = candidates[cumulative.partition_point(|&c| c < x).min(candidates.len() - 1)].0;
-            let s = (self.rand_f() * (self.sim.net.lanes[lane].length() as f64 - 6.0)) as f32 + 3.0;
-            let (p, heading) = self.sim.net.lanes[lane].at(s);
-            if (p - center).length() < 40.0 {
-                continue; // not right next to the player
+        // (the first population, the world as it loads, fills the roads at once: a few
+        // rounds of requests, each a pass of its own)
+        let rounds = if self.sim.initial { 8 } else { 1 };
+        let mut placed = 0;
+        for _ in 0..rounds {
+            let want_now = want.saturating_sub(placed);
+            let before = placed;
+            // the requests: places along the lanes near the centre, as many as metres of lane
+            // (times its density), several for each car wanted (in open country most places are
+            // in sight), at most what one pass looks at, none at a place being left alone after
+            // its refusals (`admission`)
+            let (mut asked, mut attempts) = (0, 0);
+            let ask = (want_now * 8).min(omsi_sim::ai_traffic::admission::EXAMINE_PER_PASS);
+            while want_now > 0 && asked < ask && attempts < want_now * 12 {
+                attempts += 1;
+                let x = self.rand_f() as f32 * total_w;
+                let lane = candidates[cumulative.partition_point(|&c| c < x).min(candidates.len() - 1)].0;
+                let s = (self.rand_f() * (self.sim.net.lanes[lane].length() as f64 - 6.0)) as f32 + 3.0;
+                let (p, heading) = self.sim.net.lanes[lane].at(s);
+                if (p - center).length() < 40.0 {
+                    continue; // not right next to the player
+                }
+                // not into a car parked in the lane
+                if self.parked.get(&lane).is_some_and(|l| l.iter().any(|&(ps, lat)| (ps - s).abs() < 8.0 && lat.abs() < 1.5)) {
+                    continue;
+                }
+                match self.sim.admission.submit(now, class, (lane, s), (p, heading as f64), None) {
+                    Ok(_) => asked += 1,
+                    Err(Denial::QueueFull) => break,
+                    Err(_) => {}
+                }
             }
-            // not into a car parked in the lane
-            if self.parked.get(&lane).is_some_and(|l| l.iter().any(|&(ps, lat)| (ps - s).abs() < 8.0 && lat.abs() < 1.5)) {
-                continue;
+            let mut budgets = Budgets::default();
+            budgets.set(class, Some(want_now));
+            let host = !self.sim.mirror;
+            let initial = self.sim.initial;
+            let mut admission = std::mem::take(&mut self.sim.admission);
+            let mut types: HashMap<u64, Arc<VehicleType>> = HashMap::new();
+            let admitted = admission.pass_for(Some(class), now, host, &mut budgets, |r| {
+                // nobody may see it appear (the first population is the world as it loads)
+                if kind == LaneKind::Street && !initial && !self.may_appear(world, r.pos) {
+                    return Verdict::Retry(Retry::Visible);
+                }
+                // nor where something stands, or drives up so close it would have to brake hard
+                if !self.sim.spawn_gap(r.pos) {
+                    return Verdict::Retry(Retry::NoGap);
+                }
+                // only on loaded ground (a lane's tile may have gone again)
+                if kind != LaneKind::Air && !world.has_ground(r.pos.x, r.pos.y) {
+                    return Verdict::Deny(Denial::NoGround);
+                }
+                // (a lane may carry none of the groups that drive now)
+                let Some(ty) = self.pick_type(kind, Some(r.lane)) else {
+                    return Verdict::Deny(Denial::NoPath);
+                };
+                // (nor onto the rear section of an articulated bus, nor the player's bus)
+                if kind != LaneKind::Air && !self.spawn_clear(&ty, r.pos, r.heading) {
+                    return Verdict::Retry(Retry::NoGap);
+                }
+                types.insert(r.ticket, ty);
+                Verdict::Admit
+            });
+            self.sim.admission = admission;
+            for r in admitted {
+                let Some(ty) = types.remove(&r.ticket) else { continue };
+                let seed = self.rand();
+                self.create_car(view, world, renderer, scene, center, kind, r.lane, r.s, ty, seed, None, None, None, None);
+                placed += 1;
             }
-            match self.sim.admission.submit(now, class, (lane, s), (p, heading as f64), None) {
-                Ok(_) => asked += 1,
-                Err(Denial::QueueFull) => break,
-                Err(_) => {}
+            if placed == before {
+                break;
             }
-        }
-        let mut budgets = Budgets::default();
-        budgets.set(class, Some(want));
-        let host = !self.sim.mirror;
-        let initial = self.sim.initial;
-        let mut admission = std::mem::take(&mut self.sim.admission);
-        let mut types: HashMap<u64, Arc<VehicleType>> = HashMap::new();
-        let admitted = admission.pass_for(Some(class), now, host, &mut budgets, |r| {
-            // nobody may see it appear (the first population is the world as it loads)
-            if kind == LaneKind::Street && !initial && !self.may_appear(world, r.pos) {
-                return Verdict::Retry(Retry::Visible);
-            }
-            // nor where something stands, or drives up so close it would have to brake hard
-            if !self.sim.spawn_gap(r.pos) {
-                return Verdict::Retry(Retry::NoGap);
-            }
-            // only on loaded ground (a lane's tile may have gone again)
-            if kind != LaneKind::Air && !world.has_ground(r.pos.x, r.pos.y) {
-                return Verdict::Deny(Denial::NoGround);
-            }
-            // (a lane may carry none of the groups that drive now)
-            let Some(ty) = self.pick_type(kind, Some(r.lane)) else {
-                return Verdict::Deny(Denial::NoPath);
-            };
-            // (nor onto the rear section of an articulated bus, nor the player's bus)
-            if kind != LaneKind::Air && !self.spawn_clear(&ty, r.pos, r.heading) {
-                return Verdict::Retry(Retry::NoGap);
-            }
-            types.insert(r.ticket, ty);
-            Verdict::Admit
-        });
-        self.sim.admission = admission;
-        for r in admitted {
-            let Some(ty) = types.remove(&r.ticket) else { continue };
-            let seed = self.rand();
-            self.create_car(view, world, renderer, scene, center, kind, r.lane, r.s, ty, seed, None, None, None, None);
         }
     }
 
