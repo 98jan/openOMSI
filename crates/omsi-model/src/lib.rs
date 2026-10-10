@@ -490,7 +490,47 @@ impl Model {
                 Entry::Token(t) => m.handle_token(t, &mut r),
             }
         }
+        m.tidy_interior_lamps();
         m
+    }
+
+    /// Keep in each mesh's `[illumination_interior]` only the lamps that exist, each once.
+    /// `-1` is how the stock files write "no lamp" (the SD202 lists four of them for its
+    /// outer meshes) and goes without a word; an index past the model's `[interiorlight]`s
+    /// or one written twice is a mistake of the file - said once for the whole model, with
+    /// the first such mesh, rather than met again by every frame's lamp code.
+    pub fn tidy_interior_lamps(&mut self) {
+        let n = self.interior_lights.len() as i64;
+        let mut first_bad: Option<(String, Vec<i32>)> = None;
+        let mut bad_meshes = 0;
+        for mesh in &mut self.meshes {
+            let mut kept: Vec<i32> = Vec::with_capacity(mesh.illumination_interior.len());
+            let mut bad = false;
+            for &k in &mesh.illumination_interior {
+                if k == -1 {
+                    continue;
+                }
+                if (k as i64) < 0 || k as i64 >= n || kept.contains(&k) {
+                    bad = true;
+                    continue;
+                }
+                kept.push(k);
+            }
+            // (the list a mesh gets without a line of its own, 0 to 3, is no mistake of the
+            // file; nor is anything in a model without lamps, an AI car's copy of a bus)
+            let implicit = mesh.illumination_interior == [0, 1, 2, 3];
+            if bad && !implicit && n > 0 {
+                bad_meshes += 1;
+                first_bad.get_or_insert_with(|| (mesh.file.clone(), mesh.illumination_interior.clone()));
+            }
+            mesh.illumination_interior = kept;
+        }
+        if let Some((file, list)) = first_bad {
+            log::warn!(
+                "{}: [illumination_interior] of {bad_meshes} mesh(es) names lamps that do not exist or names one twice (first {file}: {list:?}, {n} [interiorlight]s); those entries are left out",
+                self.path.display()
+            );
+        }
     }
 
     /// Handle one `[newanim]` sub-command line (one of [`ANIM_TOKENS`]): it goes to the
@@ -1365,6 +1405,19 @@ mod tests {
         let plain: Vec<&MaterialDef> = m.meshes[0].materials.iter().filter(|x| !x.item && x.change.is_none()).collect();
         assert_eq!(plain.len(), 1);
         assert!(plain[0].envmap.is_some() && plain[0].alpha == 1);
+    }
+
+    /// `[illumination_interior]` keeps the lamps that exist, each once; `-1` means none.
+    #[test]
+    fn interior_lamp_lists_keep_existing_lamps_once() {
+        let lamps = "[interiorlight]\na\n1\n255\n255\n255\n0\n0\n2\n".repeat(3);
+        let text = format!("{lamps}[mesh]\na.o3d\n[illumination_interior]\n0\n-1\n-1\n-1\n[mesh]\nb.o3d\n[illumination_interior]\n2\n7\n2\n1\n[mesh]\nc.o3d\n");
+        let m = Model::parse(&CfgFile::from_str("model.cfg", &text));
+        let lists: Vec<&[i32]> = m.meshes.iter().map(|x| x.illumination_interior.as_slice()).collect();
+        assert_eq!(lists, vec![&[0][..], &[2, 1][..], &[2, 1][..]]);
+        // the list a mesh has without a line: what exists of 0..3
+        let m = Model::parse(&CfgFile::from_str("model.cfg", &format!("{lamps}[mesh]\na.o3d\n")));
+        assert_eq!(m.meshes[0].illumination_interior, vec![0, 1, 2]);
     }
 
     #[test]
