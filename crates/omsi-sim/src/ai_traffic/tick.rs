@@ -765,7 +765,10 @@ impl TrafficSim {
             let st = &mut car.state;
             if yield_at.is_some() && st.speed < 0.3 {
                 st.yield_time += dt;
-            } else if yield_at.is_none() {
+            } else if yield_at.is_none() && st.speed > 1.0 {
+                // (only once it is on its way: let go for a step and held again before it
+                // has moved, a driver at a side road started his wait afresh each time, and
+                // the main road's queue never saw him as waiting long)
                 st.yield_time = 0.0;
             }
             // (`--follow yield`: a car that has stood for a couple of seconds giving way at
