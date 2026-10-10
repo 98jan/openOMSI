@@ -75,7 +75,14 @@ impl TrafficSim {
             cars: Vec::new(),
             dormant: Vec::new(),
             dormant_time: 0.0,
-            rng: 0x9E37_79B9_7F4A_7C15,
+            // the session's own traffic (as the scripts' `random`, see
+            // `omsi_script::set_session_seed`): which cars come, where and when differs from
+            // session to session as in OMSI, and OMSI_SEED=n repeats one exactly. Without a
+            // session seed (tests, tools) always the same. A LAN room sets its own after
+            // (`set_lan_seed`).
+            rng: omsi_script::session_seed()
+                .map(|s| omsi_script::mix_seed(s ^ 0x7472_6166_6669_6321) | 1)
+                .unwrap_or(0x9E37_79B9_7F4A_7C15),
             target,
             lights_only: false,
             spawn_radius: 400.0,
