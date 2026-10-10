@@ -329,7 +329,12 @@ impl ApplicationHandler for App {
             }
             // a finger (a phone; see touch.rs)
             WindowEvent::Touch(t) => self.on_touch(event_loop, t),
-            WindowEvent::RedrawRequested => self.frame(event_loop),
+            // (while the renderer is still being built, the window's start goes on instead)
+            WindowEvent::RedrawRequested => {
+                if !self.drive_window_start(event_loop) {
+                    self.frame(event_loop);
+                }
+            }
             _ => {}
         }
     }

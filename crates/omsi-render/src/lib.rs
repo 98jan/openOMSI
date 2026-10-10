@@ -2606,8 +2606,19 @@ impl Renderer {
         format: Option<wgpu::TextureFormat>,
         options: RenderOptions,
     ) -> Result<Renderer> {
+        Self::open_on(adapter, surface, format, options).await?.finish().await
+    }
+
+    /// The graphics device for a renderer on this adapter, its pipelines not built yet: see
+    /// [`Opened`].
+    pub async fn open_on(
+        adapter: wgpu::Adapter,
+        surface: Option<&wgpu::Surface<'_>>,
+        format: Option<wgpu::TextureFormat>,
+        options: RenderOptions,
+    ) -> Result<Opened> {
         let info = adapter.get_info();
-        let (asked_format, asked_options) = (format, options);
+        let asked_options = options;
         // test hooks for an adapter that cannot be opened: an error, or wgpu going down
         #[cfg(feature = "test-hooks")]
         match omsi_cfg::flags::OMSI_FAKE_GPU_ERROR.var() {
@@ -2843,7 +2854,50 @@ impl Renderer {
         // 740/830 since 0.2.0), and the retry without multisampling was not checked at all.
         let mesh_pages = adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::BASE_VERTEX);
         let name = format!("{} ({:?})", info.name, info.backend);
-        let made = Self::build_with_fallbacks(&device, &queue, &info, &name, format, options, mesh_pages).await;
+        Ok(Opened { adapter, info, device, queue, format, options, asked_options, mesh_pages, name })
+    }
+}
+
+/// A graphics device opened for a renderer whose pipelines are not built yet
+/// ([`Renderer::open_on`]). A window can be drawn into with it already - a first picture, an
+/// interface - while [`Opened::finish`] builds them, on another thread if need be: the ~110
+/// pipelines took seconds (8 on DirectX 12, which keeps no cache of them for us), and a
+/// window shown meanwhile stood blank, or white where it had been smaller.
+pub struct Opened {
+    adapter: wgpu::Adapter,
+    info: wgpu::AdapterInfo,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    format: wgpu::TextureFormat,
+    options: RenderOptions,
+    asked_options: RenderOptions,
+    mesh_pages: bool,
+    name: String,
+}
+
+impl Opened {
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
+    /// The format the renderer draws its pictures in (the window's).
+    pub fn format(&self) -> wgpu::TextureFormat {
+        self.format
+    }
+
+    pub fn adapter_info(&self) -> &wgpu::AdapterInfo {
+        &self.info
+    }
+
+    /// The renderer: its pipelines built on this device (on another one when the device was
+    /// lost meanwhile, see below).
+    pub async fn finish(self) -> Result<Renderer> {
+        let Opened { adapter, info, device, queue, format, options, asked_options, mesh_pages, name } = self;
+        let made = Renderer::build_with_fallbacks(&device, &queue, &info, &name, format, options, mesh_pages).await;
         // A driver whose shader compiler fails on a pipeline answers "out of memory" or an
         // unknown error, and wgpu takes that as the device lost: on phones (Adreno, Mali)
         // one of 0.2's new pipelines did so, the renderer was made all the same and every
@@ -2867,7 +2921,8 @@ impl Renderer {
             BASIC_PIPELINES.store(true, std::sync::atomic::Ordering::Relaxed);
             // (and so from the start next time, see `fallback_load`)
             fallback_store(&name, Some((1, true)));
-            return Box::pin(Self::new_on(adapter, surface, asked_format, asked_options)).await;
+            // (the format chosen for the window before: the same the surface would give)
+            return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
         }
         match &made {
             Ok(_) => pipeline_cache::save(),
@@ -2875,6 +2930,9 @@ impl Renderer {
         }
         made
     }
+}
+
+impl Renderer {
 
     /// Build the renderer on `device`, again with less where a build fails (see `new_on`).
     async fn build_with_fallbacks(
@@ -9437,6 +9495,38 @@ impl<'w> SurfaceState<'w> {
         Ok(SurfaceState { surface: std::mem::ManuallyDrop::new(surface), config, lost: renderer.device_lost.clone(), encode })
     }
 
+    /// The window's surface on a device whose renderer is still being built ([`Opened`]'s
+    /// device and format): pictures without the renderer (a clear, an interface) can be
+    /// shown until [`Self::adopt`] hands it over.
+    pub fn early(instance: &wgpu::Instance, window: Arc<winit_window::Window>, device: &wgpu::Device, format: wgpu::TextureFormat, width: u32, height: u32, vsync: bool) -> Result<Self> {
+        let surface = instance.create_surface(window).context("create_surface")?;
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: width.max(1),
+            height: height.max(1),
+            present_mode: if vsync { wgpu::PresentMode::AutoVsync } else { wgpu::PresentMode::AutoNoVsync },
+            // (two frames in flight: see `new_with`)
+            desired_maximum_frame_latency: 2,
+            alpha_mode: wgpu::CompositeAlphaMode::Auto,
+            view_formats: vec![],
+        };
+        surface.configure(device, &config);
+        Ok(SurfaceState { surface: std::mem::ManuallyDrop::new(surface), config, lost: Default::default(), encode: None })
+    }
+
+    /// The renderer built for the device this surface was made on ([`Self::early`]) takes
+    /// it over. False when the renderer is on another device (the first was lost while the
+    /// pipelines were built): the surface is then made anew for it. (Not for ANGLE, whose
+    /// window takes the sRGB pictures encoded: its renderer is built before the surface.)
+    pub fn adopt(&mut self, renderer: &Renderer, device: &wgpu::Device) -> bool {
+        if &renderer.device != device {
+            return false;
+        }
+        self.lost = renderer.device_lost.clone();
+        true
+    }
+
     /// The window's next picture.
     pub fn acquire(&self) -> wgpu::CurrentSurfaceTexture {
         self.surface.get_current_texture()
@@ -9466,6 +9556,13 @@ impl<'w> SurfaceState<'w> {
             return;
         }
         self.surface.configure(&renderer.device, &self.config);
+    }
+
+    /// [`Self::resize`] while the renderer is still being built (see [`Self::early`]).
+    pub fn resize_on(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+        self.config.width = width.max(1);
+        self.config.height = height.max(1);
+        self.surface.configure(device, &self.config);
     }
 
     pub fn set_vsync(&mut self, renderer: &Renderer, enabled: bool) {

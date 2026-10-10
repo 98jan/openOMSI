@@ -156,6 +156,8 @@ pub(crate) struct GfxState {
     /// What the renderer shows of the AI traffic and the people (`view_sync`): their
     /// renders, kept apart from `session.traffic` and `session.humans`.
     pub(crate) sim_view: crate::view_sync::SimView,
+    /// The window's start while its renderer is still being built (see `WindowStart`).
+    pub(crate) starting: Option<super::WindowStart>,
 }
 
 /// The camera's state besides the camera itself: the head turned and zoomed per view, the

@@ -35,8 +35,14 @@ fn home() -> PathBuf {
 }
 
 pub fn data_dir() -> PathBuf {
+    // (made once: asked for dozens of times a second - the launcher's frames, its polls - and
+    // made each time, two system calls for a folder that was there)
+    static MADE: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
     let d = home().join(".openomsi");
-    let _ = std::fs::create_dir_all(&d);
+    let mut made = MADE.lock().unwrap_or_else(|e| e.into_inner());
+    if made.as_ref() != Some(&d) && std::fs::create_dir_all(&d).is_ok() {
+        *made = Some(d.clone());
+    }
     d
 }
 
