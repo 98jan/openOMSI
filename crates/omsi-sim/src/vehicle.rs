@@ -1538,8 +1538,9 @@ impl VehicleInstance {
         // a mod that brakes only inside an {if} (a retarder, a stop brake, its own physics)
         // stayed braked for good, and one that adds to its own value kept on growing.
         self.put(self.v_brakeforce, 0.0);
-        for a in self.v_wheels.clone() {
-            for w in a {
+        // (an axle's ids are copied out one by one: the whole list was copied every frame)
+        for a in 0..self.v_wheels.len() {
+            for w in self.v_wheels[a] {
                 self.put(w[4], 0.0);
             }
         }
@@ -1766,7 +1767,8 @@ impl VehicleInstance {
         // straight down on the front wheel alone (OMSI_ONLY_MESH=SD_Rad_VL) and at the
         // steering wheel in the cab, which turn together with this sign.
         let steer = self.physics.steer_deg.to_radians();
-        for (ai, axle) in self.v_wheels.clone().iter().enumerate() {
+        for ai in 0..self.v_wheels.len() {
+            let axle = self.v_wheels[ai];
             for (si, w) in axle.iter().enumerate() {
                 let ws = self.physics.wheels[ai][si].clone();
                 self.put(w[0], ws.rotation_deg.to_radians());
@@ -2006,7 +2008,8 @@ impl VehicleInstance {
         self.put(self.v_accel[0], a.x);
         self.put(self.v_accel[1], a.y);
         self.put(self.v_accel[2], a.z);
-        for (ai, axle) in self.v_wheels.clone().iter().enumerate() {
+        for ai in 0..self.v_wheels.len() {
+            let axle = self.v_wheels[ai];
             for (si, w) in axle.iter().enumerate() {
                 if let Some(rw) = rb.wheels.get(ai * 2 + si) {
                     self.put(w[0], rw.rotation_deg.to_radians());
@@ -2504,7 +2507,8 @@ impl VehicleInstance {
         // centre, and every wheel rolls as far as its own track through the bend is long
         let (rot, wheelbase) = crate::ai_motion::rotation_point(&self.ty.def);
         let k = ai.steer_deg.to_radians().tan() / wheelbase;
-        for (ai_idx, axle) in self.v_wheels.clone().iter().enumerate() {
+        for ai_idx in 0..self.v_wheels.len() {
+            let axle = self.v_wheels[ai_idx];
             for (si, w) in axle.iter().enumerate() {
                 let Some(ws) = self.physics.wheels.get_mut(ai_idx).map(|a| &mut a[si]) else {
                     continue;
