@@ -96,6 +96,10 @@ pub struct VehicleHost {
     /// The script's `number` string variable (the fleet number): `NrSpecRandom` is
     /// specific to it.
     pub number_var: Option<u32>,
+    /// What the bus radio plays (`GetRadioName`, `GetRadioSong`): the station's name and
+    /// the title it gives, both empty while the radio is off. The game fills them.
+    pub radio_name: String,
+    pub radio_song: String,
     /// Timetable information for the `GetTT*` callbacks (line, delay in s, stops).
     pub tt_line: String,
     pub tt_delay: f32,
@@ -610,6 +614,9 @@ impl Host for VehicleHost {
                 let s = self.hof.as_ref().and_then(|h| h.global_strings.get(usize::try_from(n).ok()?)).cloned().unwrap_or_default();
                 stacks.push_str(s);
             }
+            // --- the bus radio (openOMSI): the station and its song as strings
+            "getradioname" => stacks.push_str(self.radio_name.clone()),
+            "getradiosong" => stacks.push_str(self.radio_song.clone()),
             // --- timetable callbacks
             "getttlinestring" => stacks.push_str(self.tt_line.clone()),
             "getttdelay" => stacks.push(self.tt_delay),
@@ -780,6 +787,22 @@ mod tests {
         // a half goes to the even number, as under Delphi's control word
         assert_eq!((arg_i32(0.5), arg_i32(1.5), arg_i32(2.5), arg_i32(-0.5)), (0, 2, 2, 0));
         assert_eq!(arg_idx(-1.0), usize::MAX);
+    }
+
+    #[test]
+    fn the_radio_callbacks_give_the_station_and_its_song() {
+        let p = compile(&CompileInput::default());
+        let mut state = State::new(&p);
+        let mut host = VehicleHost::new(SimClock::default());
+        let mut stacks = Stacks::default();
+        host.callback("GetRadioName", 0, &mut stacks, &mut state);
+        assert_eq!(stacks.pop_str(), "", "the radio off");
+        host.radio_name = "radioeins".into();
+        host.radio_song = "Artist - Title".into();
+        host.callback("GetRadioName", 0, &mut stacks, &mut state);
+        host.callback("getradiosong", 0, &mut stacks, &mut state);
+        assert_eq!(stacks.pop_str(), "Artist - Title");
+        assert_eq!(stacks.pop_str(), "radioeins");
     }
 
     #[test]

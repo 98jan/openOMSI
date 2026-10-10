@@ -222,12 +222,14 @@ impl App {
                 Some(p) => {
                     let inside = self.cam.in_cab;
                     self.sound.radio.set_map(&self.args.root, &self.args.map);
+                    self.sound.radio.fx = self.settings.radio_fx;
                     if let Some(m) = self.sound.radio.update(a, &p.vehicle, inside) {
                         self.service_msg = Some((m, 6.0));
                     }
                     // (a radio whose display is a text of its script shows the station)
                     p.vehicle.radio_text = self.sound.radio.display_text();
                     p.vehicle.radio_frequency = self.sound.radio.frequency(p.vehicle.position.x, p.vehicle.position.y);
+                    (p.vehicle.host.radio_name, p.vehicle.host.radio_song) = self.sound.radio.now_playing();
                 }
                 None => self.sound.radio.stop(a),
             }

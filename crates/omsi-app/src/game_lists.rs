@@ -1105,7 +1105,7 @@ fn steps_of(verb: &str) -> Option<Vec<f32>> {
         "ui_scale" => (10..=40).map(|v| v as f32 * 0.05).collect(),
         "chat_size" => (5..=30).map(|v| v as f32 * 0.1).collect(),
         "ui_opacity" => (4..=20).map(|v| v as f32 * 0.05).collect(),
-        "vol_ai" | "vol_scenery" | "vol_ambient" => (0..=20).map(|v| v as f32 * 0.05).collect(),
+        "vol_ai" | "vol_scenery" | "vol_ambient" | "radio_speaker" | "radio_hiss" | "radio_dropouts" => (0..=20).map(|v| v as f32 * 0.05).collect(),
         "wheel_range" => (6..=60).map(|v| v as f32 * 30.0).collect(),
         "wheel_lock" => std::iter::once(0.0).chain((2..=60).map(|v| v as f32 * 30.0)).collect(),
         "fov" => std::iter::once(0.0).chain((20..=120).map(|v| v as f32)).collect(),
@@ -1262,6 +1262,9 @@ fn option_now(app: &App, verb: &str, arg: &str) -> Option<f32> {
         "vol_ai" => s.vol_ai,
         "vol_scenery" => s.vol_scenery,
         "vol_ambient" => s.vol_ambient,
+        "radio_speaker" => s.radio_fx.speaker,
+        "radio_hiss" => s.radio_fx.hiss,
+        "radio_dropouts" => s.radio_fx.dropouts,
         "wheel_range" => s.wheel_range,
         "wheel_lock" => s.wheel_lock,
         "triple_width_mm" => s.triple.width_mm,
@@ -1411,6 +1414,13 @@ fn option_set(app: &mut App, verb: &str, arg: &str, v: f32) -> Option<(&'static 
         "vol_ambient" => {
             app.settings.vol_ambient = (v * 100.0).round() / 100.0;
             Some(("vol_ambient", app.settings.vol_ambient.to_string()))
+        }
+        "radio_speaker" | "radio_hiss" | "radio_dropouts" => {
+            let v = ((v * 100.0).round() / 100.0).clamp(0.0, 1.0);
+            let fx = &mut app.settings.radio_fx;
+            let (key, at) = match verb { "radio_speaker" => ("radio_speaker", &mut fx.speaker), "radio_hiss" => ("radio_hiss", &mut fx.hiss), _ => ("radio_dropouts", &mut fx.dropouts) };
+            *at = v;
+            Some((key, v.to_string()))
         }
         "wheel_range" => {
             app.settings.wheel_range = v.round();
@@ -2505,6 +2515,9 @@ fn options_pages(app: &App) -> Vec<Page> {
         slider_row(app, "vol_scenery", "Surroundings", "How loud the sounds of the scenery are", &pct),
         switch_row(app, "doppler", "Doppler effect", "Approaching sounds higher, receding ones lower"),
         pick("pax_voices", "Passenger voices", "What passengers say"),
+        slider_row(app, "radio_speaker", "Radio: small speaker", "The bus radio through a small dashboard speaker: no deep bass, no bright treble", &pct),
+        slider_row(app, "radio_hiss", "Radio: FM hiss", "The hiss and crackle of a weak FM signal", &pct),
+        slider_row(app, "radio_dropouts", "Radio: signal dropouts", "Now and then the signal is lost for a moment", &pct),
     ]
         .into_iter()
         .flatten()
