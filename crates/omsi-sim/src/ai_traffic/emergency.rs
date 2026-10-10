@@ -124,7 +124,8 @@ pub struct Request {
 
 /// A car making way: for whom, to where across its lane, the S-curve it moves along, and
 /// where it stands once over (odometer). `drive_on`: the emergency vehicle could not get
-/// past it standing there, so it keeps going at its new place across the lane.
+/// past it standing there, so it keeps going at its new place across the lane. `vetoed`:
+/// the way over was not clear when it looked (`time`): it looks again a second later.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MakeWay {
     pub from: u64,
@@ -132,6 +133,8 @@ pub struct MakeWay {
     pub ramp: (f32, f32, f32, f32),
     pub hold: Option<f32>,
     pub drive_on: bool,
+    pub vetoed: bool,
+    pub time: f32,
 }
 
 /// A junction kept for an emergency vehicle (see the module).
@@ -640,9 +643,17 @@ impl TrafficSim {
             self.cars[i].make_way = None;
             return None;
         }
-        let mut w = match car.make_way.filter(|w| w.from == req.from) {
+        let before = car.make_way.filter(|w| w.from == req.from);
+        let mut w = match before.filter(|w| !(w.vetoed && self.time - w.time > 1.0)) {
             Some(w) => w,
-            None => self.begin_make_way(i, req, ts, sc),
+            None => {
+                let mut w = self.begin_make_way(i, req, ts, sc);
+                // (still not clear: it stays where it stopped)
+                if w.vetoed {
+                    w.hold = before.and_then(|b| b.hold);
+                }
+                w
+            }
         };
         let car = &mut self.cars[i];
         let st = &mut car.state;
@@ -678,7 +689,9 @@ impl TrafficSim {
         let ahead = sc.lead.map_or(50.0, |l| l.0.gap) - 0.5;
         let len = (2.0 * st.speed).max(2.0).min(ahead);
         let odo = st.odometer;
+        let mut vetoed = false;
         if len < 1.0 || (target - st.lateral).abs() < 0.05 {
+            vetoed = (target - st.lateral).abs() >= 0.05;
             target = st.lateral;
         } else {
             let mut hyp = st.clone();
@@ -693,11 +706,12 @@ impl TrafficSim {
                     log::info!("t={:.1}: car {} does not move aside for emergency vehicle {}: {what}", self.time, car.id, req.from);
                 }
                 target = st.lateral;
+                vetoed = true;
             }
         }
         let ramp = if (target - st.lateral).abs() < 0.05 { (target, target, odo, 1.0) } else { (st.lateral, target, odo, len) };
         let drive_on = self.emergency.siren(req.from).is_none_or(|s| !self.passable(st.lane, st.s, target, car.half_width, &req, s));
-        let w = MakeWay { from: req.from, target, ramp, hold: None, drive_on };
+        let w = MakeWay { from: req.from, target, ramp, hold: None, drive_on, vetoed, time: self.time };
         if ts.debug {
             log::info!("t={:.1}: car {} makes way for emergency vehicle {} ({:.1} m behind): to {target:+.2} m{}", self.time, car.id, req.from, req.gap, if w.drive_on { ", driving on" } else { "" });
         }
