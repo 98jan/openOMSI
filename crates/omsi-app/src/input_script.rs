@@ -38,6 +38,10 @@ impl App {
             self.vr_nav_edit_key(code, pressed, repeat);
             return;
         }
+        // the developer tools: Ctrl+Shift+D, and their text fields' keys
+        if self.devtools_key(code, pressed, repeat) {
+            return;
+        }
         // The mirror panels (see mirror_hud.rs): Ctrl+M shows or hides them, Ctrl+Shift+M
         // starts and ends their editor; in the editor Insert, Delete, C and Esc are its keys.
         if self.mirror_hud_key(code, pressed, repeat) {
@@ -871,7 +875,7 @@ impl App {
                     let (press, release) = (arg != "up", arg != "down");
                     if self.menus.placing.is_some() && self.menus.game_menu.is_none() {
                         self.placing_click();
-                    } else if self.menus.game_menu.is_some() || self.shell_takes_mouse() {
+                    } else if self.menus.game_menu.is_some() || self.shell_takes_mouse() || (self.devtools.is_some() && self.shell.over_ui) {
                         // (on the menu as the window's button: its lines, its arrows)
                         if press {
                             self.left_button(event_loop, true);
@@ -1028,6 +1032,8 @@ impl App {
                     let riders = self.session.humans.as_ref().map(|h| (h.people_in(crate::humans::BusId::Player), self.session.placed.iter().map(|q| h.people_in(crate::humans::BusId::Ai(crate::humans::placed_bus_id(q.uid)))).collect::<Vec<_>>()));
                     log::info!("input script: menu {arg}: player {:?}, on foot {:?}, placed {}, people in the bus / the placed ones {:?}", self.player.as_ref().map(|p| p.vehicle.position), self.session.on_foot.as_ref().map(|f| f.pos), self.session.placed.len(), riders);
                 }
+                // `devtools <command>`: the developer tools (see `App::devtools_command`)
+                "devtools" => self.devtools_command(cmd.split_once(' ').map(|x| x.1.trim()).unwrap_or("")),
                 // `shot <file>`: the window's own view into a PNG, drawn from the scene the
                 // window is showing (the only way to see what the window path renders)
                 "shot" => self.perf.shot = Some((PathBuf::from(arg), true)),

@@ -72,6 +72,7 @@ mod real_time;
 mod settings;
 mod shell;
 mod photo;
+mod devtools;
 mod telemetry;
 mod threads;
 mod tiles;
@@ -773,6 +774,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         exiting: false,
         shell: crate::shell::Shell::new(),
         photo: None,
+        devtools: None,
     }
 }
 

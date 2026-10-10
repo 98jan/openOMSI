@@ -64,12 +64,15 @@ impl App {
             }
         }
         if !self.paused && ground_here {
+            // (the developer tools' held variables: before the scripts and after them)
+            crate::devtools::apply_holds(self.devtools.as_deref(), &mut p.vehicle);
             p.tick(
                 dt,
                 self.sound.audio.as_ref(),
                 self.cam.in_cab,
                 !matches!(self.view.as_str(), "free" | "foot"),
             );
+            crate::devtools::apply_holds(self.devtools.as_deref(), &mut p.vehicle);
             crate::plugins::plugin_impacts(&p.vehicle, &mut self.integrations);
             steps::deliver_player_impacts(p, self.session.traffic.as_mut());
             // After scripts: zero-movement `_drag` for a held switch. Running this

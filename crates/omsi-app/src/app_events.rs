@@ -142,7 +142,7 @@ impl ApplicationHandler for App {
                 // releases go on, so that nothing held stays held)
                 if event.state == ElementState::Pressed {
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        if self.plugin_typing_key(code, event.text.as_deref()) {
+                        if self.plugin_typing_key(code, event.text.as_deref()) || self.devtools_typing(code, event.text.as_deref()) {
                             return;
                         }
                     }
@@ -453,6 +453,9 @@ impl App {
             return;
         }
         if self.xr.vr_nav_edit.is_some() { self.vr_nav_scroll(amount); return; }
+        if self.devtools_wheel(amount) {
+            return;
+        }
         // over a mirror panel the wheel resizes it (Shift: wider or narrower)
         if let Some(size) = self.mirror_hud_size() {
             let shift =
@@ -560,6 +563,10 @@ impl App {
                 ph.looking = pressed && !over;
             }
             self.sync_look_hold();
+            return;
+        }
+        // the developer tools' panel takes the clicks on it
+        if self.devtools_click(pressed) {
             return;
         }
         // a mirror panel is dragged with the left button (a release always ends a drag)
