@@ -382,7 +382,7 @@ jobs:
             gh release upload "v$VERSION" $(ls out/*.zip out/*.apk 2>/dev/null) --clobber
             gh release edit "v$VERSION" --title "openOMSI $VERSION" --notes-file notes.md
           else
-            gh release create "v$VERSION" out/*.zip out/*.apk \
+            gh release create "v$VERSION" $(ls out/*.zip out/*.apk 2>/dev/null) \
               --verify-tag \
               --title "openOMSI $VERSION" \
               --notes-file notes.md
