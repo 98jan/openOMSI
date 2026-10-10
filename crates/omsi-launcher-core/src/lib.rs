@@ -2027,7 +2027,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
         match k.as_str() {
             "anisotropy" => v[&k] = json!(val.parse::<i64>().unwrap_or(8).clamp(1, 16)),
             "msaa" | "shadow_size" => v[&k] = json!(val.parse::<i64>().unwrap_or(0)),
-            "ui_opacity" | "volume" | "vol_ai" | "vol_scenery" | "vol_ambient" | "min_obj_size" => v[&k] = json!(val.parse::<f64>().unwrap_or(0.0)),
+            "ui_opacity" | "volume" | "vol_ai" | "vol_scenery" | "vol_ambient" | "min_obj_size" | "radio_speaker" | "radio_hiss" | "radio_dropouts" => v[&k] = json!(val.parse::<f64>().unwrap_or(0.0)),
             "pax_density" => v[&k] = json!(val.trim_end_matches('%').parse::<f64>().map(|x| if x > 5.0 { x / 100.0 } else { x }).unwrap_or(1.0)),
             "triple_fov_deg" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| if x < 20.0 { 0.0 } else { x.min(120.0) }).unwrap_or(0.0)),
             "triple_width_mm" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(200.0, 2000.0)).unwrap_or(600.0)),
@@ -2500,6 +2500,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("windy_trees={}\n", b("windy_trees", true)));
     text.push_str(&format!("standing_chance={}\n", n("standing_chance", 5).clamp(0, 100)));
     text.push_str(&format!("ambient={}\nvol_ambient={}\n", b("ambient", true), f("vol_ambient", 0.8).clamp(0.0, 1.0)));
+    text.push_str(&format!("radio_speaker={}\nradio_hiss={}\nradio_dropouts={}\n", f("radio_speaker", 0.0).clamp(0.0, 1.0), f("radio_hiss", 0.0).clamp(0.0, 1.0), f("radio_dropouts", 0.0).clamp(0.0, 1.0)));
     text.push_str(&format!("ai_wait_timed_stops_only={}\n", b("ai_wait_timed_stops_only", false)));
     text.push_str(&format!("triple_left_angle_deg={}\ntriple_right_angle_deg={}\ntriple_eye_height_mm={}\n", f("triple_left_angle_deg", 45.0).clamp(0.0, 90.0), f("triple_right_angle_deg", 45.0).clamp(0.0, 90.0), f("triple_eye_height_mm", 0.0).clamp(-500.0, 500.0)));
     text.push_str(&format!("passenger_animation={}\n", if v.get("passenger_animation").and_then(|x| x.as_str()) == Some("enhanced") { "enhanced" } else { "original" }));

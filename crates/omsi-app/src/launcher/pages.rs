@@ -1088,6 +1088,14 @@ fn sound_tab(ui: &mut Ui, s: &mut Value, dirty: &mut f32, cols: [Rect; 2]) -> [f
         *dirty = 0.3;
     }
     sel_setting(ui, s, dirty, "s-voices", c.row(), "Passenger voices", "pax_voices", &[("all", "Greetings and tickets"), ("tickets", "Only the ticket asked for"), ("off", "Silent")]);
+    // the bus radio's own sound (all off at first)
+    for (key, label, id) in [("radio_speaker", "Radio: small speaker", "s-radspk"), ("radio_hiss", "Radio: FM hiss", "s-radhiss"), ("radio_dropouts", "Radio: signal dropouts", "s-raddrop")] {
+        let mut v = get(s, key).as_f64().unwrap_or(0.0) as f32;
+        if ui.slider(id, c.row(), &mut v, 0.0, 1.0, 0.05, label, &|v| format!("{:.0}%", v * 100.0)) {
+            s[key] = json!((v * 100.0).round() / 100.0);
+            *dirty = 0.3;
+        }
+    }
     [c.used(), radio_stations(ui, cols[1])]
 }
 
