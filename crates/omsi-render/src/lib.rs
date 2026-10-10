@@ -1079,6 +1079,7 @@ pub struct MaterialExtra {
     /// the IBIS, the matrix displays, the dashboard's LCDs. The enhanced picture's glow
     /// and FXAA leave it alone (see `MASK_FORMAT`): FXAA took half the contrast out of
     /// their letters and they read as blurred.
+    /// Its mask remains identifiable through a clear pane so it cannot be blurred as mist.
     pub screen: bool,
     /// An LED matrix - a display whose lit dots are the `\S:n` script texture's
     /// (`[matl_transmap]`), the Krueger and K++ destination panels: the dots are the
