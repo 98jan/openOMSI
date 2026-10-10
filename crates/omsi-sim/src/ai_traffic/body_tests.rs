@@ -243,3 +243,25 @@ fn a_step_into_the_scenery_is_taken_back() {
     assert!(lead <= BODY_MAX_LEAD + 0.25, "the plan ran {lead:.2} m ahead of its body");
     assert!(car(&t, id).state.speed < 0.5);
 }
+
+/// The looks along the way and the steps taken back run on the traffic's own steps: a
+/// scene with scenery in it drives the same at any frame rate.
+#[test]
+fn the_scenery_watch_drives_the_same_at_any_frame_rate() {
+    let f = Fixture::new();
+    let run_at = |fps: f32| {
+        let mut t = traffic(&f, turn(10.0));
+        with_scenery(&mut t, &[block(DVec2::new(0.0, 100.0), DVec2::new(3.0, 0.3), 0.0), block(DVec2::new(0.75, 70.0), DVec2::new(0.1, 0.1), 0.0)]);
+        add_car(&mut t, &f, 0, 20.0, 0x31, Some(10.0));
+        add_car(&mut t, &f, 0, 5.0, 0x32, Some(10.0));
+        for _ in 0..(12.0 * fps).round() as usize {
+            t.advance(1.0 / fps, None);
+        }
+        let mut v: Vec<_> = t.cars.iter().map(|c| (c.id, c.state.lane, c.state.s, c.state.speed, c.state.nudge_at(c.state.odometer))).collect();
+        v.sort_by_key(|x| x.0);
+        v
+    };
+    let slow = run_at(30.0);
+    assert_eq!(slow, run_at(60.0));
+    assert_eq!(slow, run_at(144.0));
+}
