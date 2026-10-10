@@ -2195,6 +2195,9 @@ pub struct Renderer {
     dynamic_scale: std::cell::Cell<f32>,
     /// `OMSI_DEBUG_FLICKER`: which near instances in view were drawn last frame.
     flicker: std::cell::RefCell<HashMap<usize, bool>>,
+    /// The window's main-pass bundles as last recorded, with what they were made of (see
+    /// `record_main_bundles`).
+    main_bundles: std::cell::RefCell<Option<passes::batch::MainBundles>>,
     /// Instances the main view drew last frame (a bit each): they keep being drawn a little
     /// past the size and distance limits, so that an object right at a limit does not pop
     /// in and out as the camera sways.
@@ -3009,6 +3012,7 @@ impl Renderer {
             target_use: HashMap::new(),
             dynamic_scale: std::cell::Cell::new(1.0),
             flicker: std::cell::RefCell::new(HashMap::new()),
+            main_bundles: Default::default(),
             cull_drawn: std::cell::RefCell::new(Vec::new()),
             object_sizes: Default::default(),
             object_sizes_scratch: Default::default(),
@@ -7142,11 +7146,18 @@ impl Renderer {
         // casters of each cascade, the depth prepass and the main pass. The list is built
         // and uploaded before any pass is encoded.
         clock.stage(self, "setup", "mirror.setup");
-        let mut list: Vec<u32> = Vec::new();
-        let shadow_batches = self.plan_shadow_casters(scene, &f, &sh, &mut list);
+        let mut shadow_list: Vec<u32> = Vec::new();
+        let mut shadow_batches = self.plan_shadow_casters(scene, &f, &sh, &mut shadow_list);
         clock.stage(self, "shadow items", "mirror.shadow items");
         let visible = self.cull_view(scene, &f, &mut clock);
-        let mut plan = self.batch_draws(scene, &f, &visible, list);
+        let mut plan = self.batch_draws(scene, &f, &visible, Vec::new());
+        // (the shadow casters' entries after the passes' own: the main pass's batches keep
+        // their places in the list while only the shadows change, and its bundles are kept)
+        let at = plan.list.len() as u32;
+        for b in shadow_batches.iter_mut().flatten() {
+            b.instances = b.instances.start + at..b.instances.end + at;
+        }
+        plan.list.extend_from_slice(&shadow_list);
         self.count_draws(scene, with_overlays, visible.len(), &plan, &shadow_batches);
         clock.stage(self, "items", "mirror.items");
         plan.split_rain(scene, f.glass_on);
@@ -8846,7 +8857,7 @@ struct DrawItem {
 /// entry (the vertex shader looks it up). Thousands of single draws were the biggest CPU
 /// cost of a frame - wgpu validates and records every one - and trees, lamps, fences,
 /// people and the AI cars' shared meshes collapse into a few hundred batches.
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct Batch {
     pipe: u8,
     mesh: u32,
@@ -9199,6 +9210,13 @@ fn run_parts<T: Send>(pool: Option<&rayon::ThreadPool>, parts: usize, f: impl Fn
     out.into_iter().map(|o| o.expect("render part")).collect()
 }
 
+/// How many bundles `record_bundles` makes of `n` batches (each of the same share).
+fn bundle_parts(pool: Option<&rayon::ThreadPool>, n: usize) -> usize {
+    let max_parts = pool.map(|p| (p.current_num_threads() + 1).clamp(4, 8)).unwrap_or(4);
+    let parts = (n / 250).clamp(1, max_parts);
+    if parts == 1 { 1 } else { n.div_ceil(n.div_ceil(parts)) }
+}
+
 /// The main pass's batches as render bundles, recorded on up to four threads. Checking
 /// every draw is the costliest CPU step of a frame; a bundle is checked when it is made,
 /// and the pass that runs it only replays it. The bundles keep the batches' order (the
@@ -9251,8 +9269,7 @@ fn record_bundles(
             }
         }
     };
-    let max_parts = pool.map(|p| (p.current_num_threads() + 1).clamp(4, 8)).unwrap_or(4);
-    let parts = (batches.len() / 250).clamp(1, max_parts);
+    let parts = bundle_parts(pool, batches.len());
     if parts == 1 {
         return record(batches).into_iter().collect();
     }

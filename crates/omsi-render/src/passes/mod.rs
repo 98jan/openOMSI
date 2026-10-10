@@ -4,7 +4,7 @@
 
 use super::*;
 
-mod batch;
+pub(crate) mod batch;
 mod cull;
 mod effects;
 mod main_pass;
