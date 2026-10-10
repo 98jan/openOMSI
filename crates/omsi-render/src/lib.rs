@@ -3,6 +3,8 @@
 pub mod angle;
 pub mod atmosphere;
 pub mod clouds;
+mod cookies;
+pub use cookies::{Cookie, COOKIE_LAYERS};
 mod gpu_memory;
 mod passes;
 mod device_selection;
@@ -89,6 +91,9 @@ struct CameraUniform {
     inside2_a: [f32; 4],
     inside2_b: [f32; 4],
     inside2_c: [f32; 4],
+    /// Enhanced: the field each light cookie layer covers (`cookies::CookieAtlas::fields`).
+    /// After the rest: the shaders that light nothing by a cookie leave it out.
+    cookies: [[f32; 4]; COOKIE_LAYERS],
 }
 
 /// The period the sky's cloud patterns repeat with (m): 5 x the cloud field (14 km), 8 x
@@ -338,6 +343,9 @@ pub struct PointLight {
     pub shadow_owner: Option<i64>,
     /// Which path draws the light.
     pub mode: LightMode,
+    /// The enhanced path lights it by a picture of its beam (`[spotlight_cookie]`, see
+    /// `cookies`) within its cone, when a layer is free for the picture that frame.
+    pub cookie: Option<Cookie>,
 }
 
 impl Default for PointLight {
@@ -354,6 +362,7 @@ impl Default for PointLight {
             housed: false,
             shadow_owner: None,
             mode: LightMode::Both,
+            cookie: None,
         }
     }
 }
@@ -514,11 +523,20 @@ struct LampShadow {
     position: Vec3,
     range: f32,
     owner: Option<i64>,
+    /// The player's headlamps' map (`passes::headlamp_shadow`): it looks this way along the
+    /// road (level, unit) instead of down; and the vehicle they belong to, whose own parts
+    /// cast nothing into it.
+    look: Option<Vec3>,
+    own: Option<passes::VehicleBox>,
 }
 
 impl LampShadow {
-    /// The shadow map's view and projection: straight down, depth 0..1 over its reach.
+    /// The shadow map's view and projection: straight down, depth 0..1 over its reach (the
+    /// headlamps' along the road, see `headlamp_view_proj`).
     fn view_proj(&self) -> Mat4 {
+        if let Some(look) = self.look {
+            return self.headlamp_view_proj(look);
+        }
         let proj = Mat4::perspective_rh(LAMP_SHADOW_FOV.to_radians(), 1.0, 0.1, self.range.max(1.0));
         let view = Mat4::look_to_rh(self.position, -Vec3::Z, Vec3::Y);
         proj * view
@@ -1117,6 +1135,11 @@ pub struct MaterialExtra {
     /// halo comes from its brightness as any light's does. `params2.x` is left off, so the
     /// classic picture draws the material as if the keyword were not there.
     pub glow: f32,
+    /// `[led_glow_effect]` (an openOMSI extension): the share (0..1) of the `Led glow`
+    /// setting an LED panel's dots burn with; `None` the whole of it. With the keyword
+    /// the modeller has said whether the slot is an LED panel at all (`led` follows it),
+    /// so this is only read where `led` is set.
+    pub led_glow: Option<f32>,
 }
 
 /// The textures a material's bind group samples.
@@ -2037,6 +2060,8 @@ pub struct Renderer {
     /// The coronas' pictures besides the standard glow (index = `Corona::texture`; entry 0
     /// unused).
     corona_textures: Vec<Option<wgpu::BindGroup>>,
+    /// The light cookies' pictures and the frame's layers of them.
+    cookies: cookies::CookieAtlas,
     corona_layout: wgpu::BindGroupLayout,
     corona_sampler: wgpu::Sampler,
     sky_layout: wgpu::BindGroupLayout,
@@ -3058,6 +3083,7 @@ impl Renderer {
             puddles::Pipelines::new(&device, &scene.shader, &scene.camera_layout, &scene.material_layout)
         });
         let rt = options.ray_tracing.then(|| rt::RayTracer::new(&device));
+        let cookie_atlas = cookies::CookieAtlas::new();
         Renderer {
             _device_poller: DevicePoller::start(&device),
             upscale_pipeline: upscale.upscale_pipeline,
@@ -3149,6 +3175,7 @@ impl Renderer {
             snow_bind_group: snow.bind_group,
             smoke_bind_group: coronas.smoke_bind_group,
             corona_textures: Vec::new(),
+            cookies: cookie_atlas,
             corona_layout: scene.corona_layout,
             corona_sampler: coronas.sampler,
             sky_layout: sky.layout,
@@ -4419,7 +4446,8 @@ impl Renderer {
             },
             sway: extra.sway.map_or([0.0; 4], |s| [1.0, s[0], s[1], s[2]]),
             // (no mask bound - its file missing - no glow: the slot would shine all over)
-            glow: [if lightmap.is_some() { extra.glow.max(0.0) } else { 0.0 }, 0.0, 0.0, 0.0],
+            // (y: an LED panel's share of its glow, see `MaterialExtra::led_glow`)
+            glow: [if lightmap.is_some() { extra.glow.max(0.0) } else { 0.0 }, extra.led_glow.map_or(1.0, |g| g.clamp(0.0, 1.0)), 0.0, 0.0],
         };
         let slot = |t: Option<TextureId>| {
             t.and_then(|t| scene.textures.get(t).map(|g| (t, g.gen)))
@@ -6288,7 +6316,7 @@ impl Renderer {
     /// by, whose radius it reads as 0, and the mirrors show no headlight pools. The three
     /// stand-in points stay out of it, or a street full of cars would fill the grid cells'
     /// sixteen places before the street lamps got theirs.
-    fn prepare_lights(&self, scene: &mut Scene, cam_rel: Vec3, enhanced: bool, lamp_shadows: bool) -> ([f32; 4], Vec<LampShadow>) {
+    fn prepare_lights(&self, scene: &mut Scene, cam_rel: Vec3, enhanced: bool, lamp_shadows: bool, own: Option<&(DVec3, f64, [f32; 6])>) -> ([f32; 4], Vec<LampShadow>) {
         // the street lamps that get a shadow map: the few lighting the camera's
         // surroundings most (by their strength over the distance)
         let mut chosen: Vec<(f32, LampShadow, [i64; 3])> = Vec::new();
@@ -6307,6 +6335,10 @@ impl Renderer {
         for l in &scene.interior_lights {
             gpu_lights.push(gpu_light(l, (l.position - ro).as_vec3()));
         }
+        // (the player's headlamps, which share a map of their own: see `passes::headlamp_shadow`)
+        let own = own.filter(|_| lamp_shadows && enhanced).map(|b| passes::VehicleBox::new(b, ro));
+        let mut own_lamps: Vec<(Vec3, Vec3, f32)> = Vec::new();
+        self.cookies.begin_frame();
         // The grid is made in a room kept all unused but for the cells the last one filled,
         // which are cleared first: half a megabyte set and compared twice a frame (the
         // window's picture and a mirror's) for the few thousand cells lamps reach.
@@ -6347,6 +6379,24 @@ impl Renderer {
             if !drawn_by(l, enhanced) {
                 continue;
             }
+            // The enhanced path's own marks in `pos.w`, which the classic shader reads as a
+            // radius of none (these lights are the enhanced path's alone): 1 + its layer for
+            // a lamp with a picture of its beam (without a free layer, its cone lights it),
+            // and 16 more for one of the player's headlamps, which read their shared map
+            // (see `passes::headlamp_shadow`, enhanced.wgsl `light_marks`).
+            let mut marks = 0.0;
+            if let Some(layer) = l.cookie.filter(|_| enhanced && l.mode == LightMode::Enhanced).and_then(|c| self.cookies.layer(&c)) {
+                marks += 1.0 + layer as f32;
+            }
+            if own.as_ref().is_some_and(|b| passes::own_headlamp(l, p, b)) {
+                marks += 16.0;
+                own_lamps.push((p, l.direction, l.radius));
+            }
+            if marks > 0.0 {
+                if let Some(g) = gpu_lights.last_mut() {
+                    g.pos[3] = -marks;
+                }
+            }
             if lamp_shadows && enhanced && l.housed && l.intensity > 0.0 {
                 let d = (p - cam_rel).length();
                 if d < l.radius + LAMP_SHADOW_REACH {
@@ -6358,7 +6408,7 @@ impl Renderer {
                     if scene.lamp_shadow_last.contains(&key) {
                         score *= 1.6;
                     }
-                    chosen.push((score, LampShadow { index: idx, position: p, range: l.radius, owner: l.shadow_owner }, key));
+                    chosen.push((score, LampShadow { index: idx, position: p, range: l.radius, owner: l.shadow_owner, look: None, own: None }, key));
                 }
             }
             for y in (y0.max(0.0) as usize)..=(y1.min(side as f32 - 1.0) as usize) {
@@ -6377,6 +6427,8 @@ impl Renderer {
                 }
             }
         }
+        // (the beams' pictures the lamps found layers for, after the lights: see `cookies`)
+        self.cookies.append(&mut gpu_lights);
         if gpu_lights.is_empty() {
             gpu_lights.push(GpuPointLight {
                 pos: [0.0; 4],
@@ -6454,9 +6506,12 @@ impl Renderer {
             self.rebuild_camera_bind_group(scene);
         }
         chosen.sort_by(|a, b| b.0.total_cmp(&a.0));
-        chosen.truncate(LAMP_SHADOWS);
+        // (the headlamps' map, when there is one, takes the last tile: they light the road
+        // the driver looks along, nearer than any street lamp)
+        let headlamps = own.and_then(|b| passes::headlamp_shadow(&own_lamps, b, cam_rel));
+        chosen.truncate(LAMP_SHADOWS - usize::from(headlamps.is_some()));
         scene.lamp_shadow_last = chosen.iter().map(|c| c.2).collect();
-        let lamps = chosen.into_iter().map(|c| c.1).collect();
+        let lamps = chosen.into_iter().map(|c| c.1).chain(headlamps).collect();
         ([origin[0], origin[1], LIGHT_CELL, side as f32], lamps)
     }
 
@@ -6674,6 +6729,11 @@ impl Renderer {
             self.corona_textures.resize_with(i + 1, || None);
         }
         self.corona_textures[i] = Some(bg);
+    }
+
+    /// A light cookie's picture (`PointLight::cookie`), under the number its lamps name.
+    pub fn set_cookie_picture(&self, id: u16, img: &omsi_texture::Image) {
+        self.cookies.set_picture(id, img);
     }
 
     /// The picture of a smoke particle: the game's `Texture/rauch.tga` (OMSI's default
