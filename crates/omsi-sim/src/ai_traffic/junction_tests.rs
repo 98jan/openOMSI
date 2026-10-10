@@ -813,3 +813,28 @@ fn a_yield_pass_does_not_go_through_a_body() {
         }
     }
 }
+
+/// Of two decided cars a second apart, the one that can no longer stop firmly goes first,
+/// whatever their numbers; close in time and both able to stop (or neither), the first
+/// there, a tie to the lower number. A car that rolled into its junction gives way to one
+/// with the right of way coming too fast to stop for it, not to one far off, slow or
+/// giving way itself.
+#[test]
+fn the_car_that_cannot_stop_goes_first() {
+    // the main road's car at 13.7 m/s 12 m off (id 354) and one rolling out at 4 m/s 5 m
+    // off (id 254): the main road's goes, from either side
+    assert!(!goes_first((1.1, 5.3, 4.1, 254), (0.8, 11.8, 13.7, 354)));
+    assert!(goes_first((0.8, 11.8, 13.7, 354), (1.1, 5.3, 4.1, 254)));
+    // both able to stop: the tie to the lower number
+    assert!(goes_first((1.0, 20.0, 3.0, 1), (1.1, 20.0, 3.0, 2)));
+    assert!(!goes_first((1.1, 20.0, 3.0, 2), (1.0, 20.0, 3.0, 1)));
+    let mut o = crate::traffic::AiState::new(0, 0.0, 1);
+    o.speed = 14.0;
+    o.decel = 2.4;
+    assert!(too_close_to_pull_out(1.7, 2.6, &o, false, 50.0, 3.0, 4.0));
+    assert!(!too_close_to_pull_out(1.7, 2.6, &o, true, 50.0, 3.0, 4.0), "it gives way itself");
+    assert!(!too_close_to_pull_out(1.7, 2.6, &o, false, 120.0, 8.0, 4.0), "far off");
+    assert!(!too_close_to_pull_out(5.0, 1.0, &o, false, 50.0, 3.0, 4.0), "this one cannot stop any more");
+    o.speed = 2.0;
+    assert!(!too_close_to_pull_out(1.7, 2.6, &o, false, 3.0, 1.0, 4.0), "slow enough to stop");
+}
