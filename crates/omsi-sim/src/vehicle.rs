@@ -5305,6 +5305,38 @@ mod tests {
         assert!(!m_local.is_nan());
     }
 
+    /// `Program::stores`/`reads` answer from bits made once; for the stock vehicles' real
+    /// scripts they say for every variable what a scan of the whole bytecode says.
+    #[test]
+    #[ignore = "needs the original OMSI 2 install (OMSI_ROOT)"]
+    fn stores_and_reads_bits_match_the_scan_for_stock_scripts() {
+        let root = original_root();
+        for bus in [
+            "Vehicles/MAN_NL_NG/MAN_GN92_main.bus",
+            "Vehicles/MAN_NL_NG/MAN_EN92_main_KI.bus",
+            "Vehicles/MAN_SD202/MAN_D92.bus",
+            "Vehicles/MAN_SD200/MAN_SD80.bus",
+            "Vehicles/VW_Golf_2/ai_vw_golf_2.bus",
+        ] {
+            let bus = root.join(bus);
+            require_content(&[&bus]);
+            let ty = VehicleType::load(&root, &bus).expect("vehicle");
+            let p = &ty.program;
+            assert!(p.var_names.len() > 10, "{}: no script", bus.display());
+            let ops: Vec<&omsi_script::Op> = p.blocks.iter().flat_map(|b| &b.ops).collect();
+            let (mut stored, mut read) = (0, 0);
+            for v in 0..p.var_names.len() as omsi_script::VarId + 64 {
+                let s = ops.iter().any(|op| matches!(op, omsi_script::Op::Store(x) if *x == v));
+                let r = ops.iter().any(|op| matches!(op, omsi_script::Op::Load(x) if *x == v));
+                assert_eq!(p.stores(v), s, "{}: stores {v}", bus.display());
+                assert_eq!(p.reads(v), r, "{}: reads {v}", bus.display());
+                stored += s as usize;
+                read += r as usize;
+            }
+            assert!(stored > 0 && read > 0, "{}", bus.display());
+        }
+    }
+
     /// Volvo Wright's dashboard rear-close trigger falls back to its explicit external-close
     /// path when the handbrake guard only produced the button sound.
     #[test]
