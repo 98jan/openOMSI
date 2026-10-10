@@ -97,7 +97,7 @@ pub struct Choice {
     pub paint: String,
     /// The number plate the player typed for the bus (empty: as the content says).
     pub plate: String,
-    /// The fleet number picked from the bus's `[number]` list (empty: its first).
+    /// The fleet number picked from the bus's `[number]` list (empty: no selection yet).
     pub number: String,
     pub hof: String,
     /// The depot file was chosen by hand (else it follows the map and the date).
@@ -913,8 +913,12 @@ impl State {
                     if let Some(v) = self.vehicles.first() {
                         self.choice.bus = v.file.clone();
                         self.choice.paint.clear();
+                        self.choice.number.clear();
                         self.choice.hof = self.default_hof();
                     }
+                }
+                if !self.bus().is_some_and(|v| v.numbers.iter().any(|(number, _)| *number == self.choice.number)) {
+                    self.choice.number = self.random_bus_number();
                 }
                 self.pick_map();
                 // (the first reading asked for the lines with the maps already)
@@ -1203,13 +1207,21 @@ impl State {
             .unwrap_or_default()
     }
 
+    /// Pick once when the bus changes; both launcher layouts use this stored choice.
+    fn random_bus_number(&self) -> String {
+        self.bus().filter(|v| !v.numbers.is_empty()).map(|v| {
+            let index = (omsi_net::random_session_id() % v.numbers.len() as u64) as usize;
+            v.numbers[index].0.clone()
+        }).unwrap_or_default()
+    }
+
     pub fn select_bus(&mut self, file: &str) {
         if self.choice.bus == file {
             return;
         }
         self.choice.bus = file.to_string();
         self.choice.paint.clear();
-        self.choice.number.clear();
+        self.choice.number = self.random_bus_number();
         // (a hand-picked depot file stays when the new bus has one of that name)
         let keep = self.choice.hof_manual && self.bus().is_some_and(|v| v.hofs.iter().any(|h| h.eq_ignore_ascii_case(&self.choice.hof)));
         if !keep {
