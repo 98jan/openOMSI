@@ -308,7 +308,11 @@ pub(crate) fn duty_step(
     {
         let clock = game_clock.unwrap_or(&p.vehicle.host.clock);
         let career = &*career;
-        crate::journey::note(journey, d, due, served, root, || crate::journey::head(career, &world.global.name, &p.vehicle, clock));
+        crate::journey::note(journey, d, due, served, p.vehicle.odometer_km(), root, || crate::journey::head(career, &world.global.name, &p.vehicle, clock));
+    }
+    // (the trip's summary, for the game to show)
+    if let (Some(f), Some(j)) = (ended.as_ref(), journey.as_mut()) {
+        j.trip_ended(f.index);
     }
     if let Some(events) = plugin_events {
         use omsi_plugin::InfoValue::{Num, Text};
