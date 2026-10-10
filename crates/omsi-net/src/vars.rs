@@ -54,6 +54,7 @@ pub struct VarSender {
     acc: f32,
     ticks: u32,
     delta_from: usize,
+    delta_string: usize,
     key_float: usize,
     key_string: usize,
 }
@@ -130,17 +131,27 @@ impl VarSender {
             let take = ((ROOM - HEADER - 4) / 4).min(n - first);
             // (only a run of ids one after another can go as a run: they mostly are)
             let mut run = 1;
-            while run < take && float_ids[first + run] == float_ids[first] + run as u16 {
+            while run < take && float_ids[first].checked_add(run as u16) == Some(float_ids[first + run]) {
                 run += 1;
             }
-            let mut d = header(protocol, id, table, 1);
-            d.extend_from_slice(&float_ids[first].to_le_bytes());
-            d.extend_from_slice(&(run as u16).to_le_bytes());
-            for k in first..first + run {
+            // Sparse tables must progress by a packetful too, rather than one id every
+            // half second. Keep the compact run encoding where it holds more entries.
+            let indexed = ((ROOM - HEADER - 2) / 6).min(n - first);
+            let consecutive = run >= indexed;
+            let count = if consecutive { run } else { indexed };
+            let mut d = header(protocol, id, table, if consecutive { 1 } else { 0 });
+            if consecutive {
+                d.extend_from_slice(&float_ids[first].to_le_bytes());
+            }
+            d.extend_from_slice(&(count as u16).to_le_bytes());
+            for k in first..first + count {
+                if !consecutive {
+                    d.extend_from_slice(&float_ids[k].to_le_bytes());
+                }
                 d.extend_from_slice(&floats[k].to_le_bytes());
                 self.floats[k] = floats[k];
             }
-            self.key_float = (first + run) % n;
+            self.key_float = (first + count) % n;
             out.push(d);
         }
         // strings: those that changed, and in turn the others
@@ -161,21 +172,30 @@ impl VarSender {
                 *count += 1;
                 true
             };
-            for k in 0..m {
-                if strings[k] != self.strings[k] && put(&mut d, k, &mut count) {
-                    self.strings[k] = strings[k].clone();
-                }
-            }
+            // Reserve key ticks for recovery. Changes cannot consume the space needed
+            // by unchanged values whose last datagram was lost or predates a new peer.
             if key {
                 let mut k = self.key_string % m;
                 for _ in 0..m {
                     if !put(&mut d, k, &mut count) {
                         break;
                     }
-                    self.strings[k] = strings[k].clone();
+                    self.strings[k] = cut(&strings[k]).to_string();
                     k = (k + 1) % m;
                 }
                 self.key_string = k;
+            } else {
+                let mut k = self.delta_string % m;
+                for _ in 0..m {
+                    if cut(&strings[k]) != self.strings[k] {
+                        if !put(&mut d, k, &mut count) {
+                            break;
+                        }
+                        self.strings[k] = cut(&strings[k]).to_string();
+                    }
+                    k = (k + 1) % m;
+                }
+                self.delta_string = k;
             }
             if count > 0 {
                 d[HEADER..HEADER + 2].copy_from_slice(&count.to_le_bytes());
@@ -279,6 +299,76 @@ mod tests {
         let m = tx.tick(5, 7, 99, &ids, &floats, &sids, &strings, 0.1);
         let v = decode(&m[0], 5).unwrap();
         assert_eq!(v.floats, vec![(17, 4.25)]);
+    }
+
+    #[test]
+    fn changing_strings_do_not_starve_later_strings_or_lost_updates() {
+        let ids: Vec<u16> = (0..30).collect();
+        let mut strings: Vec<String> = (0..30).map(|k| format!("{k}:{}", "x".repeat(240))).collect();
+        let mut tx = VarSender::default();
+        // Establish the sender's baseline, but lose these datagrams.
+        for _ in 0..20 {
+            tx.tick(5, 7, 99, &[], &[], &ids, &strings, 0.1);
+        }
+        let mut got = vec![None; strings.len()];
+        for tick in 0..100 {
+            // The first fields change forever and can fill a whole datagram.
+            for k in 0..5 {
+                strings[k] = format!("{tick}:{k}:{}", "x".repeat(240));
+            }
+            if tick == 0 {
+                strings[29] = "later changed field".into();
+            }
+            for msg in tx.tick(5, 7, 99, &[], &[], &ids, &strings, 0.1) {
+                assert!(msg.len() <= ROOM);
+                for (id, value) in decode(&msg, 5).unwrap().strings {
+                    got[id as usize] = Some(value);
+                }
+            }
+        }
+        for k in 5..strings.len() {
+            assert_eq!(got[k].as_deref(), Some(strings[k].as_str()), "string {k} never recovered");
+        }
+    }
+
+    #[test]
+    fn changing_strings_rotate_even_when_every_packet_is_full() {
+        let ids: Vec<u16> = (0..20).collect();
+        let mut strings = vec!["x".repeat(240); ids.len()];
+        let mut tx = VarSender::default();
+        for _ in 0..20 {
+            tx.tick(5, 7, 99, &[], &[], &ids, &strings, 0.1);
+        }
+        let mut seen = std::collections::HashSet::new();
+        for tick in 0..5 {
+            for (k, s) in strings.iter_mut().enumerate() {
+                *s = format!("{tick}:{k}:{}", "x".repeat(240));
+            }
+            for msg in tx.tick(5, 7, 99, &[], &[], &ids, &strings, 0.1) {
+                seen.extend(decode(&msg, 5).unwrap().strings.into_iter().map(|(id, _)| id));
+            }
+        }
+        assert_eq!(seen.len(), ids.len(), "all changed strings need a turn before the next key frame");
+    }
+
+    #[test]
+    fn sparse_float_ids_recover_a_lost_baseline_within_seconds() {
+        let ids: Vec<u16> = (0..1000).map(|k| k * 2).collect();
+        let values: Vec<f32> = (0..ids.len()).map(|k| k as f32).collect();
+        let mut tx = VarSender::default();
+        for _ in 0..10 {
+            tx.tick(5, 7, 99, &ids, &values, &[], &[], 0.1);
+        }
+        let mut got = std::collections::HashMap::new();
+        for _ in 0..30 {
+            for msg in tx.tick(5, 7, 99, &ids, &values, &[], &[], 0.1) {
+                assert!(msg.len() <= ROOM);
+                got.extend(decode(&msg, 5).unwrap().floats);
+            }
+        }
+        for (&id, &value) in ids.iter().zip(&values) {
+            assert_eq!(got.get(&id), Some(&value), "variable {id} never recovered");
+        }
     }
 
     #[test]

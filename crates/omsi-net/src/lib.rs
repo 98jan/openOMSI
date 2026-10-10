@@ -149,6 +149,9 @@ const MAX_FIELD: usize = 64;
 /// A host takes at most this many states and this many other messages a second from one
 /// player (with bursts of as many); chat lines one a second (bursts of three).
 const STATE_RATE: (f32, f32) = (40.0, 40.0);
+// Variable deltas and key frames use at most 22 datagrams/s. They must not
+// consume the pose/world budget (otherwise normal driving drops recovery slices).
+const VAR_RATE: (f32, f32) = (30.0, 30.0);
 const MESSAGE_RATE: (f32, f32) = (10.0, 20.0);
 const CHAT_RATE: (f32, f32) = (1.0, 3.0);
 // ---------------------------------------------------------------------------------------
@@ -1226,6 +1229,13 @@ pub enum LanEvent {
     Notice(String),
 }
 
+#[derive(Debug, Clone, Copy)]
+enum PeerTraffic {
+    State,
+    Variables,
+    Message,
+}
+
 /// A token bucket: `rate` a second, at most `burst` at once.
 #[derive(Debug, Clone)]
 struct Bucket {
@@ -1268,6 +1278,7 @@ pub struct Peer {
     last_seq: u16,
     state_at: Instant,
     states: Bucket,
+    variables: Bucket,
     messages: Bucket,
     chat: Bucket,
     /// Datagrams of this player the host threw away (too many at once).
@@ -1291,6 +1302,7 @@ impl Peer {
             last_seq: 0,
             state_at: now,
             states: Bucket::new(STATE_RATE.1),
+            variables: Bucket::new(VAR_RATE.1),
             messages: Bucket::new(MESSAGE_RATE.1),
             chat: Bucket::new(CHAT_RATE.1),
             dropped: 0,
@@ -1857,7 +1869,7 @@ impl LanSession {
         match self.role {
             Role::Host => {
                 // only from the player it says, at their address
-                if self.checked_peer(sender, from, MESSAGE_RATE, false).is_none() {
+                if self.checked_peer(sender, from, MESSAGE_RATE, PeerTraffic::Message).is_none() {
                     return;
                 }
                 if to == self.my_id {
@@ -2517,7 +2529,7 @@ impl LanSession {
                     else {
                         continue;
                     };
-                    if self.checked_peer(id, from, STATE_RATE, true).is_none() {
+                    if self.checked_peer(id, from, STATE_RATE, PeerTraffic::State).is_none() {
                         continue;
                     }
                     if let Some(mut f) = world::decode(&data, PROTOCOL as u8) {
@@ -2633,7 +2645,7 @@ impl LanSession {
                     let Some(id) = field(&parts, 1).parse::<u32>().ok() else {
                         continue;
                     };
-                    if self.checked_peer(id, from, MESSAGE_RATE, false).is_none() {
+                    if self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message).is_none() {
                         continue;
                     }
                     if parts[0] == "WANT" {
@@ -2661,7 +2673,7 @@ impl LanSession {
                     else {
                         continue;
                     };
-                    if self.checked_peer(id, from, MESSAGE_RATE, false).is_none() {
+                    if self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message).is_none() {
                         continue;
                     }
                     if let Some(d @ world::Desc::Person { .. }) = world::Desc::decode(&parts) {
@@ -2730,16 +2742,16 @@ impl LanSession {
         id: u32,
         from: SocketAddr,
         rate: (f32, f32),
-        state: bool,
+        traffic: PeerTraffic,
     ) -> Option<&mut Peer> {
         let peer = self.peers.get_mut(&id)?;
         if peer.addr != Some(from) {
             return None;
         }
-        let ok = if state {
-            peer.states.take(rate)
-        } else {
-            peer.messages.take(rate)
+        let ok = match traffic {
+            PeerTraffic::State => peer.states.take(rate),
+            PeerTraffic::Variables => peer.variables.take(rate),
+            PeerTraffic::Message => peer.messages.take(rate),
         };
         if !ok {
             peer.dropped += 1;
@@ -2786,7 +2798,7 @@ impl LanSession {
         match self.role {
             // (as a state: only a player we welcomed, from its address, within its rate)
             Role::Host => {
-                if self.checked_peer(v.id, from, STATE_RATE, true).is_none() {
+                if self.checked_peer(v.id, from, VAR_RATE, PeerTraffic::Variables).is_none() {
                     return;
                 }
                 self.broadcast(data, Some(v.id));
@@ -2812,7 +2824,7 @@ impl LanSession {
         }
         let peer = match self.role {
             // only players we welcomed, from the address we welcomed, are taken and relayed
-            Role::Host => match self.checked_peer(id, from, STATE_RATE, true) {
+            Role::Host => match self.checked_peer(id, from, STATE_RATE, PeerTraffic::State) {
                 Some(p) => p,
                 None => return,
             },
@@ -2863,7 +2875,7 @@ impl LanSession {
         let relay;
         {
             let peer = match self.role {
-                Role::Host => match self.checked_peer(id, from, MESSAGE_RATE, false) {
+                Role::Host => match self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message) {
                     Some(p) => p,
                     None => return,
                 },
@@ -2915,7 +2927,7 @@ impl LanSession {
         let Some(spawn) = Footprint::from_numbers(&v) else {
             return;
         };
-        let Some(peer) = self.checked_peer(id, from, MESSAGE_RATE, false) else {
+        let Some(peer) = self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message) else {
             return;
         };
         let (name, bus) = (peer.pose.name.clone(), peer.pose.bus.clone());
@@ -2935,7 +2947,7 @@ impl LanSession {
             return;
         };
         let text = clean_text(field(parts, 2), MAX_CHAT);
-        let Some(peer) = self.checked_peer(id, from, MESSAGE_RATE, false) else {
+        let Some(peer) = self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message) else {
             return;
         };
         if text.is_empty() {

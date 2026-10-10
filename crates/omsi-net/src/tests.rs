@@ -493,6 +493,74 @@ fn find(s: &LanSession, x: f64) -> Option<&Peer> {
 }
 
 #[test]
+fn variable_recovery_has_its_own_rate_budget_and_checks_the_sender() {
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let from: SocketAddr = "127.0.0.1:29001".parse().unwrap();
+    let mut peer = Peer::new(Some(from), pose(1.0));
+    peer.states.tokens = 0.0;
+    host.peers.insert(7, peer);
+    let mut sender = vars::VarSender::default();
+    let messages = sender.tick(PROTOCOL as u8, 7, 99, &[0], &[42.0], &[], &[], 0.1);
+    host.on_vars(&messages[0], "127.0.0.1:29002".parse().unwrap());
+    assert!(host.take_vars().is_empty(), "a different address cannot send for this peer");
+    host.on_vars(&messages[0], from);
+    let received = host.take_vars();
+    assert_eq!(received.len(), 1, "pose traffic must not starve variables");
+    assert_eq!(received[0].floats, vec![(0, 42.0)]);
+    host.peers.get_mut(&7).unwrap().variables.tokens = 0.0;
+    host.on_vars(&messages[0], from);
+    assert!(host.take_vars().is_empty(), "variable traffic is still rate limited");
+}
+
+#[test]
+fn host_and_clients_exchange_complete_variable_tables() {
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let addr = SocketAddr::from(([127, 0, 0, 1], host.local_addr().unwrap().port()));
+    let mut a = LanSession::join_addr(vec![addr], None, "a", world("m")).unwrap();
+    let mut b = LanSession::join_addr(vec![addr], None, "b", world("m")).unwrap();
+    let poses = [pose(100.0), pose(200.0), pose(300.0)];
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 150, |s| {
+        find(s[2], 200.0).is_some() && find(s[1], 100.0).is_some()
+    });
+    assert!(a.connected && b.connected);
+    let ids: Vec<u16> = (0..600).map(|k| k * 2).collect();
+    let values: Vec<f32> = (0..600).map(|k| k as f32 + 0.5).collect();
+    let string_ids: Vec<u16> = (0..20).collect();
+    let strings: Vec<String> = (0..20).map(|k| format!("{k}:{}", "x".repeat(240))).collect();
+    let mut received = [vars::VarsIn::default(), vars::VarsIn::default(), vars::VarsIn::default()];
+    for _ in 0..10 {
+        host.send_vars(99, &ids, &values, &string_ids, &strings, 0.1);
+        a.send_vars(99, &ids, &values, &string_ids, &strings, 0.1);
+        host.tick(0.1, &poses[0]);
+        a.tick(0.1, &poses[1]);
+        b.tick(0.1, &poses[2]);
+        for v in host.take_vars().into_iter().filter(|v| v.id == a.my_id) {
+            assert_eq!(v.table, 99);
+            received[0].floats.extend(v.floats);
+            received[0].strings.extend(v.strings);
+        }
+        for v in a.take_vars().into_iter().filter(|v| v.id == host.my_id) {
+            received[1].floats.extend(v.floats);
+            received[1].strings.extend(v.strings);
+        }
+        for v in b.take_vars().into_iter().filter(|v| v.id == a.my_id) {
+            received[2].floats.extend(v.floats);
+            received[2].strings.extend(v.strings);
+        }
+    }
+    for got in received {
+        let floats: std::collections::HashMap<_, _> = got.floats.into_iter().collect();
+        let texts: std::collections::HashMap<_, _> = got.strings.into_iter().collect();
+        for (&id, &value) in ids.iter().zip(&values) {
+            assert_eq!(floats.get(&id), Some(&value));
+        }
+        for (&id, value) in string_ids.iter().zip(&strings) {
+            assert_eq!(texts.get(&id), Some(value));
+        }
+    }
+}
+
+#[test]
 fn host_and_two_clients_exchange_states() {
     let mut host =
         LanSession::host(28100, "host", world("maps/Grundorf/global.cfg"), true).unwrap();
