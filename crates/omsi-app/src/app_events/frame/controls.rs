@@ -29,7 +29,11 @@ impl App {
         ctl.ff_engine = self.settings.ff_engine_vib;
         ctl.ff_fade = self.settings.ff_fade;
         ctl.steer_gain = if self.settings.wheel_lock >= 45.0 { (self.settings.wheel_range / self.settings.wheel_lock).clamp(0.1, 20.0) } else { 1.0 };
-        ctl.disabled = self.settings.ctrl_off.split('|').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        // (made anew only when the setting no longer says what the list holds)
+        let off = || self.settings.ctrl_off.split('|').map(str::trim).filter(|s| !s.is_empty());
+        if !ctl.disabled.iter().map(String::as_str).eq(off()) {
+            ctl.disabled = off().map(str::to_string).collect();
+        }
         ctl.set_editing(self.menus.game_menu.is_some() || self.menus.chooser.is_some() || self.photo.is_some());
         let analog = ctl.poll();
         let actions = std::mem::take(&mut ctl.actions);
