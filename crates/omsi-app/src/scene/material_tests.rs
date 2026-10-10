@@ -322,3 +322,16 @@ fn matl_glow_gives_a_material_its_own_light() {
     assert_eq!(glow_mask(&[&mapped]), None);
     assert!(own_light_slot(&[&mapped]) && own_light_slot(&[&lit]) && !own_light_slot(&[&plain]));
 }
+
+/// A text texture keeps its slot's glow: a route arrow whose caption slot is emissive shows
+/// its street name at night, a plain sign's slot gives none, and the two do not share one
+/// material.
+#[test]
+fn a_text_texture_glows_as_its_slot_does() {
+    let lit = omsi_o3d::Material { emissive: [0.8, 0.8, 0.6], ..Default::default() };
+    let plain = omsi_o3d::Material::default();
+    assert_eq!(text_emissive(&[], Some(&lit)), [0.8, 0.8, 0.6]);
+    assert_eq!(text_emissive(&[], Some(&plain)), [0.0; 3]);
+    assert_eq!(text_emissive(&[], None), [0.0; 3]);
+    assert_ne!(text_material_key("k".into(), &[], Some(&lit)), text_material_key("k".into(), &[], Some(&plain)));
+}

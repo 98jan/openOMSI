@@ -121,6 +121,7 @@ impl TrafficSim {
             framed_spawns: Vec::new(),
             player: None,
             player_priority: false,
+            player_turn: 0.0,
             player_blinker: 0,
             player_signal_age: f32::MAX,
             player_signalling: 0.0,

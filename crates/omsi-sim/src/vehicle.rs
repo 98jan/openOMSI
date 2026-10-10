@@ -27,6 +27,19 @@ fn script_speed(speed_kmh: f32) -> f32 {
     if speed_kmh.abs() < 0.01 { 0.0 } else { speed_kmh }
 }
 
+/// The speed the driven wheels' turning gives (m/s): the mean of their rims' speed, each
+/// wheel's spin (rad/s) times its radius - Omsi.exe's `Velocity` (0x7e2574 sums each driven
+/// axle's two wheel speeds times its size, averages them over the driven wheels and turns
+/// that into km/h), while its `Velocity_Ground` is the body's speed. They part when a wheel
+/// spins or locks. `None` for a vehicle without driven wheels: then OMSI's `Velocity` is the
+/// body's speed too.
+fn driven_wheels_speed(wheels: impl Iterator<Item = (f32, f32, bool)>) -> Option<f32> {
+    let (sum, n) = wheels
+        .filter(|w| w.2)
+        .fold((0.0f32, 0u32), |(sum, n), (spin, radius, _)| (sum + spin * radius, n + 1));
+    (n > 0).then(|| sum / n as f32)
+}
+
 // A vehicle pack may contain many tiny trim meshes and only a few large body/interior
 // meshes. When the mesh vote is close, use capped triangle counts as a tie-breaker instead
 // of letting every tiny mesh carry the same weight.
@@ -1996,9 +2009,17 @@ impl VehicleInstance {
         self.physics.speed = speed;
         self.physics.steer_deg = rb.steer_deg;
         self.physics.accel = rb.accel_body;
-        let v = script_speed(speed * 3.6);
+        // `Velocity` is what the driven wheels' turning makes of the speed, `Velocity_Ground`
+        // the body's own (see `driven_wheels_speed`): a wheel spinning on ice or locked by
+        // the brake shows on the speedometer as in OMSI.
+        let wheels = rb.wheels.iter().map(|w| (w.spin, w.radius, w.driven));
+        // (a bus standing on its brakes: the wheels' rocking of a few hundredths of a metre a
+        // second is no speed, scripts test `!Velocity` for a bus at rest)
+        let ground = script_speed(speed * 3.6);
+        let wheels = driven_wheels_speed(wheels).unwrap_or(speed) * 3.6;
+        let v = if ground == 0.0 && wheels.abs() < 0.5 { 0.0 } else { script_speed(wheels) };
         self.put(self.v_velocity, v);
-        self.put(self.v_velocity_ground, v);
+        self.put(self.v_velocity_ground, ground);
         let n_wheel = rb
             .wheels
             .iter()
@@ -4492,6 +4513,19 @@ mod tests {
     include!("../../../tools/test-support/original_root.rs");
     use super::*;
     use std::sync::Arc;
+
+    #[test]
+    fn velocity_is_the_driven_wheels_speed() {
+        // a front axle rolling at 10 m/s, the driven rear axle spinning at twice that
+        // (wheels of 0.5 m): the speedometer shows the spin, the body's speed stays apart
+        let wheels = [(20.0, 0.5, false), (20.0, 0.5, false), (40.0, 0.5, true), (40.0, 0.5, true)];
+        assert_eq!(driven_wheels_speed(wheels.into_iter()), Some(20.0));
+        // a locked driven axle reads 0, one on the other side of a differential half
+        assert_eq!(driven_wheels_speed([(0.0, 0.5, true), (0.0, 0.5, true)].into_iter()), Some(0.0));
+        assert_eq!(driven_wheels_speed([(0.0, 0.5, true), (20.0, 0.5, true)].into_iter()), Some(5.0));
+        // a trailer without driven wheels: the body's speed is used
+        assert_eq!(driven_wheels_speed([(20.0, 0.5, false)].into_iter()), None);
+    }
 
     pub(super) fn coupling_test_type(boogies: Option<f32>) -> Arc<VehicleType> {
         Arc::new(VehicleType {

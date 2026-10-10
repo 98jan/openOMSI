@@ -811,20 +811,30 @@ pub(super) fn text_alpha(materials: &[omsi_o3d::Material], slot: usize, override
 /// clamp, mirror) on the slot carry over to the text drawn into it. Made with the plain
 /// wrap, Road-Hog123's bus stop flags - a second mesh whose UVs run past the text texture
 /// into its border - showed the stop name repeated across the whole flag (#1645).
-pub(super) fn text_material(renderer: &Renderer, scene: &mut Scene, tex: TextureId, alpha: AlphaMode, slot_ov: &[&MaterialDef]) -> MaterialId {
+/// The slot's own emissive colour goes with it (`slot_mat`, its o3d material, or its
+/// `[matl_allcolor]`): Omsi.exe only swaps the slot's texture and keeps its material, so a
+/// sign whose slot glows - a route arrow's caption - glows with its text, and one that does
+/// not stays dark at night. Made without it, the arrows' street and stop names went black
+/// after dusk on arrows that shone.
+pub(super) fn text_material(renderer: &Renderer, scene: &mut Scene, tex: TextureId, alpha: AlphaMode, slot_ov: &[&MaterialDef], slot_mat: Option<&omsi_o3d::Material>) -> MaterialId {
     let extra = material_extra(slot_ov, None, None, [0.0; 4]);
     let plain = MaterialExtra::default();
     let border_only = MaterialExtra { border: extra.border, ..plain.clone() };
     renderer.address_next.set(tex_addressing(slot_ov.iter().copied()));
-    // (lit like the rest of the object: Omsi.exe only swaps the slot's texture, a sign
-    // does not shine at night)
-    renderer.add_material_extra(scene, Some(tex), alpha, [1.0; 4], false, None, None, None, None, [0.0; 3], border_only)
+    let emissive = text_emissive(slot_ov, slot_mat);
+    renderer.add_material_extra(scene, Some(tex), alpha, [1.0; 4], false, None, None, None, None, emissive, border_only)
 }
 
-/// The key of a text texture material: the text's own key and how its slot addresses it.
-pub(super) fn text_material_key(base: String, slot_ov: &[&MaterialDef]) -> String {
+/// The emissive colour of a text texture's slot (see `text_material`).
+pub(super) fn text_emissive(slot_ov: &[&MaterialDef], slot_mat: Option<&omsi_o3d::Material>) -> [f32; 3] {
+    slot_mat.map(|m| d3d_material(m, slot_ov.iter().find_map(|o| o.allcolor), true).1).unwrap_or([0.0; 3])
+}
+
+/// The key of a text texture material: the text's own key, how its slot addresses it and
+/// the slot's glow.
+pub(super) fn text_material_key(base: String, slot_ov: &[&MaterialDef], slot_mat: Option<&omsi_o3d::Material>) -> String {
     let border = material_extra(slot_ov, None, None, [0.0; 4]).border;
-    format!("{base}|{:?}|{border:?}", tex_addressing(slot_ov.iter().copied()))
+    format!("{base}|{:?}|{border:?}|{:?}", tex_addressing(slot_ov.iter().copied()), text_emissive(slot_ov, slot_mat))
 }
 
 pub(super) fn scenery_text_key(tt: &omsi_model::TextTexture, text: &str, alpha: AlphaMode) -> String {

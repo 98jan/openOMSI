@@ -29,6 +29,8 @@ pub(crate) const SCENERY_OBJECT_REACH: f32 = 50.0;
 impl App {
     /// A key of the window, or of an `OMSI_INPUT` script.
     pub(crate) fn on_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, pressed: bool, repeat: bool) {
+        // (Alt tapped alone opens OMSI 2's quick menu: `game_panels`)
+        self.alt_tap(code, pressed, repeat);
         // the photo mode has all the keys
         if self.photo_on() {
             self.photo_key(code, pressed, repeat);
@@ -55,6 +57,10 @@ impl App {
             }
             // and gives the mouse back to the bus when the plugins' panels have it
             if self.release_plugin_focus() {
+                return;
+            }
+            // and closes the game's panel on top (the quick menu, a form, the editor)
+            if self.close_game_panel() {
                 return;
             }
         }
@@ -873,7 +879,15 @@ impl App {
                 // `click down` / `click up` only press or let go (a drag in between)
                 "click" => {
                     let (press, release) = (arg != "up", arg != "down");
-                    if self.menus.placing.is_some() && self.menus.game_menu.is_none() {
+                    if self.game_panels_mouse() {
+                        // (on the game's panels as the window's button)
+                        if press {
+                            self.game_panel_click(true);
+                        }
+                        if release {
+                            self.game_panel_click(false);
+                        }
+                    } else if self.menus.placing.is_some() && self.menus.game_menu.is_none() {
                         self.placing_click();
                     } else if self.menus.game_menu.is_some() || self.shell_takes_mouse() || (self.devtools.is_some() && self.shell.over_ui) {
                         // (on the menu as the window's button: its lines, its arrows)

@@ -391,7 +391,10 @@ impl TrafficSim {
         let behind = half_len as f64 + ((-speed).max(0.0) * horizon) as f64;
         let wide = (half_w + half_width + 0.35) as f64;
         let margin = PLAYER_BOX_MARGIN as f64;
-        let inside = |p: DVec3| in_player_box(p, centre, fwd, right, wide, ahead + margin, behind + margin);
+        // (the player's own bus bends its reach along its turn; a LAN player's goes straight)
+        let turn = if player.0 == self.player.map_or(DVec3::NAN, |p| p.0) { self.player_turn } else { 0.0 };
+        let body = half_len as f64 + margin;
+        let inside = |p: DVec3| in_player_sweep(p, centre, fwd, right, wide, body, ahead + margin, behind + margin, turn);
         let look = (st.speed * st.speed / (2.0 * st.decel) + st.speed * 2.0 + 15.0)
             .clamp(15.0, look_ahead(st.speed));
         let mut d = 0.0f32;
@@ -430,6 +433,47 @@ impl TrafficSim {
         }
         None
     }
+}
+
+/// `in_player_box` with the stretch ahead of the bus bent along the arc it is turning on
+/// (`turn`: its curvature, 1/m, positive to the right): the body itself (`body` ahead of
+/// `centre`) and a band `wide` to either side of the arc its centre will run along for
+/// `ahead` metres. Straight ahead, as before, the reach of a bus driving through a bend at
+/// speed lay across the oncoming lane, and the cars coming the other way braked hard for a
+/// bus that was never going to be where they were.
+#[allow(clippy::too_many_arguments)]
+pub fn in_player_sweep(p: DVec3, centre: DVec3, fwd: DVec2, right: DVec2, wide: f64, body: f64, ahead: f64, behind: f64, turn: f64) -> bool {
+    if turn.abs() < 1e-4 || ahead <= body {
+        return in_player_box(p, centre, fwd, right, wide, ahead, behind);
+    }
+    if in_player_box(p, centre, fwd, right, wide, body, behind) {
+        return true;
+    }
+    if (p.z - centre.z).abs() >= 4.0 {
+        return false;
+    }
+    // in the bus's frame (x right, y ahead) the arc runs round the turning centre (1/turn, 0)
+    let rel = p.truncate() - centre.truncate();
+    let (x, y) = (rel.dot(right), rel.dot(fwd));
+    let radius = 1.0 / turn.abs();
+    let (vx, vy) = (x - 1.0 / turn, y);
+    let along = vy.atan2(-turn.signum() * vx) * radius;
+    ((vx * vx + vy * vy).sqrt() - radius).abs() <= wide && along >= 0.0 && along <= ahead
+}
+
+/// The curvature (1/m, positive to the right) of the player's path from its last two boxes
+/// `dt` apart, smoothed into `before`: none for a bus creeping or standing, whose heading
+/// says little about where it goes.
+pub fn player_turn_of(before: f64, last: Option<PlayerBox>, now: Option<PlayerBox>, dt: f32) -> f64 {
+    let (Some(a), Some(b)) = (last, now) else { return 0.0 };
+    let speed = b.4.abs() as f64;
+    if speed < 1.0 || dt <= 0.0 || (b.0 - a.0).length() > 5.0 + speed * dt as f64 * 2.0 {
+        return 0.0;
+    }
+    let turned = (b.1 - a.1 + 540.0).rem_euclid(360.0) - 180.0;
+    let k = (turned.to_radians() / (speed * dt as f64) * (b.4 as f64).signum()).clamp(-0.2, 0.2);
+    // (over about a third of a second: a frame's heading jitters)
+    before + (k - before) * (dt as f64 / 0.3).min(1.0)
 }
 
 /// Whether the point `p` of a car's way lies in the player's box round `centre` (`wide` to

@@ -142,7 +142,7 @@ impl App {
         let bus_view = self.mouse_steers_in_view();
         // (the plugins' panels having the mouse hold the wheel and the pedals as
         // looking round does: the cursor goes to their buttons)
-        let panels_mouse = self.plugin_focus();
+        let panels_mouse = self.plugin_focus() || self.game_panels_mouse();
         // (the cursor locked while a mouse button looks round, held while the mouse steers,
         // let go when it is wanted: mouse_grab.rs)
         self.sync_look_hold();

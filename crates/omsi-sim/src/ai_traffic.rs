@@ -194,6 +194,9 @@ pub struct TrafficSim {
     pub framed_spawns: Vec<(u64, DVec3)>,
     /// The player's vehicle as of the last tick (nothing is put on the road on top of it).
     pub player: Option<PlayerBox>,
+    /// The curvature of the player's path as of the last tick (1/m, positive to the right,
+    /// `player_turn_of`): the cars look for the bus along its turn (`in_player_sweep`).
+    pub player_turn: f64,
     /// The player's bus has right of way over the traffic (its script's `TrafficPriority`,
     /// OMSI: priority 1000 over the types' own): cars keep out of the way it is about
     /// to take for longer.
