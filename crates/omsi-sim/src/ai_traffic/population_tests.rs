@@ -85,7 +85,7 @@ fn a_lan_client_admits_nobody() {
     let f = Fixture::new();
     let mut t = road(&f);
     t.mirror = true;
-    t.admission.submit(0.0, Class::Street, 0, 50.0, DVec3::new(0.0, 50.0, 0.0), None).unwrap();
+    t.admission.submit(0.0, Class::Street, (0, 50.0), (DVec3::new(0.0, 50.0, 0.0), 0.0), None).unwrap();
     let mut b = Budgets::default();
     b.set(Class::Street, Some(10));
     let host = !t.is_mirror();

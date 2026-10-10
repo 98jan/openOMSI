@@ -431,7 +431,7 @@ impl Traffic {
             let x = self.rand_f() as f32 * total_w;
             let lane = candidates[cumulative.partition_point(|&c| c < x).min(candidates.len() - 1)].0;
             let s = (self.rand_f() * (self.sim.net.lanes[lane].length() as f64 - 6.0)) as f32 + 3.0;
-            let (p, _) = self.sim.net.lanes[lane].at(s);
+            let (p, heading) = self.sim.net.lanes[lane].at(s);
             if (p - center).length() < 40.0 {
                 continue; // not right next to the player
             }
@@ -439,7 +439,7 @@ impl Traffic {
             if self.parked.get(&lane).is_some_and(|l| l.iter().any(|&(ps, lat)| (ps - s).abs() < 8.0 && lat.abs() < 1.5)) {
                 continue;
             }
-            match self.sim.admission.submit(now, class, lane, s, p, None) {
+            match self.sim.admission.submit(now, class, (lane, s), (p, heading as f64), None) {
                 Ok(_) => asked += 1,
                 Err(Denial::QueueFull) => break,
                 Err(_) => {}
@@ -469,8 +469,7 @@ impl Traffic {
                 return Verdict::Deny(Denial::NoPath);
             };
             // (nor onto the rear section of an articulated bus, nor the player's bus)
-            let heading = self.sim.net.lanes[r.lane].at(r.s).1 as f64;
-            if kind != LaneKind::Air && !self.spawn_clear(&ty, r.pos, heading) {
+            if kind != LaneKind::Air && !self.spawn_clear(&ty, r.pos, r.heading) {
                 return Verdict::Retry(Retry::NoGap);
             }
             types.insert(r.ticket, ty);
@@ -529,8 +528,7 @@ impl Traffic {
             let Some(d) = self.sim.dormant.iter().find(|d| Some(d.id) == r.dormant) else {
                 return Verdict::Deny(Denial::NoPath);
             };
-            let h = self.sim.net.lanes[r.lane].at(r.s).1 as f64;
-            if !self.sim.spawn_gap(p) || !self.spawn_clear(&d.ty, p, h) {
+            if !self.sim.spawn_gap(p) || !self.spawn_clear(&d.ty, p, r.heading) {
                 return Verdict::Retry(Retry::NoGap);
             }
             Verdict::Admit

@@ -174,13 +174,14 @@ impl TrafficSim {
             .filter_map(|(k, d)| {
                 let l = self.net.lanes.get(d.lane)?;
                 let s = d.s.clamp(0.0, (l.length() - 0.1).max(0.0));
-                let p = l.at(s).0;
+                let (p, heading) = l.at(s);
                 centers.iter().any(|c| (p - *c).truncate().length() < radius).then_some(admission::Request {
                     ticket: k as u64,
                     class: admission::Class::Dormant,
                     lane: d.lane,
                     s,
                     pos: p,
+                    heading: heading as f64,
                     at: self.time,
                     dormant: Some(d.id),
                 })

@@ -88,6 +88,10 @@ pub const BACKOFF_SHORT: f32 = 0.5;
 pub const BACKOFF_LONG: f32 = 3.0;
 /// A request not admitted within this long is dropped (s): the population asks afresh.
 pub const REQUEST_TTL: f32 = 10.0;
+/// Nor in line with one admitted in the same pass, ahead or behind it, nearer than this (m):
+/// the one behind would have to brake hard for the other at once (as `TrafficSim::spawn_gap`
+/// keeps a new car out of the way of one on the road).
+pub const SPAWN_IN_LINE: f64 = 40.0;
 
 /// A vehicle asked to be put on the road.
 #[derive(Debug, Clone)]
@@ -98,6 +102,8 @@ pub struct Request {
     pub lane: usize,
     pub s: f32,
     pub pos: DVec3,
+    /// Its heading there (degrees clockwise from north).
+    pub heading: f64,
     /// When it was asked (traffic time, s).
     pub at: f32,
     /// A dormant car waking up: its id.
@@ -177,7 +183,7 @@ impl Admission {
 
     /// Ask for a vehicle of `class` at `s` metres along `lane` (at `pos`). Its ticket, or why
     /// it was not taken: the queue is full, or the place is being left alone.
-    pub fn submit(&mut self, now: f32, class: Class, lane: usize, s: f32, pos: DVec3, dormant: Option<u64>) -> Result<u64, Denial> {
+    pub fn submit(&mut self, now: f32, class: Class, (lane, s): (usize, f32), (pos, heading): (DVec3, f64), dormant: Option<u64>) -> Result<u64, Denial> {
         let refused = if self.queue.len() >= QUEUE_CAP {
             Denial::QueueFull
         } else if self.backing_off(lane, now) {
@@ -185,7 +191,7 @@ impl Admission {
         } else {
             let ticket = self.next_ticket;
             self.next_ticket += 1;
-            self.queue.push_back(Request { ticket, class, lane, s, pos, at: now, dormant });
+            self.queue.push_back(Request { ticket, class, lane, s, pos, heading, at: now, dormant });
             return Ok(ticket);
         };
         self.denied[refused as usize] += 1;
@@ -261,10 +267,24 @@ fn decide(r: &Request, budgets: &Budgets, admitted: &[Request], check: &mut impl
     if !budgets.has_room(r.class) {
         return Verdict::Deny(Denial::AtCapacity);
     }
-    if admitted.iter().any(|a| (a.pos - r.pos).length() < SPAWN_GAP) {
+    if admitted.iter().any(|a| too_close(a, r)) {
         return Verdict::Retry(Retry::NoGap);
     }
     check(r)
+}
+
+/// Would two vehicles put at `a` and `b` stand too close: nearer than `SPAWN_GAP`, or in
+/// line, one ahead of the other, nearer than `SPAWN_IN_LINE`?
+fn too_close(a: &Request, b: &Request) -> bool {
+    let rel = b.pos - a.pos;
+    if rel.length() < SPAWN_GAP {
+        return true;
+    }
+    [a.heading, b.heading].iter().any(|h| {
+        let h = h.to_radians();
+        let (along, across) = (rel.x * h.sin() + rel.y * h.cos(), (rel.x * h.cos() - rel.y * h.sin()).abs());
+        across < 3.0 && along.abs() < SPAWN_IN_LINE
+    })
 }
 
 /// Decide a batch that does not wait in the queue (the dormant cars, which wait in their
@@ -337,7 +357,7 @@ mod tests {
         let mut refused = 0;
         for k in 0..1000 {
             // (pairs of requests 3 m apart, at 40 lanes)
-            if a.submit(0.0, Class::Street, k % 40, 0.0, at((k / 2) as f64 * 20.0 + (k % 2) as f64 * 3.0), None).is_err() {
+            if a.submit(0.0, Class::Street, (k % 40, 0.0), (at((k / 2) as f64 * 20.0 + (k % 2) as f64 * 3.0), 0.0), None).is_err() {
                 refused += 1;
             }
         }
@@ -369,7 +389,7 @@ mod tests {
         let mut now = 0.0;
         let mut taken = 0;
         while now < 2.0 {
-            if a.submit(now, Class::Street, 5, 0.0, at(0.0), None).is_ok() {
+            if a.submit(now, Class::Street, (5, 0.0), (at(0.0), 0.0), None).is_ok() {
                 taken += 1;
             }
             a.pass(now, true, &mut street(10), |_| Verdict::Retry(Retry::NoGap));
@@ -380,7 +400,7 @@ mod tests {
         assert!(a.backing_off(5, now));
         assert!(a.denied[Denial::Backoff as usize] > 0);
         // another place is not held up by it
-        assert!(a.submit(now, Class::Street, 6, 0.0, at(500.0), None).is_ok());
+        assert!(a.submit(now, Class::Street, (6, 0.0), (at(500.0), 0.0), None).is_ok());
         let admitted = a.pass(now, true, &mut street(10), |r| if r.lane == 6 { Verdict::Admit } else { Verdict::Retry(Retry::NoGap) });
         assert_eq!(admitted.len(), 1);
         // and an admission there clears its record
@@ -392,21 +412,21 @@ mod tests {
     fn budgets_are_kept_per_class_and_only_the_host_admits() {
         let mut a = Admission::default();
         for k in 0..4 {
-            a.submit(0.0, Class::Street, k, 0.0, at(k as f64 * 100.0), None).unwrap();
+            a.submit(0.0, Class::Street, (k, 0.0), (at(k as f64 * 100.0), 0.0), None).unwrap();
         }
-        a.submit(0.0, Class::Aircraft, 9, 0.0, at(1000.0), None).unwrap();
+        a.submit(0.0, Class::Aircraft, (9, 0.0), (at(1000.0), 0.0), None).unwrap();
         let mut b = Budgets::default();
         b.set(Class::Street, Some(2)).set(Class::Aircraft, Some(1));
         let admitted = a.pass(0.0, true, &mut b, |_| Verdict::Admit);
         assert_eq!(admitted.iter().map(|r| r.class).collect::<Vec<_>>(), vec![Class::Street, Class::Street, Class::Aircraft]);
         assert_eq!(a.denied[Denial::AtCapacity as usize], 2);
         assert_eq!(b.room(Class::Street), Some(0));
-        a.submit(0.0, Class::Street, 20, 0.0, at(0.0), None).unwrap();
-        a.submit(0.0, Class::Street, 21, 0.0, at(300.0), None).unwrap();
+        a.submit(0.0, Class::Street, (20, 0.0), (at(0.0), 0.0), None).unwrap();
+        a.submit(0.0, Class::Street, (21, 0.0), (at(300.0), 0.0), None).unwrap();
         assert!(a.pass(0.0, true, &mut street(5), |r| if r.lane == 20 { Verdict::Deny(Denial::NoGround) } else { Verdict::Deny(Denial::NoPath) }).is_empty());
         assert_eq!(a.denied[Denial::NoGround as usize], 1);
         assert_eq!(a.denied[Denial::NoPath as usize], 1);
-        a.submit(5.0, Class::Street, 30, 0.0, at(0.0), None).unwrap();
+        a.submit(5.0, Class::Street, (30, 0.0), (at(0.0), 0.0), None).unwrap();
         assert!(a.pass(5.0, false, &mut street(5), |_| Verdict::Admit).is_empty());
         assert_eq!(a.denied[Denial::NotHost as usize], 1);
         assert!(a.is_empty());
@@ -416,7 +436,7 @@ mod tests {
     #[test]
     fn requests_lapse_and_a_new_network_starts_afresh() {
         let mut a = Admission::default();
-        a.submit(0.0, Class::Street, 1, 0.0, at(0.0), None).unwrap();
+        a.submit(0.0, Class::Street, (1, 0.0), (at(0.0), 0.0), None).unwrap();
         let mut now = 0.0;
         while now <= REQUEST_TTL + BACKOFF_LONG + 1.0 {
             a.pass(now, true, &mut street(5), |_| Verdict::Retry(Retry::Visible));
@@ -424,7 +444,7 @@ mod tests {
         }
         assert!(a.is_empty());
         assert_eq!(a.denied[Denial::Expired as usize], 1);
-        a.submit(now, Class::Street, 2, 0.0, at(0.0), None).unwrap();
+        a.submit(now, Class::Street, (2, 0.0), (at(0.0), 0.0), None).unwrap();
         a.new_network(1);
         assert!(a.is_empty());
         assert!(!a.backing_off(1, now));
@@ -434,11 +454,20 @@ mod tests {
     /// ones admitted before.
     #[test]
     fn a_batch_wakes_in_order_without_overlaps() {
-        let r = |k: u64, x: f64| Request { ticket: k, class: Class::Dormant, lane: 0, s: 0.0, pos: at(x), at: 0.0, dormant: Some(k) };
+        let r = |k: u64, x: f64| Request { ticket: k, class: Class::Dormant, lane: 0, s: 0.0, pos: at(x), heading: 0.0, at: 0.0, dormant: Some(k) };
         let reqs = [r(1, 0.0), r(2, 5.0), r(3, 50.0), r(4, 100.0)];
         let mut b = Budgets::default();
         b.set(Class::Dormant, Some(2));
         let v = decide_batch(&reqs, &mut b, |_| Verdict::Admit);
         assert_eq!(v, vec![Verdict::Admit, Verdict::Retry(Retry::NoGap), Verdict::Admit, Verdict::Deny(Denial::AtCapacity)]);
+    }
+    /// Two put in line on one road in the same pass keep more than a gap apart: the one
+    /// behind would brake hard for the other at once. Side by side on two roads they may.
+    #[test]
+    fn two_admitted_in_line_keep_their_distance() {
+        let r = |k: u64, x: f64, y: f64| Request { ticket: k, class: Class::Street, lane: k as usize, s: 0.0, pos: DVec3::new(x, y, 0.0), heading: 0.0, at: 0.0, dormant: None };
+        let reqs = [r(1, 0.0, 0.0), r(2, 0.0, 30.0), r(3, 10.0, 25.0), r(4, 0.0, 50.0)];
+        let v = decide_batch(&reqs, &mut street(10), |_| Verdict::Admit);
+        assert_eq!(v, vec![Verdict::Admit, Verdict::Retry(Retry::NoGap), Verdict::Admit, Verdict::Admit]);
     }
 }
