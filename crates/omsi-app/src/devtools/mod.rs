@@ -227,6 +227,8 @@ fn key_char(code: KeyCode, shift: bool) -> Option<char> {
 impl App {
     /// Open or close the developer tools (Ctrl+Shift+D).
     pub(crate) fn toggle_devtools(&mut self) {
+        // (a text field of the panel lets the keyboard go either way)
+        self.shell.ui.focus = None;
         if self.devtools.take().is_some() {
             self.shell.clear();
             self.service_msg = Some(("Developer tools closed".into(), 2.0));
@@ -343,7 +345,12 @@ impl App {
                 }
                 overlay::draw(&mut self.shell.ui, &screen, &d.overlays, &parts, &|n| v.var(n));
             }
-            panel::draw(&mut self.shell.ui, d, self.player.as_mut(), size)
+            let out = panel::draw(&mut self.shell.ui, d, self.player.as_mut(), size);
+            // (the text fields are on the variables' page: on another one nothing types)
+            if d.tab != 0 {
+                self.shell.ui.focus = None;
+            }
+            out
         };
         self.shell.finish();
         for r in requests {

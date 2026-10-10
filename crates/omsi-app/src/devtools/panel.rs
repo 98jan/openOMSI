@@ -314,6 +314,22 @@ fn files(ui: &mut Ui, d: &mut DevTools, r: Rect, out: &mut Vec<Request>) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// Every page is drawn without a bus of one's own, and asks nothing of the game.
+    #[test]
+    fn every_page_draws_without_a_bus() {
+        let mut ui = Ui::new();
+        let mut d = DevTools::new(None);
+        let size = Vec2::new(1280.0, 800.0);
+        for tab in 0..TABS.len() {
+            d.tab = tab;
+            ui.begin(size, 1.0, 0.016);
+            assert!(draw(&mut ui, &mut d, None, size).is_empty());
+            ui.finish();
+        }
+    }
+
     #[test]
     fn values_are_shown_whole_or_to_four_places() {
         assert_eq!(super::shown(3.0), "3");

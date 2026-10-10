@@ -239,13 +239,15 @@ pub(crate) fn draw(ui: &mut Ui, screen: &Screen, on: &Overlays, parts: &[Part], 
             if let Some(c) = cabin {
                 for (list, colour, name) in [(&c.pass_positions, SEAT, "seat"), (&c.driver_positions, DRIVER, "driver")] {
                     for (i, s) in list.iter().enumerate() {
+                        // (`height`: the seat's above the floor, 0 for a standing place)
+                        let standing = s.height < 0.05;
                         let foot = Vec3::from(s.pos);
-                        let head = foot + Vec3::Z * s.height.max(0.3);
+                        let head = foot + Vec3::Z * if standing { 1.7 } else { s.height + 0.85 };
                         pen.line(part.at(foot), part.at(head), 2.0, colour);
                         pen.dot(part.at(foot), 3.5, colour);
                         // (the way the seat faces: `[passpos]` rotation, degrees about z)
                         pen.arrow(part, foot + Vec3::Z * 0.05, direction(s.rot, 0.0), 0.4, colour);
-                        let kind = if s.height > 0.8 { "standing" } else { name };
+                        let kind = if standing && name == "seat" { "standing" } else { name };
                         pen.label(part.at(head), &format!("{kind} {i}"), colour);
                     }
                 }
