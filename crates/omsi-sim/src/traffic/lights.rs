@@ -159,9 +159,17 @@ impl TrafficLightController {
                     // rest: the main road stays green round it until a request comes
                     // (Winsenburg's win-4: replayed once, it ran through yellow and red
                     // with nobody waiting and flickered between green and yellow, #1722).
+                    let no_progress = ((to as f64 - p.time as f64).rem_euclid(cycle)).abs() < 1e-6;
                     self.rewound = (!p.if_request && to > 1e-6 && to < p.time - 1e-6).then_some(k);
                     self.time = (to as f64).rem_euclid(cycle);
                     self.passed.clear();
+                    // A jump at the cycle boundary can target zero (for example TCSP17's
+                    // `[traffic_light_jump] 4 84 1 0`). At cycle position zero that is a
+                    // no-op: without remembering this event, it fires again at distance
+                    // zero every frame and the whole controller stays frozen at zero.
+                    if no_progress {
+                        self.passed.push(k);
+                    }
                     if left <= 0.0 {
                         return;
                     }
