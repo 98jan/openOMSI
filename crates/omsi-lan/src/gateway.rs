@@ -18,15 +18,22 @@ struct WsPath {
     _client: Option<omsi_net::ws::WsClient>,
     /// The WebSocket address joined through (`wss://…/ws`).
     url: Option<String>,
+    /// The client's reconnections last seen by `ws_came_back`.
+    seen: usize,
 }
 
+/// The session's way in from the internet: the host's gateway and tunnel (a server socket
+/// and a cloudflared process) or the joining game's WebSocket. Process-wide like the
+/// sockets and the process it holds; closed with the session (`close_public_gateway`).
 static WS_PATH: std::sync::Mutex<Option<WsPath>> = std::sync::Mutex::new(None);
 
 /// Whether the joining game's WebSocket was made again since this was last asked.
+/// (Counted with the connection: a later session's starts from none.)
 pub fn ws_came_back() -> bool {
-    static SEEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let n = WS_PATH.lock().ok().and_then(|w| w.as_ref()?._client.as_ref().map(|c| c.reconnects())).unwrap_or(0);
-    n != SEEN.swap(n, std::sync::atomic::Ordering::Relaxed)
+    let Ok(mut w) = WS_PATH.lock() else { return false };
+    let Some(w) = w.as_mut() else { return false };
+    let n = w._client.as_ref().map(|c| c.reconnects()).unwrap_or(0);
+    n != std::mem::replace(&mut w.seen, n)
 }
 
 /// Shut the gateway and the tunnel (its cloudflared process) down: at the end of the game.
@@ -57,7 +64,7 @@ pub fn open_public_gateway(session: &LanSession, info: omsi_net::ws::ServerInfo,
         }
     };
     if let Ok(mut w) = WS_PATH.lock() {
-        *w = Some(WsPath { gateway: Some(gateway), tunnel: None, _client: None, url: None });
+        *w = Some(WsPath { gateway: Some(gateway), tunnel: None, _client: None, url: None, seen: 0 });
     }
     if !want_tunnel || omsi_cfg::flags::OMSI_NO_TUNNEL.is_set() || omsi_cfg::flags::OMSI_NO_BRIDGE.is_set() {
         return;
@@ -325,7 +332,7 @@ pub fn ws_join_target(url: &str) -> Result<String, String> {
     let c = omsi_net::ws::WsClient::connect(url)?;
     let local = c.local;
     if let Ok(mut w) = WS_PATH.lock() {
-        *w = Some(WsPath { gateway: None, tunnel: None, _client: Some(c), url: Some(url.to_string()) });
+        *w = Some(WsPath { gateway: None, tunnel: None, _client: Some(c), url: Some(url.to_string()), seen: 0 });
     }
     Ok(local.to_string())
 }
