@@ -99,7 +99,7 @@ pub fn sync_vehicle_part(
 /// Resolve a vehicle `[matl_freetex]` name. OMSI add-ons often write paths such as
 /// `..\\Texture\\mb_pmon\\warning.bmp`: if the normal lookup misses, retry the part
 /// below the `Texture` component against the vehicle's texture search directories.
-pub(super) fn find_vehicle_freetex(name: &str, dirs: &[&Path]) -> Option<PathBuf> {
+pub(crate) fn find_vehicle_freetex(name: &str, dirs: &[&Path]) -> Option<PathBuf> {
     if let Some(path) = omsi_texture::find_texture(name, dirs) {
         return Some(path);
     }
@@ -467,4 +467,43 @@ pub fn sync_vehicle_textures(
         }
     }
     renderer.rebind_textures(scene, &rebound);
+}
+
+#[cfg(test)]
+mod freetex_key_tests {
+    use super::freetex_key_is;
+
+    /// The key as `sync_materials` makes it.
+    fn key(name: &str, mask: Option<u32>) -> String {
+        match mask {
+            Some(m) => format!("{}#{m}", name.to_ascii_lowercase()),
+            None => name.to_ascii_lowercase(),
+        }
+    }
+
+    #[test]
+    fn matches_the_key_made_of_the_same_name() {
+        for name in ["", "Anz_Linie.BMP", "x#0", "Ä_Ziel", "a/b\\c"] {
+            for mask in [None, Some(0), Some(3), Some(10), Some(u32::MAX)] {
+                assert!(freetex_key_is(Some(&key(name, mask)), name, mask), "{name:?} {mask:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn differs_from_any_other_key() {
+        let names = ["", "x", "X#0", "x#0", "xy", "y", "Ä", "ä"];
+        let masks = [None, Some(0), Some(3), Some(30)];
+        for a in names {
+            for ma in masks {
+                for b in names {
+                    for mb in masks {
+                        let same = key(a, ma) == key(b, mb);
+                        assert_eq!(freetex_key_is(Some(&key(a, ma)), b, mb), same, "{a:?} {ma:?} / {b:?} {mb:?}");
+                    }
+                }
+            }
+        }
+        assert!(!freetex_key_is(None, "", None));
+    }
 }
