@@ -17,5 +17,4 @@ fn 491 crates/omsi-model::handle_keyword crates/omsi-model/src/lib.rs
 fn 366 crates/omsi-script::aachen_ibox_route_pad crates/omsi-script/src/compat.rs
 fn 441 crates/omsi-sim::advance crates/omsi-sim/src/human/motion.rs
 fn 437 crates/omsi-sim::bones crates/omsi-sim/src/human/bones.rs
-fn 496 crates/omsi-sim::step_slice crates/omsi-sim/src/rigid/body.rs
 fn 454 crates/omsi-xr::render crates/omsi-xr/src/openxr.rs
