@@ -426,6 +426,9 @@ pub(crate) struct ViewHistory {
     /// The window's main-pass bundles as last recorded, with what they were made of (see
     /// `record_main_bundles`).
     pub(crate) main_bundles: std::cell::RefCell<Option<passes::batch::MainBundles>>,
+    /// The window's last main pass: bundles recorded anew and bundles kept from the frame
+    /// before (the tests check the reuse by it).
+    pub(crate) bundle_stats: std::cell::Cell<(usize, usize)>,
     /// Instances the main view drew last frame (a bit each): they keep being drawn a little
     /// past the size and distance limits, so that an object right at a limit does not pop
     /// in and out as the camera sways.

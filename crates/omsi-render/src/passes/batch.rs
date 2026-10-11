@@ -561,23 +561,32 @@ impl Renderer {
                             }
                         }
                         if reuse.iter().all(Option::is_some) && c.parts.len() == chunks.len() {
+                            self.history.bundle_stats.set((0, reuse.len()));
                             return reuse.into_iter().flatten().collect();
                         }
                     }
                 }
             }
+            let kept_parts = reuse.iter().filter(|b| b.is_some()).count();
+            if f.with_overlays {
+                self.history.bundle_stats.set((chunks.len() - kept_parts, kept_parts));
+            }
             let bundles = record_bundles(&self.device, self.encoding_pool.as_ref(), scene, &chunks, &reuse, pp, camera, format, self.options.msaa);
-            // (not when a part could not be recorded: it would be left out frame after frame)
+            // (not when a part could not be recorded: it would be left out frame after frame;
+            // and a mirror's or an eye's picture leaves the window's alone - it cleared them,
+            // so with the mirrors on the window never kept a bundle)
             let whole = bundles.iter().all(Option::is_some);
-            *self.history.main_bundles.borrow_mut() = (kept && whole).then(|| MainBundles {
-                mode,
-                camera: camera.clone(),
-                parts: chunks
-                    .iter()
-                    .zip(&bundles)
-                    .map(|(chunk, b)| (chunk.to_vec(), batch_resources(scene, chunk), b.clone().expect("whole")))
-                    .collect(),
-            });
+            if kept {
+                *self.history.main_bundles.borrow_mut() = whole.then(|| MainBundles {
+                    mode,
+                    camera: camera.clone(),
+                    parts: chunks
+                        .iter()
+                        .zip(&bundles)
+                        .map(|(chunk, b)| (chunk.to_vec(), batch_resources(scene, chunk), b.clone().expect("whole")))
+                        .collect(),
+                });
+            }
             bundles.into_iter().flatten().collect()
         } else {
             Vec::new()

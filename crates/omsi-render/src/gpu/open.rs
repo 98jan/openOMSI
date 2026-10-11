@@ -588,6 +588,7 @@ impl Renderer {
                 triple_culling: Default::default(),
                 flicker: std::cell::RefCell::new(HashMap::new()),
                 main_bundles: Default::default(),
+                bundle_stats: Default::default(),
                 cull_drawn: std::cell::RefCell::new(Vec::new()),
                 object_sizes: Default::default(),
                 object_sizes_scratch: Default::default(),
