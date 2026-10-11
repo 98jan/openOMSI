@@ -328,20 +328,32 @@ pub(crate) fn bundle_parts(pool: Option<&rayon::ThreadPool>, n: usize) -> usize 
     if parts == 1 { 1 } else { n.div_ceil(n.div_ceil(parts)) }
 }
 
-/// The main pass's batches as render bundles, recorded on up to four threads. Checking
-/// every draw is the costliest CPU step of a frame; a bundle is checked when it is made,
-/// and the pass that runs it only replays it. The bundles keep the batches' order (the
-/// blended ones are far to near).
+/// The batches each bundle of `record_bundles` is made of, in order.
+pub(crate) fn bundle_chunks<'b>(pool: Option<&rayon::ThreadPool>, batches: &'b [Batch]) -> Vec<&'b [Batch]> {
+    let parts = bundle_parts(pool, batches.len());
+    if parts == 1 {
+        return vec![batches];
+    }
+    batches.chunks(batches.len().div_ceil(parts)).collect()
+}
+
+/// The main pass's batches as render bundles, one per chunk of `bundle_chunks`, recorded on
+/// up to four threads. Checking every draw is the costliest CPU step of a frame; a bundle is
+/// checked when it is made, and the pass that runs it only replays it. The bundles keep the
+/// batches' order (the blended ones are far to near). A chunk with a bundle in `reuse` (the
+/// same batches recorded before) is not recorded again; None where a part could not be
+/// recorded.
 pub(crate) fn record_bundles(
     device: &wgpu::Device,
     pool: Option<&rayon::ThreadPool>,
     scene: &Scene,
-    batches: &[Batch],
+    chunks: &[&[Batch]],
+    reuse: &[Option<wgpu::RenderBundle>],
     pp: &PassPipelines,
     camera: &wgpu::BindGroup,
     format: wgpu::TextureFormat,
     samples: u32,
-) -> Vec<wgpu::RenderBundle> {
+) -> Vec<Option<wgpu::RenderBundle>> {
     let color_formats = [Some(format), Some(MASK_FORMAT), Some(GBUF_FORMAT), Some(AUX_FORMAT)];
     let record = |chunk: &[Batch]| -> wgpu::RenderBundle {
         let mut bundle =
@@ -378,12 +390,11 @@ pub(crate) fn record_bundles(
             }
         }
     };
-    let parts = bundle_parts(pool, batches.len());
-    if parts == 1 {
-        return record(batches).into_iter().collect();
+    let part = |k: usize| reuse.get(k).cloned().flatten().or_else(|| record(chunks[k]));
+    if chunks.len() == 1 {
+        return vec![part(0)];
     }
-    let chunks: Vec<&[Batch]> = batches.chunks(batches.len().div_ceil(parts)).collect();
-    run_parts(pool, chunks.len(), |k| record(chunks[k])).into_iter().flatten().collect()
+    run_parts(pool, chunks.len(), part)
 }
 
 /// The sun's and the lamps' shadow maps, their pipelines, and the cascades as last drawn.
