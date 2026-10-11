@@ -635,7 +635,7 @@ impl World {
             };
             let curve = SplineCurve::from_map(s, origin2);
             if omsi_cfg::flags::OMSI_CHECK_SPLINES.is_set() {
-                SPLINE_ENDS.lock().insert(s.id, (curve.point_at(0.0), curve.end_point(), s.prev_id, s.next_id, s.file.clone()));
+                self.spline_ends.lock().insert(s.id, (curve.point_at(0.0), curve.end_point(), s.prev_id, s.next_id, s.file.clone()));
             }
             // editor-only splines (invisible streets, flight paths) still carry lanes
             let mut new_lanes = spline_lanes(&st.def, s, &curve, (tx, ty));
@@ -1277,9 +1277,9 @@ impl World {
     }
 }
 
-/// OMSI_CHECK_SPLINES: every spline's two ends, its neighbours in the chain and its file.
-/// (Global: `offscreen` reads it to report chained ends that differ in height.)
-pub static SPLINE_ENDS: std::sync::LazyLock<Mutex<HashMap<i64, (DVec3, DVec3, i64, i64, String)>>> = std::sync::LazyLock::new(Default::default);
+/// OMSI_CHECK_SPLINES: every spline's two ends, its neighbours in the chain and its file
+/// (`World::spline_ends`; `offscreen` reports chained ends that differ in height).
+pub type SplineEnds = HashMap<i64, (DVec3, DVec3, i64, i64, String)>;
 
 /// Metres between the points the ambience keeps along a lane, a track, a wire or a tunnel.
 const SOUND_LINE_STEP: f32 = 10.0;

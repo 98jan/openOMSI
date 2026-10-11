@@ -174,6 +174,8 @@ pub struct World {
     pub(crate) cookie_fades: Mutex<crate::lights::CookieFades>,
     /// What a season's second look costs, for the log (see `season_looks`).
     pub(crate) season_extra: Mutex<crate::season_looks::SeasonExtra>,
+    /// OMSI_CHECK_SPLINES: the ends of the splines staged (see `stage::SplineEnds`).
+    pub spline_ends: Mutex<crate::stage::SplineEnds>,
     /// Every tile file of the map read once: splines for the spline attachment rows,
     /// objects for entry points and stops of tiles that are not loaded.
     pub(super) index: Mutex<Option<Arc<MapIndex>>>,
