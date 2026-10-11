@@ -1,9 +1,16 @@
 //! openOMSI's multiplayer on top of the transport (`omsi-net`): what of a session needs no
-//! game world - the host's mods for the players who join (`mods`) and the voice chat's link
-//! to the TeamSpeak plugin (`voice`). The game's side (the remote buses drawn and heard, the
-//! shared world, the chat on the HUD) stays in the app, which hands this crate plain values.
+//! game world - the host's mods for the players who join (`mods`), the voice chat's link
+//! to the TeamSpeak plugin (`voice`), the WebSocket gateway, tunnel and status page
+//! (`gateway`), what of a vehicle goes over the network beyond its pose (`sync`), where a
+//! joining bus may stand (`spawn`) and the session's status file for the launcher. The
+//! game's side (the remote buses drawn and heard, the shared world, the chat on the HUD)
+//! stays in the app, which hands this crate plain values.
 
+pub mod gateway;
+pub mod mirror;
 pub mod mods;
+pub mod spawn;
+pub mod sync;
 pub mod voice;
 
 use std::path::PathBuf;
@@ -17,3 +24,29 @@ pub fn data_dir() -> Option<PathBuf> {
 /// The line the launcher looks for in the game's log when the game is over: the server sent
 /// the player away (kick, ban) or turned it away at the door, with the server's message.
 pub const LEFT_SERVER: &str = "LAN: disconnected from the server: ";
+
+/// The status file of this game process.
+pub fn status_path() -> Option<PathBuf> {
+    let id = omsi_cfg::flags::OMSI_INSTANCE
+        .var()
+        .map(str::to_string)
+        .filter(|s| {
+            !s.is_empty()
+                && s.len() <= 64
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
+        .unwrap_or_else(|| std::process::id().to_string());
+    Some(data_dir()?.join("lan").join(format!("{id}.json")))
+}
+
+/// Removes the status file when the game ends.
+pub struct StatusFileGuard;
+
+impl Drop for StatusFileGuard {
+    fn drop(&mut self) {
+        if let Some(p) = status_path() {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}

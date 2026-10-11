@@ -8,6 +8,9 @@ description = "openOMSI's multiplayer on top of omsi-net: the host's mods for jo
 [dependencies]
 omsi-cfg = { path = "../omsi-cfg" }
 omsi-net = { path = "../omsi-net" }
+omsi-sim = { path = "../omsi-sim" }
+omsi-vehicle = { path = "../omsi-vehicle" }
+omsi-script = { path = "../omsi-script" }
 glam.workspace = true
 hashbrown.workspace = true
 log.workspace = true
