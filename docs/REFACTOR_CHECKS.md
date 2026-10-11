@@ -99,3 +99,15 @@ grows more than 5 % past its size in `scripts/size-budget.txt`, or a new one pas
 another file of its crate keeps its allowance. After a split, `scripts/size-budget.sh
 --update` lowers the recorded sizes; it never raises them. `--list` shows every file with
 its longest function.
+
+## Crate layers
+
+`scripts/arch-guard.sh` (run by the pull request checks) keeps the crates in their layers:
+the file formats at the bottom, then the simulation, the presentation (renderer, audio, UI),
+the app's subsystems, and `omsi-app` on top as the glue. `scripts/arch-rules.txt` lists what
+must not depend on what (`forbid omsi-sim omsi-render`: the simulation never knows how it is
+drawn) and the edges that still break a rule and are to be removed (`allow ...`); once such an
+edge is gone, the check asks for its `allow` line to be deleted, so it cannot come back.
+The same file caps the lines of Rust in `crates/omsi-app` (`app-lines`, plus 2 %): a new
+subsystem gets a crate of its own instead of growing the app. `--update` lowers the cap after
+code has moved out; `--graph` prints the dependency graph.

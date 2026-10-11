@@ -1,0 +1,58 @@
+# Architecture rules, checked by scripts/arch-guard.sh (see there for the syntax).
+# The layers, bottom up: omsi-cfg; the file formats and content (o3d, texture, model, map, scenery,
+# vehicle, timetable, content, script, geometry); the simulation (omsi-sim); presentation
+# (omsi-render, omsi-audio, omsi-ui); network and plugins (omsi-net, omsi-plugin); the app's
+# subsystems (launcher, input, multiplayer, platform ...); omsi-app on top, gluing them together.
+
+# Nothing depends on the app: it is the top of the graph.
+forbid * omsi-app
+
+# The simulation knows nothing of how it is shown or heard, nor of the network or the launcher.
+forbid omsi-sim omsi-render
+forbid omsi-sim omsi-ui
+forbid omsi-sim omsi-audio
+forbid omsi-sim omsi-texture
+forbid omsi-sim omsi-net
+forbid omsi-sim omsi-plugin
+forbid omsi-sim omsi-launcher-*
+# (edge still to be removed: the script textures of vehicles and displays)
+allow omsi-sim omsi-texture
+
+# The renderer draws what it is given: no simulation, scripts, sound or network in it.
+forbid omsi-render omsi-sim
+forbid omsi-render omsi-script
+forbid omsi-render omsi-audio
+forbid omsi-render omsi-net
+forbid omsi-render omsi-vehicle
+
+# File formats and content stay below the simulation and presentation.
+forbid omsi-cfg omsi-*
+forbid omsi-o3d omsi-sim
+forbid omsi-o3d omsi-render
+forbid omsi-texture omsi-sim
+forbid omsi-texture omsi-render
+forbid omsi-model omsi-sim
+forbid omsi-model omsi-render
+forbid omsi-map omsi-sim
+forbid omsi-map omsi-render
+forbid omsi-scenery omsi-sim
+forbid omsi-scenery omsi-render
+forbid omsi-vehicle omsi-sim
+forbid omsi-vehicle omsi-render
+forbid omsi-timetable omsi-sim
+forbid omsi-timetable omsi-render
+forbid omsi-content omsi-sim
+forbid omsi-content omsi-render
+forbid omsi-script omsi-sim
+forbid omsi-script omsi-render
+forbid omsi-geometry omsi-sim
+forbid omsi-geometry omsi-render
+
+# Transport and plugin hosting do not know the game.
+forbid omsi-net omsi-sim
+forbid omsi-net omsi-render
+forbid omsi-plugin omsi-sim
+forbid omsi-plugin omsi-render
+
+# Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
+app-lines 128041
