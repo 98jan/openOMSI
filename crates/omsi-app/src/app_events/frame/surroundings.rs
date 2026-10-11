@@ -48,7 +48,6 @@ impl App {
     /// The lights (the lamps' cones, the light maps, every light that shines), the rain and
     /// the snow, the cabin air, the tyres' spray and the sounds of the street.
     pub(super) fn frame_lights(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
-        let __t = Instant::now();
         // the lamps' cones in fog and falling rain or snow, and new light pictures
         if let Some(wt) = &self.session.weather {
             lights::set_cone_strength(wt.fog.0, precip_of(wt).1, daylight.night);
@@ -225,12 +224,10 @@ impl App {
                 }
             }
         }
-        *self.perf.profile.entry("lights+rain").or_default() += __t.elapsed().as_secs_f64();
     }
 
     /// The departure boards, the map's route arrows and the scenery's scripts.
     pub(super) fn frame_scripted(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
-        let __t = Instant::now();
         if let (Some(w), Some(r), Some(scene), Some(cam)) = (
             self.world.as_ref(),
             self.renderer.as_ref(),
@@ -266,6 +263,5 @@ impl App {
                 self.cam.in_cab,
             );
         }
-        *self.perf.profile.entry("scripted").or_default() += __t.elapsed().as_secs_f64();
     }
 }

@@ -294,6 +294,7 @@ impl<'a> Offscreen<'a> {
             spray,
             real_time,
             recorder,
+            profile: Default::default(),
         })
     }
 }

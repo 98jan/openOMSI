@@ -92,6 +92,7 @@ impl App {
     pub(crate) fn vr_active(&self) -> bool { false }
 
     pub(crate) fn resumed_impl(&mut self, event_loop: &ActiveEventLoop) {
+        crate::frame_stages::log_order();
         if let Some(window) = self.window.clone() {
             // back from the background (a phone): the window's surface is made again (on the
             // device whose renderer is still being built, while it is)

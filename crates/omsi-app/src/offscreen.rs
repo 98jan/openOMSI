@@ -11,7 +11,12 @@ mod picture;
 mod record;
 mod report;
 mod setup;
+mod stages;
 mod step;
+
+pub(crate) use stages::OFFSCREEN_STEP;
+#[cfg(test)]
+pub(crate) use stages::OffscreenStage;
 
 /// What an offscreen run keeps from its start to its picture (the names are the run's
 /// locals when it was one function).
@@ -80,6 +85,9 @@ struct Offscreen<'a> {
     real_time: RealTime,
     /// `OMSI_RECORD`: the film being written (see `record`).
     recorder: Option<record::Recorder>,
+    /// What each stage of the steps took in all (s, see `frame_stages`; logged with
+    /// OMSI_PROFILE).
+    profile: std::collections::BTreeMap<&'static str, f64>,
 }
 
 pub(crate) fn run_offscreen(
@@ -88,17 +96,31 @@ pub(crate) fn run_offscreen(
     lan_off: Option<omsi_net::LanSession>,
     remotes_off: lan::LanGame,
 ) -> Result<()> {
+    crate::frame_stages::log_order();
     let mut run = Offscreen::setup(args, out, lan_off, remotes_off)?;
+    let mut steps = 0;
     for i in 0..run.total_frames {
+        steps += 1;
         if !run.step(i)? {
             break;
         }
     }
     run.finish_recording()?;
+    run.log_profile(steps);
     run.finish()
 }
 
 impl Offscreen<'_> {
+    /// OMSI_PROFILE: what each stage took per step, on average.
+    fn log_profile(&self, steps: usize) {
+        if !omsi_cfg::flags::OMSI_PROFILE.is_set() {
+            return;
+        }
+        let steps = steps.max(1) as f64;
+        let list: Vec<String> = self.profile.iter().map(|(k, v)| format!("{k} {:.2}", v / steps * 1000.0)).collect();
+        log::info!("profile: offscreen stages per step (ms): {}", list.join(", "));
+    }
+
     /// After the steps: the run's reports, the checks asked for, the picture.
     fn finish(mut self) -> Result<()> {
         let args = self.args;

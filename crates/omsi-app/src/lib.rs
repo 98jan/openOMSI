@@ -90,6 +90,7 @@ use omsi_input::{controllers, ffb_calibration, gamepad_profile, hpattern};
 mod cli;
 mod diagnostics;
 mod perf_report;
+mod frame_stages;
 mod support_bundle;
 mod duty_start;
 mod input_script;
