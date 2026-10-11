@@ -4,6 +4,7 @@
 //! Everything slow runs on a thread of its own and comes back as a [`Msg`]; the window
 //! drains them at the start of each frame, so it never waits.
 
+use crate::host::host;
 use omsi_launcher_lib as core;
 use serde::{Deserialize, Serialize};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -195,7 +196,7 @@ impl Choice {
         }
         // a season chosen: the date in its phase, as the game will have it (older launchers
         // kept the day of the month; the date may have followed the computer's since)
-        if let Some(d) = crate::season_phase::launcher_date(&c.season, &c.phase, &c.date, &c.map, true) {
+        if let Some(d) = host().season_date(&c.season, &c.phase, &c.date, &c.map, true) {
             c.date = d;
         }
         c
@@ -287,8 +288,8 @@ impl State {
         let (tx, rx) = channel();
         let config = core::load_config();
         let settings = core::get_settings().unwrap_or_else(|_| core::settings_from_text(None));
-        crate::ui_language(settings.get("language").and_then(|x| x.as_str()).unwrap_or("ENG"));
-        crate::mt::enable(settings.get("machine_translation").and_then(|x| x.as_bool()).unwrap_or(false));
+        host().ui_language(settings.get("language").and_then(|x| x.as_str()).unwrap_or("ENG"));
+        host().mt_enable(settings.get("machine_translation").and_then(|x| x.as_bool()).unwrap_or(false));
         let keybindings = core::get_keybindings().unwrap_or(serde_json::Value::Null);
         let mut choice = Choice::load();
         // (at the real time, a trip picked in an earlier session has most likely left)
@@ -358,7 +359,7 @@ impl State {
         // launcher learns of it from the previous run's log)
         #[cfg(target_os = "android")]
         {
-            s.crash = crate::android::previous_run_crash();
+            s.crash = host().previous_run_crash();
         }
         s
     }
@@ -686,7 +687,7 @@ impl State {
             profile: Some(self.config.profile.clone()).filter(|p| !p.is_empty()),
             lan: Some(lan),
             lan_name: None,
-            season: Some(c.season.clone()).filter(|s| s != "auto").map(|s| crate::season_phase::launcher_choice(&s, &c.phase).map(|x| x.word()).unwrap_or(s)),
+            season: Some(c.season.clone()).filter(|s| s != "auto").map(|s| host().season_word(&s, &c.phase).unwrap_or(s)),
             tutorial: None,
             situation: None,
         }
@@ -874,8 +875,8 @@ impl State {
                 if !self.content_first {
                     return;
                 }
-                crate::mt::protect(maps.iter().flat_map(|m| [m.name.as_str(), m.friendly.as_str()]));
-                crate::mt::protect(weathers.iter().map(|w| w.name.as_str()));
+                host().mt_protect(&mut maps.iter().flat_map(|m| [m.name.as_str(), m.friendly.as_str()]));
+                host().mt_protect(&mut weathers.iter().map(|w| w.name.as_str()));
                 self.maps = maps;
                 self.weathers = weathers;
                 self.pick_map();
@@ -886,15 +887,15 @@ impl State {
                 if !self.content_first {
                     return;
                 }
-                crate::mt::protect(batch.iter().flat_map(|v| [v.name.as_str(), v.manufacturer.as_str(), v.type_name.as_str()]).chain(batch.iter().flat_map(|v| v.paints.iter().map(|p| p.as_str()))));
+                host().mt_protect(&mut batch.iter().flat_map(|v| [v.name.as_str(), v.manufacturer.as_str(), v.type_name.as_str()]).chain(batch.iter().flat_map(|v| v.paints.iter().map(|p| p.as_str()))));
                 self.vehicles.extend(batch);
                 self.set_status(format!("{} maps, {} buses - reading the vehicle folders: {done} of {total}", self.maps.len(), self.vehicles.len()), false);
             }
             Msg::Content(Ok((maps, vehicles, weathers))) => {
                 // (names of things, not the interface: never machine-translated)
-                crate::mt::protect(maps.iter().flat_map(|m| [m.name.as_str(), m.friendly.as_str()]));
-                crate::mt::protect(vehicles.iter().flat_map(|v| [v.name.as_str(), v.manufacturer.as_str(), v.type_name.as_str()]).chain(vehicles.iter().flat_map(|v| v.paints.iter().map(|p| p.as_str()))));
-                crate::mt::protect(weathers.iter().map(|w| w.name.as_str()));
+                host().mt_protect(&mut maps.iter().flat_map(|m| [m.name.as_str(), m.friendly.as_str()]));
+                host().mt_protect(&mut vehicles.iter().flat_map(|v| [v.name.as_str(), v.manufacturer.as_str(), v.type_name.as_str()]).chain(vehicles.iter().flat_map(|v| v.paints.iter().map(|p| p.as_str()))));
+                host().mt_protect(&mut weathers.iter().map(|w| w.name.as_str()));
                 let known: std::collections::HashSet<String> = self.maps.iter().map(|m| m.file.clone()).chain(self.vehicles.iter().map(|v| v.file.clone())).chain(self.weathers.iter().map(|w| w.file.clone())).collect();
                 if !known.is_empty() {
                     for f in maps.iter().map(|m| &m.file).chain(vehicles.iter().map(|v| &v.file)).chain(weathers.iter().map(|w| &w.file)) {
@@ -937,7 +938,7 @@ impl State {
             }
             Msg::Lines { map, date, lines } => {
                 if let Ok(ls) = lines.as_ref() {
-                    crate::mt::protect(ls.iter().flat_map(|l| l.termini.iter().map(|t| t.as_str()).chain([l.name.as_str()])).chain(ls.iter().flat_map(|l| l.tours.iter().map(|t| t.number.as_str()))));
+                    host().mt_protect(&mut ls.iter().flat_map(|l| l.termini.iter().map(|t| t.as_str()).chain([l.name.as_str()])).chain(ls.iter().flat_map(|l| l.tours.iter().map(|t| t.number.as_str()))));
                 }
                 if (map, date) != self.lines_for {
                     return;
@@ -1141,7 +1142,7 @@ impl State {
         // (its folder opened, for the player to look inside before attaching it)
         if !core::IN_PROCESS_GAMES {
             if let Some(dir) = path.parent() {
-                crate::updater::open_url(&dir.to_string_lossy());
+                omsi_platform::updater::open_url(&dir.to_string_lossy());
             }
         }
     }
@@ -1352,8 +1353,8 @@ pub fn disconnect_of(log: &std::path::Path) -> Option<String> {
     let text = String::from_utf8_lossy(&text[text.len().saturating_sub(64 * 1024)..]).to_string();
     let all: Vec<&str> = text.lines().collect();
     let run = &all[all.iter().rposition(|l| l.contains("starting the game:")).unwrap_or(0)..];
-    let line = run.iter().rev().find(|l| l.contains(crate::lan::LEFT_SERVER))?;
-    let why = line.split_once(crate::lan::LEFT_SERVER)?.1.trim();
+    let line = run.iter().rev().find(|l| l.contains(omsi_lan::LEFT_SERVER))?;
+    let why = line.split_once(omsi_lan::LEFT_SERVER)?.1.trim();
     Some(if why.is_empty() { "sent away by the host".to_string() } else { why.chars().take(300).collect() })
 }
 
@@ -1420,7 +1421,7 @@ mod disconnect_tests {
         let dir = std::env::temp_dir().join(format!("openomsi-disc-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("game.log");
-        let left = crate::lan::LEFT_SERVER;
+        let left = omsi_lan::LEFT_SERVER;
         std::fs::write(&p, format!("[x INFO a] starting the game: one\n[x WARN openomsi_game::lan] {left}old\n[x INFO a] starting the game: two\n[x WARN openomsi_game::lan] {left}Expulsé : conduite dangereuse\n[x INFO a] game ends\n")).unwrap();
         assert_eq!(super::disconnect_of(&p).as_deref(), Some("Expulsé : conduite dangereuse"));
         // a run that ended in any other way: nothing

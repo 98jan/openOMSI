@@ -1,5 +1,5 @@
 use super::*;
-use crate::updater::Status;
+use omsi_platform::updater::Status;
 
 /// Every clickable thing of the settings page by the tab it is on (switches are named
 /// `set-<key>`). Taken from the page as it was before the tabs: nothing may go missing.
@@ -143,7 +143,8 @@ fn stacked_graphics_tab_shows_and_saves_the_cloud_quality() {
     assert!(ui.drawn.contains_key(&id_of("s-cloud-quality")));
     s["cloud_quality"] = json!("low");
     let saved = core::settings_to_text(&s, None);
-    assert_eq!(crate::settings::Settings::from_text(&saved).cloud_quality, "low");
+    // (that the game reads it so: omsi-app's launcher tests)
+    assert_eq!(core::settings_from_text(Some(&saved))["cloud_quality"], json!("low"));
 }
 
 #[test]
@@ -180,8 +181,7 @@ fn smooth_mouse_steering_switches_off_and_is_saved() {
     let saved = core::settings_to_text(&s, None);
     assert!(saved.contains("mouse_smooth=0\n"), "{saved}");
     assert_eq!(core::settings_from_text(Some(&saved))["mouse_smooth"], json!(false));
-    assert!(!crate::settings::Settings::from_text(&saved).mouse_smooth);
-    assert!(crate::settings::Settings::from_text("").mouse_smooth);
+    // (that the game reads it so: omsi-app's launcher tests)
 }
 
 #[test]

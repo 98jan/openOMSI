@@ -1,10 +1,10 @@
-//! The launcher's side of the updates (see `crate::updater`): the check when it starts,
+//! The launcher's side of the updates (see `omsi_platform::updater`): the check when it starts,
 //! the question, the progress, and the restart.
 
 use super::theme::*;
 use super::ui::ButtonKind;
 use super::Launcher;
-use crate::updater::{self, Status};
+use omsi_platform::updater::{self, Status};
 use glam::Vec2;
 use omsi_ui::paint::Align;
 use omsi_ui::{Rect, Weight};

@@ -174,8 +174,8 @@ fn time_text(l: &Launcher) -> String {
     let weather = match l.state.choice.weather.strip_prefix("metar:") {
         Some(c) => format!("live {c}"),
         None if l.state.choice.weather == "cycle" => "weather cycle".into(),
-        None if crate::weather_setup::custom_weather(Some(&l.state.choice.weather)).is_some() => {
-            let c=crate::weather_setup::custom_weather(Some(&l.state.choice.weather)).unwrap();
+        None if omsi_content::weather_choice::custom_weather(Some(&l.state.choice.weather)).is_some() => {
+            let c=omsi_content::weather_choice::custom_weather(Some(&l.state.choice.weather)).unwrap();
             format!("custom | {:.0}°C | {:.0}% RH",c.temp_c,c.humidity)
         },
         None => l.state.weathers.iter().find(|w| w.file == l.state.choice.weather).map(|w| w.name.clone()).unwrap_or_else(|| "map weather".into()),
@@ -867,7 +867,7 @@ fn time_sheet(l: &mut Launcher, r: Rect) -> bool {
         return done;
     }
 
-    if let Some(mut custom) = crate::weather_setup::custom_weather(Some(&l.state.choice.weather)) {
+    if let Some(mut custom) = omsi_content::weather_choice::custom_weather(Some(&l.state.choice.weather)) {
         let mut changed = false;
         let mut back = false;
         l.ui.scroll_area("ps-custom-weather", right, &mut |ui, v| {
@@ -887,14 +887,14 @@ fn time_sheet(l: &mut Launcher, r: Rect) -> bool {
             changed |= ui.slider("ps-custom-temp", Rect::new(v.x, yy, v.w - 8.0, 40.0), &mut custom.temp_c, -30.0, 45.0, 1.0, "Temperature", &|x| format!("{x:.0} °C"));
             yy += 46.0;
             let t = custom.temp_c;
-            changed |= ui.slider("ps-custom-hum", Rect::new(v.x, yy, v.w - 8.0, 40.0), &mut custom.humidity, 0.0, 100.0, 1.0, "Humidity", &|x| format!("{x:.0} % | dew {:.0} °C", crate::weather_setup::dew_point_c(t, x)));
+            changed |= ui.slider("ps-custom-hum", Rect::new(v.x, yy, v.w - 8.0, 40.0), &mut custom.humidity, 0.0, 100.0, 1.0, "Humidity", &|x| format!("{x:.0} % | dew {:.0} °C", omsi_content::weather_choice::dew_point_c(t, x)));
             yy += 50.0;
 
             changed |= ui.slider("ps-custom-cloud", Rect::new(v.x, yy, v.w - 8.0, 40.0), &mut custom.cloud_cover, 0.0, 1.0, 0.01, "Cloud cover", &|x| if x <= 0.0 { omsi_ui::tr("Clear sky").into_owned() } else { format!("{:.0} %", x * 100.0) });
             yy += 50.0;
 
             ui.label(Rect::new(v.x, yy, 120.0, 38.0), "Precipitation");
-            let precip_labels: Vec<String> = crate::weather_setup::CUSTOM_PRECIP.iter().map(|x| (*x).to_string()).collect();
+            let precip_labels: Vec<String> = omsi_content::weather_choice::CUSTOM_PRECIP.iter().map(|x| (*x).to_string()).collect();
             let mut precip = custom.precip.clamp(0, 2) as usize;
             if ui.select("ps-custom-precip", Rect::new(v.x + 122.0, yy, v.w - 130.0, 38.0), &mut precip, &precip_labels) {
                 custom.precip = precip as i32;
@@ -934,7 +934,7 @@ fn time_sheet(l: &mut Launcher, r: Rect) -> bool {
 
     if let Some(code) = l.state.choice.weather.strip_prefix("metar:").map(str::to_string) {
         let mut airport = code.to_ascii_uppercase().chars().filter(|c| c.is_ascii_alphabetic()).take(4).collect::<String>();
-        let airport_list = crate::weather_setup::metar_airports(std::path::Path::new(&l.state.config.root));
+        let airport_list = omsi_content::weather_choice::metar_airports(std::path::Path::new(&l.state.config.root));
         let mut changed = false;
         let mut back = false;
         l.ui.scroll_area("ps-real-weather", right, &mut |ui, v| {
@@ -986,7 +986,7 @@ fn time_sheet(l: &mut Launcher, r: Rect) -> bool {
     }
 
     let home = super::drive::nearest_airport(&l.state.config.root, &l.state.choice.map);
-    let custom = crate::weather_setup::CustomWeather::default().encode();
+    let custom = omsi_content::weather_choice::CustomWeather::default().encode();
     let items: Vec<(String, String, String)> = [
         (String::new(), "Natural weather".to_string(), "Develops by itself through the day and the season".to_string()),
         (custom, "Custom weather".to_string(), "Visibility, wind, temperature, rain, snow and road state".to_string()),

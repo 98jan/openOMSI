@@ -635,9 +635,9 @@ fn start_line(l: &Launcher) -> String {
     let weather = match l.state.choice.weather.strip_prefix("metar:") {
         Some(code) => format!("at {code}"),
         None if l.state.choice.weather == "cycle" => omsi_ui::tr("Weather cycle").into_owned(),
-        None if crate::weather_model::is_natural(Some(&l.state.choice.weather)) || l.state.choice.weather.is_empty() => omsi_ui::tr("Natural weather").into_owned(),
-        None if crate::weather_setup::custom_weather(Some(&l.state.choice.weather)).is_some() => {
-            let c = crate::weather_setup::custom_weather(Some(&l.state.choice.weather)).unwrap();
+        None if omsi_content::weather_choice::is_natural(Some(&l.state.choice.weather)) || l.state.choice.weather.is_empty() => omsi_ui::tr("Natural weather").into_owned(),
+        None if omsi_content::weather_choice::custom_weather(Some(&l.state.choice.weather)).is_some() => {
+            let c = omsi_content::weather_choice::custom_weather(Some(&l.state.choice.weather)).unwrap();
             format!("{} | {}", omsi_ui::tr("Custom"), custom_weather_summary(&c))
         }
         None => l.state.weathers.iter().find(|w| w.file == l.state.choice.weather).map(|w| w.name.clone()).unwrap_or_else(|| "the map's weather".into()),
@@ -1227,7 +1227,7 @@ fn step_time(l: &mut Launcher, r: Rect) {
         }
         y+=42.0;
     }
-    let custom_now = crate::weather_setup::custom_weather(Some(&l.state.choice.weather));
+    let custom_now = omsi_content::weather_choice::custom_weather(Some(&l.state.choice.weather));
     let custom_file = custom_now.clone().unwrap_or_default().encode();
     let custom_meta = custom_now.as_ref()
         .map(custom_weather_summary)
@@ -1253,7 +1253,7 @@ fn step_time(l: &mut Launcher, r: Rect) {
     }
     if let Some(code) = metar.as_ref() {
         let root = std::path::PathBuf::from(&l.state.config.root);
-        let list = crate::weather_setup::metar_airports(&root);
+        let list = omsi_content::weather_choice::metar_airports(&root);
 
         let mut airport = code.to_uppercase().chars().take(4).collect::<String>();
 
@@ -1307,7 +1307,7 @@ fn step_time(l: &mut Launcher, r: Rect) {
     // When Custom weather is selected, the weather cards turn into the editor. The value is
     // still just `choice.weather`, so it survives launcher restarts and goes to the game
     // through the normal `--weather` argument.
-    if let Some(mut custom) = crate::weather_setup::custom_weather(Some(&l.state.choice.weather)) {
+    if let Some(mut custom) = omsi_content::weather_choice::custom_weather(Some(&l.state.choice.weather)) {
         let area = Rect::new(r.x - 4.0, y, r.w + 8.0, r.bottom() - y);
         let mut changed = false;
         let mut presets = false;
@@ -1329,7 +1329,7 @@ fn step_time(l: &mut Launcher, r: Rect) {
             changed |= ui.slider("custom-temp", Rect::new(v.x + 4.0, yy, v.w - 12.0, 34.0), &mut custom.temp_c, -30.0, 45.0, 1.0, "Temperature", &|x| format!("{x:.0} °C"));
             yy += 40.0;
             let temp_for_dew = custom.temp_c;
-            changed |= ui.slider("custom-hum", Rect::new(v.x + 4.0, yy, v.w - 12.0, 34.0), &mut custom.humidity, 0.0, 100.0, 1.0, "Humidity", &|x| format!("{x:.0} % | dew {:.0} °C", crate::weather_setup::dew_point_c(temp_for_dew, x)));
+            changed |= ui.slider("custom-hum", Rect::new(v.x + 4.0, yy, v.w - 12.0, 34.0), &mut custom.humidity, 0.0, 100.0, 1.0, "Humidity", &|x| format!("{x:.0} % | dew {:.0} °C", omsi_content::weather_choice::dew_point_c(temp_for_dew, x)));
             yy += 44.0;
 
             // (how much of the sky the clouds cover: one value from a clear sky to a closed one,
@@ -1338,7 +1338,7 @@ fn step_time(l: &mut Launcher, r: Rect) {
             yy += 44.0;
 
             ui.label(Rect::new(v.x + 4.0, yy, 130.0, 32.0), "Precipitation");
-            let precip_labels: Vec<String> = crate::weather_setup::CUSTOM_PRECIP.iter().map(|x| (*x).to_string()).collect();
+            let precip_labels: Vec<String> = omsi_content::weather_choice::CUSTOM_PRECIP.iter().map(|x| (*x).to_string()).collect();
             let mut precip = custom.precip.clamp(0, 2) as usize;
             if ui.select("custom-precip", Rect::new(v.x + 134.0, yy, v.w - 142.0, 32.0), &mut precip, &precip_labels) {
                 custom.precip = precip as i32;
@@ -1560,7 +1560,7 @@ fn start(l: &mut Launcher) {
 
 /// The airport of OMSI's METAR list (`Weather/ICAO.txt`) nearest to where map `map` lies
 /// (its `timezone.txt`), else Berlin's; read once per map.
-pub(super) fn custom_weather_summary(c:&crate::weather_setup::CustomWeather)->String{
+pub(super) fn custom_weather_summary(c:&omsi_content::weather_choice::CustomWeather)->String{
     let precip=match c.precip{
         1=>format!("rain {:.0}%",c.precip_intensity/255.0*100.0),
         2=>format!("snow {:.0}%",c.precip_intensity/255.0*100.0),
@@ -1577,7 +1577,7 @@ pub(super) fn custom_weather_summary(c:&crate::weather_setup::CustomWeather)->St
 }
 
 pub(super) fn selected_weather_as_custom(root:&str,file:&str)->Option<String>{
-    if file.is_empty()||file=="cycle"||file.to_ascii_lowercase().starts_with("metar:")||crate::weather_setup::custom_weather(Some(file)).is_some(){return None}
+    if file.is_empty()||file=="cycle"||file.to_ascii_lowercase().starts_with("metar:")||omsi_content::weather_choice::custom_weather(Some(file)).is_some(){return None}
     // (asked every frame the weather step is drawn: the file was read and parsed each time;
     // kept for the weather chosen until another one is)
     static LAST: std::sync::Mutex<Option<((String, String), Option<String>)>> = std::sync::Mutex::new(None);
@@ -1591,14 +1591,14 @@ pub(super) fn selected_weather_as_custom(root:&str,file:&str)->Option<String>{
         let path=omsi_cfg::resolve_path(std::path::Path::new(root),file);
         let w=omsi_content::weather::Weather::load(&path).ok()?;
         let wet=(w.ground_wet[0]/255.0).clamp(0.0,1.0);
-        Some(crate::weather_setup::CustomWeather::from_weather(&w,1.0,wet).encode())
+        Some(omsi_content::weather_choice::CustomWeather::from_weather(&w,1.0,wet).encode())
     };
     let v = read();
     *last = Some(((root.to_string(), file.to_string()), v.clone()));
     v
 }
 
-pub(crate) fn nearest_airport(root: &str, map: &str) -> String {
+pub fn nearest_airport(root: &str, map: &str) -> String {
     static CACHE: std::sync::Mutex<Option<hashbrown::HashMap<String, String>>> = std::sync::Mutex::new(None);
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     let cache = cache.get_or_insert_with(Default::default);

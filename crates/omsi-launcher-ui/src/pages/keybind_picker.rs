@@ -19,7 +19,7 @@ pub(super) struct KeyActionOption {
 
 /// Every action the vehicles' section can be given: the language files' texts, OMSI's events
 /// (in their own spelling), the buses' script triggers and what the keyboard file has.
-fn action_options(names: &crate::describe::ControlNames, script_actions: &HashMap<String, Vec<String>>, bindings: &Value) -> Vec<KeyActionOption> {
+fn action_options(names: &omsi_input::describe::ControlNames, script_actions: &HashMap<String, Vec<String>>, bindings: &Value) -> Vec<KeyActionOption> {
     let mut actions: HashMap<String, KeyActionOption> = HashMap::new();
     let mut found = |action: &str, label: Option<&str>, source: Option<String>| {
         let option = actions.entry(action.to_ascii_lowercase()).or_insert_with(|| KeyActionOption {
@@ -65,7 +65,7 @@ fn action_options(names: &crate::describe::ControlNames, script_actions: &HashMa
 /// The actions a controller's button can be given on the launcher's page, and their labels:
 /// the keyboard file's vehicle actions, the H-pattern gates and the game's own (built once
 /// and kept, not every frame).
-pub(super) fn controller_action_choices(names: &crate::describe::ControlNames, bindings: &Value) -> (Vec<String>, Vec<String>) {
+pub(super) fn controller_action_choices(names: &omsi_input::describe::ControlNames, bindings: &Value) -> (Vec<String>, Vec<String>) {
     let mut actions: Vec<String> = vec!["<none>".into()];
     actions.extend(bindings.get("vehicles").and_then(|a| a.as_array()).map(|a| a.iter().filter_map(|b| b.get("action").and_then(|x| x.as_str()).map(String::from)).collect::<Vec<_>>()).unwrap_or_default());
     // H-pattern shifters use OMSI's "_fest" actions: pressing the gate selects the gear,
@@ -241,7 +241,7 @@ fn ensure_key_action_catalog(l: &mut Launcher) {
         // and nobody reads it)
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            crate::describe::ControlNames::scan_script_actions(|update| { let _ = tx.send(update); });
+            omsi_input::describe::ControlNames::scan_script_actions(|update| { let _ = tx.send(update); });
         });
         l.pages.kb_script_scan_actions = Some(HashMap::new());
         l.pages.kb_script_scan_paths.clear();
@@ -518,7 +518,7 @@ mod keybind_picker_tests {
 
     #[test]
     fn empty_search_shows_the_catalog_and_configured_custom_actions() {
-        let names = crate::describe::ControlNames::from_table("ENG", &[
+        let names = omsi_input::describe::ControlNames::from_table("ENG", &[
             ("door", "Front door"),
             ("horn", "Horn"),
             ("ivu_ticket_cancel", "IVU: Cancel ticket"),
@@ -565,7 +565,7 @@ mod keybind_picker_tests {
 
     #[test]
     fn empty_query_keeps_catalog_entries_past_twelve() {
-        let names = crate::describe::ControlNames::from_table("ENG", &[]);
+        let names = omsi_input::describe::ControlNames::from_table("ENG", &[]);
         let script_actions: HashMap<String, Vec<String>> = (0..40)
             .map(|i| (format!("vehicle_action_{i:02}"), Vec::new()))
             .collect();
@@ -610,7 +610,7 @@ mod keybind_picker_tests {
 
     #[test]
     fn source_search_matches_folder_prefix_and_spaced_bus_filename() {
-        let names = crate::describe::ControlNames::from_table("ENG", &[]);
+        let names = omsi_input::describe::ControlNames::from_table("ENG", &[]);
         let script_actions = HashMap::from([
             ("neoman_special_control".into(), vec!["NEOMAN_Overhaul_v3/Vehicle.bus".into()]),
             ("man_a26_cruise".into(), vec!["MAN_A26_3D.bus".into()]),
@@ -642,7 +642,7 @@ mod keybind_picker_tests {
     /// not the game section's keys, which a button would send to the bus.
     #[test]
     fn controller_choices_include_keyboard_catalog_actions() {
-        let names = crate::describe::ControlNames::from_table("ENG", &[("door", "Front door")]);
+        let names = omsi_input::describe::ControlNames::from_table("ENG", &[("door", "Front door")]);
         let bindings = json!({
             "vehicles": [{ "action": "custom_cruise_control" }, { "action": "door" }],
             "game": [{ "action": "chat_open" }],

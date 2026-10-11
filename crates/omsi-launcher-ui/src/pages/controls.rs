@@ -12,12 +12,12 @@ use omsi_launcher_lib as core;
 /// which Esc opens and a controller has no Esc for.
 pub(super) const PAD_GAME_ACTIONS: [&str; 27] = ["doors_all", "door_4", "door_3", "door_2", "door_1", "gear_up", "gear_down", "view_look_left", "view_look_right", "view_look_up", "view_look_down", "view_reset_direction", "view_reset_all_directions", "view_interiorcam_plus", "view_interiorcam_minus", "view_toggle_viewpoint", "view_toggle_interior", "view_set_driver", "view_set_passenger", "view_set_outside", "sim_pause", "open_menu", "screenshot", "quicksave", "toggel_mouse_ctrl", "toggel_ctrler", "voice_radio"];
 
-pub(super) fn action_text(names: &crate::describe::ControlNames, a: &str) -> String {
+pub(super) fn action_text(names: &omsi_input::describe::ControlNames, a: &str) -> String {
     known_action(a).unwrap_or_else(|| names.control(a))
 }
 
-pub(super) fn control_names(l: &Launcher) -> &'static crate::describe::ControlNames {
-    crate::describe::names(std::path::Path::new(&l.state.config.root), l.state.settings.get("language").and_then(|x| x.as_str()).unwrap_or("ENG"))
+pub(super) fn control_names(l: &Launcher) -> &'static omsi_input::describe::ControlNames {
+    omsi_input::describe::names(std::path::Path::new(&l.state.config.root), l.state.settings.get("language").and_then(|x| x.as_str()).unwrap_or("ENG"))
 }
 
 fn known_action(a: &str) -> Option<String> {
@@ -102,7 +102,7 @@ pub fn controls(l: &mut Launcher, area: Rect) {
         if code == K::Escape {
             l.pages.capturing = None;
         } else if !matches!(code, K::ShiftLeft | K::ShiftRight | K::ControlLeft | K::ControlRight | K::AltLeft | K::AltRight | K::SuperLeft | K::SuperRight) {
-            match crate::keys::dik_code(code) {
+            match omsi_input::keys::dik_code(code) {
                 Some(scan) => {
                     let m = l.ui.input.binding_modifiers() as i64;
                     let section = ["vehicles", "game"][sec];
@@ -179,10 +179,10 @@ pub fn controls(l: &mut Launcher, area: Rect) {
         let list: Vec<(usize, String, i64, i64)> = l.state.keybindings.get(*key).and_then(|a| a.as_array()).map(|a| a.iter().enumerate().map(|(i, b)| (i, b.get("action").and_then(|x| x.as_str()).unwrap_or("").to_string(), b.get("scan_code").and_then(|x| x.as_i64()).unwrap_or(0), b.get("modifier").and_then(|x| x.as_i64()).unwrap_or(0))).collect()).unwrap_or_default();
         let mut shown: Vec<(usize, String, String, bool)> = list
             .iter()
-            .filter(|(_, a, s, m)| q.is_empty() || matches(&action_text(names, a), &q) || a.to_lowercase().contains(&q) || crate::keys::key_name(*s, *m).to_lowercase().contains(&q))
+            .filter(|(_, a, s, m)| q.is_empty() || matches(&action_text(names, a), &q) || a.to_lowercase().contains(&q) || omsi_input::keys::key_name(*s, *m).to_lowercase().contains(&q))
             .map(|(i, a, s, m)| {
                 let clash = *s != 0 && list.iter().any(|(j, _, s2, m2)| j != i && s2 == s && m2 == m);
-                (*i, action_text(names, a), crate::keys::key_name(*s, *m), clash)
+                (*i, action_text(names, a), omsi_input::keys::key_name(*s, *m), clash)
             })
             .collect();
         if sec == 1 {
@@ -317,25 +317,25 @@ fn shown_button_count(buttons: &[(String, String)], physical: usize, revealed: O
 
 /// The game controllers tab (see `PadsView`).
 fn game_controllers(l: &mut Launcher, body: Rect) {
-    use crate::controllers::{DeviceCfg, Func};
+    use omsi_input::controllers::{DeviceCfg, Func};
     let names = control_names(l);
     if l.pages.controller_action_choices.is_none() {
         l.pages.controller_action_choices = Some(std::sync::Arc::new(controller_action_choices(names, &l.state.keybindings)));
     }
     let choices = std::sync::Arc::clone(l.pages.controller_action_choices.as_ref().unwrap());
     let (actions, labels) = choices.as_ref();
-    let hwnd = l.window.as_deref().and_then(crate::controllers::window_handle);
+    let hwnd = l.window.as_deref().and_then(omsi_input::controllers::window_handle);
     let pv = &mut l.pages.pads;
     if pv.io.is_none() {
-        pv.io = Some(crate::controllers::Devices::new(hwnd, false));
+        pv.io = Some(omsi_input::controllers::Devices::new(hwnd, false));
     }
     if pv.devices.is_none() {
         let root = std::path::PathBuf::from(&l.state.config.root);
-        pv.devices = Some(crate::controllers::read_cfg(&root));
+        pv.devices = Some(omsi_input::controllers::read_cfg(&root));
     }
     // what the devices do now (and a button pressed while one is awaited)
     let mut pressed: Vec<(String, usize)> = Vec::new();
-    let mut connected: Vec<crate::controllers::Connected> = Vec::new();
+    let mut connected: Vec<omsi_input::controllers::Connected> = Vec::new();
     if let Some(io) = pv.io.as_mut() {
         for (name, n, down) in io.poll() {
             if down {
@@ -346,7 +346,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
     }
     let devices = pv.devices.get_or_insert_with(Vec::new);
     let mut body = body;
-    if !l.state.settings.get("momentary_gears").and_then(|v| v.as_bool()).unwrap_or(false) && crate::hpattern::has_held_bindings(devices) {
+    if !l.state.settings.get("momentary_gears").and_then(|v| v.as_bool()).unwrap_or(false) && omsi_input::hpattern::has_held_bindings(devices) {
         let height = l.ui.paragraph("H-pattern gears are assigned. Enable return to neutral under Settings → Driving → Game controllers if your shifter has no neutral button.", Vec2::new(body.x + 12.0, body.y + 8.0), body.w - 24.0, 12.5, Weight::Regular, TEXT_DIM);
         body.y += height + 20.0;
         body.h -= height + 20.0;
@@ -368,7 +368,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
         ui.scroll_area("pad-list", list_r, &mut |ui, v| {
             let mut y = v.y;
             for (i, d) in devices.iter().enumerate() {
-                let on = connected.iter().any(|c| crate::controllers::names_match(&d.name, &c.name));
+                let on = connected.iter().any(|c| omsi_input::controllers::names_match(&d.name, &c.name));
                 let switched_off = offs.iter().any(|o| o.eq_ignore_ascii_case(&d.name));
                 let r = Rect::new(v.x + 6.0, y, v.w - 12.0, 44.0);
                 if ui.row(&format!("pad-{i}"), r, sel == i) {
@@ -382,7 +382,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
                 }
                 y += 48.0;
             }
-            for c in connected.iter().filter(|c| !devices.iter().any(|d| crate::controllers::names_match(&d.name, &c.name))) {
+            for c in connected.iter().filter(|c| !devices.iter().any(|d| omsi_input::controllers::names_match(&d.name, &c.name))) {
                 let r = Rect::new(v.x + 6.0, y, v.w - 12.0, 38.0);
                 if ui.button(&format!("pad-add-{}", c.name), r, &format!("Set up {}", c.name), Some("add"), ButtonKind::Primary) {
                     add = Some(c.name.clone());
@@ -413,7 +413,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
         pv.dirty = true;
         // a new device starts with the assistant
         if axes {
-            pv.wizard = Some(Wizard { step: 0, rest: [None; 8], at: Vec::new(), error: None, calibration: None, ff_choice: None, test_strength: crate::ffb_calibration::PULSE_FORCE });
+            pv.wizard = Some(Wizard { step: 0, rest: [None; 8], at: Vec::new(), error: None, calibration: None, ff_choice: None, test_strength: omsi_input::ffb_calibration::PULSE_FORCE });
         }
     }
     // the dead zone (a setting of the game's)
@@ -437,7 +437,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
     l.ui.panel(right);
     let Some(d) = devices.get_mut(pv.selected) else { return };
     let inner = l.ui.heading(Rect::new(right.x + 18.0, right.y + 14.0, right.w - 36.0, right.h - 28.0), &d.name.clone(), Some("tune"));
-    let live_dev = crate::controllers::find_connected(&connected, &d.name);
+    let live_dev = omsi_input::controllers::find_connected(&connected, &d.name);
     let live: Vec<(usize, f32)> = live_dev.map(|c| c.axes.clone()).unwrap_or_default();
     // every button the device has gets its line (DirectInput says how many)
     if let Some(n) = live_dev.map(|c| c.buttons).filter(|n| *n > d.buttons.len()) {
@@ -481,7 +481,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
     }
     let buttons_only = pv.io.as_ref().is_some_and(|io| io.buttons_only(&d.name));
     if !buttons_only && l.ui.button("pad-wizard", Rect::new(inner.right() - 220.0, inner.y - 36.0, 220.0, 30.0), "Set up step by step", Some("touch_app"), ButtonKind::Normal) {
-        pv.wizard = Some(Wizard { step: 0, rest: [None; 8], at: Vec::new(), error: None, calibration: None, ff_choice: None, test_strength: crate::ffb_calibration::PULSE_FORCE });
+        pv.wizard = Some(Wizard { step: 0, rest: [None; 8], at: Vec::new(), error: None, calibration: None, ff_choice: None, test_strength: omsi_input::ffb_calibration::PULSE_FORCE });
     }
     const AXES: [&str; 8] = ["X axis", "Y axis", "Z axis", "X rotation", "Y rotation", "Z rotation", "Slider 1", "Slider 2"];
     let funcs: Vec<String> = Func::LABELS.iter().map(|s| s.to_string()).collect();
@@ -524,7 +524,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
         let shp_w = 140.0;
         let sel_w = (w - lab_w - inv_w - shp_w - 60.0 - 4.0 * GAP).clamp(120.0, 200.0);
         let bar_w = (w - lab_w - sel_w - inv_w - shp_w - 4.0 * GAP).max(30.0);
-        let shapes: Vec<String> = crate::controllers::AXIS_SHAPES.iter().map(|s| s.0.to_string()).collect();
+        let shapes: Vec<String> = omsi_input::controllers::AXIS_SHAPES.iter().map(|s| s.0.to_string()).collect();
         // (a device of buttons only has no axes to give a function)
         for a in (0..8).filter(|_| !buttons_only) {
             let r = Rect::new(x0, y, w, ROW);
@@ -551,9 +551,9 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
             if d.axes[a].is_some() {
                 // the characteristic: the curve bits of the flags, the range extension kept
                 let curve = d.axis_flags[a] & (4 | 8 | 0x10);
-                let mut shp = crate::controllers::AXIS_SHAPES.iter().position(|s| s.1 == curve).unwrap_or(0);
+                let mut shp = omsi_input::controllers::AXIS_SHAPES.iter().position(|s| s.1 == curve).unwrap_or(0);
                 if ui.select(&format!("pad-shape-{a}"), Rect::new(bar.right() + GAP + sel_w + GAP + inv_w + GAP, r.y, shp_w, r.h), &mut shp, &shapes) {
-                    d.axis_flags[a] = (d.axis_flags[a] & !(4 | 8 | 0x10)) | crate::controllers::AXIS_SHAPES[shp].1;
+                    d.axis_flags[a] = (d.axis_flags[a] & !(4 | 8 | 0x10)) | omsi_input::controllers::AXIS_SHAPES[shp].1;
                     dirty = true;
                 }
             }
@@ -572,7 +572,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
         for (b, (act, _)) in d.buttons.iter_mut().take(shown_buttons).enumerate() {
             let (col, row) = (b / rows.max(1), b % rows.max(1));
             let r = Rect::new(x0 + col as f32 * (cw + GAP), y + row as f32 * per_row, cw, ROW);
-            let label = match b.checked_sub(crate::controllers::HAT_BUTTONS) {
+            let label = match b.checked_sub(omsi_input::controllers::HAT_BUTTONS) {
                 Some(h) => format!("Hat {} {}", h / 4 + 1, ["up", "right", "down", "left"][h % 4]),
                 None => format!("Button {}", b + 1),
             };
@@ -605,8 +605,8 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
         pv.dirty = true;
     }
     // a button pressed on the device: its line (added up to it)
-    if let Some((name, n)) = pressed.into_iter().find(|(name, _)| crate::controllers::names_match(&d.name, name)) {
-        if crate::controllers::names_match(&d.name, &name) && n < crate::controllers::HAT_BUTTONS + 16 {
+    if let Some((name, n)) = pressed.into_iter().find(|(name, _)| omsi_input::controllers::names_match(&d.name, name)) {
+        if omsi_input::controllers::names_match(&d.name, &name) && n < omsi_input::controllers::HAT_BUTTONS + 16 {
             while d.buttons.len() <= n {
                 d.buttons.push((String::new(), "0".into()));
                 pv.dirty = true;
@@ -619,7 +619,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
             l.ui.scroll_to("pad-detail", buttons_start_y + row as f32 * (ROW + 4.0), ROW, list.h);
             pv.last_pressed = Some((n, std::time::Instant::now()));
             let now = d.buttons.get(n).map(|b| b.0.clone()).filter(|a| !a.is_empty());
-            let label = match n.checked_sub(crate::controllers::HAT_BUTTONS) {
+            let label = match n.checked_sub(omsi_input::controllers::HAT_BUTTONS) {
                 Some(h) => format!("hat {} {}", h / 4 + 1, ["up", "right", "down", "left"][h % 4]),
                 None => format!("button {}", n + 1),
             };
@@ -656,7 +656,7 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
 
 /// Take the device shown (`selected`) out of the list; the one below it (or the last) is
 /// shown next. Its name.
-fn remove_device(devices: &mut Vec<crate::controllers::DeviceCfg>, selected: &mut usize) -> String {
+fn remove_device(devices: &mut Vec<omsi_input::controllers::DeviceCfg>, selected: &mut usize) -> String {
     let name = devices.remove(*selected).name;
     *selected = (*selected).min(devices.len().saturating_sub(1));
     name
@@ -673,7 +673,7 @@ const WIZARD_STEPS: [(&str, &str); 5] = [
 
 /// One frame of the assistant in `r`; Some(true) when it has set the device up, Some(false)
 /// when the player gave up.
-fn wizard(ui: &mut Ui, r: Rect, w: &mut Wizard, d: &mut crate::controllers::DeviceCfg, live: &[(usize, f32)], connected: bool, feedback: bool) -> Option<bool> {
+fn wizard(ui: &mut Ui, r: Rect, w: &mut Wizard, d: &mut omsi_input::controllers::DeviceCfg, live: &[(usize, f32)], connected: bool, feedback: bool) -> Option<bool> {
     let (title, text) = WIZARD_STEPS[w.step];
     ui.text_in(&format!("Step {} of {}: {title}", w.step + 1, WIZARD_STEPS.len()), Rect::new(r.x, r.y, r.w, 26.0), 17.0, Weight::Bold, TEXT, Align::Left);
     let mut y = r.y + 34.0;
@@ -737,7 +737,7 @@ fn wizard(ui: &mut Ui, r: Rect, w: &mut Wizard, d: &mut crate::controllers::Devi
         return None;
     }
     let axes = wizard_result(&w.rest, &w.at);
-    if feedback && axes.iter().any(|a| matches!(a, Some((crate::controllers::Func::Steering, _)))) {
+    if feedback && axes.iter().any(|a| matches!(a, Some((omsi_input::controllers::Func::Steering, _)))) {
         return None;
     }
     d.axes = axes;
@@ -745,12 +745,12 @@ fn wizard(ui: &mut Ui, r: Rect, w: &mut Wizard, d: &mut crate::controllers::Devi
 }
 
 fn feedback_setup(
-    ui: &mut Ui, r: Rect, w: &mut Wizard, d: &mut crate::controllers::DeviceCfg,
-    live: &[(usize, f32)], device: Option<&crate::controllers::Connected>,
-    io: &mut Option<crate::controllers::Devices>, active: &mut bool, hwnd: Option<isize>, global_invert: bool,
+    ui: &mut Ui, r: Rect, w: &mut Wizard, d: &mut omsi_input::controllers::DeviceCfg,
+    live: &[(usize, f32)], device: Option<&omsi_input::controllers::Connected>,
+    io: &mut Option<omsi_input::controllers::Devices>, active: &mut bool, hwnd: Option<isize>, global_invert: bool,
 ) -> Option<bool> {
     let axes = wizard_result(&w.rest, &w.at);
-    let axis = axes.iter().position(|a| matches!(a, Some((crate::controllers::Func::Steering, _))));
+    let axis = axes.iter().position(|a| matches!(a, Some((omsi_input::controllers::Func::Steering, _))));
     ui.text_in("Force feedback direction", Rect::new(r.x, r.y, r.w, 26.0), 17.0, Weight::Bold, TEXT, Align::Left);
     let warning = "INJURY RISK: TAKE YOUR HANDS OFF THE WHEEL. Keep hands and fingers clear before starting and throughout the test.";
     let warning_height = ui.paragraph_height(warning, r.w - 58.0, 14.5, Weight::Bold) + 20.0;
@@ -788,7 +788,7 @@ fn feedback_setup(
         }
         if !*active {
             ui.slider("wiz-ff-strength", Rect::new(r.x, y, r.w, ROW), &mut w.test_strength,
-                      crate::ffb_calibration::PULSE_FORCE, crate::ffb_calibration::MAX_PULSE_FORCE, 0.01,
+                      omsi_input::ffb_calibration::PULSE_FORCE, omsi_input::ffb_calibration::MAX_PULSE_FORCE, 0.01,
                       "Test strength", &|v| format!("{:.0}%", v * 100.0));
             y += ROW + 8.0;
             y += ui.paragraph("If the wheel barely moves, increase Test strength and retry. Keep your hands clear.", Vec2::new(r.x, y), r.w, 13.0, Weight::Regular, TEXT_DIM) + 10.0;
@@ -797,11 +797,11 @@ fn feedback_setup(
                     w.error = Some("The wheel is unavailable. Reconnect it and try again.".into());
                 } else {
                     *io = None;
-                    *io = Some(crate::controllers::Devices::new(hwnd, true));
+                    *io = Some(omsi_input::controllers::Devices::new(hwnd, true));
                     *active = true;
                     w.error = None;
                     log::info!("FFB calibration: device {}, raw steering axis {:?}, test strength {:.0}%", device.unwrap().name, axis, w.test_strength * 100.0);
-                    w.calibration = Some((std::time::Instant::now(), crate::ffb_calibration::Calibration::new(w.test_strength)));
+                    w.calibration = Some((std::time::Instant::now(), omsi_input::ffb_calibration::Calibration::new(w.test_strength)));
                 }
             }
             y += 48.0;
@@ -832,8 +832,8 @@ fn feedback_setup(
 /// The axes the assistant found: `rest` where everything rested, `at` where the axes stood
 /// with the wheel turned left, the throttle, the brake and the clutch pressed (all None: that
 /// step skipped).
-fn wizard_result(rest: &[Option<f32>; 8], at: &[[Option<f32>; 8]]) -> [Option<(crate::controllers::Func, bool)>; 8] {
-    use crate::controllers::Func;
+fn wizard_result(rest: &[Option<f32>; 8], at: &[[Option<f32>; 8]]) -> [Option<(omsi_input::controllers::Func, bool)>; 8] {
+    use omsi_input::controllers::Func;
     let mut axes: [Option<(Func, bool)>; 8] = [None; 8];
     let steer = at.first().and_then(|a| moved_most(rest, a, &[]));
     if let Some((k, delta)) = steer {
@@ -879,7 +879,7 @@ fn moved_most(rest: &[Option<f32>; 8], now: &[Option<f32>; 8], exclude: &[usize]
 
 /// Write the devices to the content folder's `Inputs/gamectrler.cfg` (OMSI 2's own is only
 /// read; the game takes the content folder's first).
-fn save_gamectrler(devices: &[crate::controllers::DeviceCfg]) -> Result<std::path::PathBuf, String> {
+fn save_gamectrler(devices: &[omsi_input::controllers::DeviceCfg]) -> Result<std::path::PathBuf, String> {
     let candidate = core::content_dir().unwrap_or_else(core::data_dir).join("Inputs");
     let dir = if (candidate.exists() || std::fs::create_dir_all(&candidate).is_ok()) && omsi_cfg::is_writable(&candidate) {
         candidate
@@ -888,7 +888,7 @@ fn save_gamectrler(devices: &[crate::controllers::DeviceCfg]) -> Result<std::pat
     };
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let p = dir.join("gamectrler.cfg");
-    std::fs::write(&p, crate::controllers::cfg_text(devices)).map_err(|e| e.to_string())?;
+    std::fs::write(&p, omsi_input::controllers::cfg_text(devices)).map_err(|e| e.to_string())?;
     omsi_cfg::content_changed();
     Ok(p)
 }
@@ -935,11 +935,11 @@ mod wizard_tests {
         super::Wizard {
             step: super::WIZARD_STEPS.len(), rest: [Some(0.0); 8],
             at: vec![[Some(-1.0), None, None, None, None, None, None, None], [None; 8], [None; 8], [None; 8]],
-            error: None, calibration: None, ff_choice: None, test_strength: crate::ffb_calibration::PULSE_FORCE,
+            error: None, calibration: None, ff_choice: None, test_strength: omsi_input::ffb_calibration::PULSE_FORCE,
         }
     }
 
-    fn click_feedback(name: &str, w: &mut super::Wizard, d: &mut crate::controllers::DeviceCfg) -> Option<bool> {
+    fn click_feedback(name: &str, w: &mut super::Wizard, d: &mut omsi_input::controllers::DeviceCfg) -> Option<bool> {
         use super::*;
         let mut ui = Ui::new();
         let size = Vec2::new(900.0, 700.0);
@@ -966,7 +966,7 @@ mod wizard_tests {
 
     #[test]
     fn manual_direction_is_only_applied_on_finish_and_cancel_preserves_the_device() {
-        let original = crate::controllers::DeviceCfg { ff_invert: Some(true), ..Default::default() };
+        let original = omsi_input::controllers::DeviceCfg { ff_invert: Some(true), ..Default::default() };
         let mut device = original.clone();
         let mut w = feedback_wizard();
         assert_eq!(click_feedback("wiz-ff-manual", &mut w, &mut device), None);
@@ -981,7 +981,7 @@ mod wizard_tests {
 
     #[test]
     fn disconnected_wheel_cannot_start_a_hardware_test() {
-        let mut device = crate::controllers::DeviceCfg::default();
+        let mut device = omsi_input::controllers::DeviceCfg::default();
         let mut w = feedback_wizard();
         assert_eq!(click_feedback("wiz-ff-test", &mut w, &mut device), None);
         assert!(w.error.is_some());
@@ -994,7 +994,7 @@ mod wizard_tests {
         pads.feedback_test = true;
         pads.wizard = Some(super::Wizard {
             step: super::WIZARD_STEPS.len(), rest: [None; 8], at: Vec::new(), error: None,
-            calibration: Some((std::time::Instant::now(), crate::ffb_calibration::Calibration::new(crate::ffb_calibration::PULSE_FORCE))), ff_choice: None, test_strength: crate::ffb_calibration::PULSE_FORCE,
+            calibration: Some((std::time::Instant::now(), omsi_input::ffb_calibration::Calibration::new(omsi_input::ffb_calibration::PULSE_FORCE))), ff_choice: None, test_strength: omsi_input::ffb_calibration::PULSE_FORCE,
         });
         pads.cancel_feedback_test();
         assert!(!pads.feedback_test);
@@ -1004,7 +1004,7 @@ mod wizard_tests {
         assert_eq!(pads.wizard.as_ref().unwrap().ff_choice, None);
     }
 
-    use crate::controllers::Func;
+    use omsi_input::controllers::Func;
 
     #[test]
     fn h_pattern_gears_have_a_clear_name() {
@@ -1066,20 +1066,20 @@ mod pad_action_tests {
         for a in super::PAD_GAME_ACTIONS {
             let held = a.starts_with("view_look_") || a == "voice_radio";
             let handled = held
-                || crate::input_script::is_game_action(a)
+                || omsi_input::actions::is_game_action(a)
                 || a.starts_with("gear_")
-                || crate::player::door_action(a).is_some();
+                || omsi_input::actions::door_action(a).is_some();
             assert!(handled, "{a}");
         }
         // held pad actions are game actions so they never reach the bus script
-        assert!(crate::input_script::is_game_action("voice_radio"));
-        assert!(crate::input_script::is_game_action("view_look_left"));
+        assert!(omsi_input::actions::is_game_action("voice_radio"));
+        assert!(omsi_input::actions::is_game_action("view_look_left"));
     }
 }
 
 #[cfg(test)]
 mod pad_remove_tests {
-    use crate::controllers::{cfg_text, parse_cfg};
+    use omsi_input::controllers::{cfg_text, parse_cfg};
 
     /// A device taken out of the list is gone from the file Save writes, and the next one is
     /// shown - the one below it, or above it when it was the last (#636).

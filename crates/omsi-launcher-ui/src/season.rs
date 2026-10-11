@@ -1,4 +1,5 @@
 //! The Drive page's season and its phase: what the choice does to the date.
+use crate::host::host;
 use super::state::State;
 
 impl State {
@@ -24,7 +25,7 @@ impl State {
     /// chosen year (half a year later on a map south of the equator), see `season_phase`.
     pub fn season_chosen(&mut self) {
         let c = &self.choice;
-        if let Some(d) = crate::season_phase::launcher_date(&c.season, &c.phase, &c.date, &c.map, false) {
+        if let Some(d) = host().season_date(&c.season, &c.phase, &c.date, &c.map, false) {
             self.choice.date = d;
             self.load_lines();
         }

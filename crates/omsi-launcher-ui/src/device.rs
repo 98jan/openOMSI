@@ -1,6 +1,6 @@
 //! The launcher's graphics device: opened for its window with the interface's pipeline at
 //! once, the renderer (the bus preview's) built on a worker meanwhile (see
-//! `startup::RendererStart`); made again after a game or a lost device; and the window's
+//! `host::RendererStart`); made again after a game or a lost device; and the window's
 //! picture read back for OMSI_LAUNCHER_SHOT.
 
 use super::*;
@@ -13,7 +13,7 @@ impl Launcher {
         let Some(window) = self.window.clone() else { return };
         if !self.device_open() {
             if let Err(e) = self.open_device(&window, true) {
-                crate::startup::fatal_message(&format!("openOMSI cannot draw on this computer: {e:#}"));
+                host().fatal_message(&format!("openOMSI cannot draw on this computer: {e:#}"));
                 std::process::exit(1);
             }
             self.last = Instant::now();
@@ -32,9 +32,9 @@ impl Launcher {
     /// launcher (`android::Shell`), which shows a first picture while the launcher is
     /// put together. The launcher draws on them from its first frame.
     #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-    pub fn adopt_early(&mut self, window: Arc<Window>, start: crate::startup::RendererStart, surface: SurfaceState<'static>) {
-        self.gpu = Some(omsi_ui::Gpu::new(&start.device, start.format, 4, self.ui.atlas.size));
-        self.dev = Some((start.device.clone(), start.queue.clone(), start.format));
+    pub fn adopt_early(&mut self, window: Arc<Window>, start: Box<dyn host::RendererStart>, surface: SurfaceState<'static>) {
+        self.gpu = Some(omsi_ui::Gpu::new(start.device(), start.format(), 4, self.ui.atlas.size));
+        self.dev = Some((start.device().clone(), start.queue().clone(), start.format()));
         self.starting = Some(start);
         self.surface = Some(surface);
         self.window = Some(window);
@@ -56,8 +56,7 @@ impl Launcher {
         if let Some(h) = self.gpu_rest_drop.take() {
             let _ = h.join();
         }
-        let settings = crate::settings::Settings::load();
-        let start = crate::startup::RendererStart::begin(&mut self.instance, window, showroom_options(&settings))?;
+        let start = host().begin_renderer(&mut self.instance, window, host().showroom_options())?;
         if fresh_atlas {
             self.ui.atlas = omsi_ui::Atlas::new(self.ui.atlas.size);
         }
@@ -70,9 +69,9 @@ impl Launcher {
             return Ok(());
         }
         let size = window.inner_size();
-        self.surface = Some(SurfaceState::early(&self.instance, window.clone(), &start.device, start.format, size.width.max(1), size.height.max(1), true).map_err(|e| anyhow::anyhow!("its window cannot be drawn into: {e:#}"))?);
-        self.gpu = Some(omsi_ui::Gpu::new(&start.device, start.format, 4, self.ui.atlas.size));
-        self.dev = Some((start.device.clone(), start.queue.clone(), start.format));
+        self.surface = Some(SurfaceState::early(&self.instance, window.clone(), start.device(), start.format(), size.width.max(1), size.height.max(1), true).map_err(|e| anyhow::anyhow!("its window cannot be drawn into: {e:#}"))?);
+        self.gpu = Some(omsi_ui::Gpu::new(start.device(), start.format(), 4, self.ui.atlas.size));
+        self.dev = Some((start.device().clone(), start.queue().clone(), start.format()));
         self.starting = Some(start);
         Ok(())
     }
@@ -84,7 +83,7 @@ impl Launcher {
             return;
         }
         let start = self.starting.take().expect("renderer start");
-        let early = start.device.clone();
+        let early = start.device().clone();
         match start.wait(&mut self.instance) {
             Ok(r) => {
                 // (on another device - the first was lost while the pipelines were built -
@@ -106,7 +105,7 @@ impl Launcher {
                 self.renderer_ready(r);
             }
             Err(e) => {
-                crate::startup::fatal_message(&format!("openOMSI cannot draw on this computer: {e:#}"));
+                host().fatal_message(&format!("openOMSI cannot draw on this computer: {e:#}"));
                 std::process::exit(1);
             }
         }

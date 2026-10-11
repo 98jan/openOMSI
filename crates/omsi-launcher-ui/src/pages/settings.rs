@@ -1,5 +1,6 @@
 //! The Settings page and its tabs.
 
+use crate::host::host;
 use super::*;
 use omsi_launcher_lib as core;
 
@@ -11,7 +12,7 @@ fn get<'a>(v: &'a Value, k: &str) -> &'a Value {
 }
 
 /// The window sizes the settings offer (`resolution`).
-pub(crate) const RESOLUTIONS: &[(&str, &str)] = &[("auto", "Automatic"), ("1280x720", "1280 x 720"), ("1280x800", "1280 x 800 (Steam Deck)"), ("1366x768", "1366 x 768"), ("1600x900", "1600 x 900"), ("1920x1080", "1920 x 1080"), ("1920x1200", "1920 x 1200"), ("2560x1440", "2560 x 1440"), ("3840x2160", "3840 x 2160")];
+pub const RESOLUTIONS: &[(&str, &str)] = &[("auto", "Automatic"), ("1280x720", "1280 x 720"), ("1280x800", "1280 x 800 (Steam Deck)"), ("1366x768", "1366 x 768"), ("1600x900", "1600 x 900"), ("1920x1080", "1920 x 1080"), ("1920x1200", "1920 x 1200"), ("2560x1440", "2560 x 1440"), ("3840x2160", "3840 x 2160")];
 
 fn sel_setting(ui: &mut Ui, s: &mut Value, dirty: &mut f32, name: &str, r: Rect, label: &str, key: &str, options: &[(&str, &str)]) {
     ui.label(Rect::new(r.x, r.y, r.w * 0.45, r.h), label);
@@ -56,7 +57,7 @@ pub const SETTINGS_TABS: [&str; 6] = ["Graphics", "Driving", "Camera", "Sound", 
 /// What the tabs show of the launcher and ask of it (they see only the settings): the
 /// updater's state, "Check now", "Reset all settings", the Controls page at one of its tabs.
 struct Outside {
-    update: crate::updater::Status,
+    update: omsi_platform::updater::Status,
     check_updates: bool,
     reset: bool,
     controls: Option<usize>,
@@ -827,7 +828,7 @@ fn radio_stations(ui: &mut Ui, r: Rect) -> f32 {
     c.y += ui.paragraph("A radio's station button n plays the n-th station, a cassette player the first; Shift+R steps through them. An address is an MP3, AAC or Ogg stream or an .m3u/.pls playlist.", Vec2::new(c.inner.x, c.y), c.inner.w, 12.5, Weight::Regular, TEXT_DIM) + 8.0;
     RADIO.with(|cell| {
         let mut cell = cell.borrow_mut();
-        let list = cell.get_or_insert_with(crate::radio::own_stations);
+        let list = cell.get_or_insert_with(|| host().radio_stations());
         let mut changed = false;
         let mut remove = None;
         for (k, (name, address)) in list.iter_mut().enumerate() {
@@ -847,7 +848,7 @@ fn radio_stations(ui: &mut Ui, r: Rect) -> f32 {
             list.push((String::new(), String::new()));
         }
         if changed {
-            if let Err(e) = crate::radio::save_stations(list) {
+            if let Err(e) = host().save_radio_stations(list) {
                 log::warn!("radio.cfg: {e}");
             }
         }
@@ -900,15 +901,15 @@ fn general_tab(ui: &mut Ui, s: &mut Value, dirty: &mut f32, out: &mut Outside, c
         sel_setting(ui, s, dirty, "s-lang", c.row(), "Language", "language", &langs);
     }
     // (the launcher speaks the chosen language at once)
-    crate::ui_language(get(s, "language").as_str().unwrap_or("ENG"));
+    host().ui_language(get(s, "language").as_str().unwrap_or("ENG"));
     // (texts nobody has translated: translated on this machine, see `mt`)
     let was = get(s, "machine_translation").as_bool().unwrap_or(false);
     toggle_setting(ui, s, dirty, c.row(), "Translate the remaining texts automatically (offline, downloads 620 MB once)", "machine_translation");
     let now = get(s, "machine_translation").as_bool().unwrap_or(false);
     if now != was {
-        crate::mt::enable(now);
+        host().mt_enable(now);
     }
-    let st = crate::mt::status();
+    let st = host().mt_status();
     if now && !st.is_empty() && st != "Ready" {
         ui.text_in(&st, Rect::new(c.inner.x + 12.0, c.y - 6.0, c.inner.w - 24.0, 16.0), 11.5, omsi_ui::Weight::Regular, TEXT_FAINT, omsi_ui::paint::Align::Left);
         c.y += 14.0;
@@ -983,37 +984,37 @@ fn general_tab(ui: &mut Ui, s: &mut Value, dirty: &mut f32, out: &mut Outside, c
         ui.p().rounded(cell, 3.0, if on { ACCENT } else { Color::WHITE.alpha(if h { 0.2 } else { 0.08 }) });
     }
     // (dragged somewhere else in the game, #940: that place, until a corner is chosen)
-    if let Some(a) = crate::navigator::placed_at(&cur) {
+    if let Some(a) = host().navigator_placed_at(&cur) {
         let (cw, ch) = (screen.w * 0.5 - 10.0, screen.h * 0.5 - 10.0);
         let cell = Rect::new(screen.x + 5.0 + a[0] * (screen.w - 10.0 - cw), screen.y + 5.0 + a[1] * (screen.h - 10.0 - ch), cw, ch);
         ui.p().rounded(cell, 3.0, ACCENT);
     }
     c.y += 74.0;
     let left = c.used();
-    // updates from the GitHub releases (see `crate::updater`)
+    // updates from the GitHub releases (see `omsi_platform::updater`)
     let mut c = Col::new(ui, cols[1], "Updates");
     toggle_setting(ui, s, dirty, c.row(), "Look for updates when the launcher starts", "update_check");
     toggle_setting(ui, s, dirty, c.row(), "Install updates without asking", "update_auto");
     toggle_setting(ui, s, dirty, c.row(), "Tell me about a new version during a session", "update_notify");
     toggle_setting(ui, s, dirty, c.row(), "Count me in the website's \"playing now\" (anonymous)", "presence");
     {
-        use crate::updater::Status;
+        use omsi_platform::updater::Status;
         let r = c.row();
         let busy = matches!(out.update, Status::Checking | Status::Downloading { .. } | Status::Installing(_) | Status::WaitingForInstaller(_) | Status::Restarting(_));
         if ui.button("s-upd-check", Rect::new(r.x, r.y, 150.0, r.h), if busy { "Checking..." } else { "Check now" }, Some("refresh"), ButtonKind::Normal) && !busy {
             out.check_updates = true;
         }
         let text = match &out.update {
-            Status::UpToDate if crate::updater::is_test_build(crate::updater::current_version()) => format!("{} is a test build: it is not updated", crate::updater::current_version()),
-            Status::UpToDate => format!("{} is the latest version", crate::updater::current_version()),
+            Status::UpToDate if omsi_platform::updater::is_test_build(omsi_platform::updater::current_version()) => format!("{} is a test build: it is not updated", omsi_platform::updater::current_version()),
+            Status::UpToDate => format!("{} is the latest version", omsi_platform::updater::current_version()),
             Status::Available(rel) => format!("{} is available", rel.version),
             Status::Failed(_) => "The last check failed".to_string(),
-            _ => format!("This is openOMSI {}", crate::updater::current_version()),
+            _ => format!("This is openOMSI {}", omsi_platform::updater::current_version()),
         };
         ui.text_in(&text, Rect::new(r.x + 162.0, r.y, r.w - 162.0, r.h), 12.5, omsi_ui::Weight::Regular, TEXT_DIM, omsi_ui::paint::Align::Left);
     }
     if ui.button("s-upd-github", c.row(), "github.com/openOmsi-project/openOMSI", Some("open_in_new"), ButtonKind::Ghost) {
-        crate::updater::open_url(crate::updater::REPO_URL);
+        omsi_platform::updater::open_url(omsi_platform::updater::REPO_URL);
     }
     // every setting at once: here at the end, not first on the page where it was the
     // control one saw before any other

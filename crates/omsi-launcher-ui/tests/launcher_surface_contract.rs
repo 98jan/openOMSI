@@ -8,7 +8,7 @@
 fn launcher_uses_surface_state_for_frame_presentation() {
     // This is a source-level contract check, not a replacement for a Windows
     // ANGLE/WARP smoke test. The full launcher requires a real window.
-    let source = include_str!("../src/launcher/mod.rs");
+    let source = include_str!("../src/lib.rs");
     let draw_frame = source
         .split_once("fn draw_frame(")
         .expect("launcher frame function")

@@ -1,5 +1,6 @@
 //! The Setup and Tutorials pages.
 
+use crate::host::host;
 use super::*;
 use omsi_launcher_lib as core;
 
@@ -73,7 +74,7 @@ pub fn setup(l: &mut Launcher, area: Rect) {
                     // (a phone: the gallery is kept out of the folder chosen at once, before
                     // its media scanner lists its textures as photos, #1632)
                     #[cfg(target_os = "android")]
-                    crate::android::hide_content_from_gallery();
+                    host().hide_content_from_gallery();
                     l.state.load_content();
                 }
                 Err(e) => l.state.set_status(format!("{e:#}"), true),
@@ -94,11 +95,8 @@ fn support_panel(l: &mut Launcher, r: Rect) {
     let h = l.ui.paragraph(ABOUT, Vec2::new(inner.x, inner.y), inner.w, 12.5, Weight::Regular, TEXT_DIM);
     if l.ui.button("export-diagnostics", Rect::new(inner.x, inner.y + h + 12.0, 220.0, 42.0), "Export diagnostics", Some("download"), ButtonKind::Normal) {
         let c = &l.state.choice;
-        let snapshot = crate::support_bundle::snapshot(l.renderer.as_ref(), &crate::settings::Settings::load(),
-            l.pages.pads.io.as_ref().map(|d| d.connected()), Some((&c.map, Some(&c.bus), c.line.as_deref(), c.tour.as_deref())), "launcher_selection");
-        let out = crate::support_bundle::default_output();
-        l.state.spawn(move || super::state::Msg::Diagnostics(
-            crate::support_bundle::export(&out, &snapshot).map(|_| out).map_err(|e| format!("{e:#}"))));
+        let job = host().support_bundle(l.renderer.as_ref(), l.pages.pads.io.as_ref().map(|d| d.connected()), (&c.map, &c.bus, c.line.as_deref(), c.tour.as_deref()));
+        l.state.spawn(move || super::state::Msg::Diagnostics(job()));
     }
 }
 

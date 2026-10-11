@@ -30,10 +30,9 @@ use std::sync::mpsc::{channel, Receiver};
 use std::sync::Arc;
 use std::time::Instant;
 
-// The map is drawn with the game's own city map palette and order (see `navigator`): every
+// The map is drawn with the game's own city map palette and order (the navigator's, `Host::city_map_colors`): every
 // road's dark casing first, then every road's surface over every casing, then the chosen
 // line's route in the map's own red - so the two maps are the same picture.
-use crate::navigator::{ROAD, ROAD_CASING, ROAD_MAIN, ROUTE};
 const STOP: Color = Color::rgba(240, 240, 240, 1.0);
 /// Entry points wear the launcher's own amber; the one under the mouse a grey ring, the
 /// chosen one a white (a click on the map takes the place of a name in a list of seventy).
@@ -106,7 +105,7 @@ struct Entry {
 #[derive(Default)]
 struct Roads {
     /// Every carriageway the map has, as the game groups them: points in world metres.
-    roads: Vec<crate::navigator::MapRoad>,
+    roads: Vec<crate::host::MapRoad>,
     /// The linked network behind them (a trip's road pieces are lanes of it).
     net: Arc<Network>,
     /// (tile x, tile y, spline id, path) → the lane the timetable names.
@@ -662,6 +661,7 @@ impl MapView {
         let k = self.scale;
         let rel = |q: DVec3| Vec3::new((q.x - roads.origin.x) as f32, (q.y - roads.origin.y) as f32, 0.0);
         let mut p = Painter::new();
+        let [road_casing, road, road_main, route] = crate::host::host().city_map_colors();
         let mut points = 0usize;
         // what a road is drawn from: its own metres, at least a hair of a pixel
         let mut band = |p: &mut Painter, pts: &[DVec3], w_m: f32, w_px: f32, c: Color| {
@@ -678,9 +678,9 @@ impl MapView {
         for pass in 0..2 {
             for r in &roads.roads {
                 if pass == 0 {
-                    band(&mut p, &r.points, r.width + 2.0, CASING_PX * k, ROAD_CASING);
+                    band(&mut p, &r.points, r.width + 2.0, CASING_PX * k, road_casing);
                 } else {
-                    band(&mut p, &r.points, r.width, ROAD_PX * k, if r.main { ROAD_MAIN } else { ROAD });
+                    band(&mut p, &r.points, r.width, ROAD_PX * k, if r.main { road_main } else { road });
                 }
             }
         }
@@ -693,7 +693,7 @@ impl MapView {
                 let v = simplify(&v, tolerance);
                 points += v.len();
                 if v.len() >= 2 {
-                    p.ribbon(&v, 0.0, ROUTE_PX * k, ROUTE, false);
+                    p.ribbon(&v, 0.0, ROUTE_PX * k, route, false);
                 }
             }
         }
@@ -753,7 +753,7 @@ fn ring(p: &mut Painter, at: Vec3, r_px: f32, w_px: f32, c: Color, mpp: f32) {
 /// A polyline with the points the eye cannot tell apart taken out (the game's own map
 /// simplification, in metres: 12 cm there, half a pixel here).
 fn simplify(pts: &[Vec3], tol: f32) -> Vec<Vec3> {
-    crate::navigator::simplify(pts, tol)
+    crate::host::host().simplify(pts, tol)
 }
 
 /// Read a map the way the map needs it: the roads the game's city map draws, the entry
@@ -817,8 +817,7 @@ fn read_map(look: &Look) -> Roads {
         .filter(|t| omsi_cfg::vfs::is_file(&t.2))
         .collect();
     let t0 = std::time::Instant::now();
-    let crate::scene::NavigationMap { lanes, road_surfaces, places, signs: _ } = crate::scene::navigation_map_of(&root, &tiles, &chrono);
-    let (roads, net) = crate::navigator::city_roads(lanes, &road_surfaces);
+    let crate::host::CityMap { roads, net, places } = crate::host::host().city_map(&root, &tiles, &chrono);
     // the lanes the timetable can name, and the lanes of every spline behind them
     let mut by_path = HashMap::new();
     let mut by_spline: HashMap<(i32, i32, i64), Vec<usize>> = HashMap::new();

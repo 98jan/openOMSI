@@ -107,5 +107,3 @@ ndk-context = "0.1"
 [dev-dependencies]
 # the control names from a table (`ControlNames::from_table`) for the key picker's tests
 omsi-input = { path = "../omsi-input", features = ["test-support"] }
-# the launcher toolkit's test view (`Ui::drawn`) for the launcher pages' tests
-omsi-launcher-ui = { path = "../omsi-launcher-ui", features = ["test-support"] }

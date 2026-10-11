@@ -86,7 +86,7 @@ mod app_events;
 mod bus_service;
 mod camera_util;
 // the game controllers, their mappings and force feedback (`omsi-input`), at their old paths
-use omsi_input::{controllers, ffb_calibration, gamepad_profile, hpattern};
+use omsi_input::{controllers, gamepad_profile, hpattern};
 mod cli;
 mod diagnostics;
 mod perf_report;

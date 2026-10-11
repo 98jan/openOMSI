@@ -46,7 +46,7 @@ pub struct PagesView {
     pub controls_tab: usize,
     /// Sources indexed by action name, filled as installed vehicle scripts are scanned.
     pub kb_script_actions: Option<std::collections::HashMap<String, Vec<String>>>,
-    pub kb_script_actions_rx: Option<std::sync::mpsc::Receiver<crate::describe::ScriptActionScanUpdate>>,
+    pub kb_script_actions_rx: Option<std::sync::mpsc::Receiver<omsi_input::describe::ScriptActionScanUpdate>>,
     kb_script_actions_root: Option<std::path::PathBuf>,
     kb_script_cache_loaded: bool,
     kb_script_scan_actions: Option<std::collections::HashMap<String, Vec<String>>>,
@@ -70,11 +70,11 @@ pub struct PagesView {
 /// the one shown, a button being waited for.
 #[derive(Default)]
 pub struct PadsView {
-    pub io: Option<crate::controllers::Devices>,
+    pub io: Option<omsi_input::controllers::Devices>,
     /// The set-up assistant, while it runs.
     pub wizard: Option<Wizard>,
     feedback_test: bool,
-    pub devices: Option<Vec<crate::controllers::DeviceCfg>>,
+    pub devices: Option<Vec<omsi_input::controllers::DeviceCfg>>,
     pub selected: usize,
     /// Waiting for a button of the shown device to be pressed (to add its binding).
     pub capturing: bool,
@@ -98,7 +98,7 @@ pub struct Wizard {
     pub rest: [Option<f32>; 8],
     pub at: Vec<[Option<f32>; 8]>,
     pub error: Option<String>,
-    calibration: Option<(std::time::Instant, crate::ffb_calibration::Calibration)>,
+    calibration: Option<(std::time::Instant, omsi_input::ffb_calibration::Calibration)>,
     ff_choice: Option<bool>,
     test_strength: f32,
 }
@@ -121,7 +121,7 @@ impl PadsView {
     }
 }
 
-fn release_feedback(io: &mut Option<crate::controllers::Devices>, active: &mut bool) {
+fn release_feedback(io: &mut Option<omsi_input::controllers::Devices>, active: &mut bool) {
     if *active {
         *io = None;
         *active = false;

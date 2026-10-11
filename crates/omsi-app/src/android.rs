@@ -369,9 +369,9 @@ impl Shell {
             launcher_statics();
             let early = self.early.take();
             let instance = early.as_ref().map(|e| e.instance.clone()).unwrap_or_else(graphics_instance);
-            let mut l = Box::new(launcher::Launcher::new(instance));
+            let mut l = Box::new(launcher::new(instance));
             if let Some(e) = early {
-                l.adopt_early(e.window, e.start, e.surface);
+                l.adopt_early(e.window, Box::new(e.start), e.surface);
             }
             self.launcher = Some(l);
         }

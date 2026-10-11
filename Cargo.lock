@@ -3501,10 +3501,29 @@ dependencies = [
 name = "omsi-launcher-ui"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "arboard",
  "glam",
  "hashbrown 0.17.1",
+ "image",
+ "libc",
+ "log",
+ "omsi-cfg",
  "omsi-content",
+ "omsi-input",
+ "omsi-lan",
+ "omsi-launcher-core",
+ "omsi-map",
+ "omsi-net",
+ "omsi-platform",
+ "omsi-render",
+ "omsi-sim",
+ "omsi-timetable",
  "omsi-ui",
+ "omsi-vehicle",
+ "serde",
+ "serde_json",
+ "wgpu",
  "winit",
 ]
 

@@ -197,7 +197,7 @@ fn mod_list(l: &mut Launcher, c: Rect) {
     let mut y = inner.y;
     l.ui.text_in(&status.content_dir, Rect::new(inner.x, y, inner.w - 90.0, 18.0), 11.5, Weight::Regular, TEXT_FAINT, Align::Left);
     if l.ui.button("mods-open-folder", Rect::new(inner.right() - 80.0, y - 4.0, 80.0, 26.0), "Open", Some("open_in_new"), ButtonKind::Ghost) {
-        crate::updater::open_url(&status.content_dir);
+        omsi_platform::updater::open_url(&status.content_dir);
     }
     y += 26.0;
     // the search, and the filters with how many each holds
