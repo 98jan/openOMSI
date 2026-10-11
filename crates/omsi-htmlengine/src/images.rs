@@ -66,7 +66,7 @@ impl ImageStore {
             log::debug!("htmltexture: image {rel} not found");
             return None;
         };
-        let img = match crate::image_decode::decode(&path) {
+        let img = match omsi_sim::image_decode::decode(&path) {
             Ok(i) => i,
             Err(e) => {
                 log::warn!("htmltexture: image {} cannot be read: {e}", path.display());

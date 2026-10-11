@@ -3314,6 +3314,7 @@ dependencies = [
  "omsi-cfg",
  "omsi-content",
  "omsi-geometry",
+ "omsi-htmlengine",
  "omsi-input",
  "omsi-lan",
  "omsi-launcher-core",
@@ -3446,6 +3447,17 @@ dependencies = [
  "omsi-map",
  "omsi-o3d",
  "omsi-scenery",
+]
+
+[[package]]
+name = "omsi-htmlengine"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "log",
+ "omsi-cfg",
+ "omsi-sim",
+ "omsi-texture",
 ]
 
 [[package]]
@@ -3687,7 +3699,6 @@ dependencies = [
 name = "omsi-sim"
 version = "0.1.0"
 dependencies = [
- "ab_glyph",
  "anyhow",
  "glam",
  "hashbrown 0.17.1",

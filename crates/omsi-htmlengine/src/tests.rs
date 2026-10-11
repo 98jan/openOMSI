@@ -1,6 +1,6 @@
 use super::*;
 
-const DEMO: &str = include_str!("../../../../docs/examples/htmltexture/demo.html");
+const DEMO: &str = include_str!("../../../docs/examples/htmltexture/demo.html");
 
 fn px(frame: &[u8], w: u32, x: u32, y: u32) -> [u8; 4] {
     let i = ((y * w + x) * 4) as usize;
@@ -217,12 +217,12 @@ fn a_click_can_press_a_trigger() {
     assert!(r.take_triggers().is_empty());
 }
 
-fn map(items: Vec<(&str, crate::vehicle_api::ApiValue)>) -> crate::vehicle_api::ApiValue {
-    crate::vehicle_api::ApiValue::Map(items.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+fn map(items: Vec<(&str, omsi_sim::vehicle_api::ApiValue)>) -> omsi_sim::vehicle_api::ApiValue {
+    omsi_sim::vehicle_api::ApiValue::Map(items.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
 }
 
-fn sample_vehicle() -> crate::vehicle_api::ApiValue {
-    use crate::vehicle_api::ApiValue as A;
+fn sample_vehicle() -> omsi_sim::vehicle_api::ApiValue {
+    use omsi_sim::vehicle_api::ApiValue as A;
     let door = |n: f64, open: f64| map(vec![("number", A::Num(n)), ("open", A::Num(open)), ("isOpen", A::Bool(open > 0.05))]);
     map(vec![
         ("info", map(vec![("number", A::Str("4711".into()))])),
@@ -290,8 +290,8 @@ fn a_timer_sees_the_latest_vehicle_without_an_update_function() {
 
 /// The vehicle object `demo.html` reads. `bare`: a bus without doors, boarding doors and
 /// rpm signal (those come as `null` / empty).
-fn demo_vehicle(speed: f64, engine_on: bool, door_open: bool, bare: bool) -> crate::vehicle_api::ApiValue {
-    use crate::vehicle_api::ApiValue as A;
+fn demo_vehicle(speed: f64, engine_on: bool, door_open: bool, bare: bool) -> omsi_sim::vehicle_api::ApiValue {
+    use omsi_sim::vehicle_api::ApiValue as A;
     let s = |t: &str| A::Str(t.to_string());
     let num = |items: Vec<(&str, f64)>| map(items.into_iter().map(|(k, v)| (k, A::Num(v))).collect());
     let flags = |items: Vec<(&str, bool)>| map(items.into_iter().map(|(k, v)| (k, A::Bool(v))).collect());
@@ -362,7 +362,7 @@ fn demo_vehicle(speed: f64, engine_on: bool, door_open: bool, bare: bool) -> cra
 
 /// A renderer with `demo.html` loaded and the vehicle handed over (as the game does on the
 /// first update).
-fn demo_page(v: &crate::vehicle_api::ApiValue) -> EngineRenderer {
+fn demo_page(v: &omsi_sim::vehicle_api::ApiValue) -> EngineRenderer {
     let mut r = EngineRenderer::new(800, 480, DEMO);
     r.set_vehicle(v);
     r.set_vars(&[], &[]);
@@ -540,14 +540,14 @@ fn the_demo_redraws_from_the_latest_snapshot_every_second() {
     assert!(r.text_of("foot").unwrap().contains("| 0 s |"));
     // a new snapshot without an update call: the once-a-second timer picks it up
     let mut v = demo_vehicle(20.0, true, false, false);
-    if let crate::vehicle_api::ApiValue::Map(m) = &mut v {
+    if let omsi_sim::vehicle_api::ApiValue::Map(m) = &mut v {
         for (k, val) in m.iter_mut() {
             if k.as_str() == "info" {
                 *val = map(vec![
-                    ("number", crate::vehicle_api::ApiValue::Str("42".into())),
-                    ("ident", crate::vehicle_api::ApiValue::Str("DEMO".into())),
-                    ("route", crate::vehicle_api::ApiValue::Str("Line 9".into())),
-                    ("nextStop", crate::vehicle_api::ApiValue::Str("Depot".into())),
+                    ("number", omsi_sim::vehicle_api::ApiValue::Str("42".into())),
+                    ("ident", omsi_sim::vehicle_api::ApiValue::Str("DEMO".into())),
+                    ("route", omsi_sim::vehicle_api::ApiValue::Str("Line 9".into())),
+                    ("nextStop", omsi_sim::vehicle_api::ApiValue::Str("Depot".into())),
                 ]);
             }
         }
@@ -562,7 +562,7 @@ fn the_demo_redraws_from_the_latest_snapshot_every_second() {
 
 #[test]
 fn the_demo_shows_a_real_vehicle_snapshot() {
-    use crate::vehicle_api::{snapshot, Inputs};
+    use omsi_sim::vehicle_api::{snapshot, Inputs};
     let var = |n: &str| match n.to_ascii_lowercase().as_str() {
         "door_0" => Some(0.0),
         "door_1" => Some(1.0),
@@ -604,8 +604,8 @@ fn the_demo_shows_a_real_vehicle_snapshot() {
 }
 #[test]
 fn time_date_and_locale_reach_the_page() {
-    use crate::vehicle_api::environment;
-    let mut c = crate::SimClock::default();
+    use omsi_sim::vehicle_api::environment;
+    let mut c = omsi_sim::SimClock::default();
     c.set_date(2026, 9, 30);
     c.time = 13.0 * 3600.0 + 5.0 * 60.0 + 9.0;
     let mut r = EngineRenderer::new(
@@ -634,9 +634,9 @@ fn a_scenery_page_has_only_the_basic_api() {
         200,
         100,
         "<div id='a'></div><div id='b'></div>         <script>          document.getElementById('a').textContent = [typeof omsi.vehicle, typeof omsi.depot, typeof omsi.setRoute, typeof omsi.setNextStop].join(',');          omsi.update = function (d) {            document.getElementById('b').textContent = [typeof d.vehicle, typeof omsi.setVar, typeof omsi.trigger, typeof omsi.time, omsi.locale].join(',');          };         </script>",
-        crate::htmltex::PageApi::Scenery,
+        omsi_sim::htmltex::PageApi::Scenery,
     );
-    r.set_env(&crate::vehicle_api::environment(&crate::SimClock::default(), "de"));
+    r.set_env(&omsi_sim::vehicle_api::environment(&omsi_sim::SimClock::default(), "de"));
     r.set_vars(&[], &[]);
     assert_eq!(r.text_of("a").as_deref(), Some("undefined,undefined,undefined,undefined"));
     assert_eq!(r.text_of("b").as_deref(), Some("undefined,function,function,object,de"));
@@ -644,8 +644,8 @@ fn a_scenery_page_has_only_the_basic_api() {
 
 #[test]
 fn the_english_date_is_month_first() {
-    use crate::vehicle_api::{environment, ApiValue};
-    let mut c = crate::SimClock::default();
+    use omsi_sim::vehicle_api::{environment, ApiValue};
+    let mut c = omsi_sim::SimClock::default();
     c.set_date(2026, 9, 30);
     let ApiValue::Map(m) = environment(&c, "en") else { panic!() };
     let ApiValue::Map(d) = &m.iter().find(|(k, _)| k == "date").unwrap().1 else { panic!() };
@@ -703,6 +703,7 @@ fn bmp(w: u32, h: u32, rgb: [u8; 3]) -> Vec<u8> {
 
 /// A page in a fresh folder that holds `red.bmp` (4x4 red) and `blue.bmp` (2x2 blue).
 fn picture_page(name: &str, html: &str, w: u32, h: u32) -> EngineRenderer {
+    install_decoder();
     let dir = std::env::temp_dir().join(format!("omsi_htmlimg_{}_{}", name, std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("red.bmp"), bmp(4, 4, [255, 0, 0])).unwrap();
@@ -839,17 +840,6 @@ fn background_values_are_split_and_read() {
 }
 
 #[test]
-fn style_sheet_urls_are_made_relative_to_the_page() {
-    use crate::htmltex::rebase_css_urls;
-    let css = "a{background:url(../img/x.png)} b{background:url('y.png')} c{background:url(data:x)} d{background:url(/abs.png)}";
-    assert_eq!(
-        rebase_css_urls(css, "css/"),
-        "a{background:url(css/../img/x.png)} b{background:url('css/y.png')} c{background:url(data:x)} d{background:url(/abs.png)}"
-    );
-    assert_eq!(rebase_css_urls(css, ""), css);
-}
-
-#[test]
 fn linked_style_sheet_and_script_are_inlined_with_their_pictures() {
     let dir = std::env::temp_dir().join(format!("omsi_htmlimg_page_{}", std::process::id()));
     std::fs::create_dir_all(dir.join("css")).unwrap();
@@ -858,17 +848,17 @@ fn linked_style_sheet_and_script_are_inlined_with_their_pictures() {
     std::fs::write(dir.join("css").join("s.css"), "#a{width:6px;height:6px;background:url(../img/red.bmp)}").unwrap();
     std::fs::write(dir.join("index.html"), "<link rel='stylesheet' href='css/s.css'><body style='margin:0'><div id=a></div></body>").unwrap();
     let dirs = [dir.as_path()];
-    let html = crate::htmltex::load_page(&dirs, "index.html");
+    let html = omsi_sim::htmltex::load_page(&dirs, "index.html");
     assert!(html.contains("url(css/../img/red.bmp)"));
     let mut r = EngineRenderer::new(8, 8, &html);
-    r.set_asset_dirs(crate::htmltex::asset_dirs(&dirs, "index.html"));
+    r.set_asset_dirs(omsi_sim::htmltex::asset_dirs(&dirs, "index.html"));
     let f = r.poll_frame().unwrap();
     assert_eq!(px(&f, 8, 5, 5), [255, 0, 0, 255]);
 }
 /// Speed of the engine on `docs/examples/htmltexture/demo.html`. Not part of the normal test
 /// run; start it in release mode (debug numbers mean nothing):
 ///
-/// `cargo test -p omsi-sim --release --lib bench_htmlengine -- --ignored --nocapture`
+/// `cargo test -p omsi-htmlengine --release --lib bench_htmlengine -- --ignored --nocapture`
 ///
 /// Set `HTMLBENCH_PAGE=path/to/page.html` to measure your own page and `HTMLBENCH_RUNS=n` for
 /// the number of timed runs (default 200).
@@ -922,7 +912,7 @@ fn hit_test_follows_layout_changes_and_idle_updates_draw_nothing() {
 
 #[test]
 fn departures_are_asked_by_stop_and_handed_back() {
-    use crate::vehicle_api::ApiValue;
+    use omsi_sim::vehicle_api::ApiValue;
     let html = "<body><p id=o></p><script>window.omsi.update = function (d) { var l = omsi.getDepartures('Central '); document.getElementById('o').textContent = l.length + ':' + (l.length ? l[0].line + '|' + l[0].destination + '|' + l[0].time : ''); };</script></body>";
     let mut r = EngineRenderer::new(8, 8, html);
     r.set_vars(&[], &[]);
@@ -953,4 +943,14 @@ fn hangul_is_drawn_with_the_fallback_face() {
     assert!(ink("<b>정류장</b>") > 40);
     with_fonts(|reg, _| face_for(reg, false, '가', |_, id, fi| assert!(id.0 != 0 && fi == 1)));
     with_fonts(|reg, _| face_for(reg, false, 'A', |_, _, fi| assert_eq!(fi, 0)));
+}
+
+/// The pictures are read through omsi-sim's decoder, which the game registers at start:
+/// the tests register the same one.
+fn install_decoder() {
+    omsi_sim::image_decode::install(|path| {
+        omsi_texture::decode_file(path)
+            .map(|i| omsi_sim::image_decode::DecodedImage { width: i.width, height: i.height, rgba: i.rgba, has_alpha: i.has_alpha })
+            .map_err(|e| e.to_string())
+    });
 }

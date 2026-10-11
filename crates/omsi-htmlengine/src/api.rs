@@ -1,7 +1,7 @@
-//! The vehicle snapshot (see [`crate::vehicle_api`]) as script values.
+//! The vehicle snapshot (see [`omsi_sim::vehicle_api`]) as script values.
 
 use super::*;
-use crate::vehicle_api::ApiValue;
+use omsi_sim::vehicle_api::ApiValue;
 
 /// The script object tree for a snapshot: maps become objects, lists arrays.
 pub(crate) fn api_to_val(a: &ApiValue) -> Val {

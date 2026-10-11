@@ -22,7 +22,6 @@ anyhow.workspace = true
 hashbrown.workspace = true
 rayon.workspace = true
 parking_lot = { workspace = true }
-ab_glyph.workspace = true
 
 [dev-dependencies]
 # (the tests and examples read pictures with the game's decoder, see `image_decode`)
