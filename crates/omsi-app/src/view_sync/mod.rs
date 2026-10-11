@@ -33,6 +33,7 @@
 
 pub(crate) mod people;
 pub(crate) mod traffic;
+pub(crate) mod traffic_audio;
 pub(crate) mod vehicle;
 pub(crate) mod vehicle_damage;
 

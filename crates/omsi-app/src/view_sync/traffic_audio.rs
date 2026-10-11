@@ -1,10 +1,13 @@
-//! The AI vehicles' sounds.
+//! The AI vehicles' sounds: the view sync's side of the traffic that is heard.
 
-use super::*;
+use crate::traffic::Traffic;
+use glam::DVec3;
+use hashbrown::HashMap;
+use std::sync::Arc;
 
 /// A vehicle definition's `[sound_ai]` (else `[sound]`) configuration, the folder its clips
 /// are named from, and those clips' files.
-pub(super) struct SoundPlan {
+pub(crate) struct SoundPlan {
     cfg: Arc<omsi_vehicle::SoundCfg>,
     dir: std::path::PathBuf,
     clips: Vec<std::path::PathBuf>,
