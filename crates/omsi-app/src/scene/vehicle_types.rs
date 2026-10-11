@@ -128,7 +128,7 @@ pub struct MultiLight {
 
 impl MultiLight {
     /// The light map made of the maps in `mask`, from the shared store or read now.
-    pub(super) fn composite(&mut self, renderer: &Renderer, scene: &mut Scene, mask: u32) -> Option<TextureId> {
+    pub(crate) fn composite(&mut self, renderer: &Renderer, scene: &mut Scene, mask: u32) -> Option<TextureId> {
         let mut key = String::from("lightmap-sum:");
         for (k, (path, _)) in self.maps.iter().enumerate() {
             if mask & (1 << k) != 0 {
@@ -361,7 +361,7 @@ impl Look {
 }
 
 impl SlotSpec {
-    pub(super) fn with_freetex(
+    pub(crate) fn with_freetex(
         &self,
         key: Option<TextureId>,
         tex: TextureId,

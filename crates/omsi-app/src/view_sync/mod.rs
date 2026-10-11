@@ -22,6 +22,8 @@
 
 pub(crate) mod people;
 pub(crate) mod traffic;
+pub(crate) mod vehicle;
+pub(crate) mod vehicle_damage;
 
 use crate::humans::Humans;
 use crate::scene::World;

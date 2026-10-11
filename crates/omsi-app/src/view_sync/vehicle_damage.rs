@@ -1,6 +1,7 @@
 //! Collision damage on a vehicle instance: cracks over its broken glass and dents in its
 //! body meshes (copies of its own), from the hits the simulation recorded.
-use super::*;
+use crate::scene::*;
+use omsi_render::{Renderer, Scene};
 
 fn closest_point_on_triangle(
     p: glam::Vec3,

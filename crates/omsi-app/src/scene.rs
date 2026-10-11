@@ -43,7 +43,6 @@ pub use scripted::DayKind;
 mod vehicle_materials;
 mod vehicle_types;
 mod vehicles;
-mod vehicle_damage;
 mod lanes;
 mod season_looks;
 
@@ -56,7 +55,9 @@ pub(crate) use props::*;
 pub(crate) use scripted::*;
 pub(crate) use vehicle_materials::*;
 pub(crate) use vehicle_types::*;
-pub(crate) use vehicle_damage::*;
+// (the vehicles' per-frame view sync lives in `view_sync`; at its old paths here)
+pub(crate) use crate::view_sync::vehicle::*;
+pub(crate) use crate::view_sync::vehicle_damage::*;
 use lanes::*;
 use lightmaps::*;
 pub(crate) use stage::*;
