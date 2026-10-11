@@ -1,14 +1,18 @@
 //! openOMSI's multiplayer on top of the transport (`omsi-net`): what of a session needs no
 //! game world - the host's mods for the players who join (`mods`), the voice chat's link
-//! to the TeamSpeak plugin (`voice`), the WebSocket gateway, tunnel and status page
+//! to the GreenTeaSpeak plugin (`voice`), the WebSocket gateway, tunnel and status page
 //! (`gateway`), what of a vehicle goes over the network beyond its pose (`sync`), where a
-//! joining bus may stand (`spawn`) and the session's status file for the launcher. The
-//! game's side (the remote buses drawn and heard, the shared world, the chat on the HUD)
-//! stays in the app, which hands this crate plain values.
+//! joining bus may stand (`spawn`), a client's tracks of the host's world (`mirror`), a
+//! dedicated server's `server.cfg` and administration (`server_cfg`, `admin`) and the
+//! session's status file for the launcher. The game's side (the remote buses drawn and
+//! heard, the shared world, the chat on the HUD) stays in the app, which hands this crate
+//! plain values.
 
+pub mod admin;
 pub mod gateway;
 pub mod mirror;
 pub mod mods;
+pub mod server_cfg;
 pub mod spawn;
 pub mod sync;
 pub mod voice;

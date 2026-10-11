@@ -3454,11 +3454,13 @@ dependencies = [
 name = "omsi-lan"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "glam",
  "hashbrown 0.17.1",
  "libc",
  "log",
  "omsi-cfg",
+ "omsi-map",
  "omsi-net",
  "omsi-script",
  "omsi-sim",
