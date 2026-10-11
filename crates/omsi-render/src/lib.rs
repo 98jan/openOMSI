@@ -26,6 +26,7 @@ mod scene;
 mod sky;
 mod surface;
 mod targets;
+mod uniforms;
 mod view;
 pub(crate) use frame_plan::*;
 pub use gpu::*;
@@ -37,202 +38,15 @@ pub(crate) use shaders::*;
 pub use sky::*;
 pub use surface::*;
 pub(crate) use targets::*;
+pub use uniforms::*;
 pub use view::*;
 pub use triple::{panel_width, ScreenView, TripleScreen};
-
-#[derive(Default)]
-struct ViewCulling {
-    drawn: Vec<u64>,
-    sizes: hashbrown::HashMap<[u64; 4], f32>,
-    scratch: hashbrown::HashMap<[u64; 4], f32>,
-}
 
 use anyhow::{anyhow, Context, Result};
 use glam::{DVec3, Mat4, Vec3, Vec4};
 use omsi_geometry::MeshData;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Vertex {
-    pub pos: [f32; 3],
-    pub normal: [f32; 3],
-    pub uv: [f32; 2],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
-    view_proj: [[f32; 4]; 4],
-    cam_pos: [f32; 4],
-    /// World-space render origin modulo 1000 m (the procedural patterns' period), added back
-    /// for procedural patterns that must not jump when the floating origin moves to the next
-    /// 100 m cell.
-    world_origin: [f32; 4],
-    sun_dir: [f32; 4],
-    ambient: [f32; 4],
-    fog: [f32; 4],
-    sun_color: [f32; 4],
-    sky_color: [f32; 4],
-    light_grid: [f32; 4],
-    sky: [f32; 4],
-    cam_right: [f32; 4],
-    cam_up: [f32; 4],
-    clouds: [f32; 4],
-    light_view_proj: [[f32; 4]; 4],
-    light_view_proj_far: [[f32; 4]; 4],
-    shadow: [f32; 4],
-    /// x enhanced graphics (0/1), y seconds since start, z sun ndc x, w sun ndc y
-    post: [f32; 4],
-    /// The player's vehicle as a box the weather does not reach into: origin (render-origin
-    /// relative) and sin(heading); cos(heading) and the half extents; the box centre offset
-    /// and whether there is one.
-    inside_a: [f32; 4],
-    inside_b: [f32; 4],
-    inside_c: [f32; 4],
-    /// x procedural detail texturing (0/1), y soft shadow penumbra (0/1), z aerial
-    /// perspective strength, w the close shadow cascade's half range
-    flags: [f32; 4],
-    /// The close shadow cascade (right half of the near map).
-    light_view_proj_close: [[f32; 4]; 4],
-    /// The player's vehicle's velocity (m/s, world) and 1: the airstream the rain on its
-    /// glass meets (see `Lighting::glass_wind`).
-    wind: [f32; 4],
-    /// Enhanced: the street lamps' shadow maps (`LAMP_SHADOWS` tiles under the far map),
-    /// and the light indices they belong to (-1: none).
-    lamp_view_proj: [[[f32; 4]; 4]; 4],
-    lamp_shadow: [f32; 4],
-    /// Windy trees: xy the weather's wind (m/s, world; 0 with the setting off), zw how far
-    /// the air has carried the gusts since the start (m, modulo the shaders' PATTERN_PERIOD).
-    tree_wind: [f32; 4],
-    /// The rear section of the player's articulated vehicle as `inside_*` (w of the third
-    /// 0 without one): the weather stays out of it as well (#1967: it snowed and rained in
-    /// the back of an articulated bus). Last, so that the shaders that do not read it can
-    /// leave it out of their copy of this struct.
-    inside2_a: [f32; 4],
-    inside2_b: [f32; 4],
-    inside2_c: [f32; 4],
-    /// Enhanced: the field each light cookie layer covers (`cookies::CookieAtlas::fields`).
-    /// After the rest: the shaders that light nothing by a cookie leave it out.
-    cookies: [[f32; 4]; COOKIE_LAYERS],
-}
-
-/// The period the sky's cloud patterns repeat with (m): 5 x the cloud field (14 km), 8 x
-/// its billow detail (8.75 km) and 28 x the high layer's (2.5 km) - the render origin is
-/// taken modulo this for them, which keeps centimetres of precision in 32 bits.
-const CLOUD_ORIGIN_PERIOD: f64 = 70000.0;
-
-/// The enhanced path's post passes (post.wgsl `PostParams`).
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct PostUniform {
-    a: [f32; 4],
-    b: [f32; 4],
-    c: [f32; 4],
-    d: [f32; 4],
-}
-
-/// The enhanced lighting (enhanced_common.wgsl `Enhanced`).
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct EnhancedUniform {
-    exposure: [f32; 4],
-    sun: [f32; 4],
-    sh: [[f32; 4]; 9],
-    ground: [f32; 4],
-    fog: [f32; 4],
-    fog_color: [f32; 4],
-    weather: [f32; 4],
-    lights: [f32; 4],
-    sun_disc: [f32; 4],
-    debug: [f32; 4],
-    /// xyz where the sky cube was drawn from, relative to the camera (the dome looks the
-    /// clouds up through it with the parallax taken out); w the clouds' march steps
-    /// (`Lighting::low_clouds`)
-    eye: [f32; 4],
-    /// x how bright an LED panel's dots burn (`Lighting::led_glow`), y how much of the
-    /// mip chain an LED panel is held at (`Lighting::led_mips`)
-    led: [f32; 4],
-    /// xyz towards the moon, w its angular radius
-    moon: [f32; 4],
-    /// rgb the moon disc's irradiance at the ground before the clouds, w how much of the
-    /// starry sky shows (the city's lamps and the haze wash the faint stars out)
-    moon_disc: [f32; 4],
-    /// rgb the sun's irradiance at the clouds' heights (`atmosphere::CLOUD_SUN_HEIGHTS`)
-    cloud_sun: [[f32; 4]; 4],
-    /// rgb the moonlight on a surface facing the moon (after the clouds), w 1 while the
-    /// shadow maps are the moon's (`Lighting::casts_moon_shadows`)
-    moon_light: [f32; 4],
-    /// `Lighting::condensation`
-    condensation: [f32; 4],
-}
-
-/// Steps of the enhanced clouds' march through their layer (sky_enhanced.wgsl
-/// `cloud_layer`), and with the low cloud quality (`Lighting::low_clouds`).
-const CLOUD_STEPS: u32 = 56;
-const CLOUD_STEPS_LOW: u32 = 20;
-
-/// Face size of the enhanced sky cube (see `Probe::cube_view`): about as many texels per
-/// degree as a 1600-pixel-wide picture has pixels at half its size (at 512 the clouds'
-/// edges stood in blocks of three or four pixels).
-const SKY_CUBE_SIZE: u32 = 1024;
-/// Redraw rounds of a sky cube face: each starts the clouds' steps elsewhere, and the
-/// rounds are averaged (all of them at once for a picture on its own or a new sky).
-const SKY_CUBE_ROUNDS: u32 = 8;
-/// The old picture's share when a face is redrawn in the window.
-const SKY_CUBE_HISTORY: f64 = 0.8;
-/// A face is redrawn every this many window frames: the clouds drift by a pixel of the
-/// cube in seconds, and a face a frame (a 32-step march of 1024x1024 texels) cost 2.9 ms of
-/// every enhanced frame on an M4.
-const SKY_CUBE_EVERY: u32 = 4;
-
-const PROBE_SIZE: u32 = 64;
-const PROBE_MIPS: u32 = 6;
-/// Glow levels of the enhanced post path.
-const GLOW_LEVELS: usize = 6;
-/// The illuminance a light's core gives (maplight colour 1, in the sky model's units:
-/// 55 lux, so the street under a lamp gets its 15-25 lux).
-const LAMP_E: f32 = 0.0055;
-/// Illuminance of a bus saloon's lamps on the seats and the floor (300 lux).
-const CABIN_E: f32 = 0.03;
-/// A lit window's radiance at night.
-const WINDOW_RADIANCE: f32 = 0.0022;
-/// The metering (see `meter_tuning`).
-const METER_GAIN: f32 = 0.4;
-const METER_TARGET: f32 = -2.84;
-// (how far the eye adapts to what it looks at beyond what the light model knows: the sun
-// in view, a dark cab or an underpass by day - two stops and a half and more for the
-// eye; at the metering's gain a snow field still comes out darkened by well under a stop)
-const METER_DARKEN: f32 = 2.0;
-const METER_BRIGHTEN: f32 = 1.6;
-/// The tone curve's contrast about mid grey by day and at night (see `tone_contrast`).
-const TONE_CONTRAST_DAY: f32 = 1.22;
-const TONE_CONTRAST_NIGHT: f32 = 0.94;
-/// How far night vision takes the colour out of a dark scene (post.wgsl `night_vision`).
-const NIGHT_VISION: f32 = 0.3;
-/// The sun's angular radius as drawn (a little larger than the real 0.27°).
-const SUN_RADIUS: f32 = 0.0065;
-/// The moon's, as drawn (the real one is as large as the sun's; a little more, as the
-/// eye sees it).
-const MOON_RADIUS: f32 = 0.0062;
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct FogLampUniform {
-    inv_view_proj: [[f32; 4]; 4],
-    size: [f32; 4],
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct SsaoUniform {
-    inv_proj: [[f32; 4]; 4],
-    params: [f32; 4],
-    /// xy: the projection's off-centre shift (0 for the window's own symmetric frustum;
-    /// a headset eye or a triple screen's side panel has one)
-    shift: [f32; 4],
-}
 
 pub type MeshId = usize;
 pub type TextureId = usize;

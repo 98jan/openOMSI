@@ -426,3 +426,10 @@ pub(crate) struct ViewHistory {
     /// Cleared and reused as the next main view's object-size history.
     pub(crate) object_sizes_scratch: std::cell::RefCell<hashbrown::HashMap<[u64; 4], f32>>,
 }
+
+#[derive(Default)]
+pub(crate) struct ViewCulling {
+    pub(crate) drawn: Vec<u64>,
+    pub(crate) sizes: hashbrown::HashMap<[u64; 4], f32>,
+    pub(crate) scratch: hashbrown::HashMap<[u64; 4], f32>,
+}

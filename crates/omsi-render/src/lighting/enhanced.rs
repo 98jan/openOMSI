@@ -750,3 +750,52 @@ impl Renderer {
         redraw
     }
 }
+
+/// Steps of the enhanced clouds' march through their layer (sky_enhanced.wgsl
+/// `cloud_layer`), and with the low cloud quality (`Lighting::low_clouds`).
+pub(crate) const CLOUD_STEPS: u32 = 56;
+pub(crate) const CLOUD_STEPS_LOW: u32 = 20;
+
+/// Face size of the enhanced sky cube (see `Probe::cube_view`): about as many texels per
+/// degree as a 1600-pixel-wide picture has pixels at half its size (at 512 the clouds'
+/// edges stood in blocks of three or four pixels).
+pub(crate) const SKY_CUBE_SIZE: u32 = 1024;
+/// Redraw rounds of a sky cube face: each starts the clouds' steps elsewhere, and the
+/// rounds are averaged (all of them at once for a picture on its own or a new sky).
+pub(crate) const SKY_CUBE_ROUNDS: u32 = 8;
+/// The old picture's share when a face is redrawn in the window.
+pub(crate) const SKY_CUBE_HISTORY: f64 = 0.8;
+/// A face is redrawn every this many window frames: the clouds drift by a pixel of the
+/// cube in seconds, and a face a frame (a 32-step march of 1024x1024 texels) cost 2.9 ms of
+/// every enhanced frame on an M4.
+pub(crate) const SKY_CUBE_EVERY: u32 = 4;
+
+pub(crate) const PROBE_SIZE: u32 = 64;
+pub(crate) const PROBE_MIPS: u32 = 6;
+/// Glow levels of the enhanced post path.
+pub(crate) const GLOW_LEVELS: usize = 6;
+/// The illuminance a light's core gives (maplight colour 1, in the sky model's units:
+/// 55 lux, so the street under a lamp gets its 15-25 lux).
+pub(crate) const LAMP_E: f32 = 0.0055;
+/// Illuminance of a bus saloon's lamps on the seats and the floor (300 lux).
+pub(crate) const CABIN_E: f32 = 0.03;
+/// A lit window's radiance at night.
+pub(crate) const WINDOW_RADIANCE: f32 = 0.0022;
+/// The metering (see `meter_tuning`).
+pub(crate) const METER_GAIN: f32 = 0.4;
+pub(crate) const METER_TARGET: f32 = -2.84;
+// (how far the eye adapts to what it looks at beyond what the light model knows: the sun
+// in view, a dark cab or an underpass by day - two stops and a half and more for the
+// eye; at the metering's gain a snow field still comes out darkened by well under a stop)
+pub(crate) const METER_DARKEN: f32 = 2.0;
+pub(crate) const METER_BRIGHTEN: f32 = 1.6;
+/// The tone curve's contrast about mid grey by day and at night (see `tone_contrast`).
+pub(crate) const TONE_CONTRAST_DAY: f32 = 1.22;
+pub(crate) const TONE_CONTRAST_NIGHT: f32 = 0.94;
+/// How far night vision takes the colour out of a dark scene (post.wgsl `night_vision`).
+pub(crate) const NIGHT_VISION: f32 = 0.3;
+/// The sun's angular radius as drawn (a little larger than the real 0.27°).
+pub(crate) const SUN_RADIUS: f32 = 0.0065;
+/// The moon's, as drawn (the real one is as large as the sun's; a little more, as the
+/// eye sees it).
+pub(crate) const MOON_RADIUS: f32 = 0.0062;
