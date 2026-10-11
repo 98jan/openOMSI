@@ -4,6 +4,9 @@ include!("../../../../../tools/test-support/original_root.rs");
 use super::*;
 use std::sync::Arc;
 
+mod articulation;
+mod scripts_props;
+
 #[test]
 fn velocity_is_the_driven_wheels_speed() {
     // a front axle rolling at 10 m/s, the driven rear axle spinning at twice that
