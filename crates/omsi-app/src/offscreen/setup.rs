@@ -98,7 +98,8 @@ impl<'a> Offscreen<'a> {
         let player_ref: Option<Player> = None;
         let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
         let weather = load_weather(args);
-        setup_sky(args, &renderer, &mut scene, envir.as_ref(), Some(&weather));
+        let mut sky_clouds = None;
+        setup_sky(args, &renderer, &mut scene, envir.as_ref(), Some(&weather), &mut sky_clouds);
         if let Some(p) = player.as_mut() {
             apply_weather(&mut p.vehicle, &weather, initial_wetness(&weather));
         }
@@ -296,6 +297,7 @@ impl<'a> Offscreen<'a> {
             recorder,
             profile: Default::default(),
             drive_extremes: super::NO_EXTREMES,
+            sky_clouds,
         })
     }
 }

@@ -409,9 +409,10 @@ pub(crate) fn picture_lighting(
     condensation: [f32; 4],
     settings: &crate::settings::Settings,
     animation_time: f32,
+    sky_clouds: &crate::weather_setup::SkyClouds,
 ) -> omsi_render::Lighting {
     let mut lighting = match weather {
-        Some(w) => weather_lighting(daylight, w, cloud_drift, wetness, settings.shadows),
+        Some(w) => weather_lighting(daylight, w, cloud_drift, wetness, settings.shadows, sky_clouds),
         None => lights::lighting_from(daylight, 50000.0),
     };
     lighting.wetness = omsi_cfg::flags::OMSI_WETNESS.parse()

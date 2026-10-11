@@ -410,7 +410,7 @@ impl App {
         // offscreen: a session begun in the rain used to open on a bone-dry street
         self.session.wetness = self.session.weather.as_ref().map(initial_wetness).unwrap_or(0.0);
         self.clock = start_clock(&self.args);
-        setup_sky(&self.args, &renderer, &mut scene, self.session.envir.as_ref(), self.session.weather.as_ref());
+        setup_sky(&self.args, &renderer, &mut scene, self.session.envir.as_ref(), self.session.weather.as_ref(), &mut self.session.sky_clouds);
         // the window streams the tiles around the camera unless a fixed area was asked for
         if !self.args.all && self.args.radius.is_none() {
             match opened.unwrap_or_else(|| open_world(&self.args)) {

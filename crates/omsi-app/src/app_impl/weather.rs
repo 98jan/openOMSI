@@ -40,7 +40,7 @@ impl App {
         self.session.weather=Some(to);
         if clouds_changed{
             if let (Some(r),Some(scene))=(self.renderer.as_ref(),self.scene.as_mut()){
-                crate::weather_setup::setup_sky(&self.args,r,scene,self.session.envir.as_ref(),self.session.weather.as_ref());
+                crate::weather_setup::setup_sky(&self.args,r,scene,self.session.envir.as_ref(),self.session.weather.as_ref(),&mut self.session.sky_clouds);
             }
         }
         self.follow_date();
@@ -110,7 +110,7 @@ impl App {
             }
             if clouds_changed {
                 if let (Some(r), Some(scene)) = (self.renderer.as_ref(), self.scene.as_mut()) {
-                    crate::weather_setup::setup_sky(&self.args, r, scene, self.session.envir.as_ref(), self.session.weather.as_ref());
+                    crate::weather_setup::setup_sky(&self.args, r, scene, self.session.envir.as_ref(), self.session.weather.as_ref(), &mut self.session.sky_clouds);
                 }
             }
         }
@@ -121,7 +121,7 @@ impl App {
                 self.session.weather = Some(w);
                 if kind_changed {
                     if let (Some(r), Some(scene)) = (self.renderer.as_ref(), self.scene.as_mut()) {
-                        crate::weather_setup::setup_sky(&self.args, r, scene, self.session.envir.as_ref(), self.session.weather.as_ref());
+                        crate::weather_setup::setup_sky(&self.args, r, scene, self.session.envir.as_ref(), self.session.weather.as_ref(), &mut self.session.sky_clouds);
                     }
                 }
             }

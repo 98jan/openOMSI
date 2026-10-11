@@ -47,6 +47,8 @@ struct Shown {
     centre: glam::Vec3,
     length: f32,
     weather: omsi_content::weather::Weather,
+    /// The classic sky's cloud type its scene's sky was set up with.
+    sky_clouds: crate::weather_setup::SkyClouds,
     lighting: Lighting,
 }
 
@@ -235,8 +237,8 @@ impl Showroom {
                         s.look = w.clone();
                         let args = args_for(&w);
                         s.weather = load_weather(&args);
-                        setup_sky(&args, renderer, &mut s.scene, omsi_content::Envir::load(&args.root.join("envir.cfg")).ok().as_ref(), Some(&s.weather));
-                        s.lighting = lighting_for(&args, &s.weather);
+                        setup_sky(&args, renderer, &mut s.scene, omsi_content::Envir::load(&args.root.join("envir.cfg")).ok().as_ref(), Some(&s.weather), &mut s.sky_clouds);
+                        s.lighting = lighting_for(&args, &s.weather, &s.sky_clouds);
                     }
                     self.dirty = true;
                 } else {
@@ -342,7 +344,8 @@ impl Showroom {
         let args = args_for(&r.look);
         let weather = load_weather(&args);
         let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
-        setup_sky(&args, renderer, &mut scene, envir.as_ref(), Some(&weather));
+        let mut sky_clouds = None;
+        setup_sky(&args, renderer, &mut scene, envir.as_ref(), Some(&weather), &mut sky_clouds);
         add_floor(renderer, &mut scene);
         let world = r.world;
         let mut vehicle = r.vehicle;
@@ -366,10 +369,10 @@ impl Showroom {
             centre.y = bb[4] + bb[1] * 0.5 - total * 0.5;
             length = total;
         }
-        let lighting = lighting_for(&args, &weather);
+        let lighting = lighting_for(&args, &weather, &sky_clouds);
         log::info!("showroom: {} ({} meshes, {:.1} m long) placed in {:.2} s", r.look.bus, render.instances.len(), length, t0.elapsed().as_secs_f64());
         let _ = std::fs::remove_file(placing_mark());
-        Shown { look: r.look, scene, world: Some(world), vehicle: Some(vehicle), render: Some(render), trailers, centre, length, weather, lighting }
+        Shown { look: r.look, scene, world: Some(world), vehicle: Some(vehicle), render: Some(render), trailers, centre, length, weather, sky_clouds, lighting }
     }
 
     /// The picture of the bus at `w` x `h` pixels, drawn again when something changed.
@@ -440,11 +443,11 @@ impl Showroom {
 /// The light of the look's time and weather, with the sun's shadow under the bus. Always
 /// the plain renderer, whatever the game's graphics setting: a preview is to be quick and
 /// clear, not the game's picture (no enhanced exposure and glow, no weather effects).
-fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather) -> Lighting {
+fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather, sky_clouds: &crate::weather_setup::SkyClouds) -> Lighting {
     let clock = start_clock(args);
     let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
     let daylight = omsi_sim::Daylight::compute(&clock, envir.as_ref());
-    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, true);
+    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, true, sky_clouds);
     l.shadows = daylight.altitude_deg > 2.0;
     l.enhanced = false;
     l.classic = false;

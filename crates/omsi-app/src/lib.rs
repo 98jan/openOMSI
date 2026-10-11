@@ -602,6 +602,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             metar_rx: None,
             metar_once: false,
             metar_next: 0.0,
+            sky_clouds: None,
         },
         menus: MenuState {
             chooser: None,

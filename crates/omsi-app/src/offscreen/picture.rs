@@ -78,6 +78,7 @@ impl Offscreen<'_> {
             ref player,
             ref cabin_air,
             wetness,
+            ref sky_clouds,
             ..
         } = *self;
         let daylight = omsi_sim::Daylight::compute(clock, envir.as_ref());
@@ -100,6 +101,7 @@ impl Offscreen<'_> {
             cabin_air.appearance(),
             settings,
             args.drive.unwrap_or(0.0) + service_seconds as f32,
+            sky_clouds,
         );
         // OMSI_CONDENSATION=<minutes>,<people>[,engine 0/1]: the cabin air and the condensation
         // on the player's glass after that long with that many aboard

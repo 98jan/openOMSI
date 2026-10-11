@@ -25,6 +25,7 @@ impl App {
             self.session.cabin_air.appearance(),
             &self.settings,
             self.clock.run_time as f32,
+            &self.session.sky_clouds,
         )
     }
 

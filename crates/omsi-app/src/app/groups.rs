@@ -474,6 +474,9 @@ pub(crate) struct SessionState {
     /// The current METAR receiver is a single manual fetch rather than the continuous sync.
     pub(crate) metar_once: bool,
     pub(crate) metar_next: f64,
+    /// The classic sky's cloud type the scene's sky was set up with (see
+    /// `weather_setup::SkyClouds`).
+    pub(crate) sky_clouds: crate::weather_setup::SkyClouds,
 }
 
 /// The fuel pump or the bus wash running (`SessionState::pumping`).

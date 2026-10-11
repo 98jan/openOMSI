@@ -207,6 +207,7 @@ impl Offscreen<'_> {
             ref run_clock,
             ref envir,
             ref weather,
+            ref sky_clouds,
             ..
         } = *self;
         if let Some(t) = traffic.as_mut() {
@@ -246,6 +247,7 @@ impl Offscreen<'_> {
                         cloud_drift_at(weather, run_clock.time),
                         0.0,
                         settings.shadows,
+                        sky_clouds,
                     );
                     let pixels =
                         renderer.render_to_image(scene, w, h, &view_cam, &lighting)?;

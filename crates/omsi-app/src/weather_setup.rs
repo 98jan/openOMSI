@@ -81,6 +81,7 @@ pub(crate) fn setup_sky(
     scene: &mut Scene,
     envir: Option<&omsi_content::Envir>,
     weather: Option<&omsi_content::weather::Weather>,
+    sky_clouds: &mut SkyClouds,
 ) {
     const STOCK: [&str; 3] = ["Texture\\himmel01.bmp", "Texture\\himmel04.bmp", "Texture\\himmel05.bmp"];
     let names = envir.map(|e| e.sky_textures.clone()).unwrap_or_else(|| STOCK.map(String::from));
@@ -118,7 +119,7 @@ pub(crate) fn setup_sky(
             .map_err(|e| log::warn!("cloud texture {}: {e}", t.texture))
             .ok()
     });
-    *VANILLA_CLOUD_TYPE.lock().unwrap_or_else(|e| e.into_inner()) = ty.filter(|_| vanilla.is_some()).map(|t| (kind.clone(), t));
+    *sky_clouds = ty.filter(|_| vanilla.is_some()).map(|t| (kind.clone(), t));
     let vanilla = vanilla.map(|img| renderer.add_texture(scene, &img, true));
     renderer.set_sky_textures_vanilla(scene, [ids[0], ids[1], ids[2]], clouds, vanilla);
 }
@@ -133,8 +134,10 @@ pub(crate) struct CloudType {
 }
 
 /// The cloud type the sky was last set up with (its name and entry): the classic sky's
-/// cloud layer is drawn by it while the weather names it.
-pub(crate) static VANILLA_CLOUD_TYPE: std::sync::Mutex<Option<(String, CloudType)>> = std::sync::Mutex::new(None);
+/// cloud layer is drawn by it while the weather names it. Kept with the scene whose sky
+/// textures `setup_sky` made (the window's session, the offscreen run, the showroom's look)
+/// and handed to `weather_lighting`.
+pub(crate) type SkyClouds = Option<(String, CloudType)>;
 
 /// The `[cloudtype]` entry named `kind` (`-1` or empty: none), read as Omsi.exe reads it
 /// (0x754664): name, texture, size, then `ovc` or `sct`.
@@ -364,7 +367,7 @@ pub(crate) fn clouds_of(w: &omsi_content::weather::Weather, drift: [f32; 4]) -> 
 
 
 /// The classic sky's weather (see `omsi_render::VanillaSky`).
-pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f32; 4]) -> omsi_render::VanillaSky {
+pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f32; 4], sky_clouds: &SkyClouds) -> omsi_render::VanillaSky {
     // the visibility Omsi.exe fogs with (0x753120): the fog range, shortened by rain to
     // 100000 m / its intensity and by snow to 20000 m / its intensity
     let range = w.fog.0.max(1.0);
@@ -375,9 +378,7 @@ pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f32; 4]) -
         _ => range,
     };
     let kind = w.clouds.0.trim();
-    let ty = VANILLA_CLOUD_TYPE
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+    let ty = sky_clouds
         .as_ref()
         .filter(|(k, _)| k.eq_ignore_ascii_case(kind) && CLOUDS.load(std::sync::atomic::Ordering::Relaxed))
         .map(|(_, t)| t.clone());
@@ -400,6 +401,7 @@ pub(crate) fn weather_lighting(
     cloud_drift: [f32; 4],
     wetness: f32,
     shadows: bool,
+    sky_clouds: &SkyClouds,
 ) -> omsi_render::Lighting {
     let mut lighting = lights::lighting_from(daylight, w.fog.0);
     lighting.enhanced = ENHANCED.load(std::sync::atomic::Ordering::Relaxed);
@@ -407,7 +409,7 @@ pub(crate) fn weather_lighting(
     let (density, offset) = clouds_of(w, cloud_drift);
     lighting.cloud_density = density;
     lighting.cloud_offset = offset;
-    lighting.vanilla_sky = vanilla_sky(w, cloud_drift);
+    lighting.vanilla_sky = vanilla_sky(w, cloud_drift, sky_clouds);
     let model_sky = *crate::weather_model::CURRENT.lock().unwrap_or_else(|e| e.into_inner());
     let (kind, rate) = precip_of(w);
     lights::apply_weather(
