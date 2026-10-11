@@ -2,7 +2,7 @@
 //! is the program's side of it (`AppHost`, installed before the window opens): the settings,
 //! the renderer's start, the bus preview drawn with the game's own scene (`showroom`), the
 //! city map read the way the navigator reads it, the interface's language and machine
-//! translation, the season of a date, the bus radio's stations and the support package.
+//! translation, the bus radio's stations and the support package.
 //! The old paths (`crate::launcher::ui`, `::state`, `::drive` ...) are the crate's.
 
 mod showroom;
@@ -31,8 +31,10 @@ pub(crate) fn new(instance: wgpu::Instance) -> Launcher {
     Launcher::new(instance)
 }
 
-/// The program's side of the launcher, for every launcher made from here on.
-fn install() {
+/// The program's side of the launcher, for every launcher made from here on. Whatever makes a
+/// launcher `state::State` on its own (another front end bridging to it) calls this first:
+/// the state sets the interface language and machine translation through it.
+pub(crate) fn install() {
     omsi_launcher_ui::host::set(Box::new(AppHost));
 }
 
@@ -58,12 +60,6 @@ impl Host for AppHost {
     }
     fn mt_protect(&self, texts: &mut dyn Iterator<Item = &str>) {
         crate::mt::protect(texts);
-    }
-    fn season_date(&self, season: &str, phase: &str, date: &str, map: &str, keep_in_phase: bool) -> Option<String> {
-        crate::season_phase::launcher_date(season, phase, date, map, keep_in_phase)
-    }
-    fn season_word(&self, season: &str, phase: &str) -> Option<String> {
-        crate::season_phase::launcher_choice(season, phase).map(|x| x.word())
     }
     #[cfg(target_os = "android")]
     fn previous_run_crash(&self) -> Option<(String, String)> {

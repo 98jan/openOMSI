@@ -3553,6 +3553,7 @@ dependencies = [
  "omsi-timetable",
  "omsi-ui",
  "omsi-vehicle",
+ "omsi-weather",
  "serde",
  "serde_json",
  "wgpu",

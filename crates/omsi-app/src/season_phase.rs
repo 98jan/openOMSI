@@ -32,25 +32,3 @@ pub fn apply_season_date(args: &mut Args) {
     );
 }
 
-/// The launcher's season and phase (`autumn`, `late`) as the game reads them.
-pub fn launcher_choice(season: &str, phase: &str) -> Option<SeasonChoice> {
-    SeasonChoice::parse(&format!("{season}-{phase}"))
-}
-
-/// The launcher's date (`YYYY-MM-DD`) for its season and phase on `map`: the phase's
-/// typical day of its year, or with `keep_in_phase` the date itself when it lies in the
-/// phase already (see [`phase_date`]). None with no season chosen.
-pub fn launcher_date(season: &str, phase: &str, date: &str, map: &str, keep_in_phase: bool) -> Option<String> {
-    let choice = launcher_choice(season, phase)?;
-    let num = |r: std::ops::Range<usize>| date.get(r).and_then(|x| x.parse::<u32>().ok());
-    let lat = map_latitude(Path::new(&omsi_launcher_lib::load_config().root), map);
-    let year = num(0..4).unwrap_or(1989) as i32;
-    let (y, m, d) = match (num(5..7), num(8..10)) {
-        (Some(m), Some(d)) if keep_in_phase => phase_date(choice, (year, m, d), lat),
-        _ => {
-            let (m, d) = choice.day(lat);
-            (year, m, d)
-        }
-    };
-    Some(format!("{y:04}-{m:02}-{d:02}"))
-}

@@ -196,7 +196,7 @@ impl Choice {
         }
         // a season chosen: the date in its phase, as the game will have it (older launchers
         // kept the day of the month; the date may have followed the computer's since)
-        if let Some(d) = host().season_date(&c.season, &c.phase, &c.date, &c.map, true) {
+        if let Some(d) = super::season::launcher_date(&c.season, &c.phase, &c.date, &c.map, true) {
             c.date = d;
         }
         c
@@ -687,7 +687,7 @@ impl State {
             profile: Some(self.config.profile.clone()).filter(|p| !p.is_empty()),
             lan: Some(lan),
             lan_name: None,
-            season: Some(c.season.clone()).filter(|s| s != "auto").map(|s| host().season_word(&s, &c.phase).unwrap_or(s)),
+            season: Some(c.season.clone()).filter(|s| s != "auto").map(|s| super::season::launcher_choice(&s, &c.phase).map(|x| x.word()).unwrap_or(s)),
             tutorial: None,
             situation: None,
         }

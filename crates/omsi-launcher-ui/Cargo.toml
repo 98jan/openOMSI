@@ -28,6 +28,7 @@ omsi-sim = { path = "../omsi-sim" }
 omsi-timetable = { path = "../omsi-timetable" }
 omsi-ui = { path = "../omsi-ui" }
 omsi-vehicle = { path = "../omsi-vehicle" }
+omsi-weather = { path = "../omsi-weather" }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

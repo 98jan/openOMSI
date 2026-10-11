@@ -2,7 +2,7 @@
 //! `Host` once, before the launcher's window opens (`set`). Everything here is what only the
 //! game has - its settings file's reading, the renderer's start, the bus preview drawn with
 //! the game's scene, the city map read the way the navigator reads it, the interface's
-//! language and machine translation, the season of a date, the bus radio's stations, the
+//! language and machine translation, the bus radio's stations, the
 //! support package - so the launcher's pages need none of the game's modules.
 //!
 //! Without a host (the launcher's own tests) every call answers as if nothing were there.
@@ -27,14 +27,6 @@ pub trait Host: Send + Sync {
         String::new()
     }
     fn mt_protect(&self, _texts: &mut dyn Iterator<Item = &str>) {}
-    /// The date a season and phase choice starts on (see the game's `season_phase`).
-    fn season_date(&self, _season: &str, _phase: &str, _date: &str, _map: &str, _keep_in_phase: bool) -> Option<String> {
-        None
-    }
-    /// The word a season and phase choice is saved as.
-    fn season_word(&self, _season: &str, _phase: &str) -> Option<String> {
-        None
-    }
     /// A phone: what the previous run said last and the end of its log, when it crashed.
     fn previous_run_crash(&self) -> Option<(String, String)> {
         None
