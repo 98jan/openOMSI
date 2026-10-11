@@ -25,6 +25,7 @@ members = [
     "crates/omsi-platform",
     "crates/omsi-input",
     "crates/omsi-xr",
+    "crates/omsi-weather",
     "crates/omsi-app",
     "tools/omsi-check",
 ]

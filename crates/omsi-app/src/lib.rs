@@ -59,10 +59,10 @@ mod radio;
 
 mod puddles;
 mod quit;
-mod condensation;
+use omsi_weather::condensation;
 mod rain;
 mod window_wipers;
-mod window_drops;
+use omsi_weather::window_drops;
 mod scene;
 mod season_phase;
 mod schedule;
@@ -115,8 +115,7 @@ mod startup;
 mod traffic_link;
 mod tutorial;
 mod weather_setup;
-mod weather_cycle;
-mod weather_model;
+use omsi_weather::{weather_cycle, weather_model};
 mod world_load;
 
 // the interface's translations (locales/app.yml; the English text is the key)

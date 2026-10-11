@@ -3,7 +3,7 @@
 use super::*;
 
 // (the cloud kinds, a hand-set weather's text and the METAR airports: omsi_content::weather_choice)
-pub(crate) use omsi_content::weather_choice::{cloud_kind_index, cloud_kind_nearest, cover_of, custom_weather, dew_point_c, metar_airports, relative_humidity, CustomWeather, CLOUD_KINDS};
+pub(crate) use omsi_content::weather_choice::{absolute_humidity, cloud_kind_index, cloud_kind_nearest, cover_of, custom_weather, dew_point_c, metar_airports, relative_humidity, CustomWeather, CLOUD_KINDS, CUSTOM_PRECIP};
 pub(crate) use omsi_weather::conditions::{cloud_drift_at, cloud_drift_step, initial_wetness, precip_of, road_wetness, street_condition};
 
 
@@ -361,30 +361,7 @@ pub(crate) fn clouds_of(w: &omsi_content::weather::Weather, drift: [f32; 4]) -> 
     (cover_of(w), [drift[0], drift[1]])
 }
 
-/// The clouds' drift after `time` seconds of a steady wind (see `cloud_drift_step`).
-pub(crate) fn cloud_drift_at(w: &omsi_content::weather::Weather, time: f64) -> [f32; 4] {
-    let mut d = [0.0; 4];
-    cloud_drift_step(&mut d, w, time);
-    d
-}
 
-/// Move the clouds on by `secs` of [wind] direction (deg) speed (m/s), over the 2500 m
-/// tiling; the field repeats every tile, so only the fraction of a tile is kept. (Taken
-/// from the absolute time, every change of the wind while a weather blends in moved the
-/// whole sky by time x change.) `d[2..4]`: the classic sky's clouds, in metres (modulo
-/// `VANILLA_CLOUD_PERIOD`) as Omsi.exe moves them (0x753428) - by the wind's speed along
-/// its direction taken as degrees x pi/200, its slip from pi/180 kept, so that they drift
-/// the way the original's do.
-pub(crate) fn cloud_drift_step(d: &mut [f32; 4], w: &omsi_content::weather::Weather, secs: f64) {
-    let (dir, speed) = (w.wind.0.to_radians() as f64, w.wind.1 as f64);
-    let s = secs * speed / 2500.0;
-    d[0] = (d[0] as f64 + dir.sin() * s).rem_euclid(1.0) as f32;
-    d[1] = (d[1] as f64 + dir.cos() * s).rem_euclid(1.0) as f32;
-    let omsi_dir = w.wind.0 as f64 * std::f64::consts::PI / 200.0;
-    let period = omsi_render::VANILLA_CLOUD_PERIOD as f64;
-    d[2] = (d[2] as f64 + omsi_dir.sin() * speed * secs).rem_euclid(period) as f32;
-    d[3] = (d[3] as f64 + omsi_dir.cos() * speed * secs).rem_euclid(period) as f32;
-}
 
 /// The classic sky's weather (see `omsi_render::VanillaSky`).
 pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f32; 4]) -> omsi_render::VanillaSky {
@@ -414,15 +391,6 @@ pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f32; 4]) -
     }
 }
 
-/// How wet the roads are: rain soaks them in a few minutes, sunshine dries them in about
-/// twenty. `secs` is how long this weather has been running.
-pub(crate) fn road_wetness(rate: f32, secs: f64, start: f32) -> f32 {
-    if rate > 0.0 {
-        (start + secs as f32 * rate / 180.0).clamp(0.0, 1.0)
-    } else {
-        (start - secs as f32 / 1200.0).clamp(0.0, 1.0)
-    }
-}
 
 /// The renderer's lighting for this weather at this moment: the daylight, then what the
 /// cloud cover, the rain and the snow make of it.
@@ -490,16 +458,6 @@ pub(crate) fn weather_lighting(
     lighting
 }
 
-/// Push the weather into a vehicle's script host.
-pub(crate) fn precip_of(w: &omsi_content::weather::Weather) -> (i32, f32) {
-    let kind = w.precip.first().copied().unwrap_or(0.0) as i32;
-    let rate = if kind == 0 {
-        0.0
-    } else {
-        (w.precip.get(1).copied().unwrap_or(0.0) / 255.0).clamp(0.0, 1.0)
-    };
-    (kind, rate)
-}
 
 /// Tell the htmltexture pages the weather (`omsi.weather`), with the temperature the
 /// vehicles get.
@@ -543,29 +501,7 @@ pub(crate) fn debug_sound_every() -> Option<f32> {
     })
 }
 
-/// The road under the wheels as the scripts and the sound configurations read it
-/// (`StreetCond`): 0 dry, 1 wet, 2 covered in snow. A snowfall (or a weather with
-/// `[snowOnRoad]`) puts it into the upper half, everything else follows the water film.
-pub(crate) fn street_condition(w: &omsi_content::weather::Weather, wetness: f32) -> f32 {
-    let wet = wetness.clamp(0.0, 1.0);
-    if w.snow_on_road || precip_of(w).0 == 2 {
-        1.0 + wet
-    } else {
-        wet
-    }
-}
 
-/// How wet the roads are when a session starts: what this weather has already left on them
-/// (`[groundwet]`, 0 … 255), and at least what the rain falling now would soak them to.
-pub(crate) fn initial_wetness(w: &omsi_content::weather::Weather) -> f32 {
-    let rate = precip_of(w).1;
-    let falling = if rate > 0.0 {
-        (0.4 + rate).min(1.0)
-    } else {
-        0.0
-    };
-    (w.ground_wet[0] / 255.0).clamp(0.0, 1.0).max(falling)
-}
 
 
 
@@ -642,6 +578,11 @@ pub(crate) fn from_report(s: &str) -> Option<omsi_content::weather::Weather> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_weather_drifts_the_classic_clouds_over_the_renderers_tiling() {
+        assert_eq!(omsi_weather::conditions::CLOUD_PERIOD, omsi_render::VANILLA_CLOUD_PERIOD);
+    }
 
     #[test]
     fn cloud_types_are_read_as_omsi_reads_them() {

@@ -70,7 +70,7 @@ pub fn lerp(a: &Weather, b: &Weather, k: f32) -> Weather {
         cloud_cover: if a.cloud_cover.is_none() && b.cloud_cover.is_none() && a.clouds.0.trim().eq_ignore_ascii_case(b.clouds.0.trim()) {
             None
         } else {
-            Some(m(crate::weather_setup::cover_of(a), crate::weather_setup::cover_of(b)))
+            Some(m(omsi_content::weather_choice::cover_of(a), omsi_content::weather_choice::cover_of(b)))
         },
         precip: (0..n).map(|i| m(p(&a.precip, i), p(&b.precip, i))).collect(),
         ground_wet: [m(a.ground_wet[0], b.ground_wet[0]), m(a.ground_wet[1], b.ground_wet[1]), m(a.ground_wet[2], b.ground_wet[2])],
@@ -100,7 +100,7 @@ pub fn installed() -> Vec<(String, Weather)> {
 /// How much of the sky its clouds cover (0 none .. 1 overcast), from the cloud type of its
 /// `[clouds]` (-1 none, Cumulus 1..3, Overcast): the number beside it is their height.
 fn cover(w: &Weather) -> f32 {
-    crate::weather_setup::cover_of(w)
+    omsi_content::weather_choice::cover_of(w)
 }
 
 /// How much rain or snow a weather brings (0 none .. 1 a downpour).
@@ -241,11 +241,11 @@ mod tests {
         b.wind = (90.0, 20.0);
         let mut bl = Blend::new(a, b, 240.0);
         // late in the year, where the old time-based drift jumped by whole tiles a frame
-        let mut d = crate::weather_setup::cloud_drift_at(&bl.from, 3.0e7);
+        let mut d = crate::conditions::cloud_drift_at(&bl.from, 3.0e7);
         for _ in 0..600 {
             let (x, _, _) = bl.step(1.0 / 2.0);
             let before = d;
-            crate::weather_setup::cloud_drift_step(&mut d, &x, 1.0 / 2.0);
+            crate::conditions::cloud_drift_step(&mut d, &x, 1.0 / 2.0);
             for i in 0..2 {
                 let step = (d[i] - before[i]).abs();
                 assert!(step.min(1.0 - step) < 0.01, "jump {step}");

@@ -52,5 +52,13 @@ forbid omsi-net omsi-render
 forbid omsi-plugin omsi-sim
 forbid omsi-plugin omsi-render
 
+# The weather is state and physics: it neither draws nor sounds, nor knows the network.
+forbid omsi-weather omsi-render
+forbid omsi-weather omsi-audio
+forbid omsi-weather omsi-ui
+forbid omsi-weather omsi-net
+forbid omsi-weather omsi-plugin
+forbid omsi-weather omsi-launcher-*
+
 # Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
 app-lines 128041

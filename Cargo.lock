@@ -3331,6 +3331,7 @@ dependencies = [
  "omsi-timetable",
  "omsi-ui",
  "omsi-vehicle",
+ "omsi-weather",
  "omsi-xr",
  "parking_lot",
  "pollster",
@@ -3706,6 +3707,19 @@ version = "0.1.0"
 dependencies = [
  "log",
  "omsi-cfg",
+]
+
+[[package]]
+name = "omsi-weather"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "log",
+ "omsi-cfg",
+ "omsi-content",
+ "omsi-map",
+ "omsi-sim",
+ "omsi-texture",
 ]
 
 [[package]]

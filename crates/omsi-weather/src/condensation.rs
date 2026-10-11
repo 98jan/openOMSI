@@ -229,12 +229,12 @@ pub fn open_doors(doors: &[(glam::Vec3, glam::DVec3, f32, bool)]) -> usize {
 /// doors and the cabin (its `[boundingbox]`: the volume less the seats and the walls, the
 /// skin around it).
 pub fn inputs_for(v: &omsi_sim::VehicleInstance, w: &omsi_content::weather::Weather, riders: usize, doors_open: usize) -> CabinInputs {
-    let (kind, rate) = crate::weather_setup::precip_of(w);
+    let (kind, rate) = crate::conditions::precip_of(w);
     let [x, y, z] = v.ty.def.bounding_box.map(|bb| [bb[0], bb[1], bb[2]]).unwrap_or([2.5, 12.0, 3.1]);
     CabinInputs {
         outside: w.temp.0,
         dew_point: w.temp.1.min(w.temp.0),
-        speed: crate::lights::vehicle_velocity(v).length(),
+        speed: crate::conditions::vehicle_velocity(v).length(),
         engine: omsi_sim::startup::engine_running(v),
         people: riders + 1,
         doors_open,

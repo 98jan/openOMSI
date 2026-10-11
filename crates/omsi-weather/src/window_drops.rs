@@ -8,7 +8,7 @@ const RAIN_LIMIT: usize = LIMIT - 4; // leave room for runoff from the wiper ban
 const MAP: usize = 512;
 const TRAIL: usize = 4;
 
-pub(super) struct Drop {
+pub struct Drop {
     pub pos: Vec2,
     pub previous: Vec2,
     pub velocity: Vec2,
@@ -43,7 +43,7 @@ impl Drop {
     }
 }
 
-pub(super) struct Drops {
+pub struct Drops {
     pub drops: Vec<Drop>,
     size: Vec2,
     grid: [usize; 2],

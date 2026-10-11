@@ -444,7 +444,7 @@ impl WeatherModel {
             description: String::new(),
             fog: (vis.max(80.0), 1.0),
             wind: (wind_dir, wind_speed),
-            temp: (self.temp, crate::weather_setup::absolute_humidity(self.temp, rh * 100.0)),
+            temp: (self.temp, omsi_content::weather_choice::absolute_humidity(self.temp, rh * 100.0)),
             pressure: 1013.0 + p,
             clouds: (kind.into(), lcl.max(200.0)),
             precip,
