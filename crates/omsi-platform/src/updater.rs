@@ -353,7 +353,7 @@ fn latest_from_site() -> anyhow::Result<Option<Release>> {
         anyhow::bail!("github.com named no release ({})", r.get_url());
     }
     let version = tag.trim_start_matches(['v', 'V']).to_string();
-    if is_test_build(current_version()) || !newer(&version, current_version()) {
+    if is_test_build(current_version()) || !newer(&version, current_version()) || crate::recovery::is_bad(&version) {
         return Ok(None);
     }
     let Some(name) = asset_name(&version) else { return Ok(None) };
@@ -376,6 +376,12 @@ fn parse_release(v: &serde_json::Value, current: &str) -> anyhow::Result<Option<
         return Ok(None);
     }
     if v["draft"].as_bool() == Some(true) || v["prerelease"].as_bool() == Some(true) || !newer(&version, current) {
+        return Ok(None);
+    }
+    // (a release that failed to start here, or would not even run its self-test, is not
+    // offered again: only a newer one is, see `recovery`)
+    if crate::recovery::is_bad(&version) {
+        log::info!("update check: {version} failed on this computer before and is not offered again");
         return Ok(None);
     }
     let Some(want) = asset_name(&version) else { return Ok(None) };
@@ -526,6 +532,12 @@ fn download(r: &Release, to: &Path, status: &Mutex<Status>) -> anyhow::Result<()
     Ok(())
 }
 
+/// Download and install `r` now, on this thread (the start guard's rescue, which has no
+/// launcher to show the progress in).
+pub fn install_now(r: &Release) -> anyhow::Result<()> {
+    download_and_install(r, &Mutex::new(Status::Installing(r.clone())))
+}
+
 fn download_and_install(r: &Release, status: &Mutex<Status>) -> anyhow::Result<()> {
     // (on a computer: where it goes must be writable before 15 MB are fetched for nothing)
     #[cfg(not(target_os = "android"))]
@@ -642,7 +654,7 @@ pub fn is_dev_build(exe: &Path) -> bool {
 }
 
 const STAGING: &str = ".openomsi-update";
-const MANIFEST: &str = ".openomsi-files";
+pub(crate) const MANIFEST: &str = ".openomsi-files";
 const OLD: &str = ".old-update";
 
 fn old_of(p: &Path) -> PathBuf {
@@ -718,7 +730,7 @@ pub fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
 }
 
 /// What the archive's top-level item `name` replaces in the installation.
-fn target_of(name: &str, place: &Place) -> PathBuf {
+pub(crate) fn target_of(name: &str, place: &Place) -> PathBuf {
     // (the macOS app, whatever the player named the one that runs)
     if name.to_ascii_lowercase().ends_with(".app") {
         if let Some(b) = &place.bundle {
@@ -728,8 +740,16 @@ fn target_of(name: &str, place: &Place) -> PathBuf {
     place.dir.join(name)
 }
 
-/// Put the program files of the release archive `zip` into the installation at `place`.
+/// Put the program files of the release archive `zip` into the installation at `place`,
+/// once its program has passed its self-test. The files it replaces stay beside it as
+/// `*.old-update`, with the version they belong to (`.openomsi-previous`), until the new
+/// version has started well once (`cleanup_after_update`): until then the start guard can
+/// go back to them (`recovery::rollback`).
 pub fn install_archive(zip: &Path, place: &Place) -> anyhow::Result<()> {
+    install_archive_with(zip, place, true)
+}
+
+pub(crate) fn install_archive_with(zip: &Path, place: &Place, self_test: bool) -> anyhow::Result<()> {
     let staging = place.dir.join(STAGING);
     unpack(zip, &staging).map_err(|e| anyhow::anyhow!("could not unpack the update into {} ({e})", short_path(&place.dir)))?;
     let mut items: Vec<String> = std::fs::read_dir(&staging)?.flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
@@ -745,9 +765,29 @@ pub fn install_archive(zip: &Path, place: &Place) -> anyhow::Result<()> {
     if !has_program {
         anyhow::bail!("the update archive holds no openOMSI program");
     }
+    // the new program must start before it replaces the old one: a build that cannot even
+    // be loaded here (a library missing, a broken file) stops now, with nothing replaced
+    if self_test {
+        let program = crate::recovery::staged_program(&staging).ok_or_else(|| anyhow::anyhow!("the update archive holds no program to start"))?;
+        if let Err(e) = crate::recovery::self_test(&program, std::time::Duration::from_secs(30)) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(e.into());
+        }
+    }
     // what an earlier update put here and this one no longer brings
     let before: Vec<String> = std::fs::read_to_string(place.dir.join(MANIFEST)).map(|t| t.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty() && !l.contains(['/', '\\']) && l != ".." && l != ".").collect()).unwrap_or_default();
     let gone: Vec<String> = before.into_iter().filter(|n| !items.iter().any(|i| i.eq_ignore_ascii_case(n))).collect();
+    // the version these files are, for going back to it; and the earlier list of what an
+    // update brought, set aside with the files it lists
+    let _ = std::fs::write(place.dir.join(crate::recovery::PREVIOUS), current_version());
+    let manifest = place.dir.join(MANIFEST);
+    let mut manifest_aside = None;
+    if manifest.exists() {
+        let aside = aside_of(&manifest);
+        if std::fs::rename(&manifest, &aside).is_ok() {
+            manifest_aside = Some(aside);
+        }
+    }
     // swap: the old file aside, the new one in; undone completely on the first failure
     let mut moved: Vec<(PathBuf, Option<PathBuf>)> = Vec::new();
     let result = (|| -> anyhow::Result<()> {
@@ -791,6 +831,10 @@ pub fn install_archive(zip: &Path, place: &Place) -> anyhow::Result<()> {
             }
         }
         let _ = std::fs::remove_dir_all(&staging);
+        if let Some(aside) = manifest_aside {
+            let _ = std::fs::rename(aside, &manifest);
+        }
+        let _ = std::fs::remove_file(place.dir.join(crate::recovery::PREVIOUS));
         return Err(e);
     }
     let _ = std::fs::write(place.dir.join(MANIFEST), items.join("\n") + "\n");
@@ -818,8 +862,9 @@ pub fn relaunch(place: &Place) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// At the start: the files an update set aside are no longer running - away with them
-/// (tried for a while: on Windows the old program may take a moment to end).
+/// Once this version has started well (the start guard's `healthy`): the files an update set
+/// aside, kept until now to go back to, are no longer needed - away with them (tried for a
+/// while: on Windows the old program may take a moment to end).
 pub fn cleanup_after_update() {
     let Ok(place) = install_place() else { return };
     std::thread::spawn(move || {
@@ -828,7 +873,10 @@ pub fn cleanup_after_update() {
             if let Ok(rd) = std::fs::read_dir(&place.dir) {
                 for e in rd.flatten() {
                     let p = e.path();
-                    if p.file_name().map(|n| n.to_string_lossy().ends_with(OLD)).unwrap_or(false) {
+                    if p.file_name().map(|n| {
+                        let n = n.to_string_lossy();
+                        n.ends_with(OLD) || n.ends_with(crate::recovery::BAD)
+                    }).unwrap_or(false) {
                         remove_any(&p);
                         left |= p.exists();
                     }
@@ -838,6 +886,7 @@ pub fn cleanup_after_update() {
             if staging.exists() {
                 remove_any(&staging);
             }
+            let _ = std::fs::remove_file(place.dir.join(crate::recovery::PREVIOUS));
             if !left {
                 return;
             }
@@ -1023,7 +1072,7 @@ mod tests {
             z.finish().unwrap();
         }
         let place = Place { dir: dir.clone(), bundle: None, exe: dir.join("openomsi") };
-        install_archive(&zip_path, &place).unwrap();
+        install_archive_with(&zip_path, &place, false).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("openomsi")).unwrap(), "new game");
         assert_eq!(std::fs::read_to_string(dir.join("openomsi-launcher")).unwrap(), "new cli");
         assert_eq!(std::fs::read_to_string(dir.join("README.md")).unwrap(), "readme");
@@ -1044,7 +1093,7 @@ mod tests {
             z.write_all(b"x").unwrap();
             z.finish().unwrap();
         }
-        assert!(install_archive(&bad, &place).is_err());
+        assert!(install_archive_with(&bad, &place, false).is_err());
         assert_eq!(std::fs::read_to_string(dir.join("openomsi")).unwrap(), "new game");
         let _ = std::fs::remove_dir_all(&root);
     }

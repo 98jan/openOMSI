@@ -288,6 +288,12 @@ flags! {
     OMSI_GROUND_GAP_RADIUS: Num, Debug, Use, "150", "With OMSI_GROUND_GAP: the radius in metres.";
     OMSI_GROUND_LANES: Bool, Debug, Use, "off", "Along every street lane, every metre, how far the ground lies over or under the lane.";
     OMSI_GROUND_SAMPLE: Text, Test, Use, "-", "Offscreen CSV: what the wheels stand on every metre along the lanes near the start.";
+    OMSI_GUARD_DEADLINE: Num, Switch, Use, "120", "The start guard: seconds the launcher may take to its first frames before its start counts as hung (it is then ended and the guard heals the installation).";
+    OMSI_GUARD_DIALOG_FILE: Text, Test, Use, "-", "The start guard writes the messages it would show the player into this file instead (scripts/guard-e2e.sh).";
+    OMSI_GUARD_FORCE: Bool, Test, Use, "off", "The start guard also watches a development build (one run from a cargo target folder).";
+    OMSI_GUARD_STATE: Text, Setup, Use, "-", "Set by the start guard for the process it notes: <pid>:<its state file> (what the watcher reads).";
+    OMSI_GUARD_TEST_BREAK: Bool, Test, Use, "off", "With it, a file guard-test-break beside the program (panic, exit, hang or nothing) breaks this start before its first frames on purpose (scripts/guard-e2e.sh).";
+    OMSI_HEALTH_URL: Text, Setup, Use, "built-in", "Another list of broken releases (URL or file:///...json) for the start guard instead of release/health.json on GitHub.";
     OMSI_HEIGHTPROFILE_GROUND: Bool, Switch, Once, "off", "The wheels stand on the splines' [heightprofile]s again (A/B).";
     OMSI_HIDDEN_WINDOW: Bool, Test, Use, "off", "The game's window is made and never shown (no Dock icon on macOS): a run of the whole game (its frame, the plugins, --exit-after) beside whoever works at the screen; its frames are drawn into a texture, for benchmarks.";
     OMSI_HIDE_MESH: Text, Test, Use, "-", "a|b: leave out the meshes whose file names contain one of the parts.";
@@ -343,6 +349,7 @@ flags! {
     OMSI_NO_GLASS_PICTURE: Bool, Switch, Frame, "off", "No picture behind the glass (rain films).";
     OMSI_NO_GROUND_PAINT: Bool, Switch, Use, "off", "No painted ground layers.";
     OMSI_NO_GROUND_SPLINE_BATCHING: Bool, Switch, Use, "off", "No batching of ground splines.";
+    OMSI_NO_GUARD: Bool, Switch, Use, "off", "No start guard: a start that crashes or hangs is not healed by an update or by going back to the version before.";
     OMSI_NO_INTERP: Bool, Switch, Once, "off", "The old way without interpolation, for comparing.";
     OMSI_NO_LAN_MODS: Bool, Switch, Use, "off", "LAN: do not exchange mods.";
     OMSI_NO_LIGHT_MAP: Bool, Switch, Use, "off", "No night light maps on the tiles (A/B).";
@@ -414,6 +421,7 @@ flags! {
     OMSI_ROOT: Text, Setup, Use, "found", "The OMSI 2 installation folder (also the content root for tests that need real content).";
     OMSI_RT_REFL_HALF: Bool, Switch, Use, "off", "Trace reflections at half size.";
     OMSI_SAFE_GPU: Num, Setup, Use, "0", "Restarts after a lost graphics device: lighter on the card each time. Set at runtime on Android and by the restart.";
+    OMSI_SAFE_MODE: Bool, Setup, Use, "off", "Safe mode, set by the start guard after failed starts: the basic render pipelines and no plugins.";
     OMSI_SCREEN_AT: Text, Setup, Once, "-", "x,y: the screen (a point on the desktop, pixels) the game window opens on; the launcher sets it to where it stands.";
     OMSI_SEED: Num, Test, Use, "random", "Seed of the scripts' random numbers (repeat a session).";
     OMSI_SHADOW_FAR_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the far shadow map every frame.";

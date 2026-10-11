@@ -171,6 +171,9 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_GLASS_WIND` | num | - | use | app | Offscreen: the rain on the glass as met at this speed in m/s. |
 | `OMSI_GPU_LIMITS` | text | - | use | render | default or downlevel: request only the WebGPU default (or downlevel) limits. Set by the small_chip test. |
 | `OMSI_GROUND_SAMPLE` | text | - | use | app | Offscreen CSV: what the wheels stand on every metre along the lanes near the start. |
+| `OMSI_GUARD_DIALOG_FILE` | text | - | use | guard | The start guard writes the messages it would show the player into this file instead (scripts/guard-e2e.sh). |
+| `OMSI_GUARD_FORCE` | bool | off | use | guard | The start guard also watches a development build (one run from a cargo target folder). |
+| `OMSI_GUARD_TEST_BREAK` | bool | off | use | guard | With it, a file guard-test-break beside the program (panic, exit, hang or nothing) breaks this start before its first frames on purpose (scripts/guard-e2e.sh). |
 | `OMSI_HIDDEN_WINDOW` | bool | off | use | app | The game's window is made and never shown (no Dock icon on macOS): a run of the whole game (its frame, the plugins, --exit-after) beside whoever works at the screen; its frames are drawn into a texture, for benchmarks. |
 | `OMSI_HIDE_MESH` | text | - | use | scene | a\|b: leave out the meshes whose file names contain one of the parts. |
 | `OMSI_HIDE_WINDOW` | text | - | use | app | from,to: treat the window as hidden between these seconds. |
@@ -181,7 +184,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_LAN_AUDIO` | bool | off | use | app | Offscreen LAN: with the other buses' sounds. |
 | `OMSI_LAN_SAY` | text | - | use | app | "30=Hallo;45=Bye": LAN chat lines said at these seconds of the session. |
 | `OMSI_LAUNCHER_EXIT` | num | - | use | launcher-ui | Launcher: close after this many seconds. |
-| `OMSI_LAUNCHER_INPUT` | text | - | use | launcher-ui, platform | Scripted launcher input ("t=2 click 400,300; ..."). Removed from the game's environment by the updater. |
+| `OMSI_LAUNCHER_INPUT` | text | - | use | guard, launcher-ui, platform | Scripted launcher input ("t=2 click 400,300; ..."). Removed from the game's environment by the updater. |
 | `OMSI_LAUNCHER_PAGE` | text | - | use | launcher-ui | Launcher: open this page (e.g. mods, drive:N). |
 | `OMSI_LAUNCHER_SHOT` | text | - | use | launcher-ui | Launcher: secs:file.png - the window's picture into a file. |
 | `OMSI_LAUNCHER_SIZE` | text | - | use | launcher-ui | Launcher: WxH window size. |
@@ -229,7 +232,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 |---|---|---|---|---|---|
 | `OMSI_AI_MODEL_LOCK` | bool | off | use | sim | AI cars steer no further than their model's own steering lock (no 60 degree allowance for tight turns). |
 | `OMSI_AI_WAY_ONLY` | bool | off | use | app | AI vehicles stand on their way with the plain ground sampler, as before (A/B). |
-| `OMSI_BASIC_PIPELINES` | bool | off | once | render | Use the reduced (basic) render pipelines, as after a driver failed to build the full ones. |
+| `OMSI_BASIC_PIPELINES` | bool | off | once | guard, render | Use the reduced (basic) render pipelines, as after a driver failed to build the full ones. |
 | `OMSI_CROSSING_DEFORM` | bool | off | use | scene | Apply the crossings' ground deformation again (A/B; Omsi.exe does not). |
 | `OMSI_CUT_PLAIN` | bool | off | use | scene | Road-cut textures uploaded without GPU-made mipmaps. |
 | `OMSI_FIXED_SCALE` | bool | off | use | app | Keep the render scale fixed (no dynamic resolution). |
@@ -237,6 +240,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_FULL_GPU` | bool | off | use | render | Keep the requested settings on a small or shared graphics chip. |
 | `OMSI_GL_TEXTURE_UNITS` | bool | off | use | render | Use the texture-unit layout of the OpenGL backend on any device. |
 | `OMSI_GPU_ARRAYS` | text | - | use | render | textures or nostorage: take that texture array path on any device. |
+| `OMSI_GUARD_DEADLINE` | num | 120 | use | guard | The start guard: seconds the launcher may take to its first frames before its start counts as hung (it is then ended and the guard heals the installation). |
 | `OMSI_HEIGHTPROFILE_GROUND` | bool | off | once | scene | The wheels stand on the splines' [heightprofile]s again (A/B). |
 | `OMSI_HTML_FALLBACK_FONT` | text | - | use | htmlengine | Font file for the html pages' characters Roboto lacks (Hangul, CJK); else Malgun Gothic (Windows) or AppleGothic (macOS). |
 | `OMSI_HTML_FALLBACK_FONT_BOLD` | text | - | use | htmlengine | With OMSI_HTML_FALLBACK_FONT: its bold face. |
@@ -262,6 +266,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_NO_GLASS_PICTURE` | bool | off | frame | render | No picture behind the glass (rain films). |
 | `OMSI_NO_GROUND_PAINT` | bool | off | use | scene | No painted ground layers. |
 | `OMSI_NO_GROUND_SPLINE_BATCHING` | bool | off | use | scene | No batching of ground splines. |
+| `OMSI_NO_GUARD` | bool | off | use | guard | No start guard: a start that crashes or hangs is not healed by an update or by going back to the version before. |
 | `OMSI_NO_INTERP` | bool | off | once | lan | The old way without interpolation, for comparing. |
 | `OMSI_NO_LAN_MODS` | bool | off | use | lan | LAN: do not exchange mods. |
 | `OMSI_NO_LIGHT_MAP` | bool | off | use | scene | No night light maps on the tiles (A/B). |
@@ -271,7 +276,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_NO_MSAA_PREPASS` | bool | off | frame | render | No depth prepass with multisampling. |
 | `OMSI_NO_PBR` | bool | off | use | scene | No PBR materials. |
 | `OMSI_NO_PIPELINE_CACHE` | bool | off | use | render | Compile every pipeline at each start (no ~/.openomsi/cache/pipelines-*.bin). |
-| `OMSI_NO_PLUGINS` | bool | off | use | app | No plugins loaded. |
+| `OMSI_NO_PLUGINS` | bool | off | use | app, guard | No plugins loaded. |
 | `OMSI_NO_POLL_THREAD` | bool | off | use | render | No device poll thread. |
 | `OMSI_NO_PRESENCE` | bool | off | use | platform | No presence ("playing now") service. |
 | `OMSI_NO_PUDDLE_GLASS_DEPTH` | bool | off | use | render | Puddles without glass depth. |
@@ -340,6 +345,8 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_CLOUDFLARED` | text | - | use | net | Path of the cloudflared binary for the LAN tunnel (searched after the game's folder, before the PATH). |
 | `OMSI_CONTENT` | text | beside the game | use | app, cfg, launcher-core, sim | The content folder (mods, archives, screenshots). Set at runtime on Android. |
 | `OMSI_CONTENT_ZIP` | text | - | use | cfg | Extra content archives, separated like PATH (as --content-zip). |
+| `OMSI_GUARD_STATE` | text | - | use | guard | Set by the start guard for the process it notes: <pid>:<its state file> (what the watcher reads). |
+| `OMSI_HEALTH_URL` | text | built-in | use | platform | Another list of broken releases (URL or file:///...json) for the start guard instead of release/health.json on GitHub. |
 | `OMSI_INSTANCE` | text | - | use | app, lan, launcher-core | The id of a game instance started by the launcher (set for the child process). |
 | `OMSI_LAN_IP` | text | - | use | net | a.b.c.d[,e.f.g.h]: LAN addresses to offer first (when the detection gets them wrong). |
 | `OMSI_LAUNCHER` | text | - | use | app | Program to open as the launcher instead of the built-in one. |
@@ -348,6 +355,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_PRESENCE_URL` | text | built-in | use | platform | Base URL of the presence ("playing now") service. |
 | `OMSI_ROOT` | text | found | use | app, launcher-core, o3d, sim | The OMSI 2 installation folder (also the content root for tests that need real content). |
 | `OMSI_SAFE_GPU` | num | 0 | use | app | Restarts after a lost graphics device: lighter on the card each time. Set at runtime on Android and by the restart. |
+| `OMSI_SAFE_MODE` | bool | off | use | guard | Safe mode, set by the start guard after failed starts: the basic render pipelines and no plugins. |
 | `OMSI_SCREEN_AT` | text | - | once | app, launcher-core | x,y: the screen (a point on the desktop, pixels) the game window opens on; the launcher sets it to where it stands. |
 | `OMSI_UPDATE_URL` | text | built-in | use | app, platform | Another release description (URL or file:///...json) for the update check. |
 | `OMSI_WINE` | text | PATH | use | plugin | The Wine binary for Windows plugins. |
