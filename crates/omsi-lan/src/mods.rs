@@ -37,7 +37,6 @@
 mod channel;
 mod store;
 
-use crate::Args;
 use channel::{SecureReader, SecureWriter};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
@@ -150,9 +149,19 @@ fn is_original(r: &Path, original: &Path) -> bool {
     r == original
 }
 
+/// What of the host's game decides the files it shares (from its command line): the
+/// content root, the map, the bus and the weather.
+#[derive(Debug, Clone, Default)]
+pub struct ModSource {
+    pub root: PathBuf,
+    pub map: String,
+    pub bus: Option<String>,
+    pub weather: Option<String>,
+}
+
 /// The files the host's session uses that are not stock content, with where each is read
 /// from (a folder or a mounted archive).
-fn collect(args: &Args) -> (Manifest, Vec<PathBuf>) {
+fn collect(args: &ModSource) -> (Manifest, Vec<PathBuf>) {
     let t0 = Instant::now();
     let original = args.root.clone();
     // (lower-case relative path) -> (spelling, source)
@@ -403,7 +412,7 @@ fn collect(args: &Args) -> (Manifest, Vec<PathBuf>) {
 }
 
 /// Serve the session's mods on TCP `port` (a thread; the list is made in the background).
-pub fn serve(port: u16, session: u64, args: &Args) {
+pub fn serve(port: u16, session: u64, args: &ModSource) {
     if omsi_cfg::flags::OMSI_NO_LAN_MODS.is_set() {
         return;
     }
@@ -711,7 +720,7 @@ fn store_dir() -> Option<PathBuf> {
     sandbox_base().map(|b| b.with_file_name("lan-store"))
 }
 
-pub fn fetch(args: &mut Args, host: SocketAddr, session: u64, progress: &mut dyn FnMut(u64, u64, &str)) -> Result<Report, String> {
+pub fn fetch(map: &mut String, host: SocketAddr, session: u64, progress: &mut dyn FnMut(u64, u64, &str)) -> Result<Report, String> {
     if omsi_cfg::flags::OMSI_NO_LAN_MODS.is_set() {
         return Err("switched off (OMSI_NO_LAN_MODS)".into());
     }
@@ -901,9 +910,9 @@ pub fn fetch(args: &mut Args, host: SocketAddr, session: u64, progress: &mut dyn
     omsi_cfg::add_content_root_first(dir.clone());
     // the host's map (now that we have it)
     let map_ok = refuse_path(&manifest.map).is_none() && omsi_cfg::find_in_roots(&manifest.map).is_some();
-    if map_ok && !manifest.map.is_empty() && !manifest.map.eq_ignore_ascii_case(&args.map.replace('\\', "/")) {
+    if map_ok && !manifest.map.is_empty() && !manifest.map.eq_ignore_ascii_case(&map.replace('\\', "/")) {
         log::info!("LAN mods: the session is on the host's map {}", manifest.map);
-        args.map = manifest.map.clone();
+        *map = manifest.map.clone();
     }
     if !report.refused.is_empty() {
         log::warn!("LAN mods: {} files refused: {}", report.refused.len(), report.refused.iter().take(8).cloned().collect::<Vec<_>>().join("; "));

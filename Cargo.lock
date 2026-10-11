@@ -3320,6 +3320,7 @@ dependencies = [
  "omsi-content",
  "omsi-geometry",
  "omsi-input",
+ "omsi-lan",
  "omsi-launcher-core",
  "omsi-map",
  "omsi-model",
@@ -3455,6 +3456,24 @@ dependencies = [
  "omsi-vehicle",
  "windows 0.62.2",
  "winit",
+]
+
+[[package]]
+name = "omsi-lan"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "libc",
+ "log",
+ "omsi-cfg",
+ "omsi-net",
+ "rayon",
+ "ring",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "windows 0.62.2",
 ]
 
 [[package]]

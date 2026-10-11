@@ -516,6 +516,12 @@ pub struct RemoteVehicle {
     smooth: hashbrown::HashSet<u16>,
 }
 
+impl omsi_lan::voice::RemoteBuses for LanGame {
+    fn remote_bus(&self, id: u32) -> Option<DVec3> {
+        self.remotes.get(&id).map(|r| r.vehicle().position)
+    }
+}
+
 impl RemoteVehicle {
     /// The LAN player's vehicle as it is drawn here.
     pub fn vehicle(&self) -> &omsi_sim::VehicleInstance {
@@ -660,10 +666,7 @@ pub struct Frame<'a> {
     pub radio_keyed: bool,
 }
 
-pub(crate) fn data_dir() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
-    Some(PathBuf::from(home).join(".openomsi"))
-}
+pub(crate) use omsi_lan::data_dir;
 
 /// The status file of this game process.
 fn status_path() -> Option<PathBuf> {
@@ -1172,9 +1175,7 @@ pub fn start(args: &Args) -> Option<LanSession> {
     Some(session)
 }
 
-/// The line the launcher looks for in the game's log when the game is over: the server sent
-/// the player away (kick, ban) or turned it away at the door, with the server's message.
-pub const LEFT_SERVER: &str = "LAN: disconnected from the server: ";
+pub use omsi_lan::LEFT_SERVER;
 
 /// A joining game the server sent or turned away: the reason, once (the game then ends and the
 /// launcher shows "Disconnected from the server" with it). None for a host, or while it may play.
@@ -1191,11 +1192,16 @@ pub fn turned_away(lan: &LanSession) -> Option<String> {
 /// The host's mods (see `lan_mods`): the host serves them on its session's port number
 /// (TCP), a joining player fetches what it lacks before its world is made, and says how
 /// far it has got in the status the launcher shows.
+/// What of our command line decides the mods we share as the host.
+fn mod_source(args: &Args) -> crate::lan_mods::ModSource {
+    crate::lan_mods::ModSource { root: args.root.clone(), map: args.map.clone(), bus: args.bus.clone(), weather: args.weather.clone() }
+}
+
 pub fn share_mods(args: &mut Args, lan: &mut LanSession) {
     match lan.role {
         Role::Host => {
             if let Some(port) = lan.local_addr().map(|a| a.port()) {
-                crate::lan_mods::serve(port, lan.session, args);
+                crate::lan_mods::serve(port, lan.session, &mod_source(args));
             }
         }
         Role::Client => {
@@ -1233,17 +1239,17 @@ pub fn share_mods(args: &mut Args, lan: &mut LanSession) {
             // (in the background: the session is kept alive meanwhile - a join held for
             // minutes was dropped by the host and came in later without the mods)
             let (tx, rx) = std::sync::mpsc::channel::<String>();
-            let mut fargs = args.clone();
+            let mut fmap = args.map.clone();
             let worker = std::thread::spawn(move || {
                 let mut last = Instant::now() - Duration::from_secs(1);
-                let r = crate::lan_mods::fetch(&mut fargs, host, session, &mut |done, total, file| {
+                let r = crate::lan_mods::fetch(&mut fmap, host, session, &mut |done, total, file| {
                     if last.elapsed() > Duration::from_millis(500) {
                         last = Instant::now();
                         let pct = if total > 0 { done * 100 / total } else { 100 };
                         let _ = tx.send(format!("Host's mods: {pct}% ({:.0} of {:.0} MB) {file}", done as f64 / 1e6, total as f64 / 1e6));
                     }
                 });
-                (r, fargs.map)
+                (r, fmap)
             });
             let planned = Pose { bus: args.bus.clone().unwrap_or_default().replace('\\', "/"), ..Default::default() };
             while !worker.is_finished() {

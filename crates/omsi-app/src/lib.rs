@@ -13,7 +13,7 @@ mod admin;
 use omsi_platform::discord;
 #[cfg(steam)]
 mod steam;
-mod voice;
+use omsi_lan::voice;
 mod head_idle;
 use omsi_input::headtrack;
 #[cfg(windows)]
@@ -96,7 +96,7 @@ mod duty_start;
 mod input_script;
 mod app_impl;
 mod launcher_link;
-mod lan_mods;
+use omsi_lan::mods as lan_mods;
 mod memory;
 mod offscreen;
 mod ground_gap;

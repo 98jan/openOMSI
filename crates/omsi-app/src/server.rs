@@ -268,7 +268,7 @@ pub(crate) fn enforce_vehicles(lan: &mut omsi_net::LanSession) {
 }
 
 /// A dedicated server's voice server (`voice_*` of `server.cfg`).
-pub(crate) static SERVER_VOICE: std::sync::OnceLock<Option<crate::voice::VoiceServer>> = std::sync::OnceLock::new();
+pub(crate) use omsi_lan::voice::SERVER_VOICE;
 
 /// A dedicated server's admin password and clock speed (for the host loop).
 pub(crate) static SERVER_ADMIN: std::sync::OnceLock<(String, f64)> = std::sync::OnceLock::new();

@@ -40,9 +40,9 @@ use std::sync::mpsc::{self, Receiver, Sender, SyncSender, TryRecvError};
 use std::time::{Duration, Instant};
 
 /// The port of the plugin (SaltyChat's WebSocket port, for those who know it).
-pub(crate) const DEFAULT_PORT: u16 = 38088;
+pub const DEFAULT_PORT: u16 = 38088;
 /// How far a player is heard (m) when the host does not say.
-pub(crate) const DEFAULT_RANGE: f32 = 20.0;
+pub const DEFAULT_RANGE: f32 = 20.0;
 /// TeamSpeak's limit on a nickname's length (characters).
 const MAX_NICK: usize = 30;
 /// Inside a bus with the other one outside it (or in another bus): heard through the
@@ -68,7 +68,7 @@ const RECONNECT: Duration = Duration::from_millis(20);
 
 /// The voice server a session uses, as its host names it.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct VoiceServer {
+pub struct VoiceServer {
     /// The voice server's unique id (the one in its info panel). Never empty: the plugin
     /// moves nobody about on a voice server the session does not name.
     pub server_uid: String,
@@ -86,7 +86,7 @@ impl VoiceServer {
     /// `voice_channel_password`, `voice_range`, `voice_radio`. None without a channel,
     /// without the voice server's unique id, or when the answer to `voice?` would not fit a
     /// command.
-    pub(crate) fn from_kv(get: impl Fn(&str) -> Option<String>) -> Option<VoiceServer> {
+    pub fn from_kv(get: impl Fn(&str) -> Option<String>) -> Option<VoiceServer> {
         let channel = get("voice_channel").map(|c| c.trim().to_string()).filter(|c| !c.is_empty())?;
         let flag = |k: &str, d: bool| {
             get(k).map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")).unwrap_or(d)
@@ -113,14 +113,14 @@ impl VoiceServer {
     }
 
     /// `~/.openomsi/voice.cfg` of a game that hosts (the same keys as `server.cfg`).
-    pub(crate) fn host_file() -> Option<VoiceServer> {
-        let text = std::fs::read_to_string(crate::lan::data_dir()?.join("voice.cfg")).ok()?;
+    pub fn host_file() -> Option<VoiceServer> {
+        let text = std::fs::read_to_string(crate::data_dir()?.join("voice.cfg")).ok()?;
         let kv = parse_kv(&text);
         VoiceServer::from_kv(|k| kv.get(k).cloned())
     }
 
     /// The host's answer to `voice?`.
-    pub(crate) fn command(server: Option<&VoiceServer>) -> String {
+    pub fn command(server: Option<&VoiceServer>) -> String {
         match server {
             Some(s) => format!(
                 "voice {} {} {} {} {}",
@@ -135,7 +135,7 @@ impl VoiceServer {
     }
 
     /// The host's answer as a joining game reads it: Some(None) for a session without voice.
-    pub(crate) fn parse_command(text: &str) -> Option<Option<VoiceServer>> {
+    pub fn parse_command(text: &str) -> Option<Option<VoiceServer>> {
         let rest = text.strip_prefix("voice ")?.trim();
         if rest == "-" {
             return Some(None);
@@ -156,10 +156,13 @@ impl VoiceServer {
     }
 }
 
+/// A dedicated server's voice server (`server.cfg`), set once at its start.
+pub static SERVER_VOICE: std::sync::OnceLock<Option<VoiceServer>> = std::sync::OnceLock::new();
+
 /// The voice server this game names when it hosts: a dedicated server's `server.cfg`, else
 /// `~/.openomsi/voice.cfg`.
-pub(crate) fn hosted() -> Option<VoiceServer> {
-    match crate::server::SERVER_VOICE.get() {
+pub fn hosted() -> Option<VoiceServer> {
+    match SERVER_VOICE.get() {
         Some(v) => v.clone(),
         None => VoiceServer::host_file(),
     }
@@ -213,7 +216,7 @@ fn dec(s: &str) -> String {
 
 /// A player's nickname in the voice channel: their name (letters, digits and a few signs)
 /// and their id in the session, within TeamSpeak's 30 characters.
-pub(crate) fn nickname(name: &str, id: u32) -> String {
+pub fn nickname(name: &str, id: u32) -> String {
     let tail = format!(" #{id}");
     let clean: String = name
         .chars()
@@ -228,8 +231,8 @@ pub(crate) fn nickname(name: &str, id: u32) -> String {
 
 /// `~/.openomsi/voice-plugin.key`: the key the game says `hello` with and the plugin
 /// checks it against (no web page or other program on this machine can read it).
-pub(crate) fn key_path() -> Option<PathBuf> {
-    Some(crate::lan::data_dir()?.join("voice-plugin.key"))
+pub fn key_path() -> Option<PathBuf> {
+    Some(crate::data_dir()?.join("voice-plugin.key"))
 }
 
 /// The key in `path`, made the first time (32 random bytes as hex, readable by this user
@@ -446,7 +449,7 @@ fn link_thread(addr: SocketAddr, key_file: Option<PathBuf>, out: Receiver<String
 
 /// What the game knows of the voice chat.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct Status {
+pub struct Status {
     /// The plugin is there.
     pub linked: bool,
     /// The plugin is on the session's voice server, in its channel.
@@ -458,7 +461,7 @@ pub(crate) struct Status {
 
 /// A player as the voice chat places them, each frame.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Speaker {
+pub struct Speaker {
     pub id: u32,
     pub name: String,
     /// Where their head is.
@@ -473,7 +476,7 @@ pub(crate) struct Speaker {
 
 /// Where we hear from: the camera, and which bus it is in.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct Listener {
+pub struct Listener {
     pub at: DVec3,
     /// Degrees, 0 = north, clockwise (the camera's yaw).
     pub yaw: f32,
@@ -485,7 +488,7 @@ pub(crate) struct Listener {
 }
 
 /// The game's side of the voice chat during a session.
-pub(crate) struct Voice {
+pub struct Voice {
     link: Option<Link>,
     addr: SocketAddr,
     /// The file of the key the plugin knows the game by (`key_path`).
@@ -516,7 +519,7 @@ pub(crate) struct Voice {
 
 impl Voice {
     /// The voice chat of a session (`port` 0: the default).
-    pub(crate) fn new(port: u16) -> Voice {
+    pub fn new(port: u16) -> Voice {
         let port = if port == 0 { DEFAULT_PORT } else { port };
         Voice {
             link: None,
@@ -537,7 +540,7 @@ impl Voice {
     }
 
     /// The host's voice server is known (we host, or its answer came).
-    pub(crate) fn set_server(&mut self, server: Option<VoiceServer>) {
+    pub fn set_server(&mut self, server: Option<VoiceServer>) {
         if self.server.as_ref() != Some(&server) {
             match &server {
                 Some(s) => log::info!("voice: the session talks on voice server '{}' channel '{}' (range {} m)", s.server_uid, s.channel, s.range),
@@ -548,18 +551,18 @@ impl Voice {
     }
 
     /// The host's answer is in (or we host): the voice server, or that there is none.
-    pub(crate) fn known(&self) -> bool {
+    pub fn known(&self) -> bool {
         self.server.is_some()
     }
 
     /// The voice server, once known.
-    pub(crate) fn server(&self) -> Option<&VoiceServer> {
+    pub fn server(&self) -> Option<&VoiceServer> {
         self.server.as_ref().and_then(|s| s.as_ref())
     }
 
     /// Ask the host for its voice server now and then until it answers (an older host
     /// never does: given up after a while). True when it is time to ask.
-    pub(crate) fn should_ask(&mut self, dt: f32) -> bool {
+    pub fn should_ask(&mut self, dt: f32) -> bool {
         if self.server.is_some() || self.asked >= ASK_TRIES {
             return false;
         }
@@ -579,7 +582,7 @@ impl Voice {
 
     /// Once a frame: take in what the plugin said, tell it the session, where we are and
     /// where the others are.
-    pub(crate) fn tick(&mut self, dt: f32, me: (&str, u32), listener: Option<Listener>, others: &[Speaker]) {
+    pub fn tick(&mut self, dt: f32, me: (&str, u32), listener: Option<Listener>, others: &[Speaker]) {
         let Some(server) = self.server().cloned() else { return };
         if self.link.is_none() {
             self.link = Link::start(self.addr, self.key.clone());
@@ -707,17 +710,17 @@ impl Voice {
     }
 
     /// Is this player speaking now?
-    pub(crate) fn speaks(&self, name: &str, id: u32) -> bool {
+    pub fn speaks(&self, name: &str, id: u32) -> bool {
         !self.talking.is_empty() && self.talking.contains(&nickname(name, id))
     }
 
     /// Is this player keying the bus radio now?
-    pub(crate) fn on_radio(&self, name: &str, id: u32) -> bool {
+    pub fn on_radio(&self, name: &str, id: u32) -> bool {
         !self.radioing.is_empty() && self.radioing.contains(&nickname(name, id))
     }
 
     /// The HUD's line, when there is something to say.
-    pub(crate) fn hud_line(&self) -> Option<String> {
+    pub fn hud_line(&self) -> Option<String> {
         self.server()?;
         if !self.status.linked {
             if let Some(r) = &self.refused {
@@ -762,14 +765,20 @@ fn heard_volume(me: &Listener, o: &Speaker, range: f32) -> Option<f32> {
     Some((open * MUFFLED * 100.0).round() / 100.0)
 }
 
+/// Where the game draws another player's bus (the session's own record of them: the
+/// game's remote vehicles), which may differ from their last pose.
+pub trait RemoteBuses {
+    fn remote_bus(&self, id: u32) -> Option<DVec3>;
+}
+
 /// The other players as the voice chat places them: their head on foot, the driver's
 /// place in their bus, the bus they ride in.
-pub(crate) fn speakers(lan: &omsi_net::LanSession, game: &crate::lan::LanGame, my_bus: Option<DVec3>) -> Vec<Speaker> {
+pub fn speakers(lan: &omsi_net::LanSession, game: &impl RemoteBuses, my_bus: Option<DVec3>) -> Vec<Speaker> {
     let bus_of = |id: u32| -> Option<DVec3> {
         if id == lan.my_id {
             return my_bus;
         }
-        game.remotes.get(&id).map(|r| r.vehicle().position).or_else(|| lan.peers().find(|p| p.pose.id == id).map(|p| DVec3::new(p.pose.x, p.pose.y, p.pose.z)))
+        game.remote_bus(id).or_else(|| lan.peers().find(|p| p.pose.id == id).map(|p| DVec3::new(p.pose.x, p.pose.y, p.pose.z)))
     };
     let mut out = Vec::new();
     for p in lan.peers().filter(|p| p.has_pose && p.pose.id != lan.my_id) {
