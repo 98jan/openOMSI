@@ -128,9 +128,9 @@ pub struct AiState {
 }
 
 /// An emergency vehicle on an active drive takes the speed limit times this ...
-pub const EMERGENCY_LIMIT_FACTOR: f32 = 1.3;
+pub const EMERGENCY_LIMIT_FACTOR: f32 = 1.5;
 /// ... but at most this many km/h over it.
-pub const EMERGENCY_LIMIT_PLUS: f32 = 20.0;
+pub const EMERGENCY_LIMIT_PLUS: f32 = 30.0;
 
 /// How the body stood after the last step, seen from the planner's way: how far the planner
 /// is ahead of the body's own place on that way (m, negative behind it), how fast the body
@@ -673,7 +673,9 @@ impl AiState {
             let turn = wrap_deg(q.point(net, s, d + 3.0).1 - q.point(net, s, d - 3.0).1).abs().to_radians() / 6.0;
             let k = net.lanes[q.lanes[i]].curvature_at(u).abs().max(turn);
             if k > 1e-4 {
-                let v = (self.lat_accel / k).sqrt().max(2.5);
+                // (an emergency vehicle on its drive takes the bends harder)
+                let lat = self.lat_accel * if self.priority_drive { 1.5 } else { 1.0 };
+                let v = (lat / k).sqrt().max(2.5);
                 // (a bend may begin anywhere up to a sample's spacing before the sample
                 // that finds it: the speed is taken from there, or the car met the start of
                 // a tight turn half a metre after its profile had allowed 1 m/s more)
@@ -765,7 +767,8 @@ impl AiState {
     /// has to stop (a light, a junction it gives way at, a bus stop).
     pub fn desired_accel(&self, net: &Network, lead: Option<Lead>, stop: Option<f32>) -> f32 {
         let Some(lane) = net.lanes.get(self.lane) else { return 0.0 };
-        let (a, b) = (self.accel.max(0.1), self.decel.max(0.5));
+        // (an emergency vehicle on its drive pulls away hard)
+        let (a, b) = (self.accel.max(0.1) * if self.priority_drive { 1.6 } else { 1.0 }, self.decel.max(0.5));
         let v = self.speed;
         let limit = |l: &Lane| {
             // (the bonus is the driver's whole margin: his own liking for speed on top of it
