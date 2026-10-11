@@ -64,7 +64,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DEBUG_PUDDLES` | num | 0 | use | render | Puddle debug view (a number selects it). |
 | `OMSI_DEBUG_RAIN` | bool | off | use | app | Log the tyres' spray and puddles. |
 | `OMSI_DEBUG_RASTER` | text | - | use | app | x,y: log the ground raster at that point. |
-| `OMSI_DEBUG_REPEATERS` | bool | off | use | app | Log repeater objects whose spline chain disagrees with the map. |
+| `OMSI_DEBUG_REPEATERS` | bool | off | use | world | Log repeater objects whose spline chain disagrees with the map. |
 | `OMSI_DEBUG_REST` | bool | off | use | app | Log where the bus came to rest on the ground after spawning. |
 | `OMSI_DEBUG_ROUTES` | bool | off | use | sim | Log where consecutive lanes of an AI route do not join. |
 | `OMSI_DEBUG_RT` | num | off | use | render | Log the ray tracing structures every 30 frames (with a number: a debug view). |
@@ -334,7 +334,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 
 | Name | Type | Default | Read | Crates | Description |
 |---|---|---|---|---|---|
-| `OMSI_AMBIENCE_DIR` | text | - | use | app | The folder of the ambience's recordings (its pack.json), instead of `ambience` beside the program or in ~/.openomsi. |
+| `OMSI_AMBIENCE_DIR` | text | - | use | soundscape | The folder of the ambience's recordings (its pack.json), instead of `ambience` beside the program or in ~/.openomsi. |
 | `OMSI_BACKEND` | text | settings | use | app, launcher-ui | vulkan, dx12, metal, gl or angle (dx11, d3d11; Windows): the graphics API tried first (overrides the settings). Set at runtime by the launcher and on Android. |
 | `OMSI_CLOUDFLARED` | text | - | use | net | Path of the cloudflared binary for the LAN tunnel (searched after the game's folder, before the PATH). |
 | `OMSI_CONTENT` | text | beside the game | use | app, cfg, launcher-core, sim | The content folder (mods, archives, screenshots). Set at runtime on Android. |
