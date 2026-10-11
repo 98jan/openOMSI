@@ -10,5 +10,5 @@ pub(crate) fn start_at_now(args: &mut crate::cli::Args) {
     args.day_of_year = None;
     let s = n.secs as u64;
     args.time = format!("{:02}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60);
-    mark_start_synced();
+    args.start_synced = true;
 }

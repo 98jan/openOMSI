@@ -8,9 +8,6 @@ use omsi_sim::SimClock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// The game was started on the real time (a duty must not move the clock then).
-static START_SYNCED: AtomicBool = AtomicBool::new(false);
-
 /// This device's local calendar date and time of day.
 #[derive(Clone, Copy, Debug)]
 pub struct Now {
@@ -80,18 +77,9 @@ pub fn gap(mine: &SimClock, real: &SimClock) -> f64 {
     (day_number(real.year, real.day_of_year) - day_number(mine.year, mine.day_of_year)) as f64 * 86400.0 + (real.time - mine.time)
 }
 
-/// Mark the session as started on the real time (see `started_synced`).
-pub fn mark_start_synced() {
-    START_SYNCED.store(true, Ordering::Relaxed);
-}
-
-
-pub fn started_synced() -> bool {
-    START_SYNCED.load(Ordering::Relaxed)
-}
-
 /// A dedicated server runs on the real time (`real_time` in its server.cfg): its clock
-/// cannot be set or sped up.
+/// cannot be set or sped up. (Process-wide: a server is one session per process, set once
+/// from its server.cfg before it starts.)
 static SERVER_REAL: AtomicBool = AtomicBool::new(false);
 
 pub fn set_server_real(on: bool) {
