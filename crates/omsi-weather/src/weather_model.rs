@@ -569,6 +569,114 @@ mod tests {
 }
 
 #[cfg(test)]
+mod run_tests {
+    use super::*;
+    use omsi_sim::daylight::{place, set_place, SunPlace};
+    use omsi_sim::SimClock;
+
+    /// The session model as it was kept before `ModelRun`: one `Option<Session>` and the sky
+    /// it showed, with `start`, `stop` and `refresh` as they were (statics then, locals here).
+    #[derive(Default)]
+    struct Before {
+        session: Option<(WeatherModel, i32, f64, f64, (i32, f64))>,
+        current: Option<ModelSky>,
+    }
+
+    impl Before {
+        fn start(&mut self, clock: &SimClock) -> Weather {
+            let place = place();
+            let model = WeatherModel::new(clock, &place);
+            let w = model.weather();
+            self.current = Some(model.sky());
+            self.session = Some((model, clock.year, place.latitude, place.longitude, (clock.day_of_year, clock.time)));
+            w
+        }
+
+        fn stop(&mut self) {
+            self.session = None;
+            self.current = None;
+        }
+
+        fn refresh(&mut self, clock: &SimClock) -> Option<Weather> {
+            let s = self.session.as_mut()?;
+            let place = place();
+            let elapsed = (clock.day_of_year - s.4 .0) as f64 * 86_400.0 + (clock.time - s.4 .1);
+            let moved = (place.latitude - s.2).abs() > 0.01 || (place.longitude - s.3).abs() > 0.01;
+            if moved || clock.year != s.1 || !(0.0..=86_400.0).contains(&elapsed) {
+                s.0 = WeatherModel::new(clock, &place);
+                s.1 = clock.year;
+                s.2 = place.latitude;
+                s.3 = place.longitude;
+            } else if elapsed > 0.0 {
+                s.0.step(clock.year, &place, (elapsed / 3600.0) as f32);
+            }
+            s.4 = (clock.day_of_year, clock.time);
+            self.current = Some(s.0.sky());
+            Some(s.0.weather())
+        }
+    }
+
+    /// Two sessions, a stop and a start again, frame steps, minutes, midnight, a jump of
+    /// more than a day, a jump back, a new year and a map at another place: the run gives
+    /// the weather and the sky the statics gave, bit for bit, at every step.
+    #[test]
+    fn a_run_steps_as_the_session_statics_did() {
+        let berlin = SunPlace::default();
+        let elsewhere = SunPlace { latitude: 50.7, longitude: -3.5, ..SunPlace::default() };
+        set_place(berlin.clone());
+        let mut before = Before::default();
+        let mut run: Option<ModelRun>;
+        let mut clock = SimClock { year: 2026, day_of_year: 100, time: 6.0 * 3600.0, ..Default::default() };
+        let mut steps = 0;
+        let check = |before: &mut Before, run: &mut Option<ModelRun>, clock: &SimClock| {
+            let old = before.refresh(clock);
+            let new = run.as_mut().map(|r| r.refresh(clock));
+            assert_eq!(format!("{old:?}"), format!("{new:?}"), "weather at {clock:?}");
+            assert_eq!(before.current, run.as_ref().map(|r| r.sky()), "sky at {clock:?}");
+        };
+        for session in 0..2 {
+            let w_old = before.start(&clock);
+            let (r, w_new) = ModelRun::start(&clock);
+            assert_eq!(format!("{w_old:?}"), format!("{w_new:?}"));
+            run = Some(r);
+            assert_eq!(before.current, run.as_ref().map(|r| r.sky()));
+            // frames of a sixtieth of a second, then of a second, then minutes over midnight
+            for (n, dt) in [(120, 1.0 / 60.0), (600, 1.0), (200, 17.0 * 60.0)] {
+                for _ in 0..n {
+                    clock.time += dt;
+                    if clock.time >= 86_400.0 {
+                        clock.time -= 86_400.0;
+                        clock.day_of_year += 1;
+                    }
+                    check(&mut before, &mut run, &clock);
+                    steps += 1;
+                }
+            }
+            // more than a day on, back an hour, a new year, another place, and back home
+            clock.day_of_year += 2;
+            check(&mut before, &mut run, &clock);
+            clock.time = (clock.time - 3600.0).max(0.0);
+            check(&mut before, &mut run, &clock);
+            clock.year += 1;
+            check(&mut before, &mut run, &clock);
+            set_place(elsewhere.clone());
+            clock.time += 600.0;
+            check(&mut before, &mut run, &clock);
+            set_place(berlin.clone());
+            clock.time += 600.0;
+            check(&mut before, &mut run, &clock);
+            steps += 5;
+            // the session ends (another weather): no model until the next one starts
+            before.stop();
+            run = None;
+            check(&mut before, &mut run, &clock);
+            clock.day_of_year = 200 + session * 90;
+        }
+        assert!(steps > 1800);
+    }
+}
+
+#[cfg(test)]
 mod report {
     use super::*;
 
