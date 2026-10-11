@@ -533,139 +533,151 @@ impl Ui {
         }
         // the timetable of the chosen line or tour, beside the list
         if let Some(p) = preview {
-            let (px0, py0) = (list_r + 4.0 * s, y + header_h);
-            let (px1, py1) = (x + w - pad, y + h - pad);
-            self.text.rounded(r, scene, [px0 - 1.0, py0 - 1.0, px1 + 1.0, py1 + 1.0], CARD_R * s + 1.0, BORDER);
-            self.text.rounded(r, scene, [px0, py0, px1, py1], CARD_R * s, PANEL_ALT);
-            let pad = tin;
-            let inner = px1 - px0 - pad * 2.0;
-            let mut cy = py0 + 28.0 * s;
-            let head = clip_to(&self.text, &p.title, 16.0 * s, inner);
-            self.put(r, scene, &head, (16.0 * s) as u32, WHITE, px0 + pad, cy);
-            cy += 22.0 * s;
-            let meta = clip_to(&self.text, &p.meta, 11.0 * s, inner);
-            self.put(r, scene, &meta, (11.0 * s) as u32, MUTED, px0 + pad, cy);
-            cy += 18.0 * s;
-            scene.overlays.push((sep, [px0 + pad, cy.round(), px1 - pad, cy.round() + 1.0]));
-            let rpx = (13.0 * s) as u32;
-            let lh = 24.0 * s;
-            let mut top = cy + 10.0 * s;
-            // the tour, and the time of the trip, each between arrows that step through them
-            let nav_rows: Vec<(&String, f32, usize)> = p.time.iter().map(|t| (t, 20.0f32, 0usize)).collect();
-            for (time, fs, base) in nav_rows {
-                let bh = 30.0 * s;
-                let bw = 46.0 * s;
-                let by = top;
-                let right = px1 - pad;
-                let left = px0 + pad;
-                for j in 0..2usize {
-                    let rect = if j == 0 { [left, by, left + bw, by + bh] } else { [right - bw, by, right, by + bh] };
-                    let a = self.easeq((14, "time", j + base), if over(rect) { 1.0 } else { 0.0 }, 1.0 / FADE_SECS);
-                    self.text.rounded(r, scene, rect, ROW_R * s, mix([232, 160, 48, 60], ACCENT, a * 0.7));
-                    let col = mix(ACCENT_HOT, [18, 14, 8, 255], a);
-                    let (cx, cy) = ((rect[0] + rect[2]) * 0.5, (rect[1] + rect[3]) * 0.5);
-                    // (a real arrow: a shaft and a head of stacked strips)
-                    let dir = if j == 0 { -1.0 } else { 1.0 };
-                    let (half, head_w, head_h) = (9.0 * s, 7.0 * s, 7.0 * s);
-                    let t = (2.0 * s).max(2.0);
-                    self.text.rounded(r, scene, [cx - half, cy - t * 0.5, cx + half, cy + t * 0.5], 0.0, col);
-                    let tip = cx + dir * half;
-                    let strips = 7;
-                    for k in 0..strips {
-                        // (strip k, from the head's base towards the tip, narrowing)
-                        let bx = tip - dir * head_w * (1.0 - k as f32 / strips as f32);
-                        let ex = tip - dir * head_w * (1.0 - (k as f32 + 1.0) / strips as f32);
-                        let h = head_h * (1.0 - (k as f32 + 0.5) / strips as f32);
-                        self.text.rounded(r, scene, [bx.min(ex), cy - h, bx.max(ex), cy + h], 0.0, col);
-                    }
-                    self.menu_time.push(rect);
-                }
-                let mid_l = left + bw + 10.0 * s;
-                let mid_r = right - bw - 10.0 * s;
-                let time = clip_to(&self.text, time, fs * s, mid_r - mid_l);
-                let tw = self.text.width(&time, fs * s);
-                self.put(r, scene, &time, (fs * s) as u32, if base == 0 { AMBER } else { WHITE }, mid_l + (mid_r - mid_l - tw) * 0.5, by + bh * 0.5);
-                top = by + bh + 8.0 * s;
-            }
-            let n = p.rows.len();
-            if let (Some(chosen), Some(button)) = (p.chosen, p.button.as_ref()) {
-                // the stops to start from: the one chosen marked, a click chooses another
-                let go_h = 34.0 * s;
-                let go = [px0 + pad, py1 - 12.0 * s - go_h, px1 - pad, py1 - 12.0 * s];
-                let fit = (((go[1] - 10.0 * s) - top) / lh).floor().max(1.0) as usize;
-                let first = match f.pane_first {
-                    Some(p) if n > fit => p.min(n - fit),
-                    _ if n > fit => chosen.saturating_sub(fit / 2).min(n - fit),
-                    _ => 0,
-                };
-                self.menu_pane_start = first;
-                self.menu_pane_box = Some([px0, py0, px1, py1]);
-                // (a long list of stops: a thin scroll bar at the pane's edge)
-                if n > fit {
-                    let hot = over([px0, py0, px1, py1]);
-                    let track = [px1 - 7.0 * s, top, px1 - 3.0 * s, go[1] - 10.0 * s];
-                    let thumb = self.thumb(r, scene, track, first, fit, n, hot, s);
-                    self.menu_pane_scroll = Some((track, [thumb[0] - 6.0 * s, thumb[1], thumb[2] + 3.0 * s, thumb[3]], n, fit));
-                }
-                let time_w = p.rows.iter().skip(first).take(fit).map(|row| self.text.width(&row.1, rpx as f32)).fold(0.0f32, f32::max);
-                for (i, (what, when)) in p.rows.iter().enumerate().skip(first).take(fit) {
-                    let ry = top + lh * (i - first) as f32 + lh * 0.5;
-                    let rect = [px0 + 8.0 * s, ry - lh * 0.5, px1 - 8.0 * s, ry + lh * 0.5];
-                    let on = i == chosen;
-                    let hov = over(rect) && !on;
-                    let a_on = self.easeq((11, "stop", i), if on { 1.0 } else { 0.0 }, 1.0 / FADE_SECS);
-                    let a_hov = self.easeq((12, "stop", i), if hov { 1.0 } else { 0.0 }, 1.0 / FADE_SECS);
-                    if a_hov > 0.0 {
-                        self.text.rounded(r, scene, rect, ROW_R * s, fade(LIT, a_hov));
-                    }
-                    if a_on > 0.0 {
-                        self.text.rounded(r, scene, rect, ROW_R * s, fade(SELECTED, a_on));
-                        self.text.rounded(r, scene, [rect[0], rect[1] + 7.0 * s, rect[0] + 2.0 * s, rect[3] - 7.0 * s], 1.0 * s, fade(ACCENT, a_on));
-                    }
-                    self.put_right(r, scene, when, rpx, AMBER, px1 - pad, ry);
-                    let what = clip_to(&self.text, what, rpx as f32, inner - time_w - 14.0 * s);
-                    self.put(r, scene, &what, rpx, mix(SOFT, WHITE, a_on), px0 + pad, ry);
-                    self.menu_pane.push(rect);
-                }
-                // the button that starts the trip
-                let a_go = self.easeq((13, "go", 0), if over(go) { 1.0 } else { 0.0 }, 1.0 / FADE_SECS);
-                self.text.rounded(r, scene, go, ROW_R * s, mix(ACCENT, ACCENT_HOT, a_go));
-                let l = self.text.label(r, scene, button, (14.0 * s) as u32 | BOLD, ON_ACCENT);
-                let (gx, gy) = (go[0] + (go[2] - go[0] - l.w as f32) * 0.5, (go[1] + go[3]) * 0.5 - l.h as f32 * 0.5);
-                scene.overlays.push((l.tex, [gx, gy, gx + l.w as f32, gy + l.h as f32]));
-                self.menu_pane_go = Some(go);
-            } else {
-                let fit = ((py1 - 12.0 * s - top) / lh).floor().max(1.0) as usize;
-                // (a list too long for the pane ends in how many more there are)
-                let shown = if n > fit { fit.saturating_sub(1) } else { n };
-                let time_w = p.rows.iter().take(shown).map(|row| self.text.width(&row.1, rpx as f32)).fold(0.0f32, f32::max);
-                let tp = format!("{} ", omsi_ui::tr("Tour"));
-                // (the tour numbers in tiles of one width, the destination after them)
-                let tile_w = p.rows.iter().take(shown).filter_map(|row| row.0.strip_prefix(tp.as_str()).and_then(|x| x.split_once("  ›  ").map(|(n, _)| n).or(Some(x)))).map(|n| self.text.width(n.trim(), rpx as f32) + 16.0 * s).fold(30.0 * s, f32::max);
-                for (i, (what, when)) in p.rows.iter().take(shown).enumerate() {
-                    let ry = top + lh * i as f32 + lh * 0.5;
-                    self.put_right(r, scene, when, rpx, AMBER, px1 - pad, ry);
-                    if let Some(rest) = what.strip_prefix(tp.as_str()) {
-                        let (num, dest) = rest.split_once("  ›  ").unwrap_or((rest, ""));
-                        let th = lh - 6.0 * s;
-                        self.text.rounded(r, scene, [px0 + pad, ry - th * 0.5, px0 + pad + tile_w, ry + th * 0.5], 5.0 * s, ACCENT_SOFT);
-                        let nw = self.text.width(num.trim(), rpx as f32);
-                        self.put(r, scene, num.trim(), rpx, txt(ACCENT), px0 + pad + (tile_w - nw) * 0.5, ry);
-                        let dx = px0 + pad + tile_w + 10.0 * s;
-                        let dest = clip_to(&self.text, dest, rpx as f32, px1 - pad - time_w - 14.0 * s - dx);
-                        self.put(r, scene, &dest, rpx, SOFT, dx, ry);
-                    } else {
-                        let what = clip_to(&self.text, what, rpx as f32, inner - time_w - 14.0 * s);
-                        self.put(r, scene, &what, rpx, SOFT, px0 + pad, ry);
-                    }
-                }
-                if n > shown {
-                    let ry = top + lh * shown as f32 + lh * 0.5;
-                    self.put(r, scene, &omsi_ui::tr("+{} more").replacen("{}", &(n - shown).to_string(), 1), (12.0 * s) as u32, MUTED, px0 + pad, ry);
-                }
-            }
+            self.draw_menu_preview(r, scene, f, p, sep, [x, y, w, h], list_r, header_h, s);
         }
         self.menu_overlay_range = overlay_start..scene.overlays.len();
+    }
+
+    /// The timetable of the chosen line or tour in its pane beside the menu's list (card
+    /// `[x, y, w, h]`, the list ending at `list_r`): the trip's times between arrows, then the
+    /// stops to start from with the button that starts the trip, or the tour's trips.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_menu_preview(&mut self, r: &Renderer, scene: &mut Scene, f: &Frame, p: &Preview, sep: TextureId, card: [f32; 4], list_r: f32, header_h: f32, s: f32) {
+        let [x, y, w, h] = card;
+        let pad = PAD * s;
+        let tin = TEXT_IN * s;
+        let over = |rect: [f32; 4]| f.cursor.0 >= rect[0] && f.cursor.0 <= rect[2] && f.cursor.1 >= rect[1] && f.cursor.1 <= rect[3];
+        let (px0, py0) = (list_r + 4.0 * s, y + header_h);
+        let (px1, py1) = (x + w - pad, y + h - pad);
+        self.text.rounded(r, scene, [px0 - 1.0, py0 - 1.0, px1 + 1.0, py1 + 1.0], CARD_R * s + 1.0, BORDER);
+        self.text.rounded(r, scene, [px0, py0, px1, py1], CARD_R * s, PANEL_ALT);
+        let pad = tin;
+        let inner = px1 - px0 - pad * 2.0;
+        let mut cy = py0 + 28.0 * s;
+        let head = clip_to(&self.text, &p.title, 16.0 * s, inner);
+        self.put(r, scene, &head, (16.0 * s) as u32, WHITE, px0 + pad, cy);
+        cy += 22.0 * s;
+        let meta = clip_to(&self.text, &p.meta, 11.0 * s, inner);
+        self.put(r, scene, &meta, (11.0 * s) as u32, MUTED, px0 + pad, cy);
+        cy += 18.0 * s;
+        scene.overlays.push((sep, [px0 + pad, cy.round(), px1 - pad, cy.round() + 1.0]));
+        let rpx = (13.0 * s) as u32;
+        let lh = 24.0 * s;
+        let mut top = cy + 10.0 * s;
+        // the tour, and the time of the trip, each between arrows that step through them
+        let nav_rows: Vec<(&String, f32, usize)> = p.time.iter().map(|t| (t, 20.0f32, 0usize)).collect();
+        for (time, fs, base) in nav_rows {
+            let bh = 30.0 * s;
+            let bw = 46.0 * s;
+            let by = top;
+            let right = px1 - pad;
+            let left = px0 + pad;
+            for j in 0..2usize {
+                let rect = if j == 0 { [left, by, left + bw, by + bh] } else { [right - bw, by, right, by + bh] };
+                let a = self.easeq((14, "time", j + base), if over(rect) { 1.0 } else { 0.0 }, 1.0 / FADE_SECS);
+                self.text.rounded(r, scene, rect, ROW_R * s, mix([232, 160, 48, 60], ACCENT, a * 0.7));
+                let col = mix(ACCENT_HOT, [18, 14, 8, 255], a);
+                let (cx, cy) = ((rect[0] + rect[2]) * 0.5, (rect[1] + rect[3]) * 0.5);
+                // (a real arrow: a shaft and a head of stacked strips)
+                let dir = if j == 0 { -1.0 } else { 1.0 };
+                let (half, head_w, head_h) = (9.0 * s, 7.0 * s, 7.0 * s);
+                let t = (2.0 * s).max(2.0);
+                self.text.rounded(r, scene, [cx - half, cy - t * 0.5, cx + half, cy + t * 0.5], 0.0, col);
+                let tip = cx + dir * half;
+                let strips = 7;
+                for k in 0..strips {
+                    // (strip k, from the head's base towards the tip, narrowing)
+                    let bx = tip - dir * head_w * (1.0 - k as f32 / strips as f32);
+                    let ex = tip - dir * head_w * (1.0 - (k as f32 + 1.0) / strips as f32);
+                    let h = head_h * (1.0 - (k as f32 + 0.5) / strips as f32);
+                    self.text.rounded(r, scene, [bx.min(ex), cy - h, bx.max(ex), cy + h], 0.0, col);
+                }
+                self.menu_time.push(rect);
+            }
+            let mid_l = left + bw + 10.0 * s;
+            let mid_r = right - bw - 10.0 * s;
+            let time = clip_to(&self.text, time, fs * s, mid_r - mid_l);
+            let tw = self.text.width(&time, fs * s);
+            self.put(r, scene, &time, (fs * s) as u32, if base == 0 { AMBER } else { WHITE }, mid_l + (mid_r - mid_l - tw) * 0.5, by + bh * 0.5);
+            top = by + bh + 8.0 * s;
+        }
+        let n = p.rows.len();
+        if let (Some(chosen), Some(button)) = (p.chosen, p.button.as_ref()) {
+            // the stops to start from: the one chosen marked, a click chooses another
+            let go_h = 34.0 * s;
+            let go = [px0 + pad, py1 - 12.0 * s - go_h, px1 - pad, py1 - 12.0 * s];
+            let fit = (((go[1] - 10.0 * s) - top) / lh).floor().max(1.0) as usize;
+            let first = match f.pane_first {
+                Some(p) if n > fit => p.min(n - fit),
+                _ if n > fit => chosen.saturating_sub(fit / 2).min(n - fit),
+                _ => 0,
+            };
+            self.menu_pane_start = first;
+            self.menu_pane_box = Some([px0, py0, px1, py1]);
+            // (a long list of stops: a thin scroll bar at the pane's edge)
+            if n > fit {
+                let hot = over([px0, py0, px1, py1]);
+                let track = [px1 - 7.0 * s, top, px1 - 3.0 * s, go[1] - 10.0 * s];
+                let thumb = self.thumb(r, scene, track, first, fit, n, hot, s);
+                self.menu_pane_scroll = Some((track, [thumb[0] - 6.0 * s, thumb[1], thumb[2] + 3.0 * s, thumb[3]], n, fit));
+            }
+            let time_w = p.rows.iter().skip(first).take(fit).map(|row| self.text.width(&row.1, rpx as f32)).fold(0.0f32, f32::max);
+            for (i, (what, when)) in p.rows.iter().enumerate().skip(first).take(fit) {
+                let ry = top + lh * (i - first) as f32 + lh * 0.5;
+                let rect = [px0 + 8.0 * s, ry - lh * 0.5, px1 - 8.0 * s, ry + lh * 0.5];
+                let on = i == chosen;
+                let hov = over(rect) && !on;
+                let a_on = self.easeq((11, "stop", i), if on { 1.0 } else { 0.0 }, 1.0 / FADE_SECS);
+                let a_hov = self.easeq((12, "stop", i), if hov { 1.0 } else { 0.0 }, 1.0 / FADE_SECS);
+                if a_hov > 0.0 {
+                    self.text.rounded(r, scene, rect, ROW_R * s, fade(LIT, a_hov));
+                }
+                if a_on > 0.0 {
+                    self.text.rounded(r, scene, rect, ROW_R * s, fade(SELECTED, a_on));
+                    self.text.rounded(r, scene, [rect[0], rect[1] + 7.0 * s, rect[0] + 2.0 * s, rect[3] - 7.0 * s], 1.0 * s, fade(ACCENT, a_on));
+                }
+                self.put_right(r, scene, when, rpx, AMBER, px1 - pad, ry);
+                let what = clip_to(&self.text, what, rpx as f32, inner - time_w - 14.0 * s);
+                self.put(r, scene, &what, rpx, mix(SOFT, WHITE, a_on), px0 + pad, ry);
+                self.menu_pane.push(rect);
+            }
+            // the button that starts the trip
+            let a_go = self.easeq((13, "go", 0), if over(go) { 1.0 } else { 0.0 }, 1.0 / FADE_SECS);
+            self.text.rounded(r, scene, go, ROW_R * s, mix(ACCENT, ACCENT_HOT, a_go));
+            let l = self.text.label(r, scene, button, (14.0 * s) as u32 | BOLD, ON_ACCENT);
+            let (gx, gy) = (go[0] + (go[2] - go[0] - l.w as f32) * 0.5, (go[1] + go[3]) * 0.5 - l.h as f32 * 0.5);
+            scene.overlays.push((l.tex, [gx, gy, gx + l.w as f32, gy + l.h as f32]));
+            self.menu_pane_go = Some(go);
+        } else {
+            let fit = ((py1 - 12.0 * s - top) / lh).floor().max(1.0) as usize;
+            // (a list too long for the pane ends in how many more there are)
+            let shown = if n > fit { fit.saturating_sub(1) } else { n };
+            let time_w = p.rows.iter().take(shown).map(|row| self.text.width(&row.1, rpx as f32)).fold(0.0f32, f32::max);
+            let tp = format!("{} ", omsi_ui::tr("Tour"));
+            // (the tour numbers in tiles of one width, the destination after them)
+            let tile_w = p.rows.iter().take(shown).filter_map(|row| row.0.strip_prefix(tp.as_str()).and_then(|x| x.split_once("  ›  ").map(|(n, _)| n).or(Some(x)))).map(|n| self.text.width(n.trim(), rpx as f32) + 16.0 * s).fold(30.0 * s, f32::max);
+            for (i, (what, when)) in p.rows.iter().take(shown).enumerate() {
+                let ry = top + lh * i as f32 + lh * 0.5;
+                self.put_right(r, scene, when, rpx, AMBER, px1 - pad, ry);
+                if let Some(rest) = what.strip_prefix(tp.as_str()) {
+                    let (num, dest) = rest.split_once("  ›  ").unwrap_or((rest, ""));
+                    let th = lh - 6.0 * s;
+                    self.text.rounded(r, scene, [px0 + pad, ry - th * 0.5, px0 + pad + tile_w, ry + th * 0.5], 5.0 * s, ACCENT_SOFT);
+                    let nw = self.text.width(num.trim(), rpx as f32);
+                    self.put(r, scene, num.trim(), rpx, txt(ACCENT), px0 + pad + (tile_w - nw) * 0.5, ry);
+                    let dx = px0 + pad + tile_w + 10.0 * s;
+                    let dest = clip_to(&self.text, dest, rpx as f32, px1 - pad - time_w - 14.0 * s - dx);
+                    self.put(r, scene, &dest, rpx, SOFT, dx, ry);
+                } else {
+                    let what = clip_to(&self.text, what, rpx as f32, inner - time_w - 14.0 * s);
+                    self.put(r, scene, &what, rpx, SOFT, px0 + pad, ry);
+                }
+            }
+            if n > shown {
+                let ry = top + lh * shown as f32 + lh * 0.5;
+                self.put(r, scene, &omsi_ui::tr("+{} more").replacen("{}", &(n - shown).to_string(), 1), (12.0 * s) as u32, MUTED, px0 + pad, ry);
+            }
+        }
     }
 }
 
