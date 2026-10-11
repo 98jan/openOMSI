@@ -76,6 +76,9 @@ pub fn trace_ffb(f: &crate::controllers::FfInput, x: f32, x0: f32, inverted: boo
 /// A failed read after reacquiring can be transient, but several in a row mean the
 /// DirectInput object itself is stale. Reopen it instead of keeping its last state forever.
 const READ_FAILURE_LIMIT: u8 = 3;
+/// How long after the start an empty list of game controllers is looked at again every 5 s;
+/// after that only a device notification brings a new enumeration (#2213).
+const EMPTY_RETRY_FOR: Duration = Duration::from_secs(30);
 
 /// One device opened.
 pub struct Device {
@@ -619,6 +622,7 @@ impl DirectInput {
             let mut seen = HID_CHANGES.load(Ordering::Relaxed);
             let mut last = Instant::now();
             let mut empty = initially_empty;
+            let started = Instant::now();
             // (a device plugged in raises several notifications: look once they settle)
             let mut pending: Option<Instant> = None;
             loop {
@@ -651,9 +655,12 @@ impl DirectInput {
                 }
                 if window.is_none() && last.elapsed() > Duration::from_secs(3) {
                     pending = Some(Instant::now() - Duration::from_secs(1));
-                } else if empty && last.elapsed() > Duration::from_secs(5) {
+                } else if empty && last.elapsed() > Duration::from_secs(5) && started.elapsed() < EMPTY_RETRY_FOR {
                     // Some older wheel drivers appear after the first enumeration
-                    // without sending a HID arrival notification.
+                    // without sending a HID arrival notification - they do so within
+                    // seconds of the start. Looking every 5 s for the whole session
+                    // with nothing plugged in made the game hitch every 5 s: an
+                    // enumeration of DirectInput holds up the whole process (#2213).
                     pending = Some(Instant::now() - Duration::from_secs(1));
                 }
                 if pending.is_some_and(|t| t.elapsed() > Duration::from_millis(300)) {
