@@ -328,7 +328,7 @@ impl Renderer {
         // (the player's headlamps, which share a map of their own: see `passes::headlamp_shadow`)
         let own = own.filter(|_| lamp_shadows && enhanced).map(|b| passes::VehicleBox::new(b, ro));
         let mut own_lamps: Vec<(Vec3, Vec3, f32)> = Vec::new();
-        self.cookies.begin_frame();
+        self.lights.cookies.begin_frame();
         // The grid is made in a room kept all unused but for the cells the last one filled,
         // which are cleared first: half a megabyte set and compared twice a frame (the
         // window's picture and a mirror's) for the few thousand cells lamps reach.
@@ -375,7 +375,7 @@ impl Renderer {
             // and 16 more for one of the player's headlamps, which read their shared map
             // (see `passes::headlamp_shadow`, enhanced.wgsl `light_marks`).
             let mut marks = 0.0;
-            if let Some(layer) = l.cookie.filter(|_| enhanced && l.mode == LightMode::Enhanced).and_then(|c| self.cookies.layer(&c)) {
+            if let Some(layer) = l.cookie.filter(|_| enhanced && l.mode == LightMode::Enhanced).and_then(|c| self.lights.cookies.layer(&c)) {
                 marks += 1.0 + layer as f32;
             }
             if own.as_ref().is_some_and(|b| passes::own_headlamp(l, p, b)) {
@@ -418,7 +418,7 @@ impl Renderer {
             }
         }
         // (the beams' pictures the lamps found layers for, after the lights: see `cookies`)
-        self.cookies.append(&mut gpu_lights);
+        self.lights.cookies.append(&mut gpu_lights);
         if gpu_lights.is_empty() {
             gpu_lights.push(GpuPointLight {
                 pos: [0.0; 4],
@@ -567,7 +567,7 @@ impl Renderer {
             }
         }
         self.queue.write_texture(
-            wgpu::TexelCopyTextureInfo { texture: &self.lm_atlas, mip_level: 0, origin: wgpu::Origin3d { x: slot.0 * LM_TILE_PX, y: slot.1 * LM_TILE_PX, z: 0 }, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyTextureInfo { texture: &self.lights.lm_atlas, mip_level: 0, origin: wgpu::Origin3d { x: slot.0 * LM_TILE_PX, y: slot.1 * LM_TILE_PX, z: 0 }, aspect: wgpu::TextureAspect::All },
             &px,
             wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(LM_TILE_PX * 4), rows_per_image: None },
             wgpu::Extent3d { width: LM_TILE_PX, height: LM_TILE_PX, depth_or_array_layers: 1 },
@@ -576,7 +576,7 @@ impl Renderer {
 
     /// Where the light map atlas lies: its south-west corner (world x, y) and its side (m).
     pub fn set_light_map_place(&self, x: f64, y: f64, side: f64) {
-        self.lm_place.set((x, y, side));
+        self.lights.lm_place.set((x, y, side));
     }
 
     /// Register picture `id` for coronas (`Corona::texture`): a light's own bitmap, whose
@@ -585,34 +585,34 @@ impl Renderer {
         let t = upload_texture(&self.device, &self.queue, img, true);
         let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("corona picture"),
-            layout: &self.corona_layout,
+            layout: &self.lights.corona_layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&t.view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.corona_sampler) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.lights.corona_sampler) },
             ],
         });
         let i = id as usize;
-        if self.corona_textures.len() <= i {
-            self.corona_textures.resize_with(i + 1, || None);
+        if self.lights.corona_textures.len() <= i {
+            self.lights.corona_textures.resize_with(i + 1, || None);
         }
-        self.corona_textures[i] = Some(bg);
+        self.lights.corona_textures[i] = Some(bg);
     }
 
     /// A light cookie's picture (`PointLight::cookie`), under the number its lamps name.
     pub fn set_cookie_picture(&self, id: u16, img: &omsi_texture::Image) {
-        self.cookies.set_picture(id, img);
+        self.lights.cookies.set_picture(id, img);
     }
 
     /// The picture of a smoke particle: the game's `Texture/rauch.tga` (OMSI's default
     /// for every `[smoke]`), alpha as its mask.
     pub fn set_smoke_texture(&mut self, img: &omsi_texture::Image) {
         let t = upload_texture(&self.device, &self.queue, img, true);
-        self.smoke_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        self.lights.smoke_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("smoke"),
-            layout: &self.corona_layout,
+            layout: &self.lights.corona_layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&t.view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.corona_sampler) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.lights.corona_sampler) },
             ],
         });
     }
@@ -686,4 +686,32 @@ impl Renderer {
             }
         }
     }
+}
+
+/// The lights' resources beside the scene's grid: coronas, smoke, snowfall, cookies, the tile light maps and the lamps in the fog.
+pub(crate) struct LightRes {
+    pub(crate) corona_bind_group: wgpu::BindGroup,
+    /// The snowfall's parameters (snow.wgsl `SnowParams`) and their bind group.
+    pub(crate) snow_buf: wgpu::Buffer,
+    pub(crate) snow_bind_group: wgpu::BindGroup,
+    /// The smoke texture (`Texture/rauch.tga`, see [`Renderer::set_smoke_texture`]).
+    pub(crate) smoke_bind_group: wgpu::BindGroup,
+    /// The coronas' pictures besides the standard glow (index = `Corona::texture`; entry 0
+    /// unused).
+    pub(crate) corona_textures: Vec<Option<wgpu::BindGroup>>,
+    /// The light cookies' pictures and the frame's layers of them.
+    pub(crate) cookies: cookies::CookieAtlas,
+    pub(crate) corona_layout: wgpu::BindGroupLayout,
+    pub(crate) corona_sampler: wgpu::Sampler,
+    /// Enhanced: the lamps' light the fog scatters, added over the drawn picture (none on
+    /// OpenGL and without storage buffers), its bind group layout and parameters.
+    pub(crate) fog_lamps_pipeline: Option<[wgpu::RenderPipeline; 2]>,
+    pub(crate) fog_lamps_layout: wgpu::BindGroupLayout,
+    pub(crate) fog_lamps_buf: wgpu::Buffer,
+    /// The tile light maps (`.map.LM.bmp`) of the 5x5 tiles around the camera, north up, and
+    /// where that square lies (world x, y of its south-west corner, its side in metres).
+    pub(crate) lm_atlas: wgpu::Texture,
+    pub(crate) lm_atlas_view: wgpu::TextureView,
+    pub(crate) lm_uniform: wgpu::Buffer,
+    pub(crate) lm_place: std::cell::Cell<(f64, f64, f64)>,
 }

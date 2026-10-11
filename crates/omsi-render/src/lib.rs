@@ -275,37 +275,7 @@ pub struct Renderer {
     material_layout: wgpu::BindGroupLayout,
     pass: PassPipelines,
     hdr_pass: Option<PassPipelines>,
-    /// The enhanced sky tone-mapped into the plain pass's target: the sky of the mirrors
-    /// of an Enhanced picture (sky_enhanced.wgsl `fs_enhanced_mirror`).
-    sky_mirror_pipeline: Option<wgpu::RenderPipeline>,
     reflection_pass: Option<PassPipelines>,
-    corona_bind_group: wgpu::BindGroup,
-    /// The snowfall's parameters (snow.wgsl `SnowParams`) and their bind group.
-    snow_buf: wgpu::Buffer,
-    snow_bind_group: wgpu::BindGroup,
-    /// The smoke texture (`Texture/rauch.tga`, see [`Renderer::set_smoke_texture`]).
-    smoke_bind_group: wgpu::BindGroup,
-    /// The coronas' pictures besides the standard glow (index = `Corona::texture`; entry 0
-    /// unused).
-    corona_textures: Vec<Option<wgpu::BindGroup>>,
-    /// The light cookies' pictures and the frame's layers of them.
-    cookies: cookies::CookieAtlas,
-    corona_layout: wgpu::BindGroupLayout,
-    corona_sampler: wgpu::Sampler,
-    sky_layout: wgpu::BindGroupLayout,
-    sky_sampler: wgpu::Sampler,
-    /// The classic sky's weather (`VanillaSkyUniform`, sky bind group binding 10).
-    vanilla_sky_buf: wgpu::Buffer,
-    /// The enhanced clouds' noise (clouds.rs): the shape map, the detail volume and their
-    /// repeating, mip-mapped sampler (sky bind group bindings 6-8).
-    cloud_shape_view: wgpu::TextureView,
-    cloud_detail_view: wgpu::TextureView,
-    cloud_sampler: wgpu::Sampler,
-    /// The shape map's second level (RGBA8), for the clouds' shadow on the street, and how
-    /// much of the sun the clouds let through over the camera now (smoothed).
-    cloud_shape_cpu: Vec<u8>,
-    cloud_sun: Option<f32>,
-    sky_mesh: (wgpu::Buffer, wgpu::Buffer, u32),
     overlay_pipeline: wgpu::RenderPipeline,
     overlay_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
@@ -315,11 +285,6 @@ pub struct Renderer {
     /// A tangent-space normal pointing straight out (the PBR normal map's stand-in).
     flat_normal_texture: GpuTexture,
     format: wgpu::TextureFormat,
-    depth: Option<(wgpu::Texture, wgpu::TextureView, u32, u32)>,
-    /// Multisampled colour and depth targets per size (the window, each mirror).
-    msaa_targets: HashMap<(u32, u32), (Option<wgpu::TextureView>, wgpu::TextureView)>,
-    /// Screen-space ambient occlusion: depth prepass and AO textures of the window's size.
-    ao: Option<AoTargets>,
     ao_sampler: wgpu::Sampler,
     ao_layout: wgpu::BindGroupLayout,
     ao_buf: wgpu::Buffer,
@@ -337,56 +302,9 @@ pub struct Renderer {
     /// read a depth texture texel by texel - the pipelines failed there, AO off or not (#422).
     ssao_pipeline: Option<wgpu::RenderPipeline>,
     blur_pipeline: Option<wgpu::RenderPipeline>,
-    /// Enhanced: the lamps' light the fog scatters, added over the drawn picture (none on
-    /// OpenGL and without storage buffers), its bind group layout and parameters.
-    fog_lamps_pipeline: Option<[wgpu::RenderPipeline; 2]>,
-    fog_lamps_layout: wgpu::BindGroupLayout,
-    fog_lamps_buf: wgpu::Buffer,
-    shadow_view: wgpu::TextureView,
-    shadow_view_far: wgpu::TextureView,
-    shadow_sampler: wgpu::Sampler,
-    shadow_layout: wgpu::BindGroupLayout,
-    /// [near opaque, near alpha-tested, far opaque, far alpha-tested, close opaque, close
-    /// alpha-tested], then the street lamps' (6 + 2 k + kind; not with `basic_pipelines`)
-    shadow_pipelines: Vec<wgpu::RenderPipeline>,
     /// The settings this renderer was built with.
     pub options: RenderOptions,
-    /// Enhanced path: the HDR targets per size, the post pipelines and their resources.
-    hdr_targets: HashMap<(u32, u32), HdrTargets>,
     puddles: Option<puddles::Pipelines>,
-    post: PostPipelines,
-    post_layout: wgpu::BindGroupLayout,
-    post_buf: wgpu::Buffer,
-    post_sampler: wgpu::Sampler,
-    /// The metered mean log luminance (1x1), and the adapted value in two textures drawn
-    /// into by turns (`adapt_front` is the current one), with their bind groups.
-    meter_view: wgpu::TextureView,
-    adapt_views: [wgpu::TextureView; 2],
-    adapt_bg: [wgpu::BindGroup; 2],
-    adapt_front: usize,
-    /// OMSI_DEBUG_EXPOSURE: the adapted metering read back now and then, and logged.
-    exposure_log: Option<ExposureLog>,
-    /// Enhanced lighting: its uniform, the sky table, the sampler both use, the reflection
-    /// probe, the sky last computed and the exposure as it follows it.
-    enh_buf: wgpu::Buffer,
-    sky_lut: wgpu::Texture,
-    sky_lut_view: wgpu::TextureView,
-    lin_sampler: wgpu::Sampler,
-    probe: Option<Probe>,
-    sky_state: Option<atmosphere::SkyState>,
-    /// How much the lamps round the camera light the night sky, relative to a city's
-    /// (`lamp_sky_glow`), as the sky is computed with it.
-    city_glow: Option<f32>,
-    /// The lamps' and headlights' light on what the camera looks at (`view_lamp_light`),
-    /// which the eye adapts to by night.
-    view_lamps: Option<f32>,
-    /// A sky being computed on a helper thread, for this input.
-    sky_job: Option<(
-        atmosphere::SkyInput,
-        std::sync::mpsc::Receiver<atmosphere::SkyState>,
-    )>,
-    /// The pre-exposure (natural log) as it follows the sky's.
-    exposure: Option<f32>,
     /// The projection's width over height while a picture is drawn into a texture (see
     /// `render_to_texture`), whatever the texture's own shape.
     texture_aspect: Option<f32>,
@@ -407,72 +325,13 @@ pub struct Renderer {
     /// The next material is lit at night by the tile light maps (`[LightMapMapping]`, the
     /// splines) instead of the map's lamps.
     pub light_map_next: std::cell::Cell<bool>,
-    /// The tile light maps (`.map.LM.bmp`) of the 5x5 tiles around the camera, north up, and
-    /// where that square lies (world x, y of its south-west corner, its side in metres).
-    lm_atlas: wgpu::Texture,
-    lm_atlas_view: wgpu::TextureView,
-    lm_uniform: wgpu::Buffer,
-    lm_place: std::cell::Cell<(f64, f64, f64)>,
     /// Mipmap generation on the GPU (a blit per level).
     mip_pipeline: wgpu::RenderPipeline,
     mip_layout: wgpu::BindGroupLayout,
     mip_sampler: wgpu::Sampler,
-    /// Set by the device's error handler when something failed with multisampling on.
-    gpu_error: Arc<std::sync::atomic::AtomicBool>,
-    /// A GPU error while Enhanced+ traces rays: its ray tracing is left out from the next
-    /// frame on (a frame whose commands the device refused shows nothing at all - left to
-    /// go on, the picture stood still on the loading screen while the game ran behind it).
-    rt_error: Arc<std::sync::atomic::AtomicBool>,
     /// The headset's pictures: the heading (degrees) the `[matl_envmap]` sphere maps are
     /// laid out by instead of each eye's view (see `set_env_heading`).
     env_heading: std::cell::Cell<Option<f32>>,
-    /// The card ran out of memory since the last `take_out_of_memory`.
-    out_of_memory: Arc<std::sync::atomic::AtomicBool>,
-    /// Why the graphics device was lost (a driver reset, the card removed), once it was.
-    device_lost: Arc<std::sync::Mutex<Option<String>>>,
-    /// Render scale: the pipeline that scales the 3D picture up to the window, its
-    /// parameters, and the smaller targets per size (with their bind groups).
-    upscale_pipeline: wgpu::RenderPipeline,
-    copy_pipeline: wgpu::RenderPipeline,
-    /// Triple screen: a panel's picture copied 1:1 to its place in the window.
-    panel_pipeline: wgpu::RenderPipeline,
-    upscale_layout: wgpu::BindGroupLayout,
-    upscale_buf: wgpu::Buffer,
-    scale_targets: HashMap<(u32, u32), (wgpu::TextureView, wgpu::BindGroup)>,
-    triple_targets: Option<((u32, u32), Vec<(wgpu::TextureView, wgpu::BindGroup)>)>,
-    triple_culling: [ViewCulling; 3],
-    /// Full-resolution current scene before rain films, in its original colour format.
-    glass_picture: Option<wgpu::TextureView>,
-    /// When each size of the size-keyed targets (scale, MSAA, HDR) was last asked for.
-    target_use: HashMap<(u32, u32), std::time::Instant>,
-    /// The game's frame-rate governor on top of the render scale (1 = none; see
-    /// `set_dynamic_scale`).
-    dynamic_scale: std::cell::Cell<f32>,
-    /// `OMSI_DEBUG_FLICKER`: which near instances in view were drawn last frame.
-    flicker: std::cell::RefCell<HashMap<usize, bool>>,
-    /// The window's main-pass bundles as last recorded, with what they were made of (see
-    /// `record_main_bundles`).
-    main_bundles: std::cell::RefCell<Option<passes::batch::MainBundles>>,
-    /// Instances the main view drew last frame (a bit each): they keep being drawn a little
-    /// past the size and distance limits, so that an object right at a limit does not pop
-    /// in and out as the camera sways.
-    cull_drawn: std::cell::RefCell<Vec<u64>>,
-    /// The screen size each object (origin and radius) was judged by in the main view's last
-    /// frame: all its meshes and LOD levels take the same one, so exactly one level of an
-    /// object is drawn and it does not flip between levels with the view's jitter.
-    object_sizes: std::cell::RefCell<hashbrown::HashMap<[u64; 4], f32>>,
-    /// Cleared and reused as the next main view's object-size history.
-    object_sizes_scratch: std::cell::RefCell<hashbrown::HashMap<[u64; 4], f32>>,
-    /// The far shadow cascade as last drawn: its light matrix, frames since, the render
-    /// origin and the sun it was drawn for.
-    shadow_far_cache: std::cell::Cell<(Mat4, u32, DVec3, Vec3)>,
-    /// The same for the near cascade, drawn every other frame (see `render_inner`).
-    shadow_near_cache: std::cell::Cell<(Mat4, u32, DVec3, Vec3)>,
-    /// Shadow atlas matrices from the first OpenXR eye, reused by the second eye.
-    xr_shadow_cache: std::cell::Cell<Option<(DVec3, Vec3, Mat4, Mat4, Mat4)>>,
-    /// Depth-only pipeline that fills its viewport with the far depth: clears the close
-    /// cascade's part of the atlas when the near part is kept from the frame before.
-    shadow_clear_pipeline: wgpu::RenderPipeline,
     /// Sort the blended draws by origin distance alone, as before the camera-enclosing
     /// objects were drawn last (only for before/after pictures, `OMSI_BLEND_AB`).
     pub blend_by_origin: bool,
@@ -504,6 +363,22 @@ pub struct Renderer {
     rt: Option<rt::RayTracer>,
     /// Meshes share pages of buffers (the adapter draws with a base vertex).
     mesh_pages: bool,
+    /// The size-keyed targets (see targets.rs): made on first use, let go of when unused.
+    targets: Targets,
+    /// The render scale: the pipelines that scale the 3D picture up to the window or copy a panel, and the governor's factor.
+    scale: Upscale,
+    /// The sky: its layout, sampler, dome, the classic sky's weather, the enhanced clouds' noise, the sky table and the sky being computed.
+    sky: SkyRes,
+    /// The lights' resources beside the scene's grid: coronas, smoke, snowfall, cookies, the tile light maps and the lamps in the fog.
+    lights: LightRes,
+    /// The enhanced picture's post pass and exposure: pipelines, metering, the eye's adaptation, the lighting uniform and probe.
+    tone: ToneMapping,
+    /// The sun's and the lamps' shadow maps, their pipelines, and the cascades as last drawn.
+    shadows: ShadowRes,
+    /// What the views drew in their last frames, which the next frame's culling and bundles go by.
+    history: ViewHistory,
+    /// What the device's error handlers report: errors with multisampling or ray tracing on, out of memory, the device lost.
+    errors: GpuErrors,
 }
 
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -691,7 +566,7 @@ impl Renderer {
         if self.options.render_scale > 0.0 {
             s
         } else {
-            (s * self.dynamic_scale.get()).clamp(0.5, 1.0)
+            (s * self.scale.dynamic_scale.get()).clamp(0.5, 1.0)
         }
     }
 
@@ -704,11 +579,11 @@ impl Renderer {
         // the game's governor)
         let s = s.clamp(0.55, 1.0);
         let level = [1.0f32, 0.85, 0.7, 0.55].into_iter().min_by(|a, b| (a - s).abs().total_cmp(&(b - s).abs())).unwrap_or(1.0);
-        self.dynamic_scale.set(level);
+        self.scale.dynamic_scale.set(level);
     }
 
     pub fn dynamic_scale(&self) -> f32 {
-        self.dynamic_scale.get()
+        self.scale.dynamic_scale.get()
     }
 
     /// The size the 3D scene is drawn at for a window of this size.

@@ -124,7 +124,7 @@ impl Renderer {
             textures.iter().map(|t| &scene.textures[*t].view).collect();
         let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sky"),
-            layout: &self.sky_layout,
+            layout: &self.sky.sky_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -140,7 +140,7 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&self.sky_sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.sky.sky_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
@@ -155,15 +155,15 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::TextureView(&self.cloud_shape_view),
+                    resource: wgpu::BindingResource::TextureView(&self.sky.cloud_shape_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: wgpu::BindingResource::TextureView(&self.cloud_detail_view),
+                    resource: wgpu::BindingResource::TextureView(&self.sky.cloud_detail_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 8,
-                    resource: wgpu::BindingResource::Sampler(&self.cloud_sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.sky.cloud_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 9,
@@ -174,10 +174,42 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 10,
-                    resource: self.vanilla_sky_buf.as_entire_binding(),
+                    resource: self.sky.vanilla_sky_buf.as_entire_binding(),
                 },
             ],
         });
         scene.sky_bind_group = Some(bg);
     }
+}
+
+/// The sky: its layout, sampler, dome, the classic sky's weather, the enhanced clouds' noise, the sky table and the sky being computed.
+pub(crate) struct SkyRes {
+    /// The enhanced sky tone-mapped into the plain pass's target: the sky of the mirrors
+    /// of an Enhanced picture (sky_enhanced.wgsl `fs_enhanced_mirror`).
+    pub(crate) sky_mirror_pipeline: Option<wgpu::RenderPipeline>,
+    pub(crate) sky_layout: wgpu::BindGroupLayout,
+    pub(crate) sky_sampler: wgpu::Sampler,
+    /// The classic sky's weather (`VanillaSkyUniform`, sky bind group binding 10).
+    pub(crate) vanilla_sky_buf: wgpu::Buffer,
+    /// The enhanced clouds' noise (clouds.rs): the shape map, the detail volume and their
+    /// repeating, mip-mapped sampler (sky bind group bindings 6-8).
+    pub(crate) cloud_shape_view: wgpu::TextureView,
+    pub(crate) cloud_detail_view: wgpu::TextureView,
+    pub(crate) cloud_sampler: wgpu::Sampler,
+    /// The shape map's second level (RGBA8), for the clouds' shadow on the street, and how
+    /// much of the sun the clouds let through over the camera now (smoothed).
+    pub(crate) cloud_shape_cpu: Vec<u8>,
+    pub(crate) cloud_sun: Option<f32>,
+    pub(crate) sky_mesh: (wgpu::Buffer, wgpu::Buffer, u32),
+    pub(crate) sky_lut: wgpu::Texture,
+    pub(crate) sky_lut_view: wgpu::TextureView,
+    pub(crate) sky_state: Option<atmosphere::SkyState>,
+    /// How much the lamps round the camera light the night sky, relative to a city's
+    /// (`lamp_sky_glow`), as the sky is computed with it.
+    pub(crate) city_glow: Option<f32>,
+    /// A sky being computed on a helper thread, for this input.
+    pub(crate) sky_job: Option<(
+        atmosphere::SkyInput,
+        std::sync::mpsc::Receiver<atmosphere::SkyState>,
+    )>,
 }

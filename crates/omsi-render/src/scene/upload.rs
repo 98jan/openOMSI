@@ -262,15 +262,15 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&self.shadow_view),
+                    resource: wgpu::BindingResource::TextureView(&self.shadows.shadow_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 6,
-                    resource: wgpu::BindingResource::Sampler(&self.shadow_sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.shadows.shadow_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 7,
-                    resource: wgpu::BindingResource::TextureView(&self.shadow_view_far),
+                    resource: wgpu::BindingResource::TextureView(&self.shadows.shadow_view_far),
                 },
                 wgpu::BindGroupEntry {
                     binding: 8,
@@ -280,7 +280,7 @@ impl Renderer {
                             .as_ref()
                             .and_then(|r| r.targets.as_ref())
                             .map(|t| &t.out)
-                            .or(self.ao.as_ref().map(|a| &a.blur_view))
+                            .or(self.targets.ao.as_ref().map(|a| &a.blur_view))
                             .unwrap_or(&self.white_texture.view),
                     ),
                 },
@@ -294,19 +294,19 @@ impl Renderer {
                 },
                 wgpu::BindGroupEntry {
                     binding: 11,
-                    resource: self.enh_buf.as_entire_binding(),
+                    resource: self.tone.enh_buf.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 13,
-                    resource: wgpu::BindingResource::Sampler(&self.lin_sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.tone.lin_sampler),
                 },
                 wgpu::BindGroupEntry {
                     binding: 18,
-                    resource: wgpu::BindingResource::TextureView(&self.lm_atlas_view),
+                    resource: wgpu::BindingResource::TextureView(&self.lights.lm_atlas_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 19,
-                    resource: self.lm_uniform.as_entire_binding(),
+                    resource: self.lights.lm_uniform.as_entire_binding(),
                 },
         ];
         // (the point lights where the device has storage buffers for them)
@@ -316,10 +316,10 @@ impl Renderer {
         }
         // (the enhanced path's textures: not on the sixteen-texture-unit path, nor in the
         // launcher's preview, which has no reflection probe - see `camera_layout_entries`)
-        if let (false, Some(probe)) = (sixteen_texture_units(), self.probe.as_ref()) {
+        if let (false, Some(probe)) = (sixteen_texture_units(), self.tone.probe.as_ref()) {
             entries.extend([
                 wgpu::BindGroupEntry { binding: 12, resource: wgpu::BindingResource::TextureView(&probe.view) },
-                wgpu::BindGroupEntry { binding: 14, resource: wgpu::BindingResource::TextureView(&self.sky_lut_view) },
+                wgpu::BindGroupEntry { binding: 14, resource: wgpu::BindingResource::TextureView(&self.sky.sky_lut_view) },
                 wgpu::BindGroupEntry { binding: 17, resource: wgpu::BindingResource::TextureView(&probe.cube_view) },
             ]);
         }
@@ -331,7 +331,7 @@ impl Renderer {
         scene.camera_bind_group = Some(bg);
         let sbg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("shadow camera"),
-            layout: &self.shadow_layout,
+            layout: &self.shadows.shadow_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,

@@ -184,9 +184,9 @@ fn launcher_preview_initializes_without_enhanced_or_ray_tracing_resources() {
     let instance = wgpu::Instance::new(descriptor);
     let mut renderer = pollster::block_on(Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), RenderOptions { msaa: 1, preview_only: true, no_enhanced: true, ray_tracing: false, ..Default::default() })).unwrap();
     assert!(renderer.hdr_pass.is_none());
-    assert!(renderer.probe.is_none());
+    assert!(renderer.tone.probe.is_none());
     assert!(renderer.rt.is_none());
-    assert!(renderer.cloud_shape_cpu.is_empty());
+    assert!(renderer.sky.cloud_shape_cpu.is_empty());
     let bindings: Vec<u32> = camera_layout_entries(ArrayPath::Storage, true).into_iter().map(|e| e.binding).collect();
     for binding in ENHANCED_CAMERA_TEXTURES {
         assert!(!bindings.contains(&binding), "preview camera layout must omit enhanced binding {binding}");
@@ -247,8 +247,8 @@ fn vanilla_gl_build_omits_unused_enhanced_resources() {
         },
     );
     assert!(renderer.hdr_pass.is_none());
-    assert!(renderer.probe.is_none());
-    assert!(renderer.cloud_shape_cpu.is_empty());
+    assert!(renderer.tone.probe.is_none());
+    assert!(renderer.sky.cloud_shape_cpu.is_empty());
     let mut scene = renderer.new_scene();
     let camera = Camera {
         position: DVec3::new(0.0, -35.0, 30.0),
@@ -268,7 +268,7 @@ fn vanilla_gl_build_omits_unused_enhanced_resources() {
     assert!(pollster::block_on(scope.pop()).is_none());
     // A desktop's native backend still prepares Enhanced for changing modes in-game.
     assert!(base.hdr_pass.is_some());
-    assert!(base.probe.is_some());
+    assert!(base.tone.probe.is_some());
 }
 
 #[test]

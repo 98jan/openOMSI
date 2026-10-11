@@ -547,7 +547,7 @@ impl Renderer {
             let kept = f.with_overlays && f.projection.is_none() && !f.second_eye;
             let mode = (f.enhanced, f.reflection_frame, format, self.options.msaa, rt_gbuf());
             if kept {
-                if let Some(c) = self.main_bundles.borrow().as_ref() {
+                if let Some(c) = self.history.main_bundles.borrow().as_ref() {
                     if c.mode == mode && c.camera == *camera && c.batches == *batches && same_resources(scene, batches, &c.resources) {
                         return c.bundles.clone();
                     }
@@ -556,7 +556,7 @@ impl Renderer {
             let bundles = record_bundles(&self.device, self.encoding_pool.as_ref(), scene, batches, pp, camera, format, self.options.msaa);
             // (not when a part could not be recorded: it would be left out frame after frame)
             let whole = bundles.len() == bundle_parts(self.encoding_pool.as_ref(), batches.len());
-            *self.main_bundles.borrow_mut() = (kept && whole).then(|| MainBundles {
+            *self.history.main_bundles.borrow_mut() = (kept && whole).then(|| MainBundles {
                 mode,
                 camera: camera.clone(),
                 batches: batches.to_vec(),

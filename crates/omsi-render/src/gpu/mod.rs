@@ -530,11 +530,11 @@ impl Renderer {
     /// Whether the card ran out of memory since the last call (the game then keeps fewer
     /// textures, before the driver gives up the device).
     pub fn take_out_of_memory(&self) -> bool {
-        self.out_of_memory.swap(false, std::sync::atomic::Ordering::Relaxed)
+        self.errors.out_of_memory.swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn device_lost(&self) -> Option<String> {
-        self.device_lost.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.errors.device_lost.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -545,4 +545,18 @@ pub(crate) fn gpu_error_text(e: &wgpu::Error) -> String {
         }
         other => other.to_string(),
     }
+}
+
+/// What the device's error handlers report: errors with multisampling or ray tracing on, out of memory, the device lost.
+pub(crate) struct GpuErrors {
+    /// Set by the device's error handler when something failed with multisampling on.
+    pub(crate) gpu_error: Arc<std::sync::atomic::AtomicBool>,
+    /// A GPU error while Enhanced+ traces rays: its ray tracing is left out from the next
+    /// frame on (a frame whose commands the device refused shows nothing at all - left to
+    /// go on, the picture stood still on the loading screen while the game ran behind it).
+    pub(crate) rt_error: Arc<std::sync::atomic::AtomicBool>,
+    /// The card ran out of memory since the last `take_out_of_memory`.
+    pub(crate) out_of_memory: Arc<std::sync::atomic::AtomicBool>,
+    /// Why the graphics device was lost (a driver reset, the card removed), once it was.
+    pub(crate) device_lost: Arc<std::sync::Mutex<Option<String>>>,
 }

@@ -227,14 +227,14 @@ impl Renderer {
         // Release render targets before building their single-sample replacements. Keeping
         // the old targets alive while the new renderer is built can turn a recoverable OOM
         // into another allocation failure.
-        self.depth = None;
-        self.msaa_targets.clear();
-        self.ao = None;
-        self.hdr_targets.clear();
-        self.scale_targets.clear();
-        self.triple_targets = None;
-        self.glass_picture = None;
-        self.target_use.clear();
+        self.targets.depth = None;
+        self.targets.msaa_targets.clear();
+        self.targets.ao = None;
+        self.targets.hdr_targets.clear();
+        self.targets.scale_targets.clear();
+        self.targets.triple_targets = None;
+        self.targets.glass_picture = None;
+        self.targets.target_use.clear();
         let options = RenderOptions {
             msaa: 1,
             ..self.options
@@ -259,8 +259,8 @@ impl Renderer {
         lighting: &Lighting,
     ) {
         // (the triple screen's panels are not kept once it is turned off)
-        if self.triple_targets.take().is_some() {
-            self.triple_culling = Default::default();
+        if self.targets.triple_targets.take().is_some() {
+            self.history.triple_culling = Default::default();
         }
         self.render_inner(scene, target, width, height, camera, lighting, true, None, None, false);
     }
@@ -283,7 +283,7 @@ impl Renderer {
         let views = rig.views(camera, width, height);
         // all three panels have the same size: they share the size-keyed targets
         let pw = panel_width(width);
-        if self.triple_targets.as_ref().map(|t| t.0) != Some((width, height)) {
+        if self.targets.triple_targets.as_ref().map(|t| t.0) != Some((width, height)) {
             let targets = views
                 .iter()
                 .map(|v| {
@@ -315,7 +315,7 @@ impl Renderer {
                     );
                     let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("triple screen composite"),
-                        layout: &self.upscale_layout,
+                        layout: &self.scale.upscale_layout,
                         entries: &[
                             wgpu::BindGroupEntry {
                                 binding: 0,
@@ -327,14 +327,14 @@ impl Renderer {
                             },
                             wgpu::BindGroupEntry {
                                 binding: 2,
-                                resource: wgpu::BindingResource::Sampler(&self.sky_sampler),
+                                resource: wgpu::BindingResource::Sampler(&self.sky.sky_sampler),
                             },
                         ],
                     });
                     (view, group)
                 })
                 .collect();
-            self.triple_targets = Some(((width, height), targets));
+            self.targets.triple_targets = Some(((width, height), targets));
         }
         // the HUD is drawn once over the whole window, after the panels: they draw none
         // (its rect buffers are kept aside, not rebuilt each frame)
@@ -344,7 +344,7 @@ impl Renderer {
         // Centre meters exposure and updates shared lighting once. All panels
         // then use that same exposure and sun shadow atlas.
         for (turn, i) in [1, 0, 2].into_iter().enumerate() {
-            let view = self.triple_targets.as_ref().unwrap().1[i].0.clone();
+            let view = self.targets.triple_targets.as_ref().unwrap().1[i].0.clone();
             self.swap_triple_culling(i);
             self.render_inner(
                 scene,
@@ -386,12 +386,12 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&self.panel_pipeline);
+            pass.set_pipeline(&self.scale.panel_pipeline);
             for (i, v) in views.iter().enumerate() {
                 // (the right panel loses its last pixel or two at the window's edge)
                 let [x, y, w, h] = v.viewport;
                 pass.set_scissor_rect(x, y, w.min(width - x), h);
-                pass.set_bind_group(0, &self.triple_targets.as_ref().unwrap().1[i].1, &[]);
+                pass.set_bind_group(0, &self.targets.triple_targets.as_ref().unwrap().1[i].1, &[]);
                 pass.draw(0..3, 0..1);
             }
             pass.set_scissor_rect(0, 0, width, height);
@@ -407,10 +407,10 @@ impl Renderer {
     pub(crate) fn swap_triple_culling(&mut self, panel: usize) {
         // Visibility and LOD hysteresis belong to one projection. A side panel
         // must not replace the previous centre view's history each frame.
-        let history = &mut self.triple_culling[panel];
-        std::mem::swap(self.cull_drawn.get_mut(), &mut history.drawn);
-        std::mem::swap(self.object_sizes.get_mut(), &mut history.sizes);
-        std::mem::swap(self.object_sizes_scratch.get_mut(), &mut history.scratch);
+        let history = &mut self.history.triple_culling[panel];
+        std::mem::swap(self.history.cull_drawn.get_mut(), &mut history.drawn);
+        std::mem::swap(self.history.object_sizes.get_mut(), &mut history.sizes);
+        std::mem::swap(self.history.object_sizes_scratch.get_mut(), &mut history.scratch);
     }
 
     /// Render one OpenXR view using the headset's asymmetric projection matrix.
@@ -465,7 +465,7 @@ impl Renderer {
                 entries: &[
                     wgpu::BindGroupEntry { binding: 0, resource: buffer.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&texture.view) },
-                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sky_sampler) },
+                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.sky.sky_sampler) },
                 ],
             });
             Some((buffer, group))
@@ -594,7 +594,7 @@ impl Renderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&self.sky_sampler),
+                        resource: wgpu::BindingResource::Sampler(&self.sky.sky_sampler),
                     },
                 ],
             });
@@ -832,4 +832,30 @@ impl Renderer {
         buf.unmap();
         Ok(out)
     }
+}
+
+/// The enhanced picture's post pass and exposure: pipelines, metering, the eye's adaptation, the lighting uniform and probe.
+pub(crate) struct ToneMapping {
+    pub(crate) post: PostPipelines,
+    pub(crate) post_layout: wgpu::BindGroupLayout,
+    pub(crate) post_buf: wgpu::Buffer,
+    pub(crate) post_sampler: wgpu::Sampler,
+    /// The metered mean log luminance (1x1), and the adapted value in two textures drawn
+    /// into by turns (`adapt_front` is the current one), with their bind groups.
+    pub(crate) meter_view: wgpu::TextureView,
+    pub(crate) adapt_views: [wgpu::TextureView; 2],
+    pub(crate) adapt_bg: [wgpu::BindGroup; 2],
+    pub(crate) adapt_front: usize,
+    /// OMSI_DEBUG_EXPOSURE: the adapted metering read back now and then, and logged.
+    pub(crate) exposure_log: Option<ExposureLog>,
+    /// Enhanced lighting: its uniform, the sky table, the sampler both use, the reflection
+    /// probe, the sky last computed and the exposure as it follows it.
+    pub(crate) enh_buf: wgpu::Buffer,
+    pub(crate) lin_sampler: wgpu::Sampler,
+    pub(crate) probe: Option<Probe>,
+    /// The lamps' and headlights' light on what the camera looks at (`view_lamp_light`),
+    /// which the eye adapts to by night.
+    pub(crate) view_lamps: Option<f32>,
+    /// The pre-exposure (natural log) as it follows the sky's.
+    pub(crate) exposure: Option<f32>,
 }

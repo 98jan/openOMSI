@@ -87,8 +87,8 @@ pub(crate) struct AoTargets {
 impl Renderer {
     /// The smaller colour target of the render scale for this size, with its bind group.
     pub(crate) fn scale_target(&mut self, w: u32, h: u32) -> (wgpu::TextureView, wgpu::BindGroup) {
-        self.target_use.insert((w, h), std::time::Instant::now());
-        if let Some(t) = self.scale_targets.get(&(w, h)) {
+        self.targets.target_use.insert((w, h), std::time::Instant::now());
+        if let Some(t) = self.targets.scale_targets.get(&(w, h)) {
             return t.clone();
         }
         self.evict_targets();
@@ -108,7 +108,7 @@ impl Renderer {
         });
         let view = tex.create_view(&Default::default());
         let bg = self.picture_group(&view);
-        self.scale_targets
+        self.targets.scale_targets
             .insert((w, h), (view.clone(), bg.clone()));
         (view, bg)
     }
@@ -116,11 +116,11 @@ impl Renderer {
     pub(crate) fn picture_group(&self, view: &wgpu::TextureView) -> wgpu::BindGroup {
         self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene picture"),
-            layout: &self.upscale_layout,
+            layout: &self.scale.upscale_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: self.upscale_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 0, resource: self.scale.upscale_buf.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(view) },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.post_sampler) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&self.tone.post_sampler) },
             ],
         })
     }
@@ -139,7 +139,7 @@ impl Renderer {
     /// Refraction reads a copy made before drawing films, avoiding rain/wiper feedback.
     pub(crate) fn prepare_glass_behind(&mut self, scene: &mut Scene, width: u32, height: u32, format: wgpu::TextureFormat) {
         let Some(id) = scene.glass_slot else { return };
-        if self.glass_picture.as_ref().is_none_or(|v| v.texture().width() != width || v.texture().height() != height || v.texture().format() != format) {
+        if self.targets.glass_picture.as_ref().is_none_or(|v| v.texture().width() != width || v.texture().height() != height || v.texture().format() != format) {
             let tex = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("picture behind glass"),
                 size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
@@ -148,9 +148,9 @@ impl Renderer {
                 usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
-            self.glass_picture = Some(tex.create_view(&Default::default()));
+            self.targets.glass_picture = Some(tex.create_view(&Default::default()));
         }
-        let view = self.glass_picture.as_ref().unwrap();
+        let view = self.targets.glass_picture.as_ref().unwrap();
         if scene.textures[id].view != *view {
             scene.textures[id] = GpuTexture::showing(view.texture().clone(), view.clone(), (width, height));
             self.rebind_textures(scene, &[id]);
@@ -159,7 +159,7 @@ impl Renderer {
 
     /// The ambient-occlusion textures for a target of this size (rebuilt on resize).
     pub(crate) fn ensure_ao(&mut self, w: u32, h: u32) -> bool {
-        if self.ao.as_ref().map(|a| a.size == (w, h)).unwrap_or(false) {
+        if self.targets.ao.as_ref().map(|a| a.size == (w, h)).unwrap_or(false) {
             return false;
         }
         let size = wgpu::Extent3d {
@@ -239,21 +239,21 @@ impl Renderer {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         }).create_view(&Default::default());
-        let fog_bg = self.fog_lamps_pipeline.is_some().then(|| {
+        let fog_bg = self.lights.fog_lamps_pipeline.is_some().then(|| {
             // (the half-size pass reads no result: the layout wants one, the AO's is bound)
             [&ao_view, &fog_view].map(|read| {
                 self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("fog lamps"),
-                    layout: &self.fog_lamps_layout,
+                    layout: &self.lights.fog_lamps_layout,
                     entries: &[
-                        wgpu::BindGroupEntry { binding: 0, resource: self.fog_lamps_buf.as_entire_binding() },
+                        wgpu::BindGroupEntry { binding: 0, resource: self.lights.fog_lamps_buf.as_entire_binding() },
                         wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&depth_view) },
                         wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(read) },
                     ],
                 })
             })
         });
-        self.ao = Some(AoTargets {
+        self.targets.ao = Some(AoTargets {
             size: (w, h),
             depth_view,
             ao_view,
@@ -275,13 +275,13 @@ impl Renderer {
         const STALE: std::time::Duration = std::time::Duration::from_millis(250);
         const KEEP: usize = 10;
         let now = std::time::Instant::now();
-        let mut uses: Vec<((u32, u32), std::time::Instant)> = self.target_use.iter().map(|(k, t)| (*k, *t)).collect();
+        let mut uses: Vec<((u32, u32), std::time::Instant)> = self.targets.target_use.iter().map(|(k, t)| (*k, *t)).collect();
         uses.sort_by_key(|(_, t)| std::cmp::Reverse(*t));
         let keep: std::collections::HashSet<(u32, u32)> = uses.iter().filter(|(_, t)| now.duration_since(*t) < STALE).take(KEEP).map(|(k, _)| *k).collect();
-        self.target_use.retain(|k, _| keep.contains(k));
-        self.scale_targets.retain(|k, _| keep.contains(k));
-        self.msaa_targets.retain(|k, _| keep.contains(k));
-        self.hdr_targets.retain(|k, _| keep.contains(k));
+        self.targets.target_use.retain(|k, _| keep.contains(k));
+        self.targets.scale_targets.retain(|k, _| keep.contains(k));
+        self.targets.msaa_targets.retain(|k, _| keep.contains(k));
+        self.targets.hdr_targets.retain(|k, _| keep.contains(k));
     }
 
     /// The multisampled colour (`color`: where the pass draws into it) and depth attachments
@@ -289,8 +289,8 @@ impl Renderer {
     /// Enhanced picture draws into a multisampled target of its own and only the depth is
     /// used, and a colour of the window's size was made for nothing (130 MB at 4K with 4x).
     pub(crate) fn msaa_targets(&mut self, w: u32, h: u32, color: bool) -> (Option<wgpu::TextureView>, wgpu::TextureView) {
-        self.target_use.insert((w, h), std::time::Instant::now());
-        if !self.msaa_targets.contains_key(&(w, h)) {
+        self.targets.target_use.insert((w, h), std::time::Instant::now());
+        if !self.targets.msaa_targets.contains_key(&(w, h)) {
             self.evict_targets();
         }
         let size = wgpu::Extent3d {
@@ -308,7 +308,7 @@ impl Renderer {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
         }).create_view(&Default::default());
-        if let Some(t) = self.msaa_targets.get_mut(&(w, h)) {
+        if let Some(t) = self.targets.msaa_targets.get_mut(&(w, h)) {
             if color && t.0.is_none() {
                 t.0 = Some(make_color());
             }
@@ -325,15 +325,15 @@ impl Renderer {
             view_formats: &[],
         });
         let t = (color.then(make_color), depth.create_view(&Default::default()));
-        self.msaa_targets.insert((w, h), t.clone());
+        self.targets.msaa_targets.insert((w, h), t.clone());
         t
     }
 
     /// The HDR colour targets of the enhanced path for this size, with the glow's levels,
     /// the tone-mapped picture FXAA reads and the post passes' bind groups.
     pub(crate) fn hdr_targets(&mut self, w: u32, h: u32) -> bool {
-        self.target_use.insert((w, h), std::time::Instant::now());
-        if self.hdr_targets.contains_key(&(w, h)) {
+        self.targets.target_use.insert((w, h), std::time::Instant::now());
+        if self.targets.hdr_targets.contains_key(&(w, h)) {
             return false;
         }
         self.evict_targets();
@@ -383,11 +383,11 @@ impl Renderer {
         let bg_with = |src: &wgpu::TextureView, base: &wgpu::TextureView, adapt: &wgpu::TextureView, screen_mask: &wgpu::TextureView| {
             self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("post"),
-                layout: &self.post_layout,
+                layout: &self.tone.post_layout,
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: self.post_buf.as_entire_binding(),
+                        resource: self.tone.post_buf.as_entire_binding(),
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
@@ -395,7 +395,7 @@ impl Renderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&self.post_sampler),
+                        resource: wgpu::BindingResource::Sampler(&self.tone.post_sampler),
                     },
                     wgpu::BindGroupEntry {
                         binding: 3,
@@ -434,13 +434,13 @@ impl Renderer {
             .collect();
         let meter_bg = bg(&down[levels - 1], none, none);
         let tonemap_bg = [
-            bg_with(&view, &up[0], &self.adapt_views[0], &mask),
-            bg_with(&view, &up[0], &self.adapt_views[1], &mask),
+            bg_with(&view, &up[0], &self.tone.adapt_views[0], &mask),
+            bg_with(&view, &up[0], &self.tone.adapt_views[1], &mask),
         ];
         // (FXAA reads the screen mask as its `t_base` and leaves the screens as they are)
         let fxaa_bg = bg(&ldr, &mask, none);
         let classic_bg = self.picture_group(&view);
-        self.hdr_targets.insert(
+        self.targets.hdr_targets.insert(
             (w, h),
             HdrTargets {
                 msaa_view,
@@ -465,7 +465,7 @@ impl Renderer {
 
     #[allow(dead_code)]
     pub(crate) fn ensure_depth(&mut self, w: u32, h: u32) {
-        if let Some((_, _, dw, dh)) = &self.depth {
+        if let Some((_, _, dw, dh)) = &self.targets.depth {
             if *dw == w && *dh == h {
                 return;
             }
@@ -485,6 +485,38 @@ impl Renderer {
             view_formats: &[],
         });
         let view = tex.create_view(&Default::default());
-        self.depth = Some((tex, view, w, h));
+        self.targets.depth = Some((tex, view, w, h));
     }
+}
+
+/// The size-keyed targets (see targets.rs): made on first use, let go of when unused.
+pub(crate) struct Targets {
+    pub(crate) depth: Option<(wgpu::Texture, wgpu::TextureView, u32, u32)>,
+    /// Multisampled colour and depth targets per size (the window, each mirror).
+    pub(crate) msaa_targets: HashMap<(u32, u32), (Option<wgpu::TextureView>, wgpu::TextureView)>,
+    /// Screen-space ambient occlusion: depth prepass and AO textures of the window's size.
+    pub(crate) ao: Option<AoTargets>,
+    /// Enhanced path: the HDR targets per size, the post pipelines and their resources.
+    pub(crate) hdr_targets: HashMap<(u32, u32), HdrTargets>,
+    pub(crate) scale_targets: HashMap<(u32, u32), (wgpu::TextureView, wgpu::BindGroup)>,
+    pub(crate) triple_targets: Option<((u32, u32), Vec<(wgpu::TextureView, wgpu::BindGroup)>)>,
+    /// Full-resolution current scene before rain films, in its original colour format.
+    pub(crate) glass_picture: Option<wgpu::TextureView>,
+    /// When each size of the size-keyed targets (scale, MSAA, HDR) was last asked for.
+    pub(crate) target_use: HashMap<(u32, u32), std::time::Instant>,
+}
+
+/// The render scale: the pipelines that scale the 3D picture up to the window or copy a panel, and the governor's factor.
+pub(crate) struct Upscale {
+    /// Render scale: the pipeline that scales the 3D picture up to the window, its
+    /// parameters, and the smaller targets per size (with their bind groups).
+    pub(crate) upscale_pipeline: wgpu::RenderPipeline,
+    pub(crate) copy_pipeline: wgpu::RenderPipeline,
+    /// Triple screen: a panel's picture copied 1:1 to its place in the window.
+    pub(crate) panel_pipeline: wgpu::RenderPipeline,
+    pub(crate) upscale_layout: wgpu::BindGroupLayout,
+    pub(crate) upscale_buf: wgpu::Buffer,
+    /// The game's frame-rate governor on top of the render scale (1 = none; see
+    /// `set_dynamic_scale`).
+    pub(crate) dynamic_scale: std::cell::Cell<f32>,
 }

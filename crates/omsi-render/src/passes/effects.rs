@@ -48,7 +48,7 @@ impl Renderer {
             log::info!("fog lamps: enhanced {enhanced} prepass {prepass_on} overlays {with_overlays} masked {masked_frame} fog {:.5} lights {} shafts {shafts} glare {glare}", enhanced_weather_fog(lighting), scene.lights.len());
         }
         if enhanced && prepass_on && with_overlays && masked_frame && (fog_lamps || shafts || glare) {
-            if let (Some(pipes), Some(ao), Some(cam_bg)) = (self.fog_lamps_pipeline.as_ref(), self.ao.as_ref(), scene.camera_bind_group.as_ref()) {
+            if let (Some(pipes), Some(ao), Some(cam_bg)) = (self.lights.fog_lamps_pipeline.as_ref(), self.targets.ao.as_ref(), scene.camera_bind_group.as_ref()) {
                 if let Some(fog_bg) = ao.fog_bg.as_ref() {
                     // (how much of the weather's extinction is mist and fog - droplets of some
                     // ten micrometres, which scatter a lamp's light into a halo and its beam
@@ -60,8 +60,8 @@ impl Renderer {
                     let rain_part = if lighting.rain > 0.0 && lighting.snowfall <= 0.0 { 2.3 / (2500.0 - 1800.0 * lighting.rain.clamp(0.0, 1.0)) } else { 0.0 };
                     let droplets = if fog_all > 0.0 { ((fog_all - rain_part) / fog_all).clamp(0.0, 1.0) } else { 0.0 };
                     let u = FogLampUniform { inv_view_proj: vp_mat.inverse().to_cols_array_2d(), size: [width as f32, height as f32, if glare { 1.0 } else { 0.0 }, droplets] };
-                    self.queue.write_buffer(&self.fog_lamps_buf, 0, bytemuck::bytes_of(&u));
-                    let h = &self.hdr_targets[&(width, height)];
+                    self.queue.write_buffer(&self.lights.fog_lamps_buf, 0, bytemuck::bytes_of(&u));
+                    let h = &self.targets.hdr_targets[&(width, height)];
                     let view = h.puddles.as_ref().filter(|_| puddles_on).map_or(&h.view, |p| &p.view);
                     for (k, (target, load)) in [(&ao.fog_view, wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT)), (view, wgpu::LoadOp::Load)].into_iter().enumerate() {
                         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -90,9 +90,9 @@ impl Renderer {
         let (width, height, masked_frame) = (f.width, f.height, f.masked_frame);
         let scene_view = f.scene_view();
         if f.glass_on {
-            let hdr = masked_frame.then(|| &self.hdr_targets[&(width, height)]);
+            let hdr = masked_frame.then(|| &self.targets.hdr_targets[&(width, height)]);
             let view = hdr.map_or(scene_view, |h| h.puddles.as_ref().filter(|_| puddles_on).map_or(&h.view, |p| &p.view));
-            let behind = self.glass_picture.as_ref().unwrap();
+            let behind = self.targets.glass_picture.as_ref().unwrap();
             encoder.copy_texture_to_texture(
                 wgpu::TexelCopyTextureInfo { texture: view.texture(), mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
                 wgpu::TexelCopyTextureInfo { texture: behind.texture(), mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
@@ -121,7 +121,7 @@ impl Renderer {
                 label: Some("rain on current scene"),
                 color_attachments: &colours[..if colours[2].is_some() { 4 } else if hdr.is_some() { 2 } else { 1 }],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.ao.as_ref().unwrap().depth_view,
+                    view: &self.targets.ao.as_ref().unwrap().depth_view,
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
                     stencil_ops: None,
                 }),
@@ -138,7 +138,7 @@ impl Renderer {
         let (width, height) = (f.width, f.height);
         let overlays = &f.overlays;
         if f.reflection_frame {
-            let h = &self.hdr_targets[&(width, height)];
+            let h = &self.targets.hdr_targets[&(width, height)];
             let bg = h.puddles.as_ref().filter(|_| puddles_on).map_or(&h.classic_bg, |p| &p.classic_bg);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("classic reflections present"),
@@ -149,7 +149,7 @@ impl Renderer {
                 depth_stencil_attachment: None, timestamp_writes: None,
                 occlusion_query_set: None, multiview_mask: None,
             });
-            pass.set_pipeline(&self.copy_pipeline);
+            pass.set_pipeline(&self.scale.copy_pipeline);
             pass.set_bind_group(0, bg, &[]);
             pass.draw(0..3, 0..1);
             if !overlays.is_empty() && !f.scaled {

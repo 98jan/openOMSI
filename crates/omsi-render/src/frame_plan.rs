@@ -385,3 +385,44 @@ pub(crate) fn record_bundles(
     let chunks: Vec<&[Batch]> = batches.chunks(batches.len().div_ceil(parts)).collect();
     run_parts(pool, chunks.len(), |k| record(chunks[k])).into_iter().flatten().collect()
 }
+
+/// The sun's and the lamps' shadow maps, their pipelines, and the cascades as last drawn.
+pub(crate) struct ShadowRes {
+    pub(crate) shadow_view: wgpu::TextureView,
+    pub(crate) shadow_view_far: wgpu::TextureView,
+    pub(crate) shadow_sampler: wgpu::Sampler,
+    pub(crate) shadow_layout: wgpu::BindGroupLayout,
+    /// [near opaque, near alpha-tested, far opaque, far alpha-tested, close opaque, close
+    /// alpha-tested], then the street lamps' (6 + 2 k + kind; not with `basic_pipelines`)
+    pub(crate) shadow_pipelines: Vec<wgpu::RenderPipeline>,
+    /// The far shadow cascade as last drawn: its light matrix, frames since, the render
+    /// origin and the sun it was drawn for.
+    pub(crate) shadow_far_cache: std::cell::Cell<(Mat4, u32, DVec3, Vec3)>,
+    /// The same for the near cascade, drawn every other frame (see `render_inner`).
+    pub(crate) shadow_near_cache: std::cell::Cell<(Mat4, u32, DVec3, Vec3)>,
+    /// Shadow atlas matrices from the first OpenXR eye, reused by the second eye.
+    pub(crate) xr_shadow_cache: std::cell::Cell<Option<(DVec3, Vec3, Mat4, Mat4, Mat4)>>,
+    /// Depth-only pipeline that fills its viewport with the far depth: clears the close
+    /// cascade's part of the atlas when the near part is kept from the frame before.
+    pub(crate) shadow_clear_pipeline: wgpu::RenderPipeline,
+}
+
+/// What the views drew in their last frames, which the next frame's culling and bundles go by.
+pub(crate) struct ViewHistory {
+    pub(crate) triple_culling: [ViewCulling; 3],
+    /// `OMSI_DEBUG_FLICKER`: which near instances in view were drawn last frame.
+    pub(crate) flicker: std::cell::RefCell<HashMap<usize, bool>>,
+    /// The window's main-pass bundles as last recorded, with what they were made of (see
+    /// `record_main_bundles`).
+    pub(crate) main_bundles: std::cell::RefCell<Option<passes::batch::MainBundles>>,
+    /// Instances the main view drew last frame (a bit each): they keep being drawn a little
+    /// past the size and distance limits, so that an object right at a limit does not pop
+    /// in and out as the camera sways.
+    pub(crate) cull_drawn: std::cell::RefCell<Vec<u64>>,
+    /// The screen size each object (origin and radius) was judged by in the main view's last
+    /// frame: all its meshes and LOD levels take the same one, so exactly one level of an
+    /// object is drawn and it does not flip between levels with the view's jitter.
+    pub(crate) object_sizes: std::cell::RefCell<hashbrown::HashMap<[u64; 4], f32>>,
+    /// Cleared and reused as the next main view's object-size history.
+    pub(crate) object_sizes_scratch: std::cell::RefCell<hashbrown::HashMap<[u64; 4], f32>>,
+}

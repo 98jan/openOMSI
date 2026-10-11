@@ -48,7 +48,7 @@ impl Renderer {
         let sun = if moon_shadows { lighting.moon_dir.normalize_or_zero() } else { lighting.sun_dir.normalize_or_zero() };
         let shadows = (f.with_overlays || projection.is_some()) && (lighting.casts_sun_shadows() || moon_shadows);
         let shared_xr_shadows = if second_eye && shadows {
-            self.xr_shadow_cache
+            self.shadows.xr_shadow_cache
                 .get()
                 .filter(|(origin, previous_sun, _, _, _)| *origin == scene.render_origin && *previous_sun == sun)
         } else {
@@ -62,7 +62,7 @@ impl Renderer {
         // and everything within 30 m - every frame. Redrawn at once when the camera has
         // jumped, the sun has moved or the render origin has (its matrix is relative to it).
         let near_wanted = light_matrix(SHADOW_RANGE, self.options.shadow_size);
-        let (near_m, near_age, near_origin, near_sun) = self.shadow_near_cache.get();
+        let (near_m, near_age, near_origin, near_sun) = self.shadows.shadow_near_cache.get();
         let near_jumped = (near_m.project_point3(cam_rel) - near_wanted.project_point3(cam_rel)).length() > 0.03;
         let redraw_near = draw_shadows
             && (near_age >= 1
@@ -76,10 +76,10 @@ impl Renderer {
         } else if !shadows {
             near_wanted
         } else if redraw_near {
-            self.shadow_near_cache.set((near_wanted, 0, scene.render_origin, sun));
+            self.shadows.shadow_near_cache.set((near_wanted, 0, scene.render_origin, sun));
             near_wanted
         } else {
-            self.shadow_near_cache.set((near_m, near_age + 1, near_origin, near_sun));
+            self.shadows.shadow_near_cache.set((near_m, near_age + 1, near_origin, near_sun));
             near_m
         };
         let light_view_proj_close = shared_xr_shadows
@@ -91,7 +91,7 @@ impl Renderer {
         // was 0.6 ms of GPU time for a picture that hardly changes; a car in it is a few
         // texels, and a tile streamed in waits three frames at most for its shadow.
         let far_wanted = light_matrix(SHADOW_RANGE_FAR, self.options.shadow_size);
-        let (far_m, far_age, far_origin, far_sun) = self.shadow_far_cache.get();
+        let (far_m, far_age, far_origin, far_sun) = self.shadows.shadow_far_cache.get();
         let far_moved = (far_m.project_point3(cam_rel) - far_wanted.project_point3(cam_rel)).length() > 0.12;
         let redraw_far = draw_shadows
             && (far_age >= 3
@@ -110,14 +110,14 @@ impl Renderer {
         } else if !shadows {
             far_wanted
         } else if redraw_far {
-            self.shadow_far_cache.set((far_wanted, 0, scene.render_origin, sun));
+            self.shadows.shadow_far_cache.set((far_wanted, 0, scene.render_origin, sun));
             far_wanted
         } else {
-            self.shadow_far_cache.set((far_m, far_age + 1, far_origin, far_sun));
+            self.shadows.shadow_far_cache.set((far_m, far_age + 1, far_origin, far_sun));
             far_m
         };
         if projection.is_some() && !second_eye && shadows {
-            self.xr_shadow_cache.set(Some((
+            self.shadows.xr_shadow_cache.set(Some((
                 scene.render_origin,
                 sun,
                 light_view_proj,

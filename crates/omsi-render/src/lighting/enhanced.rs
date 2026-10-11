@@ -511,7 +511,7 @@ impl Renderer {
         }
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: &self.sky_lut,
+                texture: &self.sky.sky_lut,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -531,47 +531,47 @@ impl Renderer {
         if omsi_cfg::flags::OMSI_DEBUG_SKY.is_set() {
             log::info!("sky: sun {:?} (altitude {:.1}°) sky {:?} ground {:?} exposure {:.3} table scale {:.4} haze {:.2} overcast {:.2} rain {:.2} sun visibility {:.2} moon {:?} (altitude {:.1}°, lit {:.2}) city glow {:.2}", st.sun, st.input.sun_dir.z.asin().to_degrees(), st.sky_horizontal, st.ground, st.exposure, st.lut_scale, st.input.haze, st.input.overcast, st.input.rain, st.input.sun_visibility, st.moon_light, st.input.moon_dir.normalize_or_zero().z.asin().to_degrees(), st.input.moon_illum, st.input.city_glow);
         }
-        if let Some(p) = self.probe.as_mut() {
+        if let Some(p) = self.tone.probe.as_mut() {
             p.age = u32::MAX;
         }
-        self.sky_state = Some(st);
+        self.sky.sky_state = Some(st);
     }
 
     /// The enhanced path's light for this frame: the sky (recomputed when the sun or the
     /// weather has moved on), the exposure following it, the sky table and the uniform.
     /// Returns whether the reflection probe is to be drawn this frame.
     pub(crate) fn prepare_enhanced(&mut self, lighting: &Lighting, cam_rel: Vec3, ro: DVec3, dt: f32) -> bool {
-        let (input, sun_visibility) = enhanced_sky_input(lighting, self.city_glow.unwrap_or(1.0));
+        let (input, sun_visibility) = enhanced_sky_input(lighting, self.sky.city_glow.unwrap_or(1.0));
         // A new sky takes a few milliseconds: it is computed on a helper thread and taken in
         // when it is ready. A picture on its own, and the first frame, wait for it.
-        if let Some((_, rx)) = &self.sky_job {
+        if let Some((_, rx)) = &self.sky.sky_job {
             match rx.try_recv() {
                 Ok(st) => {
-                    self.sky_job = None;
+                    self.sky.sky_job = None;
                     self.install_sky(st);
                 }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.sky_job = None,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.sky.sky_job = None,
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
         let pending = self
-            .sky_job
+            .sky.sky_job
             .as_ref()
             .map(|j| j.0)
-            .or(self.sky_state.as_ref().map(|st| st.input));
+            .or(self.sky.sky_state.as_ref().map(|st| st.input));
         if pending
             .map(|i| sky_input_differs(&i, &input))
             .unwrap_or(true)
         {
-            if self.instant_exposure || self.sky_state.is_none() {
-                self.sky_job = None;
+            if self.instant_exposure || self.sky.sky_state.is_none() {
+                self.sky.sky_job = None;
                 self.install_sky(atmosphere::SkyState::compute(&input));
             } else {
                 let (tx, rx) = std::sync::mpsc::channel();
                 std::thread::spawn(move || {
                     let _ = tx.send(atmosphere::SkyState::compute(&input));
                 });
-                self.sky_job = Some((input, rx));
+                self.sky.sky_job = Some((input, rx));
             }
         }
         let input_overcast = input.overcast;
@@ -580,7 +580,7 @@ impl Renderer {
         // wide) and followed over a moment as the clouds drift
         let cloud_t = {
             let now = if lighting.enhanced && lighting.cloud_density > 0.0 {
-                cloud_sun_transmittance(&self.cloud_shape_cpu, lighting, cam_rel, ro)
+                cloud_sun_transmittance(&self.sky.cloud_shape_cpu, lighting, cam_rel, ro)
             } else {
                 1.0
             };
@@ -594,18 +594,18 @@ impl Renderer {
                     let el = 0.25 + (i % 8) as f32 * 0.09;
                     let mut l = lighting.clone();
                     l.sun_dir = Vec3::new(el.cos() * az.cos(), el.cos() * az.sin(), el.sin());
-                    if cloud_sun_transmittance(&self.cloud_shape_cpu, &l, cam_rel, ro) > 0.5 {
+                    if cloud_sun_transmittance(&self.sky.cloud_shape_cpu, &l, cam_rel, ro) > 0.5 {
                         clear += 1;
                     }
                     n += 1;
                 }
                 log::info!("cloud sun: {now:.3} here, {clear} of {n} directions clear (cover {:.2})", lighting.cloud_density);
             }
-            let t = self.cloud_sun.map(|c| c + (now - c) * k).unwrap_or(now);
-            self.cloud_sun = Some(t);
+            let t = self.sky.cloud_sun.map(|c| c + (now - c) * k).unwrap_or(now);
+            self.sky.cloud_sun = Some(t);
             t
         };
-        let st = self.sky_state.as_ref().expect("sky state");
+        let st = self.sky.sky_state.as_ref().expect("sky state");
         // the exposure follows the light over a second or two (in log space); an offscreen
         // picture and the first frame take it at once
         // (the eye takes to a cloud's shadow as to any other light: the exposure is for the
@@ -623,14 +623,14 @@ impl Renderer {
         // place round the camera is (`city_glow`, its lamps within a few hundred metres);
         // a country road with no lamps round it has none, and the moonlight still decides.
         let district = atmosphere::ARTIFICIAL * st.input.city_glow.clamp(0.0, 1.0);
-        let e_rest = match self.view_lamps {
+        let e_rest = match self.tone.view_lamps {
             Some(v) => (st.e_rest - st.e_artificial + v.max(district)).max(1e-6),
             None => st.e_rest,
         };
         let full = atmosphere::exposure_for(st.e_sun + e_rest).max(1e-6).ln();
         let shaded = atmosphere::exposure_for(st.e_sun * cloud_t + e_rest).max(1e-6).ln();
         let target = full + (shaded - full) * CLOUD_SHADE_ADAPT;
-        let log_exposure = match self.exposure {
+        let log_exposure = match self.tone.exposure {
             // (the eye takes to brighter light within a second, to the dark over several:
             // the cones' light adaptation is fast, their dark adaptation slow)
             Some(e) if !self.instant_exposure && dt > 0.0 => {
@@ -639,7 +639,7 @@ impl Renderer {
             }
             _ => target,
         };
-        self.exposure = Some(log_exposure);
+        self.tone.exposure = Some(log_exposure);
         let pre = log_exposure.exp();
         // the fog's in-scattered light: a white sphere's average in this light
         let axes = [Vec3::X, -Vec3::X, Vec3::Y, -Vec3::Y, Vec3::Z, -Vec3::Z];
@@ -665,7 +665,7 @@ impl Renderer {
         }
         // the probe is drawn every half second or so, and at once for a new sky
         let instant = self.instant_exposure;
-        let (redraw, probe_scale) = match self.probe.as_mut() {
+        let (redraw, probe_scale) = match self.tone.probe.as_mut() {
             Some(p) => {
                 let redraw = instant || p.age >= 30;
                 if redraw {
@@ -682,7 +682,7 @@ impl Renderer {
         // away from it is exact for the base of the clouds, and wrong by up to the layer's
         // depth over their distance; a climb shows far sooner than driving along
         let cam_w = ro + cam_rel.as_dvec3();
-        let eye_off = match self.probe.as_mut() {
+        let eye_off = match self.tone.probe.as_mut() {
             Some(p) => {
                 let to_clouds = (1400.0 - cam_rel.z as f64).max(120.0);
                 let far = match p.cube_eye {
@@ -704,7 +704,7 @@ impl Renderer {
         };
         let u = EnhancedUniform {
             // (self-lit surfaces at their own brightness after the metering, see ExposureLog)
-            exposure: [pre, 2f32.powf(-self.exposure_log.as_ref().map(|l| l.ev).unwrap_or(0.0)).clamp(0.7, 1.6), pre * WINDOW_RADIANCE, 1.6],
+            exposure: [pre, 2f32.powf(-self.tone.exposure_log.as_ref().map(|l| l.ev).unwrap_or(0.0)).clamp(0.7, 1.6), pre * WINDOW_RADIANCE, 1.6],
             sun: (st.sun * cloud_t).extend(SUN_RADIUS).to_array(),
             sh,
             ground: st.ground.extend(st.lut_scale).to_array(),
@@ -746,7 +746,7 @@ impl Renderer {
             moon_disc: st.moon_disc.extend((1.0 - 0.18 * (st.input.haze - 1.0).max(0.0)).clamp(0.2, 1.0) * 0.55).to_array(),
         };
         self.queue
-            .write_buffer(&self.enh_buf, 0, bytemuck::bytes_of(&u));
+            .write_buffer(&self.tone.enh_buf, 0, bytemuck::bytes_of(&u));
         redraw
     }
 }

@@ -73,7 +73,7 @@ impl<'w> SurfaceState<'w> {
         config.width = width.max(1);
         config.height = height.max(1);
         surface.configure(&renderer.device, &config);
-        Ok(SurfaceState { surface: std::mem::ManuallyDrop::new(surface), config, lost: renderer.device_lost.clone(), encode })
+        Ok(SurfaceState { surface: std::mem::ManuallyDrop::new(surface), config, lost: renderer.errors.device_lost.clone(), encode })
     }
 
     /// The window's surface on a device whose renderer is still being built ([`Opened`]'s
@@ -104,7 +104,7 @@ impl<'w> SurfaceState<'w> {
         if &renderer.device != device {
             return false;
         }
-        self.lost = renderer.device_lost.clone();
+        self.lost = renderer.errors.device_lost.clone();
         true
     }
 
