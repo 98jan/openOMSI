@@ -540,3 +540,54 @@ fn articulation_beta_tilts_the_joint_towards_the_rear_section() {
         }
     }
 }
+
+/// The ids the vehicle and its rear section keep for the variables they use every frame
+/// are those the names give: the program's own (driver's seat, text refresh, cabin air,
+/// radio) and the per-axle wheel, suspension and spring variables the rear section
+/// writes, also after the vehicle gains an engine variable on the way.
+#[test]
+#[ignore = "needs the original OMSI 2 install (OMSI_ROOT)"]
+fn cached_variable_ids_answer_as_the_names() {
+    let root = original_root();
+    let bus = root.join("Vehicles/MAN_NL_NG/MAN_GN92_main.bus");
+    let trail = root.join("Vehicles/MAN_NL_NG/MAN_GN92_trail.bus");
+    require_content(&[&bus, &trail]);
+    let ty = Arc::new(VehicleType::load(&root, &bus).expect("GN92"));
+    let mut v = VehicleInstance::new(ty, VehicleHost::new(crate::SimClock::default()));
+    v.attach_trailer_ex(Arc::new(VehicleType::load(&root, &trail).expect("GN92 trail")), false);
+    for round in 0..2 {
+        v.update(0.02);
+        let p = v.ty.program.clone();
+        let ids = *v.program_ids();
+        assert_eq!(ids.refresh_strings, p.var("Refresh_Strings"));
+        assert_eq!(ids.driver_seat, p.var("Driver_Seat_VertTransl"));
+        assert!(ids.driver_seat.is_some(), "the GN92 has a sprung seat");
+        assert_eq!(ids.owns_cabin_temp, p.var("Cabinair_Temp").is_some_and(|i| p.stores(i)));
+        assert_eq!(ids.owns_cabin_rel_hum, p.var("Cabinair_relHum").is_some_and(|i| p.stores(i)));
+        assert_eq!(ids.snd_radio_text, p.str_var("Snd_Radio_Text"));
+        assert_eq!(ids.magnitola, p.str_var("magnitola_1"));
+        assert_eq!(ids.mp3_freq, p.str_var("mp3_freq"));
+        assert_eq!(ids.mp3_track, p.str_var("mp3_display_track_name"));
+        let t = &v.trailers[0];
+        let n = t.axle_count.max(t.rest.len());
+        assert_eq!(t.axle_ids.rotation.len(), n);
+        let mut found = 0;
+        for a in 0..n {
+            let k = t.first_axle + a;
+            for (s, side) in ["L", "R"].into_iter().enumerate() {
+                assert_eq!(t.axle_ids.rotation[a][s], p.var(&format!("Wheel_Rotation_{k}_{side}")));
+                assert_eq!(t.axle_ids.rotation_speed[a][s], p.var(&format!("Wheel_RotationSpeed_{k}_{side}")));
+                assert_eq!(t.axle_ids.suspension[a][s], p.var(&format!("Axle_Suspension_{k}_{side}")));
+                found += t.axle_ids.rotation[a][s].is_some() as usize;
+            }
+            let factor = v.var_slot(&format!("Axle_Springfactor_{k}_L")).map(|i| i as omsi_script::VarId);
+            assert_eq!(t.axle_ids.spring_factor[a], factor);
+        }
+        assert!(found > 0, "the rear section's wheels turn by script variables");
+        // (round 1: with a variable the vehicle gained, the ids are made again)
+        if round == 0 {
+            v.set_engine_var("Axle_Springfactor_2_L", 1.0);
+        }
+    }
+    assert!(v.trailers[0].axle_ids.spring_factor.iter().any(|i| i.is_some()));
+}

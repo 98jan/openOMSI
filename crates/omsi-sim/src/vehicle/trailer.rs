@@ -96,6 +96,46 @@ pub struct TrailerPart {
     /// variables (`[scriptshare]`: the rear section of an articulated bus shows the
     /// number and the destination the front's scripts set).
     pub text_textures: Vec<crate::texttex::TextTextureState>,
+    /// The leading vehicle's per-axle variables this part writes every frame (see
+    /// [`AxleVarIds`]).
+    pub(super) axle_ids: AxleVarIds,
+}
+
+/// The leading vehicle's variables a coupled part reads and writes every frame for each of
+/// its axles (index 0: its first): looked up once, not by a `format!`ted name per wheel per
+/// frame. The program's (`Wheel_Rotation*`, `Axle_Suspension_*`) are what `program.var`
+/// answers, `Axle_Springfactor_*` what the vehicle's `var` answers - so they are made again
+/// for another program or when the vehicle gains a variable.
+#[derive(Default)]
+pub(super) struct AxleVarIds {
+    /// The program (its address) and the number of the vehicle's variables they were made for.
+    made_for: Option<(usize, usize)>,
+    /// `Wheel_Rotation_<n>_L/R` and `Wheel_RotationSpeed_<n>_L/R`.
+    pub(super) rotation: Vec<[Option<omsi_script::VarId>; 2]>,
+    pub(super) rotation_speed: Vec<[Option<omsi_script::VarId>; 2]>,
+    /// `Axle_Suspension_<n>_L/R`.
+    pub(super) suspension: Vec<[Option<omsi_script::VarId>; 2]>,
+    /// `Axle_Springfactor_<n>_L`.
+    pub(super) spring_factor: Vec<Option<omsi_script::VarId>>,
+}
+
+impl AxleVarIds {
+    /// Made (again) for `main` unless they are for its program and variables already;
+    /// `axles` of the part from train axle `first`.
+    fn refresh(&mut self, main: &VehicleInstance, first: usize, axles: usize) {
+        let key = (Arc::as_ptr(&main.ty.program) as usize, main.var_index.len());
+        if self.made_for == Some(key) {
+            return;
+        }
+        let p = &main.ty.program;
+        let sides = |f: &dyn Fn(&str) -> Option<omsi_script::VarId>| ["L", "R"].map(|side| f(side));
+        let n = first..first + axles;
+        self.rotation = n.clone().map(|k| sides(&|side| p.var(&format!("Wheel_Rotation_{k}_{side}")))).collect();
+        self.rotation_speed = n.clone().map(|k| sides(&|side| p.var(&format!("Wheel_RotationSpeed_{k}_{side}")))).collect();
+        self.suspension = n.clone().map(|k| sides(&|side| p.var(&format!("Axle_Suspension_{k}_{side}")))).collect();
+        self.spring_factor = n.map(|k| main.var_slot(&format!("Axle_Springfactor_{k}_L")).map(|i| i as omsi_script::VarId)).collect();
+        self.made_for = Some(key);
+    }
 }
 
 impl TrailerPart {
@@ -247,6 +287,7 @@ impl TrailerPart {
             odometer: 0.0,
             reversed,
             text_textures: Vec::new(),
+            axle_ids: AxleVarIds::default(),
             skin_rest: Vec::new(),
             ty,
         }
@@ -400,6 +441,7 @@ impl TrailerPart {
     }
 
     pub(super) fn update(&mut self, main: &mut VehicleInstance, dt: f32, lead: Option<(DVec3, Mat4, f64)>) {
+        self.axle_ids.refresh(main, self.first_axle, self.axle_count.max(self.rest.len()));
         // coupling point in the world: on the leading part (the vehicle or the previous trailer)
         let (lead_pos, lead_rot, lead_heading) =
             lead.unwrap_or((main.position, main.body_rotation(), main.heading));
@@ -442,7 +484,7 @@ impl TrailerPart {
         self.pivot = Some(new_pivot);
         // Its springs: an AI copy sits `[ai_deltaheight]` low like its tractor; a driven one
         // as far down as the scripts' `Axle_Springfactor` lets the load press it.
-        let ai = main.var("AI").map(|v| v > 0.5).unwrap_or(false);
+        let ai = main.ev(Ev::Ai).map(|v| v > 0.5).unwrap_or(false);
         let shows = !self.ty.suspension_axles.is_empty();
         let mut sag = Vec::with_capacity(self.rest.len());
         for (a, (offset, load, k)) in self.rest.iter().enumerate() {
@@ -454,22 +496,16 @@ impl TrailerPart {
                     0.0
                 }
             } else if self.ty.suspension_axles.contains(&axle) {
-                let factor = main
-                    .var(&format!("Axle_Springfactor_{axle}_L"))
+                let factor = self.axle_ids.spring_factor[a]
+                    .map(|i| main.state.vars[i as usize])
                     .unwrap_or(1.0)
                     .max(0.05);
                 (load / (k * factor)).min(crate::rigid::BUMP)
             } else {
                 0.0
             };
-            for side in ["L", "R"] {
-                if let Some(id) = main
-                    .ty
-                    .program
-                    .var(&format!("Axle_Suspension_{axle}_{side}"))
-                {
-                    main.state.vars[id as usize] = -compression;
-                }
+            for id in self.axle_ids.suspension[a].into_iter().flatten() {
+                main.state.vars[id as usize] = -compression;
             }
             sag.push(offset - compression);
         }
@@ -625,16 +661,11 @@ impl TrailerPart {
                 * 60.0;
         let rot = (self.odometer / self.wheel_radius).rem_euclid(std::f32::consts::TAU);
         for a in 0..self.axle_count {
-            for side in ["L", "R"] {
-                let k = self.first_axle + a;
-                if let Some(id) = main.ty.program.var(&format!("Wheel_Rotation_{k}_{side}")) {
+            for side in 0..2 {
+                if let Some(id) = self.axle_ids.rotation[a][side] {
                     main.state.vars[id as usize] = rot;
                 }
-                if let Some(id) = main
-                    .ty
-                    .program
-                    .var(&format!("Wheel_RotationSpeed_{k}_{side}"))
-                {
+                if let Some(id) = self.axle_ids.rotation_speed[a][side] {
                     main.state.vars[id as usize] = rpm;
                 }
             }
@@ -679,11 +710,11 @@ impl TrailerPart {
                 // unloaded, never past the bump stop)
                 sides[si] = Some(((g + r as f64 - p.z) as f32).clamp(0.0, crate::rigid::BUMP));
             }
-            travel.push((axle, sides));
+            travel.push((a, sides));
         }
-        for (axle, sides) in travel {
-            for (side, c) in ["L", "R"].into_iter().zip(sides) {
-                if let (Some(c), Some(id)) = (c, main.ty.program.var(&format!("Axle_Suspension_{axle}_{side}"))) {
+        for (a, sides) in travel {
+            for (id, c) in self.axle_ids.suspension[a].into_iter().zip(sides) {
+                if let (Some(c), Some(id)) = (c, id) {
                     main.state.vars[id as usize] = -c;
                 }
             }

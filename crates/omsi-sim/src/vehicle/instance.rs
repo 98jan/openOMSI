@@ -263,6 +263,7 @@ impl VehicleInstance {
             props_plan: PropsPlan::default(),
             pax_vars: std::sync::OnceLock::new(),
             engine_ids: std::sync::OnceLock::new(),
+            program_ids: std::sync::OnceLock::new(),
         }
     }
 
@@ -360,7 +361,7 @@ impl VehicleInstance {
     pub fn update_text_textures(&mut self) -> Vec<usize> {
         let mut changed = Vec::new();
         // `Refresh_Strings` is reset; an unchanged string would draw the same picture again
-        if let Some(id) = self.ty.program.var("Refresh_Strings") {
+        if let Some(id) = self.program_ids().refresh_strings {
             self.state.vars[id as usize] = 0.0;
         }
         // (the field and the text are read where they are: both were copied for every text

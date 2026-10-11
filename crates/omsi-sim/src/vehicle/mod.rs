@@ -26,6 +26,7 @@ mod coupling;
 mod drive;
 mod instance;
 mod pose;
+mod program_ids;
 mod props;
 mod radio;
 mod trailer;
@@ -220,4 +221,6 @@ pub struct VehicleInstance {
     pax_vars: std::sync::OnceLock<PaxVars>,
     /// The engine's own variables (see `engine_vars`), the same way.
     engine_ids: std::sync::OnceLock<engine_vars::EngineVarIds>,
+    /// The program's own variables the engine uses every frame (see `program_ids`).
+    program_ids: std::sync::OnceLock<program_ids::ProgramIds>,
 }

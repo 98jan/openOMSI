@@ -20,14 +20,14 @@ impl VehicleInstance {
     pub(super) fn show_radio_text(&mut self) {
         let Some(text) = self.radio_text.as_ref() else { return };
         let frequency = self.radio_frequency.as_deref();
-        let p = &self.ty.program;
-        if let Some(i) = p.str_var("Snd_Radio_Text") {
+        let p = *self.program_ids();
+        if let Some(i) = p.snd_radio_text {
             if self.state.str_vars[i as usize] != *text {
                 self.state.str_vars[i as usize] = text.clone();
             }
             // (this kind keeps its frequency apart, `90.9 MHz@` in `mp3_freq`, and the
             // display begins with it)
-            if let (Some(frequency), Some(display), Some(own)) = (frequency, p.str_var("magnitola_1"), p.str_var("mp3_freq")) {
+            if let (Some(frequency), Some(display), Some(own)) = (frequency, p.magnitola, p.mp3_freq) {
                 let own = &self.state.str_vars[own as usize];
                 if let Some(shown) = own_frequency(own, &self.state.str_vars[display as usize], frequency) {
                     self.state.str_vars[display as usize] = shown;
@@ -35,7 +35,7 @@ impl VehicleInstance {
             }
             return;
         }
-        let (Some(display), Some(track)) = (p.str_var("magnitola_1"), p.str_var("mp3_display_track_name")) else { return };
+        let (Some(display), Some(track)) = (p.magnitola, p.mp3_track) else { return };
         if let Some(shown) = magnitola_line(&self.state.str_vars[track as usize], &self.state.str_vars[display as usize], text, frequency) {
             self.state.str_vars[display as usize] = shown;
         }

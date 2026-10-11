@@ -8,7 +8,7 @@ impl VehicleInstance {
     /// the body's vertical acceleration and its roll and pitch at the seat's place (the
     /// driver's camera) push a spring (3000) and damper (2000) on 150 kg; ±10 cm at most.
     pub(super) fn update_driver_seat(&mut self, dt: f32) {
-        let Some(id) = self.ty.program.var("Driver_Seat_VertTransl") else { return };
+        let Some(id) = self.program_ids().driver_seat else { return };
         if dt <= 0.0 {
             return;
         }
@@ -108,10 +108,9 @@ impl VehicleInstance {
         // them; only the relative humidity comes from their temperature and humidity. An
         // engine model on top of theirs broke that balance - the Sprinter 312D's cabin
         // went to infinity within a second, and its engine with it.
-        let owns = |name: &str| self.ty.program.var(name).is_some_and(|v| self.ty.program.stores(v));
-        if owns("Cabinair_Temp") {
+        if self.program_ids().owns_cabin_temp {
             if let (Some(t), Some(hum)) = (self.ev(Ev::CabinTemp), self.ev(Ev::CabinAbsHum)) {
-                if !owns("Cabinair_relHum") && t.is_finite() && t > -237.0 {
+                if !self.program_ids().owns_cabin_rel_hum && t.is_finite() && t > -237.0 {
                     self.set_engine_ev(Ev::CabinRelHum, relative_humidity(t, hum));
                 }
             }
@@ -360,7 +359,7 @@ impl VehicleInstance {
     /// Has the bus's script finished leaving its stop (doors shut, stop brake off)? True
     /// for vehicles whose scripts do not take part in that handshake.
     pub fn station_released(&self) -> bool {
-        self.var("AI_Scheduled_AtStation")
+        self.ev(Ev::AiAtStation)
             .map(|v| v > -0.5)
             .unwrap_or(true)
     }
