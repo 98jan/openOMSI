@@ -5,7 +5,7 @@
 
 use super::catalog::Spot;
 use super::place::Place;
-use crate::scene::DayKind;
+use omsi_map::calendar::DayKind;
 use glam::DVec3;
 
 /// The moment, as the rules read it.

@@ -3329,6 +3329,7 @@ dependencies = [
  "omsi-scenery",
  "omsi-script",
  "omsi-sim",
+ "omsi-soundscape",
  "omsi-texture",
  "omsi-timetable",
  "omsi-ui",
@@ -3694,6 +3695,26 @@ dependencies = [
  "omsi-vehicle",
  "parking_lot",
  "rayon",
+]
+
+[[package]]
+name = "omsi-soundscape"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-audio",
+ "omsi-cfg",
+ "omsi-geometry",
+ "omsi-map",
+ "omsi-platform",
+ "omsi-scenery",
+ "omsi-sim",
+ "omsi-vehicle",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

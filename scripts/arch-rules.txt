@@ -67,6 +67,13 @@ forbid omsi-career omsi-ui
 forbid omsi-career omsi-net
 forbid omsi-career omsi-launcher-*
 
+# The sounds of the world are heard, not drawn, and know neither the simulation's renderer
+# side nor the network or the launcher.
+forbid omsi-soundscape omsi-render
+forbid omsi-soundscape omsi-ui
+forbid omsi-soundscape omsi-net
+forbid omsi-soundscape omsi-launcher-*
+
 # The input devices read controllers and keys: they neither draw nor sound, nor know the network,
 # the plugins or the launcher.
 forbid omsi-input omsi-render

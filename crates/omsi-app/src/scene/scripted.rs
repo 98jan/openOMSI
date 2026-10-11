@@ -24,13 +24,7 @@ pub struct InUse {
     pub threshold: f32,
 }
 
-/// The day as the in-use rules ask about it.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct DayKind {
-    pub workday: bool,
-    pub holiday: bool,
-    pub school_holiday: bool,
-}
+pub use omsi_map::calendar::DayKind;
 
 /// A scripted object's dynamic texture change: its type, the variants chosen, its mesh
 /// instances and the slots' switches.

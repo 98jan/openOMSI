@@ -7,7 +7,7 @@ use super::catalog::Spot;
 use glam::DVec3;
 use omsi_geometry::LineKind;
 
-/// Around the listener (see [`crate::scene::World::sound_place`]).
+/// Around the listener (see the game's `World::sound_place`).
 #[derive(Debug, Clone, Default)]
 pub struct Place {
     /// How built-up (0 … 1): houses within some 150 m.

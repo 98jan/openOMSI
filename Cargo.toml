@@ -28,6 +28,7 @@ members = [
     "crates/omsi-plugin-ui",
     "crates/omsi-weather",
     "crates/omsi-career",
+    "crates/omsi-soundscape",
     "crates/omsi-app",
     "tools/omsi-check",
 ]

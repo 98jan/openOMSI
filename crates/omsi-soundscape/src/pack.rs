@@ -75,7 +75,7 @@ impl Pack {
     /// the user's openOMSI folder. They play from the next drive on.
     pub fn fetch_if_missing() {
         static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if crate::platform::MOBILE || STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) || Pack::find_dir().is_some() {
+        if cfg!(target_os = "android") || STARTED.swap(true, std::sync::atomic::Ordering::Relaxed) || Pack::find_dir().is_some() {
             return;
         }
         let Some(dir) = Pack::user_dir() else { return };
@@ -134,7 +134,7 @@ fn fetch(dir: &Path, part: &Path) -> anyhow::Result<()> {
         std::fs::create_dir_all(d)?;
     }
     log::info!("ambience: downloading the recordings ({} MB) from {PACK_URL}", PACK_BYTES >> 20);
-    let resp = crate::updater::agent().get(PACK_URL).call().map_err(|e| anyhow::anyhow!("{e}"))?;
+    let resp = omsi_platform::updater::agent().get(PACK_URL).call().map_err(|e| anyhow::anyhow!("{e}"))?;
     let mut reader = resp.into_reader();
     let mut out = std::fs::File::create(part)?;
     let mut hasher = sha2::Sha256::new();
@@ -162,7 +162,7 @@ fn fetch(dir: &Path, part: &Path) -> anyhow::Result<()> {
     anyhow::ensure!(got == PACK_SHA256, "the download is damaged ({done} bytes, SHA-256 {got})");
     let tmp = dir.with_extension("unpacking");
     let _ = std::fs::remove_dir_all(&tmp);
-    crate::updater::unpack(part, &tmp)?;
+    omsi_platform::updater::unpack(part, &tmp)?;
     anyhow::ensure!(tmp.join("pack.json").is_file(), "the archive holds no pack.json");
     let _ = std::fs::remove_dir_all(dir);
     std::fs::rename(&tmp, dir)?;

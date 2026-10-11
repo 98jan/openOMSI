@@ -27,7 +27,7 @@ mod mt;
 use omsi_platform::updater;
 mod update_watch;
 use omsi_platform::presence;
-mod ambience;
+use omsi_soundscape::ambience;
 mod soundscape;
 mod wheel_surface;
 mod camera_arm;
