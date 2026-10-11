@@ -374,18 +374,18 @@ fn cloud_texture(root: &Path, kind: &str) -> Option<omsi_texture::Image> {
 
 /// Cloud cover of a weather file: `[clouds] type density`, type -1 = clear, density up to
 /// ~300 (Cumulus 3) - mapped to 0..1; the cover drifts with the wind.
-pub(crate) fn clouds_of(w: &omsi_content::weather::Weather, drift: [f32; 4]) -> (f32, [f32; 2]) {
+pub(crate) fn clouds_of(w: &omsi_content::weather::Weather, drift: [f64; 4]) -> (f32, [f32; 2]) {
     if !CLOUDS.load(std::sync::atomic::Ordering::Relaxed) {
         return (0.0, [0.0; 2]);
     }
     // the cover decides, not the name (`cover_of`: a hand-set weather's own, else its type's)
-    (cover_of(w), [drift[0], drift[1]])
+    (cover_of(w), [drift[0] as f32, drift[1] as f32])
 }
 
 
 
 /// The classic sky's weather (see `omsi_render::VanillaSky`).
-pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f32; 4], sky_clouds: &SkyClouds) -> omsi_render::VanillaSky {
+pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f64; 4], sky_clouds: &SkyClouds) -> omsi_render::VanillaSky {
     // the visibility Omsi.exe fogs with (0x753120): the fog range, shortened by rain to
     // 100000 m / its intensity and by snow to 20000 m / its intensity
     let range = w.fog.0.max(1.0);
@@ -406,7 +406,7 @@ pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f32; 4], s
         visibility,
         cloud_size: ty.as_ref().map_or(0.0, |t| t.size),
         overcast: ty.as_ref().is_some_and(|t| t.overcast),
-        cloud_offset: [drift[2], drift[3]],
+        cloud_offset: [drift[2] as f32, drift[3] as f32],
     }
 }
 
@@ -416,7 +416,7 @@ pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f32; 4], s
 pub(crate) fn weather_lighting(
     daylight: &omsi_sim::Daylight,
     w: &omsi_content::weather::Weather,
-    cloud_drift: [f32; 4],
+    cloud_drift: [f64; 4],
     wetness: f32,
     shadows: bool,
     sky: &SkyState,

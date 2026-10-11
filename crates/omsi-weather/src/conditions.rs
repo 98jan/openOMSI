@@ -7,29 +7,39 @@ use omsi_content::weather::Weather;
 /// this crate cannot see (a test in omsi-app holds the two together).
 pub const CLOUD_PERIOD: f32 = 10000.0;
 
+/// The enhanced clouds' drift is kept modulo this many 2500 m tiles: a whole number of
+/// periods of every texture the clouds are read from (the shape map, 13 km: 26 tiles; the
+/// cover field, 14 km x 1 / 0.35 = 40 km: 16 tiles; the billows, 420 m at 1.3 times the
+/// drift: 42 tiles), so the wrap moves none of them. Kept modulo one tile, as it was, the
+/// whole sky jumped by 2500 m whenever the drift went round - every eight minutes or so in a
+/// 5 m/s wind - and the sky cube blended the old clouds and the new for seconds after. The
+/// wrap is 10 920 km of wind now; the high layer's noise (not periodic) jumps once in that.
+pub const CLOUD_DRIFT_WRAP: f64 = 4368.0;
+
 /// The clouds' drift after `time` seconds of a steady wind (see `cloud_drift_step`).
-pub fn cloud_drift_at(w: &Weather, time: f64) -> [f32; 4] {
+pub fn cloud_drift_at(w: &Weather, time: f64) -> [f64; 4] {
     let mut d = [0.0; 4];
     cloud_drift_step(&mut d, w, time);
     d
 }
 
-/// Move the clouds on by `secs` of [wind] direction (deg) speed (m/s), over the 2500 m
-/// tiling; the field repeats every tile, so only the fraction of a tile is kept. (Taken
+/// Move the clouds on by `secs` of [wind] direction (deg) speed (m/s), in 2500 m tiles,
+/// modulo `CLOUD_DRIFT_WRAP` (in f64: a frame's step at 240 frames a second is a few
+/// millionths of a tile, which an f32 drops near the wrap). (Taken
 /// from the absolute time, every change of the wind while a weather blends in moved the
 /// whole sky by time x change.) `d[2..4]`: the classic sky's clouds, in metres (modulo
 /// `VANILLA_CLOUD_PERIOD`) as Omsi.exe moves them (0x753428) - by the wind's speed along
 /// its direction taken as degrees x pi/200, its slip from pi/180 kept, so that they drift
 /// the way the original's do.
-pub fn cloud_drift_step(d: &mut [f32; 4], w: &Weather, secs: f64) {
+pub fn cloud_drift_step(d: &mut [f64; 4], w: &Weather, secs: f64) {
     let (dir, speed) = (w.wind.0.to_radians() as f64, w.wind.1 as f64);
     let s = secs * speed / 2500.0;
-    d[0] = (d[0] as f64 + dir.sin() * s).rem_euclid(1.0) as f32;
-    d[1] = (d[1] as f64 + dir.cos() * s).rem_euclid(1.0) as f32;
+    d[0] = (d[0] + dir.sin() * s).rem_euclid(CLOUD_DRIFT_WRAP);
+    d[1] = (d[1] + dir.cos() * s).rem_euclid(CLOUD_DRIFT_WRAP);
     let omsi_dir = w.wind.0 as f64 * std::f64::consts::PI / 200.0;
     let period = CLOUD_PERIOD as f64;
-    d[2] = (d[2] as f64 + omsi_dir.sin() * speed * secs).rem_euclid(period) as f32;
-    d[3] = (d[3] as f64 + omsi_dir.cos() * speed * secs).rem_euclid(period) as f32;
+    d[2] = (d[2] + omsi_dir.sin() * speed * secs).rem_euclid(period);
+    d[3] = (d[3] + omsi_dir.cos() * speed * secs).rem_euclid(period);
 }
 
 /// How wet the roads are: rain soaks them in a few minutes, sunshine dries them in about
