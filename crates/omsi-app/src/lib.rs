@@ -606,6 +606,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         },
         menus: MenuState {
             list_dirty: false,
+            page_titles: Default::default(),
             chooser: None,
             editor: None,
             vehicle_list: Vec::new(),

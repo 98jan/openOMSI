@@ -6,7 +6,7 @@ use super::*;
 impl App {
     /// Show one of the menu's lists in the chooser (see `game_lists`).
     pub(crate) fn open_list(&mut self, kind: crate::game_lists::ListKind) {
-        crate::game_lists::forget_page_titles();
+        crate::game_lists::forget_page_titles(self);
         // (a search belongs to its list; `chooser_pick` has taken the kind when it goes on)
         if self.menus.list_kind.as_ref().is_some_and(|k| *k != kind) {
             self.forget_search();

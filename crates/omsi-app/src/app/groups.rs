@@ -331,6 +331,9 @@ pub(crate) struct MenuState {
     /// A value of the open settings window really changed (set by `option_do` and the
     /// like): its list is out of date (see `App::list_adjust`).
     pub(crate) list_dirty: bool,
+    /// The open settings window's page titles, kept for a moment (asked every frame, see
+    /// `game_lists::page_titles`).
+    pub(crate) page_titles: std::cell::RefCell<crate::game_lists::TitlesCache>,
     /// (manufacturer, type) of each vehicle of `vehicle_list`, by its path.
     pub(crate) vehicle_meta: std::collections::HashMap<String, (String, String)>,
     pub(crate) hud: Option<hud::Hud>,

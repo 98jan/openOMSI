@@ -428,14 +428,12 @@ pub(crate) fn tab_of(app: &App, kind: ListKind, title: &str) -> usize {
     pages_of(app, &kind).and_then(|(pages, _)| pages.iter().position(|p| p.0 == title)).unwrap_or(0)
 }
 
-pub(super) type TitlesCache = Option<(ListKind, bool, std::time::Instant, (Vec<String>, usize))>;
+/// The page titles of the settings window last asked for: its kind, whether the VR
+/// navigator was offered, when, and the answer (`MenuState::page_titles`).
+pub(crate) type TitlesCache = Option<(ListKind, bool, std::time::Instant, (Vec<String>, usize))>;
 
-thread_local! {
-    static TITLES: std::cell::RefCell<TitlesCache> = const { std::cell::RefCell::new(None) };
-}
-
-pub(crate) fn forget_page_titles() {
-    TITLES.with(|c| *c.borrow_mut() = None);
+pub(crate) fn forget_page_titles(app: &App) {
+    *app.menus.page_titles.borrow_mut() = None;
 }
 
 /// The titles of the pages of an open settings window and the one shown.
@@ -444,13 +442,11 @@ pub(crate) fn forget_page_titles() {
 /// all their rows: the answer is kept for a moment.
 pub(crate) fn page_titles(app: &App, kind: &ListKind) -> Option<(Vec<String>, usize)> {
     let vr_nav_available = app.vr_active() && app.player.is_some();
-    if let Some(hit) = TITLES.with(|c| {
-        c.borrow().as_ref().filter(|(k, vr, t, _)| k == kind && *vr == vr_nav_available && t.elapsed().as_millis() < 5000).map(|(_, _, _, r)| r.clone())
-    }) {
+    if let Some(hit) = app.menus.page_titles.borrow().as_ref().filter(|(k, vr, t, _)| k == kind && *vr == vr_nav_available && t.elapsed().as_millis() < 5000).map(|(_, _, _, r)| r.clone()) {
         return Some(hit);
     }
     let (pages, tab) = pages_of(app, kind)?;
     let r = (pages.iter().map(|p| p.0.to_string()).collect::<Vec<_>>(), tab);
-    TITLES.with(|c| *c.borrow_mut() = Some((kind.clone(), vr_nav_available, std::time::Instant::now(), r.clone())));
+    *app.menus.page_titles.borrow_mut() = Some((kind.clone(), vr_nav_available, std::time::Instant::now(), r.clone()));
     Some(r)
 }
