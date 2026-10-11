@@ -201,6 +201,9 @@ pub(crate) struct ViewState {
     /// The zoom of the views inside the bus (driver, passenger): their field of view is
     /// the camera's times this (the mouse wheel, + and -, a pinch), per view.
     pub(crate) view_zoom: std::collections::HashMap<String, f32>,
+    /// The zoom each camera of a view was left with (by `App::look_key`), put back when it
+    /// is taken again: each of Omsi.exe's cameras keeps its own (#2183).
+    pub(crate) cam_zooms: std::collections::HashMap<String, f32>,
     /// Eased Space return in flight (F1 only): ((look from), (zoom from), seconds in,
     /// look key it started from). A hand on the view cancels it; other views reset
     /// instantly. If the camera changes mid-glide, the originating camera is

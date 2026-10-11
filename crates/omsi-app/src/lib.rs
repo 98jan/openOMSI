@@ -671,6 +671,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             look_view: String::new(),
             cam_blend: Default::default(),
             view_zoom: Default::default(),
+            cam_zooms: Default::default(),
             orbit: ORBIT_DEFAULT,
         },
         ui,
