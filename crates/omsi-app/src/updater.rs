@@ -262,7 +262,7 @@ pub fn asset_name(version: &str) -> Option<String> {
 
 // --- the release ----------------------------------------------------------------------------
 
-fn agent() -> ureq::Agent {
+pub(crate) fn agent() -> ureq::Agent {
     // (a read waits 30 s at most - a stalled download goes on with a range request, so a
     // short wait costs nothing; the connection gets 20 s, enough for a slow line or a
     // resolver that tries IPv6 first)
@@ -621,7 +621,7 @@ fn short_path(p: &Path) -> String {
     if n <= 48 {
         s
     } else {
-        format!("…{}", s.chars().skip(n - 46).collect::<String>())
+        format!("...{}", s.chars().skip(n - 46).collect::<String>())
     }
 }
 
@@ -674,7 +674,7 @@ fn aside_of(target: &Path) -> PathBuf {
 }
 
 /// Unpack `zip` into `to` (a fresh folder), with the files' Unix modes and links.
-fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
+pub(crate) fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
     let _ = std::fs::remove_dir_all(to);
     std::fs::create_dir_all(to)?;
     let mut a = zip::ZipArchive::new(std::fs::File::open(zip)?)?;

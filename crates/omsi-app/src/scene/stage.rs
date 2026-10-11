@@ -563,6 +563,7 @@ impl World {
             drive: Vec::new(),
             lanes: Mutex::new(Vec::new()),
             street_points: Vec::new(),
+            sound_lines: Vec::new(),
             objects: Vec::new(),
             anchors: Vec::new(),
             counts: LoadStats::default(),
@@ -596,6 +597,16 @@ impl World {
                 (0..=n).map(move |k| l.at(l.length() * k as f32 / n as f32).0)
             })
             .collect();
+        // (every 10 m along the lanes and tracks, for the ambience)
+        out.sound_lines.extend(lanes.iter().filter(|l| !l.invisible || l.kind == LaneKind::Street).filter_map(|l| {
+            let kind = match l.kind {
+                LaneKind::Street => omsi_geometry::LineKind::Road,
+                LaneKind::Rail => omsi_geometry::LineKind::Rail,
+                _ => return None,
+            };
+            let n = (l.length() / SOUND_LINE_STEP).ceil().max(1.0) as usize;
+            Some((kind, l.speed_limit_kmh, (0..=n).map(|k| l.at(l.length() * k as f32 / n as f32).0).collect()))
+        }));
         *out.lanes.lock() = lanes;
         *out.meshes.lock() = Some(meshes);
         let rows = self.stage_objects(&mut out, &tile, origin2, index, &counts);
@@ -632,6 +643,19 @@ impl World {
                 l.invisible = st.def.only_editor;
             }
             lanes.extend(new_lanes);
+            // wires strung overhead (every profile hangs clear of the line, no path on it) and
+            // tunnels sound along their length
+            let line = if !st.def.only_editor && st.def.paths.is_empty() && overhead_only(&st.def) {
+                Some(omsi_geometry::LineKind::Wire)
+            } else if s.file.to_ascii_lowercase().contains("tunnel") {
+                Some(omsi_geometry::LineKind::Tunnel)
+            } else {
+                None
+            };
+            if let Some(kind) = line {
+                let n = (curve.length / SOUND_LINE_STEP as f64).ceil().max(1.0) as usize;
+                out.sound_lines.push((kind, 0.0, (0..=n).map(|k| curve.point_at(curve.length * k as f64 / n as f64)).collect()));
+            }
             if st.def.only_editor {
                 if debug_splines {
                     log::info!("tile {tx},{ty} spline {} {} is editor-only (lanes only, no mesh) at ({:.1},{:.1},{:.2})", s.id, s.file, s.pos[0], s.pos[1], s.pos[2]);
@@ -879,14 +903,36 @@ impl World {
         }
         // [splineAttachement] rows and their repeaters
         let mut rows = 0usize;
+        let mut row_outside = 0usize;
+        let mut row_broken = 0usize;
         for a in &tile.spline_attachments {
             if !wanted(&a.file) {
+                continue;
+            }
+            // A row that runs *along* the carriageway (no lateral offset) and starts *before*
+            // the chain it is attached to is a broken write and never seen in OMSI: Grundorf
+            // Island 4's `bridge_pier` row 3275328 in tile -2,0 carries lateral offset 0 and
+            // start distance -32 where the row beside it (3275329, the same piers under the
+            // same bridge) carries -32 and 0 - the two fields the wrong way round. Laid out,
+            // its piers stand in the road; Omsi.exe drops the record, and so do we.
+            if a.repeater.is_none() && a.offset[0].abs() < 1e-6 && a.offset[2] < 0.0 {
+                if row_broken == 0 || debug_outside {
+                    log::info!("row {} of {} in tile ({tx}, {ty}) starts {:.1} m before its chain with no lateral offset: not shown, as in OMSI", a.id, a.file, a.offset[2]);
+                }
+                row_broken += 1;
                 continue;
             }
             let objs = crate::tiles::tile_row_objects(a, &tile.splines, origin2, Some(index));
             if objs.is_empty() || a.file.trim().is_empty() {
                 continue;
             }
+            // A row's object that lands outside this tile is never seen in OMSI either: the
+            // row stands over its spline but the objects are offset to the side of it (Grundorf
+            // Island 4's viaduct rows 33 m out), so the far side of a row near the tile's edge
+            // lies in the neighbouring tile, and Omsi.exe finds every object's height with a
+            // ray onto *this* tile's terrain only and drops what the ray misses - the same rule
+            // the `[object]` list above is drawn by (#787). An `[absheight]` type casts no
+            // such ray, so its row objects stay wherever they fall, as in that list.
             // without its own type the whole row is missing; otherwise each object is on
             // its own (a car park row leaves some spaces empty)
             let Some(row_type) = self.object_type(&a.file) else {
@@ -894,6 +940,25 @@ impl World {
                 counts.lock().failed_objects += 1;
                 continue;
             };
+            let absolute = row_type.sco.absolute_height();
+            let edge = tile_size() + 1e-3;
+            let objs: Vec<_> = objs
+                .into_iter()
+                .filter(|(_, ro)| {
+                    let (x, y) = (ro.pose.pos.x - origin2.x, ro.pose.pos.y - origin2.y);
+                    if absolute || ((-1e-3..=edge).contains(&x) && (-1e-3..=edge).contains(&y)) {
+                        return true;
+                    }
+                    if row_outside == 0 || debug_outside {
+                        log::info!("row {} object {} of {} at ({:.1}, {:.1}) lies outside tile ({tx}, {ty}): not shown, as in OMSI", a.id, ro.index, a.file, x, y);
+                    }
+                    row_outside += 1;
+                    false
+                })
+                .collect();
+            if objs.is_empty() {
+                continue;
+            }
             rows += 1;
             let first = objs.iter().map(|o| o.1.index).min().unwrap_or(0);
             for (_, ro) in objs {
@@ -919,6 +984,12 @@ impl World {
                     key,
                 });
             }
+        }
+        if row_outside > 1 {
+            log::info!("tile ({tx}, {ty}): {row_outside} spline row objects lie outside the tile and are not shown, as in OMSI");
+        }
+        if row_broken > 1 {
+            log::info!("tile ({tx}, {ty}): {row_broken} spline rows start before their chain with no lateral offset and are not shown, as in OMSI");
         }
         rows
     }
@@ -1209,3 +1280,6 @@ impl World {
 /// OMSI_CHECK_SPLINES: every spline's two ends, its neighbours in the chain and its file.
 /// (Global: `offscreen` reads it to report chained ends that differ in height.)
 pub(crate) static SPLINE_ENDS: std::sync::LazyLock<Mutex<HashMap<i64, (DVec3, DVec3, i64, i64, String)>>> = std::sync::LazyLock::new(Default::default);
+
+/// Metres between the points the ambience keeps along a lane, a track, a wire or a tunnel.
+const SOUND_LINE_STEP: f32 = 10.0;

@@ -186,7 +186,7 @@ impl Layout<'_> {
                 .collect::<String>()
                 .trim_end()
                 .to_string()
-                + "…";
+                + "...";
             if self.width(&s, px, w) <= max {
                 lo = mid;
             } else {
@@ -198,7 +198,7 @@ impl Layout<'_> {
             .collect::<String>()
             .trim_end()
             .to_string()
-            + "…"
+            + "..."
     }
 
     /// `text` in lines of at most `max` (a word longer than that is broken where it must).
@@ -1115,7 +1115,7 @@ impl PluginPanels {
 }
 
 /// The line the game shows while the panels have the mouse.
-pub(crate) const FOCUS_NOTE: &str = "The mouse is on the plugin panels · Esc gives it back";
+pub(crate) const FOCUS_NOTE: &str = "The mouse is on the plugin panels | Esc gives it back";
 
 /// Whether the plugins' panels have the mouse (`omsi.ui.focus`): from the plugins alone, for
 /// where the rest of the game is borrowed.

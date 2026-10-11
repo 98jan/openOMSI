@@ -680,8 +680,8 @@ impl Offscreen<'_> {
             steps::humans_by_hour(h, world, run_clock.time, settings.pax_density, duty.as_ref());
             // populate stops near every LAN player every 2 seconds, as app_events.rs
             // does every 2 s near the local player.  At startup `center` is ZERO (no
-            // player bus on a headless server), so stops on the actual map – which can
-            // be thousands of metres away – fall outside the 600 m filter in
+            // player bus on a headless server), so stops on the actual map - which can
+            // be thousands of metres away - fall outside the 600 m filter in
             // `populate_with` and are never seeded without this loop.
             if i.is_multiple_of(60) {
                 let player_centers: Vec<glam::DVec3> = remotes_off

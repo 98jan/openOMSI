@@ -141,11 +141,13 @@ macro_rules! flags {
 flags! {
     OMSI_AI_MODEL_LOCK: Bool, Switch, Use, "off", "AI cars steer no further than their model's own steering lock (no 60 degree allowance for tight turns).";
     OMSI_AI_WAY_ONLY: Bool, Switch, Use, "off", "AI vehicles stand on their way with the plain ground sampler, as before (A/B).";
+    OMSI_AMBIENCE_DENSITY: Text, Debug, Once, "1", "The ambience's one-shots (birds, the far life, thunder, the objects' calls) this many times as often (a number), or only some of them (slot=factor,…: bird.geese=40) - what fits the place, season and hour stays the same (for demos and checks).";
+    OMSI_AMBIENCE_DIR: Text, Setup, Use, "-", "The folder of the ambience's recordings (its pack.json), instead of `ambience` beside the program or in ~/.openomsi.";
     OMSI_API_BLESS: Bool, Test, Use, "off", "cargo test -p omsi-plugin api_manifest: write docs/plugin-api.json and the reference tables of docs/PLUGINS.md again from the plugin API registry.";
     OMSI_AUDIT_LINE: Num, Test, Test, "-", "bus_audit example: the line (number and letter code) the IBIS typist enters instead of the bus's own.";
     OMSI_AUTOPILOT: Num, Test, Use, "-", "Offscreen: the player's bus follows the lanes at this speed in km/h (finds where it falls through or leaves the road).";
     OMSI_BACKEND: Text, Setup, Use, "settings", "vulkan, dx12, metal, gl or angle (dx11, d3d11; Windows): the graphics API tried first (overrides the settings). Set at runtime by the launcher and on Android.";
-    OMSI_BACKGROUND: Bool, Test, Use, "off", "A test window that does not take the keyboard focus (OMSI_INPUT drives the handlers directly).";
+    OMSI_BACKGROUND: Bool, Test, Use, "off", "A test window that does not take the keyboard focus (OMSI_INPUT drives the handlers directly); with OMSI_INPUT it ignores the real mouse too.";
     OMSI_BASIC_PIPELINES: Bool, Switch, Once, "off", "Use the reduced (basic) render pipelines, as after a driver failed to build the full ones.";
     OMSI_BATCH: Num, Test, Use, "-", "Offscreen: prepare the map tiles this many at a time, as the window's streaming does.";
     OMSI_BENCH: Num, Test, Use, "-", "Offscreen: draw the final picture this many more times and log the median CPU and GPU-wait time.";
@@ -382,9 +384,11 @@ flags! {
     OMSI_ORIGINAL: Text, Test, Test, "-", "vehicle_vars example: the original OMSI folder.";
     OMSI_PARKED_PULL_OUT: Num, Tuning, Use, "0.035", "Chance per step a parked car pulls out.";
     OMSI_PARK_IN: Num, Tuning, Use, "0.04", "Chance per step a car parks.";
+    OMSI_PAX_ANIMATION: Text, Tuning, Use, "settings", "Override the passenger animation for a game session: original (OMSI) or enhanced (procedural IK).";
     OMSI_PAX_CAM: Num, Test, Use, "-", "Offscreen --view pax: the n-th passenger camera.";
     OMSI_PAX_CROSS: Text, Test, Use, "-", "x,y: send pedestrians across the signalised crossing nearest that point.";
     OMSI_PAX_WAITING: Num, Test, Use, "-", "Number of passengers waiting at each stop.";
+    OMSI_PHOTO: Text, Test, Use, "-", "Photo mode settings for a test, key=value by commas: orbit (dist, around, up), kmh (the bus moving), focal (mm), dof, fstop (f-number), focus (m; none: on the bus), motion, shutter (1/s), filter (0..10), vignette, grain, exposure (EV), aspect (0..7), grid (0..3), quality (0..3).";
     OMSI_PLUGIN_HOST32: Text, Setup, Use, "beside the game", "Path of omsi-plugin-host32.exe.";
     OMSI_POPULATION_SHOTS: Bool, Test, Use, "off", "Offscreen: pictures of the framed population spawns.";
     OMSI_PRESENCE_URL: Text, Setup, Use, "built-in", "Base URL of the presence (\"playing now\") service.";
@@ -429,6 +433,8 @@ flags! {
     OMSI_TOUCH: Bool, Test, Use, "off", "The on-screen touch controls on a computer.";
     OMSI_TRACE_AI: Text, Debug, Use, "-", "CSV: every AI car's pose, steering and speed every frame.";
     OMSI_TRACE_AI_BUSES: Bool, Debug, Use, "off", "With OMSI_TRACE_AI: the timetable buses only.";
+    OMSI_TRACE_FFB: Text, Debug, Use, "-", "CSV: the force feedback frame by frame (Windows): the wheel's position and the force sent.";
+    OMSI_TRACE_LOOK: Text, Debug, Use, "-", "CSV: the mouse look frame by frame and event by event - the cursor, the head's turn and the camera drawn.";
     OMSI_TRACE_PAX: Text, Debug, Use, "-", "File: trace the passengers.";
     OMSI_TRACE_REMOTE: Text, Debug, Use, "-", "LAN CSV: where each other player's bus is drawn every frame.";
     OMSI_TRACE_STEER: Text, Debug, Use, "-", "CSV: the mouse steering frame by frame.";

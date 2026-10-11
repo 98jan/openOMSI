@@ -39,6 +39,7 @@ mod place_step;
 mod props;
 mod lightmaps;
 mod scripted;
+pub use scripted::DayKind;
 mod vehicle_materials;
 mod vehicle_types;
 mod vehicles;

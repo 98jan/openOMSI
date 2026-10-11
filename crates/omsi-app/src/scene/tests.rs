@@ -429,6 +429,10 @@ fn a_forest_named_map_is_no_plant() {
     assert!(vegetation_give_of(&sco("[groups]\n2\nThüringer Wald\nGebäude\n[mesh]\nhaus.o3d\n")).is_none());
     assert!(vegetation_give_of(&sco("[groups]\n2\nThüringer Wald\nBäume\n[mesh]\nbaum.o3d\n")).is_some());
     assert!(vegetation_give_of(&sco("[groups]\n1\nHedges\n[mesh]\nh.o3d\n")).is_some());
+    // ("street" holds "tree": OMSI's street objects are no plants)
+    assert!(vegetation_give_of(&sco("[groups]\n2\nGerman Street Side\nLights\n[mesh]\nlamp.o3d\n")).is_none());
+    assert!(vegetation_give_of(&sco("[groups]\n2\nTrees LQ\nShrubbery\n[mesh]\ns.o3d\n")).is_some());
+    assert!(vegetation_give_of(&sco("[groups]\n1\nStreet Side\n[groups]\n1\nPlants\n[mesh]\nt.o3d\n")).is_some());
 }
 
 /// A bus bay's lines made as a plain object (NCCR's `Parkbox(bus).sco`: a flat mesh 5 mm
@@ -849,6 +853,7 @@ fn a_crossing_far_over_the_ground_is_draped_by_its_height_field() {
         drive: Vec::new(),
         lanes: Mutex::new(Vec::new()),
         street_points: Vec::new(),
+        sound_lines: Vec::new(),
         objects: vec![StagedObject {
             ot: ot.clone(),
             id: 1,
@@ -1064,3 +1069,13 @@ fn scenery_mouseevent_hit_and_trigger() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+
+#[test]
+fn a_trees_cards_turn_against_its_object_as_in_omsi() {
+    // An object turned 30 degrees clockwise (its x axis towards south-east): Omsi.exe stands
+    // the cards of its `[tree]` 30 degrees counter-clockwise, the card along x pointing
+    // north-east.
+    let card = terrain_paint::tree_card_turn(30.0).transform_vector3(glam::Vec3::X);
+    let (s, c) = 30f32.to_radians().sin_cos();
+    assert!((card - glam::Vec3::new(c, s, 0.0)).length() < 1e-5, "{card:?}");
+}

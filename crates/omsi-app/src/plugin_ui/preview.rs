@@ -47,7 +47,7 @@ fn preview() {
     let panels = [
         (
             r##"{ anchor = "top_left", x = 16, y = 60, width = 340, accent = "#F47F30", children = {
-                { type = "row", children = { { type = "icon", name = "directions_bus", color = "#F47F30" }, { type = "text", text = "Linie 42 · Kurs 3", size = 16, weight = "bold", grow = true }, { type = "badge", text = "+1:20", color = "#C62828" } } },
+                { type = "row", children = { { type = "icon", name = "directions_bus", color = "#F47F30" }, { type = "text", text = "Linie 42 | Kurs 3", size = 16, weight = "bold", grow = true }, { type = "badge", text = "+1:20", color = "#C62828" } } },
                 { type = "text", text = "Nächster Halt: Grundorf, Krankenhaus Nord (Wendeschleife am Haupteingang)", color = "#C8C8C8" },
                 { type = "row", gap = 6, children = { { type = "icon", name = "schedule", size = 16, color = "#8E8E8E" }, { type = "text", text = "ab 08:59", size = 13, color = "#8E8E8E" }, { type = "space", size = 8 }, { type = "icon", name = "group", size = 16, color = "#8E8E8E" }, { type = "text", text = "23 Fahrgäste", size = 13, color = "#8E8E8E" } } },
                 { type = "bar", value = 0.62 },

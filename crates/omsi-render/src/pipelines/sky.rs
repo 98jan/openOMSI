@@ -18,9 +18,9 @@ pub(crate) struct SkyBase {
 }
 
 impl SkyBase {
-    /// `preview`: the launcher's preview, which draws only the vanilla sky - no cloud noise,
-    /// and the shader without the enhanced sky.
-    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, camera_layout: &wgpu::BindGroupLayout, preview: bool) -> SkyBase {
+    /// With no enhanced pass, use the vanilla sky module and placeholder noise textures.
+    /// This includes ANGLE's texture-unit fallback, not only the launcher's preview.
+    pub(crate) fn new(device: &wgpu::Device, queue: &wgpu::Queue, camera_layout: &wgpu::BindGroupLayout, enhanced: bool) -> SkyBase {
         // sky dome
         let float_2d = wgpu::TextureSampleType::Float { filterable: true };
         let sky_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -39,11 +39,11 @@ impl SkyBase {
                 uniform_entry(10, wgpu::ShaderStages::FRAGMENT),
             ],
         });
-        let (cloud_shape_view, cloud_detail_view, cloud_sampler, cloud_shape_cpu) = cloud_noise_textures(device, queue, !preview);
+        let (cloud_shape_view, cloud_detail_view, cloud_sampler, cloud_shape_cpu) = cloud_noise_textures(device, queue, enhanced);
         log::info!("renderer: compiling the sky and clouds shaders");
-        let sky_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        let sky_shader = compile_shader(device, wgpu::ShaderModuleDescriptor {
             label: Some("sky"),
-            source: wgpu::ShaderSource::Wgsl(if preview { [include_str!("../colour.wgsl"), include_str!("../sky.wgsl")].join("\n") } else { sky_shader_source() }.into()),
+            source: wgpu::ShaderSource::Wgsl(shader_source(enhanced).into()),
         });
         let sky_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("sky"),
@@ -60,7 +60,7 @@ impl SkyBase {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &SKY_ATTRIBUTES,
         };
-        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        compile_pipeline(device, &wgpu::RenderPipelineDescriptor {
             label: Some("sky"),
             layout: Some(&self.pl),
             vertex: wgpu::VertexState {
@@ -90,6 +90,68 @@ impl SkyBase {
             multiview_mask: None,
             cache: crate::pipeline_cache::get(device).as_ref(),
         })
+    }
+}
+
+fn shader_source(enhanced: bool) -> String {
+    if enhanced {
+        sky_shader_source()
+    } else {
+        [include_str!("../colour.wgsl"), include_str!("../sky.wgsl")].join("\n")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shader_source;
+    use wgpu::naga;
+
+    /// The fallback sky must actually omit the raymarch/probe entry points and remain
+    /// valid on GLES, not merely refrain from drawing its enhanced pipelines.
+    #[test]
+    fn fallback_sky_translates_without_enhanced_entry_points() {
+        let source = shader_source(false);
+        let module = naga::front::wgsl::parse_str(&source).expect("vanilla sky WGSL");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("vanilla sky validation");
+        let names: Vec<_> = module
+            .entry_points
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+        assert_eq!(names, ["vs_main", "fs_main"]);
+        assert!(shader_source(true).contains("fn fs_sky_cube"));
+        for version in [300, 310] {
+            let options = naga::back::glsl::Options {
+                version: naga::back::glsl::Version::Embedded {
+                    version,
+                    is_webgl: false,
+                },
+                ..Default::default()
+            };
+            for entry in &module.entry_points {
+                let pipeline = naga::back::glsl::PipelineOptions {
+                    shader_stage: entry.stage,
+                    entry_point: entry.name.clone(),
+                    multiview: None,
+                };
+                let mut output = String::new();
+                naga::back::glsl::Writer::new(
+                    &mut output,
+                    &module,
+                    &info,
+                    &options,
+                    &pipeline,
+                    Default::default(),
+                )
+                .and_then(|mut writer| writer.write())
+                .expect("vanilla sky GLSL ES");
+            }
+        }
     }
 }
 

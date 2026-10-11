@@ -147,6 +147,7 @@ impl PeopleSim {
             stroll_timer: 0.0,
             exact_fare: true,
             boarding: "auto".into(),
+            stand_chance: 0.05,
             give_ticket: false,
             give_change_all: false,
             ticket_key: "T".into(),
@@ -321,10 +322,13 @@ impl PeopleSim {
     /// The cabin of a vehicle with the parts coupled behind it.
     pub fn cabin_for(&mut self, v: &VehicleInstance) -> Option<Arc<Cabin>> {
         let parts = train_parts(v);
-        let key: Vec<PathBuf> = parts.iter().map(|p| p.0.path.clone()).collect();
-        if let Some(c) = self.cabins.get(&key) {
+        // (looked up by the parts' paths as they are: asked a few times a bus a frame, the
+        // key was copied path by path for each question)
+        let paths: Vec<&Path> = parts.iter().map(|p| p.0.path.as_path()).collect();
+        if let Some(c) = self.cabins.get(&CabinKey(&paths)) {
             return c.clone();
         }
+        let key: Vec<PathBuf> = paths.iter().map(|p| p.to_path_buf()).collect();
         let cabin = Cabin::load_train(&parts).map(Arc::new);
         if let Some(c) = cabin.as_ref().filter(|c| c.parts.len() > 1) {
             log::info!("passenger cabin of {}: {} sections joined ({} places, {} entries, {} exits, {} path points)", v.ty.def.path.file_name().unwrap_or_default().to_string_lossy(), c.parts.len(), c.seats.len(), c.entries.len(), c.exits.len(), c.graph.points.len());
@@ -484,6 +488,7 @@ impl PeopleSim {
             pace,
             activity: Activity::Stand,
             anim: OmsiAnim::default(),
+            procedural: None,
             state,
             t_state: 0.0,
             skins: Vec::new(),
@@ -655,7 +660,7 @@ impl PeopleSim {
         let rot = bus.body_rotation();
         let off = places_off(bus, &cabin);
         for _ in 0..n {
-            let Some(k) = self.reserve_place(BusId::Player, cabin.seats.len(), &off) else { break };
+            let Some(k) = self.reserve_place(BusId::Player, &cabin.seats, &off) else { break };
             let walk = 1.1 + (self.rand_f() as f32 * 2.0 - 1.0) * 0.2;
             let r = self.rand_f() as f32;
             let mut pax = Pax::new(walk, self.rand_f());
@@ -702,5 +707,34 @@ impl PeopleSim {
             self.desk_busy = None;
             self.request = None;
         }
+    }
+}
+
+/// The key of [`PeopleSim::cabins`] borrowed: it hashes as the `Vec<PathBuf>` it stands for
+/// (a slice hashes its length and then its items, and a `PathBuf` as its `Path`).
+#[derive(Hash)]
+struct CabinKey<'a>(&'a [&'a Path]);
+
+impl hashbrown::Equivalent<Vec<PathBuf>> for CabinKey<'_> {
+    fn equivalent(&self, key: &Vec<PathBuf>) -> bool {
+        self.0.len() == key.len() && self.0.iter().zip(key).all(|(a, b)| *a == b.as_path())
+    }
+}
+
+#[cfg(test)]
+mod cabin_key_tests {
+    use super::*;
+
+    /// A train's key borrowed finds what was kept under the owned one, and only that.
+    #[test]
+    fn a_borrowed_cabin_key_finds_the_owned_one() {
+        let mut map: HashMap<Vec<PathBuf>, u32> = HashMap::new();
+        let (a, b) = (Path::new("Vehicles/MAN_SD200/MAN_SD80.bus"), Path::new("Vehicles/MAN_NL_NG/MAN_GN92_trail.bus"));
+        map.insert(vec![a.to_path_buf()], 1);
+        map.insert(vec![a.to_path_buf(), b.to_path_buf()], 2);
+        assert_eq!(map.get(&CabinKey(&[a])), Some(&1));
+        assert_eq!(map.get(&CabinKey(&[a, b])), Some(&2));
+        assert_eq!(map.get(&CabinKey(&[b, a])), None);
+        assert_eq!(map.get(&CabinKey(&[])), None);
     }
 }

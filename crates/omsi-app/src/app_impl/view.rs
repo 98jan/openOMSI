@@ -34,6 +34,24 @@ impl App {
         *z = (*z * (1.0 - 0.08 * notches.clamp(-5.0, 5.0))).clamp(0.2, 1.6);
     }
 
+    /// `OMSI_TRACE_LOOK=<csv>`: one line (`what` = frame, cursor, ...) with the cursor, the
+    /// head's turn and the camera drawn last.
+    pub(crate) fn trace_look(&self, what: &str, x: f32, y: f32) {
+        let Some(path) = omsi_cfg::flags::OMSI_TRACE_LOOK.var() else { return };
+        use std::io::Write;
+        static FILE: std::sync::Mutex<Option<std::fs::File>> = std::sync::Mutex::new(None);
+        let mut g = FILE.lock().unwrap_or_else(|e| e.into_inner());
+        if g.is_none() {
+            *g = std::fs::File::create(path).ok();
+            if let Some(f) = g.as_mut() {
+                let _ = writeln!(f, "t,what,x,y,look_yaw,look_pitch,cam_yaw,cam_pitch,mouse_look,grab");
+            }
+        }
+        if let (Some(f), Some(c)) = (g.as_mut(), self.camera.as_ref()) {
+            let _ = writeln!(f, "{:.4},{what},{x:.1},{y:.1},{:.3},{:.3},{:.3},{:.3},{},{:?}", self.started.elapsed().as_secs_f64(), self.cam.look.0, self.cam.look.1, c.yaw, c.pitch, self.input.mouse_look as u8, self.input.mouse_grab.mode);
+        }
+    }
+
     pub(crate) fn look_by(&mut self, dx: f32, dy: f32) {
         self.sync_view_look();
         // a hand on the view cancels an eased Space return.
@@ -74,7 +92,7 @@ pub(crate) fn chase_orbit_step(yaw: f32, pitch: f32, dx_px: f32, dy_px: f32) -> 
 
 /// Precision zoom step from a vertical drag: the zoom state `z` (0 wide ..
 /// 1 full zoom) travels at `intent` per 364 px, and the FOV multiplier is
-/// `1/(1+5.5*z)` — full zoom ~6.5x in. Drag down (`dy > 0`) zooms in.
+/// `1/(1+5.5*z)` - full zoom ~6.5x in. Drag down (`dy > 0`) zooms in.
 /// Never past 1.0 (never wider than the bus's own field of view); the floor
 /// is the caller's clamp. Pure (tested below).
 pub(crate) fn precision_zoom_step(mult: f32, dy_px: f32, intent: f32) -> f32 {
@@ -91,17 +109,10 @@ pub(crate) const ZOOM_INTENT_F1: f32 = 0.56;
 pub(crate) const ZOOM_INTENT: f32 = 0.70;
 
 /// Eased Space return for the F1 head: look and zoom glide home on the same
-/// ease-out as the viewpoint switch instead of teleporting. `t` seconds in;
-/// returns the current look, zoom and done. Pure (tested below).
+/// curve as the viewpoint switch instead of teleporting (`cam_approach::home`).
+/// `t` seconds in; returns the current look, zoom and done.
 pub(crate) fn reset_blend(look_from: (f32, f32), zoom_from: f32, t: f32) -> ((f32, f32), f32, bool) {
-    let x = (t / crate::app::CAM_BLEND_SECS).clamp(0.0, 1.0);
-    let u = 1.0 - x;
-    let s = 1.0 - u * u * u;
-    (
-        (look_from.0 * (1.0 - s), look_from.1 * (1.0 - s)),
-        zoom_from + (1.0 - zoom_from) * s,
-        x >= 1.0,
-    )
+    crate::cam_approach::home(look_from, zoom_from, t)
 }
 
 #[cfg(test)]
@@ -125,7 +136,7 @@ mod look_tests {
         assert_eq!((look, zoom, done), ((30.0, -10.0), 0.5, false));
         let (look, zoom, done) = super::reset_blend((30.0, -10.0), 0.5, 0.27);
         assert!(look.0 > 3.0 && look.0 < 27.0 && zoom > 0.5 && zoom < 1.0 && !done);
-        let (look, zoom, done) = super::reset_blend((30.0, -10.0), 0.5, 0.54);
+        let (look, zoom, done) = super::reset_blend((30.0, -10.0), 0.5, 2.0);
         assert_eq!((look, zoom, done), ((0.0, 0.0), 1.0, true));
         assert!(super::reset_blend((30.0, -10.0), 0.5, 5.0).2);
     }
@@ -148,6 +159,31 @@ mod look_tests {
 
 /// `App::sync_view_look` for where `self` is borrowed in parts.
 /// See `App::look_key`.
+/// Whether `key` is `look_key_of(view, cam)` (without making that key: asked every frame).
+pub(crate) fn look_key_is(key: &str, view: &str, cam: Option<(usize, usize)>) -> bool {
+    let numbered = |prefix: &str, n: usize| {
+        key.strip_prefix(prefix).and_then(|k| k.strip_prefix('#')).is_some_and(|k| {
+            let mut digits = [0u8; 20];
+            let mut at = digits.len();
+            let mut v = n;
+            loop {
+                at -= 1;
+                digits[at] = b'0' + (v % 10) as u8;
+                v /= 10;
+                if v == 0 {
+                    break;
+                }
+            }
+            k.as_bytes() == &digits[at..]
+        })
+    };
+    match (view, cam) {
+        ("driver", Some((d, _))) => numbered("driver", d),
+        ("pax", Some((_, x))) => numbered("pax", x),
+        _ => key == view,
+    }
+}
+
 pub(crate) fn look_key_of(view: &str, cam: Option<(usize, usize)>) -> String {
     match (view, cam) {
         ("driver", Some((d, _))) => format!("driver#{d}"),
@@ -276,5 +312,25 @@ mod cab_look_tests {
         // (the driver looks back down the saloon: no stop at 140 degrees)
         assert!((cab_look_yaw(175.0) - 175.0).abs() < 1e-3);
         assert!((cab_look_yaw(-160.0) + 160.0).abs() < 1e-3);
+    }
+}
+
+#[cfg(test)]
+mod look_key_tests {
+    use super::{look_key_is, look_key_of};
+
+    #[test]
+    fn look_key_is_the_key_made() {
+        let views = ["driver", "pax", "free", "foot", "outside", ""];
+        let cams = [None, Some((0, 0)), Some((1, 12)), Some((10, 3)), Some((usize::MAX, 7))];
+        let keys = ["driver#0", "driver#1", "driver#10", "driver#01", "pax#12", "pax#3", "pax#03", "driver", "pax", "free", "", "driver#", "pax#7"];
+        for v in views {
+            for c in cams {
+                assert!(look_key_is(&look_key_of(v, c), v, c), "{v} {c:?}");
+                for k in keys {
+                    assert_eq!(look_key_is(k, v, c), k == look_key_of(v, c), "{k} {v} {c:?}");
+                }
+            }
+        }
     }
 }

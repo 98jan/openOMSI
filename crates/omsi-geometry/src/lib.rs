@@ -8,9 +8,9 @@ use omsi_scenery::Spline;
 
 mod hole_rims;
 mod ground_sound;
-pub use ground_sound::GroundSound;
+pub use ground_sound::{GroundSound, LineKind, SoundLine, SoundSpot};
 mod terrain_walls;
-pub use terrain_walls::terrain_hole_walls;
+pub use terrain_walls::{terrain_hole_walls, terrain_hole_walls_with_roads};
 
 /// A renderable triangle mesh with one texture per material slot.
 #[derive(Debug, Clone, Default)]

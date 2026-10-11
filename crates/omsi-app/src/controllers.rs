@@ -335,7 +335,7 @@ pub(crate) const HAT_BUTTONS: usize = 128;
 /// and on Windows DirectInput for everything a gamepad is not (`crate::dinput`) - many wheels
 /// never show up in the system's newer interface that gilrs uses there.
 pub(crate) struct Devices {
-    gilrs: Option<Gilrs>,
+    pub(crate) gilrs: Option<Gilrs>,
     #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
     calibration_wheel: Option<crate::evdev_ff::Wheel>,
     /// Whether a gilrs device is also a native evdev constant-force wheel.
@@ -611,7 +611,7 @@ impl Devices {
             for (_, pad) in g.gamepads() {
                 let mapped = pad.mapping_source() != gilrs::MappingSource::None;
                 #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
-                let force_feedback_wheel = mapped && self.linux_ff_wheel(pad.name());
+                let force_feedback_wheel = self.linux_ff_wheel(pad.name());
                 #[cfg(not(all(target_os = "linux", target_pointer_width = "64")))]
                 let force_feedback_wheel = false;
                 #[allow(unused_mut)]
@@ -652,7 +652,7 @@ impl Devices {
                         gamepad_triggers(&mut slots, trigger(gilrs::Button::LeftTrigger2), trigger(gilrs::Button::RightTrigger2));
                     }
                     slots
-                }, gamepad, ff: pad.is_ff_supported(), ff_capable: pad.is_ff_supported(), buttons });
+                }, gamepad, ff: pad.is_ff_supported() || force_feedback_wheel, ff_capable: pad.is_ff_supported() || force_feedback_wheel, buttons });
             }
         }
         // (and a wheel gilrs does not list at all: one whose only axes are the simulation
@@ -1108,7 +1108,7 @@ fn gamepad_triggers(axes: &mut Vec<(usize, f32)>, left: f32, right: f32) {
 pub struct Controllers {
     /// Each wheel's suspension travel, settled over a tenth of a second (see `wheel_bump`).
     settled: Vec<f32>,
-    devices: Devices,
+    pub(crate) devices: Devices,
     focused: bool,
     cfg: Vec<DeviceCfg>,
     held: HeldButtons,
@@ -1227,6 +1227,8 @@ impl Controllers {
         Controllers { settled: Vec::new(), devices, focused: true, cfg, held: HeldButtons::default(), editing: false, raw_buttons: Vec::new(), deadzone: 0.0, right_stick_look: true, pad_deadzone: 0.08, pad_presets: true, pedal_throttle: 1.0, pedal_brake: 1.0, disabled: Vec::new(), ff_invert: false, ff_enabled: true, ff_road: 1.0, ff_engine: 1.0, ff_fade: FF_FADE, steer_gain: 1.0, enabled: true, actions: Vec::new(), announced: Vec::new(), moved: Vec::new(), notice: None, steer: None, ff_t: 0.0, ff_lateral: 0.0, ff_bump: 0.0, ff_bump_age: 0.0, ff_micro: Micro::default(), ff_vib: ScriptVib::default(), ff_rumble: 0.0, ff_source_logged: None, rumble: Vec::new(), #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel: None, #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel_tried: None }
     }
 
+    /// Whether this device steers the bus (set up so, or steering now): the photo mode's camera takes none for its gamepad (a wheel turned it).
+    pub(crate) fn steers(&self, name: &str) -> bool { self.steer.as_ref().is_some_and(|s| names_match(&s.0, name)) || find_device_cfg(&self.cfg, name).is_some_and(|d| d.axes.iter().flatten().any(|(f, _)| matches!(f, Func::Steering))) }
     /// A wheel or joystick steers the bus (then the arrow keys look around, as in OMSI:
     /// a G29's buttons set to the arrow keys turned the view there).
     pub fn wheel_steering(&self) -> bool {
@@ -1540,7 +1542,9 @@ impl Controllers {
             // The wheel force is calculated from the steering axis after its configured
             // reversal, while DirectInput sends forces in the physical axis direction.
             let axis_reversed = force_axis_reversed(cfg, di.force_axis(&name));
-            let force = if feedback_inverted(cfg, self.ff_invert, axis_reversed) { -force } else { force };
+            let inverted = feedback_inverted(cfg, self.ff_invert, axis_reversed) ^ di.force_flipped(&name);
+            let force = if inverted { -force } else { force };
+            crate::dinput::trace_ffb(&f, x, x0, inverted, force);
             if di.set_force(&name, force) {
                 return;
             }
@@ -1690,7 +1694,9 @@ fn wheel_force(f: &FfInput, x: f32, x0: f32, t: &mut f32, k_springs: f32, k_effe
     // a smooth extra torque, tapered away at larger angles. It crosses zero
     // continuously so there is no fixed kick when the wheel passes the centre.
     let centre_return = 0.025 * x / (x * x + 0.004 * 0.004).sqrt() / (1.0 + (x / 0.12).powi(4));
-    let spring = -(spring_strength * x / (0.5 + 1.15 * x.abs()) + centre_return) * rolling;
+    // A physical wheel needs a middle even when parked: half the centring is there at a
+    // standstill, the rest builds up as the bus rolls.
+    let spring = -(spring_strength * x / (0.5 + 1.15 * x.abs()) + centre_return) * (0.5 + 0.5 * rolling);
     let road_align = -(f.lateral_accel / 9.81).clamp(-0.45, 0.45) * 0.25 * (v / 5.0).clamp(0.0, 1.0) * rolling;
     // Assisted steering should not demand ever more hand force near full lock.
     let lock_assist = 1.0 / (1.0 + 0.55 * x * x);
@@ -2341,14 +2347,17 @@ mod button_tests {
     }
 
     #[test]
-    fn a_parked_wheel_is_not_pulled_to_the_middle() {
+    fn a_parked_wheel_has_a_gentle_middle() {
         let mut t = 0.0;
         for kmh in [-0.5, -0.1, 0.0, 0.1, 0.5] {
-            // Include residual lateral acceleration from the body's suspension.
+            // Residual lateral acceleration from the body's suspension is no force when parked.
             let f = super::FfInput { on: true, kmh, lateral_accel: 3.0, dt: 0.016, ..Default::default() };
-            for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
-                let force = super::wheel_force(&f, x, x, &mut t, 1.0, 0.0);
-                assert_eq!(force, 0.0, "kmh={kmh}, steering={x}");
+            assert_eq!(super::wheel_force(&f, 0.0, 0.0, &mut t, 1.0, 0.0), 0.0, "kmh={kmh}");
+            for x in [0.2, 0.5, 1.0] {
+                let right = super::wheel_force(&f, x, x, &mut t, 1.0, 0.0);
+                let left = super::wheel_force(&f, -x, -x, &mut t, 1.0, 0.0);
+                assert!(right < -0.02 && right > -0.2, "kmh={kmh}, steering={x}: {right}");
+                assert_eq!(right, -left, "kmh={kmh}, steering={x}");
             }
         }
     }
@@ -2360,8 +2369,8 @@ mod button_tests {
         for x in [-0.5, 0.5] {
             let right = super::wheel_force(&f, x, x - 0.01, &mut t, 1.0, 0.0);
             let left = super::wheel_force(&f, x, x + 0.01, &mut t, 1.0, 0.0);
-            assert!(right < 0.0 && left > 0.0, "{right} {left}");
-            assert!((right + left).abs() < 1e-6, "{right} {left}");
+            // (the parked centring adds the same pull to both)
+            assert!(right < left, "{right} {left}");
         }
     }
 

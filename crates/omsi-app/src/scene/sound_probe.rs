@@ -14,3 +14,23 @@ impl World {
         Some(s.surface_under(lx, ly, at.z as f32, terrain))
     }
 }
+
+impl World {
+    /// What stands around `ear` for the ambience: the loaded tiles within earshot of a church
+    /// bell, read from their sound data (see [`crate::soundscape::place`]).
+    pub fn sound_place(&self, ear: DVec3) -> crate::soundscape::place::Place {
+        let mut g = crate::soundscape::place::Gather::new(ear);
+        let reach = (crate::soundscape::place::SPOT_REACH / tile_size()).ceil() as i32;
+        let key = tile_key(ear.x, ear.y);
+        let surfaces = self.surfaces.read();
+        for dy in -reach..=reach {
+            for dx in -reach..=reach {
+                let k = (key.0 + dx, key.1 + dy);
+                if let Some(s) = surfaces.get(&k) {
+                    g.tile(&s.sound, DVec3::new(k.0 as f64 * tile_size(), k.1 as f64 * tile_size(), 0.0));
+                }
+            }
+        }
+        g.finish()
+    }
+}

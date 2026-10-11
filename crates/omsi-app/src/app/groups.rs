@@ -9,8 +9,13 @@ pub(crate) struct SoundState {
     pub(crate) audio: Option<omsi_audio::AudioEngine>,
     /// Sounds of the world around the camera (rain, footsteps).
     pub(crate) ambience: Option<ambience::Ambience>,
+    /// openOMSI's ambience from recordings (settings `ambient`, `vol_ambient`).
+    pub(crate) soundscape: Option<crate::soundscape::Soundscape>,
     /// Positional voice through GreenTeaSpeak in a session (`voice`).
     pub(crate) voice: Option<crate::voice::Voice>,
+    /// How far the walker's eyes are inside the player's bus, as the sound follows them
+    /// (see `App::foot_sound_amount`); None when nobody walks about it.
+    pub(crate) foot_in: Option<f32>,
 }
 
 /// The VR headset: its session (Windows), the navigator shown in it, the cockpit pointer
@@ -118,8 +123,8 @@ pub(crate) struct PerfState {
     pub(crate) thread_cpu_mark: Option<f64>,
     /// OMSI_PROFILE: the process's retired instructions then (macOS).
     pub(crate) instructions_mark: Option<u64>,
-    /// OMSI_PROFILE: the stages when `cpu_mark` was taken, and every frame's time since
-    /// then (s), for the exit summary's percentiles (see `perf_report`).
+    /// OMSI_PROFILE: the stages when the warm-up ended (15 s of play), and every frame's time
+    /// since then (s), for the exit summary's percentiles (see `perf_report`).
     pub(crate) profile_mark: Option<crate::perf_report::ProfileMark>,
     pub(crate) frame_times: Vec<f32>,
 }
@@ -154,6 +159,8 @@ pub(crate) struct GfxState {
     /// What the renderer shows of the AI traffic and the people (`view_sync`): their
     /// renders, kept apart from `session.traffic` and `session.humans`.
     pub(crate) sim_view: crate::view_sync::SimView,
+    /// The window's start while its renderer is still being built (see `WindowStart`).
+    pub(crate) starting: Option<super::WindowStart>,
 }
 
 /// The camera's state besides the camera itself: the head turned and zoomed per view, the
@@ -194,6 +201,10 @@ pub(crate) struct ViewState {
     /// instantly. If the camera changes mid-glide, the originating camera is
     /// finalized straight ahead instead of keeping a partial angle.
     pub(crate) f1_reset: Option<((f32, f32), f32, f32, String)>,
+    /// The driver's view of this bus turned by the view editor (degrees, on top of the
+    /// look), and its field of view there (None: the camera's own or the setting's).
+    pub(crate) view_yaw: f32,
+    pub(crate) view_fov: Option<f32>,
     pub(crate) orbit: f32,
 }
 
@@ -257,6 +268,13 @@ pub(crate) struct InputState {
     /// time (a game started with the mouse steering on: wherever the cursor was, the wheel
     /// turned and the bus drove off on full throttle).
     pub(crate) center_cursor: bool,
+    /// `OMSI_INPUT`'s `cruise <km/h>`: the player's bus held at this speed (m/s) along its
+    /// heading until its next crash (the count of crashes when it began), for collision tests.
+    pub(crate) cruise: Option<(f32, u32)>,
+    /// Looking round with a mouse button: the cursor locked and hidden where it stands and
+    /// the view turned by the mouse's own movement (`App::sync_look_hold`); `true`: the look
+    /// locked it itself, `false`: it was the mouse steering's locked cursor already.
+    pub(crate) look_lock: Option<bool>,
     /// The cursor hidden while a controller drives: where it stood.
     pub(crate) cursor_hidden: Option<(f32, f32)>,
     /// The wheel's place when it last counted as moved.
@@ -354,6 +372,9 @@ pub(crate) struct MenuState {
     pub(crate) menu_kbd: bool,
     /// The next click on the city map puts the bus there (Esc → Move the bus on the map).
     pub(crate) teleport_pick: bool,
+    /// The game's own panels: the quick menu, the trip summary, the destination form, the
+    /// view editor (`game_panels`).
+    pub(crate) game_panels: crate::game_panels::GamePanels,
     /// The tutorial being run (`--tutorial`), loaded on the first frame.
     pub(crate) tutorial: Option<crate::tutorial::Tutorial>,
     /// The mouse wheel over the menu, notches not yet turned into lines.
@@ -395,6 +416,10 @@ pub(crate) struct SessionState {
     pub(crate) world_day: Option<(i32, Option<String>)>,
     pub(crate) traffic: Option<traffic::Traffic>,
     pub(crate) schedule: Option<schedule::Schedule>,
+    /// The map's timetable read for the menu while it does not run (timetable traffic off):
+    /// its lines and tours can be looked at and picked, as in OMSI 2. Picking a duty makes
+    /// it `schedule`, without timetable buses (`timetable_for_duty`).
+    pub(crate) timetable_book: Option<schedule::Schedule>,
     pub(crate) humans: Option<humans::Humans>,
     pub(crate) duty: Option<schedule::PlayerDuty>,
     /// The duty was told the places of the stops beyond the loaded tiles.

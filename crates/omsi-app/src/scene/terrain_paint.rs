@@ -170,10 +170,13 @@ pub(super) fn vegetation_give_of(sco: &omsi_scenery::sco::SceneryObject) -> Opti
         return None;
     }
     let stem = sco.path.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+    // (a group's words, each from its start: "German Street Side" holds "tree" within
+    // "street", and every pole, sign, lamp, traffic light and fence of OMSI's own street
+    // objects swayed in the wind with the trees)
     let plant = if groups.is_empty() {
         stem.split(|c: char| !c.is_alphabetic()).any(|w| NAME_WORDS.contains(&w))
     } else {
-        groups.iter().any(|g| GROUP_WORDS.iter().any(|w| g.contains(w)))
+        groups.iter().any(|g| g.split(|c: char| !c.is_alphabetic()).any(|word| GROUP_WORDS.iter().any(|w| word.starts_with(w))))
     };
     plant.then(|| vegetation_give(&[&stem, &groups.join(" ")]))
 }
@@ -220,6 +223,18 @@ pub(super) fn tree_card_sway(ot: &ObjectType, texture: &str) -> [f32; 3] {
     let shrub = ot.sco.tree.as_ref().is_some_and(|t| t.2 > 0.0 && t.2 <= 3.0);
     let path = ot.sco.path.to_string_lossy();
     [if shrub { SHRUB_CARD_PIVOT } else { TREE_CARD_PIVOT }, 1.0, vegetation_give(&[texture, &path])]
+}
+
+/// How a `[tree]`'s crossed cards stand for an object turned by `heading` (degrees,
+/// clockwise from above). Omsi.exe does not turn the cards with the object: it reads the
+/// angle of the object's x axis back from its quaternion (0x7efda8 - counter-clockwise from
+/// east, 0x7efb8c) and hands that angle to D3DXMatrixRotationY (0x774444), which turns the
+/// other way round in its left-handed frame - the cards stand mirrored about north against
+/// the object, counter-clockwise by the heading. Turned with the object as here before, a
+/// map's tree showed its picture's planes at other angles than in OMSI (alike only at
+/// multiples of 45 degrees).
+pub(super) fn tree_card_turn(heading: f64) -> Mat4 {
+    Mat4::from_rotation_z(heading.to_radians() as f32)
 }
 
 /// Where a `[tree]` card's crown leaves its trunk, and a shrub's (of the card's height).

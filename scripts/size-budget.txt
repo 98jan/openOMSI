@@ -37,7 +37,6 @@ fn 489 crates/omsi-app::spawn_player_prepared crates/omsi-app/src/spawn.rs
 fn 424 crates/omsi-app::draw_menu crates/omsi-app/src/ui.rs
 fn 349 crates/omsi-map::parse crates/omsi-map/src/tile.rs
 fn 491 crates/omsi-model::handle_keyword crates/omsi-model/src/lib.rs
-fn 326 crates/omsi-render::new_on crates/omsi-render/src/lib.rs
 fn 366 crates/omsi-script::aachen_ibox_route_pad crates/omsi-script/src/compat.rs
 fn 349 crates/omsi-sim::callback crates/omsi-sim/src/host.rs
 fn 441 crates/omsi-sim::advance crates/omsi-sim/src/human.rs

@@ -1208,7 +1208,7 @@ pub fn share_mods(args: &mut Args, lan: &mut LanSession) {
                 lan.warnings.push(text);
                 write_status(lan, &Default::default(), None);
             };
-            note(lan, "Host's mods: looking what is needed…".into());
+            note(lan, "Host's mods: looking what is needed...".into());
             let session = lan.session;
             // the host's TCP port is not always reachable (a router forwards the UDP session
             // only, or we came in over a WebSocket): the files go through its tunnel then
@@ -1781,12 +1781,12 @@ pub fn name_tags(
         };
         if d > 25.0 {
             let dist = if d >= 1000.0 { format!("{:.1} km", d / 1000.0) } else { format!("{:.0} m", d) };
-            sub = if sub.is_empty() { dist } else { format!("{sub} · {dist}") };
+            sub = if sub.is_empty() { dist } else { format!("{sub} | {dist}") };
         }
         if radio {
-            sub = if sub.is_empty() { omsi_ui::tr("radio").into_owned() } else { format!("{} · {sub}", omsi_ui::tr("radio")) };
+            sub = if sub.is_empty() { omsi_ui::tr("radio").into_owned() } else { format!("{} | {sub}", omsi_ui::tr("radio")) };
         } else if speaks(&r.name, r.last.id) {
-            sub = if sub.is_empty() { omsi_ui::tr("speaking").into_owned() } else { format!("{} · {sub}", omsi_ui::tr("speaking")) };
+            sub = if sub.is_empty() { omsi_ui::tr("speaking").into_owned() } else { format!("{} | {sub}", omsi_ui::tr("speaking")) };
         }
         let alpha = if radio { 1.0 } else { (1.0 - ((d as f32 - 300.0) / 150.0)).clamp(0.0, 1.0) };
         tags.push(((screen_x, (1.0 - y) * 0.5 * height), name, sub, alpha));

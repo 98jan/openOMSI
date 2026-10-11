@@ -96,7 +96,7 @@ fn route_numbers(app: &App) -> Vec<String> {
             }
         }
     }
-    if let Some(sch) = app.session.schedule.as_ref() {
+    if let Some(sch) = crate::duty_book::timetable(app) {
         for l in &sch.data.lines {
             let n = l.name.trim().to_string();
             if !n.is_empty() && !out.contains(&n) {
@@ -398,13 +398,13 @@ impl App {
 fn keyboard_pages(app: &App) -> Vec<Page> {
     let cfg = keyboard_cfg(app);
     let names = crate::describe::names(&app.args.root, &app.settings.language);
-    let mut vehicle = vec![opens("Add a vehicle event…", "Choose a control supplied by the bus or its mods", "key_events")];
+    let mut vehicle = vec![opens("Add a vehicle event...", "Choose a control supplied by the bus or its mods", "key_events")];
     let mut game = Vec::new();
     for (is_game, bindings, rows) in [(false, &cfg.vehicles, &mut vehicle), (true, &cfg.game, &mut game)] {
         let mut bindings: Vec<_> = bindings.iter().enumerate().collect();
         bindings.sort_by_key(|(_, b)| names.control(&b.action).to_lowercase());
         for (i, b) in bindings {
-            let key = if app.menus.key_capture == Some((is_game, i)) { "press a key…".into() }
+            let key = if app.menus.key_capture == Some((is_game, i)) { "press a key...".into() }
                 else { crate::keys::key_name(b.scan_code as i64, b.modifier as i64) };
             rows.push((row(&names.control(&b.action), 'a', &key, "Enter to change; Delete clears; Esc cancels", None),
                 format!("keybind {} {i}", if is_game { "g" } else { "v" })));
@@ -447,7 +447,7 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
             }
             events.sort_by(|a, b| a.1.to_ascii_lowercase().cmp(&b.1.to_ascii_lowercase()).then_with(|| a.0.to_ascii_lowercase().cmp(&b.0.to_ascii_lowercase())));
             for (action, label) in events {
-                out.push((format!("{label}  ·  KY_{action}"), format!("key_event {action}")));
+                out.push((format!("{label}  |  KY_{action}"), format!("key_event {action}")));
             }
             if out.is_empty() {
                 out.push(("No vehicle events were found".into(), "back".into()));
@@ -455,7 +455,7 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
             return out;
         }
         ListKind::Lines => {
-            if let Some(sch) = app.session.schedule.as_ref() {
+            if let Some(sch) = crate::duty_book::timetable(app) {
                 let mut lines: Vec<&omsi_timetable::Line> = sch.data.lines.iter().filter(|l| l.user_allowed && l.tours.iter().any(|t| tour_listed(sch, &l.name, t, app.clock.time))).collect();
                 lines.sort_by(|a, b| natural(&a.name, &b.name));
                 for l in lines {
@@ -467,8 +467,8 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
             }
         }
         ListKind::Tours(line, _) => {
-            if let Some(l) = app.session.schedule.as_ref().and_then(|s| s.data.lines.iter().find(|l| l.name == *line)) {
-                for t in sorted_tours(l).into_iter().filter(|t| app.session.schedule.as_ref().is_some_and(|s| tour_listed(s, line, t, app.clock.time))) {
+            if let Some(l) = crate::duty_book::timetable(app).and_then(|s| s.data.lines.iter().find(|l| l.name == *line)) {
+                for t in sorted_tours(l).into_iter().filter(|t| crate::duty_book::timetable(app).is_some_and(|s| tour_listed(s, line, t, app.clock.time))) {
                     // (the tours in order of the time they start)
                     out.push((format!("{} {}", tr("Tour"), t.number.trim()), format!("tour {}\u{1}{}", line, t.number)));
                 }
@@ -558,11 +558,11 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
                 if searching {
                     // (searched for: every type, under its manufacturer's name)
                     for v in vs {
-                        out.push((format!("{name}  ·  {}", v.2), format!("bus {}", v.3)));
+                        out.push((format!("{name}  |  {}", v.2), format!("bus {}", v.3)));
                     }
                 } else if vs.len() == 1 {
                     // (a manufacturer with one type: that type at once)
-                    out.push((format!("{name}  ·  {}", vs[0].2), format!("bus {}", vs[0].3)));
+                    out.push((format!("{name}  |  {}", vs[0].2), format!("bus {}", vs[0].3)));
                 } else {
                     out.push((format!("{name}  ({} {})", vs.len(), tr("models")), format!("maker {key}")));
                 }
@@ -581,7 +581,7 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
                     let parts: Vec<&str> = t.1.split('/').collect();
                     let folder = parts.get(1).copied().unwrap_or_default();
                     let file = parts.last().copied().unwrap_or_default().rsplit_once('.').map(|x| x.0).unwrap_or_default();
-                    label = format!("{label}  ·  {}  ·  {}", bus_label(folder), bus_label(file));
+                    label = format!("{label}  |  {}  |  {}", bus_label(folder), bus_label(file));
                 }
                 out.push((label, format!("bus {}", t.1)));
             }
@@ -628,11 +628,11 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
         let query = search_query(app);
         out.retain(|(label, action)| search_matches(label, action, query));
         let label = if app.menus.menu_edit_search {
-            format!("{}: {query}_  ({})", tr("Search…"), tr("Enter sets it, Esc cancels"))
+            format!("{}: {query}_  ({})", tr("Search..."), tr("Enter sets it, Esc cancels"))
         } else if query.is_empty() {
-            tr("Search…")
+            tr("Search...")
         } else {
-            format!("{}: {query}", tr("Search…"))
+            format!("{}: {query}", tr("Search..."))
         };
         out.insert(0, (label, "search".into()));
     }
@@ -674,7 +674,7 @@ pub(crate) fn menu_extras(
         ListKind::Keyboard(_) => (MenuKind::Options, head("Keyboard"), None),
         ListKind::ControllerDevices(_) => (MenuKind::Options, head("Game controllers"), None),
         ListKind::Controller(name, _) => (MenuKind::Options, Some((name.clone(), String::new())), None),
-        ListKind::ControllerAxis(name, a) => (MenuKind::Options, Some((format!("{} · Axis {}", name, a + 1), String::new())), None),
+        ListKind::ControllerAxis(name, a) => (MenuKind::Options, Some((format!("{} | Axis {}", name, a + 1), String::new())), None),
         ListKind::ControllerButtons(name) => (MenuKind::List, Some(("Choose a button".into(), name.clone())), None),
         ListKind::ControllerButtonSettings(name, b) => (MenuKind::Options, Some((crate::game_controller_menu::button_label(*b), name.clone())), None),
         ListKind::ControllerButton(_, b) => (MenuKind::List, Some((format!("{}: choose an action", crate::game_controller_menu::button_label(*b)), String::new())), None),
@@ -729,7 +729,7 @@ pub(crate) fn menu_extras(
                 let trip_line = tour_line(ln, num).unwrap_or_else(|| line_sign(schedule, line));
                 Some(Preview {
                     title: format!("{} {}", tr("Tour"), num.trim()),
-                    meta: format!("{} {}  ·  {} {}/{}  ·  {}", tr("Line"), trip_line, tr("Trip"), trip + 1, n_trips.max(1), tr("Choose the stop to start from")),
+                    meta: format!("{} {}  |  {} {}/{}  |  {}", tr("Line"), trip_line, tr("Trip"), trip + 1, n_trips.max(1), tr("Choose the stop to start from")),
                     rows,
                     chosen: Some(chosen),
                     button: Some(tr("Start trip")),
@@ -816,6 +816,7 @@ pub(crate) fn run_move(app: &mut App, kind: &ListKind, action: &str, mv: Move) -
                         app.menus.menu_edit = Some(String::new());
                     }
                 }
+                "view_editor" if step => { crate::game_panels::view_editor::open(app); return None; }
                 "seat_reset" if step => {
                     // (this bus's views as its .bus file has them again)
                     app.settings.seat = [0.0; 3];
@@ -904,7 +905,7 @@ pub(crate) fn run_move(app: &mut App, kind: &ListKind, action: &str, mv: Move) -
         ListKind::Tours(_, pick) => {
             if let Some((line, tour)) = arg.split_once('\u{1}') {
                 let chosen = pick.as_ref().filter(|p| p.0 == tour).map(|p| p.1).unwrap_or(0);
-                let trip = pick.as_ref().filter(|p| p.0 == tour).map(|p| p.2).unwrap_or_else(|| app.session.schedule.as_ref().map(|s| s.tour_trip_now(line, tour, app.clock.time)).unwrap_or(0));
+                let trip = pick.as_ref().filter(|p| p.0 == tour).map(|p| p.2).unwrap_or_else(|| crate::duty_book::timetable(app).map(|s| s.tour_trip_now(line, tour, app.clock.time)).unwrap_or(0));
                 start_duty_at(app, line, tour, trip, chosen);
             }
             None
@@ -1105,7 +1106,7 @@ fn steps_of(verb: &str) -> Option<Vec<f32>> {
         "ui_scale" => (10..=40).map(|v| v as f32 * 0.05).collect(),
         "chat_size" => (5..=30).map(|v| v as f32 * 0.1).collect(),
         "ui_opacity" => (4..=20).map(|v| v as f32 * 0.05).collect(),
-        "vol_ai" | "vol_scenery" => (0..=20).map(|v| v as f32 * 0.05).collect(),
+        "vol_ai" | "vol_scenery" | "vol_ambient" | "radio_speaker" | "radio_hiss" | "radio_dropouts" => (0..=20).map(|v| v as f32 * 0.05).collect(),
         "wheel_range" => (6..=60).map(|v| v as f32 * 30.0).collect(),
         "wheel_lock" => std::iter::once(0.0).chain((2..=60).map(|v| v as f32 * 30.0)).collect(),
         "fov" => std::iter::once(0.0).chain((20..=120).map(|v| v as f32)).collect(),
@@ -1141,6 +1142,8 @@ fn steps_of(verb: &str) -> Option<Vec<f32>> {
             v
         }
         "rain_amt" | "wet" => (0..=100).map(|v| v as f32 / 100.0).collect(),
+        // the cloud cover: one value from a clear sky to a closed one, in steps of 2 %
+        "cloud_cover" => (0..=50).map(|v| v as f32 / 50.0).collect(),
         "brightness" => (0..=30).map(|v| v as f32 * 0.05).collect(),
         "humidity" => (0..=100).map(|v| v as f32).collect(),
         "temp" => (-20..=45).map(|v| v as f32).collect(),
@@ -1152,7 +1155,7 @@ fn steps_of(verb: &str) -> Option<Vec<f32>> {
 
 /// The cloud types of OMSI's weather (`Weather/clouds.cfg`): the name in a weather file and
 /// the name shown.
-const CLOUD_TYPES: [(&str, &str); 5] = [("-1", "None"), ("Cumulus 1", "Few clouds"), ("Cumulus 2", "Scattered"), ("Cumulus 3", "Broken"), ("Overcast 1", "Overcast")];
+use crate::weather_setup::CLOUD_KINDS;
 
 /// The kinds of precipitation of a weather file (`[precip]`'s first number).
 const PRECIP_KINDS: [&str; 3] = ["None", "Rain", "Snow"];
@@ -1160,10 +1163,9 @@ const PRECIP_KINDS: [&str; 3] = ["None", "Rain", "Snow"];
 /// The name the weather has once it was set by hand.
 pub(crate) const CUSTOM_WEATHER: &str = "Custom weather";
 
-/// The index of the cloud type `kind` (a weather file's) in `CLOUD_TYPES`.
+/// The index of the cloud type `kind` (a weather file's) in `CLOUD_KINDS`.
 fn cloud_index(kind: &str) -> Option<usize> {
-    let k = kind.trim();
-    CLOUD_TYPES.iter().position(|(id, _)| id.eq_ignore_ascii_case(k) || (*id == "-1" && (k.is_empty() || k.starts_with("-1"))))
+    crate::weather_setup::cloud_kind_index(kind)
 }
 
 /// Set the kind of precipitation (an index of `PRECIP_KINDS`) of the weather set by hand.
@@ -1260,6 +1262,8 @@ fn option_now(app: &App, verb: &str, arg: &str) -> Option<f32> {
         "ui_opacity" => s.ui_opacity,
         "vol_ai" => s.vol_ai,
         "vol_scenery" => s.vol_scenery,
+        "vol_ambient" => s.vol_ambient,
+        "radio_speaker" | "radio_hiss" | "radio_dropouts" => *crate::radio::fx_setting(&mut s.radio_fx.clone(), verb).1,
         "wheel_range" => s.wheel_range,
         "wheel_lock" => s.wheel_lock,
         "triple_width_mm" => s.triple.width_mm,
@@ -1295,6 +1299,7 @@ fn option_now(app: &App, verb: &str, arg: &str) -> Option<f32> {
             if w.precip.first().copied().unwrap_or(0.0) < 0.5 { 0.0 } else { (w.precip.get(1).copied().unwrap_or(0.0) / 255.0).clamp(0.0, 1.0) }
         }
         "wet" => app.session.wetness,
+        "cloud_cover" => crate::weather_setup::cover_of(app.session.weather.as_ref()?),
         "brightness" => custom_state(app).brightness,
         "humidity" => custom_state(app).humidity,
         "temp" => app.session.weather.as_ref()?.temp.0,
@@ -1405,6 +1410,11 @@ fn option_set(app: &mut App, verb: &str, arg: &str, v: f32) -> Option<(&'static 
             app.settings.vol_scenery = (v * 100.0).round() / 100.0;
             Some(("vol_scenery", app.settings.vol_scenery.to_string()))
         }
+        "vol_ambient" => {
+            app.settings.vol_ambient = (v * 100.0).round() / 100.0;
+            Some(("vol_ambient", app.settings.vol_ambient.to_string()))
+        }
+        "radio_speaker" | "radio_hiss" | "radio_dropouts" => Some(crate::radio::set_fx_setting(&mut app.settings.radio_fx, verb, v)),
         "wheel_range" => {
             app.settings.wheel_range = v.round();
             Some(("wheel_range", app.settings.wheel_range.to_string()))
@@ -1534,6 +1544,18 @@ fn option_set(app: &mut App, verb: &str, arg: &str, v: f32) -> Option<(&'static 
         "wet" => {
             let mut c=custom_state(app); c.road_wetness=v; app.set_custom_weather(c); None
         }
+        "cloud_cover" => {
+            // (and the kind the cover stands nearest: the picture the sky is drawn with)
+            let v = v.clamp(0.0, 1.0);
+            app.edit_weather(|w| {
+                w.cloud_cover = Some(v);
+                w.clouds.0 = CLOUD_KINDS[crate::weather_setup::cloud_kind_nearest(v)].id.to_string();
+                if v <= 0.0 {
+                    w.clouds.1 = 0.0;
+                }
+            });
+            None
+        }
         "brightness" => {
             let mut c=custom_state(app); c.brightness=v; app.set_custom_weather(c); None
         }
@@ -1574,6 +1596,7 @@ fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "blinker_cancel" => s.blinker_cancel,
         "fps" => s.show_fps,
         "get_up" => s.get_up,
+        "trip_summary" => s.trip_summary,
         "time_sync" => s.time_sync,
         "metar_sync" => s.metar_sync,
         "snow_cover" => app.session.weather.as_ref().is_some_and(|w|w.snow),
@@ -1601,6 +1624,7 @@ fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "reflections" => s.reflections,
         "clouds" => s.clouds,
         "windy_trees" => s.windy_trees,
+        "ambient" => s.ambient,
         "fullscreen" => s.fullscreen,
         "vsync" => s.vsync,
         "texture_compression" => s.texture_compression,
@@ -1710,6 +1734,7 @@ fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static str, String
             app.settings.get_up = on;
             Some(("get_up", bit))
         }
+        "trip_summary" => { app.settings.trip_summary = on; Some(("trip_summary", bit)) }
         // the real-time sync: the clock takes the device's date and time at once (a host's
         // clock runs at real time while it is on, at its time speed again after)
         "time_sync" => {
@@ -1834,6 +1859,7 @@ fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static str, String
             app.settings.windy_trees = on;
             Some(("windy_trees", bit))
         }
+        "ambient" => { app.settings.ambient = on; Some(("ambient", bit)) }
         "fullscreen" => {
             app.settings.fullscreen = on;
             if app.gfx.spanned {
@@ -2068,7 +2094,7 @@ pub(crate) fn dropdown_for(app: &App, row: usize, id: &str) -> Option<Dropdown> 
         }
         "cloudkind" => {
             current = app.session.weather.as_ref().and_then(|w| cloud_index(&w.clouds.0));
-            CLOUD_TYPES.iter().enumerate().map(|(i, (_, n))| (tr(*n), format!("cloud {i}"))).collect()
+            CLOUD_KINDS.iter().enumerate().map(|(i, k)| (tr(k.label), format!("cloud {i}"))).collect()
         }
         "precipkind" => {
             current = app.session.weather.as_ref().map(|w| (w.precip.first().copied().unwrap_or(0.0).max(0.0) as usize).min(PRECIP_KINDS.len() - 1));
@@ -2122,9 +2148,11 @@ pub(crate) fn dropdown_apply(app: &mut App, action: &str) {
             app.session.metar_next = 0.0;
         }
         "cloud" => {
-            if let Some(i) = arg.trim().parse::<usize>().ok().filter(|i| *i < CLOUD_TYPES.len()) {
+            if let Some(i) = arg.trim().parse::<usize>().ok().filter(|i| *i < CLOUD_KINDS.len()) {
                 app.edit_weather(|w| {
-                    w.clouds.0 = CLOUD_TYPES[i].0.to_string();
+                    w.clouds.0 = CLOUD_KINDS[i].id.to_string();
+                    // (the kinds are points on the cover's scale: picking one sets the cover)
+                    w.cloud_cover = Some(CLOUD_KINDS[i].cover);
                     if i == 0 {
                         w.clouds.1 = 0.0;
                     }
@@ -2249,6 +2277,7 @@ fn select_options(key: &str) -> Vec<(&'static str, &'static str)> {
         "resolution" => crate::launcher::pages::RESOLUTIONS.to_vec(),
         "navigator_corner" => vec![("top-left", "Top left"), ("top-right", "Top right"), ("bottom-left", "Bottom left"), ("bottom-right", "Bottom right")],
         "boarding" => vec![("auto", "Pay and take the ticket"), ("pay", "The driver sells the ticket"), ("walk", "Just walk in")],
+        "standing_chance" => vec![("0", "Never"), ("5", "5%"), ("10", "10%"), ("25", "25%"), ("50", "50%"), ("100", "Always")],
         "pax_voices" => vec![("all", "Greetings and tickets"), ("tickets", "Only the ticket asked for"), ("off", "Silent")],
         "maintenance" => vec![("0", "Infinite (no wear)"), ("1", "Very bad"), ("2", "Bad"), ("3", "Normal"), ("4", "Good")],
         "ai_unsched_factor" => vec![("25", "25%"), ("50", "50%"), ("75", "75%"), ("100", "100%"), ("150", "150%"), ("200", "200%")],
@@ -2326,6 +2355,7 @@ fn sync_live(app: &mut App) {
     if let Some(h) = app.session.humans.as_mut() {
         h.exact_fare = s.exact_fare;
         h.boarding = s.boarding.clone();
+        h.stand_chance = s.standing_chance;
         h.voices = match s.pax_voices.as_str() {
             "off" => 2,
             "tickets" => 1,
@@ -2351,9 +2381,11 @@ fn options_pages(app: &App) -> Vec<Page> {
         switch_row(app, "coll_vehicles", "Collisions with vehicles", "Enables/Disables Collisions with Other Vehicles"),
         switch_row(app, "collision_pedestrians", "Collisions with people", "Enables/disables knocking down people"),
         switch_row(app, "timetable_win", "Timetable window (Insert)", "Displays a list of all stops (only when a tour is active)"),
+        switch_row(app, "trip_summary", "Trip summary", "At the end of each trip: its stops with the times planned and driven, to copy or to save"),
         switch_row(app, "info_bar", "Information bar (Shift+Y)", "Displays information such as the time, speed, and other details at the top of the screen"),
         switch_row(app, "exact_fare", "Passengers pay the exact fare", "No change is given at the cash desk"),
         pick("boarding", "Boarding", "How passengers get their tickets"),
+        pick("standing_chance", "Standing passengers", "The chance a passenger stands although a seat is free"),
         pick("maintenance", "Maintenance", later),
         pick("ai_unsched_factor", "Random traffic", later),
         pick("ai_max_scheduled", "Timetable vehicles", later),
@@ -2474,11 +2506,14 @@ fn options_pages(app: &App) -> Vec<Page> {
     let sound: Vec<(String, String)> = vec![
         slider_row(app, "volume", "Volume", "Set how loud the game should be", &pct),
         slider_row(app, "vol_ai", "Traffic", "How loud the other vehicles are", &pct),
+        switch_row(app, "ambient", "Ambience", "The place, the weather, the birds of the season and the town's life, from real recordings"),
+        slider_row(app, "vol_ambient", "Ambience volume", "How loud the ambience is", &pct),
         slider_row(app, "vol_scenery", "Surroundings", "How loud the sounds of the scenery are", &pct),
         switch_row(app, "doppler", "Doppler effect", "Approaching sounds higher, receding ones lower"),
         pick("pax_voices", "Passenger voices", "What passengers say"),
     ]
         .into_iter()
+        .chain(crate::radio::option_rows(app, &pct))
         .flatten()
         .collect();
     let mut camera: Vec<(String, String)> = vec![
@@ -2519,6 +2554,7 @@ fn options_pages(app: &App) -> Vec<Page> {
         .flatten()
         .collect();
     camera.push(button("Reset the seat position", "Reset", "Put the seat back where the vehicle has it.", "seat_reset"));
+    if app.player.is_some() && !app.vr_active() { camera.push(button("Edit the view and mirrors", "Open", "A panel at the side of the driver's view: the eye, the direction, the field of view and each mirror, saved for this vehicle.", "view_editor")); }
     if cfg!(windows) {
         camera.extend(
             vec![
@@ -2701,8 +2737,9 @@ fn world_pages(app: &App) -> Vec<Page> {
         if !app.metar_locked() {
             weather.push(button("Custom weather", "Edit current", "Freeze the weather currently in force and edit it as a custom weather.", "weather_custom"));
         }
-        let cloud = app.session.weather.as_ref().and_then(|w| cloud_index(&w.clouds.0)).map(|i| CLOUD_TYPES[i].1.to_string()).or_else(|| app.session.weather.as_ref().map(|w| w.clouds.0.trim().to_string())).unwrap_or_default();
-        weather.push((row("Clouds", 'o', &cloud, "The kind of clouds in the sky.", None), "cloudkind".to_string()));
+        // how much of the sky is covered: a slider, as the launcher's panel has it (the five
+        // cloud types are the points it runs between)
+        weather.extend(slider_row(app, "cloud_cover", "Cloud cover", "How much of the sky the clouds cover.", &|v| if v <= 0.0 { omsi_ui::tr("Clear sky").into_owned() } else { format!("{:.0} %", v * 100.0) }));
         weather.extend(slider_row(app, "visibility", "Visibility", "How far one can see; less is fog.", &|v| if v >= 1000.0 { format!("{:.1} km", v / 1000.0) } else { format!("{} m", v as i64) }));
         weather.extend(slider_row(app,"brightness","Brightness","Brightness of the custom weather lighting.",&|v|format!("{:.0} %",v*100.0)));
         let kind = app.session.weather.as_ref().map(|w| (w.precip.first().copied().unwrap_or(0.0).max(0.0) as usize).min(PRECIP_KINDS.len() - 1)).unwrap_or(0);
@@ -2713,7 +2750,7 @@ fn world_pages(app: &App) -> Vec<Page> {
         weather.extend(switch_row(app,"snow_road","Snow on road","Treat the road surface as snow-covered."));
         climate.extend(slider_row(app, "temp", "Temperature", "The air temperature.", &|v| format!("{} °C", v as i64)));
         let dew_temp=app.session.weather.as_ref().map(|w|w.temp.0).unwrap_or(15.0);
-        climate.extend(slider_row(app,"humidity","Humidity","Relative humidity of the air.",&|v|format!("{:.0} % · dew {:.0} °C",v,crate::weather_setup::dew_point_c(dew_temp,v))));
+        climate.extend(slider_row(app,"humidity","Humidity","Relative humidity of the air.",&|v|format!("{:.0} % | dew {:.0} °C",v,crate::weather_setup::dew_point_c(dew_temp,v))));
         climate.extend(slider_row(app, "wind_speed", "Wind speed", "How fast the wind blows; it drives the clouds.", &|v| format!("{} m/s", v as i64)));
         climate.extend(slider_row(app, "wind_dir", "Wind direction", "The direction of the wind in degrees (0 is north).", &|v| format!("{}°", v as i64)));
         // the METAR sync on: only its own rows stay (the weather is the report's)
@@ -2748,9 +2785,9 @@ fn pages_of(app: &App, kind: &ListKind) -> Option<(Vec<Page>, usize)> {
     Some((pages, tab))
 }
 
-/// Which tab of the Options window is the one titled `title` (the first if none is).
-pub(crate) fn options_tab(app: &App, title: &str) -> usize {
-    pages_of(app, &ListKind::Options(0)).and_then(|(pages, _)| pages.iter().position(|p| p.0 == title)).unwrap_or(0)
+/// Which tab of a window (`kind`: Options, World ...) is the one titled `title` (the first if none is).
+pub(crate) fn tab_of(app: &App, kind: ListKind, title: &str) -> usize {
+    pages_of(app, &kind).and_then(|(pages, _)| pages.iter().position(|p| p.0 == title)).unwrap_or(0)
 }
 
 type TitlesCache = Option<(ListKind, bool, std::time::Instant, (Vec<String>, usize))>;
@@ -2949,10 +2986,10 @@ fn switch_driver(app: &mut App, name: &str) {
 fn fleet_numbers(v: &omsi_sim::VehicleInstance) -> Vec<(String, String)> {
     let def = &v.ty.def;
     def.numbers_with_plates()
-        .into_iter()
+        .iter()
         .map(|(n, _)| {
-            let reg = if def.registration_mode == 1 { String::new() } else { def.chosen_plate_of_number(&n) };
-            (n, reg)
+            let reg = if def.registration_mode == 1 { String::new() } else { def.chosen_plate_of_number(n) };
+            (n.clone(), reg)
         })
         .collect()
 }
@@ -2969,7 +3006,7 @@ pub(crate) fn tour_at(app: &App, k: usize) -> Option<(String, String)> {
 /// from, the trip chosen and how many trips the tour has.
 pub(crate) fn tour_choice(app: &App, k: usize) -> Option<(usize, usize, usize, usize)> {
     let (line, tour) = tour_at(app, k)?;
-    let sch = app.session.schedule.as_ref()?;
+    let sch = crate::duty_book::timetable(app)?;
     let trips = sch.tour_trip_count(&line, &tour);
     let (stop, trip) = match app.menus.list_kind.as_ref() {
         Some(ListKind::Tours(_, Some(p))) if p.0 == tour => (p.1, p.2),
@@ -2983,6 +3020,7 @@ pub(crate) fn tour_choice(app: &App, k: usize) -> Option<(usize, usize, usize, u
 /// Start the tour at stop number `chosen` of trip number `trip` of the tour (the trip chosen
 /// by its time): the duty goes on from that stop, the bus stays where it is.
 pub(crate) fn start_duty_at(app: &mut App, line: &str, tour: &str, trip: usize, chosen: usize) {
+    crate::duty_book::timetable_for_duty(app);
     let now = app.clock.time;
     let Some((k, j)) = app.session.schedule.as_ref().and_then(|s| s.tour_trip_stops(line, tour, trip).get(chosen).map(|x| (x.0, x.1))) else {
         return start_duty(app, line, tour);
@@ -3000,9 +3038,8 @@ pub(crate) fn start_duty_at(app: &mut App, line: &str, tour: &str, trip: usize, 
     // (no teleport: the stop chosen is the one the bus drives to next)
     d.start_at_here(k, j);
     if let Some(p) = app.player.as_mut() {
+        // (nothing typed into the IBIS or the blind, as in OMSI 2: Shift+U does that)
         d.update(&mut p.vehicle, now);
-        let (trip, stop) = d.trip_for_ibis();
-        p.set_duty_destination(trip, stop);
         if let Some(w) = app.world.as_ref() {
             let mut fonts = w.fonts.lock();
             if let Err(e) = crate::schedule_paper::update_vehicle(&mut p.vehicle, &d, &mut fonts) {
@@ -3017,14 +3054,13 @@ pub(crate) fn start_duty_at(app: &mut App, line: &str, tour: &str, trip: usize, 
 }
 
 fn start_duty(app: &mut App, line: &str, tour: &str) {
+    crate::duty_book::timetable_for_duty(app);
     let (Some(w), Some(sch)) = (app.world.clone(), app.session.schedule.as_mut()) else { return };
     let now = app.clock.time;
     match sch.player_duty(&w, line, tour, now, None, false) {
         Ok(mut d) => {
             if let Some(p) = app.player.as_mut() {
                 d.update(&mut p.vehicle, now);
-                let (trip, stop) = d.trip_for_ibis();
-                p.set_duty_destination(trip, stop);
                 let mut fonts = w.fonts.lock();
                 if let Err(e) = crate::schedule_paper::update_vehicle(
                     &mut p.vehicle,

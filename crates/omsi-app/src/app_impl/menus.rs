@@ -96,6 +96,11 @@ impl App {
     /// The mouse wheel over the game menu: the chosen line moves (the menu scrolls with it),
     /// in a list the same; no wrapping round.
     pub(crate) fn menu_wheel(&mut self, amount: f32) {
+        // (the pause menu of the launcher's toolkit scrolls what is under the mouse itself)
+        if self.shell_takes_mouse() {
+            self.shell.wheel(amount);
+            return;
+        }
         // (an open drop-down scrolls, not the window under it)
         if self.menus.dropdown.is_some() {
             self.menus.wheel_acc += amount;
@@ -160,7 +165,7 @@ impl App {
             "options" => self.open_list(crate::game_lists::ListKind::Options(0)),
             "controls" => self.open_list(crate::game_lists::ListKind::Controls),
             "camera" => {
-                let tab = crate::game_lists::options_tab(self, "Camera");
+                let tab = crate::game_lists::tab_of(self, crate::game_lists::ListKind::Options(0), "Camera");
                 self.open_list(crate::game_lists::ListKind::Options(tab));
             }
             "vehicle" => self.open_list(crate::game_lists::ListKind::Vehicle(0)),
@@ -190,6 +195,10 @@ impl App {
             "shot" => {
                 self.close_game_menu();
                 self.take_screenshot();
+            }
+            "photo" => {
+                self.close_game_menu();
+                self.enter_photo();
             }
             "skipstop" => {
                 self.close_game_menu();
@@ -294,6 +303,10 @@ impl App {
                     self.service_msg = Some(("Click a street on the map: the bus is put there".into(), 6.0));
                 }
             }
+            // (the game's own panels, by name for the plugins and the input script)
+            "view_editor" => crate::game_panels::view_editor::open(self),
+            "dest_form" => crate::game_panels::open_dest_form(self),
+            "quick_menu" => crate::game_panels::quick_menu::toggle(self),
             "driver" => self.open_list(crate::game_lists::ListKind::Drivers),
             "number" => self.open_list(crate::game_lists::ListKind::Numbers),
             "dest" => self.open_list(crate::game_lists::ListKind::Destinations),
@@ -354,7 +367,7 @@ pub(crate) const SERVER_GAME_MENU: [(&str, &str); 8] = [
     ("vehicle", "Vehicle options..."),
     ("world", "World options..."),
     ("map", "City map"),
-    ("shot", "Screenshot"),
+    ("photo", "Photo mode"),
     ("quit", "Leave the server"),
 ];
 
@@ -483,6 +496,6 @@ pub(crate) const GAME_MENU: [(&str, &str); 15] = [
     ("save", "Save the situation"),
     ("saveslot", "Save to a new slot"),
     ("load", "Load the quicksave"),
-    ("shot", "Screenshot"),
+    ("photo", "Photo mode"),
     ("quit", "End the session"),
 ];

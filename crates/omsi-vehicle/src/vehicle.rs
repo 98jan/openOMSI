@@ -517,17 +517,17 @@ impl Vehicle {
     /// The fleet numbers of the `[number]` list with the plate `[registration_list]`'s file
     /// gives each - line by line beside it, empty lines counted (0x614f90) - and no plate
     /// where that file has none.
-    pub fn numbers_with_plates(&self) -> Vec<(String, String)> {
-        let Some(list) = self.number_file.as_ref() else { return Vec::new() };
-        // (read once per bus: the AI asks it for every bus it puts on the road)
-        static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, Vec<(String, String)>>>> = std::sync::OnceLock::new();
-        let key = self.path.clone();
-        if let Some(v) = CACHE.get_or_init(Default::default).lock().ok().and_then(|c| c.get(&key).cloned()) {
+    pub fn numbers_with_plates(&self) -> std::sync::Arc<[(String, String)]> {
+        let Some(list) = self.number_file.as_ref() else { return std::sync::Arc::new([]) };
+        // (read once per bus: the AI asks it for every bus it puts on the road; shared, so a
+        // look-up copies no list - one plate asked for copied all of them)
+        static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<std::path::PathBuf, std::sync::Arc<[(String, String)]>>>> = std::sync::OnceLock::new();
+        if let Some(v) = CACHE.get_or_init(Default::default).lock().ok().and_then(|c| c.get(&self.path).cloned()) {
             return v;
         }
-        let out = self.read_numbers_with_plates(list);
+        let out: std::sync::Arc<[(String, String)]> = self.read_numbers_with_plates(list).into();
         if let Ok(mut c) = CACHE.get_or_init(Default::default).lock() {
-            c.insert(key, out.clone());
+            c.insert(self.path.clone(), out.clone());
         }
         out
     }
@@ -571,8 +571,8 @@ impl Vehicle {
 
     fn plate_from(&self, number: &str, list: bool) -> String {
         if list {
-            if let Some((_, p)) = self.numbers_with_plates().into_iter().find(|(n, p)| n == number.trim() && !p.is_empty()) {
-                return p;
+            if let Some((_, p)) = self.numbers_with_plates().iter().find(|(n, p)| n == number.trim() && !p.is_empty()) {
+                return p.clone();
             }
         }
         let (pre, post) = (&self.registration_affix.0, &self.registration_affix.1);

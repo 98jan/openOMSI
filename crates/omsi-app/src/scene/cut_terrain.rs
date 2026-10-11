@@ -83,7 +83,7 @@ impl World {
         let (x0, y0) = (tx as f64 * tile_size(), ty as f64 * tile_size());
         let (mut ts, hole_rims, wheel_meshes) = self.tile_surface(p, staged, layout, debug_raster);
         // (before the paint is cut: under a road the ground's layer is never asked for)
-        ts.sound = self.ground_sound(p);
+        ts.sound = self.ground_sound(p, staged.get(&key).map(|q| q.as_ref()), &ts.drive);
         if omsi_cfg::flags::OMSI_DEBUG_SURFACES.is_set() {
             let faces: Vec<String> = ts.drive.surface_examples().iter().map(|(id, n, m)| format!("{id}: {n} faces e.g. ({:.0}, {:.0}, {:.1})", x0 + m.x as f64, y0 + m.y as f64, m.z)).collect();
             log::info!("tile ({tx}, {ty}): wheel faces by surface {}", faces.join(", "));
@@ -91,7 +91,7 @@ impl World {
         let tile_terrain = self.terrains.read().get(&key).cloned();
         p.hole_walls = tile_terrain
             .as_ref()
-            .map(|terrain| omsi_geometry::terrain_hole_walls(&hole_rims, terrain))
+            .map(|terrain| omsi_geometry::terrain_hole_walls_with_roads(&hole_rims, terrain, &ts.drive))
             .unwrap_or_default();
         // How much of the ground the old cut rule ("anything below the terrain takes
         // it away") would have removed with nothing to put in its place: a hole in
@@ -411,7 +411,7 @@ fn ground_cut_check(
 impl World {
     /// What the ambience hears of a tile: the surface of its ground layers where they show,
     /// its trees and how many objects stand on it.
-    fn ground_sound(&self, p: &Prepared) -> omsi_geometry::GroundSound {
+    fn ground_sound(&self, p: &Prepared, q: Option<&StagedTile>, drive: &omsi_geometry::DriveGrid) -> omsi_geometry::GroundSound {
         let root = [self.root.as_path()];
         let ids: Vec<u8> = self.global.ground_textures.iter().map(|g| surface_id(&g.texture, &root)).collect();
         // (a map without ground textures is a meadow)
@@ -423,8 +423,9 @@ impl World {
             .collect();
         let mut g = omsi_geometry::GroundSound::from_layers(GROUND_SOUND_CELLS, base, &layers);
         let (x0, y0) = (p.tx as f64 * tile_size(), p.ty as f64 * tile_size());
-        g.trees = p.trees.iter().map(|t| [(t.2.x - x0) as f32, (t.2.y - y0) as f32, t.3 as f32]).collect();
+        g.trees = p.trees.iter().map(|t| [(t.2.x - x0) as f32, (t.2.y - y0) as f32, t.3 as f32, if crate::soundscape::catalog::is_conifer(&t.0.sco, &t.1) { 1.0 } else { 0.0 }]).collect();
         g.objects = p.objects.len() as u32;
+        self.sound_places(p, q, drive, &mut g);
         if omsi_cfg::flags::OMSI_DEBUG_SURFACES.is_set() {
             // where each surface of the ground shows on this tile (a place to try it)
             let n = g.size;
@@ -436,7 +437,7 @@ impl World {
                     seen.push(format!("{id}: {:.0} % e.g. ({:.0}, {:.0})", cells.len() as f32 * 100.0 / (n * n) as f32, x0 + (k % n) as f64 * cell + cell / 2.0, y0 + (k / n) as f64 * cell + cell / 2.0));
                 }
             }
-            log::info!("tile ({}, {}): ground surfaces {}; {} trees, {} objects", p.tx, p.ty, seen.join(", "), g.trees.len(), g.objects);
+            log::info!("tile ({}, {}): ground surfaces {}; {} trees, {} objects; for the ambience {} buildings, {} known objects, {} lines, {} water cells (water {:?})", p.tx, p.ty, seen.join(", "), g.trees.len(), g.objects, g.buildings.len(), g.spots.len(), g.lines.len(), g.water.len(), p.water);
         }
         g
     }
@@ -519,3 +520,79 @@ fn cut_paint(p: &mut Prepared, cut: Option<&Image>) {
         })
         .collect();
 }
+
+impl World {
+    /// The rest of what the ambience hears of a tile: its buildings (a model as tall and as
+    /// wide as a house), the objects it knows by what their authors filed them as, the lanes,
+    /// tracks, wires and tunnels along its splines, and where its water stands over the
+    /// ground.
+    fn sound_places(&self, p: &Prepared, q: Option<&StagedTile>, drive: &omsi_geometry::DriveGrid, g: &mut omsi_geometry::GroundSound) {
+        use crate::soundscape::catalog;
+        let (x0, y0) = (p.tx as f64 * tile_size(), p.ty as f64 * tile_size());
+        let local = |w: DVec3| [(w.x - x0) as f32, (w.y - y0) as f32, w.z as f32];
+        // (the model's box per type: the same house stands many times)
+        let mut boxes: HashMap<*const ObjectType, Option<(glam::Vec3, glam::Vec3)>> = HashMap::new();
+        for o in &p.objects {
+            let kind = catalog::classify(&o.ot.sco);
+            if let Some(k) = kind {
+                g.spots.push(omsi_geometry::SoundSpot { kind: k as u16, pos: local(o.pos), id: o.map_id });
+            }
+            let Some((lo, hi)) = *boxes.entry(Arc::as_ptr(&o.ot)).or_insert_with(|| model_box(&o.ot)) else { continue };
+            // (placed: turned and scaled as the map has it)
+            let corners = [lo, hi, glam::Vec3::new(lo.x, hi.y, lo.z), glam::Vec3::new(hi.x, lo.y, hi.z)].map(|c| o.xf.transform_vector3(c));
+            let (mut a, mut b) = (corners[0], corners[0]);
+            for c in corners {
+                a = a.min(c);
+                b = b.max(c);
+            }
+            let size = b - a;
+            if size.z >= BUILDING_HEIGHT && size.x.min(size.y) >= BUILDING_WIDTH {
+                let l = local(o.pos);
+                g.buildings.push([l[0], l[1], size.z]);
+            }
+        }
+        if let Some(q) = q {
+            for (kind, speed, points) in &q.sound_lines {
+                g.lines.push(omsi_geometry::SoundLine { kind: *kind, speed: *speed, points: points.iter().map(|w| local(*w)).collect() });
+            }
+        }
+        // the water: cells whose surface stands over the ground
+        // (only where the ground is known: without it nothing says the water lies over it)
+        if let (Some(w), Some(terrain)) = (p.water, self.terrains.read().get(&(p.tx, p.ty)).cloned()) {
+            let level = (w[0] + w[1] + w[2] + w[3]) / 4.0;
+            let n = WATER_CELLS;
+            let cell = tile_size() as f32 / n as f32;
+            for j in 0..n {
+                for i in 0..n {
+                    let (x, y) = ((i as f32 + 0.5) * cell, (j as f32 + 0.5) * cell);
+                    // (and nothing laid over it: under a road or a quay the ground often
+                    // lies below the water's level, and no water is seen there)
+                    let covered = drive.surface_at(x, y, level + 30.0).is_some_and(|(z, _)| z > level - 1.0);
+                    if terrain.sample(x, y) < level - 0.2 && !covered {
+                        g.water.push([x, y]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The box of an object type's model (its first level of detail), in its own frame.
+fn model_box(ot: &ObjectType) -> Option<(glam::Vec3, glam::Vec3)> {
+    let mut points = ot.meshes.iter().flat_map(|(m, _, _)| m.positions.iter().copied());
+    let first = glam::Vec3::from(points.next()?);
+    let (mut lo, mut hi) = (first, first);
+    for p in points {
+        let p = glam::Vec3::from(p);
+        lo = lo.min(p);
+        hi = hi.max(p);
+    }
+    Some((lo, hi))
+}
+
+/// A building to the ambience: at least this tall (m) …
+const BUILDING_HEIGHT: f32 = 4.0;
+/// … and this wide both ways (m) - a wall, a fence, a mast is not.
+const BUILDING_WIDTH: f32 = 4.0;
+/// Cells per tile edge where the ambience looks for water (some 19 m on a Berlin tile).
+const WATER_CELLS: usize = 16;

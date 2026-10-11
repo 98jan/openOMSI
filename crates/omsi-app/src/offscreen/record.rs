@@ -17,6 +17,7 @@ const RATE: u32 = 48_000;
 pub(super) struct Recorder {
     audio: omsi_audio::AudioEngine,
     ambience: crate::ambience::Ambience,
+    soundscape: crate::soundscape::Soundscape,
     fps: f32,
     from: f32,
     dir: PathBuf,
@@ -44,8 +45,9 @@ impl Recorder {
             p.load_sounds(&audio);
         }
         let ambience = crate::ambience::Ambience::load(&audio, root);
+        let soundscape = crate::soundscape::Soundscape::new(true, 0.8);
         log::info!("record: {fps} pictures a second from {from} s into {}, the sound into {stem}.wav", dir.display());
-        Some(Recorder { audio, ambience, fps, from, dir, wav: out.with_file_name(format!("{stem}.wav")), samples: Vec::new(), mixed: 0, pictures: 0, peak: 0.0 })
+        Some(Recorder { audio, ambience, soundscape, fps, from, dir, wav: out.with_file_name(format!("{stem}.wav")), samples: Vec::new(), mixed: 0, pictures: 0, peak: 0.0 })
     }
 }
 
@@ -144,7 +146,33 @@ impl Offscreen<'_> {
         if let Some(t) = self.traffic.as_mut() {
             t.update_audio(a, cam.position, street, inside, None);
         }
-        rec.ambience.update(a, dt, precip_of(&self.weather), inside, street, cam.position, &[]);
+        let daylight = omsi_sim::Daylight::compute(&self.run_clock, self.envir.as_ref());
+        let people = self.humans_off.as_ref().map(|h| h.people.iter().filter(|p| (p.position - cam.position).length() < 40.0).count() as u32).unwrap_or(0);
+        let open = self.player.as_ref().and_then(|p| p.vehicle.var("Snd_OutsideVol")).unwrap_or(0.0);
+        rec.soundscape.update(
+            a,
+            crate::soundscape::Moment {
+                world: Some(&self.world),
+                weather: Some(&self.weather),
+                clock: &self.run_clock,
+                sun: daylight.altitude_deg,
+                wetness: crate::puddles::road_wetness(self.wetness, self.weather.snow),
+                ear: cam.position,
+                inside,
+                open,
+                people,
+                paused: false,
+                dt,
+            },
+        );
+        if let Some(every) = omsi_cfg::flags::OMSI_DEBUG_SOUND.parse::<f32>().filter(|e| *e > 0.0) {
+            if (t_s / every).floor() != ((t_s - dt) / every).floor() {
+                let heard = rec.soundscape.take_heard();
+                log::info!("sound: ambience at {t_s:.0} s - {}; heard {heard}", rec.soundscape.last);
+            }
+        }
+        let precip = if rec.soundscape.active() { (0, 0.0) } else { precip_of(&self.weather) };
+        rec.ambience.update(a, dt, precip, inside, street, cam.position, &[]);
         // the sound of this step, to the sample (no drift between the picture and the sound)
         let due = (((i + 1) as f64) * dt as f64 * RATE as f64).round() as u64;
         let n = due.saturating_sub(rec.mixed) as usize;
