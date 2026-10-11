@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// What `Pose::foot_targets` finds for the two feet (see there).
+type FootTargets = ([Vec3; 2], [Mat3A; 2], [f32; 2], [Vec3; 2], [f32; 2], [Option<(f32, f32, f32)>; 2], [f32; 2]);
+
 impl Pose {
     /// Bone transforms for the current state.
     pub fn bones(&mut self, rig: &Rig) -> Posed {
@@ -21,70 +24,7 @@ impl Pose {
         let still = 1.0 - walk;
 
         // --- feet targets (model frame): ankle positions, foot yaw and pitch ---
-        let mut ankle_t = [Vec3::ZERO; 2];
-        let mut foot_rot = [Mat3A::IDENTITY; 2];
-        // the toes bend up against the foot while the heel is up, and straighten in the air
-        let mut toe_bend = [0f32; 2];
-        let mut foot_fwd = [Vec3::Y; 2];
-        let mut foot_yaw = [0f32; 2];
-        // a foot in the air: (progress, pitch at lift-off, pitch to land with); its pitch
-        // follows the shin once the leg is solved
-        let mut swing: [Option<(f32, f32, f32)>; 2] = [None; 2];
-        let mut swing_floor = [0f32; 2];
-        for side in 0..2 {
-            let f = self.feet[side];
-            let u = (self.phase + if side == 0 { 0.0 } else { 0.5 }) % 1.0;
-            let (ankle, yaw, pitch) = if f.planted {
-                // (a lift-off held back while the other foot is still in the air keeps the
-                // push-off pitch: drawn flat meanwhile, the ankle leapt 7 cm up and forward
-                // the moment the foot left)
-                let pitch = if f.walk && self.gait && u < beta + 0.3 {
-                    stance_pitch(u.min(beta), beta, walk)
-                } else {
-                    0.0
-                };
-                toe_bend[side] = (-pitch).max(0.0);
-                (Self::stance_ankle(rig, &f, pitch), f.yaw, pitch)
-            } else {
-                let t = f.t.clamp(0.0, 1.0);
-                let land_pitch = if f.walk { heel_pitch(walk) } else { 0.0 };
-                let land = {
-                    let g = Foot {
-                        pos: DVec3::new(f.to.x, f.to.y, f.land_z),
-                        yaw: f.to_yaw,
-                        ..f
-                    };
-                    Self::stance_ankle(rig, &g, land_pitch)
-                };
-                let s = smoothstep(0.0, 1.0, t) as f64;
-                let mut a = f.from_ankle + (land - f.from_ankle) * s;
-                // up a step the foot rises early, down one it drops late
-                // (blended by the height, not switched: the curve changing mid-swing moved
-                // the foot as much as the floor did)
-                let rise = (land.z - f.from_ankle.z) as f32;
-                let up = smoothstep(0.0, 0.06, rise);
-                let down = smoothstep(0.0, 0.06, -rise);
-                let zt = t * (1.0 - up - down) + smoothstep(0.0, 0.55, t) * up + smoothstep(0.35, 1.0, t) * down;
-                let bumpf = (PI * t.powf(0.75)).sin().max(0.0);
-                a.z = f.from_ankle.z
-                    + (land.z - f.from_ankle.z) * zt as f64
-                    + (f.lift * bumpf) as f64;
-                let yaw = f.from_yaw + angle_diff(f.from_yaw, f.to_yaw) * s;
-                toe_bend[side] = (-f.from_pitch).max(0.0) * (1.0 - smoothstep(0.0, 0.35, t));
-                if f.walk {
-                    swing[side] = Some((t, f.from_pitch, land_pitch));
-                }
-                swing_floor[side] =
-                    (f.from_floor + (f.land_z - f.from_floor) * zt as f64 - self.origin.z) as f32;
-                (a, yaw, 0.0)
-            };
-            let local = self.to_local(ankle);
-            let yaw_l = angle_diff(self.heading, yaw) as f32;
-            ankle_t[side] = local;
-            foot_rot[side] = Mat3A::from_quat(yaw_quat(yaw_l) * Quat::from_rotation_x(d(pitch)));
-            foot_fwd[side] = yaw_quat(yaw_l) * Vec3::Y;
-            foot_yaw[side] = yaw_l;
-        }
+        let (mut ankle_t, mut foot_rot, toe_bend, foot_fwd, foot_yaw, swing, swing_floor) = self.foot_targets(rig, walk, beta);
 
         // --- pelvis ---
         let sway = rig.hip_sway.sqrt();
@@ -243,33 +183,7 @@ impl Pose {
                 two_bone(hip_at, rig.thigh, rig.shin, ankle_t[side], pole);
             let side_v = hinge;
             if let Some((t, from, land)) = swing[side] {
-                // in the air the ankle goes from pointed (push-off) through neutral to a
-                // little flexed; the pitch is that against the shin, blended from the
-                // push-off and into the heel strike
-                let s_dir = (ankle_at - knee_at).normalize_or(-Vec3::Z);
-                let neutral = side_v.cross(s_dir).normalize_or(Vec3::Y);
-                let shin_pitch = neutral.z.clamp(-1.0, 1.0).asin().to_degrees();
-                let ankle = -14.0 + 14.0 * smoothstep(0.0, 0.5, t) + 3.0 * smoothstep(0.5, 0.85, t);
-                let rel = shin_pitch + ankle;
-                let from_w = 1.0 - smoothstep(0.0, 0.3, t);
-                let land_w = smoothstep(0.65, 1.0, t);
-                let mut pitch = (rel + (from - rel) * from_w) * (1.0 - land_w) + land * land_w;
-                // the toes clear the floor, the heel too
-                let ah = rig.ankle_h;
-                // At lift-off/landing the sole is still touching the floor. Requiring
-                // 12 mm of clearance there gives mutually impossible heel/toe limits:
-                // the last clamp tips the shoe through the floor. Spend only the
-                // clearance the ankle has actually gained above its resting height.
-                let height = ankle_at.z - swing_floor[side];
-                let above = height - (height - ah).clamp(0.0, 0.012);
-                let (rt, pt) = ((rig.toe * rig.toe + ah * ah).sqrt(), ah.atan2(rig.toe));
-                if -above / rt > -1.0 {
-                    pitch = pitch.max((pt + (-above / rt).min(1.0).asin()).to_degrees());
-                }
-                let (rh, phh) = ((rig.heel * rig.heel + ah * ah).sqrt(), ah.atan2(-rig.heel));
-                if -above / rh > -1.0 {
-                    pitch = pitch.min(-(phh + (-above / rh).min(1.0).asin()).to_degrees());
-                }
+                let pitch = Self::swing_pitch(rig, t, from, land, knee_at, ankle_at, side_v, swing_floor, side);
                 foot_rot[side] =
                     Mat3A::from_quat(yaw_quat(foot_yaw[side]) * Quat::from_rotation_x(d(pitch)));
             }
@@ -340,59 +254,7 @@ impl Pose {
             let hang_wrist = sh_at + trunk_rot * wrist_l;
             let hang_elbow = sh_at + trunk_rot * elbow_l;
             let hang_pole = hang_elbow - (sh_at + hang_wrist) * 0.5;
-            // seated: hands on the thighs
-            let hip_at = posed.hip[side];
-            let knee_at = posed.knee[side];
-            let lap =
-                hip_at + (knee_at - hip_at) * 0.55 + Vec3::new(-s * 0.02, 0.0, 0.11 * rig.scale);
-            let lap_pole = pelvis_q * Vec3::new(s * 0.5, -1.0, -0.2);
-            let sit_w = smoothstep(0.35, 1.0, sit);
-            let mut target = hang_wrist.lerp(lap, sit_w);
-            let mut pole = hang_pole.normalize_or(-Vec3::Y).lerp(lap_pole, sit_w);
-            if side == 1 && self.reach > 0.0 {
-                let r = smoothstep(0.0, 1.0, self.reach);
-                let reach_to = self.reach_at;
-                // not further than the arm, and not through the body
-                let v = reach_to - sh_at;
-                let reach_to = sh_at
-                    + v.normalize_or(Vec3::Y)
-                        * v.length().min((rig.upper_arm + rig.forearm) * 0.96);
-                target = target.lerp(reach_to, r);
-                pole = pole.lerp(Vec3::new(0.6, -0.3, -1.0), r);
-            }
-            if self.hold > 0.0 && !(side == 1 && self.reach > 0.3) {
-                let h = smoothstep(0.0, 1.0, self.hold);
-                let hold_side = if self.style[2] > 0.0 { 1 } else { 0 };
-                if side == hold_side {
-                    let reach = rig.upper_arm + rig.forearm;
-                    // the handrail over the aisle, or a pole for those who cannot reach it
-                    let rail = 1.8;
-                    let grip = if rig.shoulder[side].z + reach * 0.97 >= rail {
-                        Vec3::new(
-                            s * (rig.shoulder[1].x + 0.05),
-                            rig.shoulder[1].y + 0.1,
-                            rail + self.body_floor,
-                        )
-                    } else {
-                        Vec3::new(
-                            s * 0.2 * rig.scale,
-                            0.28 * rig.scale,
-                            rig.shoulder[1].z - 0.2 * rig.scale + self.body_floor,
-                        )
-                    };
-                    target = target.lerp(grip, h);
-                    pole = pole.lerp(Vec3::new(s, -0.2, -0.5), h);
-                }
-            }
-            if self.grip > 0.0 {
-                // on the steering wheel: the elbows down and a little out
-                let g = smoothstep(0.0, 1.0, self.grip);
-                let v = self.grip_at[side] - sh_at;
-                let to = sh_at
-                    + v.normalize_or(Vec3::Y) * v.length().min((rig.upper_arm + rig.forearm) * 0.97);
-                target = target.lerp(to, g);
-                pole = pole.lerp(Vec3::new(s * 0.7, -0.2, -1.0), g);
-            }
+            let (target, pole) = self.arm_target(rig, &posed, side, s, sh_at, hang_wrist, hang_pole, pelvis_q, sit);
             let (el_at, wr_at, _) = two_bone(sh_at, rig.upper_arm, rig.forearm, target, pole);
             let a1 = (el_at - sh_at).normalize_or(-Vec3::Z);
             let c1 = (wr_at - el_at).normalize_or(-Vec3::Z);
@@ -407,26 +269,7 @@ impl Pose {
             let c0 = rig.wrist[side] - rig.elbow[side];
             let r_upper = bone_rot(a0, Vec3::Y, a1, f1);
             let r_fore = bone_rot(c0, Vec3::Y, c1, f1_fore);
-            // the wrist: relaxed, a little flexed towards the palm (down in the T-pose);
-            // flat for the desk
-            let hinge0 = c0
-                .normalize_or(Vec3::X)
-                .cross(-Vec3::Z)
-                .normalize_or(Vec3::Y);
-            let wrist_flex = d(10.0) * (1.0 - if side == 1 { self.reach } else { 0.0 });
-            let mut r_hand = r_fore * Mat3A::from_axis_angle(hinge0, wrist_flex);
-            if let (true, Some(frames)) = (self.grip > 0.0, self.grip_frame) {
-                // round the rim: the knuckles along it, the palm against it (the rest hand
-                // lies palm down along the forearm); the wrist bends 80 degrees at most
-                let (dir, palm) = frames[side];
-                if dir.length_squared() > 1e-6 && palm.length_squared() > 1e-6 {
-                    let want = bone_rot(c0, -Vec3::Z, dir.normalize(), palm.normalize());
-                    let q_fore = Quat::from_mat3a(&r_hand);
-                    let rel = limit_quat(q_fore.inverse() * Quat::from_mat3a(&want), d(80.0));
-                    let q = q_fore.slerp(q_fore * rel, smoothstep(0.0, 1.0, self.grip));
-                    r_hand = Mat3A::from_quat(q);
-                }
-            }
+            let r_hand = self.hand_rot(side, c0, r_fore);
             out_bones[UPPER[side]] = joint_xf(rig.shoulder[side], sh_at, r_upper);
             out_bones[FORE[side]] = joint_xf(rig.elbow[side], el_at, r_fore);
             out_bones[HAND[side]] = joint_xf(rig.wrist[side], wr_at, r_hand);
@@ -445,5 +288,196 @@ impl Pose {
             *self = Pose::new(seed);
         }
         posed
+    }
+
+    /// Where the feet go this frame (model frame): the ankles, the feet's turn and pitch, the
+    /// toes' bend, and for a foot in the air its swing and the floor under it.
+    fn foot_targets(&self, rig: &Rig, walk: f32, beta: f32) -> FootTargets {
+        let d = |deg: f32| deg.to_radians();
+        let mut ankle_t = [Vec3::ZERO; 2];
+        let mut foot_rot = [Mat3A::IDENTITY; 2];
+        // the toes bend up against the foot while the heel is up, and straighten in the air
+        let mut toe_bend = [0f32; 2];
+        let mut foot_fwd = [Vec3::Y; 2];
+        let mut foot_yaw = [0f32; 2];
+        // a foot in the air: (progress, pitch at lift-off, pitch to land with); its pitch
+        // follows the shin once the leg is solved
+        let mut swing: [Option<(f32, f32, f32)>; 2] = [None; 2];
+        let mut swing_floor = [0f32; 2];
+        for side in 0..2 {
+            let f = self.feet[side];
+            let u = (self.phase + if side == 0 { 0.0 } else { 0.5 }) % 1.0;
+            let (ankle, yaw, pitch) = if f.planted {
+                // (a lift-off held back while the other foot is still in the air keeps the
+                // push-off pitch: drawn flat meanwhile, the ankle leapt 7 cm up and forward
+                // the moment the foot left)
+                let pitch = if f.walk && self.gait && u < beta + 0.3 {
+                    stance_pitch(u.min(beta), beta, walk)
+                } else {
+                    0.0
+                };
+                toe_bend[side] = (-pitch).max(0.0);
+                (Self::stance_ankle(rig, &f, pitch), f.yaw, pitch)
+            } else {
+                let t = f.t.clamp(0.0, 1.0);
+                let land_pitch = if f.walk { heel_pitch(walk) } else { 0.0 };
+                let land = {
+                    let g = Foot {
+                        pos: DVec3::new(f.to.x, f.to.y, f.land_z),
+                        yaw: f.to_yaw,
+                        ..f
+                    };
+                    Self::stance_ankle(rig, &g, land_pitch)
+                };
+                let s = smoothstep(0.0, 1.0, t) as f64;
+                let mut a = f.from_ankle + (land - f.from_ankle) * s;
+                // up a step the foot rises early, down one it drops late
+                // (blended by the height, not switched: the curve changing mid-swing moved
+                // the foot as much as the floor did)
+                let rise = (land.z - f.from_ankle.z) as f32;
+                let up = smoothstep(0.0, 0.06, rise);
+                let down = smoothstep(0.0, 0.06, -rise);
+                let zt = t * (1.0 - up - down) + smoothstep(0.0, 0.55, t) * up + smoothstep(0.35, 1.0, t) * down;
+                let bumpf = (PI * t.powf(0.75)).sin().max(0.0);
+                a.z = f.from_ankle.z
+                    + (land.z - f.from_ankle.z) * zt as f64
+                    + (f.lift * bumpf) as f64;
+                let yaw = f.from_yaw + angle_diff(f.from_yaw, f.to_yaw) * s;
+                toe_bend[side] = (-f.from_pitch).max(0.0) * (1.0 - smoothstep(0.0, 0.35, t));
+                if f.walk {
+                    swing[side] = Some((t, f.from_pitch, land_pitch));
+                }
+                swing_floor[side] =
+                    (f.from_floor + (f.land_z - f.from_floor) * zt as f64 - self.origin.z) as f32;
+                (a, yaw, 0.0)
+            };
+            let local = self.to_local(ankle);
+            let yaw_l = angle_diff(self.heading, yaw) as f32;
+            ankle_t[side] = local;
+            foot_rot[side] = Mat3A::from_quat(yaw_quat(yaw_l) * Quat::from_rotation_x(d(pitch)));
+            foot_fwd[side] = yaw_quat(yaw_l) * Vec3::Y;
+            foot_yaw[side] = yaw_l;
+        }
+        (ankle_t, foot_rot, toe_bend, foot_fwd, foot_yaw, swing, swing_floor)
+    }
+
+    /// The pitch of a foot in the air (degrees): from the push-off through neutral to the heel
+    /// strike, against the shin, with toes and heel clear of the floor.
+    #[allow(clippy::too_many_arguments)]
+    fn swing_pitch(rig: &Rig, t: f32, from: f32, land: f32, knee_at: Vec3, ankle_at: Vec3, side_v: Vec3, swing_floor: [f32; 2], side: usize) -> f32 {
+        // in the air the ankle goes from pointed (push-off) through neutral to a
+        // little flexed; the pitch is that against the shin, blended from the
+        // push-off and into the heel strike
+        let s_dir = (ankle_at - knee_at).normalize_or(-Vec3::Z);
+        let neutral = side_v.cross(s_dir).normalize_or(Vec3::Y);
+        let shin_pitch = neutral.z.clamp(-1.0, 1.0).asin().to_degrees();
+        let ankle = -14.0 + 14.0 * smoothstep(0.0, 0.5, t) + 3.0 * smoothstep(0.5, 0.85, t);
+        let rel = shin_pitch + ankle;
+        let from_w = 1.0 - smoothstep(0.0, 0.3, t);
+        let land_w = smoothstep(0.65, 1.0, t);
+        let mut pitch = (rel + (from - rel) * from_w) * (1.0 - land_w) + land * land_w;
+        // the toes clear the floor, the heel too
+        let ah = rig.ankle_h;
+        // At lift-off/landing the sole is still touching the floor. Requiring
+        // 12 mm of clearance there gives mutually impossible heel/toe limits:
+        // the last clamp tips the shoe through the floor. Spend only the
+        // clearance the ankle has actually gained above its resting height.
+        let height = ankle_at.z - swing_floor[side];
+        let above = height - (height - ah).clamp(0.0, 0.012);
+        let (rt, pt) = ((rig.toe * rig.toe + ah * ah).sqrt(), ah.atan2(rig.toe));
+        if -above / rt > -1.0 {
+            pitch = pitch.max((pt + (-above / rt).min(1.0).asin()).to_degrees());
+        }
+        let (rh, phh) = ((rig.heel * rig.heel + ah * ah).sqrt(), ah.atan2(-rig.heel));
+        if -above / rh > -1.0 {
+            pitch = pitch.min(-(phh + (-above / rh).min(1.0).asin()).to_degrees());
+        }
+        pitch
+    }
+
+    /// Where a hand goes and how its elbow points: hanging, on the lap, reaching for the desk,
+    /// holding the rail or on the steering wheel.
+    #[allow(clippy::too_many_arguments)]
+    fn arm_target(&self, rig: &Rig, posed: &Posed, side: usize, s: f32, sh_at: Vec3, hang_wrist: Vec3, hang_pole: Vec3, pelvis_q: Quat, sit: f32) -> (Vec3, Vec3) {
+        // seated: hands on the thighs
+        let hip_at = posed.hip[side];
+        let knee_at = posed.knee[side];
+        let lap =
+            hip_at + (knee_at - hip_at) * 0.55 + Vec3::new(-s * 0.02, 0.0, 0.11 * rig.scale);
+        let lap_pole = pelvis_q * Vec3::new(s * 0.5, -1.0, -0.2);
+        let sit_w = smoothstep(0.35, 1.0, sit);
+        let mut target = hang_wrist.lerp(lap, sit_w);
+        let mut pole = hang_pole.normalize_or(-Vec3::Y).lerp(lap_pole, sit_w);
+        if side == 1 && self.reach > 0.0 {
+            let r = smoothstep(0.0, 1.0, self.reach);
+            let reach_to = self.reach_at;
+            // not further than the arm, and not through the body
+            let v = reach_to - sh_at;
+            let reach_to = sh_at
+                + v.normalize_or(Vec3::Y)
+                    * v.length().min((rig.upper_arm + rig.forearm) * 0.96);
+            target = target.lerp(reach_to, r);
+            pole = pole.lerp(Vec3::new(0.6, -0.3, -1.0), r);
+        }
+        if self.hold > 0.0 && !(side == 1 && self.reach > 0.3) {
+            let h = smoothstep(0.0, 1.0, self.hold);
+            let hold_side = if self.style[2] > 0.0 { 1 } else { 0 };
+            if side == hold_side {
+                let reach = rig.upper_arm + rig.forearm;
+                // the handrail over the aisle, or a pole for those who cannot reach it
+                let rail = 1.8;
+                let grip = if rig.shoulder[side].z + reach * 0.97 >= rail {
+                    Vec3::new(
+                        s * (rig.shoulder[1].x + 0.05),
+                        rig.shoulder[1].y + 0.1,
+                        rail + self.body_floor,
+                    )
+                } else {
+                    Vec3::new(
+                        s * 0.2 * rig.scale,
+                        0.28 * rig.scale,
+                        rig.shoulder[1].z - 0.2 * rig.scale + self.body_floor,
+                    )
+                };
+                target = target.lerp(grip, h);
+                pole = pole.lerp(Vec3::new(s, -0.2, -0.5), h);
+            }
+        }
+        if self.grip > 0.0 {
+            // on the steering wheel: the elbows down and a little out
+            let g = smoothstep(0.0, 1.0, self.grip);
+            let v = self.grip_at[side] - sh_at;
+            let to = sh_at
+                + v.normalize_or(Vec3::Y) * v.length().min((rig.upper_arm + rig.forearm) * 0.97);
+            target = target.lerp(to, g);
+            pole = pole.lerp(Vec3::new(s * 0.7, -0.2, -1.0), g);
+        }
+        (target, pole)
+    }
+
+    /// The hand's rotation: the relaxed wrist, or round the steering wheel's rim.
+    fn hand_rot(&self, side: usize, c0: Vec3, r_fore: Mat3A) -> Mat3A {
+        let d = |deg: f32| deg.to_radians();
+        // the wrist: relaxed, a little flexed towards the palm (down in the T-pose);
+        // flat for the desk
+        let hinge0 = c0
+            .normalize_or(Vec3::X)
+            .cross(-Vec3::Z)
+            .normalize_or(Vec3::Y);
+        let wrist_flex = d(10.0) * (1.0 - if side == 1 { self.reach } else { 0.0 });
+        let mut r_hand = r_fore * Mat3A::from_axis_angle(hinge0, wrist_flex);
+        if let (true, Some(frames)) = (self.grip > 0.0, self.grip_frame) {
+            // round the rim: the knuckles along it, the palm against it (the rest hand
+            // lies palm down along the forearm); the wrist bends 80 degrees at most
+            let (dir, palm) = frames[side];
+            if dir.length_squared() > 1e-6 && palm.length_squared() > 1e-6 {
+                let want = bone_rot(c0, -Vec3::Z, dir.normalize(), palm.normalize());
+                let q_fore = Quat::from_mat3a(&r_hand);
+                let rel = limit_quat(q_fore.inverse() * Quat::from_mat3a(&want), d(80.0));
+                let q = q_fore.slerp(q_fore * rel, smoothstep(0.0, 1.0, self.grip));
+                r_hand = Mat3A::from_quat(q);
+            }
+        }
+        r_hand
     }
 }

@@ -11,5 +11,4 @@ file 1517 crates/omsi-net/src/tests.rs
 fn 343 crates/omsi-launcher-ui::draw crates/omsi-launcher-ui/src/timetable.rs
 fn 337 crates/omsi-launcher-ui::game_controllers crates/omsi-launcher-ui/src/pages/controls.rs
 fn 366 crates/omsi-script::aachen_ibox_route_pad crates/omsi-script/src/compat.rs
-fn 437 crates/omsi-sim::bones crates/omsi-sim/src/human/bones.rs
 fn 454 crates/omsi-xr::render crates/omsi-xr/src/openxr.rs
