@@ -88,6 +88,8 @@ struct Offscreen<'a> {
     /// What each stage of the steps took in all (s, see `frame_stages`; logged with
     /// OMSI_PROFILE).
     profile: std::collections::BTreeMap<&'static str, f64>,
+    /// The worst the bus did on the way, for the drive report.
+    drive_extremes: DriveExtremes,
 }
 
 pub(crate) fn run_offscreen(
@@ -272,8 +274,11 @@ fn tyre_lows(v: &omsi_sim::VehicleInstance, world: &World) -> Vec<(DVec3, f64)> 
 }
 
 /// The worst pitch and bank of the drive, the origin's highest and lowest over the ground,
-/// and where and when the worst pitch was.
-static DRIVE_EXTREMES: parking_lot::Mutex<(f32, f32, f64, f64, (DVec3, f32))> = parking_lot::Mutex::new((0.0, 0.0, f64::MIN, f64::MAX, (DVec3::ZERO, 0.0)));
+/// and where and when the worst pitch was (`Offscreen::drive_extremes`).
+type DriveExtremes = (f32, f32, f64, f64, (DVec3, f32));
+
+/// Nothing driven yet.
+const NO_EXTREMES: DriveExtremes = (0.0, 0.0, f64::MIN, f64::MAX, (DVec3::ZERO, 0.0));
 
 /// `OMSI_CAM_VEHICLE=x,y,z,yaw,pitch[,fov]`: a camera in the bus's own frame (x right,
 /// y forward, z up; yaw relative to the bus) for close-ups of displays and switches - the

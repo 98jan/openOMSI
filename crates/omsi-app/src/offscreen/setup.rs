@@ -295,6 +295,7 @@ impl<'a> Offscreen<'a> {
             real_time,
             recorder,
             profile: Default::default(),
+            drive_extremes: super::NO_EXTREMES,
         })
     }
 }

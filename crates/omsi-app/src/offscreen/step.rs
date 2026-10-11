@@ -615,7 +615,7 @@ impl Offscreen<'_> {
         {
             let v = &player.vehicle;
             let g = world.ground_height(v.position.x, v.position.y).map(|g| v.position.z - g).unwrap_or(0.0);
-            let mut e = DRIVE_EXTREMES.lock();
+            let e = &mut self.drive_extremes;
             if v.pitch.abs() > e.0.abs() {
                 e.0 = v.pitch;
                 e.4 = (v.position, t_s);
