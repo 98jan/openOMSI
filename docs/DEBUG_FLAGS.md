@@ -110,14 +110,14 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_GROUND_LANES` | bool | off | use | app | Along every street lane, every metre, how far the ground lies over or under the lane. |
 | `OMSI_LAN_TRACE` | text | - | use | app | LAN CSV file: where the host's people are drawn. |
 | `OMSI_LIST_ALIGNED` | bool | off | use | app | Log the splines aligned to the terrain. |
-| `OMSI_PROFILE` | bool | off | use | app, render, sim | Time per stage of the frame, logged. |
+| `OMSI_PROFILE` | bool | off | use | app, render, sim, xr | Time per stage of the frame, logged. |
 | `OMSI_PROFILE_GPU` | bool | off | use | app | Profile: wait for the GPU so its time shows as a stage of its own. |
 | `OMSI_PROFILE_JSON` | text | - | use | app | With OMSI_PROFILE and --exit-after: the exit summary (after the 15 s warm-up) as JSON into this file, see scripts/compare-performance.py. |
 | `OMSI_SUSP_TRACE` | text | - | use | app | Offscreen CSV: body height and each wheel's travel and load every frame. |
 | `OMSI_SUSP_TRACE_WINDOW` | text | - | use | app | Window CSV: each wheel's travel every frame. |
 | `OMSI_TRACE_AI` | text | - | use | sim | CSV: every AI car's pose, steering and speed every frame. |
 | `OMSI_TRACE_AI_BUSES` | bool | off | use | sim | With OMSI_TRACE_AI: the timetable buses only. |
-| `OMSI_TRACE_FFB` | text | - | use | app | CSV: the force feedback frame by frame (Windows): the wheel's position and the force sent. |
+| `OMSI_TRACE_FFB` | text | - | use | input | CSV: the force feedback frame by frame (Windows): the wheel's position and the force sent. |
 | `OMSI_TRACE_LOOK` | text | - | use | app | CSV: the mouse look frame by frame and event by event - the cursor, the head's turn and the camera drawn. |
 | `OMSI_TRACE_PAX` | text | - | use | app | File: trace the passengers. |
 | `OMSI_TRACE_REMOTE` | text | - | use | app | LAN CSV: where each other player's bus is drawn every frame. |
@@ -300,7 +300,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_SHADOW_NEAR_EVERY_FRAME` | bool | off | frame | render | Redraw the near shadow map every frame. |
 | `OMSI_TERRAIN_ALIGN` | bool | off | use | app | Align the terrain to the splines again at load (A/B; Omsi.exe does not). |
 | `OMSI_TEXTURE_RAIN` | bool | off | use | app | OMSI 2's own texture rain on the glass instead of the drops. |
-| `OMSI_TRACKIR_NATIVE` | text | on | use | app | 0 turns the native TrackIR interface off. |
+| `OMSI_TRACKIR_NATIVE` | text | on | use | input | 0 turns the native TrackIR interface off. |
 | `OMSI_TRAFFIC_ALL_GROUPS` | bool | off | use | app | Let restricted AI groups (aircraft, depot fleets) drive everywhere. |
 | `OMSI_TYRE_SUSPENSION` | bool | off | once | sim | The old suspension with wheel mass, tyre and bump stops (A/B). |
 
@@ -317,8 +317,8 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_METER` | text | - | use | render | gain,target,dark,bright,bias,night: the exposure metering. |
 | `OMSI_MIRROR_HUD` | num | settings | use | app | Mirror HUD mode (number). |
 | `OMSI_OPENXR` | bool | off | use | app | Start in OpenXR (VR) mode. |
-| `OMSI_OPENXR_MIRROR_RATE` | num | settings | use | app | VR: mirror redraw rate (negative: every mirror each frame). |
-| `OMSI_OPENXR_SCALE` | num | settings | use | app | VR: render scale of the eyes. |
+| `OMSI_OPENXR_MIRROR_RATE` | num | settings | use | app, xr | VR: mirror redraw rate (negative: every mirror each frame). |
+| `OMSI_OPENXR_SCALE` | num | settings | use | xr | VR: render scale of the eyes. |
 | `OMSI_PARKED_PULL_OUT` | num | 0.035 | use | app | Chance per step a parked car pulls out. |
 | `OMSI_PARK_IN` | num | 0.04 | use | app | Chance per step a car parks. |
 | `OMSI_PAX_ANIMATION` | text | settings | use | app | Override the passenger animation for a game session: original (OMSI) or enhanced (procedural IK). |
