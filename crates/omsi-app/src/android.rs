@@ -48,6 +48,8 @@ fn android_main(app: AndroidApp) {
     // the Java activity (OmsiActivity) for the calls into it: ndk_context's context is the
     // Application, which has none of the activity's methods
     ACTIVITY.store(app.activity_as_ptr(), Ordering::Relaxed);
+    // (the updater's calls into Java, see `omsi_platform::android`)
+    omsi_platform::android::install(omsi_platform::android::Hooks { install_apk, install_status, open_url });
     // the app's own folder is the home of settings.cfg, launcher.json, the profiles
     if let Some(home) = app.internal_data_path() {
         std::env::set_var("HOME", &home);

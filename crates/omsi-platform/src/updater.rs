@@ -25,7 +25,7 @@
 //! github.com itself which release is the latest (`releases/latest` redirects to its tag) and
 //! takes the file by its name, as `release.yml` names it.
 //!
-//! The game looks for an update too, in the background (`crate::update_watch`): it downloads it
+//! The game looks for an update too, in the background (omsi-app's `update_watch`): it downloads it
 //! during the session (`Updater::prefetch`) and says so over the navigator; the launcher then
 //! installs the file already downloaded when the session ends.
 //!
@@ -190,7 +190,7 @@ impl Updater {
     pub fn poll(&mut self) {
         #[cfg(target_os = "android")]
         if let Status::WaitingForInstaller(r) = self.status() {
-            match crate::android::install_status() {
+            match crate::android::hooks().and_then(|h| (h.install_status)()) {
                 Some((3, _)) => self.set(Status::Failed(format!("openOMSI was not updated to {}: the installation was cancelled.", r.version))),
                 Some((4, msg)) => self.set(Status::Failed(format!("openOMSI was not updated to {}: {}", r.version, if msg.is_empty() { "the system's installer refused the package." } else { msg.as_str() }))),
                 Some((6, _)) => self.set(Status::Failed(format!("openOMSI was not updated to {}: installing apps was not allowed for openOMSI (Settings → Apps → openOMSI → Install unknown apps).", r.version))),
@@ -216,7 +216,7 @@ impl Updater {
 
 /// This build's version.
 pub fn current_version() -> &'static str {
-    crate::startup::VERSION
+    crate::VERSION
 }
 
 /// `0.1.7` / `v0.1.7` as numbers (missing parts are 0).
@@ -262,7 +262,7 @@ pub fn asset_name(version: &str) -> Option<String> {
 
 // --- the release ----------------------------------------------------------------------------
 
-pub(crate) fn agent() -> ureq::Agent {
+pub fn agent() -> ureq::Agent {
     // (a read waits 30 s at most - a stalled download goes on with a range request, so a
     // short wait costs nothing; the connection gets 20 s, enough for a slow line or a
     // resolver that tries IPv6 first)
@@ -542,7 +542,7 @@ fn download_and_install(r: &Release, status: &Mutex<Status>) -> anyhow::Result<(
     *lock(status) = Status::Installing(r.clone());
     #[cfg(target_os = "android")]
     {
-        crate::android::install_apk(&file)?;
+        (crate::android::hooks().ok_or_else(|| anyhow::anyhow!("the system's package installer could not be reached"))?.install_apk)(&file)?;
         // (the new version is noted: the app that starts after the update says so)
         let _ = std::fs::write(download_dir().join("updating-to"), &r.version);
         *lock(status) = Status::WaitingForInstaller(r.clone());
@@ -674,7 +674,7 @@ fn aside_of(target: &Path) -> PathBuf {
 }
 
 /// Unpack `zip` into `to` (a fresh folder), with the files' Unix modes and links.
-pub(crate) fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
+pub fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
     let _ = std::fs::remove_dir_all(to);
     std::fs::create_dir_all(to)?;
     let mut a = zip::ZipArchive::new(std::fs::File::open(zip)?)?;
@@ -870,7 +870,7 @@ pub fn just_updated() -> Option<String> {
 /// Open a web page in the system's browser.
 pub fn open_url(url: &str) {
     #[cfg(target_os = "android")]
-    crate::android::open_url(url);
+    let _ = crate::android::hooks().map(|h| (h.open_url)(url));
     #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open").arg(url).spawn();
     #[cfg(target_os = "windows")]

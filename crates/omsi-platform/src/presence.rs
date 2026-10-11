@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// The project's presence service (`services/presence/`, deployed with wrangler).
-pub(crate) const SERVICE: &str = "https://openomsi.savvabestbrother.workers.dev";
+pub const SERVICE: &str = "https://openomsi.savvabestbrother.workers.dev";
 /// How often a running game says it is still there (the service forgets one after 25 min).
 /// (Every three minutes, a few hundred players used up the free plan's 100 000 requests a
 /// day by the evening, and the counter answered nobody until midnight UTC.)
@@ -25,7 +25,7 @@ const EVERY: Duration = Duration::from_secs(600);
 const BACK_OFF: Duration = Duration::from_secs(1800);
 
 /// The presence of this session: dropping it says goodbye.
-pub(crate) struct Presence {
+pub struct Presence {
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -93,7 +93,7 @@ fn jitter(id: &str) -> Duration {
 
 impl Presence {
     /// Start saying "playing" (in the background); None when the player does not want it.
-    pub(crate) fn start() -> Option<Presence> {
+    pub fn start() -> Option<Presence> {
         if !allowed() {
             log::info!("presence: not counted on the website (setting presence=0)");
             return None;

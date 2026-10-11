@@ -8,7 +8,7 @@ use std::sync::{
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // Shared test application; replace centrally if a different application is used for release.
-pub(crate) const DEFAULT_APP_ID: &str = "1555504817110122526";
+pub const DEFAULT_APP_ID: &str = "1555504817110122526";
 const MAX_FRAME: usize = 64 * 1024;
 #[cfg(not(test))]
 const POLL: Duration = Duration::from_millis(100);
@@ -28,14 +28,14 @@ const UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 const UPDATE_INTERVAL: Duration = Duration::from_millis(10);
 
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct Presence {
+pub struct Presence {
     pub details: String,
     pub state: String,
     pub large_text: String,
 }
 
 impl Presence {
-    pub(crate) fn for_game(
+    pub fn for_game(
         map: Option<&str>,
         bus: Option<(&str, &str)>,
         duty: Option<(&str, &str)>,
@@ -72,7 +72,7 @@ impl Presence {
         })
     }
 
-    pub(crate) fn for_launcher(enabled: bool, launching: bool, game_running: bool) -> Option<Self> {
+    pub fn for_launcher(enabled: bool, launching: bool, game_running: bool) -> Option<Self> {
         (enabled && !launching && !game_running).then(|| Self {
             details: "In launcher".into(),
             state: "Preparing a drive".into(),
@@ -96,7 +96,7 @@ fn compact(text: &str, limit: usize) -> String {
     format!("{short}...")
 }
 
-pub(crate) struct Discord {
+pub struct Discord {
     wanted: Arc<Mutex<Option<Presence>>>,
     stop: Arc<AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
@@ -371,7 +371,7 @@ fn nonce(value: &serde_json::Value) -> Option<&str> {
 }
 
 impl Discord {
-    pub(crate) fn start(app_id: &str) -> Option<Self> {
+    pub fn start(app_id: &str) -> Option<Self> {
         let app_id = if app_id.trim().is_empty() {
             DEFAULT_APP_ID
         } else {
@@ -399,21 +399,21 @@ impl Discord {
         })
     }
 
-    pub(crate) fn set(&self, presence: Option<Presence>) {
+    pub fn set(&self, presence: Option<Presence>) {
         if let Ok(mut wanted) = self.wanted.lock() {
             *wanted = presence;
         }
     }
 
-    pub(crate) fn stop(&self) {
+    pub fn stop(&self) {
         self.stop.store(true, Ordering::Release);
     }
 
-    pub(crate) fn is_stopping(&self) -> bool {
+    pub fn is_stopping(&self) -> bool {
         self.stop.load(Ordering::Acquire)
     }
 
-    pub(crate) fn is_finished(&self) -> bool {
+    pub fn is_finished(&self) -> bool {
         self.worker
             .as_ref()
             .is_none_or(|worker| worker.is_finished())

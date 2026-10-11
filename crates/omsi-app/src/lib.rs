@@ -10,7 +10,7 @@
 //! window of one process.
 
 mod admin;
-mod discord;
+use omsi_platform::discord;
 #[cfg(steam)]
 mod steam;
 mod voice;
@@ -28,9 +28,9 @@ mod platform;
 mod touch;
 mod placing;
 mod mt;
-mod updater;
+use omsi_platform::updater;
 mod update_watch;
-mod presence;
+use omsi_platform::presence;
 mod ambience;
 mod soundscape;
 mod wheel_surface;

@@ -45,6 +45,7 @@ log.workspace = true
 env_logger.workspace = true
 rayon.workspace = true
 omsi-net = { path = "../omsi-net" }
+omsi-platform = { path = "../omsi-platform" }
 omsi-ui = { path = "../omsi-ui" }
 omsi-launcher-core = { path = "../omsi-launcher-core" }
 serde.workspace = true

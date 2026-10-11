@@ -3324,6 +3324,7 @@ dependencies = [
  "omsi-model",
  "omsi-net",
  "omsi-o3d",
+ "omsi-platform",
  "omsi-plugin",
  "omsi-render",
  "omsi-scenery",
@@ -3495,6 +3496,21 @@ dependencies = [
  "log",
  "omsi-cfg",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "omsi-platform"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "omsi-cfg",
+ "omsi-launcher-core",
+ "serde_json",
+ "sha2 0.10.9",
+ "ureq",
+ "windows 0.62.2",
+ "zip",
 ]
 
 [[package]]

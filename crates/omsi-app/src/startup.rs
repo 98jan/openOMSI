@@ -623,12 +623,9 @@ pub(crate) fn fatal_message(text: &str) {
     }
 }
 
-/// The commit this binary was built from (see `build.rs`), so a log or a screenshot says
-/// which version is running.
-pub const BUILD: &str = env!("OMSI_BUILD");
-
-/// The release version, `MAJOR.MINOR.COMMIT` (see `build.rs` and docs/VERSIONING.md).
-pub const VERSION: &str = env!("OPENOMSI_VERSION");
+/// The commit this binary was built from, so a log or a screenshot says which version is
+/// running, and the release version (both stamped by omsi-platform's `build.rs`).
+pub use omsi_platform::{BUILD, VERSION};
 
 /// A window of `w` x `h` points made to fit the screen it opens on, and placed in its
 /// middle: 1600 x 900 points at 125 % are 2000 x 1125 pixels, wider than a 1920 screen, and
