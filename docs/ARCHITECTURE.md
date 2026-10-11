@@ -27,8 +27,25 @@ change behaviour is checked is in [REFACTOR_CHECKS.md](REFACTOR_CHECKS.md).
 | `mc_Form_Main`, main loop              | `omsi-app`                    | offscreen + window, start menu, HUD, tile streaming; the original's dialogs are the launcher |
 | vehicle runtime (`TRoadVehicleInst`)   | `omsi-sim`                    | scripts, animations, dynamic materials, keyboard/mouse input, IBIS typing, coupled parts |
 | AI (`mc_path`, `mc_pathrule`), humans, physics (ODE) | `omsi-sim` | `traffic` + `ai_motion` (rules, light programs, following, passing), `human` + `crowd` (poses, queues, avoidance), `rigid` + `physics` (wheels, collisions) |
-| Optionen and the start dialogs         | `omsi-app::launcher` + `omsi-launcher-core` | the game's own window (wgpu, `omsi-ui`): profile, bus, map, duty, weather, settings, mods, running games (the Tauri launcher is gone since round 9) |
-| - (no original counterpart)            | `omsi-net`, `omsi-app::lan`   | LAN play: UDP session, bit-packed vehicle states, chat |
+| Optionen and the start dialogs         | `omsi-launcher-ui` + `omsi-launcher-core` | the game's own window (wgpu, `omsi-ui`): profile, bus, map, duty, weather, settings, mods, running games (the Tauri launcher is gone since round 9) |
+| - (no original counterpart)            | `omsi-net`, `omsi-lan`, `omsi-app::lan` | LAN play: UDP session, bit-packed vehicle states, chat |
+
+## Crates
+
+The workspace is layered; `scripts/arch-guard.sh` (rules in `scripts/arch-rules.txt`, run on
+every pull request) keeps each crate off the layers above it, and `omsi-app` may only shrink.
+Bottom up:
+
+| Layer | Crates | What they hold |
+|---|---|---|
+| base | `omsi-cfg`, `omsi-ui` | text files, the virtual file system, settings, the `OMSI_*` flag registry, the panic guard; the immediate-mode UI toolkit |
+| formats and content | `omsi-o3d`, `omsi-texture`, `omsi-model`, `omsi-map`, `omsi-scenery`, `omsi-vehicle`, `omsi-timetable`, `omsi-content`, `omsi-script`, `omsi-geometry`, `omsi-world` | files in, plain data out; the map-wide index and the placement of attached objects (`omsi-world`) |
+| simulation | `omsi-sim` | vehicles (`vehicle/` by subsystem), scripts' host (`host/`), AI traffic, people, timetable, physics; no renderer, audio, texture decoder or network: pictures and HTML pages come through hooks the game registers (`image_decode`, `htmltex::set_backend`) |
+| beside the simulation | `omsi-htmlengine`, `omsi-weather`, `omsi-career` | the `[htmltexture]` engine; the weather and season models; the driver's career and real-time mode |
+| presentation | `omsi-render`, `omsi-audio`, `omsi-soundscape`, `omsi-photo`, `omsi-scene` | the renderer (`gpu/`, `resources/`, `scene/`, `lighting/`, `frame_plan`, shader parts); the mixer; ambience, scenery sounds and the radio; photo mode's lens and darkroom; the scene: loaded content turned into renderer data |
+| devices and services | `omsi-input`, `omsi-xr`, `omsi-net`, `omsi-lan`, `omsi-platform`, `omsi-plugin`, `omsi-plugin-ui` | controllers, force feedback, head tracking, key names; OpenXR; the LAN transport and the game-side session; updater, Discord, the presence count, version stamp; plugin hosting and its UI |
+| launcher | `omsi-launcher-core`, `omsi-launcher-ui` | the launcher's logic; its window and pages, talking to the game through `omsi_launcher_ui::host::Host` |
+| app | `omsi-app` | the glue: `App` and its field groups, the frame (`frame_stages`: one declared list of stages for the window and one for the offscreen run, one runner), view sync, the adapters that hold the crates' state in `App` |
 
 ## Threading
 
@@ -172,8 +189,11 @@ checked against it.
 
 ## Known debt
 
-* **What is already in place.** The window and the offscreen run share the frame's steps
-  (`omsi-app/src/app_events/frame/steps.rs`); the AI traffic and the people simulate in
+* **What is already in place.** The frame is a declared list of stages run by one runner
+  (`omsi-app/src/frame_stages.rs`: `app_events::WINDOW_FRAME` for the window,
+  `offscreen::OFFSCREEN_STEP` for the offscreen run, each stage naming the field groups it
+  reads and writes and the values it hands on; tests pin both orders and the three places
+  where the two paths knowingly differ; `OMSI_FRAME_ORDER=1` logs them); the AI traffic and the people simulate in
   `omsi-sim`, with `omsi-app::traffic::Traffic` and `omsi-app::humans::Humans` as thin
   wrappers (the simulation, with the cars' sounds) that dereference to them; every `OMSI_*` switch goes through
   `omsi_cfg::flags` (`docs/DEBUG_FLAGS.md`); `App`'s state is grouped by subsystem
@@ -221,8 +241,12 @@ checked against it.
   cars), and the people who appeared or went at the end of every `Humans` call that made
   them (`BodyOp`s replayed by `Humans::show_bodies`). Those calls take the part of the
   `SimView` they change (`&mut TrafficView`, `&mut PeopleView`) with the renderer, and
-  the timetable's and the LAN world's steps that make them pass it through. The traffic's sync also still does two pieces of simulation: parked
-  cars leave the list there, and the AI vehicles get `Envir_Brightness`.
+  the timetable's and the LAN world's steps that make them pass it through. The traffic's sync still hands the AI vehicles `Envir_Brightness`; the cars that
+  finished parking are taken off by the simulation itself (`TrafficSim::take_parked`), the
+  sync only puts their parked objects back. The player's and the AI buses' per-frame sync
+  (materials, lamps, script and text textures, glass cracks, dents) is in the phase too:
+  `view_sync/vehicle.rs` and `vehicle_damage.rs`, and the AI cars' sounds in
+  `view_sync/traffic_audio.rs`.
 
 * **Global mutable state.** The introduction's "no global mutable state" is not true today:
   `omsi-app` has about 45 module-level `static`s with interior mutability (`Mutex`, atomics,
