@@ -140,14 +140,14 @@ pub struct Arrival {
 /// `STLoadTex`: a destination display loads its bitmap every time it changes, in every bus
 /// of the fleet - read from the disk (or an archive) in the frame each time. The pictures
 /// are kept (up to 64 MB of them), the misses too.
-fn st_load(path: &std::path::Path) -> Result<Arc<omsi_texture::Image>, String> {
-    type Cache = Mutex<(std::collections::HashMap<std::path::PathBuf, Result<Arc<omsi_texture::Image>, String>>, usize)>;
+fn st_load(path: &std::path::Path) -> Result<Arc<crate::image_decode::DecodedImage>, String> {
+    type Cache = Mutex<(std::collections::HashMap<std::path::PathBuf, Result<Arc<crate::image_decode::DecodedImage>, String>>, usize)>;
     static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
     if let Some(hit) = cache.lock().0.get(path) {
         return hit.clone();
     }
-    let got = omsi_texture::decode_file(path).map(Arc::new).map_err(|e| e.to_string());
+    let got = crate::image_decode::decode(path).map(Arc::new);
     let mut c = cache.lock();
     let bytes = got.as_ref().map(|i| i.rgba.len()).unwrap_or(0);
     if c.1 + bytes > 64 << 20 {

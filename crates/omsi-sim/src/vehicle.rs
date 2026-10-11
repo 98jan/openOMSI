@@ -795,7 +795,7 @@ impl VehicleType {
 
 /// A texture of one flat, colourless tone (a stand-in the paint schemes replace).
 fn flat_placeholder(p: &Path) -> bool {
-    let Ok(img) = omsi_texture::decode_file(p) else { return false };
+    let Ok(img) = crate::image_decode::decode(p) else { return false };
     let n = (img.width as usize * img.height as usize).max(1);
     let step = (n / 4096).max(1);
     let (mut sum, mut sq, mut k) = ([0f64; 3], [0f64; 3], 0f64);

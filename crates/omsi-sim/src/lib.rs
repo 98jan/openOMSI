@@ -11,6 +11,7 @@ pub mod host;
 pub mod htmlengine;
 pub mod htmltex;
 pub mod ibis;
+pub mod image_decode;
 pub mod human;
 pub mod human_omsi;
 pub mod input;

@@ -160,7 +160,12 @@ impl World {
             signal_ids: signal_routes.iter().flat_map(|r| std::iter::once(r.signal.0).chain(r.dist_signal)).collect(),
             signal_routes,
             particle_objects: Mutex::new(HashMap::new()),
-            fonts: Arc::new(Mutex::new(omsi_sim::texttex::FontLibrary::new(root))),
+            fonts: {
+                // (the fonts' sheets and the vehicles' bitmaps are read through it; a world
+                // opened by a test or a tool has not been through `run`)
+                crate::view_sync::install_sim_decoder();
+                Arc::new(Mutex::new(omsi_sim::texttex::FontLibrary::new(root)))
+            },
             night_slots: Mutex::new(Vec::new()),
             night_modes: Mutex::new(Vec::new()),
             static_coronas: Mutex::new(Vec::new()),
