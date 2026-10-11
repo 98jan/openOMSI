@@ -220,6 +220,10 @@ pub(crate) struct Args {
     /// process - Android's launcher - starts from its own arguments.)
     #[arg(skip)]
     pub(crate) start_synced: bool,
+    /// The world the duty start opened, for the session to go on with (see
+    /// `duty_start::Preopened`).
+    #[arg(skip)]
+    pub(crate) preopened: crate::duty_start::Preopened,
     /// With a duty: start at the entry point nearest to its first stop by road (the
     /// launcher's "Automatic") instead of `--entry`.
     #[arg(long)]
