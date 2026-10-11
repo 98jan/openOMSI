@@ -3336,6 +3336,7 @@ dependencies = [
  "omsi-ui",
  "omsi-vehicle",
  "omsi-weather",
+ "omsi-world",
  "omsi-xr",
  "parking_lot",
  "pollster",
@@ -3783,6 +3784,21 @@ dependencies = [
  "omsi-map",
  "omsi-sim",
  "omsi-texture",
+]
+
+[[package]]
+name = "omsi-world"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
+ "omsi-geometry",
+ "omsi-map",
+ "omsi-scenery",
+ "parking_lot",
+ "rayon",
 ]
 
 [[package]]

@@ -29,6 +29,7 @@ members = [
     "crates/omsi-weather",
     "crates/omsi-career",
     "crates/omsi-soundscape",
+    "crates/omsi-world",
     "crates/omsi-photo",
     "crates/omsi-app",
     "tools/omsi-check",

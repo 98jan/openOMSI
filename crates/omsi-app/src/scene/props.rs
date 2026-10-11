@@ -1097,29 +1097,7 @@ impl World {
 
 /// The rotation of a knocked-over post: turned about its foot by 86° (it rests on its own
 /// thickness) in the direction of `push`.
-/// A file that belongs to a tile (`.terrain`, …): beside the tile file, or - for a tile the
-/// object editor saved as a copy in the content folder, which has only the tile itself -
-/// in the same map folder under the other content roots.
-pub fn tile_companion(path: &Path, ext: &str) -> PathBuf {
-    // a copy in a content root before the installation's (the editor's ground, a mod's)
-    if let (Some(dir), Some(name)) = (path.parent(), path.file_name()) {
-        let p = omsi_cfg::resolve_path(dir, &format!("{}{}", name.to_string_lossy(), ext));
-        if omsi_cfg::vfs::exists(&p) {
-            return p;
-        }
-    }
-    let direct = PathBuf::from(format!("{}{}", path.display(), ext));
-    if omsi_cfg::vfs::exists(&direct) {
-        return direct;
-    }
-    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else { return direct };
-    let name = format!("{}{}", name.to_string_lossy(), ext);
-    omsi_cfg::mirrored_dirs(dir)
-        .into_iter()
-        .map(|d| omsi_cfg::resolve_path(&d, &name))
-        .find(|p| omsi_cfg::vfs::exists(p))
-        .unwrap_or(direct)
-}
+pub use omsi_world::map_index::tile_companion;
 
 /// An object as the object editor has left it: moved, turned about its place, or gone.
 pub(super) fn show_edit(renderer: &Renderer, scene: &mut Scene, eo: &EditObject, e: ObjectEdit) {

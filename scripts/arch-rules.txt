@@ -74,6 +74,13 @@ forbid omsi-soundscape omsi-ui
 forbid omsi-soundscape omsi-net
 forbid omsi-soundscape omsi-launcher-*
 
+# The map as data is decided before anything is drawn, simulated or heard.
+forbid omsi-world omsi-render
+forbid omsi-world omsi-sim
+forbid omsi-world omsi-audio
+forbid omsi-world omsi-ui
+forbid omsi-world omsi-net
+
 # The input devices read controllers and keys: they neither draw nor sound, nor know the network,
 # the plugins or the launcher.
 forbid omsi-input omsi-render
