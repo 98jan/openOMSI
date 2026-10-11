@@ -12,7 +12,6 @@ pub(crate) use cameras::*;
 pub(crate) use doors::*;
 pub(crate) use picking::*;
 pub(crate) use mouse::AutoDrag;
-use mouse::repair_roller_blind;
 
 fn indicator_toggle_action(state: &mut u8, lever: Option<u8>, want: u8) -> &'static str {
     // Scripts can cancel the lever themselves after a turn; prefer their current state.
@@ -404,10 +403,6 @@ impl Player {
         self.action(action, false);
     }
 
-    pub(crate) fn repair_roller_blind(&mut self, event: &str) {
-        repair_roller_blind(&mut self.vehicle, event);
-    }
-
     /// Fire a keyboard action as a script trigger, falling back to the names the stock
     /// scripts use for it. Returns whether any script block ran.
     pub(crate) fn action(&mut self, name: &str, pressed: bool) -> bool {
@@ -460,7 +455,6 @@ impl Player {
         let headlights = pressed && name.eq_ignore_ascii_case("kw_scheinwerfer_toggle");
         let lamps_before = if headlights { self.outside_lamps_lit() } else { 0 };
         if self.vehicle.trigger(&format!("{name}{suffix}")) {
-            self.repair_roller_blind(&format!("{name}{suffix}"));
             if headlights {
                 self.headlights_with_side_lights(lamps_before);
             }
@@ -479,7 +473,6 @@ impl Player {
         };
         for alias in *aliases {
             if self.vehicle.trigger(&format!("{alias}{suffix}")) {
-                self.repair_roller_blind(&format!("{alias}{suffix}"));
                 return true;
             }
         }
