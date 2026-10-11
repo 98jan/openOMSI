@@ -34,7 +34,6 @@ pub use omsi_sim::people::Person;
 pub use omsi_sim::people::VoiceLine;
 
 /// The map's traffic keeps left (its stops are on the left): see the doors of `Cabin`.
-pub(crate) use omsi_sim::people::LEFT_HAND;
 
 /// The people as the game drives them. Everything of the simulation reads through it
 /// (`Deref` to `PeopleSim`). Their pictures are the view sync's (`PeopleView`, in

@@ -664,24 +664,19 @@ pub(crate) fn window_icon() -> Option<winit::window::Icon> {
     winit::window::Icon::from_rgba(img.into_raw(), w, h).ok()
 }
 
-/// Enhanced graphics wanted (from the settings, `--enhanced`, or OMSI_ENHANCED=1).
-pub(crate) static ENHANCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Enhanced+ (ray tracing) asked for by `--enhanced-plus` or OMSI_ENHANCED_PLUS=1 whatever
 /// the settings say (see `Settings::render_options`).
 pub(crate) static ENHANCED_PLUS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// Vanilla graphics: the picture as OMSI 2 draws it (no Vanilla+ extras, see
-/// `omsi_render::Lighting::classic`).
-pub(crate) static CLASSIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Volume of the AI vehicles and of the scenery's own sounds (OMSI's `sound_ai` and
 /// `sound_scenery`), as the bits of an f32.
 pub(crate) static SOUND_AI: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000);
-pub(crate) static SOUND_SCENERY: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000);
+// (the scenery's volume, the graphics' kind and the mirrors' size: the scene's, see `scene::host`)
+pub(crate) use crate::scene::host::{sound_gain, CLASSIC, ENHANCED, MIRROR_SIZE, SOUND_SCENERY};
 
-/// Edge of a mirror's picture (the `mirror_size` setting, OMSI's reflTexSize).
-pub(crate) static MIRROR_SIZE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(256);
-
-pub(crate) fn sound_gain(which: &std::sync::atomic::AtomicU32) -> f32 {
-    f32::from_bits(which.load(std::sync::atomic::Ordering::Relaxed))
+/// The game's settings a world reads as it opens (see `scene::host::OpenSettings`), from the
+/// settings file at that moment.
+pub(crate) fn install_scene_settings() {
+    crate::scene::host::install_open_settings(|| crate::scene::host::OpenSettings { max_parked: crate::settings::Settings::load().ai_max_parked as i64 });
 }
 
 /// The `clouds` setting: clouds in the sky (off: a clear sky whatever the weather says).

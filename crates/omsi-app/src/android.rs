@@ -26,6 +26,7 @@ pub const SHARED: &str = "/storage/emulated/0/openOMSI";
 #[no_mangle]
 fn android_main(app: AndroidApp) {
     crate::view_sync::install_sim_decoder();
+    crate::startup::install_scene_settings();
     // an error is also written where a person finds it without a computer:
     // openOMSI/crash.log (or Android/data/org.openomsi.game/files/crash.log)
     let crash_files: Vec<PathBuf> = [Some(PathBuf::from(SHARED)), app.external_data_path()].into_iter().flatten().map(|d| d.join("crash.log")).collect();

@@ -836,7 +836,7 @@ impl World {
                 if a.clips_ready(&omsi_audio::SoundSet::clip_paths(&cfg, &sdir)) {
                     log::info!("scenery sound {}: {} sounds ({:.0} m away)", path.display(), cfg.sounds.len(), dist);
                     let mut ss = omsi_audio::SoundSet::new(a, &cfg, &sdir);
-                    ss.master = crate::sound_gain(&crate::SOUND_SCENERY);
+                    ss.master = super::host::sound_gain(&super::host::SOUND_SCENERY);
                     *sounds = Some(ss);
                 }
             }

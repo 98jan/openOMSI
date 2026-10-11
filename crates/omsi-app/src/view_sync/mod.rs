@@ -47,19 +47,8 @@ use omsi_sim::VehicleInstance;
 use people::PeopleView;
 use traffic::TrafficView;
 
-/// Register what the simulation draws and reads its pictures with, which omsi-sim does not
-/// depend on: the picture decoder (`STLoadTex`, the text textures' font sheets, the HTML
-/// pages' pictures; see `omsi_sim::image_decode`), the presentation's texture loading, and
-/// the `[htmltexture]` pages' engine (omsi-htmlengine, see `omsi_sim::htmltex::set_backend`).
-/// Every entry point calls it before anything is loaded (a second call changes nothing).
-pub(crate) fn install_sim_decoder() {
-    omsi_sim::image_decode::install(|path| {
-        omsi_texture::decode_file(path)
-            .map(|i| omsi_sim::image_decode::DecodedImage { width: i.width, height: i.height, rgba: i.rgba, has_alpha: i.has_alpha })
-            .map_err(|e| e.to_string())
-    });
-    omsi_sim::htmltex::set_backend(|width, height, html, api| Box::new(omsi_htmlengine::EngineRenderer::with_api(width, height, html, api)));
-}
+// (registered by the scene, whose worlds read pictures as they open)
+pub(crate) use crate::scene::host::install_sim_decoder;
 
 /// What the renderer shows of the simulation, kept for the next view sync: the AI traffic's
 /// renders and drivers, and the people's meshes, posing and ticket blocks. Each part starts

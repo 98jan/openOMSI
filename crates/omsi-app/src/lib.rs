@@ -190,6 +190,7 @@ use world_load::*;
 /// The game (and its launcher) from the command line: what `main` does.
 pub fn run() -> Result<()> {
     view_sync::install_sim_decoder();
+    startup::install_scene_settings();
     omsi_cfg::migrate_legacy_data_dir();
     #[cfg(target_os = "macos")]
     restart_with_allocator_settings();

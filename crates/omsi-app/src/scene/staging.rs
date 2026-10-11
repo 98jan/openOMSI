@@ -158,7 +158,7 @@ impl World {
         if let Some(t) = g[i] {
             return t;
         }
-        let n = crate::MIRROR_SIZE.load(std::sync::atomic::Ordering::Relaxed).clamp(64, 2048);
+        let n = super::host::MIRROR_SIZE.load(std::sync::atomic::Ordering::Relaxed).clamp(64, 2048);
         let t = renderer.add_render_texture(scene, n, n);
         g[i] = Some(t);
         t
