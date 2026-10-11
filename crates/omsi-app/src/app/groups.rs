@@ -16,6 +16,9 @@ pub(crate) struct SoundState {
     /// How far the walker's eyes are inside the player's bus, as the sound follows them
     /// (see `App::foot_sound_amount`); None when nobody walks about it.
     pub(crate) foot_in: Option<f32>,
+    /// Passengers' lines whose clip is still being read, with when they were said (see the
+    /// surroundings stage: spoken once read, let go after two seconds).
+    pub(crate) voices_waiting: Vec<(omsi_sim::people::VoiceLine, Instant)>,
 }
 
 /// The VR headset: its session (Windows), the navigator shown in it, the cockpit pointer

@@ -140,12 +140,9 @@ impl App {
                     // time is read in the background and the line spoken as soon as it is
                     // there (read here, in the frame, it stalled the picture); one still not
                     // read after two seconds is let go.
-                    thread_local! {
-                        static WAITING: std::cell::RefCell<Vec<(omsi_sim::people::VoiceLine, Instant)>> =
-                            const { std::cell::RefCell::new(Vec::new()) };
-                    }
                     let said = self.session.humans.as_mut().map(|h| h.take_voice_lines()).unwrap_or_default();
-                    WAITING.with_borrow_mut(|waiting| {
+                    {
+                        let waiting = &mut self.sound.voices_waiting;
                         waiting.extend(said.into_iter().map(|line| (line, Instant::now())));
                         waiting.retain(|(line, since)| {
                             if !a.clips_ready(std::slice::from_ref(&line.path)) {
@@ -168,7 +165,7 @@ impl App {
                             }
                             false
                         });
-                    });
+                    }
                     let inside = self.cam.in_cab;
                     let __tm = Instant::now();
                     // openOMSI's ambience; with its recordings the street's rain is its own

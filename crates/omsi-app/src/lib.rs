@@ -694,6 +694,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             soundscape: None,
             voice: None,
             foot_in: None,
+            voices_waiting: Vec::new(),
         },
         clock: omsi_sim::SimClock::default(),
         started,
