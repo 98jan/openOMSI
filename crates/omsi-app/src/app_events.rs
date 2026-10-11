@@ -49,6 +49,9 @@ use super::*;
 
 mod frame;
 pub(crate) use frame::steps;
+pub(crate) use frame::stages::WINDOW_FRAME;
+#[cfg(test)]
+pub(crate) use frame::stages::WindowStage;
 
 /// How fast a stick turns the head, fully pushed (degrees a second, see `Analog::look`).
 const LOOK_STICK_DEG_S: f32 = 120.0;

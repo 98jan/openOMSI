@@ -16,6 +16,9 @@ pub(crate) struct SoundState {
     /// How far the walker's eyes are inside the player's bus, as the sound follows them
     /// (see `App::foot_sound_amount`); None when nobody walks about it.
     pub(crate) foot_in: Option<f32>,
+    /// Passengers' lines whose clip is still being read, with when they were said (see the
+    /// surroundings stage: spoken once read, let go after two seconds).
+    pub(crate) voices_waiting: Vec<(omsi_sim::people::VoiceLine, Instant)>,
 }
 
 /// The VR headset: its session (Windows), the navigator shown in it, the cockpit pointer
@@ -143,6 +146,8 @@ pub(crate) struct GfxState {
     pub(crate) mirror_budget: f32,
     pub(crate) mirrors_seen: usize,
     pub(crate) mirror_turn: usize,
+    /// The mirrors the panels show, drawn every frame (kept for its room).
+    pub(crate) mirror_panel_cams: Vec<usize>,
     /// With no real-time reflections: the bus whose mirrors are frozen (see
     /// `MIRROR_FREEZE_REDRAW`).
     pub(crate) frozen_mirrors: Option<FrozenMirrors>,
@@ -325,6 +330,12 @@ pub(crate) struct MenuState {
     pub(crate) vehicle_list: Vec<(String, String)>,
     /// The drop-down open over a row of the settings window, if one is.
     pub(crate) dropdown: Option<crate::game_lists::Dropdown>,
+    /// A value of the open settings window really changed (set by `option_do` and the
+    /// like): its list is out of date (see `App::list_adjust`).
+    pub(crate) list_dirty: bool,
+    /// The open settings window's page titles, kept for a moment (asked every frame, see
+    /// `game_lists::page_titles`).
+    pub(crate) page_titles: std::cell::RefCell<crate::game_lists::TitlesCache>,
     /// (manufacturer, type) of each vehicle of `vehicle_list`, by its path.
     pub(crate) vehicle_meta: std::collections::HashMap<String, (String, String)>,
     pub(crate) hud: Option<hud::Hud>,
@@ -471,6 +482,8 @@ pub(crate) struct SessionState {
     /// The current METAR receiver is a single manual fetch rather than the continuous sync.
     pub(crate) metar_once: bool,
     pub(crate) metar_next: f64,
+    /// The sky's cloud type and the physical weather model (see `weather_setup::SkyState`).
+    pub(crate) sky: crate::weather_setup::SkyState,
 }
 
 /// The fuel pump or the bus wash running (`SessionState::pumping`).

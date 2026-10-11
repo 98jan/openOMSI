@@ -25,6 +25,8 @@ pub const SHARED: &str = "/storage/emulated/0/openOMSI";
 
 #[no_mangle]
 fn android_main(app: AndroidApp) {
+    crate::view_sync::install_sim_decoder();
+    crate::startup::install_scene_settings();
     // an error is also written where a person finds it without a computer:
     // openOMSI/crash.log (or Android/data/org.openomsi.game/files/crash.log)
     let crash_files: Vec<PathBuf> = [Some(PathBuf::from(SHARED)), app.external_data_path()].into_iter().flatten().map(|d| d.join("crash.log")).collect();
@@ -47,6 +49,8 @@ fn android_main(app: AndroidApp) {
     // the Java activity (OmsiActivity) for the calls into it: ndk_context's context is the
     // Application, which has none of the activity's methods
     ACTIVITY.store(app.activity_as_ptr(), Ordering::Relaxed);
+    // (the updater's calls into Java, see `omsi_platform::android`)
+    omsi_platform::android::install(omsi_platform::android::Hooks { install_apk, install_status, open_url });
     // the app's own folder is the home of settings.cfg, launcher.json, the profiles
     if let Some(home) = app.internal_data_path() {
         std::env::set_var("HOME", &home);
@@ -366,9 +370,9 @@ impl Shell {
             launcher_statics();
             let early = self.early.take();
             let instance = early.as_ref().map(|e| e.instance.clone()).unwrap_or_else(graphics_instance);
-            let mut l = Box::new(launcher::Launcher::new(instance));
+            let mut l = Box::new(launcher::new(instance));
             if let Some(e) = early {
-                l.adopt_early(e.window, e.start, e.surface);
+                l.adopt_early(e.window, Box::new(e.start), e.surface);
             }
             self.launcher = Some(l);
         }
@@ -517,6 +521,8 @@ impl ApplicationHandler for Shell {
 
 // --- the phone's tilt as a steering wheel ----------------------------------------------
 
+// (the sensor's thread writes these and the frame reads them: platform input, outside any
+// session, like the sensor itself)
 static TILT_ON: AtomicBool = AtomicBool::new(false);
 /// The latest turn (-1 .. 1) as f32 bits, and whether the sensor gave one yet.
 static TILT: AtomicU32 = AtomicU32::new(0);

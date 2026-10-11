@@ -1825,55 +1825,8 @@ fn setting_key(k: &str) -> String {
     SETTING_ALIASES.iter().find(|(alias, _)| *alias == k).map(|(_, key)| key.to_string()).unwrap_or(k)
 }
 
-/// The interface's languages: the settings' code (OMSI's three-letter style), the name in
-/// the language itself, the interface tables' code, and other spellings a file may use.
-/// OMSI's own texts (key names, `.dsc` descriptions, tutorials) exist in English, German
-/// and French: every other language shows those in English.
-pub const LANGUAGES: &[(&str, &str, &str, &[&str])] = &[
-    ("ENG", "English", "en", &["en", "english"]),
-    ("DEU", "Deutsch", "de", &["de", "ger", "german", "deutsch"]),
-    ("FRA", "Français", "fr", &["fr", "fre", "french", "francais", "français"]),
-    ("RUS", "Русский", "ru", &["ru", "russian", "русский"]),
-    ("UKR", "Українська", "uk", &["uk", "ua", "ukrainian", "українська"]),
-    ("BEL", "Беларуская", "be", &["be", "by", "belarusian", "беларуская"]),
-    ("KAZ", "Қазақша", "kk", &["kk", "kz", "kazakh", "қазақша"]),
-    ("POL", "Polski", "pl", &["pl", "polish", "polski"]),
-    ("CZE", "Čeština", "cs", &["cs", "cz", "czech", "čeština", "ces"]),
-    ("HUN", "Magyar", "hu", &["hu", "hungarian", "magyar"]),
-    ("ESP", "Español", "es", &["es", "spa", "spanish", "español"]),
-    ("CAT", "Català", "ca", &["ca", "cat", "ca-es", "ca-ad", "catalan", "català", "catala"]),
-    ("PTB", "Português (Brasil)", "pt", &["pt", "br", "pt-br", "por", "portuguese", "português"]),
-    ("PTP", "Português (Portugal)", "pt-pt", &["pt-pt", "pt_pt", "pt-portugal", "portuguese-portugal", "português (portugal)", "português de portugal"]),
-    ("ITA", "Italiano", "it", &["it", "italian", "italiano"]),
-    ("NLD", "Nederlands", "nl", &["nl", "dutch", "nederlands"]),
-    ("TUR", "Türkçe", "tr", &["tr", "turkish", "türkçe"]),
-    ("JPN", "日本語", "ja", &["ja", "jp", "japanese", "日本語"]),
-    ("ZHT", "繁體中文", "zh-tw", &["zh-tw", "zh-hant", "zh-hk", "zh-mo", "cht", "traditional chinese", "繁體中文", "繁体中文"]),
-    ("KOR", "한국어", "ko", &["ko", "kr", "korean", "한국어"]),
-    ("THA", "ไทย", "th", &["th", "thai", "ไทย"]),
-    ("VIE", "Tiếng Việt", "vi", &["vi", "vietnamese", "tiếng việt"]),
-    ("IND", "Bahasa Indonesia", "id", &["id", "indonesian", "bahasa indonesia"]),
-    ("MSA", "Bahasa Melayu", "ms", &["ms", "malay", "bahasa melayu"]),
-    ("TGL", "Filipino", "tl", &["tl", "fil", "filipino", "tagalog"]),
-    ("CHS", "中文 (简体)", "zh", &["zh", "zh-cn", "zh-sg", "zh-hans", "zhs", "chs", "cn", "chinese", "simplified chinese", "简体中文", "簡體中文", "中文"]),
-    ("HIN", "हिन्दी", "hi", &["hi", "hindi", "हिन्दी"]),
-];
-
-/// The settings' language code from any spelling the game accepts (English when unknown).
-pub fn language_code(s: &str) -> &'static str {
-    let s = s.trim().to_lowercase();
-    LANGUAGES
-        .iter()
-        .find(|(code, _, _, aliases)| code.eq_ignore_ascii_case(&s) || aliases.iter().any(|a| *a == s))
-        .map(|l| l.0)
-        .unwrap_or("ENG")
-}
-
-/// The interface tables' code of a language (`ru`, `ja` ...; empty for English).
-pub fn language_iso(code: &str) -> &'static str {
-    let c = language_code(code);
-    LANGUAGES.iter().find(|l| l.0 == c).map(|l| if l.2 == "en" { "" } else { l.2 }).unwrap_or("")
-}
+// (the language table lives in omsi-cfg, below the input crate that needs it too)
+pub use omsi_cfg::lang::{language_code, language_iso, LANGUAGES};
 
 /// `vanilla` (as OMSI 2), `vanilla_plus`, `enhanced` or `enhanced_plus`, from the ways a file
 /// may spell them (as the game's `settings::graphics_mode`).
@@ -1984,6 +1937,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
     v["passenger_animation"] = json!("original");
     // the trees' foliage bends and sways in the weather's wind
     v["windy_trees"] = json!(true);
+    v["mirror_hud_every_frame"] = json!(false);
     // an early timetable bus waits only at the stops the timetable times (off: at every
     // stop, as in OMSI; #1773)
     v["ai_wait_timed_stops_only"] = json!(false);
@@ -2101,7 +2055,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
             "head_tracking_yaw_sens" | "head_tracking_pitch_sens" | "head_tracking_roll_sens" | "head_tracking_x_sens" | "head_tracking_y_sens" | "head_tracking_z_sens" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.0, 100.0)).unwrap_or(100.0)),
             "nav_arrows" | "nav_ai" | "get_up" | "time_sync" | "metar_sync" | "ui_scale_window" | "notes" | "machine_translation" | "update_check" | "update_auto" | "update_notify" | "presence" | "reflections" | "steering_linear" | "old_steering" | "red_steer_spd" | "ff_invert" | "ff_enabled" | "brake_hold" | "auto_clutch" | "momentary_gears" | "auto_shift" | "mouse_steering" | "mouse_right_off" | "mouse_smooth" | "mouse_hold" | "blinker_cancel" => v[&k] = json!(b(val)),
             "info_bar" => v[&k] = json!(b(val)),
-            "windy_trees" | "ai_wait_timed_stops_only" | "ambient" => v[&k] = json!(b(val)),
+            "windy_trees" | "mirror_hud_every_frame" | "ai_wait_timed_stops_only" | "ambient" => v[&k] = json!(b(val)),
             "time_speed" => v[&k] = json!(val.trim_start_matches(['x', 'X']).parse::<f64>().map(|x| x.clamp(1.0, 30.0)).map(|x| if x.fract() == 0.0 { format!("{}", x as i64) } else { x.to_string() }).unwrap_or_else(|_| "1".into())),
             "language" => v[&k] = json!(language_code(val)),
             "graphics" | "renderer" => graphics = Some(graphics_mode(val)),
@@ -2261,9 +2215,9 @@ pub fn save_settings(v: &Value) -> Result<()> {
 
 /// The settings a graphics profile holds: what the Graphics tab shows, except the machine's
 /// own (fullscreen, graphics API).
-pub const GRAPHICS_PROFILE_KEYS: [&str; 25] = [
+pub const GRAPHICS_PROFILE_KEYS: [&str; 26] = [
     "graphics", "msaa", "render_scale", "anisotropy", "shadow_size", "ssao", "shadows", "shadow_casters", "detail_textures", "led_glow", "led_mips", "reflections", "clouds", "cloud_quality", "rain_quality", "windy_trees",
-    "vsync", "max_fps", "view_distance", "max_obj_dist", "min_obj_size", "mirror_size", "mirror_refresh", "texture_memory", "texture_compression",
+    "vsync", "max_fps", "view_distance", "max_obj_dist", "min_obj_size", "mirror_size", "mirror_refresh", "mirror_hud_every_frame", "texture_memory", "texture_compression",
 ];
 
 fn graphics_profiles_path() -> PathBuf {
@@ -2501,6 +2455,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("triple_width_mm={}\ntriple_distance_mm={}\ntriple_bezel_mm={}\n", f("triple_width_mm", 600.0).clamp(200.0, 2000.0), f("triple_distance_mm", 650.0).clamp(200.0, 3000.0), f("triple_bezel_mm", 0.0).clamp(0.0, 100.0)));
     text.push_str(&format!("info_bar={}\n", b("info_bar", false)));
     text.push_str(&format!("windy_trees={}\n", b("windy_trees", true)));
+    text.push_str(&format!("mirror_hud_every_frame={}\n", b("mirror_hud_every_frame", false)));
     text.push_str(&format!("standing_chance={}\n", n("standing_chance", 5).clamp(0, 100)));
     text.push_str(&format!("ambient={}\nvol_ambient={}\n", b("ambient", true), f("vol_ambient", 0.8).clamp(0.0, 1.0)));
     text.push_str(&format!("radio_speaker={}\nradio_hiss={}\nradio_dropouts={}\n", f("radio_speaker", 0.0).clamp(0.0, 1.0), f("radio_hiss", 0.0).clamp(0.0, 1.0), f("radio_dropouts", 0.0).clamp(0.0, 1.0)));
@@ -3168,6 +3123,17 @@ mod tests {
             assert_eq!(v["mirror_refresh"], mode);
             let text = settings_to_text(&v, None);
             assert!(text.lines().any(|l| l == format!("mirror_refresh={mode}")), "{text}");
+        }
+    }
+
+    #[test]
+    fn mirror_hud_every_frame_survives_the_launcher() {
+        assert_eq!(settings_from_text(None)["mirror_hud_every_frame"], false);
+        for (word, on) in [("1", true), ("0", false)] {
+            let v = settings_from_text(Some(&format!("mirror_hud_every_frame={word}\n")));
+            assert_eq!(v["mirror_hud_every_frame"], on, "{word}");
+            let text = settings_to_text(&v, None);
+            assert!(text.lines().any(|l| l == format!("mirror_hud_every_frame={}", on as u8)), "{text}");
         }
     }
 

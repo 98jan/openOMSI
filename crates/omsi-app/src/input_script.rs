@@ -6,23 +6,8 @@ use super::*;
 pub(crate) use crate::app_impl::{cab_look_yaw, chase_orbit_step, ease_look, gate_gear_var, look_key_is, look_key_of, on_server, reset_blend, swap_view_look};
 
 
-/// Global actions a controller button should send to the game instead of to the bus script.
-pub(crate) fn is_game_action(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.starts_with("view_")
-        || matches!(
-            name.as_str(),
-            "sim_pause"
-                | "open_menu"
-                | "screenshot"
-                | "photo_mode"
-                | "quicksave"
-                | "toggel_mouse_ctrl"
-                | "toggel_ctrler"
-                | "voice_radio"
-                | "pax_door_request"
-        )
-}
+// (the game's own action names live with the controllers: `omsi-input`)
+pub(crate) use omsi_input::actions::is_game_action;
 
 /// How far (m) a click reaches a scenery object with a `[mouseevent]`.
 pub(crate) const SCENERY_OBJECT_REACH: f32 = 50.0;

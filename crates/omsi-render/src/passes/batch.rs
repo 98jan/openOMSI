@@ -539,31 +539,55 @@ impl Renderer {
             let format = if f.masked_frame { HDR_FORMAT } else { self.format };
             let batches = if plan.presurface_prefill(self, f) { &plan.main_batches[plan.presurface_batch_end..] } else { &plan.main_batches };
             let camera = scene.camera_bind_group.as_ref().expect("camera bind group");
-            // The window's bundles of the last frame are drawn again when this frame's
+            // The window's bundles of the last frame are drawn again where this frame's
             // batches are the same and name the same buffers and bind groups: a bundle holds
             // only which draws to make, and what the draws read (the instances' places, the
             // draw list) is in buffers written every frame. A view standing still - the bus
-            // at a stop - recorded the same thousand draws anew every frame.
+            // at a stop - recorded the same thousand draws anew every frame. This goes by
+            // part: when only the last parts changed (the blended draws, re-sorted as the
+            // traffic moves, come last), the parts before them are kept.
             let kept = f.with_overlays && f.projection.is_none() && !f.second_eye;
             let mode = (f.enhanced, f.reflection_frame, format, self.options.msaa, rt_gbuf());
+            let chunks = bundle_chunks(self.encoding_pool.as_ref(), batches);
+            let mut reuse: Vec<Option<wgpu::RenderBundle>> = vec![None; chunks.len()];
             if kept {
-                if let Some(c) = self.main_bundles.borrow().as_ref() {
-                    if c.mode == mode && c.camera == *camera && c.batches == *batches && same_resources(scene, batches, &c.resources) {
-                        return c.bundles.clone();
+                if let Some(c) = self.history.main_bundles.borrow().as_ref() {
+                    if c.mode == mode && c.camera == *camera {
+                        for (k, chunk) in chunks.iter().enumerate() {
+                            if let Some((b, r, bundle)) = c.parts.get(k) {
+                                if *b == **chunk && same_resources(scene, chunk, r) {
+                                    reuse[k] = Some(bundle.clone());
+                                }
+                            }
+                        }
+                        if reuse.iter().all(Option::is_some) && c.parts.len() == chunks.len() {
+                            self.history.bundle_stats.set((0, reuse.len()));
+                            return reuse.into_iter().flatten().collect();
+                        }
                     }
                 }
             }
-            let bundles = record_bundles(&self.device, self.encoding_pool.as_ref(), scene, batches, pp, camera, format, self.options.msaa);
-            // (not when a part could not be recorded: it would be left out frame after frame)
-            let whole = bundles.len() == bundle_parts(self.encoding_pool.as_ref(), batches.len());
-            *self.main_bundles.borrow_mut() = (kept && whole).then(|| MainBundles {
-                mode,
-                camera: camera.clone(),
-                batches: batches.to_vec(),
-                resources: batch_resources(scene, batches),
-                bundles: bundles.clone(),
-            });
-            bundles
+            let kept_parts = reuse.iter().filter(|b| b.is_some()).count();
+            if f.with_overlays {
+                self.history.bundle_stats.set((chunks.len() - kept_parts, kept_parts));
+            }
+            let bundles = record_bundles(&self.device, self.encoding_pool.as_ref(), scene, &chunks, &reuse, pp, camera, format, self.options.msaa);
+            // (not when a part could not be recorded: it would be left out frame after frame;
+            // and a mirror's or an eye's picture leaves the window's alone - it cleared them,
+            // so with the mirrors on the window never kept a bundle)
+            let whole = bundles.iter().all(Option::is_some);
+            if kept {
+                *self.history.main_bundles.borrow_mut() = whole.then(|| MainBundles {
+                    mode,
+                    camera: camera.clone(),
+                    parts: chunks
+                        .iter()
+                        .zip(&bundles)
+                        .map(|(chunk, b)| (chunk.to_vec(), batch_resources(scene, chunk), b.clone().expect("whole")))
+                        .collect(),
+                });
+            }
+            bundles.into_iter().flatten().collect()
         } else {
             Vec::new()
         }
@@ -574,9 +598,8 @@ impl Renderer {
 pub(crate) struct MainBundles {
     mode: (bool, bool, wgpu::TextureFormat, u32, bool),
     camera: wgpu::BindGroup,
-    batches: Vec<Batch>,
-    resources: Vec<BatchResources>,
-    bundles: Vec<wgpu::RenderBundle>,
+    /// each bundle with the batches it was recorded from and what they bound
+    parts: Vec<(Vec<Batch>, Vec<BatchResources>, wgpu::RenderBundle)>,
 }
 
 /// What a recorded batch binds: its mesh's buffers and place in them, and its material's

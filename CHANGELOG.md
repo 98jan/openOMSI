@@ -4,6 +4,40 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.32 - 2026-10-11
+
+### Fixes
+- 0.2.31 was never published: its Windows x64 build stopped at a check of the shaders that read Windows' line endings (not the game itself). 0.2.32 is 0.2.31 for every platform - see below for what it brings.
+
+## 0.2.31 - 2026-10-11
+
+### New
+- **openOMSI heals a broken start by itself.** A release that crashes or hangs before the launcher's window used to strand everyone - the updater lives in the launcher, so a launcher that never opened never updated (0.2.28 on Windows had to be downloaded again by hand). Now the program's very first act is a small watcher without a window; if the launcher crashes, ends on an error or has not drawn its first frames after two minutes, it is healed on its own: a newer release is installed (its program must start before it replaces anything), else the version before the last update - kept until the new one has started well - is put back, else it starts once more in safe mode (basic graphics, no plugins), else a message says what to do. Each step is said in a message box in the game's language. A version that failed is never installed again on that computer, and the project can list a broken release (`release/health.json`) so that it is replaced at the next start even when it starts. A crash in the middle of a drive changes nothing. `OMSI_NO_GUARD=1` switches it off (see the user guide, "When a version does not start").
+- **Mirror panels every frame**: a switch in Settings → Graphics (off by default) draws the mirror panels in the cab (Ctrl+M) every frame, as ETS2 draws its screen mirrors, so the street no longer jerks past in them ([#2209](https://github.com/openOMSI-org/openOMSI/pull/2209), by @m3rlinek01).
+
+### Changes
+- **AI traffic drives more smoothly**: brake lights with hysteresis and a minimum time lit (no flicker), gentle braking eased in, bends taken at 1.2 m/s² and slowed for from further back, AI buses steer into turns with a shorter look-ahead and a quicker wheel, and the AI horn is heard (OMSI's own `Sounds/AI_Cars` horn where a car's sounds have none on `ev_AI_Horn`).
+- **Emergency vehicles on a drive are faster**: 1.5 times the limit, at most 30 km/h over it, pulling away harder and taking bends harder.
+- **The trip summary waits until the bus stops**, so it no longer takes the mouse and the pedals while the bus pulls into the last stop ([#2240](https://github.com/openOMSI-org/openOMSI/pull/2240), by @Dasteee; #2227, #2236), and **fits a phone's screen** instead of spilling past its edges.
+- **Spline rows as Omsi.exe draws them**: the objects of a row that reach past their tile's edge are drawn again (the far side of the parked cars along a Berlin-Spandau street crossing a tile border; [#2249](https://github.com/openOMSI-org/openOMSI/pull/2249)), and a row whose first object lies before its own spline is not drawn, whatever its lateral offset ([#2238](https://github.com/openOMSI-org/openOMSI/pull/2238); both by @NACHN, checked against Omsi.exe).
+- **Under the hood**: the program is split into 33 parts with clear layers - the launcher, input devices, VR, LAN play, platform services, weather, career, soundscape, the world, the scene, photo mode and the HTML displays each in their own crate, the renderer's 10,000-line core cut up by concern, the vehicle and the script host by subsystem, the frame as one declared list of stages for the window and the offscreen run. What is drawn, heard and simulated is unchanged (checked picture by picture, sound by sound and with every test); a check on every pull request keeps the layers apart.
+
+### Fixes
+- **Destination displays that only their model names a variable for show again** (the Enviro500's `DPIP_8words`): a variable a model's `[visible]` uses is registered even when no varlist declares it ([#2217](https://github.com/openOMSI-org/openOMSI/pull/2217), by @shamough1792).
+- **A second drive in the same program** (Android starts one from the launcher, a lost graphics device restarts the renderer) no longer inherits the last one's state: corona and spotlight pictures were missing on the second renderer, a duty after one begun on the real time could not move the clock to its first trip, a map opened for a duty start could be taken over with its old state, the map lights and fading lamps of the previous map, the photo mode's settings, passengers' lines and a LAN `/admin` password carried over, and a LAN rejoin said hello twice.
+- **With mirrors on, the window's draw lists are reused again** from frame to frame (a mirror pass threw them away every frame).
+- **Offscreen recordings (`OMSI_RECORD`)** fade sounds in by the film's time, not the wall clock, so a recording comes out the same every time.
+
+## 0.2.30 - 2026-10-11
+
+### Changes
+- **Clouds: an overcast sky is a dark deck with its own heaps in it** instead of a flat pale sheet. A few fair-weather clouds keep the light bases they had; as the cover rises past about 55 % their undersides go darker, towards the grey of a storm, and a shut sky or rain is drawn by the deck itself (Enhanced; [#2198](https://github.com/openOMSI-org/openOMSI/pull/2198), by @NACHN).
+- **All platforms again**: 0.2.29 came out for Windows only; 0.2.30 is built for Windows, macOS and Linux (x64 and ARM64), Android (arm64) and the dedicated servers.
+
+### Fixes
+- **Spline rows no longer draw objects Omsi.exe drops**: a row's objects that fall outside their own tile, and a row written along the carriageway that starts before its chain - on Grundorf Island 4's interchange, bridge piers no longer stand in the road. Rows of `[absheight]` objects stay wherever they fall, as single objects do ([#2194](https://github.com/openOMSI-org/openOMSI/pull/2194), by @KYChung1287; #787).
+- **Objects a map tags as a surface stay behind what stands beside them at a distance**: the pull towards the eye that keeps road markings over the road stops growing at 5 cm, so a traffic light's pole no longer draws across its signal head from tens of metres away; markings, crossings and kerbs keep their depth near the camera ([#2197](https://github.com/openOMSI-org/openOMSI/pull/2197), by @NACHN; #1694, #1196).
+
 ## 0.2.29 - 2026-10-10
 
 ### Fixes

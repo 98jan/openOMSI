@@ -3,19 +3,21 @@
 use super::*;
 
 impl App {
-    /// The LAN session, the player on foot and the other players walking about, and the
-    /// people at the stops and in the buses.
-    pub(super) fn frame_people(&mut self, dt: f32) {
-        let __t = Instant::now();
+    /// The LAN session (a stage of its own: a joining player's bus is loaded here, and that
+    /// frame was counted as the people's).
+    pub(super) fn frame_lan(&mut self, dt: f32) {
         self.tick_lan(dt);
-        // (a stage of its own: a joining player's bus is loaded here, and that frame
-        // was counted as the people's)
-        *self.perf.profile.entry("lan").or_default() += __t.elapsed().as_secs_f64();
-        // the player on foot, and the other players walking about
+    }
+
+    /// The player on foot, and the other players walking about.
+    pub(super) fn frame_on_foot(&mut self, dt: f32) {
         self.tick_on_foot(if self.paused { 0.0 } else { dt });
         self.tick_passenger_door_request(dt);
         self.sync_remote_walkers();
-        let __t = Instant::now();
+    }
+
+    /// The people at the stops and in the buses, and their view sync.
+    pub(super) fn frame_humans(&mut self, dt: f32) {
         let sight = self.camera.as_ref().zip(self.gfx.surface.as_ref())
             .and_then(|(c, s)| self.sight_extent(c, (s.config.width, s.config.height)));
         if let (Some(h), Some(w), Some(r), Some(scene)) = (
@@ -112,7 +114,11 @@ impl App {
             let bus = self.player.as_ref().map(|p| &p.vehicle);
             view_sync::sync(ViewSync::people(h, bus, center), &mut self.gfx.sim_view, w, r, scene);
         }
-        *self.perf.profile.entry("humans").or_default() += __t.elapsed().as_secs_f64();
+    }
+
+    /// After the people: the walker aboard a bus where the bus is this frame, and the fuel
+    /// pump or bus wash running.
+    pub(super) fn frame_after_humans(&mut self, dt: f32) {
         self.foot_after_humans();
         if !self.paused {
             self.tick_service(dt);

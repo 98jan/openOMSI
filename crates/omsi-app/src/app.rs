@@ -80,6 +80,8 @@ pub(crate) struct App {
     pub(crate) shell: crate::shell::Shell,
     /// The photo mode, while it is on.
     pub(crate) photo: Option<crate::photo::Photo>,
+    /// The photo mode's settings, kept from one photo to the next in the session.
+    pub(crate) photo_settings: Option<crate::photo::Settings>,
     /// The developer tools, while they are open (Ctrl+Shift+D).
     pub(crate) devtools: Option<Box<crate::devtools::DevTools>>,
 }
@@ -92,6 +94,7 @@ impl App {
     pub(crate) fn vr_active(&self) -> bool { false }
 
     pub(crate) fn resumed_impl(&mut self, event_loop: &ActiveEventLoop) {
+        crate::frame_stages::log_order();
         if let Some(window) = self.window.clone() {
             // back from the background (a phone): the window's surface is made again (on the
             // device whose renderer is still being built, while it is)
@@ -402,12 +405,14 @@ impl App {
             log::info!("weather cycle: starting with {:?}", self.args.weather);
             self.session.weather_cycle = Some(c);
         }
-        self.session.weather = Some(load_weather(&self.args));
+        let (weather, model) = load_weather_run(&self.args);
+        self.session.weather = Some(weather);
+        self.session.sky.model = model;
         // the roads start in the state this weather has already left them in, as they do
         // offscreen: a session begun in the rain used to open on a bone-dry street
         self.session.wetness = self.session.weather.as_ref().map(initial_wetness).unwrap_or(0.0);
         self.clock = start_clock(&self.args);
-        setup_sky(&self.args, &renderer, &mut scene, self.session.envir.as_ref(), self.session.weather.as_ref());
+        setup_sky(&self.args, &renderer, &mut scene, self.session.envir.as_ref(), self.session.weather.as_ref(), &mut self.session.sky.clouds);
         // the window streams the tiles around the camera unless a fixed area was asked for
         if !self.args.all && self.args.radius.is_none() {
             match opened.unwrap_or_else(|| open_world(&self.args)) {

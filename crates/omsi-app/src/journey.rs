@@ -154,6 +154,16 @@ impl Journey {
         self.ready.take()
     }
 
+    /// Keep the automatic summary pending while driving: opening it takes the mouse
+    /// away from the bus. Use the timetable's standstill threshold (0.1 m/s).
+    pub(crate) fn take_summary_when_stopped(&mut self, speed_kmh: f32) -> Option<TripSummary> {
+        if speed_kmh.abs() < 0.36 {
+            self.take_summary()
+        } else {
+            None
+        }
+    }
+
     /// The summary of the last trip that ended.
     pub(crate) fn last_summary(&self) -> Option<TripSummary> {
         self.last.clone()
@@ -318,6 +328,33 @@ mod tests {
             departure: stops[0].1,
             end: stops[stops.len() - 1].1,
             stops: stops.iter().map(|(n, t)| PlannedStop { object_id: 0, name: n.to_string(), arr: *t, dep: *t, position: None, dir: Default::default(), stops: true }).collect(),
+        }
+    }
+
+    #[test]
+    fn automatic_summary_waits_for_standstill_and_appears_once() {
+        let trips = [trip(&[("First", 0.0), ("Last", 60.0)])];
+        let mut j = Journey::new(("5".into(), "1".into(), 0), &trips, "Test", PathBuf::new());
+        j.arrived((0, 1), 0.0);
+        j.trip_ended(0);
+        let expected = j.last_summary().expect("the completed trip is already recorded");
+
+        for speed in [20.0, -20.0, 1.0, -1.0, 0.36, -0.36] {
+            assert!(j.take_summary_when_stopped(speed).is_none(), "still moving at {speed} km/h");
+        }
+        assert_eq!(j.take_summary_when_stopped(0.0), Some(expected.clone()));
+        assert!(j.take_summary_when_stopped(0.0).is_none(), "closing it must not reopen it");
+        assert_eq!(j.last_summary(), Some(expected), "statistics remain available in the quick menu");
+    }
+
+    #[test]
+    fn automatic_summary_tolerates_standstill_physics_jitter() {
+        let trips = [trip(&[("First", 0.0), ("Last", 60.0)])];
+        for speed in [0.01, -0.01, 0.35, -0.35] {
+            let mut j = Journey::new(("5".into(), "1".into(), 0), &trips, "Test", PathBuf::new());
+            j.arrived((0, 1), 0.0);
+            j.trip_ended(0);
+            assert!(j.take_summary_when_stopped(speed).is_some(), "stopped at {speed} km/h");
         }
     }
 

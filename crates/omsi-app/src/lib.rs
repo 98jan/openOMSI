@@ -10,63 +10,57 @@
 //! window of one process.
 
 mod admin;
-mod discord;
+use omsi_platform::discord;
 #[cfg(steam)]
 mod steam;
-mod voice;
+use omsi_lan::voice;
 mod head_idle;
-mod headtrack;
+use omsi_input::headtrack;
 #[cfg(windows)]
-mod openxr;
-#[cfg(target_os = "macos")]
-mod mac_hid;
-#[cfg(target_os = "macos")]
-mod mac_game_controller;
+use omsi_xr::openxr;
 #[cfg(target_os = "android")]
 mod android;
 mod platform;
 mod touch;
 mod placing;
 mod mt;
-mod updater;
+use omsi_platform::updater;
 mod update_watch;
-mod presence;
-mod ambience;
+use omsi_platform::presence;
+use omsi_soundscape::ambience;
 mod soundscape;
-mod wheel_surface;
-mod camera_arm;
+use omsi_scene::wheel_surface;
+use omsi_scene::camera_arm;
 mod cam_approach;
-mod career;
-mod describe;
+use omsi_career::career;
+use omsi_input::describe;
 mod editor;
 mod duty_book;
 mod game_lists;
 mod game_panels;
 mod game_controller_menu;
 mod rail_drive;
-mod driver;
+use omsi_scene::driver;
 mod export;
 mod hud;
 mod humans;
 mod journey;
-mod keys;
+use omsi_input::keys;
 mod lan;
 mod lan_world;
-mod lights;
+use omsi_scene::lights;
 mod launcher;
 mod menu;
 mod mirror_hud;
 mod navigator;
 mod vr_navigator;
-mod money;
+use omsi_scene::money;
 mod radio;
 
-mod puddles;
+use omsi_scene::puddles;
 mod quit;
-mod condensation;
-mod rain;
-mod window_wipers;
-mod window_drops;
+use omsi_weather::condensation;
+use omsi_scene::{rain, window_wipers};
 mod scene;
 mod season_phase;
 mod schedule;
@@ -77,7 +71,7 @@ mod shell;
 mod photo;
 mod devtools;
 mod telemetry;
-mod threads;
+use omsi_scene::threads;
 mod tiles;
 mod traffic;
 mod view_sync;
@@ -89,45 +83,39 @@ mod applog;
 mod app_events;
 mod bus_service;
 mod camera_util;
-mod controllers;
-mod gamepad_profile;
-mod hpattern;
-mod ffb_calibration;
-#[cfg(windows)]
-mod dinput;
-#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
-mod evdev_buttons;
-#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
-mod evdev_ff;
+// the game controllers, their mappings and force feedback (`omsi-input`), at their old paths
+use omsi_input::{controllers, gamepad_profile, hpattern};
 mod cli;
 mod diagnostics;
 mod perf_report;
+mod frame_stages;
 mod support_bundle;
 mod duty_start;
 mod input_script;
 mod app_impl;
 mod launcher_link;
-mod lan_mods;
+use omsi_lan::mods as lan_mods;
 mod memory;
 mod offscreen;
 mod ground_gap;
 mod on_foot;
-mod route_arrows;
+use omsi_scene::route_arrows;
 mod server;
 mod player;
 mod plugin_io;
-mod plugin_ui;
+// the plugins' panels (`omsi-plugin-ui`) at their old path, and the app's side of their input
+use omsi_plugin_ui as plugin_ui;
+mod plugin_panels;
 mod plugins;
 mod services;
 mod situation;
 mod spawn;
-mod stock_keys;
+use omsi_input::stock_keys;
 mod startup;
 mod traffic_link;
 mod tutorial;
 mod weather_setup;
-mod weather_cycle;
-mod weather_model;
+use omsi_weather::{weather_cycle, weather_model};
 mod world_load;
 
 // the interface's translations (locales/app.yml; the English text is the key)
@@ -199,6 +187,8 @@ use world_load::*;
 
 /// The game (and its launcher) from the command line: what `main` does.
 pub fn run() -> Result<()> {
+    view_sync::install_sim_decoder();
+    startup::install_scene_settings();
     omsi_cfg::migrate_legacy_data_dir();
     #[cfg(target_os = "macos")]
     restart_with_allocator_settings();
@@ -249,6 +239,11 @@ pub fn run() -> Result<()> {
         return launcher::run(graphics_instance());
     }
     let Some(app) = make_app(args, server_cfg)? else { return Ok(()) };
+    // a game session's start goes into the start guard's journal (a version whose sessions
+    // keep failing before their first frames is healed at the launcher's next start)
+    if app.args.server.is_none() {
+        omsi_guard::start(omsi_guard::journal::Kind::Game);
+    }
     let event_loop = game_event_loop()?;
     // SIGTERM (the launcher's Stop) and Ctrl+C end the session the way Escape does
     let proxy = event_loop.create_proxy();
@@ -527,7 +522,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
     #[cfg(steam)]
     let steam = if is_server { None } else { crate::steam::Steam::start() };
     let instance = graphics_instance();
-    let vr_nav_profiles = crate::vr_navigator::Profiles::load();
+    let vr_nav_profiles = crate::vr_navigator::Profiles::load(crate::vr_navigator::profiles_path().as_deref());
     let ui = ui::Ui::new();
     let rain = rain::Rain::new();
     let cabin_air = crate::condensation::CabinAir::new();
@@ -554,6 +549,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             mirror_budget: 1.0,
             mirrors_seen: 2,
             mirror_turn: 0,
+            mirror_panel_cams: Vec::new(),
             frozen_mirrors: None,
             mirror_hud: Default::default(),
             window_hidden: false,
@@ -612,8 +608,11 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             metar_rx: None,
             metar_once: false,
             metar_next: 0.0,
+            sky: Default::default(),
         },
         menus: MenuState {
+            list_dirty: false,
+            page_titles: Default::default(),
             chooser: None,
             editor: None,
             vehicle_list: Vec::new(),
@@ -704,6 +703,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             soundscape: None,
             voice: None,
             foot_in: None,
+            voices_waiting: Vec::new(),
         },
         clock: omsi_sim::SimClock::default(),
         started,
@@ -782,6 +782,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         exiting: false,
         shell: crate::shell::Shell::new(),
         photo: None,
+        photo_settings: None,
         devtools: None,
     }
 }

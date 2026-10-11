@@ -337,6 +337,10 @@ impl Shared {
                 v.pos += step;
             }
         }
+        if crate::trace::on() {
+            let ended: Vec<VoiceId> = voices.iter().filter(|v| v.finished).map(|v| v.id).collect();
+            crate::trace::ended(&ended);
+        }
         voices.retain(|v| !v.finished);
         drop(voices);
         if listener.reverb_mix > 0.001 && listener.reverb_time > 0.05 {
@@ -447,7 +451,7 @@ fn muted() -> bool {
 pub fn read_clip(path: &Path) -> Option<Arc<Clip>> {
     let bytes = omsi_cfg::vfs::read(path).ok()?;
     let compressed = bytes.starts_with(b"OggS") || bytes.starts_with(b"fLaC") || crate::wav::is_mp3(&bytes);
-    match if compressed { crate::wav::parse_compressed(&bytes) } else { crate::wav::parse_wav(&bytes) } {
+    let clip = match if compressed { crate::wav::parse_compressed(&bytes) } else { crate::wav::parse_wav(&bytes) } {
         Ok(w) => Some(Arc::new(Clip {
             sample_rate: w.sample_rate,
             channels: w.channels,
@@ -457,7 +461,11 @@ pub fn read_clip(path: &Path) -> Option<Arc<Clip>> {
             log::warn!("{}: {e}", path.display());
             None
         }
+    };
+    if let Some(c) = &clip {
+        crate::trace::clip_read(Arc::as_ptr(c) as usize, path);
     }
+    clip
 }
 
 /// Every two seconds, the name of the system's default output device: when it is not the
@@ -481,6 +489,7 @@ impl AudioEngine {
     /// An engine without a device: clips load and voices are kept, nothing is mixed or
     /// heard - for tools that look at sound configurations.
     pub fn silent() -> AudioEngine {
+        crate::trace::engine("silent");
         AudioEngine {
             stream: std::cell::RefCell::new(None),
             device: std::cell::RefCell::new(String::new()),
@@ -501,6 +510,7 @@ impl AudioEngine {
     /// long a picture takes. Clips are read at once (a background read would leave the
     /// first seconds silent), and the clock of the parameters is the mixed sound's own.
     pub fn capture(rate: u32) -> AudioEngine {
+        crate::trace::engine("capture");
         AudioEngine {
             stream: std::cell::RefCell::new(None),
             device: std::cell::RefCell::new(String::new()),
@@ -523,10 +533,19 @@ impl AudioEngine {
             return Vec::new();
         };
         let mut out = vec![0.0f32; frames * 2];
+        crate::trace::mixed(frames);
         self.shared.render(&mut out);
         let rate = self.shared.sample_rate.load(Ordering::Relaxed).max(1) as u64;
         us.fetch_add(frames as u64 * 1_000_000 / rate, Ordering::Relaxed);
         out
+    }
+
+    /// The time the engine goes by: the wall clock, or a recording's own (the mixed sound's,
+    /// see [`AudioEngine::capture`]) - a sound's fade-in by the seconds it has played
+    /// (`[volcurve] -1`) is heard in a recording as it is in the game, however long the
+    /// pictures take to draw.
+    pub fn clock(&self) -> std::time::Instant {
+        self.shared.now()
     }
 
     /// The device's (or the capture's) sample rate.
@@ -536,6 +555,7 @@ impl AudioEngine {
 
     /// Open the default output device. Returns a silent engine if none is available.
     pub fn new() -> AudioEngine {
+        crate::trace::engine("device");
         let shared = Arc::new(Shared::new(48_000, 2, muted(), false));
         let reopen = Arc::new(AtomicBool::new(false));
         let engine = AudioEngine {
@@ -757,6 +777,7 @@ impl AudioEngine {
 
     fn play_at(&self, clip: Arc<Clip>, params: VoiceParams, start: f64) -> VoiceId {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        crate::trace::play(id, Some(Arc::as_ptr(&clip) as usize), &params, start);
         self.shared.voices.lock().push(Voice {
             id,
             clip,
@@ -777,6 +798,7 @@ impl AudioEngine {
     /// stream is closed.
     pub fn play_stream(&self, stream: Arc<crate::stream::StreamBuf>, params: VoiceParams) -> VoiceId {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        crate::trace::play(id, None, &params, 0.0);
         self.shared.voices.lock().push(Voice {
             id,
             clip: Arc::new(Clip { sample_rate: 44100, channels: 2, samples: Vec::new() }),
@@ -796,6 +818,7 @@ impl AudioEngine {
     /// The bus radio's effects on stream voice `id` (see `radio_fx`): made, retuned, or
     /// done away with when all of them are 0.
     pub fn set_radio_fx(&self, id: VoiceId, params: crate::radio_fx::RadioFxParams) {
+        crate::trace::radio_fx(id, &params);
         let rate = self.shared.sample_rate.load(Ordering::Relaxed);
         if let Some(v) = self.shared.voices.lock().iter_mut().find(|v| v.id == id) {
             match (v.fx.as_mut(), params.is_off()) {
@@ -810,6 +833,7 @@ impl AudioEngine {
     /// so the game never waits for a block being mixed. Given twice before that block, the
     /// later ones win.
     pub fn set_params(&self, id: VoiceId, params: VoiceParams) {
+        crate::trace::set(id, &params);
         // (no device, no mixer to take them in: straight onto the voice)
         if !self.enabled {
             let listener = self.shared.listener.lock().position;
@@ -849,6 +873,7 @@ impl AudioEngine {
     }
 
     pub fn stop(&self, id: VoiceId) {
+        crate::trace::stop(id);
         if let Some(v) = self.shared.voices.lock().iter_mut().find(|v| v.id == id) {
             v.finished = true;
         }
@@ -859,6 +884,7 @@ impl AudioEngine {
     }
 
     pub fn set_listener(&self, l: Listener) {
+        crate::trace::listener(&l);
         *self.shared.listener.lock() = l;
     }
 
@@ -928,6 +954,18 @@ mod tests {
         }
         assert_eq!(own.doppler.2, 1.0);
         assert!(passing.doppler.2 < 1.0);
+    }
+
+    /// A recording's clock is the sound it mixed, not the wall clock: a fade-in by seconds
+    /// played comes out the same however slowly the run goes.
+    #[test]
+    fn a_recording_goes_by_the_sound_it_mixed() {
+        let e = AudioEngine::capture(48_000);
+        let t0 = e.clock();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert_eq!(e.clock(), t0);
+        e.render_capture(24_000);
+        assert_eq!(e.clock() - t0, std::time::Duration::from_millis(500));
     }
 
     /// The stream opened again (as when the system's output device changed) keeps playing;

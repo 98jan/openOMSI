@@ -6,7 +6,6 @@ impl App {
     /// The AI traffic: what it needs to know, the timetable's departures, its step, its
     /// sound and its pictures.
     pub(super) fn frame_traffic(&mut self, dt: f32) {
-        let __t = Instant::now();
         // (with a triple screen, all of its three panels are in sight)
         let sight = self.camera.as_ref().zip(self.gfx.surface.as_ref())
             .and_then(|(c, s)| self.sight_extent(c, (s.config.width, s.config.height)));
@@ -124,6 +123,5 @@ impl App {
             *self.perf.profile.entry("traffic.sync").or_default() +=
                 __t4.elapsed().as_secs_f64();
         }
-        *self.perf.profile.entry("traffic").or_default() += __t.elapsed().as_secs_f64();
     }
 }

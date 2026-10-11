@@ -43,6 +43,13 @@ impl TripPanel {
         children.push(row(vec![note("Settings → Gameplay → Trip summary turns it off.")], RowAlign::Start));
         card(Anchor::Center, 0.0, 0.0, 620.0, 236, children)
     }
+
+    /// About how much room the card takes at scale 1 (width, height), so that a small screen
+    /// (a phone) can draw it smaller instead of past its edges.
+    pub(crate) fn extent(&self) -> (f32, f32) {
+        let table = (self.summary.rows.len() + 1) as f32 * 13.0 * crate::plugin_ui::LINE + 3.0;
+        (650.0, table + 250.0)
+    }
 }
 
 /// The text on the system's clipboard; false when there is none to be had.

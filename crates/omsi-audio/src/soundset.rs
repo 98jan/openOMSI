@@ -336,7 +336,7 @@ impl SoundSet {
     }
 
     fn ctx(&self, engine: &AudioEngine) -> Ctx {
-        Ctx { listener: engine.listener_position(), ..self.ctx_without_engine() }
+        Ctx { listener: engine.listener_position(), now: engine.clock(), ..self.ctx_without_engine() }
     }
 
     /// What a `[volcurve]` reads. The exe (`TSound` load, 0x74e408) looks the name up in the
@@ -435,7 +435,7 @@ impl SoundSet {
                 if !holds {
                     s.active_since = None;
                 } else if s.active_since.is_none() {
-                    s.active_since = Some(std::time::Instant::now());
+                    s.active_since = Some(ctx.now);
                 }
             }
             let Some(clip) = s.clip.clone() else { continue };
@@ -556,7 +556,7 @@ impl SoundSet {
             {
                 why = format!("condition {} = {:?}", c.variable, var(&c.variable));
             } else if let Some(vc) = s.def.vol_curves.iter().find(|vc| {
-                let active = s.active_since.map_or(0.0, |t| t.elapsed().as_secs_f32());
+                let active = s.active_since.map_or(0.0, |t| ctx.now.saturating_duration_since(t).as_secs_f32());
                 Self::curve_input(vc, var, active, 1.0).is_some_and(|x| curve(&vc.points, x) <= 1.0e-5)
             }) {
                 why = format!("volcurve {} = {:?}", vc.variable, var(&vc.variable));
@@ -589,7 +589,7 @@ impl SoundSet {
             .iter_mut()
             .map(|s| {
                 if !s.def.triggers.is_empty() || Self::conditions_hold(&s.def, var) {
-                    s.active_since.get_or_insert_with(|| std::time::Instant::now() - std::time::Duration::from_secs(5));
+                    s.active_since.get_or_insert_with(|| ctx.now - std::time::Duration::from_secs(5));
                 }
                 let e = ctx.eval(s, var, object_to_world);
                 let dist = s
@@ -604,7 +604,7 @@ impl SoundSet {
     }
 
     fn ctx_without_engine(&self) -> Ctx {
-        Ctx { view: self.view_mask(), amount: self.amount, cab: self.muffled, master: self.master, doppler: !self.listener_vehicle, listener: Vec3::ZERO }
+        Ctx { view: self.view_mask(), amount: self.amount, cab: self.muffled, master: self.master, doppler: !self.listener_vehicle, listener: Vec3::ZERO, now: std::time::Instant::now() }
     }
 
     pub fn stop_all(&mut self, engine: &AudioEngine) {
@@ -629,6 +629,9 @@ struct Ctx {
     master: f32,
     doppler: bool,
     listener: Vec3,
+    /// The engine's clock now (`AudioEngine::clock`): the wall clock, or a recording's
+    /// own - what `[volcurve] -1` counts its seconds in.
+    now: std::time::Instant,
 }
 
 impl Ctx {
@@ -671,7 +674,7 @@ impl Ctx {
         let active = if triggered {
             TRIGGERED_ACTIVE
         } else {
-            s.active_since.map_or(0.0, |t| t.elapsed().as_secs_f32())
+            s.active_since.map_or(0.0, |t| self.now.saturating_duration_since(t).as_secs_f32())
         };
         let facing = match (pos, def.dir) {
             (Some(at), Some(d)) => {
@@ -837,7 +840,7 @@ mod tests {
     }
 
     fn ctx(view: i32, cab: bool) -> Ctx {
-        Ctx { view, amount: if view == 2 { 1.0 } else { 0.0 }, cab, master: 1.0, doppler: false, listener: Vec3::ZERO }
+        Ctx { view, amount: if view == 2 { 1.0 } else { 0.0 }, cab, master: 1.0, doppler: false, listener: Vec3::ZERO, now: std::time::Instant::now() }
     }
 
     fn eval(c: &Ctx, def: SoundEntry, var: &dyn Fn(&str) -> Option<f32>) -> Eval {
