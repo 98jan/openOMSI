@@ -14,6 +14,7 @@ pub mod pipeline_cache;
 mod pipelines;
 mod puddles;
 mod rt;
+mod shaders;
 mod srgb_encode;
 mod triple;
 pub use triple::{panel_width, ScreenView, TripleScreen};
@@ -8543,11 +8544,11 @@ fn indexing_as_calls(src: &str, name: &str, call: &str) -> String {
 fn scene_shader_text(gl: bool) -> String {
     let src = [
         include_str!("colour.wgsl"),
-        include_str!("shader.wgsl"),
+        shaders::SCENE,
         include_str!("enhanced_common.wgsl"),
         include_str!("puddle_common.wgsl"),
         include_str!("lamp_air.wgsl"),
-        include_str!("enhanced.wgsl"),
+        shaders::ENHANCED,
     ]
     .join("\n");
     // Enhanced+: the enhanced pass writes the reflections' surfaces as well (`GBUF_FORMAT`)
