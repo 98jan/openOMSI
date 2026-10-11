@@ -6,7 +6,7 @@ use super::*;
 /// thrown away). With this the second waits for the first's. Only for reads that run to
 /// their end on their own thread - no worker pool inside, no other key asked for, no lock
 /// the waiting threads could hold - so that the wait cannot close a circle.
-pub(crate) struct OnceByKey<T>(Mutex<HashMap<String, Arc<std::sync::OnceLock<T>>>>);
+pub struct OnceByKey<T>(Mutex<HashMap<String, Arc<std::sync::OnceLock<T>>>>);
 
 impl<T> Default for OnceByKey<T> {
     fn default() -> Self {
@@ -18,7 +18,7 @@ impl<T: Clone> OnceByKey<T> {
     /// `read`'s result for `key`, read once by whoever asks first while the others wait.
     /// `read` should leave its result where later callers look first: the key is
     /// forgotten here as soon as it is read.
-    pub(crate) fn once(&self, key: &str, read: impl FnOnce() -> T) -> T {
+    pub fn once(&self, key: &str, read: impl FnOnce() -> T) -> T {
         let cell = self.0.lock().entry(key.to_string()).or_default().clone();
         let value = cell.get_or_init(read).clone();
         let mut loads = self.0.lock();
@@ -575,7 +575,7 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
             let mut positions = Vec::new();
             let mut signs = Vec::new();
             let mut roads = Vec::new();
-            let Some(tile) = crate::tiles::read_tile(path, chrono_dirs) else {
+            let Some(tile) = omsi_world::map_index::read_tile(path, chrono_dirs) else {
                 return (lanes, positions, signs, roads);
             };
             let origin2 = DVec2::new(tx as f64 * tile_size(), ty as f64 * tile_size());

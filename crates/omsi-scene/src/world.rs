@@ -246,7 +246,7 @@ pub fn standard_traffic_lamp(
 
 /// Resolve a lamp channel after its script has run. A zero script output is meaningful
 /// (not a reason to use the stock phase), notably while a pedestrian lamp is blinking.
-pub(crate) fn traffic_lamp_value(var: &str, scripted: Option<f32>, standard: Option<f32>) -> f32 {
+pub fn traffic_lamp_value(var: &str, scripted: Option<f32>, standard: Option<f32>) -> f32 {
     scripted
         .or_else(|| var.trim().parse::<f32>().ok())
         .or(standard)

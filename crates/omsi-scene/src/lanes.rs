@@ -130,7 +130,7 @@ pub(super) fn spline_lanes(
 /// `[varparent]` is a crossing whose program runs and its first string a light index.
 pub(super) fn light_child_of(crossings: &hashbrown::HashSet<i64>, var_parent: Option<i64>, strings: &[String]) -> Option<(i64, usize)> {
     let parent = var_parent.filter(|p| crossings.contains(p))?;
-    if !crate::tiles::names_traffic_light(strings) {
+    if !omsi_world::map_index::names_traffic_light(strings) {
         return None;
     }
     let index = strings.first()?.trim().parse::<usize>().ok()?;
@@ -271,7 +271,7 @@ pub(super) fn object_lanes(
 /// strings of another variable instead put a bus stop sign's route number (`72`, `A47X`)
 /// or a stop name in a `[matl_freetex]` slot, which Omsi.exe never does; those are the
 /// `[texttexture]` sizes of the sign, not files (#1756).
-pub(crate) fn resolve_scenery_freetex_name<'a>(
+pub fn resolve_scenery_freetex_name<'a>(
     var: &str,
     override_: &MaterialDef,
     overrides: &[MaterialDef],

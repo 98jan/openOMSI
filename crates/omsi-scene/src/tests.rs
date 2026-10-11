@@ -108,22 +108,6 @@ fn nightlight_follows_the_objects_darkness_threshold() {
 }
 
 #[test]
-fn vehicle_freetex_retries_paths_below_texture_component() {
-    let root = std::env::temp_dir().join("openomsi-freetex-path-test");
-    let vehicle_texture = root.join("Vehicles/TestBus/Texture");
-    let wanted = vehicle_texture.join("mb_pmon/alerta_FalhaCambio.bmp");
-    std::fs::create_dir_all(wanted.parent().unwrap()).unwrap();
-    std::fs::write(&wanted, b"x").unwrap();
-    let dirs = [vehicle_texture.as_path()];
-    let found = find_vehicle_freetex(
-        r"..\Texture\mb_pmon\alerta_FalhaCambio.bmp",
-        &dirs,
-    );
-    assert_eq!(found.as_deref(), Some(wanted.as_path()));
-    let _ = std::fs::remove_dir_all(root);
-}
-
-#[test]
 fn a_child_naming_a_crossing_light_reads_that_light() {
     // (RefreshAmpelParenting hands any child of a running crossing whose first string
     // is a light index that light's phase, lamp or not, #922)
@@ -1068,7 +1052,6 @@ fn scenery_mouseevent_hit_and_trigger() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
-
 
 #[test]
 fn a_trees_cards_turn_against_its_object_as_in_omsi() {

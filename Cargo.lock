@@ -3328,6 +3328,7 @@ dependencies = [
  "omsi-plugin",
  "omsi-plugin-ui",
  "omsi-render",
+ "omsi-scene",
  "omsi-scenery",
  "omsi-script",
  "omsi-sim",
@@ -3676,6 +3677,40 @@ dependencies = [
  "wgpu",
  "windows 0.62.2",
  "winit",
+]
+
+[[package]]
+name = "omsi-scene"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "hashbrown 0.17.1",
+ "image",
+ "log",
+ "omsi-audio",
+ "omsi-cfg",
+ "omsi-content",
+ "omsi-geometry",
+ "omsi-htmlengine",
+ "omsi-map",
+ "omsi-model",
+ "omsi-o3d",
+ "omsi-render",
+ "omsi-scenery",
+ "omsi-script",
+ "omsi-sim",
+ "omsi-soundscape",
+ "omsi-texture",
+ "omsi-ui",
+ "omsi-vehicle",
+ "omsi-weather",
+ "omsi-world",
+ "parking_lot",
+ "pollster",
+ "rayon",
+ "wgpu",
+ "zip",
 ]
 
 [[package]]

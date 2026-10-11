@@ -1,7 +1,7 @@
 //! Per-frame light sources: scenery coronas/map lights by night, vehicle lights from
 //! their script variables (`[light_enh_2]`, `[spotlight]` + `Spot_Select`, `[interiorlight]`).
 
-use crate::scene::{LightSwitch, World};
+use crate::{LightSwitch, World};
 use glam::{DVec3, Vec3};
 use omsi_render::{Corona, LightMode, Lighting, PointLight, Scene};
 
@@ -140,7 +140,7 @@ pub fn vehicle_lights(
             None => v.body_rotation(),
         }
     };
-    crate::scene::model_lights_extend(&ty.model, &mesh_xf, v.position, &value_of, &v.light_fade, coronas);
+    crate::model_lights_extend(&ty.model, &mesh_xf, v.position, &value_of, &v.light_fade, coronas);
     // An articulated vehicle is one visual bus, but its rear section has its own
     // `[light_enh_2]`/corona declarations and animated meshes.  The old collector only
     // visited the leading section, which made rear lamps, destination lights and section-
@@ -152,7 +152,7 @@ pub fn vehicle_lights(
                 None => t.body_rotation(),
             }
         };
-        crate::scene::model_lights_extend(&t.ty.model, &part_mesh_xf, t.position, &value_of, &t.light_fade, coronas);
+        crate::model_lights_extend(&t.ty.model, &part_mesh_xf, t.position, &value_of, &t.light_fade, coronas);
     }
     let body = v.body_rotation();
     // headlights: the spotlight selected by Spot_Select
@@ -828,7 +828,7 @@ pub fn corona_texture_id(model_dir: &std::path::Path, name: &str) -> u16 {
     }
     let root = CORONA_TEXTURES.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|t| t.root.clone()).unwrap_or_default();
     let mut id = 0;
-    for d in crate::scene::texture_dirs(&root, model_dir) {
+    for d in crate::texture_dirs(&root, model_dir) {
         let p = omsi_cfg::resolve_path(&d, name);
         if omsi_cfg::vfs::is_file(&p) {
             id = texture_id_of(p);

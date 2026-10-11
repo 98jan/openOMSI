@@ -66,7 +66,7 @@ pub const DISPLAYS_FAR: f64 = 50.0;
 /// A texture name that stands for "no texture": exporters write `null.bmp` into slots
 /// that have none (the SD202's IBIS key click spots). The slot shows its material colour;
 /// nothing is looked up, and nothing is reported missing.
-pub(crate) fn is_null_texture(name: &str) -> bool {
+pub fn is_null_texture(name: &str) -> bool {
     let n = name.trim();
     n.is_empty()
         || Path::new(&n.replace('\\', "/"))
@@ -273,7 +273,7 @@ pub(super) fn is_snow_picture(path: &Path) -> bool {
 
 /// A PBR set beside the diffuse texture `path` (`foo_n.png` and the rest, see
 /// `omsi_texture::pbr`), put up and tied to texture `id` for the materials made with it.
-pub(crate) fn attach_pbr(renderer: &Renderer, scene: &mut Scene, path: &Path, id: TextureId) {
+pub fn attach_pbr(renderer: &Renderer, scene: &mut Scene, path: &Path, id: TextureId) {
     // (and a season's snow picture is known as one: it gets no snow laid over it, #879)
     if is_snow_picture(path) {
         scene.snow_textures.insert(id);
@@ -310,7 +310,7 @@ pub(super) fn load_texture_key(key: &Path, compress: bool) -> Option<TextureData
 }
 
 /// Decide the alpha mode of an o3d material from the model.cfg `[matl]` overrides.
-pub(crate) fn material_alpha(
+pub fn material_alpha(
     materials: &[omsi_o3d::Material],
     slot: usize,
     overrides: &[MaterialDef],

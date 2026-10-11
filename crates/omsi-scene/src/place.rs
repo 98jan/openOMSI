@@ -808,7 +808,7 @@ fn object_lamp(ot: &ObjectType, o: &StagedObject, pos: DVec3, index: &MapIndex) 
     // a mod lamp without the keyword sat at its "off" picture, blinking yellow.
     // Objects with textures of their own to choose stay ordinary objects.)
     let child_lamp = o.lamp_parent.is_some_and(|p| index.traffic_light_parents.contains(&p))
-        && crate::tiles::names_traffic_light(&o.extra)
+        && omsi_world::map_index::names_traffic_light(&o.extra)
         && ot.dynamic_textures.is_empty()
         && !ot.meshes.iter().any(|(_, _, ov)| ov.iter().any(|m| !m.item && m.freetex.is_some()));
     if ot.sco.is_traffic_light || child_lamp {

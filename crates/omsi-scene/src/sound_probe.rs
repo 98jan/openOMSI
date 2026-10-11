@@ -17,10 +17,10 @@ impl World {
 
 impl World {
     /// What stands around `ear` for the ambience: the loaded tiles within earshot of a church
-    /// bell, read from their sound data (see [`crate::soundscape::place`]).
-    pub fn sound_place(&self, ear: DVec3) -> crate::soundscape::place::Place {
-        let mut g = crate::soundscape::place::Gather::new(ear);
-        let reach = (crate::soundscape::place::SPOT_REACH / tile_size()).ceil() as i32;
+    /// bell, read from their sound data (see [`omsi_soundscape::place`]).
+    pub fn sound_place(&self, ear: DVec3) -> omsi_soundscape::place::Place {
+        let mut g = omsi_soundscape::place::Gather::new(ear);
+        let reach = (omsi_soundscape::place::SPOT_REACH / tile_size()).ceil() as i32;
         let key = tile_key(ear.x, ear.y);
         let surfaces = self.surfaces.read();
         for dy in -reach..=reach {

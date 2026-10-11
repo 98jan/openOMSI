@@ -71,7 +71,7 @@ pub struct DynSlot {
 /// with one item is dark. A variable no script declares is registered by the model loader
 /// at 0 (the stock MANs' spare buttons, `*Noch nicht belegt*`, and a mod's door lamps
 /// were lit for good when it was taken as on, #231).
-pub(crate) fn change_picks_item(x: f32) -> bool {
+pub fn change_picks_item(x: f32) -> bool {
     x.is_finite() && x.round_ties_even() == 1.0
 }
 
@@ -128,7 +128,7 @@ pub struct MultiLight {
 
 impl MultiLight {
     /// The light map made of the maps in `mask`, from the shared store or read now.
-    pub(crate) fn composite(&mut self, renderer: &Renderer, scene: &mut Scene, mask: u32) -> Option<TextureId> {
+    pub fn composite(&mut self, renderer: &Renderer, scene: &mut Scene, mask: u32) -> Option<TextureId> {
         let mut key = String::from("lightmap-sum:");
         for (k, (path, _)) in self.maps.iter().enumerate() {
             if mask & (1 << k) != 0 {
@@ -361,7 +361,7 @@ impl Look {
 }
 
 impl SlotSpec {
-    pub(crate) fn with_freetex(
+    pub fn with_freetex(
         &self,
         key: Option<TextureId>,
         tex: TextureId,
@@ -705,4 +705,27 @@ pub(super) fn vehicle_bump_names(
     out.sort();
     out.dedup();
     out
+}
+
+/// The lamps (indices into the model's `[interiorlight]`s) a mesh's or a seat's
+/// `[illumination_interior]` names: those that exist, each once, as many as a mesh may have.
+pub fn lamp_set(indices: &[i32], n: usize) -> Vec<usize> {
+    let mut set: Vec<usize> = Vec::new();
+    for &k in indices {
+        if k >= 0 && (k as usize) < n && !set.contains(&(k as usize)) && set.len() < omsi_render::MAX_LAMPS_PER_MESH as usize {
+            set.push(k as usize);
+        }
+    }
+    set
+}
+
+impl VehicleRender {
+    /// The lamp slots (first, count) for `set_interior_lamps` that light a person on a seat
+    /// with these four lamps (`PassPos::illumination`) in a vehicle of `n` lamps; None
+    /// before the vehicle's lamps are first synced, or when none of them exists.
+    pub fn seat_lamps(&self, n: usize, lamps: &[i32; 4]) -> Option<(u32, u32)> {
+        let set = lamp_set(lamps, n);
+        let blocks = self.interior_blocks.get()?;
+        blocks.iter().find(|b| b.1 == set).map(|b| (b.0, set.len() as u32))
+    }
 }

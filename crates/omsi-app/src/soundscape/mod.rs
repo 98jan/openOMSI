@@ -9,7 +9,7 @@
 //! sounds (`Sounds\rain_outside.wav`, its ambient sound objects, an object's `[sound]`) keep
 //! playing; ours give way to them.
 
-pub use omsi_soundscape::{catalog, pack, place, rules};
+pub use omsi_soundscape::{pack, place, rules};
 use omsi_soundscape::voices;
 
 use glam::DVec3;

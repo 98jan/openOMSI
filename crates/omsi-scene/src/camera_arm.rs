@@ -16,7 +16,7 @@
 //! not a lamp post, a sign on a mast, a traffic light's boom, a tree's trunk or a parked car.
 //! `OMSI_DEBUG_CAMERA=1` logs the decision per type and what the arm hits.
 
-use crate::scene::{ObjectType, World};
+use crate::{ObjectType, World};
 use glam::{DVec3, Mat4, Vec3};
 
 /// How far the camera keeps from what it hits (m): a little more than the near plane.
@@ -231,8 +231,8 @@ pub fn classify(ot: &ObjectType) -> BlockerShape {
             .map(|slot| {
                 let texture = o3d_mats.get(slot).map(|m| m.texture.as_str()).unwrap_or("");
                 !shadow
-                    && !crate::scene::is_null_texture(texture)
-                    && crate::scene::material_alpha(o3d_mats, slot, &base)
+                    && !crate::is_null_texture(texture)
+                    && crate::material_alpha(o3d_mats, slot, &base)
                         == omsi_render::AlphaMode::Opaque
             })
             .collect();

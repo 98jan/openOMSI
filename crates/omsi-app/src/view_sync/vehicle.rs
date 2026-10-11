@@ -382,29 +382,6 @@ pub(super) fn sync_interior_lamps(
     }
 }
 
-/// The lamps (indices into the model's `[interiorlight]`s) a mesh's or a seat's
-/// `[illumination_interior]` names: those that exist, each once, as many as a mesh may have.
-pub(super) fn lamp_set(indices: &[i32], n: usize) -> Vec<usize> {
-    let mut set: Vec<usize> = Vec::new();
-    for &k in indices {
-        if k >= 0 && (k as usize) < n && !set.contains(&(k as usize)) && set.len() < omsi_render::MAX_LAMPS_PER_MESH as usize {
-            set.push(k as usize);
-        }
-    }
-    set
-}
-
-impl VehicleRender {
-    /// The lamp slots (first, count) for `set_interior_lamps` that light a person on a seat
-    /// with these four lamps (`PassPos::illumination`) in a vehicle of `n` lamps; None
-    /// before the vehicle's lamps are first synced, or when none of them exists.
-    pub fn seat_lamps(&self, n: usize, lamps: &[i32; 4]) -> Option<(u32, u32)> {
-        let set = lamp_set(lamps, n);
-        let blocks = self.interior_blocks.get()?;
-        blocks.iter().find(|b| b.1 == set).map(|b| (b.0, set.len() as u32))
-    }
-}
-
 pub fn sync_vehicle_textures(
     renderer: &Renderer,
     scene: &mut Scene,
@@ -505,5 +482,26 @@ mod freetex_key_tests {
             }
         }
         assert!(!freetex_key_is(None, "", None));
+    }
+}
+
+#[cfg(test)]
+mod freetex_path_tests {
+    use super::*;
+
+    #[test]
+    fn vehicle_freetex_retries_paths_below_texture_component() {
+        let root = std::env::temp_dir().join("openomsi-freetex-path-test");
+        let vehicle_texture = root.join("Vehicles/TestBus/Texture");
+        let wanted = vehicle_texture.join("mb_pmon/alerta_FalhaCambio.bmp");
+        std::fs::create_dir_all(wanted.parent().unwrap()).unwrap();
+        std::fs::write(&wanted, b"x").unwrap();
+        let dirs = [vehicle_texture.as_path()];
+        let found = find_vehicle_freetex(
+            r"..\Texture\mb_pmon\alerta_FalhaCambio.bmp",
+            &dirs,
+        );
+        assert_eq!(found.as_deref(), Some(wanted.as_path()));
+        let _ = std::fs::remove_dir_all(root);
     }
 }

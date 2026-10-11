@@ -1,7 +1,7 @@
 //! Persistent wetness on the player's glass, cleared by the animated blade's swept area.
 //! A small mask uses the existing transmap binding: no extra draw or offscreen pass.
 
-use crate::window_drops::Drops;
+use omsi_weather::window_drops::Drops;
 use glam::{Vec2, Vec3};
 use omsi_geometry::MeshData;
 use omsi_render::{MaterialId, Renderer, Scene, TextureId};
@@ -63,7 +63,7 @@ struct Film {
     bounds: [f32; 4],
 }
 
-pub(crate) struct WindowWipers {
+pub struct WindowWipers {
     blades: Vec<Blade>,
     films: Vec<Film>,
     time: f64,
@@ -71,11 +71,11 @@ pub(crate) struct WindowWipers {
 }
 
 impl WindowWipers {
-    pub(crate) fn new(
+    pub fn new(
         renderer: &Renderer,
         scene: &mut Scene,
         vehicle: &VehicleInstance,
-        render: &crate::scene::VehicleRender,
+        render: &crate::VehicleRender,
     ) -> Self {
         let instances = &render.instances;
         let mut blades = Vec::new();
@@ -251,15 +251,15 @@ impl WindowWipers {
         }
     }
 
-    pub(crate) fn textures(&self) -> impl Iterator<Item = TextureId> + '_ {
+    pub fn textures(&self) -> impl Iterator<Item = TextureId> + '_ {
         self.films.iter().flat_map(|f| [f.texture, f.drops_texture])
     }
 
-    pub(crate) fn materials(&self) -> impl Iterator<Item = MaterialId> + '_ {
+    pub fn materials(&self) -> impl Iterator<Item = MaterialId> + '_ {
         self.films.iter().flat_map(|f| [f.material, f.snow_material])
     }
 
-    pub(crate) fn update(
+    pub fn update(
         &mut self,
         renderer: &Renderer,
         scene: &mut Scene,

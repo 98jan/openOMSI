@@ -423,7 +423,7 @@ impl World {
             .collect();
         let mut g = omsi_geometry::GroundSound::from_layers(GROUND_SOUND_CELLS, base, &layers);
         let (x0, y0) = (p.tx as f64 * tile_size(), p.ty as f64 * tile_size());
-        g.trees = p.trees.iter().map(|t| [(t.2.x - x0) as f32, (t.2.y - y0) as f32, t.3 as f32, if crate::soundscape::catalog::is_conifer(&t.0.sco, &t.1) { 1.0 } else { 0.0 }]).collect();
+        g.trees = p.trees.iter().map(|t| [(t.2.x - x0) as f32, (t.2.y - y0) as f32, t.3 as f32, if omsi_soundscape::catalog::is_conifer(&t.0.sco, &t.1) { 1.0 } else { 0.0 }]).collect();
         g.objects = p.objects.len() as u32;
         self.sound_places(p, q, drive, &mut g);
         if omsi_cfg::flags::OMSI_DEBUG_SURFACES.is_set() {
@@ -527,7 +527,7 @@ impl World {
     /// tracks, wires and tunnels along its splines, and where its water stands over the
     /// ground.
     fn sound_places(&self, p: &Prepared, q: Option<&StagedTile>, drive: &omsi_geometry::DriveGrid, g: &mut omsi_geometry::GroundSound) {
-        use crate::soundscape::catalog;
+        use omsi_soundscape::catalog;
         let (x0, y0) = (p.tx as f64 * tile_size(), p.ty as f64 * tile_size());
         let local = |w: DVec3| [(w.x - x0) as f32, (w.y - y0) as f32, w.z as f32];
         // (the model's box per type: the same house stands many times)

@@ -539,10 +539,10 @@ impl World {
     pub(super) fn stage_tile(&self, tx: i32, ty: i32, path: &Path, index: &MapIndex) -> StagedTile {
         let origin2 = DVec2::new(tx as f64 * tile_size(), ty as f64 * tile_size());
         let origin = DVec3::new(origin2.x, origin2.y, 0.0);
-        let tile = crate::tiles::read_tile(path, &self.chrono_dirs.read());
+        let tile = omsi_world::map_index::read_tile(path, &self.chrono_dirs.read());
         // (an active chrono patch may bring the tile's terrain: see `Tile::terrain_from`)
         let terrain_path = match &tile {
-            Some(t) => crate::tiles::terrain_file(t, path),
+            Some(t) => omsi_world::map_index::terrain_file(t, path),
             None => tile_companion(path, ".terrain"),
         };
         let edited = self.terrain_edits.lock().get(&(tx, ty)).cloned();
@@ -579,7 +579,7 @@ impl World {
         // -5 m (TFileWater 0x7ab6f0) and take the file's heights only when its count is 1
         // (0x7ab760).
         out.water = tile.has_water.then(|| {
-            match omsi_cfg::vfs::read(&crate::tiles::water_file(&tile, path))
+            match omsi_cfg::vfs::read(&omsi_world::map_index::water_file(&tile, path))
                 .ok()
                 .map(|b| omsi_map::terrain::Water::parse(&b))
             {
@@ -907,7 +907,7 @@ impl World {
             if !wanted(&a.file) {
                 continue;
             }
-            let objs = crate::tiles::tile_row_objects(a, &tile.splines, origin2, Some(index));
+            let objs = omsi_world::map_index::tile_row_objects(a, &tile.splines, origin2, Some(index));
             if objs.is_empty() || a.file.trim().is_empty() {
                 continue;
             }
@@ -1189,7 +1189,7 @@ impl World {
                     .sco
                     .attachments
                     .get(*index)
-                    .map(crate::tiles::attachment_matrix)
+                    .map(omsi_world::map_index::attachment_matrix)
                     .unwrap_or(glam::Mat4::IDENTITY);
                 if *index >= pt.sco.attachments.len() {
                     // `OMSI_NO_ATTACH_FALLBACK=1` drops them instead, for an A/B
@@ -1232,7 +1232,7 @@ impl World {
 
 /// OMSI_CHECK_SPLINES: every spline's two ends, its neighbours in the chain and its file.
 /// (Global: `offscreen` reads it to report chained ends that differ in height.)
-pub(crate) static SPLINE_ENDS: std::sync::LazyLock<Mutex<HashMap<i64, (DVec3, DVec3, i64, i64, String)>>> = std::sync::LazyLock::new(Default::default);
+pub static SPLINE_ENDS: std::sync::LazyLock<Mutex<HashMap<i64, (DVec3, DVec3, i64, i64, String)>>> = std::sync::LazyLock::new(Default::default);
 
 /// Metres between the points the ambience keeps along a lane, a track, a wire or a tunnel.
 const SOUND_LINE_STEP: f32 = 10.0;

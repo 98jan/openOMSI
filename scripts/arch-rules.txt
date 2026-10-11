@@ -87,6 +87,15 @@ forbid omsi-world omsi-audio
 forbid omsi-world omsi-ui
 forbid omsi-world omsi-net
 
+# The scene turns loaded content into the renderer's data: it knows neither the game's
+# app nor the network, the plugins, the input devices or the launcher.
+forbid omsi-scene omsi-net
+forbid omsi-scene omsi-lan
+forbid omsi-scene omsi-plugin
+forbid omsi-scene omsi-input
+forbid omsi-scene omsi-xr
+forbid omsi-scene omsi-launcher-*
+
 # The input devices read controllers and keys: they neither draw nor sound, nor know the network,
 # the plugins or the launcher.
 forbid omsi-input omsi-render
