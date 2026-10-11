@@ -166,6 +166,9 @@ pub struct World {
     /// Light coronas and point lights of placed scenery objects.
     pub static_coronas: Mutex<Vec<StaticCorona>>,
     pub static_lights: Mutex<Vec<omsi_render::PointLight>>,
+    /// Those of them near the camera, gathered again only when it has moved on (see
+    /// `lights::collect`).
+    pub(crate) near_lights: Mutex<crate::lights::NearLights>,
     /// Every tile file of the map read once: splines for the spline attachment rows,
     /// objects for entry points and stops of tiles that are not loaded.
     pub(super) index: Mutex<Option<Arc<MapIndex>>>,

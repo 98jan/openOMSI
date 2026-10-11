@@ -170,6 +170,7 @@ impl World {
             night_modes: Mutex::new(Vec::new()),
             static_coronas: Mutex::new(Vec::new()),
             static_lights: Mutex::new(Vec::new()),
+            near_lights: Mutex::new(Default::default()),
             index: Mutex::new(None),
             tile_state: Mutex::new(HashMap::new()),
             seeded: Mutex::new(Default::default()),

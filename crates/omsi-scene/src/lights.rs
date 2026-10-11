@@ -549,9 +549,9 @@ const NEAR_MARGIN: f64 = 100.0;
 /// through every corona of a city map (traffic lights, street lamps, signs) each frame
 /// cost a millisecond; the near ones only change when the camera has moved on, the lamps
 /// switch or tiles have loaded or gone (the streamer rebuilds the world's lists then).
+/// Kept by the world they come from (`World::near_lights`).
 #[derive(Default)]
-struct NearLights {
-    world: usize,
+pub(crate) struct NearLights {
     generation: u64,
     lamps_on: bool,
     centre: DVec3,
@@ -559,8 +559,6 @@ struct NearLights {
     lights: Vec<PointLight>,
     coronas: Vec<Corona>,
 }
-
-static NEAR_LIGHTS: std::sync::Mutex<Option<NearLights>> = std::sync::Mutex::new(None);
 
 /// Fill the scene's lights for this frame.
 pub fn collect(
@@ -576,22 +574,18 @@ pub fn collect(
     omsi_sim::particles::set_eye(camera_pos);
     let night = daylight.night;
     {
-        let mut guard = NEAR_LIGHTS.lock().unwrap_or_else(|e| e.into_inner());
-        let near = guard.get_or_insert_with(NearLights::default);
+        let mut near = world.near_lights.lock();
         let static_lights = world.static_lights.lock();
         let static_coronas = world.static_coronas.lock();
-        let world_id = world as *const World as usize;
         let generation = world
             .tiles_generation
             .load(std::sync::atomic::Ordering::Relaxed);
-        let stale = near.world != world_id
-            || near.generation != generation
+        let stale = near.generation != generation
             || near.lamps_on != daylight.lamps_on
             || near.counts != (static_lights.len(), static_coronas.len())
             || (near.centre - camera_pos).length() > NEAR_MARGIN;
         if stale {
             *near = NearLights {
-                world: world_id,
                 generation,
                 lamps_on: daylight.lamps_on,
                 centre: camera_pos,
