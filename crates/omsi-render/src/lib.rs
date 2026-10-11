@@ -1,4 +1,19 @@
 //! wgpu renderer.
+//!
+//! `Renderer` holds the device and what lives as long as it; a `Scene` holds what is drawn.
+//! Where things are:
+//! - `gpu/`: the device - opening it, building the pipelines (with fallbacks), adapter
+//!   capabilities, bind group layouts, timers and errors; `pipelines/`: the pipelines
+//! - `resources/`: meshes, textures, materials, and freed slots taken over again
+//! - `scene/`: the scene and its instances, and their upload each frame
+//! - `view.rs`: camera and lighting parameters; `uniforms.rs`: what the shaders read
+//! - `lighting/`: point lights, coronas and smoke, and the enhanced sky and exposure model
+//! - `targets.rs`, `sky.rs`: the size-keyed targets and the sky's resources
+//! - `frame_plan.rs` and `passes/`: what a frame draws, and its passes in order;
+//!   `render.rs`: the entry points (window, triple screen, headset, images)
+//! - `shaders.rs` + `shaders/`: the long WGSL modules as parts, and their per-backend rewrites
+//!
+//! Items of these modules are re-exported here, so the crate's paths are flat.
 
 pub mod angle;
 pub mod atmosphere;
