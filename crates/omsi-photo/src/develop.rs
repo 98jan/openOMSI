@@ -8,7 +8,7 @@ use rayon::prelude::*;
 
 /// The film looks of the photo mode (the "Filter" list).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub(crate) enum Filter {
+pub enum Filter {
     #[default]
     None,
     Vivid,
@@ -24,9 +24,9 @@ pub(crate) enum Filter {
 }
 
 impl Filter {
-    pub(crate) const ALL: [Filter; 11] = [Filter::None, Filter::Vivid, Filter::Warm, Filter::Cool, Filter::Vintage, Filter::Sepia, Filter::Mono, Filter::Noir, Filter::BleachBypass, Filter::TealOrange, Filter::Faded];
+    pub const ALL: [Filter; 11] = [Filter::None, Filter::Vivid, Filter::Warm, Filter::Cool, Filter::Vintage, Filter::Sepia, Filter::Mono, Filter::Noir, Filter::BleachBypass, Filter::TealOrange, Filter::Faded];
 
-    pub(crate) fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Filter::None => "None",
             Filter::Vivid => "Vivid",
@@ -46,7 +46,7 @@ impl Filter {
 /// The darkroom's settings. Every value is 0 when it leaves the picture as it is; the
 /// signed ones run from -1 to 1, the others from 0 to 1.
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
-pub(crate) struct Grade {
+pub struct Grade {
     /// Stops of light (-3 .. 3).
     pub exposure: f32,
     pub contrast: f32,
@@ -68,13 +68,13 @@ pub(crate) struct Grade {
 
 impl Grade {
     /// Settings that leave the picture as it was taken.
-    pub(crate) fn neutral() -> Grade {
+    pub fn neutral() -> Grade {
         Grade { filter_strength: 1.0, ..Default::default() }
     }
 }
 
 /// The pictures of one shot added up, in linear light.
-pub(crate) struct Accum {
+pub struct Accum {
     pub w: u32,
     pub h: u32,
     sum: Vec<f32>,
@@ -105,12 +105,12 @@ fn to_srgb(l: f32) -> f32 {
 }
 
 impl Accum {
-    pub(crate) fn new(w: u32, h: u32) -> Accum {
+    pub fn new(w: u32, h: u32) -> Accum {
         Accum { w, h, sum: vec![0.0; (w * h * 3) as usize], n: 0 }
     }
 
     /// One more picture of the shot (RGBA, sRGB, `w` x `h`).
-    pub(crate) fn add(&mut self, rgba: &[u8]) {
+    pub fn add(&mut self, rgba: &[u8]) {
         let lut = lut();
         if rgba.len() < (self.w * self.h * 4) as usize {
             return;
@@ -155,7 +155,7 @@ impl Accum {
 
 /// The part of a `w` x `h` picture kept by the aspect ratio `aspect` (width / height; None:
 /// the whole): x, y, width, height.
-pub(crate) fn crop_rect(w: u32, h: u32, aspect: Option<f32>) -> (u32, u32, u32, u32) {
+pub fn crop_rect(w: u32, h: u32, aspect: Option<f32>) -> (u32, u32, u32, u32) {
     let Some(a) = aspect.filter(|a| *a > 0.0) else { return (0, 0, w, h) };
     let (fw, fh) = (w as f32, h as f32);
     if fw / fh > a {
@@ -252,7 +252,7 @@ fn grain_at(x: u32, y: u32) -> f32 {
 
 /// The developed picture (RGBA, sRGB, `acc.w` x `acc.h`); outside `crop` (x, y, w, h) the
 /// bars of the frame.
-pub(crate) fn develop(acc: &Accum, g: &Grade, crop: Option<(u32, u32, u32, u32)>) -> Vec<u8> {
+pub fn develop(acc: &Accum, g: &Grade, crop: Option<(u32, u32, u32, u32)>) -> Vec<u8> {
     let (w, h) = (acc.w as usize, acc.h as usize);
     let mut out = vec![0u8; w * h * 4];
     if acc.n == 0 || w == 0 || h == 0 {
@@ -350,7 +350,7 @@ pub(crate) fn develop(acc: &Accum, g: &Grade, crop: Option<(u32, u32, u32, u32)>
 }
 
 /// The developed picture cut to its frame (RGBA).
-pub(crate) fn cropped(rgba: &[u8], w: u32, crop: (u32, u32, u32, u32)) -> Vec<u8> {
+pub fn cropped(rgba: &[u8], w: u32, crop: (u32, u32, u32, u32)) -> Vec<u8> {
     let (x, y, cw, ch) = crop;
     let mut out = Vec::with_capacity((cw * ch * 4) as usize);
     for row in y..y + ch {

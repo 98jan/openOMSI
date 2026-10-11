@@ -15,13 +15,14 @@ use glam::{DVec3, Vec3};
 use omsi_render::Camera;
 use winit::keyboard::KeyCode;
 
-mod develop;
-mod lens;
 mod pad;
 mod panel;
 mod render;
 
+// (the lens and the darkroom are the omsi-photo crate)
+use omsi_photo::{develop, lens};
 pub(crate) use develop::Grade;
+pub(crate) use omsi_photo::stretch;
 
 /// A request of the photo mode's panel.
 #[derive(Clone, Debug, PartialEq)]
@@ -282,22 +283,6 @@ impl Photo {
     pub(crate) fn developed(&self) -> Option<(u32, u32, &[u8])> {
         self.render.developed.as_ref().map(|(w, h, px)| (*w, *h, px.as_slice()))
     }
-}
-
-/// `px` (`w` x `h`) stretched to `tw` x `th` (the nearest pixel), for the input script's
-/// pictures of the window.
-pub(crate) fn stretch(w: u32, h: u32, px: &[u8], tw: u32, th: u32) -> Vec<u8> {
-    let mut out = vec![0u8; (tw * th * 4) as usize];
-    for y in 0..th {
-        let sy = (y as u64 * h as u64 / th.max(1) as u64) as u32;
-        for x in 0..tw {
-            let sx = (x as u64 * w as u64 / tw.max(1) as u64) as u32;
-            let a = ((sy * w + sx) * 4) as usize;
-            let b = ((y * tw + x) * 4) as usize;
-            out[b..b + 4].copy_from_slice(&px[a..a + 4]);
-        }
-    }
-    out
 }
 
 /// `OMSI_PHOTO`: settings for a test, `key=value` by commas.

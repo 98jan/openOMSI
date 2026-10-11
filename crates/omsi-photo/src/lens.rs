@@ -12,18 +12,18 @@ use omsi_render::Camera;
 const SENSOR_H_MM: f32 = 24.0;
 
 /// The focal length (mm) of a vertical field of view (degrees).
-pub(crate) fn focal_mm(fov_deg: f32) -> f32 {
+pub fn focal_mm(fov_deg: f32) -> f32 {
     SENSOR_H_MM * 0.5 / (fov_deg.to_radians() * 0.5).tan().max(1e-4)
 }
 
 /// The vertical field of view (degrees) of a focal length (mm).
-pub(crate) fn fov_for(focal_mm: f32) -> f32 {
+pub fn fov_for(focal_mm: f32) -> f32 {
     (2.0 * (SENSOR_H_MM * 0.5 / focal_mm.max(1.0)).atan()).to_degrees()
 }
 
 /// The `i`th number of the Halton sequence of `base` (0..1): points that fill the aperture
 /// and the shutter evenly however many are taken.
-pub(crate) fn halton(mut i: u32, base: u32) -> f32 {
+pub fn halton(mut i: u32, base: u32) -> f32 {
     let mut f = 1.0f32;
     let mut r = 0.0f32;
     i += 1;
@@ -38,7 +38,7 @@ pub(crate) fn halton(mut i: u32, base: u32) -> f32 {
 /// A point of the aperture (unit radius) for the square's point (u, v): the disc evenly
 /// (Shirley's concentric mapping), or with `blades` (5 and more) the polygon the blades
 /// close to - the shape every out-of-focus light takes.
-pub(crate) fn aperture_point(u: f32, v: f32, blades: u32) -> (f32, f32) {
+pub fn aperture_point(u: f32, v: f32, blades: u32) -> (f32, f32) {
     let (a, b) = (2.0 * u - 1.0, 2.0 * v - 1.0);
     if a == 0.0 && b == 0.0 {
         return (0.0, 0.0);
@@ -56,7 +56,7 @@ pub(crate) fn aperture_point(u: f32, v: f32, blades: u32) -> (f32, f32) {
 
 /// How the photo is taken.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct Shot {
+pub struct Shot {
     /// Depth of field: the aperture opens to `fstop`, focused at `focus` metres.
     pub dof: bool,
     pub fstop: f32,
@@ -71,7 +71,7 @@ pub(crate) struct Shot {
 /// The `i`th picture of a photo: the camera moved over the aperture and aimed back at the
 /// plane of focus, turned within the pixel (`height_px`: the picture's height), and the
 /// moment of the shutter (seconds from its middle) it is taken at.
-pub(crate) fn sample(base: &Camera, i: u32, shot: &Shot, height_px: f32) -> (Camera, f32) {
+pub fn sample(base: &Camera, i: u32, shot: &Shot, height_px: f32) -> (Camera, f32) {
     let mut cam = *base;
     let f = base.forward();
     let (right, up) = (base.right(), base.up());
@@ -104,7 +104,7 @@ pub(crate) fn sample(base: &Camera, i: u32, shot: &Shot, height_px: f32) -> (Cam
 }
 
 /// Where the bus is moved for a picture taken `t` seconds from the shutter's middle.
-pub(crate) fn travel(shot: &Shot, t: f32) -> DVec3 {
+pub fn travel(shot: &Shot, t: f32) -> DVec3 {
     shot.motion.map(|(v, _)| (v * t).as_dvec3()).unwrap_or(DVec3::ZERO)
 }
 

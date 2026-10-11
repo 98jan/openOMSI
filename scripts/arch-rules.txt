@@ -108,5 +108,13 @@ forbid omsi-platform omsi-audio
 forbid omsi-platform omsi-net
 forbid omsi-platform omsi-lan
 
+# The photo mode's lens and darkroom work on the renderer's pictures: no simulation, sound,
+# interface, network or launcher in them.
+forbid omsi-photo omsi-sim
+forbid omsi-photo omsi-audio
+forbid omsi-photo omsi-ui
+forbid omsi-photo omsi-net
+forbid omsi-photo omsi-launcher-*
+
 # Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
 app-lines 128041

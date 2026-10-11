@@ -28,6 +28,7 @@ omsi-o3d = { path = "../omsi-o3d" }
 omsi-texture = { path = "../omsi-texture" }
 omsi-geometry = { path = "../omsi-geometry" }
 omsi-render = { path = "../omsi-render" }
+omsi-photo = { path = "../omsi-photo" }
 omsi-sim = { path = "../omsi-sim" }
 omsi-plugin = { path = "../omsi-plugin" }
 omsi-vehicle = { path = "../omsi-vehicle" }

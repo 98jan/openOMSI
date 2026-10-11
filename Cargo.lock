@@ -3322,6 +3322,7 @@ dependencies = [
  "omsi-model",
  "omsi-net",
  "omsi-o3d",
+ "omsi-photo",
  "omsi-platform",
  "omsi-plugin",
  "omsi-plugin-ui",
@@ -3588,6 +3589,15 @@ dependencies = [
 ]
 
 [[package]]
+[[package]]
+name = "omsi-photo"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "omsi-render",
+ "rayon",
+]
+
 name = "omsi-platform"
 version = "0.1.0"
 dependencies = [
