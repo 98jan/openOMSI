@@ -3,6 +3,7 @@
 //! omsi-sim and know nothing of the GPU; what they look like is here:
 //!
 //! * `traffic`: the AI vehicles' renders, their drivers and the traffic light lamps;
+//! * `traffic_audio`: the AI vehicles' sounds;
 //! * `people`: the people's meshes, posing and skinning, the coins and the ticket blocks;
 //! * `vehicle`, `vehicle_damage`: what any vehicle's simulation changed this frame (the
 //!   player's, an AI car's, their coupled parts'): skinned meshes, switched materials, free
