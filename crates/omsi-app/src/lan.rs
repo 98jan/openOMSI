@@ -20,6 +20,9 @@
 //! `OMSI_INSTANCE`, else the process id.
 
 use omsi_lan::variable_schema;
+pub use omsi_lan::clock::host_time_now;
+use omsi_lan::clock::{host_clock_now, clock_gap};
+use omsi_lan::script_texture::{script_texture_table, script_texture_subscription_table};
 mod sound_sync;
 use omsi_lan::animation_sync;
 
@@ -680,37 +683,6 @@ pub fn take_host_map(args: &mut Args, lan: &mut LanSession) {
     }
 }
 
-/// A date `YYYY-MM-DD` as (year, day of year).
-fn parse_date(s: &str) -> Option<(i32, i32)> {
-    let v: Vec<i32> = s.split('-').filter_map(|x| x.trim().parse().ok()).collect();
-    (v.len() == 3).then(|| {
-        let mut c = omsi_sim::SimClock::default();
-        c.set_date(v[0], v[1], v[2]);
-        (c.year, c.day_of_year)
-    })
-}
-
-/// The host's clock as a `SimClock` now (its date moved on past midnight).
-fn host_clock_now(h: &omsi_net::HostClock) -> Option<omsi_sim::SimClock> {
-    let (year, day_of_year) = parse_date(&h.world.date)?;
-    let mut c = omsi_sim::SimClock {
-        year,
-        day_of_year,
-        time: h.world.time,
-        ..Default::default()
-    };
-    c.advance(h.at.elapsed().as_secs_f32() * h.speed as f32);
-    Some(c)
-}
-
-/// The host's time of day now as `HH:MM:SS` (a joining player's duty is placed with it).
-pub fn host_time_now(lan: &LanSession) -> Option<String> {
-    let w = lan.welcome.as_ref()?;
-    let c = host_clock_now(&omsi_net::HostClock { world: w.world.clone(), at: w.at, speed: 1.0 })?;
-    let t = c.time.rem_euclid(86400.0) as u32;
-    Some(format!("{:02}:{:02}:{:02}", t / 3600, t / 60 % 60, t % 60))
-}
-
 /// A weather file the host uses, if this machine has it (None: the map's default).
 fn host_weather(args: &Args, weather: &str) -> Result<Option<String>, String> {
     let w = weather.trim();
@@ -875,24 +847,6 @@ fn adopt_at_runtime(
 }
 
 /// Days since 1 January of year 0 (for comparing two dates).
-fn day_number(year: i32, day_of_year: i32) -> i64 {
-    let y = year as i64 - 1;
-    let before = if year > 0 {
-        365 * y + y / 4 - y / 100 + y / 400 + 366
-    } else {
-        0
-    };
-    before + day_of_year as i64
-}
-
-/// How far our clock is behind the host's (s, negative: ahead).
-fn clock_gap(host: &omsi_sim::SimClock, mine: &omsi_sim::SimClock) -> f64 {
-    (day_number(host.year, host.day_of_year) - day_number(mine.year, mine.day_of_year)) as f64
-        * 86400.0
-        + host.time
-        - mine.time
-}
-
 fn write_failure(msg: &str) {
     let Some(p) = status_path() else { return };
     let _ = std::fs::create_dir_all(p.parent().unwrap());
@@ -2213,41 +2167,6 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
             }
         }
     }
-}
-
-/// Bus path and declared surfaces must agree; the seed is the owner's variable table.
-fn script_texture_table(bus: &str, program: &omsi_script::Program, surfaces: &[(i32, i32)]) -> u32 {
-    script_texture_table_for_vars(bus, var_table(program).hash, surfaces)
-}
-
-fn script_texture_table_for_vars(bus: &str, mut hash: u32, surfaces: &[(i32, i32)]) -> u32 {
-    for b in bus.replace('\\', "/").bytes().map(|b| b.to_ascii_lowercase())
-        .chain(std::iter::once(0))
-        .chain((surfaces.len() as u32).to_le_bytes())
-        .chain(surfaces.iter().flat_map(|(w, h)| w.to_le_bytes().into_iter().chain(h.to_le_bytes())))
-    {
-        hash = (hash ^ b as u32).wrapping_mul(0x0100_0193);
-    }
-    hash
-}
-
-/// Differing tables can use the owner's texture hash only after the same model/sound
-/// compatibility check that authorized the name mapping in `sync_vars`.
-fn script_texture_subscription_table(
-    bus: &str,
-    program: &omsi_script::Program,
-    surfaces: &[(i32, i32)],
-    schema: Option<&omsi_net::var_schema::Schema>,
-    mapped: Option<&VarTable>,
-) -> Option<u32> {
-    let local = var_table(program).hash;
-    let owner = match schema {
-        Some(schema) if schema.table_hash() != local => {
-            mapped.filter(|table| table.hash == schema.table_hash())?.hash
-        }
-        _ => local,
-    };
-    Some(script_texture_table_for_vars(bus, owner, surfaces))
 }
 
 fn publish_script_textures(lan: &mut LanSession, game: &mut LanGame, player: Option<&mut Player>, bus: &str) {

@@ -161,7 +161,7 @@ impl App {
                     crate::situation::save_script_textures(&out, &p.vehicle);
                 }
                 log::info!("saved situation {} ({} vehicles)", out.display(), sit.vehicles.len());
-                self.service_msg = Some(("Situation saved (quicksave)".into(), 3.0));
+                self.service_msg = Some(("Situation saved (quicksave): the launcher continues from it".into(), 4.0));
             }
             Err(e) => {
                 log::warn!("saving {}: {e}", out.display());

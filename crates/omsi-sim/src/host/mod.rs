@@ -243,7 +243,8 @@ pub fn set_ambient_weather(temperature: f32, abs_humidity: f32) {
     AMBIENT.store(bits, std::sync::atomic::Ordering::Relaxed);
 }
 
-fn ambient_weather() -> Option<(f32, f32)> {
+/// The weather's temperature (°C) and absolute humidity, once a weather has been set.
+pub fn ambient_weather() -> Option<(f32, f32)> {
     let bits = AMBIENT.load(std::sync::atomic::Ordering::Relaxed);
     (bits != u64::MAX).then(|| (f32::from_bits((bits >> 32) as u32), f32::from_bits(bits as u32)))
 }

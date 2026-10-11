@@ -58,3 +58,6 @@ impl Drop for StatusFileGuard {
 
 pub mod animation_sync;
 pub mod variable_schema;
+
+pub mod clock;
+pub mod script_texture;

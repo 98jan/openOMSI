@@ -4,6 +4,21 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.34 - 2026-10-11
+
+### New
+- **The trip summary rates the trip**: five stars, a line on how the passengers felt, the trip at a glance (stops served, stops on time, distance, time driven, passengers) and gauges for driving, comfort and ticket selling above the table of stops, all in the game's language. It opens 5 seconds after the bus stops, so there is time to open the doors first ([#2263](https://github.com/openOMSI-org/openOMSI/pull/2263), by @thibautgnt).
+- **The launcher's start button says which multiplayer game it joins**: "Join Spandau 1" or "Join Thibaut's game" after joining a server or pasting a session code, instead of "Drive" ([#2262](https://github.com/openOMSI-org/openOMSI/pull/2262), by @thibautgnt).
+
+### Fixes
+- **Bus signals no longer freeze at the start of their cycle**: a traffic-light jump that lands where it started (Grand Paris-Moulon's TCSP17) is done once, not again every frame, so the bus signal reaches its next green ([#2265](https://github.com/openOMSI-org/openOMSI/pull/2265), by @YanisK33; [#2224](https://github.com/openOMSI-org/openOMSI/issues/2224), [#2266](https://github.com/openOMSI-org/openOMSI/issues/2266)).
+- **A scripted bus signal never shows red and green together**: when its script lights both, it stays red ([#2264](https://github.com/openOMSI-org/openOMSI/pull/2264), by @YanisK33).
+- **"Save the situation" can be continued**: the quicksave (Ctrl+S) is offered in the launcher's Continue on the map it was made on, beside the last situation and the slots; before, only a slot seemed to save ([#1746](https://github.com/openOMSI-org/openOMSI/issues/1746)).
+- **Winter textures without snow as in OMSI**: a map's winter of kind 4 ("winter with snow") shows its winter pictures like kind 3; the snowy ones come only with snow in the weather - they showed under a clear sky ([#2131](https://github.com/openOMSI-org/openOMSI/issues/2131)).
+- **Text textures with '@' line breaks are laid out as in OMSI**: the lines a font height apart and centred as a block, cut at both edges when it is taller than the texture; a text beginning with '@' (the New Lion's City's settings list) stood a line too low ([#1387](https://github.com/openOMSI-org/openOMSI/issues/1387)).
+- **The map's depot file stays assigned** to a bus that lacks it when it carries the line chosen; a depot of the bus's own folder with a line of the same number was taken instead ([#1837](https://github.com/openOMSI-org/openOMSI/issues/1837)).
+- **On foot without a bus, the navigator and the city map (Shift+M) work**, following the walker ([#2118](https://github.com/openOMSI-org/openOMSI/issues/2118)).
+
 ## 0.2.33 - 2026-10-11
 
 ### Changes
