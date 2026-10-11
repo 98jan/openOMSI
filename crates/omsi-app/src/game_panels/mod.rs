@@ -135,10 +135,17 @@ impl crate::App {
                 _ => {}
             }
         }
-        // the trip's summary, when one has just ended (and the setting wants it)
-        if let Some(s) = self.session.journey.as_mut().and_then(|j| j.take_summary()) {
+        // A completed trip's summary waits until the bus stops: the panel takes the mouse.
+        let speed = self.player.as_ref().map(|p| p.vehicle.physics.velocity_kmh());
+        if let Some(j) = self.session.journey.as_mut() {
             if self.settings.trip_summary {
-                self.menus.game_panels.trip = Some(trip_summary::TripPanel::new(s));
+                if let Some(s) = speed.and_then(|speed| j.take_summary_when_stopped(speed)) {
+                    self.menus.game_panels.trip = Some(trip_summary::TripPanel::new(s));
+                }
+            } else {
+                // Disabled summaries are consumed, so enabling the setting later cannot
+                // open a report from an earlier trip. The quick menu still has it.
+                j.take_summary();
             }
         }
         let panels: Vec<(&str, Option<Panel>)> = vec![
