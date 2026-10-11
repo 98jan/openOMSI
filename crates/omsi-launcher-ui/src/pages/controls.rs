@@ -357,44 +357,9 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
     let right = Rect::new(body.x + list_w + GAP * 2.0, body.y, body.w - list_w - GAP * 2.0, body.h);
     l.ui.panel(left);
     let inner = l.ui.heading(Rect::new(left.x + 18.0, left.y + 14.0, left.w - 36.0, left.h - 28.0), "Devices", Some("sports_esports"));
-    let mut add: Option<String> = None;
-    let mut sel = pv.selected;
     let list_r = Rect::new(inner.x - 6.0, inner.y, inner.w + 12.0, inner.h - 108.0);
     let offs: Vec<String> = l.state.settings.get("ctrl_off").and_then(|v| v.as_str()).unwrap_or("").split('|').map(str::to_string).filter(|s| !s.is_empty()).collect();
-    {
-        let ui = &mut l.ui;
-        let devices = &*devices;
-        let connected = &connected;
-        ui.scroll_area("pad-list", list_r, &mut |ui, v| {
-            let mut y = v.y;
-            for (i, d) in devices.iter().enumerate() {
-                let on = connected.iter().any(|c| omsi_input::controllers::names_match(&d.name, &c.name));
-                let switched_off = offs.iter().any(|o| o.eq_ignore_ascii_case(&d.name));
-                let r = Rect::new(v.x + 6.0, y, v.w - 12.0, 44.0);
-                if ui.row(&format!("pad-{i}"), r, sel == i) {
-                    sel = i;
-                }
-                ui.text_in(&d.name, Rect::new(r.x + 12.0, r.y, r.w - 40.0, r.h), 13.0, Weight::Medium, if on { TEXT } else { TEXT_DIM }, Align::Left);
-                if switched_off {
-                    ui.text_in("off", Rect::new(r.right() - 40.0, r.y, 30.0, r.h), 11.5, Weight::Bold, TEXT_FAINT, Align::Right);
-                } else {
-                    ui.icon(if on { "check_circle" } else { "remove" }, Vec2::new(r.right() - 18.0, r.center().y), 16.0, if on { OK } else { TEXT_FAINT });
-                }
-                y += 48.0;
-            }
-            for c in connected.iter().filter(|c| !devices.iter().any(|d| omsi_input::controllers::names_match(&d.name, &c.name))) {
-                let r = Rect::new(v.x + 6.0, y, v.w - 12.0, 38.0);
-                if ui.button(&format!("pad-add-{}", c.name), r, &format!("Set up {}", c.name), Some("add"), ButtonKind::Primary) {
-                    add = Some(c.name.clone());
-                }
-                y += 44.0;
-            }
-            if devices.is_empty() && connected.is_empty() {
-                y += 4.0 + ui.paragraph("No game controller is connected, and none is set up. Connect a wheel, pedals or a joystick; a gamepad works without setting up (left stick steers, the triggers are the pedals).", Vec2::new(v.x + 6.0, y + 4.0), v.w - 12.0, 13.0, Weight::Regular, TEXT_DIM);
-            }
-            y - v.y
-        });
-    }
+    let (sel, add) = device_list(&mut l.ui, list_r, devices, &connected, &offs, pv.selected);
     if sel != pv.selected {
         release_feedback(&mut pv.io, &mut pv.feedback_test);
         pv.selected = sel;
@@ -497,27 +462,9 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
     l.ui.scroll_area("pad-detail", list, &mut |ui, v| {
         let x0 = v.x + 6.0;
         let w = v.w - 16.0;
-        let mut y = v.y;
-        if live_dev.is_some_and(|c| c.ff_capable) || d.ff_invert.is_some() {
-            let (mut steering_force, mut vibration) = d.ff_scale.unwrap_or((1.0, 1.0));
-            if ui.slider("pad-ff-steering", Rect::new(x0, y, w, ROW), &mut steering_force, 0.0, 2.0, 0.05, "Steering force", &|v| format!("{:.0}%", v * 100.0)) {
-                d.ff_scale = Some((steering_force, vibration));
-                dirty = true;
-            }
-            y += ROW + 6.0;
-            if ui.slider("pad-ff-vibration", Rect::new(x0, y, w, ROW), &mut vibration, 0.0, 2.0, 0.05, "Vibration", &|v| format!("{:.0}%", v * 100.0)) {
-                d.ff_scale = Some((steering_force, vibration));
-                dirty = true;
-            }
-            y += ROW + 20.0;
-            if !live_dev.is_some_and(|c| c.gamepad) {
-                let mut invert = d.ff_invert.unwrap_or_else(|| l.state.settings.get("ff_invert").and_then(|v| v.as_bool()).unwrap_or(false));
-                if ui.toggle("pad-ff-invert", Rect::new(x0, y, w, ROW), &mut invert, "Invert force feedback") {
-                    d.ff_invert = Some(invert);
-                    dirty = true;
-                }
-                y += ROW + 20.0;
-            }
+        let (mut y, ff_dirty) = force_feedback_rows(ui, d, live_dev, &l.state.settings, x0, w, v.y);
+        if ff_dirty {
+            dirty = true;
         }
         let lab_w = if w < 520.0 { 84.0 } else { 110.0 };
         let inv_w = 110.0;
@@ -652,6 +599,73 @@ fn game_controllers(l: &mut Launcher, body: Rect) {
             pv.confirm_remove = Some(std::time::Instant::now());
         }
     }
+}
+
+/// The list of devices on the controllers tab: those set up (lit when connected, `off` when
+/// switched off) and a button for each connected one not set up. The line chosen (`sel`
+/// unless one was clicked) and the device to set up, if one was asked for.
+fn device_list(ui: &mut Ui, list_r: Rect, devices: &[omsi_input::controllers::DeviceCfg], connected: &[omsi_input::controllers::Connected], offs: &[String], mut sel: usize) -> (usize, Option<String>) {
+    let mut add: Option<String> = None;
+    ui.scroll_area("pad-list", list_r, &mut |ui, v| {
+        let mut y = v.y;
+        for (i, d) in devices.iter().enumerate() {
+            let on = connected.iter().any(|c| omsi_input::controllers::names_match(&d.name, &c.name));
+            let switched_off = offs.iter().any(|o| o.eq_ignore_ascii_case(&d.name));
+            let r = Rect::new(v.x + 6.0, y, v.w - 12.0, 44.0);
+            if ui.row(&format!("pad-{i}"), r, sel == i) {
+                sel = i;
+            }
+            ui.text_in(&d.name, Rect::new(r.x + 12.0, r.y, r.w - 40.0, r.h), 13.0, Weight::Medium, if on { TEXT } else { TEXT_DIM }, Align::Left);
+            if switched_off {
+                ui.text_in("off", Rect::new(r.right() - 40.0, r.y, 30.0, r.h), 11.5, Weight::Bold, TEXT_FAINT, Align::Right);
+            } else {
+                ui.icon(if on { "check_circle" } else { "remove" }, Vec2::new(r.right() - 18.0, r.center().y), 16.0, if on { OK } else { TEXT_FAINT });
+            }
+            y += 48.0;
+        }
+        for c in connected.iter().filter(|c| !devices.iter().any(|d| omsi_input::controllers::names_match(&d.name, &c.name))) {
+            let r = Rect::new(v.x + 6.0, y, v.w - 12.0, 38.0);
+            if ui.button(&format!("pad-add-{}", c.name), r, &format!("Set up {}", c.name), Some("add"), ButtonKind::Primary) {
+                add = Some(c.name.clone());
+            }
+            y += 44.0;
+        }
+        if devices.is_empty() && connected.is_empty() {
+            y += 4.0 + ui.paragraph("No game controller is connected, and none is set up. Connect a wheel, pedals or a joystick; a gamepad works without setting up (left stick steers, the triggers are the pedals).", Vec2::new(v.x + 6.0, y + 4.0), v.w - 12.0, 13.0, Weight::Regular, TEXT_DIM);
+        }
+        y - v.y
+    });
+    (sel, add)
+}
+
+/// The force feedback rows at the top of a device's page (a wheel that has it, or one set
+/// up with it): steering force, vibration and, but for a gamepad, the inverted force. Where
+/// the next row starts, and whether something changed.
+#[allow(clippy::too_many_arguments)]
+fn force_feedback_rows(ui: &mut Ui, d: &mut omsi_input::controllers::DeviceCfg, live_dev: Option<&omsi_input::controllers::Connected>, settings: &serde_json::Value, x0: f32, w: f32, mut y: f32) -> (f32, bool) {
+    let mut dirty = false;
+    if live_dev.is_some_and(|c| c.ff_capable) || d.ff_invert.is_some() {
+        let (mut steering_force, mut vibration) = d.ff_scale.unwrap_or((1.0, 1.0));
+        if ui.slider("pad-ff-steering", Rect::new(x0, y, w, ROW), &mut steering_force, 0.0, 2.0, 0.05, "Steering force", &|v| format!("{:.0}%", v * 100.0)) {
+            d.ff_scale = Some((steering_force, vibration));
+            dirty = true;
+        }
+        y += ROW + 6.0;
+        if ui.slider("pad-ff-vibration", Rect::new(x0, y, w, ROW), &mut vibration, 0.0, 2.0, 0.05, "Vibration", &|v| format!("{:.0}%", v * 100.0)) {
+            d.ff_scale = Some((steering_force, vibration));
+            dirty = true;
+        }
+        y += ROW + 20.0;
+        if !live_dev.is_some_and(|c| c.gamepad) {
+            let mut invert = d.ff_invert.unwrap_or_else(|| settings.get("ff_invert").and_then(|v| v.as_bool()).unwrap_or(false));
+            if ui.toggle("pad-ff-invert", Rect::new(x0, y, w, ROW), &mut invert, "Invert force feedback") {
+                d.ff_invert = Some(invert);
+                dirty = true;
+            }
+            y += ROW + 20.0;
+        }
+    }
+    (y, dirty)
 }
 
 /// Take the device shown (`selected`) out of the list; the one below it (or the last) is
