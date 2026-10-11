@@ -172,6 +172,8 @@ pub struct World {
     /// How bright the vehicles' `[spotlight_cookie]` lamps are as they fade (see
     /// `lights::vehicle_lights`).
     pub(crate) cookie_fades: Mutex<crate::lights::CookieFades>,
+    /// What a season's second look costs, for the log (see `season_looks`).
+    pub(crate) season_extra: Mutex<crate::season_looks::SeasonExtra>,
     /// Every tile file of the map read once: splines for the spline attachment rows,
     /// objects for entry points and stops of tiles that are not loaded.
     pub(super) index: Mutex<Option<Arc<MapIndex>>>,

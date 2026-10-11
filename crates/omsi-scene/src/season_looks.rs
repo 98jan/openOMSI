@@ -9,16 +9,20 @@
 //! file's name), and of those only the ones with a texture that differs between the two
 //! looks. Houses, roads and everything else show the look that prevails.
 use super::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// The textures the second look costs: distinct files on top of the map's season.
-static EXTRA_TEXTURES: Mutex<Option<hashbrown::HashSet<PathBuf>>> = Mutex::new(None);
-static EXTRA_TYPES: AtomicUsize = AtomicUsize::new(0);
+/// The textures the second look costs (distinct files on top of the map's season) and the
+/// object types that have one, for the log (kept by the world: `World::season_extra`).
+#[derive(Default)]
+pub(crate) struct SeasonExtra {
+    textures: hashbrown::HashSet<PathBuf>,
+    types: usize,
+}
 
 /// Count the files of the other look and say so (each new one is a texture more to load).
-fn count_extra(paths: impl IntoIterator<Item = PathBuf>, what: &str) {
-    let mut all = EXTRA_TEXTURES.lock();
-    let set = all.get_or_insert_with(Default::default);
+fn count_extra(extra: &Mutex<SeasonExtra>, paths: impl IntoIterator<Item = PathBuf>, what: &str) {
+    let mut extra = extra.lock();
+    let types = extra.types;
+    let set = &mut extra.textures;
     let before = set.len();
     set.extend(paths);
     if set.len() > before {
@@ -26,7 +30,7 @@ fn count_extra(paths: impl IntoIterator<Item = PathBuf>, what: &str) {
             "season mix: {what} - {} textures more, {} in all for {} object types",
             set.len() - before,
             set.len(),
-            EXTRA_TYPES.load(Ordering::Relaxed)
+            types
         );
     }
 }
@@ -78,7 +82,7 @@ impl World {
         if now == then {
             return texture.to_string();
         }
-        count_extra([then.clone()], &format!("tree {texture} also in {}", look.as_deref().unwrap_or("summer")));
+        count_extra(&self.season_extra, [then.clone()], &format!("tree {texture} also in {}", look.as_deref().unwrap_or("summer")));
         then.to_string_lossy().into_owned()
     }
 
@@ -120,8 +124,8 @@ impl World {
         if changed.is_empty() {
             return None;
         }
-        EXTRA_TYPES.fetch_add(1, Ordering::Relaxed);
-        count_extra(changed, &format!("{} also in {}", ot.sco.path.display(), look.unwrap_or("summer")));
+        self.season_extra.lock().types += 1;
+        count_extra(&self.season_extra, changed, &format!("{} also in {}", ot.sco.path.display(), look.unwrap_or("summer")));
         Some(())
     }
 }
