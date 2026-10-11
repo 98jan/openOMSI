@@ -31,7 +31,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DEBUG_CULL` | num | off | frame | render | Log what near and in the picture is left out of the draw list, and why. |
 | `OMSI_DEBUG_DOORS` | bool | off | use | sim | Log the door variables of AI buses twice a second. |
 | `OMSI_DEBUG_DRAWS` | bool | off | frame | render | Log how many instances changed per prepare. |
-| `OMSI_DEBUG_DRIVER` | bool | off | use | app | Log the driver figure's settling (grips, wrists, elbows). |
+| `OMSI_DEBUG_DRIVER` | bool | off | use | scene | Log the driver figure's settling (grips, wrists, elbows). |
 | `OMSI_DEBUG_ENHANCED` | num | 0 | once | render | Enhanced main pass shows one of its terms alone (n selects it: 1 sun shadow, 2 occlusion, ...). |
 | `OMSI_DEBUG_EXPOSURE` | bool | off | use | render | Read back and log the adapted exposure metering now and then. |
 | `OMSI_DEBUG_FLICKER` | bool | off | frame | render | Log near instances drawn in one frame and not the next (objects blinking). |
@@ -52,7 +52,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DEBUG_MIRRORS` | bool | off | use | app | Log each mirror's eye, angles and field of view. |
 | `OMSI_DEBUG_MISSING` | bool | off | use | scene | Log where missing textures were looked for. |
 | `OMSI_DEBUG_NAN` | bool | off | once | script | Warn at every write of a NaN or infinity into a script variable. |
-| `OMSI_DEBUG_NAV` | bool | off | use | app | Log navigation details (e.g. stops whose tiles are not loaded). |
+| `OMSI_DEBUG_NAV` | bool | off | use | app, scene | Log navigation details (e.g. stops whose tiles are not loaded). |
 | `OMSI_DEBUG_OBJECTS` | bool | off | use | scene | Log objects placed outside their tile. |
 | `OMSI_DEBUG_OBJMAT` | text | - | use | scene | Log how the material slots of the objects whose file name contains this text are made. |
 | `OMSI_DEBUG_PARTICLES` | bool | off | use | scene | Log the smoke particles. |
@@ -159,8 +159,8 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_CLOUDFLARED_OWN` | bool | off | use | net | LAN tunnel: only the game's own downloaded cloudflared, to test the download. |
 | `OMSI_CONDENSATION` | text | - | use | app | Offscreen: minutes,people[,engine] - the cabin air and condensation on the glass after that long. |
 | `OMSI_DAY_AIR` | text | - | once | render | haze,angstrom[,height,strat]: fix the day's air (twilight colours) instead of the varying one. |
-| `OMSI_DRIVER_HANDS` | text | - | use | app | left,right: both driver hands held at these angles (grip close-ups). |
-| `OMSI_DRIVER_SHIFTER` | text | - | use | app | Part of a variable or file name: force the shifter the driver's hand uses; off: both hands on the wheel. |
+| `OMSI_DRIVER_HANDS` | text | - | use | scene | left,right: both driver hands held at these angles (grip close-ups). |
+| `OMSI_DRIVER_SHIFTER` | text | - | use | scene | Part of a variable or file name: force the shifter the driver's hand uses; off: both hands on the wheel. |
 | `OMSI_DRIVE_PROFILE` | text | - | use | app | Offscreen: "t throttle brake [steer]/..." piecewise constant pedals (crash/kerb tests). |
 | `OMSI_DRIVE_V0` | num | - | use | app | Offscreen: the bus's speed in km/h on the first frame. |
 | `OMSI_FAKE_GPU_ERROR` | text | - | frame | render | Fault injection: open, open-panic, pipeline, lost-build, build, lost, frame - the GPU error to simulate. Only in builds with omsi-render's `test-hooks` feature (on by default). |

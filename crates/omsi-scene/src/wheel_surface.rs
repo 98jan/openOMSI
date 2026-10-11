@@ -3,7 +3,7 @@
 //! under the wheel, see `World::surface_under`).
 
 /// Set the bus's `Axle_SurfaceID_` variables for this frame.
-pub(crate) fn tell_scripts(w: &crate::scene::World, v: &mut omsi_sim::VehicleInstance) {
+pub fn tell_scripts(w: &crate::World, v: &mut omsi_sim::VehicleInstance) {
     let Some(rb) = v.rigid.as_ref() else { return };
     let rot = v.body_rotation();
     let found: Vec<(String, u8)> = rb

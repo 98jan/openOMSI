@@ -383,7 +383,7 @@ impl DriverFigure {
     /// `pick` chooses among the map's drivers (`drivers.txt`): 0 for the player, a vehicle's
     /// own number for the traffic.
     pub fn new(
-        world: &crate::scene::World,
+        world: &crate::World,
         renderer: &Renderer,
         scene: &mut Scene,
         v: &VehicleInstance,
@@ -394,17 +394,18 @@ impl DriverFigure {
     }
 
     /// The driver as another game has them (LAN): the figure it names by its `.hum` file
-    /// (relative to the installation), else one of the map's as `new` picks.
+    /// (`hum`: relative to the installation, as `omsi_net::human_path` checked the name that
+    /// came over the network), else one of the map's as `new` picks.
     pub fn new_named(
-        world: &crate::scene::World,
+        world: &crate::World,
         renderer: &Renderer,
         scene: &mut Scene,
         v: &VehicleInstance,
-        hum: &str,
+        hum: Option<&str>,
         pick: u64,
     ) -> Option<DriverFigure> {
-        let named = omsi_net::human_path(hum)
-            .map(|rel| omsi_cfg::resolve_path(&world.root, &rel))
+        let named = hum
+            .map(|rel| omsi_cfg::resolve_path(&world.root, rel))
             .filter(|p| omsi_cfg::vfs::exists(p))
             .and_then(|p| cached_type(&p));
         let ty = named.or_else(|| driver_type(world, pick))?;
@@ -412,7 +413,7 @@ impl DriverFigure {
     }
 
     fn new_with(
-        world: &crate::scene::World,
+        world: &crate::World,
         renderer: &Renderer,
         scene: &mut Scene,
         v: &VehicleInstance,
@@ -605,7 +606,7 @@ impl DriverFigure {
     /// Turn the hands with the wheel, pose, skin and place the figure; `show` false hides it,
     /// `mirror_only` keeps it out of the window's picture but in the mirrors (the driver's
     /// own view: OMSI shows the driver in the mirrors while one looks from his seat).
-    pub fn update(&mut self, renderer: &Renderer, scene: &mut Scene, v: &VehicleInstance, render: &crate::scene::VehicleRender, dt: f32, show: bool, mirror_only: bool) {
+    pub fn update(&mut self, renderer: &Renderer, scene: &mut Scene, v: &VehicleInstance, render: &crate::VehicleRender, dt: f32, show: bool, mirror_only: bool) {
         if show != self.shown {
             for (_, inst) in &self.meshes {
                 renderer.set_params(scene, *inst, &[], show, &[]);
@@ -1419,7 +1420,7 @@ fn wrap(a: f32) -> f32 {
 /// driver figure `Humans/*/DBC_man04_driver.hum`. Each file is read once.
 /// The figure `DriverFigure::new` gives a driver with this `pick` (0: the player): also the
 /// player's figure on foot, so that getting out of the bus or having none changes no clothes.
-pub(crate) fn driver_type(world: &crate::scene::World, pick: u64) -> Option<Arc<HumanType>> {
+pub fn driver_type(world: &crate::World, pick: u64) -> Option<Arc<HumanType>> {
     let listed: Vec<std::path::PathBuf> = omsi_map::ailists::load_list(&world.map_dir.join("drivers.txt"))
         .iter()
         .map(|l| omsi_cfg::resolve_path(&world.root, l))

@@ -1,7 +1,7 @@
 //! Money on the cash desk, drawn: the coins a passenger pays with and the change the driver
 //! hands out (which coins, and where each lies, is omsi-sim's `people::money`).
 
-use crate::scene::World;
+use crate::World;
 use glam::{DVec3, Mat4, Vec3};
 use omsi_geometry::mesh_from_o3d;
 use omsi_render::{AlphaMode, MaterialId, MeshId, Renderer, Scene};
@@ -106,7 +106,7 @@ impl TicketBlocks {
             let data = mesh_from_o3d(&m);
             let id = renderer.add_mesh(scene, &data);
             let inst = renderer.add_instance(scene, id, DVec3::ZERO, Mat4::IDENTITY, mats);
-            let local = crate::tiles::attachment_matrix(&omsi_scenery::sco::Attachment { ops: a.ops.clone() });
+            let local = omsi_world::map_index::attachment_matrix(&omsi_scenery::sco::Attachment { ops: a.ops.clone() });
             blocks.push((inst, local, n, data));
         }
         if !blocks.is_empty() {

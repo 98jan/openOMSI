@@ -30,10 +30,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub mod camera_arm;
+pub mod driver;
 pub mod lights;
+pub mod money;
 pub mod puddles;
 pub mod rain;
+pub mod route_arrows;
 pub mod threads;
+pub mod wheel_surface;
 pub mod window_wipers;
 
 mod staging;

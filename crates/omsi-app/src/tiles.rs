@@ -1,13 +1,12 @@
 //! Tile streaming: [`Streamer`] loads the tiles around the camera and the player's bus on a
 //! worker thread, uploads what they produced a little each frame and unloads the far ones.
 //! The map-wide index and the placement of the attached objects are
-//! `omsi_world::map_index`, re-exported here.
+//! `omsi_world::map_index`.
 
 use glam::DVec3;
 use omsi_map::tile_size;
 use std::path::PathBuf;
 
-pub use omsi_world::map_index::*;
 
 /// A finished batch from the worker: the prepared tiles, their statistics and how long the
 /// preparation took.

@@ -2513,7 +2513,7 @@ pub fn tick(
                 d.hide(r, scene);
             }
             // their own figure at the wheel (a figure picked by their id otherwise)
-            rv.driver = crate::driver::DriverFigure::new_named(w, r, scene, &rv.vehicle, &rv.last.figure, 1000 + *id as u64);
+            rv.driver = crate::driver::DriverFigure::new_named(w, r, scene, &rv.vehicle, omsi_net::human_path(&rv.last.figure).as_deref(), 1000 + *id as u64);
         }
         if let Some(d) = rv.driver.as_mut() {
             d.update(r, scene, &rv.vehicle, &rv.render, dt.max(1.0 / 120.0), rv.last.walker.is_none(), false);

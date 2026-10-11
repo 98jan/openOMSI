@@ -5,12 +5,12 @@
 //! the route goes (`Navigator::arrow_spots`) and the objects are put into the world
 //! outside the tiles (`World::add_helper_object`), the ones behind the bus taken away.
 
-use crate::scene::{TileGpu, World};
+use crate::{TileGpu, World};
 use glam::DVec3;
 use omsi_render::{Renderer, Scene};
 
 #[derive(Default)]
-pub(crate) struct RouteArrows {
+pub struct RouteArrows {
     /// What stands now: its key and the object.
     placed: Vec<(u64, TileGpu)>,
     /// Seconds to the next look at the route.
@@ -28,7 +28,7 @@ fn sco(kind: &str) -> &'static str {
 
 impl RouteArrows {
     /// Twice a second: the arrows of the route ahead stand, the others go.
-    pub(crate) fn tick(&mut self, dt: f32, world: &World, renderer: &Renderer, scene: &mut Scene, spots: &[(u64, DVec3, f64, &'static str, String)]) {
+    pub fn tick(&mut self, dt: f32, world: &World, renderer: &Renderer, scene: &mut Scene, spots: &[(u64, DVec3, f64, &'static str, String)]) {
         self.wait -= dt;
         if self.wait > 0.0 {
             return;
@@ -65,13 +65,13 @@ impl RouteArrows {
     }
 
     /// Whether any arrow stands.
-    pub(crate) fn any(&self) -> bool {
+    pub fn any(&self) -> bool {
         !self.placed.is_empty()
     }
 
     /// Every arrow goes at once: the setting was switched off (`tick` is no longer called
     /// then, so those standing would stay where they were for good).
-    pub(crate) fn clear(&mut self, world: &World, renderer: &Renderer, scene: &mut Scene) {
+    pub fn clear(&mut self, world: &World, renderer: &Renderer, scene: &mut Scene) {
         if omsi_cfg::flags::OMSI_DEBUG_NAV.is_set() {
             log::info!("route arrows: the {} standing taken away", self.placed.len());
         }
