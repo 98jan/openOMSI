@@ -245,6 +245,8 @@ pub struct LanGame {
     pub plugin_chat: Vec<(String, String)>,
     /// The shared world: the host's traffic and people (`lan_world`).
     pub world: crate::lan_world::LanWorld,
+    /// The password `/admin` was given, until the server's challenge comes (`admin`).
+    pub admin_password: Option<String>,
     tables: hashbrown::HashMap<PathBuf, Arc<SyncTable>>,
     /// The welcome whose world was taken over (`LanSession::welcomes`).
     adopted: u32,
@@ -2744,7 +2746,7 @@ pub fn chat_send(lan: &mut LanSession, game: &mut LanGame, text: &str) {
     }
     // `/admin <password>`: a server's administration (see `admin`), never said aloud
     if let Some(pw) = text.trim().strip_prefix("/admin ") {
-        crate::admin::request(lan, pw.trim());
+        crate::admin::request(lan, game, pw.trim());
         game.chat.push("* asked the server for its administration".into());
         return;
     }

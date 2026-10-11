@@ -260,12 +260,10 @@ fn who_id(arg: &str) -> Option<u32> {
     arg.trim().parse::<u32>().ok()
 }
 
-/// The password `/admin` was given, until the server's challenge comes.
-static PENDING_PASSWORD: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-/// Ask the server for its administration with `password` (see the module).
-pub(crate) fn request(lan: &mut LanSession, password: &str) {
-    *PENDING_PASSWORD.lock().unwrap_or_else(|e| e.into_inner()) = Some(password.to_string());
+/// Ask the server for its administration with `password` (see the module); the password
+/// waits in the session's `LanGame::admin_password` for the server's challenge.
+pub(crate) fn request(lan: &mut LanSession, game: &mut crate::lan::LanGame, password: &str) {
+    game.admin_password = Some(password.to_string());
     lan.command(1, "auth?");
 }
 
@@ -378,7 +376,7 @@ pub(crate) fn command(app: &mut App, from: u32, text: &str) {
         // (server → us) the password was right: the menu is ours
         // (server → us) prove the password without sending it
         "admin-challenge" if from == 1 => {
-            let pw = PENDING_PASSWORD.lock().unwrap_or_else(|e| e.into_inner()).take();
+            let pw = app.net.remotes.admin_password.take();
             if let (Some(pw), Some(l)) = (pw, app.net.lan.as_mut()) {
                 l.command(1, &format!("auth {}", response(arg.trim(), &pw)));
             }
