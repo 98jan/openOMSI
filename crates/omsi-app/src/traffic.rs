@@ -33,7 +33,7 @@ use omsi_sim::ai_traffic::viewer::*;
 use crate::view_sync::traffic::{depart_parked, release_car_render, TrafficView};
 
 pub use omsi_sim::ai_traffic::AI_SCHEMES;
-pub(crate) use omsi_sim::ai_traffic::model::{vehicle_bodies, AiCar, BusSetup, DormantCar, ParkPlan, PlayerBox};
+pub(crate) use omsi_sim::ai_traffic::model::{vehicle_bodies, AiCar, BusSetup, ParkPlan, PlayerBox};
 pub(crate) use setup::warm_up;
 pub(crate) use omsi_sim::ai_traffic::viewer::Viewer;
 
@@ -54,6 +54,10 @@ pub struct Traffic {
     sound_cfgs: HashMap<std::path::PathBuf, Option<Arc<omsi_vehicle::SoundCfg>>>,
     /// Shared script environment for existing AI and for their next `{init}`.
     pub script_environment: Option<([f32; 22], glam::Vec3, f32)>,
+    /// What each vehicle definition (by its file) is heard with, its paths resolved once:
+    /// a car waiting for its clips looked them all up on the disk again every frame, and a
+    /// car without a usable sound configuration did so as long as it was near.
+    sound_plans: HashMap<std::path::PathBuf, Option<Arc<audio::SoundPlan>>>,
 }
 
 impl std::ops::Deref for Traffic {
@@ -80,15 +84,17 @@ impl Traffic {
             riding_sounds: None,
             sound_cfgs: HashMap::new(),
             script_environment: None,
+            sound_plans: HashMap::new(),
         }
     }
 
-    /// Advance all cars (see `TrafficSim::tick`); the cars it took off the road go silent
+    /// Advance all cars by a frame (see `TrafficSim::advance`: in the traffic's fixed steps);
+    /// the cars it took off the road go silent
     /// and their pictures go back to the world at the next sync.
     /// `player`: (centre, heading in degrees, half length, half width, speed) of the
     /// player's vehicle.
     pub fn tick(&mut self, view: &mut TrafficView, dt: f32, player: Option<PlayerBox>) {
-        self.sim.tick(dt, player);
+        self.sim.advance(dt, player);
         for id in std::mem::take(&mut self.sim.retired) {
             self.orphan_sounds.extend(self.sounds.remove(&id));
             view.retire(id);

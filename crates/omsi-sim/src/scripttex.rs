@@ -116,7 +116,12 @@ impl ScriptTexture {
         self.locked = false;
         if self.dirty {
             self.publish();
-            self.pending = Some(self.rgba.clone());
+            // (into the buffer of an image released before and not yet taken, when there
+            // is one: a script that unlocks several times a frame made a new copy each time)
+            match &mut self.pending {
+                Some(p) => p.clone_from(&self.rgba),
+                None => self.pending = Some(self.rgba.clone()),
+            }
             self.dirty = false;
         }
     }

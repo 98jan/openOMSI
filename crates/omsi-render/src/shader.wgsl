@@ -35,6 +35,10 @@ struct Camera {
     inside2_a: vec4<f32>,
     inside2_b: vec4<f32>,
     inside2_c: vec4<f32>,
+    // Enhanced: the field each light cookie layer covers (xy: the tangents of its half
+    // angles across and up; z: its first record in the light buffer), see enhanced.wgsl
+    // `cookie_light`
+    cookies: array<vec4<f32>, 8>,
 };
 
 // 1 when the point lies inside the player's vehicle (its [boundingbox], shrunk a little so
@@ -366,7 +370,8 @@ struct MaterialParams {
     wipe_bounds: vec4<f32>,
     // x: [matl_glow] strength (0 = the keyword is not there; the material is its own light -
     // its `t_light` is a greyscale mask of how much shines where, its colour is its own, see
-    // the enhanced pass), y/z/w free
+    // the enhanced pass), y an LED panel's share of the `Led glow` ([led_glow_effect],
+    // 1 without it), z/w free
     glow: vec4<f32>,
 };
 @group(1) @binding(2) var<uniform> material: MaterialParams;

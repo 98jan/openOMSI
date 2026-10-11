@@ -69,6 +69,12 @@ fn model_references(out: &mut Vec<String>, program: &Program, model: &omsi_model
     for light in &model.spotlights_2 {
         float(&light.variable);
     }
+    for light in &model.spotlight_cookies {
+        float(&light.variable);
+        for name in [&light.yaw, &light.pitch].into_iter().flatten() {
+            float(name);
+        }
+    }
     for ctc in &model.ctc {
         float(&ctc.variable);
     }
@@ -239,7 +245,7 @@ mod tests {
     #[test]
     fn model_and_sound_references_include_engine_strings_and_uncapped_values() {
         let mut program = Program::default();
-        for name in ["door_0", "rain_window", "pitch", "condition", "volume"] {
+        for name in ["door_0", "rain_window", "pitch", "condition", "volume", "cookie_light", "cookie_yaw", "cookie_pitch"] {
             program.declare_var(name);
         }
         program.declare_str_var("display");
@@ -257,11 +263,20 @@ mod tests {
             }],
             ..Default::default()
         });
+        model.spotlight_cookies.push(omsi_model::SpotlightCookie {
+            variable: "COOKIE_LIGHT".into(),
+            yaw: Some("cookie_yaw".into()),
+            pitch: Some("cookie_pitch".into()),
+            ..Default::default()
+        });
         let mut refs = Vec::new();
         model_references(&mut refs, &program, &model);
         assert!(refs.contains(&"f:door_0".into()));
         assert!(refs.contains(&"f:rain_window".into()));
         assert!(refs.contains(&"s:display".into()));
+        for name in ["cookie_light", "cookie_yaw", "cookie_pitch"] {
+            assert!(refs.contains(&format!("f:{name}")));
+        }
         reference(&mut refs, &program, "missing", false);
         assert!(refs.contains(&"u:missing".into()));
         let sound = omsi_vehicle::SoundCfg {
