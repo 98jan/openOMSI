@@ -150,28 +150,7 @@ pub(crate) fn own_bindings(root: &Path, modifier: i32) -> std::collections::Hash
         .collect()
 }
 
-pub(crate) fn content_dir() -> Option<PathBuf> {
-    if let Some(d) = omsi_cfg::flags::OMSI_CONTENT.os() {
-        return Some(PathBuf::from(d));
-    }
-    let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?.to_path_buf();
-    // inside an .app bundle the binary sits in Contents/MacOS: use the folder beside the bundle
-    let dir = if dir.ends_with("Contents/MacOS") {
-        dir.parent()?.parent()?.parent()?.to_path_buf()
-    } else {
-        dir
-    };
-    let cand = omsi_cfg::content_folder_of(&dir);
-    if !omsi_cfg::is_programs_folder(&cand) && (cand.exists() || std::fs::create_dir_all(&cand).is_ok()) && omsi_cfg::is_writable(&cand) {
-        Some(cand)
-    } else {
-        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
-        let fallback = PathBuf::from(home).join(".openomsi").join("content");
-        let _ = omsi_cfg::ensure_content_layout(&fallback);
-        Some(fallback)
-    }
-}
+pub(crate) use omsi_cfg::content_dir;
 
 /// Where a save goes when the content folder takes none (`~/.openomsi/content`): a game
 /// unpacked into Program Files, or a folder Windows' controlled folder access guards, said

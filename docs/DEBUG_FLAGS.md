@@ -25,7 +25,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DEBUG_BOARDS` | bool | off | use | sim | Log boarding at bus stops. |
 | `OMSI_DEBUG_CAMERA` | num | 1 | once | app | Camera arm log: 1 the types and what stops the arm, 2 also every frame. |
 | `OMSI_DEBUG_CAR` | num | - | use | sim | Log the state of the AI car with this id every step. |
-| `OMSI_DEBUG_CAREER` | bool | off | use | app | Log the jolts the career scoring counts. |
+| `OMSI_DEBUG_CAREER` | bool | off | use | career | Log the jolts the career scoring counts. |
 | `OMSI_DEBUG_COLLISION` | bool | off | use | app | Log the player's collision state. |
 | `OMSI_DEBUG_CONES` | bool | off | use | app, render | Log the light coronas and beams prepared per frame. |
 | `OMSI_DEBUG_CULL` | num | off | frame | render | Log what near and in the picture is left out of the draw list, and why. |
@@ -337,7 +337,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_AMBIENCE_DIR` | text | - | use | app | The folder of the ambience's recordings (its pack.json), instead of `ambience` beside the program or in ~/.openomsi. |
 | `OMSI_BACKEND` | text | settings | use | app, launcher-ui | vulkan, dx12, metal, gl or angle (dx11, d3d11; Windows): the graphics API tried first (overrides the settings). Set at runtime by the launcher and on Android. |
 | `OMSI_CLOUDFLARED` | text | - | use | net | Path of the cloudflared binary for the LAN tunnel (searched after the game's folder, before the PATH). |
-| `OMSI_CONTENT` | text | beside the game | use | app, launcher-core, sim | The content folder (mods, archives, screenshots). Set at runtime on Android. |
+| `OMSI_CONTENT` | text | beside the game | use | app, cfg, launcher-core, sim | The content folder (mods, archives, screenshots). Set at runtime on Android. |
 | `OMSI_CONTENT_ZIP` | text | - | use | cfg | Extra content archives, separated like PATH (as --content-zip). |
 | `OMSI_INSTANCE` | text | - | use | app, lan, launcher-core | The id of a game instance started by the launcher (set for the child process). |
 | `OMSI_LAN_IP` | text | - | use | net | a.b.c.d[,e.f.g.h]: LAN addresses to offer first (when the detection gets them wrong). |

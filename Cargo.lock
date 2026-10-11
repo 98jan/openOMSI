@@ -3310,6 +3310,7 @@ dependencies = [
  "log",
  "ndk-context",
  "omsi-audio",
+ "omsi-career",
  "omsi-cfg",
  "omsi-content",
  "omsi-geometry",
@@ -3368,6 +3369,20 @@ dependencies = [
  "parking_lot",
  "symphonia",
  "ureq",
+]
+
+[[package]]
+name = "omsi-career"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "libc",
+ "log",
+ "omsi-cfg",
+ "omsi-content",
+ "omsi-sim",
+ "serde_json",
+ "windows 0.62.2",
 ]
 
 [[package]]

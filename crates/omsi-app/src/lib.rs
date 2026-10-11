@@ -32,7 +32,7 @@ mod soundscape;
 mod wheel_surface;
 mod camera_arm;
 mod cam_approach;
-mod career;
+use omsi_career::career;
 use omsi_input::describe;
 mod editor;
 mod duty_book;

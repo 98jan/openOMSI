@@ -24,8 +24,8 @@ const SEESAW_WEIGHT: f64 = 0.05;
 /// Kilometres that wear the penalty down by one (P −= km / 30).
 const PENALTY_KM: f64 = 30.0;
 /// A stop's arrival later than this (s) is late, its departure earlier than minus that early.
-pub(crate) const LATE_ARRIVAL: f64 = 180.0;
-pub(crate) const EARLY_DEPARTURE: f64 = -120.0;
+pub const LATE_ARRIVAL: f64 = 180.0;
+pub const EARLY_DEPARTURE: f64 = -120.0;
 
 pub struct Career {
     pub driver: Option<Driver>,
@@ -168,7 +168,7 @@ impl Career {
         let (path, read) = if given.is_absolute() {
             (given.to_path_buf(), given.to_path_buf())
         } else {
-            let own = crate::startup::content_dir().map(|c| c.join(rel)).unwrap_or_else(|| omsi_cfg::resolve_path(root, rel));
+            let own = omsi_cfg::content_dir().map(|c| c.join(rel)).unwrap_or_else(|| omsi_cfg::resolve_path(root, rel));
             let read = if own.exists() { own.clone() } else { omsi_cfg::resolve_path(root, rel) };
             (own, read)
         };

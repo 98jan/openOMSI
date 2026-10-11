@@ -60,6 +60,13 @@ forbid omsi-weather omsi-net
 forbid omsi-weather omsi-plugin
 forbid omsi-weather omsi-launcher-*
 
+# The driver's record keeps numbers: no drawing, sound or network in it.
+forbid omsi-career omsi-render
+forbid omsi-career omsi-audio
+forbid omsi-career omsi-ui
+forbid omsi-career omsi-net
+forbid omsi-career omsi-launcher-*
+
 # The input devices read controllers and keys: they neither draw nor sound, nor know the network,
 # the plugins or the launcher.
 forbid omsi-input omsi-render

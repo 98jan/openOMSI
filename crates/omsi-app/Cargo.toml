@@ -51,6 +51,7 @@ omsi-input = { path = "../omsi-input" }
 omsi-xr = { path = "../omsi-xr" }
 omsi-plugin-ui = { path = "../omsi-plugin-ui" }
 omsi-weather = { path = "../omsi-weather" }
+omsi-career = { path = "../omsi-career" }
 omsi-ui = { path = "../omsi-ui" }
 omsi-launcher-core = { path = "../omsi-launcher-core" }
 omsi-launcher-ui = { path = "../omsi-launcher-ui" }
