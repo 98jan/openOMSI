@@ -1,0 +1,17 @@
+[package]
+name = "omsi-launcher-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The launcher's interface: its toolkit (also drawing the game's pause menu, photo mode and developer tools), pages and window"
+
+[dependencies]
+glam.workspace = true
+hashbrown.workspace = true
+winit.workspace = true
+omsi-content = { path = "../omsi-content" }
+omsi-ui = { path = "../omsi-ui" }
+
+[features]
+# what an app's tests see of the toolkit: every clickable thing's place (`Ui::drawn`)
+test-support = []

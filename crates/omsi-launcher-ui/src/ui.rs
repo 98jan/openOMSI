@@ -233,7 +233,7 @@ pub struct Ui {
     pub over_ui: bool,
     tooltip: Option<(String, Vec2)>,
     /// (tests) Where each clickable widget was this frame, by id.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub drawn: HashMap<Id, Rect>,
 }
 
@@ -265,7 +265,7 @@ impl Ui {
             clipboard_in: None,
             over_ui: false,
             tooltip: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             drawn: HashMap::new(),
         }
     }
@@ -284,7 +284,7 @@ impl Ui {
         self.cursor = winit::window::CursorIcon::Default;
         self.over_ui = false;
         self.tooltip = None;
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.drawn.clear();
         self.push_layer(Rect::new(0.0, 0.0, size.x, size.y), 0.0);
         // typing into an open dropdown searches it: the keys are the list's, not the page's
@@ -434,7 +434,7 @@ impl Ui {
 
     /// Hover/press behaviour of a clickable area: (hovered, pressed now, clicked).
     pub fn interact(&mut self, id: Id, r: Rect) -> (bool, bool, bool) {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "test-support"))]
         self.drawn.insert(id, r);
         let h = self.hover(r);
         if h {

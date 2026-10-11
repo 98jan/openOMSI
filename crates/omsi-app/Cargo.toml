@@ -50,6 +50,7 @@ omsi-lan = { path = "../omsi-lan" }
 omsi-input = { path = "../omsi-input" }
 omsi-ui = { path = "../omsi-ui" }
 omsi-launcher-core = { path = "../omsi-launcher-core" }
+omsi-launcher-ui = { path = "../omsi-launcher-ui" }
 serde.workspace = true
 hashbrown.workspace = true
 parking_lot.workspace = true
@@ -114,3 +115,7 @@ winit = { workspace = true, features = ["android-native-activity"] }
 android_logger = "0.15"
 jni = "0.21"
 ndk-context = "0.1"
+
+[dev-dependencies]
+# the launcher toolkit's test view (`Ui::drawn`) for the launcher pages' tests
+omsi-launcher-ui = { path = "../omsi-launcher-ui", features = ["test-support"] }

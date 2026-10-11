@@ -20,9 +20,9 @@ mod season;
 mod state;
 #[cfg_attr(not(target_os = "android"), allow(unused_imports))]
 pub(crate) use state::crash_of;
-pub(crate) mod theme;
+pub(crate) use omsi_launcher_ui::theme;
 mod timetable;
-pub(crate) mod ui;
+pub(crate) use omsi_launcher_ui::ui;
 mod update;
 
 use glam::Vec2;
