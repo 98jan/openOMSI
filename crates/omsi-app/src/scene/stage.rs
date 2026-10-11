@@ -931,13 +931,22 @@ impl World {
             // Island 4's viaduct rows 33 m out), so the far side of a row near the tile's edge
             // lies in the neighbouring tile, and Omsi.exe finds every object's height with a
             // ray onto *this* tile's terrain only and drops what the ray misses - the same rule
-            // the `[object]` list above is drawn by (#787).
+            // the `[object]` list above is drawn by (#787). An `[absheight]` type casts no
+            // such ray, so its row objects stay wherever they fall, as in that list.
+            // without its own type the whole row is missing; otherwise each object is on
+            // its own (a car park row leaves some spaces empty)
+            let Some(row_type) = self.object_type(&a.file) else {
+                self.note_missing(&a.file, "scenery object", tx, ty, a.id);
+                counts.lock().failed_objects += 1;
+                continue;
+            };
+            let absolute = row_type.sco.absolute_height();
             let edge = tile_size() + 1e-3;
             let objs: Vec<_> = objs
                 .into_iter()
                 .filter(|(_, ro)| {
                     let (x, y) = (ro.pose.pos.x - origin2.x, ro.pose.pos.y - origin2.y);
-                    if (-1e-3..=edge).contains(&x) && (-1e-3..=edge).contains(&y) {
+                    if absolute || ((-1e-3..=edge).contains(&x) && (-1e-3..=edge).contains(&y)) {
                         return true;
                     }
                     if row_outside == 0 || debug_outside {
@@ -950,13 +959,6 @@ impl World {
             if objs.is_empty() {
                 continue;
             }
-            // without its own type the whole row is missing; otherwise each object is on
-            // its own (a car park row leaves some spaces empty)
-            let Some(row_type) = self.object_type(&a.file) else {
-                self.note_missing(&a.file, "scenery object", tx, ty, a.id);
-                counts.lock().failed_objects += 1;
-                continue;
-            };
             rows += 1;
             let first = objs.iter().map(|o| o.1.index).min().unwrap_or(0);
             for (_, ro) in objs {
