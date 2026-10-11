@@ -540,6 +540,14 @@ impl AudioEngine {
         out
     }
 
+    /// The time the engine goes by: the wall clock, or a recording's own (the mixed sound's,
+    /// see [`AudioEngine::capture`]) - a sound's fade-in by the seconds it has played
+    /// (`[volcurve] -1`) is heard in a recording as it is in the game, however long the
+    /// pictures take to draw.
+    pub fn clock(&self) -> std::time::Instant {
+        self.shared.now()
+    }
+
     /// The device's (or the capture's) sample rate.
     pub fn sample_rate(&self) -> u32 {
         self.shared.sample_rate.load(Ordering::Relaxed)
@@ -946,6 +954,18 @@ mod tests {
         }
         assert_eq!(own.doppler.2, 1.0);
         assert!(passing.doppler.2 < 1.0);
+    }
+
+    /// A recording's clock is the sound it mixed, not the wall clock: a fade-in by seconds
+    /// played comes out the same however slowly the run goes.
+    #[test]
+    fn a_recording_goes_by_the_sound_it_mixed() {
+        let e = AudioEngine::capture(48_000);
+        let t0 = e.clock();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert_eq!(e.clock(), t0);
+        e.render_capture(24_000);
+        assert_eq!(e.clock() - t0, std::time::Duration::from_millis(500));
     }
 
     /// The stream opened again (as when the system's output device changed) keeps playing;
