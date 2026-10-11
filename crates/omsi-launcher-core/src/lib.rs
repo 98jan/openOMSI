@@ -2594,23 +2594,52 @@ pub struct SavedSituation {
 }
 
 /// What can be continued on `map` (#341): the last situation, then the save slots the game
-/// writes into `Saves` of the map's folder in the content folder, the newest first.
+/// writes into `Saves` of the map's folder in the content folder and the quicksave made on
+/// that map, the newest first.
 pub fn saved_situations(map: &str) -> Vec<SavedSituation> {
     let mut out: Vec<SavedSituation> = last_situation(map).map(|f| SavedSituation { saved: modified_secs(&f), file: f, name: "Last situation".into() }).into_iter().collect();
     if let Some(dir) = Path::new(&map.replace('\\', "/")).parent() {
         let c = content_dir();
-        if let Some(c) = &c {
-            out.extend(save_slots(&c.join(dir).join("Saves")));
-        }
         // (and where the game saves when the content folder takes no file, #1673)
         let fallback = data_dir().join("content");
-        if c.as_deref() != Some(fallback.as_path()) {
-            out.extend(save_slots(&fallback.join(dir).join("Saves")));
-            let last = usize::from(out.first().is_some_and(|f| f.name == "Last situation"));
-            out[last..].sort_by(|a, b| b.saved.cmp(&a.saved));
+        let bases: Vec<PathBuf> = c.iter().cloned().chain((c.as_deref() != Some(fallback.as_path())).then_some(fallback)).collect();
+        for base in &bases {
+            out.extend(save_slots(&base.join(dir).join("Saves")));
         }
+        // "Save the situation" (Ctrl+S) writes the game's one quicksave, for every map: it
+        // is offered on the map it was made on. Left out, it was saved where nothing
+        // offered it again and only a slot seemed to save (#1746).
+        for base in &bases {
+            let f = base.join("Situations").join("quicksave.osn");
+            if f.is_file() && situation_map(&f).is_some_and(|m| same_map(&m, map)) {
+                out.push(SavedSituation { saved: modified_secs(&f), file: f, name: "Quicksave".into() });
+            }
+        }
+        let last = usize::from(out.first().is_some_and(|f| f.name == "Last situation"));
+        out[last..].sort_by(|a, b| b.saved.cmp(&a.saved));
     }
     out
+}
+
+/// The `[map]` a situation file was saved on (its head alone is read).
+fn situation_map(f: &Path) -> Option<String> {
+    let text = std::fs::read(f).map(|b| omsi_cfg::decode_text(&b[..b.len().min(8192) & !1])).ok()?;
+    let mut lines = text.lines().map(str::trim);
+    lines.by_ref().find(|l| l.eq_ignore_ascii_case("[map]"))?;
+    lines.next().map(str::to_string).filter(|m| !m.is_empty())
+}
+
+/// Whether two map paths name the same `global.cfg`: from their `maps/` on (a map from the
+/// content folder is saved with its whole path), slashes and case aside.
+fn same_map(a: &str, b: &str) -> bool {
+    let norm = |s: &str| {
+        let s = s.trim().replace('\\', "/").to_ascii_lowercase();
+        match s.rfind("maps/") {
+            Some(i) => s[i..].to_string(),
+            None => s,
+        }
+    };
+    norm(a) == norm(b)
 }
 
 fn modified_secs(p: &Path) -> u64 {
@@ -2642,6 +2671,20 @@ fn save_slots(dir: &Path) -> Vec<SavedSituation> {
 #[cfg(test)]
 mod save_slot_tests {
     use super::*;
+
+    #[test]
+    fn a_quicksave_belongs_to_the_map_it_names() {
+        assert!(same_map("maps\\Grundorf\\global.cfg", "maps/Grundorf/global.cfg"));
+        assert!(same_map("C:\\Users\\x\\openOMSI\\content\\maps\\Grundorf\\global.cfg", "maps/grundorf/global.cfg"));
+        assert!(!same_map("maps\\Berlin-Spandau\\global.cfg", "maps/Grundorf/global.cfg"));
+        let dir = std::env::temp_dir().join(format!("omsi_quicksave_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("quicksave.osn");
+        let utf16 = |s: &str| -> Vec<u8> { [0xFF, 0xFE].into_iter().chain(s.encode_utf16().flat_map(|u| u.to_le_bytes())).collect() };
+        std::fs::write(&f, utf16("[name]\r\nQuicksave\r\n\r\n[map]\r\nmaps\\Grundorf\\global.cfg\r\n")).unwrap();
+        assert_eq!(situation_map(&f).as_deref(), Some("maps\\Grundorf\\global.cfg"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn the_slots_of_a_map_are_listed_by_their_names() {
