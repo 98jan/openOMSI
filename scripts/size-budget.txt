@@ -6,7 +6,7 @@ file 3027 crates/omsi-input/src/controllers.rs
 file 1504 crates/omsi-input/src/dinput.rs
 file 1715 crates/omsi-app/src/driver.rs
 file 3047 crates/omsi-app/src/game_lists.rs
-file 3105 crates/omsi-app/src/lan.rs
+file 2950 crates/omsi-app/src/lan.rs
 file 1740 crates/omsi-app/src/launcher/drive.rs
 file 3181 crates/omsi-app/src/launcher/pages.rs
 file 1523 crates/omsi-app/src/launcher/state.rs
