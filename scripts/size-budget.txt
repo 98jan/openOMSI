@@ -9,7 +9,6 @@ file 1609 crates/omsi-launcher-ui/src/ui.rs
 file 3236 crates/omsi-net/src/lib.rs
 file 1517 crates/omsi-net/src/tests.rs
 fn 424 crates/omsi-app::draw_menu crates/omsi-app/src/ui/menu.rs
-fn 489 crates/omsi-app::spawn_player_prepared crates/omsi-app/src/spawn.rs
 fn 315 crates/omsi-app::toggle_set crates/omsi-app/src/game_lists/options.rs
 fn 343 crates/omsi-launcher-ui::draw crates/omsi-launcher-ui/src/timetable.rs
 fn 337 crates/omsi-launcher-ui::game_controllers crates/omsi-launcher-ui/src/pages/controls.rs
