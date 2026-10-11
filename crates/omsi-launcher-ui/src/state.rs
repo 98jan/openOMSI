@@ -1187,7 +1187,14 @@ impl State {
             (Some(line), false) => core::depot_names_with_line(std::path::Path::new(&self.config.root), &v.file, line),
             _ => Vec::new(),
         };
-        if !with_line.is_empty() && !with_line.iter().any(|h| h.eq_ignore_ascii_case(&want)) {
+        // (not over the map's own depot borrowed from elsewhere when it carries the line: a
+        // bus without it took a depot of its folder that had a line of the same number - the
+        // map's was no longer given to a bus that lacks it, #1837)
+        let map_depot_has_line = match (&self.choice.line, want.is_empty()) {
+            (Some(line), false) => core::depot_has_line(&want, line) == Some(true),
+            _ => false,
+        };
+        if !with_line.is_empty() && !map_depot_has_line && !with_line.iter().any(|h| h.eq_ignore_ascii_case(&want)) {
             let names: Vec<&str> = with_line.iter().map(|h| h.as_str()).collect();
             let hints: Vec<&str> = std::iter::once(want.as_str()).chain(map_hints.iter().copied()).collect();
             let pick = omsi_vehicle::hof::closest_name(&names, &hints).unwrap_or(0);

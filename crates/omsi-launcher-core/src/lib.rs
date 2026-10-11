@@ -921,6 +921,21 @@ pub fn depot_names_with_line(root: &Path, bus: &str, line: &str) -> Vec<String> 
     found
 }
 
+/// Whether the depot file called `name`, wherever it is installed (the bus's own folder,
+/// another bus's, the shared `HOFs/`), carries line `line`; None when there is no such file.
+/// Read once per name and line.
+pub fn depot_has_line(name: &str, line: &str) -> Option<bool> {
+    type Cache = std::collections::HashMap<(String, String), Option<bool>>;
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<Cache>> = std::sync::LazyLock::new(Default::default);
+    let key = (name.trim().to_ascii_lowercase(), line.to_string());
+    if let Some(v) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return *v;
+    }
+    let found = omsi_vehicle::hof::depot_anywhere(name).map(|h| h.has_line(line));
+    CACHE.lock().unwrap_or_else(|e| e.into_inner()).insert(key, found);
+    found
+}
+
 /// The buses, as `list_vehicles`, with `progress` told after every few folders what they
 /// held, how many folders are done and how many there are: a big installation's first
 /// reading (thousands of vehicle folders, nothing in the cache yet) takes minutes, and the
