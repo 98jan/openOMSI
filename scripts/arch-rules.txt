@@ -144,5 +144,13 @@ forbid omsi-launcher-core omsi-launcher-ui
 forbid omsi-launcher-core omsi-ui
 forbid omsi-launcher-core omsi-render
 
+# The start guard runs before anything that could break: no graphics, window, game state in it.
+forbid omsi-guard omsi-render
+forbid omsi-guard omsi-ui
+forbid omsi-guard omsi-sim
+forbid omsi-guard omsi-scene
+forbid omsi-guard omsi-audio
+forbid omsi-guard omsi-launcher-ui
+
 # Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
 app-lines 65873

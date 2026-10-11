@@ -239,6 +239,11 @@ pub fn run() -> Result<()> {
         return launcher::run(graphics_instance());
     }
     let Some(app) = make_app(args, server_cfg)? else { return Ok(()) };
+    // a game session's start goes into the start guard's journal (a version whose sessions
+    // keep failing before their first frames is healed at the launcher's next start)
+    if app.args.server.is_none() {
+        omsi_guard::start(omsi_guard::journal::Kind::Game);
+    }
     let event_loop = game_event_loop()?;
     // SIGTERM (the launcher's Stop) and Ctrl+C end the session the way Escape does
     let proxy = event_loop.create_proxy();

@@ -3314,6 +3314,7 @@ dependencies = [
  "omsi-cfg",
  "omsi-content",
  "omsi-geometry",
+ "omsi-guard",
  "omsi-htmlengine",
  "omsi-input",
  "omsi-lan",
@@ -3451,6 +3452,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "omsi-guard"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "omsi-cfg",
+ "omsi-platform",
+ "serde_json",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "omsi-htmlengine"
 version = "0.1.0"
 dependencies = [
@@ -3544,6 +3556,7 @@ dependencies = [
  "log",
  "omsi-cfg",
  "omsi-content",
+ "omsi-guard",
  "omsi-input",
  "omsi-lan",
  "omsi-launcher-core",

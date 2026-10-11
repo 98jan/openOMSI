@@ -266,9 +266,8 @@ impl Launcher {
         discord_next_try: Instant::now(),
         gpu_rest_drop: None,
     };
-    // after an update: the files it set aside go, and the launcher says what happened
-    #[cfg(not(target_os = "android"))]
-    omsi_platform::updater::cleanup_after_update();
+    // after an update the launcher says what happened (the files it set aside stay until this
+    // version has drawn its first frames: the start guard goes back to them otherwise)
     if let Some(v) = omsi_platform::updater::just_updated() {
         log::info!("update: this start follows the update to {v}");
         app.update.updated = Some((v, Instant::now()));
@@ -971,6 +970,7 @@ impl Launcher {
                 // first frame counts as drawn, and the preview goes on loading after it)
                 if std::mem::take(&mut self.first_frame) {
                     log::info!("launcher: first frame drawn (the window is hidden) in {:.2} s", self.started.elapsed().as_secs_f64());
+                    omsi_guard::healthy(omsi_guard::journal::Kind::Launcher);
                 }
                 self.show_window();
                 return;
@@ -987,11 +987,16 @@ impl Launcher {
         window.pre_present_notify();
         surface.present(&device, &queue, frame);
         self.shown = Some((verts, key, Instant::now()));
-        if std::mem::take(&mut self.first_frame) {
+        let first = std::mem::take(&mut self.first_frame);
+        if first {
             log::info!("launcher: first frame presented in {:.2} s", self.started.elapsed().as_secs_f64());
         }
         self.tries = 3;
         self.show_window();
+        // (the window is up with its picture: this start went well, see omsi-guard)
+        if first {
+            omsi_guard::healthy(omsi_guard::journal::Kind::Launcher);
+        }
         self.check_exit(event_loop);
     }
 

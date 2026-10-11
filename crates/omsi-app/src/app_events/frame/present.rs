@@ -547,6 +547,10 @@ impl App {
         };
         let mut finish = false;
         self.perf.frames += 1;
+        // (a second of play drawn: this session started well, see omsi-guard)
+        if self.perf.frames == 60 {
+            omsi_guard::healthy(omsi_guard::journal::Kind::Game);
+        }
         let profiling = omsi_cfg::flags::OMSI_PROFILE.is_set();
         // (the warm-up: 15 s of play, not of the process - a big map's loading took most of
         // 15 s, and the summary then held the first heavy frames of play; marked whether or not
