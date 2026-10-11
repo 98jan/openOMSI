@@ -1131,6 +1131,55 @@ impl Navigator {
         let n_world = dy.len();
 
         let mut ui = Painter::new();
+        self.draw_map_marks(&mut ui, f, map, vpm, vp, anchor, s, lines);
+
+        let pad = self.draw_top_bar(&mut ui, f, &wd, net, pw, top_h, s);
+
+        self.draw_bottom_bar(&mut ui, f, &wd, map, pw, pad, s);
+
+        // --- to the GPU
+        let (Some(gpu), device, queue) = (self.gpu.as_mut(), &renderer.device, &renderer.queue) else { return };
+        if let Some(v) = road_verts {
+            if let Some(r) = self.roads.as_mut() {
+                r.verts = v.len();
+            }
+            gpu.upload(device, queue, 0, &v);
+        }
+        if let Some(v) = route_verts {
+            gpu.upload(device, queue, 1, &v);
+        }
+        let mut all = bg.verts;
+        all.extend(dy.verts);
+        let n_ui_start = all.len() as u32;
+        all.extend(ui.verts);
+        gpu.upload(device, queue, 2, &all);
+        gpu.upload_atlas(queue, &mut self.atlas);
+        // (the opacity setting is the background's: the map and the text stay solid)
+        let flat = Layer::flat(clip_panel, radius, 1.0);
+        let backdrop = Layer::flat(clip_panel, radius, if self.cockpit_display { self.opacity } else { crate::ui::backdrop(self.opacity).min(1.0) });
+        let mut layers = [flat, map_layer, backdrop];
+        for l in layers.iter_mut() {
+            l.opacity *= self.shown;
+        }
+        let roads_n = self.roads.as_ref().map(|r| r.verts as u32).unwrap_or(0);
+        let draws = [
+            Draw { buffer: 2, range: 0..n_bg, layer: 2, texture: 0 },
+            Draw { buffer: 0, range: 0..roads_n, layer: 1, texture: 0 },
+            Draw { buffer: 2, range: n_bg..n_bg + n_traffic, layer: 1, texture: 0 },
+            Draw { buffer: 1, range: 0..self.route_mesh.3, layer: 1, texture: 0 },
+            Draw { buffer: 2, range: n_bg + n_traffic..n_bg + n_world, layer: 1, texture: 0 },
+            Draw { buffer: 2, range: n_ui_start..all.len() as u32, layer: 0, texture: 0 },
+        ];
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("navigator") });
+        gpu.render(device, queue, &mut enc, target, size, Some(wgpu::Color::TRANSPARENT), &layers, &draws);
+        queue.submit([enc.finish()]);
+    }
+
+    /// The map's marks over the roads: the next turn, the street the bus is on, the stops
+    /// ahead, the other players, the public transport's lines and the bus itself.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_map_marks(&mut self, ui: &mut Painter, f: &NavFrame, map: Rect, vpm: Mat4, vp: [f32; 4], anchor: DVec2, s: f32, mut lines: Vec<(DVec3, Color, String)>) {
+        let rel = |p: DVec3| Vec3::new((p.x - anchor.x) as f32, (p.y - anchor.y) as f32, 0.0);
         // the far end of the map fades into the panel
         ui.gradient(Rect::new(map.x, map.y, map.w, map.h * 0.3), Color::rgba(10, 10, 10, 0.75), Color::rgba(10, 10, 10, 0.0));
         // the next turn: an arrow and how far, top left of the map
@@ -1186,7 +1235,7 @@ impl Navigator {
         for pl in &f.players {
             let Some(p) = project(vpm, vp, rel(pl.position)).filter(|p| map.contains(*p)) else { continue };
             let a = (angle_diff(self.cam_heading, pl.heading) as f32).to_radians();
-            arrow(&mut ui, p, a, 7.5 * s, 1.25, Color::rgba(10, 10, 10, 0.8), PLAYER);
+            arrow(ui, p, a, 7.5 * s, 1.25, Color::rgba(10, 10, 10, 0.8), PLAYER);
             let px = 9.5 * s;
             let name = self.fonts.fit(&pl.name, px, Weight::Bold, 90.0 * s);
             let w = self.fonts.width(&name, px, Weight::Bold) + 8.0 * s;
@@ -1216,9 +1265,14 @@ impl Navigator {
         // the bus: a plain white arrow
         if let Some(bp) = project(vpm, vp, rel(f.bus)) {
             let a = (angle_diff(self.cam_heading, f.heading) as f32).to_radians();
-            arrow(&mut ui, bp, a, 9.0 * s, 1.25, Color::rgba(10, 10, 10, 0.8), TEXT);
+            arrow(ui, bp, a, 9.0 * s, 1.25, Color::rgba(10, 10, 10, 0.8), TEXT);
         }
+    }
 
+    /// The top bar: speed (and the limit), temperatures and line, day and game time. Gives
+    /// the bars' side padding.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_top_bar(&mut self, ui: &mut Painter, f: &NavFrame, wd: &Words, net: Option<&Network>, pw: f32, top_h: f32, s: f32) -> f32 {
         // top bar: speed (and the limit) · line ……… game time
         let top = Rect::new(0.0, 0.0, pw, top_h);
         ui.rect(top, BAR);
@@ -1266,7 +1320,13 @@ impl Navigator {
             let center = self.fonts.fit(&center, 11.5 * s, Weight::Bold, rect.w);
             ui.text_in(&mut self.atlas, &self.fonts, &center, 11.5 * s, Weight::Bold, rect, Align::Center, TEXT_DIM);
         }
+        pad
+    }
 
+    /// The bottom bar with the next stop, and under it the schedule of the next stops.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_bottom_bar(&mut self, ui: &mut Painter, f: &NavFrame, wd: &Words, map: Rect, pw: f32, pad: f32, s: f32) {
+        let n_stops = f.stops.len();
         // bottom bar: the next stop; its distance, the time to it, the planned time and
         // whether the bus is early or late
         let bottom = Rect::new(0.0, map.bottom(), pw, 46.0 * s);
@@ -1276,7 +1336,7 @@ impl Navigator {
         } else {
             Rect::new(pad, bottom.y + 4.0 * s, pw - 2.0 * pad, 20.0 * s)
         };
-        let stop_row = stop_request_icon(&mut ui, &mut self.atlas, f.stop_requested, stop_row, s);
+        let stop_row = stop_request_icon(ui, &mut self.atlas, f.stop_requested, stop_row, s);
         let note = if self.route.note > 0.0 {
             Some((wd.recalculated, ON_TIME))
         } else if self.route.joined && !self.route.lanes.is_empty() && !self.route.on_route && self.route.off_for > OFF_ROUTE_AFTER {
@@ -1350,43 +1410,6 @@ impl Navigator {
                 y += 22.0 * s;
             }
         }
-
-        // --- to the GPU
-        let (Some(gpu), device, queue) = (self.gpu.as_mut(), &renderer.device, &renderer.queue) else { return };
-        if let Some(v) = road_verts {
-            if let Some(r) = self.roads.as_mut() {
-                r.verts = v.len();
-            }
-            gpu.upload(device, queue, 0, &v);
-        }
-        if let Some(v) = route_verts {
-            gpu.upload(device, queue, 1, &v);
-        }
-        let mut all = bg.verts;
-        all.extend(dy.verts);
-        let n_ui_start = all.len() as u32;
-        all.extend(ui.verts);
-        gpu.upload(device, queue, 2, &all);
-        gpu.upload_atlas(queue, &mut self.atlas);
-        // (the opacity setting is the background's: the map and the text stay solid)
-        let flat = Layer::flat(clip_panel, radius, 1.0);
-        let backdrop = Layer::flat(clip_panel, radius, if self.cockpit_display { self.opacity } else { crate::ui::backdrop(self.opacity).min(1.0) });
-        let mut layers = [flat, map_layer, backdrop];
-        for l in layers.iter_mut() {
-            l.opacity *= self.shown;
-        }
-        let roads_n = self.roads.as_ref().map(|r| r.verts as u32).unwrap_or(0);
-        let draws = [
-            Draw { buffer: 2, range: 0..n_bg, layer: 2, texture: 0 },
-            Draw { buffer: 0, range: 0..roads_n, layer: 1, texture: 0 },
-            Draw { buffer: 2, range: n_bg..n_bg + n_traffic, layer: 1, texture: 0 },
-            Draw { buffer: 1, range: 0..self.route_mesh.3, layer: 1, texture: 0 },
-            Draw { buffer: 2, range: n_bg + n_traffic..n_bg + n_world, layer: 1, texture: 0 },
-            Draw { buffer: 2, range: n_ui_start..all.len() as u32, layer: 0, texture: 0 },
-        ];
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("navigator") });
-        gpu.render(device, queue, &mut enc, target, size, Some(wgpu::Color::TRANSPARENT), &layers, &draws);
-        queue.submit([enc.finish()]);
     }
 }
 
