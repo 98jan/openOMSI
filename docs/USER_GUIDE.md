@@ -920,6 +920,14 @@ and everybody sees the passengers in everybody's bus: the riders of a player's b
 with the world frames and sit in that bus in every other game (protocol 5). `crates/omsi-net` is the transport, the same on every
 platform.
 
+**Animated variables.** Numeric variables referenced by animations in the bus's model
+configuration (including coupled sections) are sampled with the owner's frame timestamp.
+Remote buses interpolate between received samples on the same playback clock as their
+pose. Unchanged animation values are sampled too, so movement after a pause begins at
+the right time. Packet loss holds the last available state until another sample arrives;
+other numeric variables and strings still update directly. Models with many animation
+inputs use a lower sample rate to keep bandwidth bounded.
+
 **Script textures.** Matrix displays and other `[scripttexture]` surfaces come from the
 player driving that bus. The local scripts of a remote bus cannot redraw or load these
 surfaces. Both games must have the same bus and declared texture slots. If their script
@@ -932,7 +940,7 @@ RGBA image, then only changed RGBA pixel runs and mipmap settings are sent. Chan
 fragmented, acknowledged and retried until complete, and applied atomically; a late join,
 recreated vehicle or newly sized surface receives initialization again. Only images
 released by the owner's scripts are published, never an unfinished locked drawing buffer.
-Both games need LAN protocol 11; older versions are rejected rather than showing an empty
+Both games need LAN protocol 12; older versions are rejected rather than showing an empty
 display. Texture transfers have their own rate budget, separate from vehicle movement.
 
 **Script sound events.** `(T.L.name)` and `(T.F.name)` come from the player driving

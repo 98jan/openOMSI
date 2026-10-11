@@ -113,7 +113,8 @@ pub use wire::{
 /// 9: paged authoritative AI timetables and system script context.
 /// 10: recoverable variable-name manifests and model/sound compatibility fallback.
 /// 11: reliable, ordered owner-authored T.L and T.F sound events.
-pub const PROTOCOL: u32 = 11;
+/// 12: timestamped complete model animation samples on the owner's pose clock.
+pub const PROTOCOL: u32 = 12;
 /// (omsi-plugin's `MULTIPLAYER_PORTS` keeps `omsi.send` off this one and the `PORT_RANGE` after it.)
 pub const DEFAULT_PORT: u16 = 27015;
 /// Ports a host tries after the default one when that is taken (a second session on the
@@ -162,6 +163,9 @@ const STATE_RATE: (f32, f32) = (40.0, 40.0);
 // Variable deltas, key frames and long-string fragments use at most 32 datagrams/s. They must not
 // consume the pose/world budget (otherwise normal driving drops recovery slices).
 const VAR_RATE: (f32, f32) = (60.0, 60.0);
+// Animation snapshots must not consume recovery/string or movement budgets. The
+// burst fits every possible u16-indexed animation input, split across datagrams.
+const ANIMATION_RATE: (f32, f32) = (25.0, 320.0);
 const TEXTURE_RATE: (f32, f32) = (2048.0, 2048.0);
 const SOUND_RATE: (f32, f32) = (512.0, 2048.0);
 const MESSAGE_RATE: (f32, f32) = (10.0, 20.0);
@@ -1245,6 +1249,7 @@ pub enum LanEvent {
 enum PeerTraffic {
     State,
     Variables,
+    Animations,
     Textures,
     Sounds,
     Message,
@@ -1293,6 +1298,7 @@ pub struct Peer {
     state_at: Instant,
     states: Bucket,
     variables: Bucket,
+    animations: Bucket,
     textures: Bucket,
     sounds: Bucket,
     messages: Bucket,
@@ -1319,6 +1325,7 @@ impl Peer {
             state_at: now,
             states: Bucket::new(STATE_RATE.1),
             variables: Bucket::new(VAR_RATE.1),
+            animations: Bucket::new(ANIMATION_RATE.1),
             textures: Bucket::new(TEXTURE_RATE.1),
             sounds: Bucket::new(SOUND_RATE.1),
             messages: Bucket::new(MESSAGE_RATE.1),
@@ -1436,6 +1443,7 @@ pub struct LanSession {
     world_in: Vec<(Instant, world::WorldFrame)>,
     /// Every script variable of our vehicle going out (`vars.rs`), and the others' coming in.
     var_sender: vars::VarSender,
+    animation_sender: vars::AnimationSender,
     schema_sender: vars::VarSender,
     schema_receiver: vars::VarReceiver,
     schemas_in: Vec<vars::VarsIn>,
@@ -1547,6 +1555,7 @@ impl LanSession {
             received: 0,
             world_in: Vec::new(),
             var_sender: vars::VarSender::default(),
+            animation_sender: vars::AnimationSender::default(),
             schema_sender: vars::VarSender::default(),
             schema_receiver: vars::VarReceiver::default(),
             schemas_in: Vec::new(),
@@ -2816,6 +2825,7 @@ impl LanSession {
         let ok = match traffic {
             PeerTraffic::State => peer.states.take(rate),
             PeerTraffic::Variables => peer.variables.take(rate),
+            PeerTraffic::Animations => peer.animations.take(rate),
             PeerTraffic::Textures => peer.textures.take(rate),
             PeerTraffic::Sounds => peer.sounds.take(rate),
             PeerTraffic::Message => peer.messages.take(rate),
@@ -2939,6 +2949,17 @@ impl LanSession {
         }
     }
 
+    /// Model animation variables, sampled on the same clock as the vehicle pose.
+    pub fn send_animation_vars(&mut self, table: u32, values: &[(u16, f32)], dt: f32) {
+        let sent_ms = self.stamp_ms();
+        for packet in self.animation_sender.tick(PROTOCOL as u8, self.my_id, table, sent_ms, values, dt) {
+            match self.role {
+                Role::Host => self.broadcast(&packet, None),
+                Role::Client => { if let Some(host) = self.host { self.send(&packet, host); } }
+            }
+        }
+    }
+
     /// Repeat the name manifest using independently recovered string fragments.
     pub fn send_var_schema(&mut self, table: u32, schema: &str, dt: f32) {
         let texts = [schema.to_owned()];
@@ -2978,7 +2999,12 @@ impl LanSession {
         match self.role {
             // (as a state: only a player we welcomed, from its address, within its rate)
             Role::Host => {
-                if self.checked_peer(v.id, from, VAR_RATE, PeerTraffic::Variables).is_none() {
+                let (rate, traffic) = if !schema && v.sent_ms != 0 {
+                    (ANIMATION_RATE, PeerTraffic::Animations)
+                } else {
+                    (VAR_RATE, PeerTraffic::Variables)
+                };
+                if self.checked_peer(v.id, from, rate, traffic).is_none() {
                     return;
                 }
                 if schema {

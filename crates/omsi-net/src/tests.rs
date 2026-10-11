@@ -493,6 +493,68 @@ fn find(s: &LanSession, x: f64) -> Option<&Peer> {
 }
 
 #[test]
+fn animation_snapshots_keep_owner_timestamps_when_relayed_between_clients() {
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let addr = SocketAddr::from(([127, 0, 0, 1], host.local_addr().unwrap().port()));
+    let mut a = LanSession::join_addr(vec![addr], None, "a", world("m")).unwrap();
+    let mut b = LanSession::join_addr(vec![addr], None, "b", world("m")).unwrap();
+    let poses = [pose(100.0), pose(200.0), pose(300.0)];
+    pump(&mut [&mut host, &mut a, &mut b], &poses, 150, |s| {
+        find(s[2], 200.0).is_some() && find(s[1], 100.0).is_some()
+    });
+    assert!(a.connected && b.connected);
+    a.frame_ms = Some(1234.0);
+    host.frame_ms = Some(5678.0);
+    a.send_animation_vars(99, &[(5, 0.25)], 0.1);
+    host.send_animation_vars(99, &[(5, 0.75)], 0.1);
+    let mut received = [false; 3];
+    for _ in 0..30 {
+        host.tick(0.01, &poses[0]);
+        a.tick(0.01, &poses[1]);
+        b.tick(0.01, &poses[2]);
+        let client_id = a.my_id;
+        let host_id = host.my_id;
+        for (slot, session, owner, ms, value) in [
+            (0, &mut host, client_id, 1234, 0.25),
+            (1, &mut a, host_id, 5678, 0.75),
+            (2, &mut b, client_id, 1234, 0.25),
+        ] {
+            for state in session.take_vars() {
+                if state.id == owner && state.sent_ms == ms {
+                    assert_eq!(state.floats, vec![(5, value)]);
+                    received[slot] = true;
+                }
+            }
+        }
+        if received.iter().all(|got| *got) { break; }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(received, [true; 3], "host, direct client and relayed client must get the owner's frame clock");
+}
+
+#[test]
+fn animation_snapshots_have_their_own_budget_and_validate_the_sender() {
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let from: SocketAddr = "127.0.0.1:29001".parse().unwrap();
+    let mut peer = Peer::new(Some(from), pose(1.0));
+    peer.states.tokens = 0.0;
+    peer.variables.tokens = 0.0;
+    host.peers.insert(7, peer);
+    let mut sender = vars::AnimationSender::default();
+    let packets = sender.tick(PROTOCOL as u8, 7, 99, 1234, &[(0, 0.5)], 0.1);
+    host.on_vars(&packets[0], "127.0.0.1:29002".parse().unwrap());
+    assert!(host.take_vars().is_empty());
+    host.on_vars(&packets[0], from);
+    let received = host.take_vars();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].sent_ms, 1234);
+    assert_eq!(received[0].floats, vec![(0, 0.5)]);
+    host.peers.get_mut(&7).unwrap().animations.tokens = 0.0;
+    host.on_vars(&packets[0], from);
+    assert!(host.take_vars().is_empty());
+}
+
+#[test]
 fn variable_recovery_has_its_own_rate_budget_and_checks_the_sender() {
     let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
     let from: SocketAddr = "127.0.0.1:29001".parse().unwrap();

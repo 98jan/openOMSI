@@ -21,6 +21,7 @@
 
 mod variable_schema;
 mod sound_sync;
+mod animation_sync;
 
 use crate::scene::{self, World};
 use crate::{Args, Player};
@@ -76,6 +77,8 @@ pub struct SyncTable {
     pub values: Vec<(String, VarId)>,
     /// `door_0`, `door_1` … as far as the scripts have them.
     pub doors: Vec<VarId>,
+    /// All model animation inputs, independently of the capped pose values list.
+    animations: hashbrown::HashSet<VarId>,
     pub hash: u32,
     /// Variables of the horn: its switch and the volume its sound follows.
     horn: Vec<VarId>,
@@ -183,6 +186,7 @@ impl SyncTable {
     pub fn new(ty: &omsi_sim::VehicleType, parts: &[Arc<omsi_sim::VehicleType>]) -> SyncTable {
         let program = &ty.program;
         let types: Vec<&omsi_sim::VehicleType> = std::iter::once(ty).chain(parts.iter().map(|p| p.as_ref())).collect();
+        let animations = animation_sync::model_variables(program, types.iter().map(|t| &t.model));
         let var = |n: &str| -> Option<VarId> {
             let n = n.trim();
             if n.is_empty() || n.parse::<f32>().is_ok() {
@@ -403,6 +407,7 @@ impl SyncTable {
         }
         key.push_str(&format!("doors:{}", doors.len()));
         SyncTable {
+            animations,
             hash: fnv1a(key.as_bytes()).max(1),
             lamps,
             switches,
@@ -523,6 +528,9 @@ pub struct RemoteVehicle {
     remote_schema: Option<omsi_net::var_schema::Schema>,
     synced: hashbrown::HashMap<u32, f32>,
     synced_strings: hashbrown::HashMap<u32, String>,
+    animations: animation_sync::Animations,
+    /// Owner's timestamp currently used for the interpolated pose and animations.
+    draw_time: Option<f64>,
     /// Subscription cookie, table hash, and welcome generation for owner-only textures.
     texture_subscription: Option<(u64, u32, u32)>,
 }
@@ -2668,6 +2676,7 @@ fn new_remote(
             format!("their vehicle files differ from ours (table {:08X}, ours {:08X}): lights and doors only", pose.table, table.hash)
         }
     );
+    let animations = animation_sync::Animations::new(table.animations.clone());
     Some(RemoteVehicle {
         vehicle,
         render,
@@ -2699,6 +2708,8 @@ fn new_remote(
         remote_schema: None,
         synced: Default::default(),
         synced_strings: Default::default(),
+        animations,
+        draw_time: None,
         texture_subscription: None,
     })
 }
@@ -2729,6 +2740,8 @@ impl RemoteVehicle {
                     self.samples.clear();
                     self.offset = None;
                     self.play = Default::default();
+                    self.animations.clear();
+                    self.draw_time = None;
                 } else {
                     continue;
                 }
@@ -2752,6 +2765,7 @@ impl RemoteVehicle {
     /// or carried on from the last one along its way for a short while. None without
     /// stamped states (an older game).
     fn interpolated(&mut self) -> Option<Pose> {
+        self.draw_time = None;
         // (`OMSI_NO_INTERP=1`: the old way, for comparing)
         static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         if *OFF.get_or_init(|| omsi_cfg::flags::OMSI_NO_INTERP.is_set()) {
@@ -2772,7 +2786,15 @@ impl RemoteVehicle {
         // few hundredths of a second whenever one of their frames had taken long, and on
         // again when that one was no longer among the last four - the bus jumped)
         let now = lan_now();
-        let t = self.play.step(now, now - off - (gap * 2.0 + 0.02).clamp(INTERP_DELAY, 0.45), 0.5);
+        // Animation snapshots arrive at 10 Hz rather than the moving pose's 20 Hz.
+        // Give both the same playback time, with room for two animation samples.
+        let animation_gap = if self.table.animations.is_empty() { 0.0 } else {
+            omsi_net::vars::AnimationSender::interval(self.table.animations.len()) as f64
+        };
+        let animation_delay = animation_gap * 2.0 + 0.02;
+        let delay = (gap * 2.0 + 0.02).max(animation_delay).clamp(INTERP_DELAY, 0.45f64.max(animation_delay));
+        let t = self.play.step(now, now - off - delay, 0.5);
+        self.draw_time = Some(t);
         let k = self.samples.iter().rposition(|(st, _)| *st <= t);
         let Some(k) = k else {
             return self.samples.front().map(|x| x.1.clone());
@@ -3053,8 +3075,11 @@ fn drive_remote(rv: &mut RemoteVehicle, pose: &Pose, dt: f32, exact: bool) {
         priority_warning: false,
         engine_off: false,
     };
-    // and every other variable of theirs, as their scripts have it (`omsi_net::vars`)
-    pinned.extend(rv.synced.iter().map(|(id, v)| (*id as VarId, *v)));
+    // Pin model animation inputs at the pose's playback time. The raw variable
+    // updates must not overwrite interpolated doors and moving parts again.
+    pinned.extend(rv.synced.iter().map(|(id, v)| {
+        (*id as VarId, rv.animations.value(*id, rv.draw_time).unwrap_or(*v))
+    }));
     // Pose strings remain a fallback until the full value arrives. Pin them too, so
     // local AI scripts cannot replace a stand-in's display before visual updates.
     let display_names = display_vars(&rv.vehicle);
@@ -3090,6 +3115,11 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
         let float_ids: Vec<u16> = (0..t.floats.len()).map(|i| i as u16).collect();
         let string_ids: Vec<u16> = (0..t.strings.len()).map(|i| i as u16).collect();
         lan.send_vars(t.hash, &float_ids, &floats, &string_ids, &strings, dt);
+        let model = sync_table(game, &p.vehicle);
+        let animated: Vec<_> = t.floats.iter().enumerate()
+            .filter(|(_, local)| model.animations.contains(*local))
+            .map(|(index, _)| (index as u16, floats[index])).collect();
+        lan.send_animation_vars(t.hash, &animated, dt);
         if let Some(schema) = &game.my_var_schema { lan.send_var_schema(t.hash, schema, dt); }
         // `OMSI_DEBUG_VAR_SYNC=<variable>`: ours every two seconds, theirs as it came
         if let Some(name) = omsi_cfg::flags::OMSI_DEBUG_VAR_SYNC.var() {
@@ -3118,6 +3148,7 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
                 rv.vars = variable_schema::mapping(&rv.vehicle.ty.program, local, &schema);
                 rv.synced.clear();
                 rv.synced_strings.clear();
+                rv.animations.clear();
                 if rv.vars.is_some() {
                     log::info!("LAN: player {} variable tables differ; model and sound variables agree, synchronizing common names", manifest.id);
                 } else {
@@ -3150,7 +3181,9 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
         for (id, x) in v.floats {
             if let Some(&local) = t.floats.get(id as usize) {
                 if (local as usize) < nf && x.is_finite() {
-                    rv.synced.insert(local, x);
+                    if v.sent_ms == 0 || rv.animations.push(local, v.sent_ms, x) {
+                        rv.synced.insert(local, x);
+                    }
                 }
             }
         }

@@ -18,10 +18,12 @@
 //! byte 1     protocol
 //! bytes 2-5  sender's id (u32 LE)
 //! bytes 6-9  table hash (u32 LE)
-//! byte 10    kind: 0 floats by index, 1 a run of floats, 2 strings, 3 string fragment
+//! byte 10    kind: 0 floats by index, 1 a run of floats, 2 strings, 3 string fragment,
+//!                 4 timestamped animation floats
 //! then       0: count u16, (index u16, f32)*      1: first u16, count u16, f32*
 //!            2: count u16, (index u16, version u64, length u16, UTF-8)*
 //!            3: index u16, version u64, total u32, offset u32, UTF-8 bytes
+//!            4: sent_ms u32, count u16, (index u16, f32)* (animation samples)
 //! ```
 //! All numbers little-endian. Indices refer to name-sorted tables, independently of local compiler IDs.
 
@@ -52,6 +54,8 @@ struct PendingString {
 pub struct VarsIn {
     pub id: u32,
     pub table: u32,
+    /// Owner's frame clock for animation samples; zero for ordinary variable updates.
+    pub sent_ms: u32,
     pub floats: Vec<(u16, f32)>,
     pub strings: Vec<(u16, String)>,
 }
@@ -88,6 +92,44 @@ fn header(protocol: u8, id: u32, table: u32, kind: u8) -> Vec<u8> {
 
 fn same(a: f32, b: f32) -> bool {
     a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan())
+}
+
+/// Complete, timestamped animation inputs, including unchanged values. Delta-only
+/// samples would interpolate a new movement across the preceding stationary period.
+#[derive(Debug, Default)]
+pub struct AnimationSender {
+    table: Option<u32>,
+    acc: f32,
+}
+
+impl AnimationSender {
+    pub fn interval(count: usize) -> f32 {
+        let per_packet = (ROOM - HEADER - 6) / 6;
+        EVERY.max(count.div_ceil(per_packet) as f32 / 20.0)
+    }
+
+    pub fn tick(&mut self, protocol: u8, id: u32, table: u32, sent_ms: u32, values: &[(u16, f32)], dt: f32) -> Vec<Vec<u8>> {
+        if self.table != Some(table) {
+            self.table = Some(table);
+            self.acc = EVERY;
+        }
+        self.acc += dt;
+        // Keep the added traffic at twenty datagrams/second even for large models.
+        let per_packet = (ROOM - HEADER - 6) / 6;
+        let interval = Self::interval(values.len());
+        if values.is_empty() || self.acc < interval { return Vec::new(); }
+        self.acc = 0.0;
+        values.chunks(per_packet).map(|chunk| {
+            let mut d = header(protocol, id, table, 4);
+            d.extend_from_slice(&sent_ms.max(1).to_le_bytes());
+            d.extend_from_slice(&(chunk.len() as u16).to_le_bytes());
+            for &(index, value) in chunk {
+                d.extend_from_slice(&index.to_le_bytes());
+                d.extend_from_slice(&value.to_le_bytes());
+            }
+            d
+        }).collect()
+    }
 }
 
 impl VarSender {
@@ -263,6 +305,18 @@ pub fn decode(data: &[u8], protocol: u8) -> Option<VarsIn> {
     let mut v = VarsIn { id, table, ..VarsIn::default() };
     let mut at = HEADER;
     match data[10] {
+        4 => {
+            v.sent_ms = u32::from_le_bytes(data.get(at..at + 4)?.try_into().ok()?);
+            if v.sent_ms == 0 { return None; }
+            at += 4;
+            let count = u16_at(at)? as usize;
+            at += 2;
+            if data.len() != at + count * 6 { return None; }
+            for _ in 0..count {
+                v.floats.push((u16_at(at)?, f32_at(at + 2)?));
+                at += 6;
+            }
+        }
         0 => {
             let count = u16_at(at)? as usize;
             at += 2;
@@ -373,6 +427,40 @@ impl VarReceiver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn animation_snapshots_keep_timestamps_and_unchanged_values() {
+        let mut sender = AnimationSender::default();
+        let mut receiver = VarReceiver::default();
+        let values = vec![(0, 0.0), (65535, 1.0)];
+        for ms in [1000, 1100, 1200] {
+            let packets = sender.tick(12, 7, 99, ms, &values, 0.1);
+            assert_eq!(packets.len(), 1);
+            let got = receiver.receive(&packets[0], 12).unwrap();
+            assert_eq!((got.id, got.table, got.sent_ms), (7, 99, ms));
+            assert_eq!(got.floats, values);
+            assert!(decode(&packets[0], 11).is_none());
+            assert!(decode(&packets[0][..packets[0].len() - 1], 12).is_none());
+        }
+        assert!(sender.tick(12, 7, 99, 1201, &values, 0.001).is_empty());
+    }
+
+    #[test]
+    fn animation_snapshots_cover_large_models_without_truncation() {
+        let values: Vec<_> = (0..3000).map(|id| (id, id as f32)).collect();
+        let mut sender = AnimationSender::default();
+        let interval = AnimationSender::interval(values.len());
+        let packets = sender.tick(12, 7, 99, 1000, &values, interval);
+        assert!(packets.len() as f32 / interval <= 20.0);
+        let mut got = Vec::new();
+        for packet in packets {
+            assert!(packet.len() <= ROOM && packet.len() <= crate::MAX_DATAGRAM);
+            let state = decode(&packet, 12).unwrap();
+            assert_eq!(state.sent_ms, 1000);
+            got.extend(state.floats);
+        }
+        assert_eq!(got, values);
+    }
 
     /// What goes out is what comes in: the changes at once, the rest by key frame slices,
     /// strings too - and after a few seconds every variable has arrived, whatever was lost.
