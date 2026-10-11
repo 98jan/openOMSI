@@ -22,6 +22,7 @@ impl Renderer {
             grid_buf: None,
             corona_buf: None,
             corona_count: 0,
+            corona_sent: Vec::new(),
             smoke: Vec::new(),
             smoke_buf: None,
             smoke_count: 0,

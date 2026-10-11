@@ -537,7 +537,11 @@ impl Renderer {
         }
         let bytes: &[u8] = bytemuck::cast_slice(data);
         match &scene.smoke_buf {
-            Some(b) if b.size() as usize >= bytes.len() => self.queue.write_buffer(b, 0, bytes),
+            Some(b) if b.size() as usize >= bytes.len() => {
+                if scene.corona_sent != bytes {
+                    self.queue.write_buffer(b, 0, bytes);
+                }
+            }
             _ => {
                 let b = self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("smoke"),
@@ -673,7 +677,11 @@ impl Renderer {
         }
         let bytes: &[u8] = bytemuck::cast_slice(&data);
         match &scene.corona_buf {
-            Some(b) if b.size() as usize >= bytes.len() => self.queue.write_buffer(b, 0, bytes),
+            Some(b) if b.size() as usize >= bytes.len() => {
+                if scene.corona_sent != bytes {
+                    self.queue.write_buffer(b, 0, bytes);
+                }
+            }
             _ => {
                 let b = self.device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("coronas"),
@@ -685,6 +693,8 @@ impl Renderer {
                 scene.corona_buf = Some(b);
             }
         }
+        scene.corona_sent.clear();
+        scene.corona_sent.extend_from_slice(bytes);
     }
 }
 

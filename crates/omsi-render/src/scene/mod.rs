@@ -197,6 +197,9 @@ pub struct Scene {
     pub(crate) grid_buf: Option<GpuArray>,
     pub(crate) corona_buf: Option<wgpu::Buffer>,
     pub(crate) corona_count: u32,
+    /// What `corona_buf` holds (the bytes last written): the window's picture and its
+    /// mirrors send the same coronas in a frame, and it is written once.
+    pub(crate) corona_sent: Vec<u8>,
     /// The frame's draw list (see `Batch`), shared by the shadow, prepass and main passes.
     pub(crate) draw_buf: Option<GpuArray>,
     pub(crate) camera_bind_group: Option<wgpu::BindGroup>,
