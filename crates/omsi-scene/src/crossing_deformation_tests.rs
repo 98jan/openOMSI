@@ -5,9 +5,14 @@ struct Fixture(PathBuf);
 
 impl Fixture {
     fn new() -> Self {
+        // A counter besides the clock: the clock ticks in microseconds on macOS, and two
+        // tests running side by side made the same folder in the same tick, wrote over each
+        // other's files and deleted them under each other.
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let path = std::env::temp_dir().join(format!(
-            "openomsi-crossing-field-{}-{}",
+            "openomsi-crossing-field-{}-{}-{}",
             std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()

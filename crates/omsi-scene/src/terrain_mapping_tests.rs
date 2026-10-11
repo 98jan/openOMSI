@@ -6,9 +6,13 @@ struct Fixture(PathBuf);
 
 impl Fixture {
     fn new() -> Self {
+        // A counter besides the clock, which ticks in microseconds on macOS: two tests side
+        // by side otherwise share a folder (see crossing_deformation_tests.rs).
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let path = std::env::temp_dir().join(format!(
-            "openomsi-terrain-mapping-{}-{}",
+            "openomsi-terrain-mapping-{}-{}-{}",
             std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
