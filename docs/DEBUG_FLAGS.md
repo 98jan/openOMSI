@@ -237,8 +237,8 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_GL_TEXTURE_UNITS` | bool | off | use | render | Use the texture-unit layout of the OpenGL backend on any device. |
 | `OMSI_GPU_ARRAYS` | text | - | use | render | textures or nostorage: take that texture array path on any device. |
 | `OMSI_HEIGHTPROFILE_GROUND` | bool | off | once | app | The wheels stand on the splines' [heightprofile]s again (A/B). |
-| `OMSI_HTML_FALLBACK_FONT` | text | - | use | sim | Font file for the html pages' characters Roboto lacks (Hangul, CJK); else Malgun Gothic (Windows) or AppleGothic (macOS). |
-| `OMSI_HTML_FALLBACK_FONT_BOLD` | text | - | use | sim | With OMSI_HTML_FALLBACK_FONT: its bold face. |
+| `OMSI_HTML_FALLBACK_FONT` | text | - | use | htmlengine | Font file for the html pages' characters Roboto lacks (Hangul, CJK); else Malgun Gothic (Windows) or AppleGothic (macOS). |
+| `OMSI_HTML_FALLBACK_FONT_BOLD` | text | - | use | htmlengine | With OMSI_HTML_FALLBACK_FONT: its bold face. |
 | `OMSI_INTEL_FULL_GPU` | bool | off | use | render | Keep the requested settings on an Intel Vulkan adapter. |
 | `OMSI_KEEP_ALLOCATOR` | bool | off | use | app | Skip the restart that swaps in the faster allocator at start. |
 | `OMSI_MIRROR_ENHANCED` | bool | off | frame | app, render | Draw the mirrors with the enhanced shading again. |
