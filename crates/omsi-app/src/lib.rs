@@ -549,6 +549,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             mirror_budget: 1.0,
             mirrors_seen: 2,
             mirror_turn: 0,
+            mirror_panel_cams: Vec::new(),
             frozen_mirrors: None,
             mirror_hud: Default::default(),
             window_hidden: false,

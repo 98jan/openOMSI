@@ -135,6 +135,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         pick("max_obj_dist", "Object distance", later),
         pick("min_obj_size", "Small objects", later),
         pick("mirror_size", "Mirrors", later),
+        switch_row(app, "mirror_hud_every_frame", "Mirror panels every frame", "The mirror panels in the cab (Ctrl+M) are drawn every frame, as in ETS2, instead of taking turns with the other mirrors"),
         pick("texture_memory", "Texture memory", later),
         switch_row(app, "texture_compression", "Compress textures on loading", later),
         (!omsi_launcher_lib::graphics_profiles().is_empty()).then(|| opens("Load graphics profile", "Applies a graphics profile saved in the launcher", "gfxprofile")),

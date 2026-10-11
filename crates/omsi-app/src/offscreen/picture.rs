@@ -397,7 +397,7 @@ impl Offscreen<'_> {
             for k in 0..n {
                 let t = Instant::now();
                 if let Some(p) = player_ref.as_ref() {
-                    render_mirrors(renderer, scene, world, p, lighting, Some(k), None);
+                    render_mirrors(renderer, scene, world, p, lighting, MirrorPick::Turn(k, &[]), None);
                 }
                 renderer.render(scene, &view, w, h, camera, lighting);
                 let drawn = t.elapsed().as_secs_f64();
@@ -493,7 +493,7 @@ impl Offscreen<'_> {
         } = *self;
         let t0 = Instant::now();
         if let Some(p) = player_ref.as_ref() {
-            render_mirrors(renderer, scene, world, p, lighting, None, None);
+            render_mirrors(renderer, scene, world, p, lighting, MirrorPick::All(&[]), None);
         }
         if let Some(p) = player_ref.as_ref() {
             let mode = omsi_cfg::flags::OMSI_MIRROR_HUD.parse::<u8>().unwrap_or(settings.mirror_hud);

@@ -790,7 +790,11 @@ A new panel has the shape of the mirror's glass in the model. The layout is kept
 `~/.openomsi/mirror_hud.cfg`. The setting `mirror_hud` (0 off, 1 the right mirror, 2 the left,
 3 both) gives a bus with no layout of its own its first panels. The panels need the mirrors
 themselves to be drawn (`mirror_size` not 0); they are redrawn at the rate `mirror_refresh`
-sets, also when the glass is not in the view.
+sets, also when the glass is not in the view. With **Mirror panels every frame** (Settings →
+Graphics, `mirror_hud_every_frame=1`) the mirrors the panels show are drawn every frame instead,
+as ETS2 draws its screen mirrors, whatever `mirror_refresh` says (even with no real-time
+reflections); the other mirrors take their turns without them. It costs one mirror picture a
+frame for each mirror on the panels (none in VR, where the panels are not drawn).
 
 ## Debug and test switches
 
