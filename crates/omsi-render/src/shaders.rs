@@ -44,10 +44,11 @@ mod tests {
     }
 
     /// The assembled modules are byte for byte the single files they were cut from (sizes
-    /// and hashes taken of `shader.wgsl` and `enhanced.wgsl` before the cut).
+    /// and hashes taken of `shader.wgsl` and `enhanced.wgsl` before the cut; the scene's
+    /// since 0.2.30's capped surface pull, #2197).
     #[test]
     fn assembled_shaders_are_the_old_files() {
-        assert_eq!((super::SCENE.len(), fnv1a(super::SCENE)), (116_173, 0x5efe_f9d5_1092_98c6));
+        assert_eq!((super::SCENE.len(), fnv1a(super::SCENE)), (116_891, 0x5058_671b_fe59_f311));
         assert_eq!((super::ENHANCED.len(), fnv1a(super::ENHANCED)), (83_366, 0x8e9f_e48c_fe3d_40f5));
     }
 }
