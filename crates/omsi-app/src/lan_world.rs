@@ -518,115 +518,14 @@ impl LanWorld {
                 continue;
             }
             view.acc = (view.acc - nw::MOVING_EVERY).clamp(0.0, nw::MOVING_EVERY);
-            let mut frame = WorldFrame::default();
-            let mut seen: HashSet<Key> = HashSet::new();
-            let mut descs: Vec<Desc> = Vec::new();
-            let mut ids_hash = 0u64;
+            let mut g = Gather::default();
             if let Some(t) = t_ref {
-                for c in &t.cars {
-                    let p = c.vehicle.position;
-                    if (p - at).truncate().length() > CAR_RADIUS || c.id > nw::MAX_ID as u64 {
-                        continue;
-                    }
-                    let key = (false, c.id as u32);
-                    seen.insert(key);
-                    ids_hash ^= fnv(&c.id.to_le_bytes());
-                    let d = describe_car(args, c);
-                    let h = fnv(d.encode().as_bytes());
-                    if view.described.get(&key) != Some(&h) {
-                        view.described.insert(key, h);
-                        descs.push(d);
-                    }
-                    let q = quant(p.x, p.y, p.z, c.vehicle.heading);
-                    let speed = c.state.speed;
-                    let due = match view.sent.get(&key) {
-                        None => true,
-                        Some((last, age)) => {
-                            *last != q || speed.abs() > 0.05 || *age >= nw::STANDING_EVERY
-                        }
-                    };
-                    if !due {
-                        continue;
-                    }
-                    view.sent.insert(key, (q, 0.0));
-                    frame.cars.push(CarState {
-                        id: c.id as u32,
-                        x: p.x,
-                        y: p.y,
-                        z: p.z,
-                        heading: c.vehicle.heading as f32,
-                        pitch: c.vehicle.pitch as f32,
-                        bank: c.vehicle.bank as f32,
-                        speed,
-                        steer: c.body.steer,
-                        blinker: c.state.blinker.clamp(0, 3) as u8,
-                        brake: c.state.braking,
-                        lights: t.night,
-                        at_station: if c.at_station() {
-                            1
-                        } else if !c.vehicle.station_released() {
-                            -1
-                        } else {
-                            0
-                        },
-                    });
-                }
+                gather_cars(view, t, at, args, &mut g);
             }
             if let Some(h) = h_ref {
-                for p in h.lan_people(at, PERSON_RADIUS) {
-                    if p.id > nw::MAX_ID {
-                        continue;
-                    }
-                    let key = (true, p.id);
-                    seen.insert(key);
-                    ids_hash ^= fnv(&(p.id as u64 | 1 << 40).to_le_bytes());
-                    if !view.described.contains_key(&key) {
-                        view.described.insert(key, 0);
-                        descs.push(Desc::Person {
-                            id: p.id,
-                            file: Humans::type_file(&p.ty),
-                        });
-                    }
-                    let (place, q) = match p.aboard {
-                        Some((bus, l, lh, seat)) => (
-                            PersonPlace::Aboard {
-                                bus: bus.min(nw::MAX_ID as u64) as u32,
-                                x: l.x,
-                                y: l.y,
-                                z: l.z,
-                                heading: lh as f32,
-                                seat: seat.map(|s| s.min(254) as u8),
-                            },
-                            quant(l.x as f64, l.y as f64, l.z as f64, lh + bus as f64 * 1000.0),
-                        ),
-                        None => (
-                            PersonPlace::Foot {
-                                x: p.pos.x,
-                                y: p.pos.y,
-                                z: p.pos.z,
-                                heading: p.heading as f32,
-                                speed: p.speed as f32,
-                                waiting: p.waiting.map(|(s, k)| (s, k.min(255) as u8)),
-                            },
-                            quant(p.pos.x, p.pos.y, p.pos.z, p.heading),
-                        ),
-                    };
-                    let q = [q[0], q[1], q[2], q[3] ^ ((p.activity as i64) << 40) ^ (p.waiting.is_some() as i64) << 44];
-                    let due = match view.sent.get(&key) {
-                        None => true,
-                        Some((last, age)) => *last != q || *age >= nw::STANDING_EVERY,
-                    };
-                    if !due {
-                        continue;
-                    }
-                    view.sent.insert(key, (q, 0.0));
-                    frame.people.push(PersonState {
-                        id: p.id,
-                        activity: net_activity(p.activity),
-                        place,
-                    });
-                }
+                gather_people(view, h, at, &mut g);
             }
+            let Gather { mut frame, mut seen, mut descs, mut ids_hash } = g;
             // the riders of our own bus, and the other players' people and riders: everybody
             // sees everybody's passengers
             let mut others: Vec<(PersonState, String)> = Vec::new();
@@ -1314,6 +1213,128 @@ impl Mirror {
         }
 
     }
+}
+
+/// What one frame of the host's world for a client gathers: the frame, the things in it (in
+/// sight or not sent again), the descriptions to send first, a checksum of the ids.
+#[derive(Default)]
+struct Gather {
+    frame: WorldFrame,
+    seen: HashSet<Key>,
+    descs: Vec<Desc>,
+    ids_hash: u64,
+}
+
+/// The host's cars within `CAR_RADIUS` of a client at `at`: those moved (or standing too
+/// long unsent) go into the frame, new or changed descriptions are sent along.
+fn gather_cars(view: &mut View, t: &Traffic, at: DVec3, args: &Args, g: &mut Gather) {
+    for c in &t.cars {
+        let p = c.vehicle.position;
+        if (p - at).truncate().length() > CAR_RADIUS || c.id > nw::MAX_ID as u64 {
+            continue;
+        }
+        let key = (false, c.id as u32);
+        g.seen.insert(key);
+        g.ids_hash ^= fnv(&c.id.to_le_bytes());
+        let d = describe_car(args, c);
+        let h = fnv(d.encode().as_bytes());
+        if view.described.get(&key) != Some(&h) {
+            view.described.insert(key, h);
+            g.descs.push(d);
+        }
+        let q = quant(p.x, p.y, p.z, c.vehicle.heading);
+        let speed = c.state.speed;
+        let due = match view.sent.get(&key) {
+            None => true,
+            Some((last, age)) => {
+                *last != q || speed.abs() > 0.05 || *age >= nw::STANDING_EVERY
+            }
+        };
+        if !due {
+            continue;
+        }
+        view.sent.insert(key, (q, 0.0));
+        g.frame.cars.push(CarState {
+            id: c.id as u32,
+            x: p.x,
+            y: p.y,
+            z: p.z,
+            heading: c.vehicle.heading as f32,
+            pitch: c.vehicle.pitch as f32,
+            bank: c.vehicle.bank as f32,
+            speed,
+            steer: c.body.steer,
+            blinker: c.state.blinker.clamp(0, 3) as u8,
+            brake: c.state.braking,
+            lights: t.night,
+            at_station: if c.at_station() {
+                1
+            } else if !c.vehicle.station_released() {
+                -1
+            } else {
+                0
+            },
+        });
+    }
+
+}
+
+/// The host's people within `PERSON_RADIUS` of a client at `at`, the same way.
+fn gather_people(view: &mut View, h: &Humans, at: DVec3, g: &mut Gather) {
+    for p in h.lan_people(at, PERSON_RADIUS) {
+        if p.id > nw::MAX_ID {
+            continue;
+        }
+        let key = (true, p.id);
+        g.seen.insert(key);
+        g.ids_hash ^= fnv(&(p.id as u64 | 1 << 40).to_le_bytes());
+        if !view.described.contains_key(&key) {
+            view.described.insert(key, 0);
+            g.descs.push(Desc::Person {
+                id: p.id,
+                file: Humans::type_file(&p.ty),
+            });
+        }
+        let (place, q) = match p.aboard {
+            Some((bus, l, lh, seat)) => (
+                PersonPlace::Aboard {
+                    bus: bus.min(nw::MAX_ID as u64) as u32,
+                    x: l.x,
+                    y: l.y,
+                    z: l.z,
+                    heading: lh as f32,
+                    seat: seat.map(|s| s.min(254) as u8),
+                },
+                quant(l.x as f64, l.y as f64, l.z as f64, lh + bus as f64 * 1000.0),
+            ),
+            None => (
+                PersonPlace::Foot {
+                    x: p.pos.x,
+                    y: p.pos.y,
+                    z: p.pos.z,
+                    heading: p.heading as f32,
+                    speed: p.speed as f32,
+                    waiting: p.waiting.map(|(s, k)| (s, k.min(255) as u8)),
+                },
+                quant(p.pos.x, p.pos.y, p.pos.z, p.heading),
+            ),
+        };
+        let q = [q[0], q[1], q[2], q[3] ^ ((p.activity as i64) << 40) ^ (p.waiting.is_some() as i64) << 44];
+        let due = match view.sent.get(&key) {
+            None => true,
+            Some((last, age)) => *last != q || *age >= nw::STANDING_EVERY,
+        };
+        if !due {
+            continue;
+        }
+        view.sent.insert(key, (q, 0.0));
+        g.frame.people.push(PersonState {
+            id: p.id,
+            activity: net_activity(p.activity),
+            place,
+        });
+    }
+
 }
 
 /// A person of one client passed on to the others has this bit in its id there (the host's
