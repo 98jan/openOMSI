@@ -406,12 +406,19 @@ pub fn draw(l: &mut Launcher, area: Rect) {
 
     // --- the tour's trips
     ui.panel(right);
-    let Some(tour) = line.tours.get_mut(tv.tour) else {
-        if let Some(s) = status {
-            l.state.set_status(s.0, s.1);
-        }
-        return;
-    };
+    draw_tour_trips(ui, tv, right, &line_name, &trips, &profiles, &mut status);
+    if let Some((s, err)) = status {
+        l.state.set_status(s, err);
+    }
+}
+
+/// The chosen tour's trips (panel `right`): departure, trip, profile and destination of each,
+/// the buttons under them and the save button; what is to be said goes into `status`.
+#[allow(clippy::ptr_arg)]
+fn draw_tour_trips(ui: &mut Ui, tv: &mut TimetableView, right: Rect, line_name: &String, trips: &[String], profiles: &[(String, Vec<String>, String)], status: &mut Option<(String, bool)>) {
+    let Some(data) = tv.data.as_mut() else { return };
+    let line = &mut data.lines[tv.line];
+    let Some(tour) = line.tours.get_mut(tv.tour) else { return };
     let inner = ui.heading(Rect::new(right.x + 18.0, right.y + 14.0, right.w - 36.0, right.h - 28.0), &format!("Tour {} - {}", tour.number, tour.ai_group), Some("schedule"));
     if tv.times_for != Some((tv.line, tv.tour)) || tv.times.len() != tour.trips.len() {
         tv.times = tour.trips.iter().map(|t| fmt_time(t.departure)).collect();
@@ -507,18 +514,15 @@ pub fn draw(l: &mut Launcher, area: Rect) {
     };
     if ui.button("tt-save", save_r, &label, Some("save"), if n > 0 { ButtonKind::Primary } else { ButtonKind::Normal }) && n > 0 {
         if tv.times.iter().any(|t| parse_time(t).is_none()) {
-            status = Some(("A departure is not a time (h:mm).".into(), true));
+            *status = Some(("A departure is not a time (h:mm).".into(), true));
         } else {
             let (saved, err) = save_all(tv);
             tv.times_for = None;
-            status = Some(match err {
+            *status = Some(match err {
                 Some(e) => (format!("Not saved: {e}"), true),
                 None => (format!("{saved} line(s) saved"), false),
             });
         }
-    }
-    if let Some((s, err)) = status {
-        l.state.set_status(s, err);
     }
 }
 
