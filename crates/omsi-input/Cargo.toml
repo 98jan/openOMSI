@@ -13,8 +13,6 @@ omsi-sim = { path = "../omsi-sim" }
 omsi-vehicle = { path = "../omsi-vehicle" }
 # (`language_code`: the settings' language as OMSI spells it)
 omsi-launcher-core = { path = "../omsi-launcher-core" }
-# (only for its panic guard `catch`, until that moves below the renderer)
-omsi-render = { path = "../omsi-render" }
 winit.workspace = true
 glam.workspace = true
 log.workspace = true

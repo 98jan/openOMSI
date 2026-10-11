@@ -704,7 +704,7 @@ fn latch_release(action: &str) -> String {
 /// Only that one event is lost: the controller works once its `Connected` comes.
 fn next_event_caught<T>(mut next: impl FnMut() -> Option<T>) -> Option<T> {
     loop {
-        match omsi_render::catch(&mut next) {
+        match omsi_cfg::panic_guard::catch(&mut next) {
             Some(ev) => return ev,
             None => {
                 static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

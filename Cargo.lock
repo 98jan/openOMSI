@@ -3450,7 +3450,6 @@ dependencies = [
  "omsi-cfg",
  "omsi-content",
  "omsi-launcher-core",
- "omsi-render",
  "omsi-script",
  "omsi-sim",
  "omsi-vehicle",
