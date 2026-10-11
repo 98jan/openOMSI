@@ -766,9 +766,6 @@ fn toggle_set_graphics_and_controls(app: &mut App, id: &str, on: bool, bit: Stri
     }
 }
 
-/// Set by `option_do` when a value really changed (the open list is out of date then).
-pub(crate) static LIST_DIRTY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
 /// Change the setting `verb` (a switch or a slider) as `mv` says; false when it is neither.
 pub(crate) fn option_do(app: &mut App, verb: &str, arg: &str, mv: Move) -> bool {
     // (the weather is the METAR report's while the sync is on)
@@ -788,7 +785,7 @@ pub(crate) fn option_do(app: &mut App, verb: &str, arg: &str, mv: Move) -> bool 
                 remember_setting(k, &v);
             }
             sync_live(app);
-            LIST_DIRTY.store(true, std::sync::atomic::Ordering::Relaxed);
+            app.menus.list_dirty = true;
         }
         return true;
     }
@@ -801,7 +798,7 @@ pub(crate) fn option_do(app: &mut App, verb: &str, arg: &str, mv: Move) -> bool 
                     remember_setting(k, &v);
                 }
                 sync_live(app);
-                LIST_DIRTY.store(true, std::sync::atomic::Ordering::Relaxed);
+                app.menus.list_dirty = true;
             }
         }
         return true;

@@ -160,7 +160,7 @@ pub(crate) fn dropdown_apply(app: &mut App, action: &str) {
                 Some(p) => {
                     store_with(app, |v| omsi_launcher_lib::apply_graphics_profile(p, v));
                     sync_live(app);
-                    LIST_DIRTY.store(true, std::sync::atomic::Ordering::Relaxed);
+                    app.menus.list_dirty = true;
                     app.service_msg = Some((format!("Graphics profile \"{name}\" loaded: graphics settings apply when the game starts the next time"), 5.0));
                 }
                 None => app.service_msg = Some((format!("Graphics profile \"{name}\" not found"), 4.0)),

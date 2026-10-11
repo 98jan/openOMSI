@@ -605,6 +605,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             sky: Default::default(),
         },
         menus: MenuState {
+            list_dirty: false,
             chooser: None,
             editor: None,
             vehicle_list: Vec::new(),

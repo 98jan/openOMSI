@@ -328,6 +328,9 @@ pub(crate) struct MenuState {
     pub(crate) vehicle_list: Vec<(String, String)>,
     /// The drop-down open over a row of the settings window, if one is.
     pub(crate) dropdown: Option<crate::game_lists::Dropdown>,
+    /// A value of the open settings window really changed (set by `option_do` and the
+    /// like): its list is out of date (see `App::list_adjust`).
+    pub(crate) list_dirty: bool,
     /// (manufacturer, type) of each vehicle of `vehicle_list`, by its path.
     pub(crate) vehicle_meta: std::collections::HashMap<String, (String, String)>,
     pub(crate) hud: Option<hud::Hud>,
