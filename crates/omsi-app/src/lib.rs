@@ -17,7 +17,7 @@ use omsi_lan::voice;
 mod head_idle;
 use omsi_input::headtrack;
 #[cfg(windows)]
-mod openxr;
+use omsi_xr::openxr;
 #[cfg(target_os = "android")]
 mod android;
 mod platform;
@@ -517,7 +517,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
     #[cfg(steam)]
     let steam = if is_server { None } else { crate::steam::Steam::start() };
     let instance = graphics_instance();
-    let vr_nav_profiles = crate::vr_navigator::Profiles::load();
+    let vr_nav_profiles = crate::vr_navigator::Profiles::load(crate::vr_navigator::profiles_path().as_deref());
     let ui = ui::Ui::new();
     let rain = rain::Rain::new();
     let cabin_air = crate::condensation::CabinAir::new();

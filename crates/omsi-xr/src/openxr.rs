@@ -18,7 +18,7 @@ use windows::Win32::Graphics::Dxgi::Common::*;
 
 use omsi_render::{Camera, Lighting, Renderer, Scene};
 
-pub(crate) struct Vr {
+pub struct Vr {
     instance: xr::Instance,
     session: xr::Session<xr::D3D12>,
     frame_waiter: xr::FrameWaiter,
@@ -147,7 +147,7 @@ impl UiAnchor {
 }
 
 impl Vr {
-    pub(crate) fn new(
+    pub fn new(
         renderer: &Renderer,
         configured_scale: f32,
         desktop_mirror: bool,
@@ -385,7 +385,7 @@ impl Vr {
         })
     }
 
-    pub(crate) fn poll(&mut self) -> Result<()> {
+    pub fn poll(&mut self) -> Result<()> {
         let mut refocus = false;
         while let Some(event) = self.instance.poll_event(&mut self.events)? {
             if let xr::Event::SessionStateChanged(change) = event {
@@ -417,7 +417,7 @@ impl Vr {
         Ok(())
     }
 
-    pub(crate) fn recenter(&mut self) {
+    pub fn recenter(&mut self) {
         self.origin = None;
         self.origin_rotation = None;
         self.smoothed_head = None;
@@ -426,7 +426,7 @@ impl Vr {
         self.recenter_pointer();
     }
 
-    pub(crate) fn recenter_pointer(&mut self) {
+    pub fn recenter_pointer(&mut self) {
         self.cursor_anchor = None;
         self.cursor_surface_local = None;
         self.cockpit_cursor_anchor = None;
@@ -435,12 +435,12 @@ impl Vr {
         self.last_cursor_move = Some(Instant::now());
     }
 
-    pub(crate) fn toggle_desktop_mirror(&mut self) -> bool {
+    pub fn toggle_desktop_mirror(&mut self) -> bool {
         self.desktop_mirror = !self.desktop_mirror;
         self.desktop_mirror
     }
 
-    pub(crate) fn desktop_crop(&self, size: (u32, u32)) -> (f32, f32) {
+    pub fn desktop_crop(&self, size: (u32, u32)) -> (f32, f32) {
         let eye_aspect = self.width as f32 / self.height.max(1) as f32;
         let desktop_aspect = size.0.max(1) as f32 / size.1.max(1) as f32;
         if desktop_aspect > eye_aspect {
@@ -450,7 +450,7 @@ impl Vr {
         }
     }
 
-    pub(crate) fn needs_cursor_surface(&self, position: (f32, f32), menu_open: bool) -> bool {
+    pub fn needs_cursor_surface(&self, position: (f32, f32), menu_open: bool) -> bool {
         !menu_open
             && (self.cursor_menu_open
                 || self.last_cursor_position.is_none_or(|p| {
@@ -458,7 +458,7 @@ impl Vr {
                 }))
     }
 
-    pub(crate) fn set_cursor_surface(
+    pub fn set_cursor_surface(
         &mut self,
         hit: Option<DVec3>,
         bus_pose: Option<(DVec3, Mat4)>,
@@ -514,7 +514,7 @@ impl Vr {
     }
 
     /// Pick through the same cropped left-eye picture shown on the desktop.
-    pub(crate) fn cursor_ray(
+    pub fn cursor_ray(
         &self,
         x: f32,
         y: f32,
@@ -534,11 +534,11 @@ impl Vr {
         Some((camera.position, direction, spread))
     }
 
-    pub(crate) fn navigator_edit_camera(&self) -> Option<Camera> {
+    pub fn navigator_edit_camera(&self) -> Option<Camera> {
         self.mirror_camera.map(|(camera, _)| camera)
     }
 
-    pub(crate) fn render(
+    pub fn render(
         &mut self,
         renderer: &mut Renderer,
         scene: &mut Scene,
@@ -551,7 +551,7 @@ impl Vr {
         tooltip_overlay: Option<usize>,
         cursor_position: (f32, f32),
         bus_pose: Option<(DVec3, Mat4)>,
-        navigator: Option<(usize, crate::vr_navigator::Display)>,
+        navigator: Option<(usize, crate::navigator::Display)>,
         player_uid: Option<u64>,
         head_smoothing_ms: f32,
         cockpit_pointer_enabled: bool,

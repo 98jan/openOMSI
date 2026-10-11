@@ -3336,7 +3336,7 @@ dependencies = [
  "omsi-timetable",
  "omsi-ui",
  "omsi-vehicle",
- "openxr",
+ "omsi-xr",
  "parking_lot",
  "pollster",
  "rayon",
@@ -3350,7 +3350,6 @@ dependencies = [
  "steamworks",
  "ureq",
  "wgpu",
- "wgpu-hal",
  "windows 0.62.2",
  "winit",
  "winresource",
@@ -3678,6 +3677,23 @@ version = "0.1.0"
 dependencies = [
  "log",
  "omsi-cfg",
+]
+
+[[package]]
+name = "omsi-xr"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "glam",
+ "log",
+ "omsi-cfg",
+ "omsi-render",
+ "openxr",
+ "serde",
+ "serde_json",
+ "wgpu",
+ "wgpu-hal",
+ "windows 0.62.2",
 ]
 
 [[package]]
