@@ -105,7 +105,9 @@ mod route_arrows;
 mod server;
 mod player;
 mod plugin_io;
-mod plugin_ui;
+// the plugins' panels (`omsi-plugin-ui`) at their old path, and the app's side of their input
+use omsi_plugin_ui as plugin_ui;
+mod plugin_panels;
 mod plugins;
 mod services;
 mod situation;

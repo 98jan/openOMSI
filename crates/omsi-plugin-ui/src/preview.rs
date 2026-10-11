@@ -167,7 +167,7 @@ fn preview() {
 
 /// Read a preview back, lay it over a stand-in for the road (sky, buildings, the street)
 /// and write it as a PNG.
-pub(crate) fn save(device: &wgpu::Device, queue: &wgpu::Queue, target: &wgpu::Texture, w: u32, h: u32, out: &str) {
+pub fn save(device: &wgpu::Device, queue: &wgpu::Queue, target: &wgpu::Texture, w: u32, h: u32, out: &str) {
     // read back and laid over a stand-in for the road: sky, buildings, the street
     let stride = (w * 4).div_ceil(256) * 256;
     let buf = device.create_buffer(&wgpu::BufferDescriptor {

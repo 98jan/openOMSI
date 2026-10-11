@@ -22,7 +22,7 @@ use omsi_render::{Renderer, Scene, TextureId};
 use omsi_ui::paint::Align as TextAlign;
 use omsi_ui::{Atlas, Color, Draw, Fonts, Gpu, Layer, Painter, Rect, Vertex, Weight};
 
-mod input;
+pub mod input;
 #[cfg(test)]
 mod preview;
 mod widgets;
@@ -41,11 +41,11 @@ const BUTTON: Color = Color::rgba(44, 44, 44, 1.0);
 const SHADOW: Color = Color::rgba(0, 0, 0, 0.35);
 
 /// A text line's height, times its size.
-pub(crate) const LINE: f32 = 1.3;
-pub(crate) const BADGE_H: f32 = 20.0;
+pub const LINE: f32 = 1.3;
+pub const BADGE_H: f32 = 20.0;
 const BADGE_PX: f32 = 12.0;
 const BADGE_PAD: f32 = 8.0;
-pub(crate) const BUTTON_H: f32 = 34.0;
+pub const BUTTON_H: f32 = 34.0;
 const BUTTON_PX: f32 = 14.0;
 const BUTTON_PAD: f32 = 14.0;
 const BUTTON_ICON: f32 = 18.0;
@@ -99,7 +99,7 @@ fn ink_on(fill: Color) -> Color {
 
 /// What a card is drawn from, in its own logical pixels (its top left at 0, 0).
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Laid {
+pub struct Laid {
     pub w: f32,
     pub h: f32,
     pub radius: f32,
@@ -111,7 +111,7 @@ pub(crate) struct Laid {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Item {
+pub enum Item {
     /// A box with round corners; `hot`: the hit that lights it under the mouse.
     Rounded {
         r: Rect,
@@ -145,7 +145,7 @@ pub(crate) enum Item {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Hit {
+pub struct Hit {
     pub r: Rect,
     /// None: the panel itself.
     pub element: Option<String>,
@@ -154,7 +154,7 @@ pub(crate) struct Hit {
 
 /// What a press on a hit does: a click, or setting a slider or tabs by where it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HitKind {
+pub enum HitKind {
     Click,
     Slider,
     Tabs,
@@ -551,12 +551,12 @@ impl Layout<'_> {
 
 /// Lay a panel out: its size, what it is drawn from and where it takes clicks.
 /// `backdrop`: the opacity setting's strength for the game's own card colour (`ui::backdrop`).
-pub(crate) fn layout(p: &Panel, fonts: &Fonts, backdrop: f32) -> Laid {
+pub fn layout(p: &Panel, fonts: &Fonts, backdrop: f32) -> Laid {
     layout_typing(p, fonts, backdrop, None)
 }
 
 /// [`layout`], with the caret in the text field `typing` (the field's id).
-pub(crate) fn layout_typing(p: &Panel, fonts: &Fonts, backdrop: f32, typing: Option<&str>) -> Laid {
+pub fn layout_typing(p: &Panel, fonts: &Fonts, backdrop: f32, typing: Option<&str>) -> Laid {
     let mut l = Layout {
         fonts,
         out: Laid::default(),
@@ -598,7 +598,7 @@ pub(crate) fn layout_typing(p: &Panel, fonts: &Fonts, backdrop: f32, typing: Opt
 
 /// A notification as a panel: the stripe in its colour, the icon and the title in a row
 /// above the text.
-pub(crate) fn toast_panel(t: &Toast) -> Panel {
+pub fn toast_panel(t: &Toast) -> Panel {
     let accent = t.color.unwrap_or(Rgba([232, 160, 48, 255]));
     let element = |kind: Kind, grow: bool, c: Option<Rgba>| Element {
         id: None,
@@ -678,7 +678,7 @@ pub(crate) fn toast_panel(t: &Toast) -> Panel {
 
 /// Where a card `w` x `h` goes on a screen of `screen` (logical): its anchor, moved by its
 /// offset towards the middle (right and down from a middle), kept on the screen.
-pub(crate) fn place(p: &Panel, w: f32, h: f32, screen: Vec2) -> Vec2 {
+pub fn place(p: &Panel, w: f32, h: f32, screen: Vec2) -> Vec2 {
     let (ax, ay) = p.anchor.factors();
     let along = |a: f32, size: f32, room: f32, off: f32| {
         let at = a * (room - size) + if a == 1.0 { -off } else { off };
@@ -688,7 +688,7 @@ pub(crate) fn place(p: &Panel, w: f32, h: f32, screen: Vec2) -> Vec2 {
 }
 
 /// The hit under `p` (card pixels): the last one drawn there.
-pub(crate) fn hit_at(laid: &Laid, p: Vec2) -> Option<usize> {
+pub fn hit_at(laid: &Laid, p: Vec2) -> Option<usize> {
     laid.hits.iter().rposition(|h| h.r.contains(p))
 }
 
@@ -698,7 +698,7 @@ pub(crate) fn hit_at(laid: &Laid, p: Vec2) -> Option<usize> {
 /// the card's top left at `at` (logical) with its shadow round it; `hot` lights that hit's
 /// shape. `clear`: the target is cleared first, else drawn over.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_card(
+pub fn draw_card(
     gpu: &mut Gpu,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -868,7 +868,7 @@ enum Key {
 }
 
 /// What the frame tells the panels.
-pub(crate) struct PanelsFrame {
+pub struct PanelsFrame {
     /// The interface's part of the window (x, y, w, h; physical pixels).
     pub hud: [f32; 4],
     /// Physical pixels per logical one: the screen's scale times the interface size.
@@ -886,17 +886,18 @@ pub(crate) struct PanelsFrame {
 
 /// The plugins' panels on the screen.
 #[derive(Default)]
-pub(crate) struct PluginPanels {
+pub struct PluginPanels {
     gpu: Option<Gpu>,
     fonts: Option<Fonts>,
     atlas: Option<Atlas>,
     cards: HashMap<Key, Card>,
     frame: u64,
-    scale: f32,
+    /// The interface's scale the cards were last laid out at (the app's drags divide by it).
+    pub scale: f32,
     /// The plugins' pictures on the graphics card.
     images: widgets::Images,
     /// A slider or a panel being dragged with the mouse.
-    pub(crate) drag: Option<input::Drag>,
+    pub drag: Option<input::Drag>,
     /// The field typed into when the cards were last laid out.
     typing: Option<(u64, String, String)>,
 }
@@ -1115,11 +1116,11 @@ impl PluginPanels {
 }
 
 /// The line the game shows while the panels have the mouse.
-pub(crate) const FOCUS_NOTE: &str = "The mouse is on the plugin panels | Esc gives it back";
+pub const FOCUS_NOTE: &str = "The mouse is on the plugin panels | Esc gives it back";
 
 /// Whether the plugins' panels have the mouse (`omsi.ui.focus`): from the plugins alone, for
 /// where the rest of the game is borrowed.
-pub(crate) fn focused(plugins: &Option<omsi_plugin::Plugins>) -> bool {
+pub fn focused(plugins: &Option<omsi_plugin::Plugins>) -> bool {
     plugins.as_ref().is_some_and(|p| p.ui.borrow().focused())
 }
 

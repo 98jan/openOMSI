@@ -49,6 +49,7 @@ omsi-platform = { path = "../omsi-platform" }
 omsi-lan = { path = "../omsi-lan" }
 omsi-input = { path = "../omsi-input" }
 omsi-xr = { path = "../omsi-xr" }
+omsi-plugin-ui = { path = "../omsi-plugin-ui" }
 omsi-weather = { path = "../omsi-weather" }
 omsi-ui = { path = "../omsi-ui" }
 omsi-launcher-core = { path = "../omsi-launcher-core" }

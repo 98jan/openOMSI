@@ -24,7 +24,7 @@ const IMAGE_MAX: u32 = 1024;
 const GREY: Color = Color::rgba(142, 142, 142, 1.0);
 
 impl Layout<'_> {
-    pub(super) fn widget_natural(&self, e: &Element) -> f32 {
+    pub fn widget_natural(&self, e: &Element) -> f32 {
         match &e.kind {
             Kind::Image { width, .. } => *width,
             Kind::Checkbox { text, .. } => (CHECK + CHECK_GAP + self.width(text, CONTROL_PX, Weight::Regular)).ceil(),
@@ -37,7 +37,7 @@ impl Layout<'_> {
         }
     }
 
-    pub(super) fn widget_height(&self, e: &Element, w: f32) -> f32 {
+    pub fn widget_height(&self, e: &Element, w: f32) -> f32 {
         match &e.kind {
             // (a picture wider than its room keeps its shape)
             Kind::Image { width, height, .. } => height * (w / width).min(1.0),
@@ -59,7 +59,7 @@ impl Layout<'_> {
         self.out.hits.len() - 1
     }
 
-    pub(super) fn widget_emit(&mut self, e: &Element, r: Rect) {
+    pub fn widget_emit(&mut self, e: &Element, r: Rect) {
         let accent = e.color.map(color).unwrap_or(ACCENT);
         match &e.kind {
             Kind::Image { path, width, height } => {
@@ -214,13 +214,13 @@ impl Layout<'_> {
 
 /// The plugins' pictures, read once and kept on the graphics card (by file).
 #[derive(Default)]
-pub(crate) struct Images {
+pub struct Images {
     loaded: HashMap<PathBuf, Option<usize>>,
 }
 
 impl Images {
     /// The picture's texture, read from its file the first time (None: it cannot be read).
-    pub(crate) fn get(&mut self, gpu: &mut Gpu, device: &wgpu::Device, queue: &wgpu::Queue, path: &Path) -> Option<usize> {
+    pub fn get(&mut self, gpu: &mut Gpu, device: &wgpu::Device, queue: &wgpu::Queue, path: &Path) -> Option<usize> {
         if let Some(t) = self.loaded.get(path) {
             return *t;
         }
