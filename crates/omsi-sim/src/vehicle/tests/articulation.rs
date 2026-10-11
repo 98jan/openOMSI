@@ -584,6 +584,14 @@ fn cached_variable_ids_answer_as_the_names() {
             assert_eq!(t.axle_ids.spring_factor[a], factor);
         }
         assert!(found > 0, "the rear section's wheels turn by script variables");
+        // the rear section's lamps read the vehicle's variables through its plan as by name
+        let lamps: Vec<&str> = t.ty.model.meshes.iter().flat_map(|md| &md.light_enh_2).map(|l| l.variable.as_str()).collect();
+        assert!(!lamps.is_empty(), "the rear section has lamps");
+        assert_eq!(t.props_plan.lights.len(), lamps.len());
+        for (src, name) in t.props_plan.lights.iter().zip(&lamps) {
+            let by_name = name.trim().parse::<f32>().ok().or_else(|| v.var(name.trim())).unwrap_or(0.0);
+            assert_eq!(src.value(&v.state.vars, 0.0).to_bits(), by_name.to_bits(), "{name}");
+        }
         // (round 1: with a variable the vehicle gained, the ids are made again)
         if round == 0 {
             v.set_engine_var("Axle_Springfactor_2_L", 1.0);

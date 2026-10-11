@@ -164,15 +164,19 @@ impl VehicleInstance {
         // the lamps come on and go out with their `timeconst`
         let mut lf = std::mem::take(&mut self.light_fade);
         let mut part_fades: Vec<Vec<f32>> = self.trailers.iter_mut().map(|t| std::mem::take(&mut t.light_fade)).collect();
-        // (the vehicle's own lights by the plan's sources; the coupled parts' - which read
-        // this vehicle's variables too - by name)
+        // (the vehicle's own lights and the coupled parts' - which read this vehicle's
+        // variables too - by their plans' sources, resolved against this vehicle's variables
+        // as the names were: each part's lamp was a look-up by name every frame)
+        for t in &mut self.trailers {
+            t.props_plan.refresh(&t.ty, &self.var_index);
+        }
         let value = |n: &str| -> f32 { n.trim().parse::<f32>().ok().or_else(|| self.var(n.trim())).unwrap_or(0.0) };
-        let (own_lights, vars) = (&self.props_plan.lights, &self.state.vars);
-        let fade = |model: &omsi_model::Model, fades: &mut Vec<f32>, own: bool| {
+        let vars = &self.state.vars;
+        let fade = |model: &omsi_model::Model, fades: &mut Vec<f32>, lights: &[PropSource]| {
             let mut k = 0;
             for md in &model.meshes {
                 for l in &md.light_enh_2 {
-                    let v = match own_lights.get(k).filter(|_| own) {
+                    let v = match lights.get(k) {
                         Some(src) => src.value(vars, 0.0),
                         None => value(&l.variable),
                     };
@@ -196,9 +200,9 @@ impl VehicleInstance {
                 }
             }
         };
-        fade(&self.ty.model, &mut lf, true);
+        fade(&self.ty.model, &mut lf, &self.props_plan.lights);
         for (t, f) in self.trailers.iter().zip(part_fades.iter_mut()) {
-            fade(&t.ty.model, f, false);
+            fade(&t.ty.model, f, &t.props_plan.lights);
         }
         self.light_fade = lf;
         for (t, f) in self.trailers.iter_mut().zip(part_fades) {
