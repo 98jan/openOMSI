@@ -60,5 +60,24 @@ forbid omsi-weather omsi-net
 forbid omsi-weather omsi-plugin
 forbid omsi-weather omsi-launcher-*
 
+# The input devices read controllers and keys: they neither draw nor sound, nor know the network,
+# the plugins or the launcher.
+forbid omsi-input omsi-render
+forbid omsi-input omsi-ui
+forbid omsi-input omsi-audio
+forbid omsi-input omsi-net
+forbid omsi-input omsi-plugin
+forbid omsi-input omsi-launcher-*
+
+# The VR session draws the renderer's scene into the headset: it does not run the simulation.
+forbid omsi-xr omsi-sim
+forbid omsi-xr omsi-audio
+forbid omsi-xr omsi-net
+
+# The plugins' panels are drawn from the plugins' tables: no simulation, sound or network.
+forbid omsi-plugin-ui omsi-sim
+forbid omsi-plugin-ui omsi-audio
+forbid omsi-plugin-ui omsi-net
+
 # Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
 app-lines 128041
