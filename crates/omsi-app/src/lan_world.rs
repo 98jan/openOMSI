@@ -787,7 +787,89 @@ impl LanWorld {
             return;
         };
         let m = &mut self.mirror;
-        // the host's world while we are in its session; our own again once it is over
+        if !m.switch(lan, world, renderer, scene, traffic.as_deref_mut(), humans.as_deref_mut(), view) {
+            return;
+        }
+        let now = m.now_ms();
+        m.take_frames(lan, dt, world, renderer, scene, traffic.as_deref_mut());
+        let render_ms = m.play.step(now, now + m.offset.unwrap_or(0.0) - INTERP_DELAY, 500.0);
+        m.ask_descriptions(lan);
+        m.take_loaded_types();
+        // cars: forgotten, gone, new
+        let forget = std::time::Duration::from_secs_f32(nw::FORGET_AFTER);
+        m.cars.retain(|_, t| t.heard.elapsed() < forget);
+        if let Some(t) = traffic.as_deref_mut() {
+            m.add_and_remove_cars(t, view, args, world, renderer, scene);
+            let shown = m.place_cars(t, dt, render_ms);
+            m.show_destinations(t, shown, args, world);
+        }
+        // people
+        m.people.retain(|_, t| t.heard.elapsed() < forget);
+        if let Some(h) = humans.as_deref_mut() {
+            m.update_people(lan, h, view, world, renderer, scene, render_ms);
+        }
+        if let Some(f) = self.trace.as_mut() {
+            self.trace_t -= dt;
+            if self.trace_t <= 0.0 {
+                self.trace_t = 0.1;
+                if let Some(t) = traffic.as_deref() {
+                    for c in t.cars.iter().filter(|c| m.drawn_cars.contains(&(c.id as u32))) {
+                        let p = c.vehicle.position;
+                        let _ = writeln!(f, "client,{render_ms:.0},{},c,{},{:.3},{:.3},{:.3},{:.2}", lan.my_id, c.id, p.x, p.y, p.z, c.vehicle.heading);
+                    }
+                }
+                if let Some(h) = humans.as_deref() {
+                    for (id, pos) in h.mirror_positions() {
+                        let _ = writeln!(f, "client,{render_ms:.0},{},p,{id},{:.3},{:.3},{:.3},0", lan.my_id, pos.x, pos.y, pos.z);
+                    }
+                }
+                let _ = f.flush();
+            }
+        }
+        self.log_t -= dt;
+        if self.log_t <= 0.0 && omsi_cfg::flags::OMSI_DEBUG_LAN.is_set() {
+            self.log_t = 4.0;
+            let m = &mut self.mirror;
+            let ids_hash = m
+                .cars
+                .keys()
+                .map(|id| fnv(&(*id as u64).to_le_bytes()))
+                .chain(m.people.keys().map(|id| fnv(&(*id as u64 | 1 << 40).to_le_bytes())))
+                .fold(0u64, |a, b| a ^ b);
+            let rate = (lan.world_received - m.bytes_at) as f32 / 4.0 / 1024.0;
+            m.bytes_at = lan.world_received;
+            log::info!(
+                "LAN world from the host: {} cars ({} drawn), {} people ({} drawn), ids {:016X}; {:.1} KB/s; drawn {:.0} ms behind the host; {} passengers handed to us, {} not",
+                m.cars.len(),
+                m.drawn_cars.len(),
+                m.people.len(),
+                m.drawn_people.len(),
+                ids_hash,
+                rate,
+                INTERP_DELAY,
+                m.granted,
+                m.denied
+            );
+        }
+    }
+}
+
+/// A client's side of the frame (`LanWorld::client`), step by step.
+impl Mirror {
+    /// The host's world while we are in its session; our own again once it is over. Whether
+    /// the host's world is drawn.
+    #[allow(clippy::too_many_arguments)]
+    fn switch(
+        &mut self,
+        lan: &LanSession,
+        world: &World,
+        renderer: &Renderer,
+        scene: &mut Scene,
+        mut traffic: Option<&mut Traffic>,
+        mut humans: Option<&mut Humans>,
+        view: &mut SimView,
+    ) -> bool {
+        let m = self;
         let want_on = lan.welcome.is_some() && lan.rejected.is_none();
         if want_on != m.on {
             m.on = want_on;
@@ -812,10 +894,20 @@ impl LanWorld {
                 }
             );
         }
-        if !m.on {
-            return;
-        }
-        let now = m.now_ms();
+        m.on
+    }
+
+    /// The descriptions and world frames that came from the host.
+    fn take_frames(
+        &mut self,
+        lan: &mut LanSession,
+        dt: f32,
+        world: &World,
+        renderer: &Renderer,
+        scene: &mut Scene,
+        mut traffic: Option<&mut Traffic>,
+    ) {
+        let m = self;
         for d in lan.take_descs() {
             let key = match &d {
                 Desc::Car { id, .. } => (false, *id),
@@ -875,8 +967,11 @@ impl LanWorld {
                 }
             }
         }
-        let render_ms = m.play.step(now, now + m.offset.unwrap_or(0.0) - INTERP_DELAY, 500.0);
-        // descriptions still missing: asked for (again)
+    }
+
+    /// Descriptions still missing: asked for (again).
+    fn ask_descriptions(&mut self, lan: &mut LanSession) {
+        let m = self;
         let mut want: Vec<EntityRef> = Vec::new();
         for (person, ids) in [
             (false, m.cars.keys().copied().collect::<Vec<_>>()),
@@ -908,7 +1003,11 @@ impl LanWorld {
         if !want.is_empty() {
             lan.want(&want);
         }
-        // vehicle types loaded in the background
+    }
+
+    /// Vehicle types loaded in the background.
+    fn take_loaded_types(&mut self) {
+        let m = self;
         if m.loaded_tx.is_none() {
             let (tx, rx) = mpsc::channel();
             m.loaded_tx = Some(tx);
@@ -923,322 +1022,297 @@ impl LanWorld {
                 m.types.insert(path, ty);
             }
         }
-        // cars: forgotten, gone, new
-        let forget = std::time::Duration::from_secs_f32(nw::FORGET_AFTER);
-        m.cars.retain(|_, t| t.heard.elapsed() < forget);
-        if let Some(t) = traffic.as_deref_mut() {
-            let gone: Vec<u32> = m
-                .drawn_cars
-                .iter()
-                .copied()
-                .filter(|id| !m.cars.contains_key(id))
-                .collect();
-            for id in gone {
-                t.remove_car(&mut view.traffic, world, renderer, scene, id as u64);
-                m.drawn_cars.remove(&id);
-                m.shown.remove(&id);
-                m.odometer.remove(&id);
-            }
-            let new: Vec<u32> = m
-                .cars
-                .keys()
-                .copied()
-                .filter(|id| !m.drawn_cars.contains(id))
-                .collect();
-            for id in new {
-                let Some(Desc::Car {
-                    file,
-                    scheme,
-                    line,
-                    destination,
-                    ..
-                }) = m.descs.get(&(false, id)).cloned()
-                else {
-                    continue;
-                };
-                let scheduled = !line.is_empty() || !destination.is_empty();
-                let Some(path) = local_file(&args.root, &file) else {
-                    if m.types.insert(PathBuf::from(&file), None).is_none() {
-                        log::warn!("LAN: the host's vehicle {file} is not installed here; it is left out");
-                    }
-                    continue;
-                };
-                let ty = match m.types.get(&path) {
-                    Some(Some(ty)) => ty.clone(),
-                    Some(None) => continue,
-                    None => match t.loaded_type(&path) {
-                        Some(ty) => {
-                            m.types.insert(path.clone(), Some(ty.clone()));
-                            ty
-                        }
-                        None => {
-                            if m.loading.insert(path.clone()) {
-                                let tx = m.loaded_tx.clone().unwrap();
-                                let root = args.root.clone();
-                                std::thread::spawn(move || {
-                                    let ty = VehicleType::load_ai(&root, &path).ok().map(Arc::new);
-                                    let _ = tx.send((path, ty));
-                                });
-                            }
-                            continue;
-                        }
-                    },
-                };
-                let Some(first) = m.cars[&id].samples.last().map(|s| s.v) else {
-                    continue;
-                };
-                t.add_mirror_car(
-                    &mut view.traffic,
-                    world,
-                    renderer,
-                    scene,
-                    id as u64,
-                    ty,
-                    scheme.map(|s| s as usize),
-                    scheduled,
-                    DVec3::new(first.x, first.y, first.z),
-                    first.heading as f64,
-                );
-                m.drawn_cars.insert(id);
-            }
-            // where each is now, and what its scripts make of it
-            let index: HashMap<u64, usize> =
-                t.cars.iter().enumerate().map(|(i, c)| (c.id, i)).collect();
-            let mut work: Vec<(usize, CarState, f64)> = Vec::new();
-            for (id, track) in &m.cars {
-                let Some(&i) = index.get(&(*id as u64)) else {
-                    continue;
-                };
-                let Some((a, b, k)) = track.around(render_ms) else {
-                    continue;
-                };
-                let mut c = *b;
-                // (something that has stopped is not guessed on: it stands where it stopped)
-                let k = if b.speed.abs() < 0.1 { k.min(1.0) } else { k };
-                let kk = k.min(1.0);
-                // (a jump of more than 30 m is a teleport, not a drive: no gliding)
-                let far = (DVec2::new(b.x - a.x, b.y - a.y)).length() > 30.0;
-                if !far {
-                    c.x = a.x + (b.x - a.x) * k;
-                    c.y = a.y + (b.y - a.y) * k;
-                    c.z = a.z + (b.z - a.z) * kk;
-                    c.heading = lerp_angle(a.heading as f64, b.heading as f64, k) as f32;
-                    c.pitch = a.pitch + (b.pitch - a.pitch) * kk as f32;
-                    c.bank = a.bank + (b.bank - a.bank) * kk as f32;
-                    c.speed = a.speed + (b.speed - a.speed) * kk as f32;
-                    c.steer = a.steer + (b.steer - a.steer) * kk as f32;
-                }
-                // the flags as the later frame had them once we are past its middle
-                if k < 0.5 {
-                    c.blinker = a.blinker;
-                    c.brake = a.brake;
-                    c.at_station = a.at_station;
-                }
-                work.push((i, c, far as u8 as f64));
-            }
-            let mut shown: Vec<(usize, u32)> = Vec::new();
-            for (i, c, _) in &work {
-                let car = &mut t.cars[*i];
-                let before = car.vehicle.position;
-                let now_p = DVec3::new(c.x, c.y, c.z);
-                let moved = (now_p - before).truncate().length() as f32;
-                let odo = m.odometer.entry(c.id).or_insert(0.0);
-                if moved < 30.0 {
-                    *odo += moved * c.speed.signum();
-                }
-                car.vehicle.position = now_p;
-                car.vehicle.heading = c.heading as f64;
-                car.vehicle.pitch = c.pitch;
-                car.vehicle.bank = c.bank;
-                car.state.speed = c.speed;
-                car.state.blinker = c.blinker as i32;
-                car.state.braking = c.brake;
-                if let Some(b) = car.bus.as_mut() {
-                    b.phase = if c.at_station == 1 {
-                        crate::bus_service::Phase::Boarding
-                    } else {
-                        crate::bus_service::Phase::Running
-                    };
-                }
-                car.body.steer = c.steer;
-                shown.push((*i, c.id));
-            }
-            // the scripts (lamps, indicators, doors, wheels) run in parallel, as the
-            // traffic's own do
-            {
-                use rayon::prelude::*;
-                let odometer = &m.odometer;
-                // (read off the buses before the parallel block takes `t.cars` mutably:
-                // which side each stands at its stop is the host's own timetable state)
-                let sides: HashMap<usize, f32> =
-                    work.iter().map(|(i, _, _)| (*i, t.cars[*i].at_station_side())).collect();
-                let frames: HashMap<usize, AiFrame> = work
-                    .iter()
-                    .map(|(i, c, _)| {
-                        (
-                            *i,
-                            AiFrame {
-                                speed: c.speed,
-                                odometer: odometer.get(&c.id).copied().unwrap_or(0.0),
-                                steer_deg: c.steer,
-                                blinker: c.blinker as i32,
-                                brake: c.brake,
-                                lights: c.lights,
-                                at_station: c.at_station as i32,
-                                at_station_side: sides.get(i).copied().unwrap_or(0.0),
-                                priority_warning: false,
-                                // (the host's buses' engines are not on the wire: running)
-                                engine_off: false,
-                            },
-                        )
-                    })
-                    .collect();
-                let mut run: Vec<(&mut omsi_sim::VehicleInstance, &AiFrame)> = t
-                    .cars
-                    .iter_mut()
-                    .enumerate()
-                    .filter_map(|(i, car)| frames.get(&i).map(|f| (&mut car.vehicle, f)))
-                    .collect();
-                run.par_iter_mut().for_each(|(v, f)| v.update_ai(dt, f));
-            }
-            // the timetable buses' displays
-            for (i, id) in shown {
-                let Some(Desc::Car {
-                    line, destination, ..
-                }) = m.descs.get(&(false, id))
-                else {
-                    continue;
-                };
-                if line.is_empty() || !destination.starts_with('#') || destination == "#-1" {
-                    continue;
-                }
-                let want = (line.clone(), destination.clone());
-                if m.shown.get(&id) == Some(&want) {
-                    continue;
-                }
-                let car = &mut t.cars[i];
-                let path = car.vehicle.ty.def.path.clone();
-                let hof = m
-                    .hofs
-                    .entry(path)
-                    .or_insert_with(|| crate::find_hof(args, world, &car.vehicle.ty))
-                    .clone();
-                if let Some(k) = car.vehicle.ty.program.str_var("Linie") {
-                    car.vehicle.state.str_vars[k as usize] = line.clone();
-                }
-                show_car_destination(&mut car.vehicle, hof.as_deref(), line, destination);
-                m.shown.insert(id, want);
-            }
+    }
+
+    /// The host's cars that are gone taken away, the new ones made (their types loaded in
+    /// the background first).
+    #[allow(clippy::too_many_arguments)]
+    fn add_and_remove_cars(&mut self, t: &mut Traffic, view: &mut SimView, args: &Args, world: &World, renderer: &Renderer, scene: &mut Scene) {
+        let m = self;
+        let gone: Vec<u32> = m
+            .drawn_cars
+            .iter()
+            .copied()
+            .filter(|id| !m.cars.contains_key(id))
+            .collect();
+        for id in gone {
+            t.remove_car(&mut view.traffic, world, renderer, scene, id as u64);
+            m.drawn_cars.remove(&id);
+            m.shown.remove(&id);
+            m.odometer.remove(&id);
         }
-        // people
-        m.people.retain(|_, t| t.heard.elapsed() < forget);
-        if let Some(h) = humans.as_deref_mut() {
-            // the host's answers to our claims
-            for (ids, granted) in lan.take_grants() {
-                for id in ids {
-                    if granted {
-                        if h.grant(id) {
-                            m.granted += 1;
-                            log::info!("LAN: the host hands waiting passenger {id} over to our bus");
-                        } else {
-                            // the host has let them go (they are ours now, and the host
-                            // says no more of them): a copy kept here would stand at the
-                            // stop for good, one more after every stop
-                            h.mirror_remove(id);
-                        }
-                        m.people.remove(&id);
-                        m.drawn_people.remove(&id);
-                    } else {
-                        m.denied += 1;
-                    }
+        let new: Vec<u32> = m
+            .cars
+            .keys()
+            .copied()
+            .filter(|id| !m.drawn_cars.contains(id))
+            .collect();
+        for id in new {
+            let Some(Desc::Car {
+                file,
+                scheme,
+                line,
+                destination,
+                ..
+            }) = m.descs.get(&(false, id)).cloned()
+            else {
+                continue;
+            };
+            let scheduled = !line.is_empty() || !destination.is_empty();
+            let Some(path) = local_file(&args.root, &file) else {
+                if m.types.insert(PathBuf::from(&file), None).is_none() {
+                    log::warn!("LAN: the host's vehicle {file} is not installed here; it is left out");
                 }
-            }
-            let gone: Vec<u32> = m
-                .drawn_people
-                .iter()
-                .copied()
-                .filter(|id| !m.people.contains_key(id))
-                .collect();
-            for id in gone {
-                h.mirror_remove(id);
-                m.drawn_people.remove(&id);
-            }
-            for (id, track) in &m.people {
-                let Some((a, b, k)) = track.around(render_ms) else {
-                    continue;
-                };
-                let pose = person_pose(a, b, k);
-                if m.drawn_people.contains(id) {
-                    if h.has_mirror(*id) {
-                        h.mirror_set(*id, &pose);
+                continue;
+            };
+            let ty = match m.types.get(&path) {
+                Some(Some(ty)) => ty.clone(),
+                Some(None) => continue,
+                None => match t.loaded_type(&path) {
+                    Some(ty) => {
+                        m.types.insert(path.clone(), Some(ty.clone()));
+                        ty
+                    }
+                    None => {
+                        if m.loading.insert(path.clone()) {
+                            let tx = m.loaded_tx.clone().unwrap();
+                            let root = args.root.clone();
+                            std::thread::spawn(move || {
+                                let ty = VehicleType::load_ai(&root, &path).ok().map(Arc::new);
+                                let _ = tx.send((path, ty));
+                            });
+                        }
                         continue;
                     }
-                    // (taken away here with a bus that went: drawn again once it is back)
-                    m.drawn_people.remove(id);
-                }
-                // a rider only once the bus is here to sit in
-                if pose.aboard.map(|a| !h.knows_bus(a.0)).unwrap_or(false) {
-                    continue;
-                }
-                let Some(Desc::Person { file, .. }) = m.descs.get(&(true, *id)) else {
-                    continue;
-                };
-                let Some(ty) = h.type_by_file(file) else {
-                    continue;
-                };
-                if h.mirror_add(&mut view.people, world, renderer, scene, *id, ty, &pose) {
-                    m.drawn_people.insert(*id);
-                }
-            }
-            let claims = h.take_claims();
-            if !claims.is_empty() {
-                log::info!("LAN: our bus stands at a stop: asking the host for waiting passengers {claims:?}");
-                lan.claim(&claims);
-            }
-        }
-        if let Some(f) = self.trace.as_mut() {
-            self.trace_t -= dt;
-            if self.trace_t <= 0.0 {
-                self.trace_t = 0.1;
-                if let Some(t) = traffic.as_deref() {
-                    for c in t.cars.iter().filter(|c| m.drawn_cars.contains(&(c.id as u32))) {
-                        let p = c.vehicle.position;
-                        let _ = writeln!(f, "client,{render_ms:.0},{},c,{},{:.3},{:.3},{:.3},{:.2}", lan.my_id, c.id, p.x, p.y, p.z, c.vehicle.heading);
-                    }
-                }
-                if let Some(h) = humans.as_deref() {
-                    for (id, pos) in h.mirror_positions() {
-                        let _ = writeln!(f, "client,{render_ms:.0},{},p,{id},{:.3},{:.3},{:.3},0", lan.my_id, pos.x, pos.y, pos.z);
-                    }
-                }
-                let _ = f.flush();
-            }
-        }
-        self.log_t -= dt;
-        if self.log_t <= 0.0 && omsi_cfg::flags::OMSI_DEBUG_LAN.is_set() {
-            self.log_t = 4.0;
-            let m = &mut self.mirror;
-            let ids_hash = m
-                .cars
-                .keys()
-                .map(|id| fnv(&(*id as u64).to_le_bytes()))
-                .chain(m.people.keys().map(|id| fnv(&(*id as u64 | 1 << 40).to_le_bytes())))
-                .fold(0u64, |a, b| a ^ b);
-            let rate = (lan.world_received - m.bytes_at) as f32 / 4.0 / 1024.0;
-            m.bytes_at = lan.world_received;
-            log::info!(
-                "LAN world from the host: {} cars ({} drawn), {} people ({} drawn), ids {:016X}; {:.1} KB/s; drawn {:.0} ms behind the host; {} passengers handed to us, {} not",
-                m.cars.len(),
-                m.drawn_cars.len(),
-                m.people.len(),
-                m.drawn_people.len(),
-                ids_hash,
-                rate,
-                INTERP_DELAY,
-                m.granted,
-                m.denied
+                },
+            };
+            let Some(first) = m.cars[&id].samples.last().map(|s| s.v) else {
+                continue;
+            };
+            t.add_mirror_car(
+                &mut view.traffic,
+                world,
+                renderer,
+                scene,
+                id as u64,
+                ty,
+                scheme.map(|s| s as usize),
+                scheduled,
+                DVec3::new(first.x, first.y, first.z),
+                first.heading as f64,
             );
+            m.drawn_cars.insert(id);
         }
+    }
+
+    /// Where each car is now (between the host's frames at `render_ms`), and what its
+    /// scripts make of it. The cars placed, with their ids.
+    fn place_cars(&mut self, t: &mut Traffic, dt: f32, render_ms: f64) -> Vec<(usize, u32)> {
+        let m = self;
+        // where each is now, and what its scripts make of it
+        let index: HashMap<u64, usize> =
+            t.cars.iter().enumerate().map(|(i, c)| (c.id, i)).collect();
+        let mut work: Vec<(usize, CarState, f64)> = Vec::new();
+        for (id, track) in &m.cars {
+            let Some(&i) = index.get(&(*id as u64)) else {
+                continue;
+            };
+            let Some((a, b, k)) = track.around(render_ms) else {
+                continue;
+            };
+            let mut c = *b;
+            // (something that has stopped is not guessed on: it stands where it stopped)
+            let k = if b.speed.abs() < 0.1 { k.min(1.0) } else { k };
+            let kk = k.min(1.0);
+            // (a jump of more than 30 m is a teleport, not a drive: no gliding)
+            let far = (DVec2::new(b.x - a.x, b.y - a.y)).length() > 30.0;
+            if !far {
+                c.x = a.x + (b.x - a.x) * k;
+                c.y = a.y + (b.y - a.y) * k;
+                c.z = a.z + (b.z - a.z) * kk;
+                c.heading = lerp_angle(a.heading as f64, b.heading as f64, k) as f32;
+                c.pitch = a.pitch + (b.pitch - a.pitch) * kk as f32;
+                c.bank = a.bank + (b.bank - a.bank) * kk as f32;
+                c.speed = a.speed + (b.speed - a.speed) * kk as f32;
+                c.steer = a.steer + (b.steer - a.steer) * kk as f32;
+            }
+            // the flags as the later frame had them once we are past its middle
+            if k < 0.5 {
+                c.blinker = a.blinker;
+                c.brake = a.brake;
+                c.at_station = a.at_station;
+            }
+            work.push((i, c, far as u8 as f64));
+        }
+        let mut shown: Vec<(usize, u32)> = Vec::new();
+        for (i, c, _) in &work {
+            let car = &mut t.cars[*i];
+            let before = car.vehicle.position;
+            let now_p = DVec3::new(c.x, c.y, c.z);
+            let moved = (now_p - before).truncate().length() as f32;
+            let odo = m.odometer.entry(c.id).or_insert(0.0);
+            if moved < 30.0 {
+                *odo += moved * c.speed.signum();
+            }
+            car.vehicle.position = now_p;
+            car.vehicle.heading = c.heading as f64;
+            car.vehicle.pitch = c.pitch;
+            car.vehicle.bank = c.bank;
+            car.state.speed = c.speed;
+            car.state.blinker = c.blinker as i32;
+            car.state.braking = c.brake;
+            if let Some(b) = car.bus.as_mut() {
+                b.phase = if c.at_station == 1 {
+                    crate::bus_service::Phase::Boarding
+                } else {
+                    crate::bus_service::Phase::Running
+                };
+            }
+            car.body.steer = c.steer;
+            shown.push((*i, c.id));
+        }
+        // the scripts (lamps, indicators, doors, wheels) run in parallel, as the
+        // traffic's own do
+        {
+            use rayon::prelude::*;
+            let odometer = &m.odometer;
+            // (read off the buses before the parallel block takes `t.cars` mutably:
+            // which side each stands at its stop is the host's own timetable state)
+            let sides: HashMap<usize, f32> =
+                work.iter().map(|(i, _, _)| (*i, t.cars[*i].at_station_side())).collect();
+            let frames: HashMap<usize, AiFrame> = work
+                .iter()
+                .map(|(i, c, _)| {
+                    (
+                        *i,
+                        AiFrame {
+                            speed: c.speed,
+                            odometer: odometer.get(&c.id).copied().unwrap_or(0.0),
+                            steer_deg: c.steer,
+                            blinker: c.blinker as i32,
+                            brake: c.brake,
+                            lights: c.lights,
+                            at_station: c.at_station as i32,
+                            at_station_side: sides.get(i).copied().unwrap_or(0.0),
+                            priority_warning: false,
+                            // (the host's buses' engines are not on the wire: running)
+                            engine_off: false,
+                        },
+                    )
+                })
+                .collect();
+            let mut run: Vec<(&mut omsi_sim::VehicleInstance, &AiFrame)> = t
+                .cars
+                .iter_mut()
+                .enumerate()
+                .filter_map(|(i, car)| frames.get(&i).map(|f| (&mut car.vehicle, f)))
+                .collect();
+            run.par_iter_mut().for_each(|(v, f)| v.update_ai(dt, f));
+        }
+        shown
+    }
+
+    /// The timetable buses' displays.
+    fn show_destinations(&mut self, t: &mut Traffic, shown: Vec<(usize, u32)>, args: &Args, world: &World) {
+        let m = self;
+        for (i, id) in shown {
+            let Some(Desc::Car {
+                line, destination, ..
+            }) = m.descs.get(&(false, id))
+            else {
+                continue;
+            };
+            if line.is_empty() || !destination.starts_with('#') || destination == "#-1" {
+                continue;
+            }
+            let want = (line.clone(), destination.clone());
+            if m.shown.get(&id) == Some(&want) {
+                continue;
+            }
+            let car = &mut t.cars[i];
+            let path = car.vehicle.ty.def.path.clone();
+            let hof = m
+                .hofs
+                .entry(path)
+                .or_insert_with(|| crate::find_hof(args, world, &car.vehicle.ty))
+                .clone();
+            if let Some(k) = car.vehicle.ty.program.str_var("Linie") {
+                car.vehicle.state.str_vars[k as usize] = line.clone();
+            }
+            show_car_destination(&mut car.vehicle, hof.as_deref(), line, destination);
+            m.shown.insert(id, want);
+        }
+
+    }
+
+    /// The host's people: its answers to our claims, those gone, those drawn, and our claims
+    /// for the people waiting where our bus stands.
+    #[allow(clippy::too_many_arguments)]
+    fn update_people(&mut self, lan: &mut LanSession, h: &mut Humans, view: &mut SimView, world: &World, renderer: &Renderer, scene: &mut Scene, render_ms: f64) {
+        let m = self;
+        // the host's answers to our claims
+        for (ids, granted) in lan.take_grants() {
+            for id in ids {
+                if granted {
+                    if h.grant(id) {
+                        m.granted += 1;
+                        log::info!("LAN: the host hands waiting passenger {id} over to our bus");
+                    } else {
+                        // the host has let them go (they are ours now, and the host
+                        // says no more of them): a copy kept here would stand at the
+                        // stop for good, one more after every stop
+                        h.mirror_remove(id);
+                    }
+                    m.people.remove(&id);
+                    m.drawn_people.remove(&id);
+                } else {
+                    m.denied += 1;
+                }
+            }
+        }
+        let gone: Vec<u32> = m
+            .drawn_people
+            .iter()
+            .copied()
+            .filter(|id| !m.people.contains_key(id))
+            .collect();
+        for id in gone {
+            h.mirror_remove(id);
+            m.drawn_people.remove(&id);
+        }
+        for (id, track) in &m.people {
+            let Some((a, b, k)) = track.around(render_ms) else {
+                continue;
+            };
+            let pose = person_pose(a, b, k);
+            if m.drawn_people.contains(id) {
+                if h.has_mirror(*id) {
+                    h.mirror_set(*id, &pose);
+                    continue;
+                }
+                // (taken away here with a bus that went: drawn again once it is back)
+                m.drawn_people.remove(id);
+            }
+            // a rider only once the bus is here to sit in
+            if pose.aboard.map(|a| !h.knows_bus(a.0)).unwrap_or(false) {
+                continue;
+            }
+            let Some(Desc::Person { file, .. }) = m.descs.get(&(true, *id)) else {
+                continue;
+            };
+            let Some(ty) = h.type_by_file(file) else {
+                continue;
+            };
+            if h.mirror_add(&mut view.people, world, renderer, scene, *id, ty, &pose) {
+                m.drawn_people.insert(*id);
+            }
+        }
+        let claims = h.take_claims();
+        if !claims.is_empty() {
+            log::info!("LAN: our bus stands at a stop: asking the host for waiting passengers {claims:?}");
+            lan.claim(&claims);
+        }
+
     }
 }
 
