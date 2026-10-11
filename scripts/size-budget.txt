@@ -10,7 +10,6 @@ file 3236 crates/omsi-net/src/lib.rs
 file 1517 crates/omsi-net/src/tests.rs
 fn 343 crates/omsi-launcher-ui::draw crates/omsi-launcher-ui/src/timetable.rs
 fn 337 crates/omsi-launcher-ui::game_controllers crates/omsi-launcher-ui/src/pages/controls.rs
-fn 349 crates/omsi-map::parse crates/omsi-map/src/tile.rs
 fn 366 crates/omsi-script::aachen_ibox_route_pad crates/omsi-script/src/compat.rs
 fn 441 crates/omsi-sim::advance crates/omsi-sim/src/human/motion.rs
 fn 437 crates/omsi-sim::bones crates/omsi-sim/src/human/bones.rs
