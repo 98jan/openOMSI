@@ -553,6 +553,7 @@ impl Renderer {
                 snow_bind_group: snow.bind_group,
                 smoke_bind_group: coronas.smoke_bind_group,
                 corona_textures: Vec::new(),
+                pictures_taken: (0, 0),
                 cookies: cookie_atlas,
                 corona_layout: scene.corona_layout,
                 corona_sampler: coronas.sampler,

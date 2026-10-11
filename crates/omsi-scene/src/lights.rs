@@ -357,18 +357,20 @@ fn cookie_picture_id(model_dir: &std::path::Path, name: &str) -> u16 {
     let id = corona_texture_id(model_dir, name);
     if id != 0 {
         let mut g = COOKIE_PICTURES.lock().unwrap_or_else(|e| e.into_inner());
-        let (known, pending) = g.get_or_insert_with(Default::default);
+        let (known, listed) = g.get_or_insert_with(Default::default);
         if known.insert(id) {
             let path = CORONA_TEXTURES.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|t| t.ids.iter().find(|(_, i)| **i == id).map(|(p, _)| p.clone()));
             if let Some(p) = path {
-                pending.push((id, p));
+                listed.push((id, p));
             }
         }
     }
     id
 }
 
-/// The beam pictures known and those still to be handed to the renderer.
+/// The beam pictures known, and in the order they were first asked for (each renderer is
+/// handed them from where it stands, see `upload_corona_textures`). Process-wide like the
+/// numbers in `CORONA_TEXTURES`: a picture file has one number for every renderer.
 type CookiePictures = (std::collections::HashSet<u16>, Vec<(u16, std::path::PathBuf)>);
 static COOKIE_PICTURES: std::sync::Mutex<Option<CookiePictures>> = std::sync::Mutex::new(None);
 
@@ -783,9 +785,13 @@ pub fn load_smoke_texture(renderer: &mut omsi_render::Renderer, root: &std::path
 /// The pictures of the coronas besides the standard glow: a light's own `bitmap` and the
 /// fog cone's `Texture/light_cone.bmp`, numbered as they are first asked for and uploaded
 /// before the next frame is drawn (`upload_corona_textures`).
+/// Process-wide on purpose: it only numbers picture files (the numbers live on in the
+/// world's lights); which of them a renderer holds is the renderer's
+/// (`Renderer::pictures_taken`), so a second session's renderer gets them all again.
 struct CoronaTextures {
     ids: std::collections::HashMap<std::path::PathBuf, u16>,
-    pending: Vec<(u16, std::path::PathBuf)>,
+    /// Every picture numbered, in the order it was numbered.
+    listed: Vec<(u16, std::path::PathBuf)>,
     root: Option<std::path::PathBuf>,
 }
 
@@ -794,7 +800,7 @@ static CORONA_TEXTURES: std::sync::Mutex<Option<CoronaTextures>> = std::sync::Mu
 /// The game folder the standard pictures (`Texture\…`) are found in.
 pub fn set_corona_root(root: &std::path::Path) {
     let mut g = CORONA_TEXTURES.lock().unwrap_or_else(|e| e.into_inner());
-    let t = g.get_or_insert_with(|| CoronaTextures { ids: Default::default(), pending: Vec::new(), root: None });
+    let t = g.get_or_insert_with(|| CoronaTextures { ids: Default::default(), listed: Vec::new(), root: None });
     t.root = Some(root.to_path_buf());
     // (the game's own pictures are looked for in the new folder)
     for id in [&CONE_ID, &GLOW_ID, &STAR_ID] {
@@ -804,13 +810,13 @@ pub fn set_corona_root(root: &std::path::Path) {
 
 fn texture_id_of(path: std::path::PathBuf) -> u16 {
     let mut g = CORONA_TEXTURES.lock().unwrap_or_else(|e| e.into_inner());
-    let t = g.get_or_insert_with(|| CoronaTextures { ids: Default::default(), pending: Vec::new(), root: None });
+    let t = g.get_or_insert_with(|| CoronaTextures { ids: Default::default(), listed: Vec::new(), root: None });
     if let Some(id) = t.ids.get(&path) {
         return *id;
     }
     let id = (t.ids.len() + 1).min(u16::MAX as usize) as u16;
     t.ids.insert(path.clone(), id);
-    t.pending.push((id, path));
+    t.listed.push((id, path));
     id
 }
 
@@ -883,15 +889,18 @@ pub fn star_texture_id() -> u16 {
     stock_texture_id("light_effect1.bmp", &STAR_ID)
 }
 
-/// Upload the pictures asked for since the last frame.
+/// Upload the pictures this renderer has not been handed yet (those asked for since the
+/// last frame; all of them for a new renderer).
 pub fn upload_corona_textures(renderer: &mut omsi_render::Renderer) {
+    let (taken, cookies_taken) = renderer.pictures_taken();
     let pending = {
-        let mut g = CORONA_TEXTURES.lock().unwrap_or_else(|e| e.into_inner());
-        match g.as_mut() {
-            Some(t) => std::mem::take(&mut t.pending),
+        let g = CORONA_TEXTURES.lock().unwrap_or_else(|e| e.into_inner());
+        match g.as_ref() {
+            Some(t) => t.listed.get(taken..).unwrap_or_default().to_vec(),
             None => return,
         }
     };
+    let taken = taken + pending.len();
     for (id, path) in pending {
         match omsi_texture::decode_file(&path) {
             Ok(img) => renderer.set_corona_texture(id, &img),
@@ -899,7 +908,8 @@ pub fn upload_corona_textures(renderer: &mut omsi_render::Renderer) {
         }
     }
     // (and the `[spotlight_cookie]` pictures: see `cookie_picture_id`)
-    let cookies = COOKIE_PICTURES.lock().unwrap_or_else(|e| e.into_inner()).as_mut().map(|c| std::mem::take(&mut c.1)).unwrap_or_default();
+    let cookies = COOKIE_PICTURES.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|c| c.1.get(cookies_taken..).unwrap_or_default().to_vec()).unwrap_or_default();
+    renderer.set_pictures_taken((taken, cookies_taken + cookies.len()));
     for (id, path) in cookies {
         match omsi_texture::decode_file(&path) {
             Ok(img) => renderer.set_cookie_picture(id, &img),

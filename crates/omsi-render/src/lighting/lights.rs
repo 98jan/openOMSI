@@ -602,6 +602,19 @@ impl Renderer {
         self.lights.corona_textures[i] = Some(bg);
     }
 
+    /// How many of its caller's numbered corona pictures and cookie pictures this renderer
+    /// has been handed (as `set_corona_texture` / `set_cookie_picture`). The numbers are the
+    /// same for every renderer of the process; a renderer of its own - a second session's,
+    /// one made again after a lost device - starts at none and so is handed them all.
+    pub fn pictures_taken(&self) -> (usize, usize) {
+        self.lights.pictures_taken
+    }
+
+    /// See [`Renderer::pictures_taken`].
+    pub fn set_pictures_taken(&mut self, taken: (usize, usize)) {
+        self.lights.pictures_taken = taken;
+    }
+
     /// A light cookie's picture (`PointLight::cookie`), under the number its lamps name.
     pub fn set_cookie_picture(&self, id: u16, img: &omsi_texture::Image) {
         self.lights.cookies.set_picture(id, img);
@@ -709,6 +722,9 @@ pub(crate) struct LightRes {
     /// The coronas' pictures besides the standard glow (index = `Corona::texture`; entry 0
     /// unused).
     pub(crate) corona_textures: Vec<Option<wgpu::BindGroup>>,
+    /// How far this renderer has come through the numbered corona and cookie pictures its
+    /// caller keeps (see [`Renderer::pictures_taken`]).
+    pub(crate) pictures_taken: (usize, usize),
     /// The light cookies' pictures and the frame's layers of them.
     pub(crate) cookies: cookies::CookieAtlas,
     pub(crate) corona_layout: wgpu::BindGroupLayout,
