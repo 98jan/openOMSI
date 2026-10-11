@@ -1493,8 +1493,3 @@ mod auto_shift_tests {
         assert_eq!(g(1, 5, 3.4, 0.0, 1.0, 0.0, 15.0), 1);
     }
 }
-
-#[cfg(test)]
-mod door_action_tests {
-    use super::door_action;
-}
