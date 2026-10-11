@@ -19,6 +19,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | Name | Type | Default | Read | Crates | Description |
 |---|---|---|---|---|---|
 | `OMSI_AMBIENCE_DENSITY` | text | 1 | once | app | The ambience's one-shots (birds, the far life, thunder, the objects' calls) this many times as often (a number), or only some of them (slot=factor,…: bird.geese=40) - what fits the place, season and hour stays the same (for demos and checks). |
+| `OMSI_AUDIO_TRACE` | text | - | once | audio | Write what the game asks of the mixer (every sound started, changed, stopped, the listener each frame) into this file, rounded and deterministic for offscreen recordings (see scripts/audio-trace.sh). |
 | `OMSI_BENCH_FRAMES` | bool | off | use | app | With OMSI_BENCH: log every bench frame's times, not only the medians. |
 | `OMSI_DEBUG_AI_WIDE` | bool | off | use | sim | Log every tenth of a second an AI car standing over 1.5 m beside its way. |
 | `OMSI_DEBUG_ANIM` | text | - | once | sim | Log the animations of the meshes whose file name contains this text. |
