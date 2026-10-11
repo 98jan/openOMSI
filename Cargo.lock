@@ -3322,6 +3322,7 @@ dependencies = [
  "omsi-input",
  "omsi-lan",
  "omsi-launcher-core",
+ "omsi-launcher-ui",
  "omsi-map",
  "omsi-model",
  "omsi-net",
@@ -3496,6 +3497,17 @@ dependencies = [
  "windows 0.62.2",
  "winresource",
  "zip",
+]
+
+[[package]]
+name = "omsi-launcher-ui"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "omsi-content",
+ "omsi-ui",
+ "winit",
 ]
 
 [[package]]
