@@ -3319,6 +3319,7 @@ dependencies = [
  "omsi-cfg",
  "omsi-content",
  "omsi-geometry",
+ "omsi-input",
  "omsi-launcher-core",
  "omsi-map",
  "omsi-model",
@@ -3430,6 +3431,30 @@ dependencies = [
  "omsi-map",
  "omsi-o3d",
  "omsi-scenery",
+]
+
+[[package]]
+name = "omsi-input"
+version = "0.1.0"
+dependencies = [
+ "block2 0.6.2",
+ "gilrs",
+ "glam",
+ "libc",
+ "log",
+ "objc2 0.6.4",
+ "objc2-core-foundation",
+ "objc2-game-controller",
+ "objc2-io-kit",
+ "omsi-cfg",
+ "omsi-content",
+ "omsi-launcher-core",
+ "omsi-render",
+ "omsi-script",
+ "omsi-sim",
+ "omsi-vehicle",
+ "windows 0.62.2",
+ "winit",
 ]
 
 [[package]]

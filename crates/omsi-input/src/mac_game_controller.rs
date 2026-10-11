@@ -127,7 +127,7 @@ struct Pad {
     axes: Arc<Mutex<[f32; 6]>>,
 }
 
-pub(crate) struct GcPads {
+pub struct GcPads {
     pads: Vec<Pad>,
     last_scan: Option<std::time::Instant>,
 }
@@ -137,7 +137,7 @@ pub(crate) struct GcPads {
 unsafe impl Send for GcPads {}
 
 impl GcPads {
-    pub(crate) fn new() -> GcPads {
+    pub fn new() -> GcPads {
         GcPads { pads: Vec::new(), last_scan: None }
     }
 
@@ -179,7 +179,7 @@ impl GcPads {
 
     /// The buttons pressed (true) and let go since the last call, as `Devices::poll` wants
     /// them.
-    pub(crate) fn poll(&mut self) -> Vec<(String, usize, bool)> {
+    pub fn poll(&mut self) -> Vec<(String, usize, bool)> {
         self.scan();
         let mut out = Vec::new();
         for pad in &mut self.pads {
@@ -196,7 +196,7 @@ impl GcPads {
     }
 
     /// Every controller's name and axes, as the `valueChangedHandler` last filled them in.
-    pub(crate) fn connected(&self) -> Vec<(String, Vec<(usize, f32)>)> {
+    pub fn connected(&self) -> Vec<(String, Vec<(usize, f32)>)> {
         self.pads
             .iter()
             .map(|p| {

@@ -9,7 +9,7 @@
 use gilrs::Button;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PadKind {
+pub enum PadKind {
     Xbox,
     Ps4,
     Ps5,
@@ -20,7 +20,7 @@ const SONY: u16 = 0x054c;
 impl PadKind {
     /// The family a connected device belongs to, by its USB ids, else by its name. None: not
     /// one of the three (a wheel, a joystick, a Switch pad).
-    pub(crate) fn detect(name: &str, id: Option<(u16, u16)>) -> Option<PadKind> {
+    pub fn detect(name: &str, id: Option<(u16, u16)>) -> Option<PadKind> {
         let n = name.to_ascii_lowercase();
         if let Some((vendor, product)) = id {
             if vendor == SONY {
@@ -46,7 +46,7 @@ impl PadKind {
     }
 
     /// The setting `pad_type`: `auto` (None) or one of the families.
-    pub(crate) fn from_setting(v: &str) -> Option<PadKind> {
+    pub fn from_setting(v: &str) -> Option<PadKind> {
         match v.trim().to_ascii_lowercase().as_str() {
             "xbox" => Some(PadKind::Xbox),
             "ps4" => Some(PadKind::Ps4),
@@ -55,7 +55,7 @@ impl PadKind {
         }
     }
 
-    pub(crate) fn title(self) -> &'static str {
+    pub fn title(self) -> &'static str {
         match self {
             PadKind::Xbox => "Xbox",
             PadKind::Ps4 => "PlayStation 4",
@@ -64,7 +64,7 @@ impl PadKind {
     }
 
     /// What the button is called on this pad.
-    pub(crate) fn label(self, b: Button) -> &'static str {
+    pub fn label(self, b: Button) -> &'static str {
         let sony = self != PadKind::Xbox;
         match b {
             Button::South => if sony { "Cross" } else { "A" },
@@ -93,7 +93,7 @@ impl PadKind {
 }
 
 /// The buttons that have a default action, in the order the settings list them.
-pub(crate) const PRESET_BUTTONS: [Button; 13] = [
+pub const PRESET_BUTTONS: [Button; 13] = [
     Button::South,
     Button::East,
     Button::West,
@@ -111,7 +111,7 @@ pub(crate) const PRESET_BUTTONS: [Button; 13] = [
 
 /// The key action a button drives when its pad has no buttons set up (OMSI's names, as
 /// `gamectrler.cfg` and the Controllers page use them).
-pub(crate) fn default_action(b: Button) -> Option<&'static str> {
+pub fn default_action(b: Button) -> Option<&'static str> {
     Some(match b {
         Button::South => "doors_all",
         Button::East => "view_toggle_interior",
@@ -132,7 +132,7 @@ pub(crate) fn default_action(b: Button) -> Option<&'static str> {
 }
 
 /// What the action does, in the words of the settings list.
-pub(crate) fn action_text(action: &str) -> &'static str {
+pub fn action_text(action: &str) -> &'static str {
     match action {
         "doors_all" => "Open / close all doors",
         "view_toggle_interior" => "Cabin / outside view",
@@ -156,7 +156,7 @@ pub(crate) fn action_text(action: &str) -> &'static str {
 /// the buttons as the HID descriptor numbers them from 0, and the first hat after
 /// `controllers::HAT_BUTTONS` as up, right, down, left. Triggers are axes and not listed.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) fn sony_direct_input_button(n: usize, hat_base: usize) -> Option<Button> {
+pub fn sony_direct_input_button(n: usize, hat_base: usize) -> Option<Button> {
     if n >= hat_base {
         return match n - hat_base {
             0 => Some(Button::DPadUp),
@@ -223,10 +223,10 @@ mod tests {
         assert_eq!(default_action(Button::Start), Some("open_menu"));
         for b in PRESET_BUTTONS {
             let a = default_action(b).unwrap();
-            let handled = crate::input_script::is_game_action(a)
+            let handled = crate::actions::is_game_action(a)
                 || a.starts_with("gear_")
                 || a.starts_with("blinker_")
-                || crate::player::door_action(a).is_some();
+                || crate::actions::door_action(a).is_some();
             assert!(handled, "{a}");
         }
     }

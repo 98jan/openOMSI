@@ -1,15 +1,15 @@
 //! Determine motor polarity from two bounded, opposite pulses on the raw steering axis.
 
-pub(crate) const PULSE_FORCE: f32 = 0.20;
-pub(crate) const MAX_PULSE_FORCE: f32 = 0.50;
-pub(crate) const PULSE_MS: u32 = 250;
+pub const PULSE_FORCE: f32 = 0.20;
+pub const MAX_PULSE_FORCE: f32 = 0.50;
+pub const PULSE_MS: u32 = 250;
 
 enum Phase {
     Settle { origin: Option<f32>, stable_since: f32, first: Option<f32> },
     Pulse { origin: f32, since: f32, first: Option<f32>, minimum: f32, maximum: f32 },
 }
 
-pub(crate) struct Calibration {
+pub struct Calibration {
     strength: f32,
     phase: Phase,
     last_frame: f32,

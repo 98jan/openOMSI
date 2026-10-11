@@ -28,7 +28,7 @@ struct InputEvent {
     value: i32,
 }
 
-pub(crate) struct Wheel {
+pub struct Wheel {
     pub name: String,
     file: File,
     id: i16,
@@ -78,7 +78,7 @@ impl Wheel {
         self.upload(level) || std::io::Error::last_os_error().raw_os_error() != Some(libc::ENODEV)
     }
 
-    pub(crate) fn pulse_force(&mut self, force: f32) -> bool {
+    pub fn pulse_force(&mut self, force: f32) -> bool {
         let limit = crate::ffb_calibration::MAX_PULSE_FORCE;
         let level = (-force.clamp(-limit, limit) * i16::MAX as f32) as i16;
         if !self.upload_for(level, crate::ffb_calibration::PULSE_MS as u16) {
@@ -137,14 +137,14 @@ fn constant_force_device(name: Option<&str>) -> bool {
 }
 
 /// A device with a constant force is connected (a wheel: openOMSI drives its forces itself).
-pub(crate) fn wheel_connected() -> bool {
+pub fn wheel_connected() -> bool {
     constant_force_device(None)
 }
 
 /// This gilrs device is also an evdev constant-force wheel.
 /// SDL mappings can describe wheels such as the G29 as gamepads; the kernel capability is
 /// authoritative for openOMSI's steering semantics and native force-feedback path.
-pub(crate) fn wheel_named(name: &str) -> bool {
+pub fn wheel_named(name: &str) -> bool {
     constant_force_device(Some(name))
 }
 

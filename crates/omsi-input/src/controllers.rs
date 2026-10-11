@@ -21,7 +21,7 @@ use std::path::Path;
 
 /// What one axis of a device does.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Func {
+pub enum Func {
     Steering,
     Throttle,
     Brake,
@@ -35,7 +35,7 @@ pub(crate) enum Func {
 
 impl Func {
     /// The file's number of the function (-1 none).
-    pub(crate) fn code(f: Option<Func>) -> i32 {
+    pub fn code(f: Option<Func>) -> i32 {
         match f {
             None => -1,
             Some(Func::Steering) => 0,
@@ -48,7 +48,7 @@ impl Func {
         }
     }
 
-    pub(crate) fn from_code(c: i32) -> Option<Func> {
+    pub fn from_code(c: i32) -> Option<Func> {
         match c {
             0 => Some(Func::Steering),
             1 => Some(Func::Throttle),
@@ -62,41 +62,41 @@ impl Func {
     }
 
     /// As the options dialog lists them.
-    pub(crate) const LABELS: [&'static str; 8] = ["<none>", "Steering", "Throttle", "Brake", "Clutch", "Throttle/Brake", "Look left / right", "Look up / down"];
+    pub const LABELS: [&'static str; 8] = ["<none>", "Steering", "Throttle", "Brake", "Clutch", "Throttle/Brake", "Look left / right", "Look up / down"];
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct DeviceCfg {
-    pub(crate) name: String,
+pub struct DeviceCfg {
+    pub name: String,
     /// The line after the name (kept as the file has it).
-    pub(crate) second: String,
+    pub second: String,
     /// Per DirectInput axis: the function and whether it runs the other way.
-    pub(crate) axes: [Option<(Func, bool)>; 8],
+    pub axes: [Option<(Func, bool)>; 8],
     /// Per axis the file's flags beyond bit 0 (kept as they are).
-    pub(crate) axis_flags: [i32; 8],
+    pub axis_flags: [i32; 8],
     /// Per button: the key action (empty: none) and the number after it.
-    pub(crate) buttons: Vec<(String, String)>,
+    pub buttons: Vec<(String, String)>,
     /// `[FFScale]`: steering forces (centering and drag), then vibration strength.
-    pub(crate) ff_scale: Option<(f32, f32)>,
+    pub ff_scale: Option<(f32, f32)>,
     /// Motor polarity for this device; None uses the existing global setting.
-    pub(crate) ff_invert: Option<bool>,
+    pub ff_invert: Option<bool>,
     /// `[openOMSI.Latching]`: the buttons (from 0) that are latching switches - a turn signal
     /// lever, a lit hazard button - and switch back when they come out.
-    pub(crate) latching: Vec<usize>,
+    pub latching: Vec<usize>,
 }
 
 /// The `gamectrler.cfg` in use: the content folder's (written by the launcher) before
 /// OMSI 2's own.
-pub(crate) fn cfg_path(root: &Path) -> std::path::PathBuf {
+pub fn cfg_path(root: &Path) -> std::path::PathBuf {
     omsi_cfg::find_in_roots("Inputs/gamectrler.cfg").map(|(_, p)| p).unwrap_or_else(|| root.join("Inputs").join("gamectrler.cfg"))
 }
 
 /// `Inputs/gamectrler.cfg`: the configured devices.
-pub(crate) fn read_cfg(root: &Path) -> Vec<DeviceCfg> {
+pub fn read_cfg(root: &Path) -> Vec<DeviceCfg> {
     read_cfg_checked(root).unwrap_or_default()
 }
 
-pub(crate) fn read_cfg_checked(root: &Path) -> Result<Vec<DeviceCfg>, String> {
+pub fn read_cfg_checked(root: &Path) -> Result<Vec<DeviceCfg>, String> {
     let path = cfg_path(root);
     let text = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut devices = parse_cfg(&omsi_cfg::codepage::decode(&text));
@@ -115,7 +115,7 @@ pub(crate) fn read_cfg_checked(root: &Path) -> Result<Vec<DeviceCfg>, String> {
     Ok(devices)
 }
 
-pub(crate) fn parse_cfg(text: &str) -> Vec<DeviceCfg> {
+pub fn parse_cfg(text: &str) -> Vec<DeviceCfg> {
     let lines: Vec<&str> = text.lines().map(str::trim).collect();
     let mut out: Vec<DeviceCfg> = Vec::new();
     let mut i = 0;
@@ -172,7 +172,7 @@ pub(crate) fn parse_cfg(text: &str) -> Vec<DeviceCfg> {
 }
 
 /// The file's text for `devices`, as OMSI writes it (CR LF).
-pub(crate) fn cfg_text(devices: &[DeviceCfg]) -> String {
+pub fn cfg_text(devices: &[DeviceCfg]) -> String {
     let mut t = String::new();
     for d in devices {
         t.push_str(&format!("\r\n[ctrl]\r\n{}\r\n{}\r\n\r\n[axis]\r\n", d.name, if d.second.is_empty() { "0" } else { &d.second }));
@@ -257,7 +257,7 @@ fn stick_steers(current: Option<f32>, set_up: bool, x: f32) -> bool {
 }
 
 /// An axis that turns the head: nothing round its centre, then the rest of the way.
-pub(crate) fn look_axis(v: f32) -> f32 {
+pub fn look_axis(v: f32) -> f32 {
     const DEAD: f32 = 0.12;
     if v.abs() <= DEAD { 0.0 } else { v.signum() * (v.abs() - DEAD) / (1.0 - DEAD) }
 }
@@ -281,12 +281,12 @@ fn mapped_device_is_gamepad(mapped: bool, force_feedback_wheel: bool) -> bool {
 /// A gamepad stick's dead zone: nothing round its centre, then the rest of the way from
 /// nothing - it used to cut off below 0.08 and jump straight to 0.08 past it.
 #[cfg_attr(not(test), allow(dead_code))]
-pub(crate) fn stick_deadzone(x: f32) -> f32 {
+pub fn stick_deadzone(x: f32) -> f32 {
     stick_deadzone_with(x, 0.08)
 }
 
 /// `stick_deadzone` with the dead zone of the settings (`pad_deadzone`).
-pub(crate) fn stick_deadzone_with(x: f32, dead: f32) -> f32 {
+pub fn stick_deadzone_with(x: f32, dead: f32) -> f32 {
     let dead = dead.clamp(0.0, 0.4);
     if x.abs() <= dead { 0.0 } else { x.signum() * ((x.abs() - dead) / (1.0 - dead)).min(1.0) }
 }
@@ -315,7 +315,7 @@ fn wheel_steering(axis: f32, reversed: bool, flags: i32, deadzone: f32, gain: f3
 /// knows it as a gamepad (a known layout of sticks and triggers), and whether it can push
 /// back (force feedback).
 #[derive(Debug, Clone)]
-pub(crate) struct Connected {
+pub struct Connected {
     pub name: String,
     pub hardware_id: Option<(u16, u16)>,
     pub axes: Vec<(usize, f32)>,
@@ -329,13 +329,13 @@ pub(crate) struct Connected {
 
 /// The first button number of the hat switches' directions (4 hats x up, right, down, left).
 #[cfg_attr(not(windows), allow(dead_code))]
-pub(crate) const HAT_BUTTONS: usize = 128;
+pub const HAT_BUTTONS: usize = 128;
 
 /// The devices of every kind: gilrs (gamepads everywhere; on macOS and Linux every device),
 /// and on Windows DirectInput for everything a gamepad is not (`crate::dinput`) - many wheels
 /// never show up in the system's newer interface that gilrs uses there.
-pub(crate) struct Devices {
-    pub(crate) gilrs: Option<Gilrs>,
+pub struct Devices {
+    pub gilrs: Option<Gilrs>,
     #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
     calibration_wheel: Option<crate::evdev_ff::Wheel>,
     /// Whether a gilrs device is also a native evdev constant-force wheel.
@@ -415,7 +415,7 @@ impl Devices {
     /// macOS: the pad's HID device has the axes of a wheel or pedals (a slider, a dial, or
     /// the simulation page's steering, accelerator, brake, clutch).
     #[cfg(target_os = "macos")]
-    pub(crate) fn hid_wheel(&self, pad: &gilrs::Gamepad<'_>) -> bool {
+    pub fn hid_wheel(&self, pad: &gilrs::Gamepad<'_>) -> bool {
         self.hid_of(pad).is_some_and(|h| h.axes.iter().any(|(c, _)| matches!(*c, 0x10036 | 0x10037) || (*c >> 16) == 2))
     }
 
@@ -433,7 +433,7 @@ impl Devices {
     }
 
     /// A device of buttons only (a gear shifter, a button box): nothing for the axis assistant.
-    pub(crate) fn buttons_only(&self, name: &str) -> bool {
+    pub fn buttons_only(&self, name: &str) -> bool {
         #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
         return self.button_devices.connected().any(|(n, _)| names_match(n, name));
         #[cfg(not(all(target_os = "linux", target_pointer_width = "64")))]
@@ -441,7 +441,7 @@ impl Devices {
     }
 
     /// A device was plugged in or removed; ask the worker to rescan without blocking a frame.
-    pub(crate) fn refresh(&self) {
+    pub fn refresh(&self) {
         #[cfg(windows)]
         if let Some(d) = self.di.as_ref() {
             d.refresh();
@@ -449,7 +449,7 @@ impl Devices {
     }
 
     /// Release foreground wheel effects when the game loses focus.
-    pub(crate) fn set_focus(&mut self, focused: bool) {
+    pub fn set_focus(&mut self, focused: bool) {
         #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
         if !focused {
             self.calibration_wheel = None;
@@ -462,7 +462,7 @@ impl Devices {
         let _ = focused;
     }
 
-    pub(crate) fn calibration_pulse(&mut self, name: &str, axis: usize, force: f32) -> bool {
+    pub fn calibration_pulse(&mut self, name: &str, axis: usize, force: f32) -> bool {
         #[cfg(windows)]
         return self.di.as_mut().is_some_and(|di| di.force_axis(name) == Some(axis) && di.pulse_force(name, force));
         #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
@@ -756,7 +756,7 @@ fn use_gilrs_buttons(direct_input: bool, system_gamepad: bool) -> bool {
     !direct_input || system_gamepad
 }
 
-pub(crate) fn is_system_gamepad(name: &str, is_di_device: bool) -> bool {
+pub fn is_system_gamepad(name: &str, is_di_device: bool) -> bool {
     !is_di_device && xinput_name(name)
 }
 
@@ -773,7 +773,7 @@ fn include_direct_input_device(name: &str, ff_capable: bool, xinput_pads: bool) 
 }
 
 /// The handle of `window` for DirectInput (Windows; elsewhere nothing is needed).
-pub(crate) fn window_handle(window: &winit::window::Window) -> Option<isize> {
+pub fn window_handle(window: &winit::window::Window) -> Option<isize> {
     #[cfg(windows)]
     {
         use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -799,7 +799,7 @@ pub struct FfInput {
     /// Short jolt from wheel suspension travel or an impact, 0..1.
     pub wheel_bump: f32,
     /// Time since the latest wheel jolt, for a repeatable initial kick.
-    pub(crate) wheel_bump_age: f32,
+    pub wheel_bump_age: f32,
     /// `FF_Vib_Amp` 0..1 and `FF_Vib_Period` (hundredths of a second) of the scripts.
     pub vib_amp: f32,
     pub vib_period: f32,
@@ -811,7 +811,7 @@ pub struct FfInput {
     pub engine_load: f32,
     /// The trembling of the tarmac and the engine, worked out here from the four above
     /// (see `Micro`); the caller leaves it at 0.
-    pub(crate) micro: f32,
+    pub micro: f32,
     pub dt: f32,
 }
 
@@ -1051,9 +1051,9 @@ impl HeldButtons {
     }
 }
 
-/// Save only to the writable openOMSI overlay. The original OMSI installation is read-only.
-pub(crate) fn save_cfg(devices: &[DeviceCfg]) -> Result<(), String> {
-    let dir = crate::startup::content_dir().ok_or("No writable openOMSI content folder was found")?.join("Inputs");
+/// Save only to the writable openOMSI overlay (`content_dir`). The original OMSI installation is read-only.
+pub fn save_cfg(content_dir: Option<std::path::PathBuf>, devices: &[DeviceCfg]) -> Result<(), String> {
+    let dir = content_dir.ok_or("No writable openOMSI content folder was found")?.join("Inputs");
     save_cfg_to(&dir.join("gamectrler.cfg"), devices)?;
     omsi_cfg::content_changed();
     Ok(())
@@ -1108,12 +1108,12 @@ fn gamepad_triggers(axes: &mut Vec<(usize, f32)>, left: f32, right: f32) {
 pub struct Controllers {
     /// Each wheel's suspension travel, settled over a tenth of a second (see `wheel_bump`).
     settled: Vec<f32>,
-    pub(crate) devices: Devices,
+    pub devices: Devices,
     focused: bool,
     cfg: Vec<DeviceCfg>,
     held: HeldButtons,
     editing: bool,
-    pub(crate) raw_buttons: Vec<(String, usize, bool)>,
+    pub raw_buttons: Vec<(String, usize, bool)>,
     pub enabled: bool,
     /// The settings' dead zone round the centre of a set-up device's axes (0..0.3).
     pub deadzone: f32,
@@ -1179,28 +1179,28 @@ pub struct Controllers {
 }
 
 impl Controllers {
-    pub(crate) fn configuration(&self) -> Vec<DeviceCfg> { self.cfg.clone() }
+    pub fn configuration(&self) -> Vec<DeviceCfg> { self.cfg.clone() }
 
-    pub(crate) fn connected(&self) -> Vec<Connected> { self.devices.connected() }
+    pub fn connected(&self) -> Vec<Connected> { self.devices.connected() }
 
     /// Replace the mappings on the same Devices object. DirectInput's worker, device
     /// handles, effects and FFB filters remain alive.
-    pub(crate) fn install_cfg(&mut self, cfg: Vec<DeviceCfg>) {
+    pub fn install_cfg(&mut self, cfg: Vec<DeviceCfg>) {
         self.held.release(&mut self.actions);
         self.cfg = cfg;
         self.notice = None;
     }
 
-    pub(crate) fn set_editing(&mut self, editing: bool) {
+    pub fn set_editing(&mut self, editing: bool) {
         if editing && !self.editing { self.held.release_momentary(&mut self.actions); }
         self.editing = editing;
     }
 
-    pub(crate) fn refresh_devices(&self) {
+    pub fn refresh_devices(&self) {
         self.devices.refresh();
     }
 
-    pub(crate) fn set_focus(&mut self, focused: bool) {
+    pub fn set_focus(&mut self, focused: bool) {
         if self.focused == focused {
             return;
         }
@@ -1228,7 +1228,7 @@ impl Controllers {
     }
 
     /// Whether this device steers the bus (set up so, or steering now): the photo mode's camera takes none for its gamepad (a wheel turned it).
-    pub(crate) fn steers(&self, name: &str) -> bool { self.steer.as_ref().is_some_and(|s| names_match(&s.0, name)) || find_device_cfg(&self.cfg, name).is_some_and(|d| d.axes.iter().flatten().any(|(f, _)| matches!(f, Func::Steering))) }
+    pub fn steers(&self, name: &str) -> bool { self.steer.as_ref().is_some_and(|s| names_match(&s.0, name)) || find_device_cfg(&self.cfg, name).is_some_and(|d| d.axes.iter().flatten().any(|(f, _)| matches!(f, Func::Steering))) }
     /// A wheel or joystick steers the bus (then the arrow keys look around, as in OMSI:
     /// a G29's buttons set to the arrow keys turned the view there).
     pub fn wheel_steering(&self) -> bool {
@@ -1336,17 +1336,17 @@ impl Controllers {
                             _ => ((v + 1.0 - 2.0 * dz).max(0.0) / (1.0 - dz)) - 1.0,
                         };
                         // a pedal travels the whole range, -1 up to 1 down
-                        let pedal = crate::settings::pedal_ends(((v + 1.0) * 0.5).clamp(0.0, 1.0));
+                        let pedal = crate::pedal::pedal_ends(((v + 1.0) * 0.5).clamp(0.0, 1.0));
                         match f {
                             Func::Steering | Func::LookX | Func::LookY => unreachable!("steering and looking handled before pedal mapping"),
-                            Func::Throttle => set(&mut out.throttle, crate::settings::pedal_curve(pedal, self.pedal_throttle)),
-                            Func::Brake => set(&mut out.brake, crate::settings::pedal_curve(pedal, self.pedal_brake)),
+                            Func::Throttle => set(&mut out.throttle, crate::pedal::pedal_curve(pedal, self.pedal_throttle)),
+                            Func::Brake => set(&mut out.brake, crate::pedal::pedal_curve(pedal, self.pedal_brake)),
                             Func::Clutch => set(&mut out.clutch, pedal),
                             Func::ThrottleBrake => {
                                 // Omsi.exe: throttle = 2v-1 and brake = 1-2v (v = 0..1), so the
                                 // raw-maximum half is the throttle
-                                set(&mut out.throttle, crate::settings::pedal_curve(v.max(0.0), self.pedal_throttle));
-                                set(&mut out.brake, crate::settings::pedal_curve((-v).max(0.0), self.pedal_brake));
+                                set(&mut out.throttle, crate::pedal::pedal_curve(v.max(0.0), self.pedal_throttle));
+                                set(&mut out.brake, crate::pedal::pedal_curve((-v).max(0.0), self.pedal_brake));
                             }
                         }
                     }
@@ -1412,8 +1412,8 @@ impl Controllers {
                     out.steering = Some(stick_deadzone_with(x, self.pad_deadzone));
                     out.stick = true;
                 }
-                out.throttle.get_or_insert(crate::settings::pedal_curve(rt, self.pedal_throttle));
-                out.brake.get_or_insert(crate::settings::pedal_curve(lt, self.pedal_brake));
+                out.throttle.get_or_insert(crate::pedal::pedal_curve(rt, self.pedal_throttle));
+                out.brake.get_or_insert(crate::pedal::pedal_curve(lt, self.pedal_brake));
                 // the right stick looks round, as the truck games have it (#454)
                 out.apply_default_gamepad_look(self.right_stick_look, pad.value(Axis::RightStickX), pad.value(Axis::RightStickY));
             }
@@ -1431,8 +1431,8 @@ impl Controllers {
                 out.steering = Some(stick_deadzone_with(x, self.pad_deadzone));
                 out.stick = true;
             }
-            out.throttle.get_or_insert(crate::settings::pedal_curve((axis(4) + 1.0) / 2.0, self.pedal_throttle));
-            out.brake.get_or_insert(crate::settings::pedal_curve((axis(3) + 1.0) / 2.0, self.pedal_brake));
+            out.throttle.get_or_insert(crate::pedal::pedal_curve((axis(4) + 1.0) / 2.0, self.pedal_throttle));
+            out.brake.get_or_insert(crate::pedal::pedal_curve((axis(3) + 1.0) / 2.0, self.pedal_brake));
             out.apply_default_gamepad_look(self.right_stick_look, axis(2), -axis(5));
         }
         // macOS: Xbox-type controllers, read through the GameController framework and so
@@ -1453,8 +1453,8 @@ impl Controllers {
                 out.steering = Some(stick_deadzone_with(x, self.pad_deadzone));
                 out.stick = true;
             }
-            out.throttle.get_or_insert(crate::settings::pedal_curve((axis(4) + 1.0) / 2.0, self.pedal_throttle));
-            out.brake.get_or_insert(crate::settings::pedal_curve((axis(5) + 1.0) / 2.0, self.pedal_brake));
+            out.throttle.get_or_insert(crate::pedal::pedal_curve((axis(4) + 1.0) / 2.0, self.pedal_throttle));
+            out.brake.get_or_insert(crate::pedal::pedal_curve((axis(5) + 1.0) / 2.0, self.pedal_brake));
             out.apply_default_gamepad_look(self.right_stick_look, axis(2), axis(3));
         }
         let before = self.steer.as_ref().filter(|s| steer.as_ref().is_some_and(|n| n.0 == s.0)).map(|s| s.1);
@@ -1635,7 +1635,7 @@ impl Controllers {
 /// reaches it through the bus body at a lower strength.
 impl Controllers {
     /// The wheels' jolt this frame (None: not driving, the travel is settled anew on return).
-    pub(crate) fn wheel_bump(&mut self, body: Option<&omsi_sim::rigid::RigidBody>, kmh: f32, dt: f32) -> f32 {
+    pub fn wheel_bump(&mut self, body: Option<&omsi_sim::rigid::RigidBody>, kmh: f32, dt: f32) -> f32 {
         let Some(body) = body else {
             self.settled.clear();
             return 0.0;
@@ -1742,7 +1742,7 @@ fn set(slot: &mut Option<f32>, v: f32) {
 /// 2: steering, accelerator, brake, clutch as Windows' HID driver places them), the evdev
 /// ABS codes on Linux (ABS_X..ABS_RZ, then THROTTLE and RUDDER as the sliders), the axis
 /// index on Windows. Axes of no known slot take the free ones in their order.
-pub(crate) fn di_slots(axes: &[(u32, f32)]) -> Vec<(usize, f32)> {
+pub fn di_slots(axes: &[(u32, f32)]) -> Vec<(usize, f32)> {
     let known = |code: u32| -> Option<usize> {
         let (hi, lo) = (code >> 16, code & 0xFFFF);
         if cfg!(target_os = "macos") {
@@ -1799,7 +1799,7 @@ fn normalized_device_name(s: &str) -> String {
     s.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
-pub(crate) fn names_match(a: &str, b: &str) -> bool {
+pub fn names_match(a: &str, b: &str) -> bool {
     // (letters of any script: a name of Cyrillic or Chinese letters only was empty here and
     // matched nothing)
     let (a, b) = (normalized_device_name(a), normalized_device_name(b));
@@ -1809,7 +1809,7 @@ pub(crate) fn names_match(a: &str, b: &str) -> bool {
 /// The connected device this name is set up as - its exact name first: an Xbox-type pad's
 /// gilrs lists too, as a plain "Controller" with no axis or button at all (see
 /// `mac_game_controller`), and that name is a substring of (so fuzzy-matches) this device's.
-pub(crate) fn find_connected<'a>(connected: &'a [Connected], name: &str) -> Option<&'a Connected> {
+pub fn find_connected<'a>(connected: &'a [Connected], name: &str) -> Option<&'a Connected> {
     connected.iter().find(|c| c.name == name).or_else(|| connected.iter().find(|c| names_match(&c.name, name)))
 }
 
@@ -1847,7 +1847,7 @@ fn calibrated_steering_reversed(cfg: Option<&DeviceCfg>) -> bool {
 /// triggers, axis codes, into button events too: they are pedals, not numbered buttons), and
 /// on macOS for an axis' code (a DualSense's L2 and R2 came in as buttons 1 and 2, the
 /// numbers of its square and cross: their place among the codes; they are axes).
-pub(crate) fn button_number(pad: &gilrs::Gamepad, code: gilrs::ev::Code) -> Option<usize> {
+pub fn button_number(pad: &gilrs::Gamepad, code: gilrs::ev::Code) -> Option<usize> {
     #[cfg(target_os = "linux")]
     if let Some(n) = declared_button_index(pad.name(), code.into_u32()) {
         return Some(n);
@@ -1882,12 +1882,12 @@ fn declared_button_index(name: &str, code: u32) -> Option<usize> {
 
 /// The button number of an evdev key code of a device read from evdev (`evdev_buttons`).
 #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
-pub(crate) fn evdev_button_number(name: &str, code: u32) -> Option<usize> {
+pub fn evdev_button_number(name: &str, code: u32) -> Option<usize> {
     declared_button_index(name, code).or_else(|| code_button(code))
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn declared_button_count(name: &str) -> usize {
+pub fn declared_button_count(name: &str) -> usize {
     with_declared(name, button_count).unwrap_or(0)
 }
 
@@ -1913,7 +1913,7 @@ fn declared_buttons(name: &str) -> Option<Vec<u32>> {
 }
 
 #[cfg(any(target_os = "linux", test))]
-pub(crate) fn key_bitmap_buttons(bitmap: &str) -> Vec<u32> {
+pub fn key_bitmap_buttons(bitmap: &str) -> Vec<u32> {
     let words: Vec<u64> = bitmap.split_whitespace().rev().filter_map(|w| u64::from_str_radix(w, 16).ok()).collect();
     (0x100..words.len() as u32 * 64).filter(|b| words[*b as usize / 64] >> (b % 64) & 1 != 0).collect()
 }
@@ -1930,7 +1930,7 @@ fn button_index(declared: &[u32], code: u32) -> Option<usize> {
     declared.iter().position(|c| *c == code)
 }
 
-pub(crate) fn code_button(code: u32) -> Option<usize> {
+pub fn code_button(code: u32) -> Option<usize> {
     let (hi, lo) = (code >> 16, (code & 0xFFFF) as usize);
     if cfg!(target_os = "macos") {
         (hi == 9 && lo >= 1).then(|| lo - 1)
@@ -1957,7 +1957,7 @@ pub(crate) fn code_button(code: u32) -> Option<usize> {
 /// An axis' characteristic from its gamectrler.cfg flags, on 0..1 (after the inversion),
 /// as Omsi.exe applies it (poll sub_6466b8): 2 extends the range by a quarter, 4 is
 /// degressive, 8 progressive, 0x10 makes either of them symmetric round the centre.
-pub(crate) fn axis_shape(v: f32, flags: i32) -> f32 {
+pub fn axis_shape(v: f32, flags: i32) -> f32 {
     use std::f32::consts::PI;
     let mut v = v;
     if flags & 2 != 0 {
@@ -1978,7 +1978,7 @@ pub(crate) fn axis_shape(v: f32, flags: i32) -> f32 {
 }
 
 /// The characteristics the set-up offers, with their flag bits (Omsi.exe's combo, 0x652ac4).
-pub(crate) const AXIS_SHAPES: [(&str, i32); 5] = [("Linear", 0), ("Progressive", 8), ("Degressive", 4), ("Bi-progressive", 8 | 0x10), ("Bi-degressive", 4 | 0x10)];
+pub const AXIS_SHAPES: [(&str, i32); 5] = [("Linear", 0), ("Progressive", 8), ("Degressive", 4), ("Bi-progressive", 8 | 0x10), ("Bi-degressive", 4 | 0x10)];
 
 #[cfg(test)]
 mod axis_shape_tests {

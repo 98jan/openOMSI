@@ -17,7 +17,7 @@ struct Device {
     buttons: usize,
 }
 
-pub(crate) struct ButtonDevices {
+pub struct ButtonDevices {
     devices: Vec<Device>,
     scanned: Instant,
 }

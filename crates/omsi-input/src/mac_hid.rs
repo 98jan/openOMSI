@@ -29,13 +29,13 @@ struct Device {
 
 /// A device as last read: its name, (vendor, product) and axes (code, value -1..1) in
 /// declared order.
-pub(crate) struct HidAxes {
+pub struct HidAxes {
     pub name: String,
     pub id: Option<(u16, u16)>,
     pub axes: Vec<(u32, f32)>,
 }
 
-pub(crate) struct MacHid {
+pub struct MacHid {
     manager: CFRetained<IOHIDManager>,
     devices: Vec<Device>,
     last_scan: Option<std::time::Instant>,
@@ -69,7 +69,7 @@ fn is_axis(e: &IOHIDElement) -> bool {
 }
 
 impl MacHid {
-    pub(crate) fn new() -> Option<MacHid> {
+    pub fn new() -> Option<MacHid> {
         let manager = IOHIDManager::new(None, 0);
         // joysticks (wheels say they are one), gamepads and multi-axis controllers only: all
         // devices would take in the keyboard, which needs the Input Monitoring permission
@@ -145,7 +145,7 @@ impl MacHid {
     }
 
     /// Every device with its axes.
-    pub(crate) fn read(&mut self) -> Vec<HidAxes> {
+    pub fn read(&mut self) -> Vec<HidAxes> {
         self.scan();
         let mut out = Vec::new();
         for d in &self.devices {

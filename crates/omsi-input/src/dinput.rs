@@ -58,7 +58,7 @@ fn force_flipped_for(hardware_id: Option<(u16, u16)>) -> bool {
 
 /// `OMSI_TRACE_FFB=<csv>`: the force feedback frame by frame - the wheel's position (now and
 /// a frame before), whether the force was turned round, the force sent and what made it.
-pub(crate) fn trace_ffb(f: &crate::controllers::FfInput, x: f32, x0: f32, inverted: bool, force: f32) {
+pub fn trace_ffb(f: &crate::controllers::FfInput, x: f32, x0: f32, inverted: bool, force: f32) {
     let Some(path) = omsi_cfg::flags::OMSI_TRACE_FFB.os() else { return };
     use std::io::Write;
     static TRACE: std::sync::Mutex<Option<(std::fs::File, std::time::Instant)>> = std::sync::Mutex::new(None);
@@ -78,7 +78,7 @@ pub(crate) fn trace_ffb(f: &crate::controllers::FfInput, x: f32, x0: f32, invert
 const READ_FAILURE_LIMIT: u8 = 3;
 
 /// One device opened.
-pub(crate) struct Device {
+pub struct Device {
     pub name: String,
     guid: GUID,
     /// USB vendor and product from DirectInput's product GUID, when available.
@@ -220,7 +220,7 @@ impl Device {
 }
 
 /// The devices, and the thread that finds them.
-pub(crate) struct DirectInput {
+pub struct DirectInput {
     di: IDirectInput8W,
     hwnd: HWND,
     /// The game wants force feedback (the window is the game's, not the launcher's).
@@ -1140,7 +1140,7 @@ impl DirectInput {
     }
 
     /// A hardware-timed calibration pulse; never leaves an infinite force running.
-    pub(crate) fn pulse_force(&mut self, name: &str, force: f32) -> bool {
+    pub fn pulse_force(&mut self, name: &str, force: f32) -> bool {
         if !self.focused
             || self
                 .devices

@@ -152,7 +152,7 @@ mod scan_name_tests {
 }
 
 /// A key and its modifiers as the player reads them ("Ctrl+D"); `(unbound)` for scan 0.
-pub(crate) fn key_name(scan: i64, modifier: i64) -> String {
+pub fn key_name(scan: i64, modifier: i64) -> String {
     if scan == 0 {
         return "(unbound)".into();
     }

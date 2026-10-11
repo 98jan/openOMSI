@@ -15,13 +15,9 @@ use omsi_platform::discord;
 mod steam;
 mod voice;
 mod head_idle;
-mod headtrack;
+use omsi_input::headtrack;
 #[cfg(windows)]
 mod openxr;
-#[cfg(target_os = "macos")]
-mod mac_hid;
-#[cfg(target_os = "macos")]
-mod mac_game_controller;
 #[cfg(target_os = "android")]
 mod android;
 mod platform;
@@ -37,7 +33,7 @@ mod wheel_surface;
 mod camera_arm;
 mod cam_approach;
 mod career;
-mod describe;
+use omsi_input::describe;
 mod editor;
 mod duty_book;
 mod game_lists;
@@ -49,7 +45,7 @@ mod export;
 mod hud;
 mod humans;
 mod journey;
-mod keys;
+use omsi_input::keys;
 mod lan;
 mod lan_world;
 mod lights;
@@ -89,16 +85,8 @@ mod applog;
 mod app_events;
 mod bus_service;
 mod camera_util;
-mod controllers;
-mod gamepad_profile;
-mod hpattern;
-mod ffb_calibration;
-#[cfg(windows)]
-mod dinput;
-#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
-mod evdev_buttons;
-#[cfg(all(target_os = "linux", target_pointer_width = "64"))]
-mod evdev_ff;
+// the game controllers, their mappings and force feedback (`omsi-input`), at their old paths
+use omsi_input::{controllers, ffb_calibration, gamepad_profile, hpattern};
 mod cli;
 mod diagnostics;
 mod perf_report;
@@ -121,7 +109,7 @@ mod plugins;
 mod services;
 mod situation;
 mod spawn;
-mod stock_keys;
+use omsi_input::stock_keys;
 mod startup;
 mod traffic_link;
 mod tutorial;

@@ -1,6 +1,6 @@
 //! H-pattern gate actions, including vehicles exposing only the held (`_fest`) variant.
 
-pub(crate) fn is_gate(name: &str) -> bool {
+pub fn is_gate(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     let Some(gate) = name.strip_prefix("kw_s_") else {
         return false;
@@ -9,7 +9,7 @@ pub(crate) fn is_gate(name: &str) -> bool {
     gate == "r" || gate == "n" || gate.parse::<u32>().is_ok()
 }
 
-pub(crate) fn has_held_bindings(cfg: &[crate::controllers::DeviceCfg]) -> bool {
+pub fn has_held_bindings(cfg: &[crate::controllers::DeviceCfg]) -> bool {
     cfg.iter().any(|d| {
         d.buttons
             .iter()
@@ -17,7 +17,7 @@ pub(crate) fn has_held_bindings(cfg: &[crate::controllers::DeviceCfg]) -> bool {
     })
 }
 
-pub(crate) fn resolve(program: &omsi_script::Program, name: &str) -> Option<String> {
+pub fn resolve(program: &omsi_script::Program, name: &str) -> Option<String> {
     if !is_gate(name) {
         return None;
     }
@@ -34,7 +34,7 @@ pub(crate) fn resolve(program: &omsi_script::Program, name: &str) -> Option<Stri
 
 /// Returns None for non-manual actions, so automatic gearboxes keep their own scripts.
 /// Release the exact supported gate first; neutral is an extra action only when enabled.
-pub(crate) fn action(
+pub fn action(
     vehicle: &mut omsi_sim::VehicleInstance,
     name: &str,
     pressed: bool,
@@ -84,11 +84,11 @@ pub(crate) fn action(
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub mod tests {
     use super::*;
     use std::sync::Arc;
 
-    pub(crate) fn vehicle(
+    pub fn vehicle(
         held: bool,
         gated_neutral: bool,
         explicit_off: bool,
