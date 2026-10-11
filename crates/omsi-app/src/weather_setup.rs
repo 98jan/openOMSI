@@ -9,15 +9,25 @@ pub(crate) use omsi_weather::conditions::{cloud_drift_at, cloud_drift_step, init
 
 /// Weather from `--weather`, else the clear-sky default.
 pub(crate) fn load_weather(args: &Args) -> omsi_content::weather::Weather {
+    load_weather_run(args).0
+}
+
+/// [`load_weather`], and the physical model's run when the weather is the model's, for the
+/// session to keep in its `SkyState` and carry on with its clock.
+pub(crate) fn load_weather_run(args: &Args) -> (omsi_content::weather::Weather, Option<crate::weather_model::ModelRun>) {
     // no weather chosen, or `natural`: the physical model (weather_model.rs)
     if crate::weather_model::is_natural(args.weather.as_deref()) {
-        let w = crate::weather_model::start(&crate::situation::start_clock(args));
+        let (run, w) = crate::weather_model::ModelRun::start(&crate::situation::start_clock(args));
         scene::SNOW_WEATHER.store(w.snow, std::sync::atomic::Ordering::Relaxed);
         omsi_sim::host::set_ambient_weather(w.temp.0, w.temp.1);
         crate::weather_setup::publish_page_weather(&w);
-        return w;
+        return (w, Some(run));
     }
-    crate::weather_model::stop();
+    (load_chosen_weather(args), None)
+}
+
+/// A chosen weather: a hand-set one, a METAR report, an `.owt` file.
+fn load_chosen_weather(args: &Args) -> omsi_content::weather::Weather {
     let rel = args
         .weather
         .clone()
@@ -134,10 +144,18 @@ pub(crate) struct CloudType {
 }
 
 /// The cloud type the sky was last set up with (its name and entry): the classic sky's
-/// cloud layer is drawn by it while the weather names it. Kept with the scene whose sky
-/// textures `setup_sky` made (the window's session, the offscreen run, the showroom's look)
-/// and handed to `weather_lighting`.
+/// cloud layer is drawn by it while the weather names it.
 pub(crate) type SkyClouds = Option<(String, CloudType)>;
+
+/// What a scene's sky is drawn from besides the weather itself, kept by whoever owns the
+/// scene (the window's session, the offscreen run, the showroom's look) and handed to
+/// `weather_lighting`: the cloud type `setup_sky` set its textures up with, and the
+/// physical weather model when the weather is the model's (`load_weather_run`).
+#[derive(Default)]
+pub(crate) struct SkyState {
+    pub(crate) clouds: SkyClouds,
+    pub(crate) model: Option<crate::weather_model::ModelRun>,
+}
 
 /// The `[cloudtype]` entry named `kind` (`-1` or empty: none), read as Omsi.exe reads it
 /// (0x754664): name, texture, size, then `ovc` or `sct`.
@@ -401,7 +419,7 @@ pub(crate) fn weather_lighting(
     cloud_drift: [f32; 4],
     wetness: f32,
     shadows: bool,
-    sky_clouds: &SkyClouds,
+    sky: &SkyState,
 ) -> omsi_render::Lighting {
     let mut lighting = lights::lighting_from(daylight, w.fog.0);
     lighting.enhanced = ENHANCED.load(std::sync::atomic::Ordering::Relaxed);
@@ -409,8 +427,8 @@ pub(crate) fn weather_lighting(
     let (density, offset) = clouds_of(w, cloud_drift);
     lighting.cloud_density = density;
     lighting.cloud_offset = offset;
-    lighting.vanilla_sky = vanilla_sky(w, cloud_drift, sky_clouds);
-    let model_sky = *crate::weather_model::CURRENT.lock().unwrap_or_else(|e| e.into_inner());
+    lighting.vanilla_sky = vanilla_sky(w, cloud_drift, &sky.clouds);
+    let model_sky = sky.model.as_ref().map(|m| m.sky());
     let (kind, rate) = precip_of(w);
     lights::apply_weather(
         &mut lighting,

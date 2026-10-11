@@ -78,13 +78,13 @@ impl Offscreen<'_> {
             ref player,
             ref cabin_air,
             wetness,
-            ref sky_clouds,
+            ref mut sky,
             ..
         } = *self;
         let daylight = omsi_sim::Daylight::compute(clock, envir.as_ref());
         steps::world_lamps(world, renderer, scene, clock, &daylight, true, true);
         // (the physical model at the map's own place and the picture's moment)
-        *weather = crate::weather_model::refresh(clock).unwrap_or(std::mem::take(weather));
+        *weather = sky.model.as_mut().map(|m| m.refresh(clock)).unwrap_or(std::mem::take(weather));
         // (the roads as wet as the run left them: a run starts with them in the state this
         // weather would leave them; OMSI_WETNESS in their place)
         // the player's vehicle has moved into `player_ref` by now (after --drive): without
@@ -101,7 +101,7 @@ impl Offscreen<'_> {
             cabin_air.appearance(),
             settings,
             args.drive.unwrap_or(0.0) + service_seconds as f32,
-            sky_clouds,
+            sky,
         );
         // OMSI_CONDENSATION=<minutes>,<people>[,engine 0/1]: the cabin air and the condensation
         // on the player's glass after that long with that many aboard

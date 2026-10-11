@@ -90,8 +90,8 @@ struct Offscreen<'a> {
     profile: std::collections::BTreeMap<&'static str, f64>,
     /// The worst the bus did on the way, for the drive report.
     drive_extremes: DriveExtremes,
-    /// The classic sky's cloud type (see `weather_setup::SkyClouds`).
-    sky_clouds: crate::weather_setup::SkyClouds,
+    /// The sky's cloud type and the physical weather model (see `weather_setup::SkyState`).
+    sky: crate::weather_setup::SkyState,
 }
 
 pub(crate) fn run_offscreen(

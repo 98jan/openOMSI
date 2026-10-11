@@ -81,11 +81,11 @@ pub struct ModelSky {
     pub aerosol_height: f32,
 }
 
-/// The sky the model shows now (read by `weather_lighting`), if a model runs.
-pub static CURRENT: std::sync::Mutex<Option<ModelSky>> = std::sync::Mutex::new(None);
-
-/// The session's model: its state, and where and from when it runs.
-struct Session {
+/// The model of a session: its state, and where and from when it runs. Kept by the
+/// session that runs on it (the window's, the offscreen run, the showroom's look), which
+/// carries it on with its clock.
+#[derive(Debug, Clone)]
+pub struct ModelRun {
     model: WeatherModel,
     year: i32,
     latitude: f64,
@@ -94,49 +94,45 @@ struct Session {
     at: (i32, f64),
 }
 
-static SESSION: std::sync::Mutex<Option<Session>> = std::sync::Mutex::new(None);
-
 /// Whether a weather choice means this model: `natural`, or none at all.
 pub use omsi_content::weather_choice::is_natural;
 
-/// Start the model for a session beginning at `clock` (at the map's place as far as it is
-/// known yet: `refresh` starts it again once the map has told its own) and give its weather.
-pub fn start(clock: &omsi_sim::SimClock) -> Weather {
-    let place = omsi_sim::daylight::place();
-    let model = WeatherModel::new(clock, &place);
-    let w = model.weather();
-    *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = Some(model.sky());
-    log::info!("weather: the physical model, {:.1} °C, {:.0} % humidity, cumulus {:.2}, deck {:.2}, veil {:.2}, fog {:.2}, rain {:.2}, visibility {:.0} m", model.temp, model.humidity() * 100.0, model.cumulus, model.deck, model.veil, model.fog, model.precip, w.fog.0);
-    *SESSION.lock().unwrap_or_else(|e| e.into_inner()) = Some(Session { model, year: clock.year, latitude: place.latitude, longitude: place.longitude, at: (clock.day_of_year, clock.time) });
-    w
-}
-
-/// Stop it (another weather was chosen).
-pub fn stop() {
-    *SESSION.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = None;
-}
-
-/// Carry the model on to `clock` (started again where the map's place differs from the
-/// one it was started for, or the clock jumped back or more than a day on) and give its
-/// weather; None when no model runs.
-pub fn refresh(clock: &omsi_sim::SimClock) -> Option<Weather> {
-    let mut guard = SESSION.lock().unwrap_or_else(|e| e.into_inner());
-    let s = guard.as_mut()?;
-    let place = omsi_sim::daylight::place();
-    let elapsed = (clock.day_of_year - s.at.0) as f64 * 86_400.0 + (clock.time - s.at.1);
-    let moved = (place.latitude - s.latitude).abs() > 0.01 || (place.longitude - s.longitude).abs() > 0.01;
-    if moved || clock.year != s.year || !(0.0..=86_400.0).contains(&elapsed) {
-        s.model = WeatherModel::new(clock, &place);
-        s.year = clock.year;
-        s.latitude = place.latitude;
-        s.longitude = place.longitude;
-    } else if elapsed > 0.0 {
-        s.model.step(clock.year, &place, (elapsed / 3600.0) as f32);
+impl ModelRun {
+    /// Start the model for a session beginning at `clock` (at the map's place as far as it
+    /// is known yet: `refresh` starts it again once the map has told its own) and give its
+    /// weather.
+    pub fn start(clock: &omsi_sim::SimClock) -> (ModelRun, Weather) {
+        let place = omsi_sim::daylight::place();
+        let model = WeatherModel::new(clock, &place);
+        let w = model.weather();
+        log::info!("weather: the physical model, {:.1} °C, {:.0} % humidity, cumulus {:.2}, deck {:.2}, veil {:.2}, fog {:.2}, rain {:.2}, visibility {:.0} m", model.temp, model.humidity() * 100.0, model.cumulus, model.deck, model.veil, model.fog, model.precip, w.fog.0);
+        (ModelRun { model, year: clock.year, latitude: place.latitude, longitude: place.longitude, at: (clock.day_of_year, clock.time) }, w)
     }
-    s.at = (clock.day_of_year, clock.time);
-    *CURRENT.lock().unwrap_or_else(|e| e.into_inner()) = Some(s.model.sky());
-    Some(s.model.weather())
+
+    /// Carry the model on to `clock` (started again where the map's place differs from the
+    /// one it was started for, or the clock jumped back or more than a day on) and give its
+    /// weather.
+    pub fn refresh(&mut self, clock: &omsi_sim::SimClock) -> Weather {
+        let s = self;
+        let place = omsi_sim::daylight::place();
+        let elapsed = (clock.day_of_year - s.at.0) as f64 * 86_400.0 + (clock.time - s.at.1);
+        let moved = (place.latitude - s.latitude).abs() > 0.01 || (place.longitude - s.longitude).abs() > 0.01;
+        if moved || clock.year != s.year || !(0.0..=86_400.0).contains(&elapsed) {
+            s.model = WeatherModel::new(clock, &place);
+            s.year = clock.year;
+            s.latitude = place.latitude;
+            s.longitude = place.longitude;
+        } else if elapsed > 0.0 {
+            s.model.step(clock.year, &place, (elapsed / 3600.0) as f32);
+        }
+        s.at = (clock.day_of_year, clock.time);
+        s.model.weather()
+    }
+
+    /// The sky the model shows now (for `weather_lighting`).
+    pub fn sky(&self) -> ModelSky {
+        self.model.sky()
+    }
 }
 
 /// How far back the model starts before the session (h).
