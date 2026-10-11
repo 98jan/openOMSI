@@ -5,11 +5,12 @@
 file 3027 crates/omsi-input/src/controllers.rs
 file 1504 crates/omsi-input/src/dinput.rs
 file 1715 crates/omsi-app/src/driver.rs
-file 3047 crates/omsi-app/src/game_lists.rs
 file 2950 crates/omsi-app/src/lan.rs
 file 1740 crates/omsi-launcher-ui/src/drive.rs
 file 1609 crates/omsi-launcher-ui/src/ui.rs
 file 2937 crates/omsi-app/src/navigator.rs
+file 3242 crates/omsi-app/src/player.rs
+file 1780 crates/omsi-app/src/tiles.rs
 file 2635 crates/omsi-app/src/ui.rs
 file 3005 crates/omsi-geometry/src/lib.rs
 file 1935 crates/omsi-launcher-core/src/install.rs
@@ -19,7 +20,7 @@ file 1517 crates/omsi-net/src/tests.rs
 file 2902 crates/omsi-sim/src/human.rs
 file 2398 crates/omsi-sim/src/rigid.rs
 file 3341 crates/omsi-sim/src/traffic.rs
-fn 315 crates/omsi-app::toggle_set crates/omsi-app/src/game_lists.rs
+fn 315 crates/omsi-app::toggle_set crates/omsi-app/src/game_lists/options.rs
 fn 349 crates/omsi-launcher-ui::game_controllers crates/omsi-launcher-ui/src/pages/controls.rs
 fn 370 crates/omsi-app::draw crates/omsi-app/src/navigator.rs
 fn 454 crates/omsi-xr::render crates/omsi-xr/src/openxr.rs
