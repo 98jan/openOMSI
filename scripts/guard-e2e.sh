@@ -12,10 +12,11 @@
 # libsteam_api.dylib beside it on macOS. Nothing is shown on the screen (hidden launcher
 # windows, the guard's messages written to a file), nothing touches the real installation or
 # ~/.openomsi (a fresh HOME per scenario), and no update is fetched from GitHub. Needs bash,
-# python3 and zip. Exits 0 when every scenario passed.
+# python3 and zip. Exits 0 when every scenario passed. GUARD_E2E_BUNDLE=1 (macOS) lays every
+# installation and release out as an openOMSI.app bundle, as players have it.
 set -uo pipefail
 
-SCENARIOS=(update_crashes update_hangs fixed_release_heals update_cannot_start listed_broken good_start_cleans_up)
+SCENARIOS=(update_crashes update_hangs fixed_release_heals update_cannot_start listed_broken nothing_helps good_start_cleans_up)
 
 usage() {
   sed -n '2,/^set -uo/p' "$0" | grep '^#' | sed 's/^# \{0,1\}//'
@@ -45,12 +46,22 @@ echo "work folder: $WORK (old $OLD_V, new $NEW_V)"
 PASS=0
 FAIL=0
 
-# copy a build's program files into a folder
+BUNDLE="${GUARD_E2E_BUNDLE:-}"
+# the program of an installation, and the top-level items a release holds
+prog() { if [ -n "$BUNDLE" ]; then echo "$1/openOMSI.app/Contents/MacOS/openomsi"; else echo "$1/openomsi"; fi; }
+if [ -n "$BUNDLE" ]; then ITEMS='openOMSI.app\n'; else ITEMS='openomsi\nlibsteam_api.dylib\n'; fi
+
+# copy a build's program files into a folder (an openOMSI.app in it with GUARD_E2E_BUNDLE)
 put_build() { # <bin> <dir>
-  mkdir -p "$2"
-  cp "$1" "$2/openomsi"
+  local to="$2"
+  if [ -n "$BUNDLE" ]; then
+    to="$2/openOMSI.app/Contents/MacOS"; mkdir -p "$to"
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleExecutable</key><string>openomsi</string><key>CFBundleIdentifier</key><string>io.github.openomsi.e2e</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>\n' > "$2/openOMSI.app/Contents/Info.plist"
+  fi
+  mkdir -p "$to"
+  cp "$1" "$to/openomsi"
   local lib; lib="$(dirname "$1")/libsteam_api.dylib"
-  [ -f "$lib" ] && cp "$lib" "$2/"
+  [ -f "$lib" ] && cp "$lib" "$to/"
   return 0
 }
 
@@ -59,7 +70,8 @@ make_release() { # <version> <bin or 'garbage'> <out dir> [name=content ...]
   local v="$1" bin="$2" out="$3"; shift 3
   local stage="$out/stage-$v"; rm -rf "$stage"; mkdir -p "$stage"
   if [ "$bin" = garbage ]; then
-    printf 'not a program\n' > "$stage/openomsi"; chmod +x "$stage/openomsi"
+    put_build "$OLD_BIN" "$stage"
+    printf 'not a program\n' > "$(prog "$stage")"; chmod +x "$(prog "$stage")"
   else
     put_build "$bin" "$stage"
   fi
@@ -82,10 +94,10 @@ PY
 updated_install() { # <dir> <new bin> [name=content ...]
   local dir="$1" bin="$2"; shift 2
   put_build "$OLD_BIN" "$dir"
-  printf 'openomsi\nlibsteam_api.dylib\n' > "$dir/.openomsi-files"
-  for f in openomsi libsteam_api.dylib .openomsi-files; do [ -e "$dir/$f" ] && mv "$dir/$f" "$dir/$f.old-update"; done
+  printf "$ITEMS" > "$dir/.openomsi-files"
+  for f in openomsi libsteam_api.dylib openOMSI.app .openomsi-files; do [ -e "$dir/$f" ] && mv "$dir/$f" "$dir/$f.old-update"; done
   put_build "$bin" "$dir"
-  local list='openomsi\nlibsteam_api.dylib\n' kv
+  local list="$ITEMS" kv
   for kv in "$@"; do printf '%s\n' "${kv#*=}" > "$dir/${kv%%=*}"; list="$list${kv%%=*}\n"; done
   printf "$list" > "$dir/.openomsi-files"
   printf '%s' "$OLD_V" > "$dir/.openomsi-previous"
@@ -99,16 +111,16 @@ run_launcher() { # <dir> <home> [VAR=value ...]
   env -i PATH="$PATH" HOME="$home" TMPDIR="${TMPDIR:-/tmp}" \
     OMSI_ROOT="${OMSI_ROOT:-/nonexistent}" OMSI_BACKGROUND=1 OMSI_HIDDEN_WINDOW=1 OMSI_LAUNCHER_EXIT=8 \
     OMSI_GUARD_TEST_BREAK=1 OMSI_GUARD_DIALOG_FILE="$home/messages.txt" OMSI_HEALTH_URL="file://$WORK/health-empty.json" \
-    "$@" "$dir/openomsi" > "$home/first-start.log" 2>&1 &
+    "$@" "$(prog "$dir")" > "$home/first-start.log" 2>&1 &
   local t=0
   sleep 2
-  while pgrep -f "$dir/openomsi" > /dev/null 2>&1; do
+  while pgrep -f "$dir/" > /dev/null 2>&1; do
     sleep 1; t=$((t + 1))
-    [ $t -gt 240 ] && { echo "    (still running after 240 s - ending it)"; pkill -9 -f "$dir/openomsi"; break; }
+    [ $t -gt 240 ] && { echo "    (still running after 240 s - ending it)"; pkill -9 -f "$dir/"; break; }
   done
 }
 
-installed_version() { version_of "$1/openomsi"; }
+installed_version() { version_of "$(prog "$1")"; }
 
 check() { # <description> <condition command...>
   local what="$1"; shift
@@ -150,14 +162,14 @@ for s in "${SCENARIOS[@]}"; do
       check "the old version $OLD_V is installed again" test "$(installed_version "$D")" = "$OLD_V"
       check "the hang is in the journal" grep -q '"end": "hang"' "$G/starts.json"
       check "the player was told it went back" grep -q "went back to $OLD_V" "$H/messages.txt"
-      check "no hung program is left" bash -c "! pgrep -f '$D/openomsi' > /dev/null"
+      check "no hung program is left" bash -c "! pgrep -f '$D/' > /dev/null"
       ;;
     fixed_release_heals)
       # the installed version crashes at its start, a fixed newer release is out: installed and
       # started by the guard (no earlier version kept)
       put_build "$OLD_BIN" "$D"
       printf 'panic\n' > "$D/guard-test-break"
-      printf 'openomsi\nlibsteam_api.dylib\nguard-test-break\n' > "$D/.openomsi-files"
+      printf "${ITEMS}guard-test-break\n" > "$D/.openomsi-files"
       run_launcher "$D" "$H" OMSI_UPDATE_URL="file://$REL_NEW_GOOD"
       check "the fixed release $NEW_V is installed" test "$(installed_version "$D")" = "$NEW_V"
       check "the player was told it updated" grep -q "updated itself to $NEW_V" "$H/messages.txt"
@@ -180,11 +192,27 @@ for s in "${SCENARIOS[@]}"; do
       printf '{"bad": ["%s"], "message": "test listing"}\n' "$NEW_V" > "$WORK/health-bad.json"
       run_launcher "$D" "$H" OMSI_HEALTH_URL="file://$WORK/health-bad.json" OMSI_UPDATE_URL="file://$REL_NEW_GOOD"
       check "the first start ran $NEW_V and noted the listing" grep -q '"remote_bad"' "$G/starts.json"
-      check "the way back was kept" test -e "$D/openomsi.old-update"
+      check "the way back was kept" bash -c "ls -a '$D' | grep -q old-update"
       run_launcher "$D" "$H" OMSI_HEALTH_URL="file://$WORK/health-bad.json" OMSI_UPDATE_URL="file://$REL_NEW_GOOD"
       check "the next start went back to $OLD_V" test "$(installed_version "$D")" = "$OLD_V"
       check "the player was told why" grep -q "lists openOMSI $NEW_V as broken" "$H/messages.txt"
       check "$NEW_V is marked broken here" grep -qx "$NEW_V" "$G/bad-versions"
+      ;;
+    nothing_helps)
+      # broken, no newer release, nothing kept: safe mode once, then the player is told - and
+      # no endless restarts; the start after that just runs
+      put_build "$OLD_BIN" "$D"
+      printf 'exit\n' > "$D/guard-test-break"
+      printf '{"tag_name": "v0.0.1", "draft": false, "prerelease": false, "assets": []}\n' > "$WORK/release-old.json"
+      run_launcher "$D" "$H" OMSI_UPDATE_URL="file://$WORK/release-old.json"
+      check "safe mode was tried" grep -q "safe mode" "$H/messages.txt"
+      check "then the player was told what to do" grep -q "could not heal itself" "$H/messages.txt"
+      check "exactly two messages" test "$(grep -c '^---$' "$H/messages.txt")" = 2
+      check "the safe-mode start had safe mode on" grep -q "in safe mode" "$G/guard.log"
+      local_starts() { python3 -I -c "import json; print(len(json.load(open('$G/starts.json'))['starts']))"; }
+      check "two starts, no loop" test "$(local_starts)" = 2
+      run_launcher "$D" "$H" OMSI_UPDATE_URL="file://$WORK/release-old.json"
+      check "a later start shows nothing more" test "$(grep -c '^---$' "$H/messages.txt")" = 2
       ;;
     good_start_cleans_up)
       # a good start of an updated version: the kept earlier version goes, the watcher ends

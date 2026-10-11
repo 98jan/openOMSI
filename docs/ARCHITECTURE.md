@@ -159,6 +159,32 @@ budget.
 * Map splines store x, height, y; objects store x, y, z. See `docs/FORMATS.md`.
 
 
+## Start guard
+
+A release that breaks the start must not strand anyone (it happened: the updater lives in the
+launcher, and a launcher that never drew its window never updated). `crates/omsi-guard` runs
+before anything that could break and needs no graphics card, window or game state (the arch
+rules forbid it the renderer, the UI, the simulation, the scene, the audio and the launcher UI):
+
+* `main` asks it first: `--self-test` (the updater runs a new program with it before installing
+  it - a build that cannot be loaded is refused there), `--guard-watch` (the watcher), safe
+  mode's switches, then `omsi_guard::start(Launcher)` for a launcher start, which starts the
+  watcher - the same program again, without a window - or heals right away when this version
+  already failed here.
+* The watcher waits for the launcher's first frames (`omsi_guard::healthy`, called by the
+  launcher at its first presented frame and by a game session after 60 frames), its end, or
+  `OMSI_GUARD_DEADLINE` (120 s, then it ends it). A failed start of a version that never ran
+  here, or two in a row, is healed (`rescue`): a newer release, else the version before
+  (`omsi_platform::recovery::rollback` - the updater keeps the replaced files until the new
+  version has started well), else safe mode, else a message. Meanwhile it reads the project's
+  list of broken releases (`release/health.json`); a listed version keeps its way back and goes
+  back at the next start.
+* `guard/starts.json` (the journal) also notes the game sessions the launcher starts and starts
+  no watcher saw: a start that never reached its first frames and whose process is gone failed.
+  `guard/bad-versions` lists what failed here; the updater offers none of them again.
+* Proof: `scripts/guard-e2e.sh <old build> <new build>` runs real release builds in a throwaway
+  installation against fake releases and versions broken on purpose (`OMSI_GUARD_TEST_BREAK`).
+
 ## Target layering
 
 Where the code is going (new code follows it, refactors move old code towards it):

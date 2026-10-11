@@ -97,6 +97,28 @@ goes on). `OMSI_NO_UPDATE=1` switches the checks off; `OMSI_UPDATE_URL` points t
 release description (GitHub's format; `file://` works, for testing - the game then looks after
 3 s).
 
+**When a version does not start.** openOMSI heals a start that breaks on its own, before
+anything that could break has run: when it is started (a double click, the launcher) it first
+starts a small watcher without a window. If the launcher crashes, ends on an error or has not
+drawn its first frames after two minutes (it is then ended), the watcher steps in - when that
+version never started on this computer, or failed twice in a row:
+
+1. a newer release, when there is one, is downloaded and installed (its program must start
+   before it replaces anything) and openOMSI starts again;
+2. else the version the last update replaced - kept beside it until the new version has
+   started well once - is put back, and openOMSI starts again;
+3. else openOMSI starts once more in **safe mode** (the basic render pipelines, no plugins);
+4. else a message says what to do (download the latest release, where the log is).
+
+Each step is told in a message box. A version that failed is never installed again on this
+computer, only a newer one. The project can also list a released version as broken
+(`release/health.json`); such a version goes back to the one before, or on to a fixed one, at
+the next start even when it starts well. A crash in the middle of a drive is not a broken
+start: nothing is changed then. The guard keeps its own record in `~/.openomsi/guard/`
+(`guard.log`, `starts.json`, `bad-versions`). `OMSI_NO_GUARD=1` switches it off. On Android
+the next start after one that never reached the launcher looks for an update at once (the
+system's installer asks); going back is the system's business there.
+
 **Playing now.** While a session runs the game tells the project's counter (a Cloudflare
 Worker, `services/presence/`) every ten minutes that it is being played, and says goodbye
 when it ends; the website and the README show how many play right now. What goes out is a
