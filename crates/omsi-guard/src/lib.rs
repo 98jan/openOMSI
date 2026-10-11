@@ -161,9 +161,10 @@ pub fn healthy(kind: Kind) {
         journal::update(|j| j.mark_healthy(std::process::id()));
         note(&format!("{kind:?} of {} started well", omsi_platform::VERSION));
     }
-    // (also without a guard: a version that runs needs no way back any more)
+    // a version that runs needs no way back any more: the watcher drops it once it knows the
+    // project does not list this version as broken; without a watcher it goes now
     #[cfg(not(target_os = "android"))]
-    if kind == Kind::Launcher {
+    if kind == Kind::Launcher && own_state().is_none() {
         omsi_platform::updater::cleanup_after_update();
     }
 }

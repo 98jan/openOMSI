@@ -73,10 +73,17 @@ pub fn run(args: &[String]) -> i32 {
         while !listed.is_finished() && Instant::now() < until {
             std::thread::sleep(Duration::from_millis(100));
         }
-        if listed.is_finished() {
-            if let Ok(Some(why)) = listed.join() {
+        let verdict = if listed.is_finished() { listed.join().ok().flatten() } else { None };
+        match verdict {
+            // (the way back stays: the next start takes it)
+            Some(why) => {
                 crate::note(&format!("the project lists {version} as broken: {why}"));
                 crate::journal::update(|j| j.remote_bad = Some((version.clone(), why)));
+            }
+            // a version that runs needs no way back any more
+            None => {
+                #[cfg(not(target_os = "android"))]
+                omsi_platform::updater::cleanup_now();
             }
         }
         return 0;

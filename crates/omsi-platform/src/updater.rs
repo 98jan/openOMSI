@@ -563,7 +563,13 @@ fn download_and_install(r: &Release, status: &Mutex<Status>) -> anyhow::Result<(
     #[cfg(not(target_os = "android"))]
     {
         let place = install_place()?;
-        install_archive(&file, &place)?;
+        if let Err(e) = install_archive(&file, &place) {
+            // (a program that cannot start here is never offered again, only a newer one)
+            if e.downcast_ref::<crate::recovery::SelfTestFailed>().is_some() {
+                crate::recovery::mark_bad(&r.version);
+            }
+            return Err(e);
+        }
         let _ = std::fs::write(download_dir().join("updating-to"), &r.version);
         let _ = std::fs::remove_file(&file);
         let _ = std::fs::remove_file(checked_note(&file));
@@ -866,8 +872,13 @@ pub fn relaunch(place: &Place) -> anyhow::Result<()> {
 /// aside, kept until now to go back to, are no longer needed - away with them (tried for a
 /// while: on Windows the old program may take a moment to end).
 pub fn cleanup_after_update() {
+    std::thread::spawn(cleanup_now);
+}
+
+/// `cleanup_after_update` on this thread (the start guard's watcher, which ends right after).
+pub fn cleanup_now() {
     let Ok(place) = install_place() else { return };
-    std::thread::spawn(move || {
+    {
         for _ in 0..20 {
             let mut left = false;
             if let Ok(rd) = std::fs::read_dir(&place.dir) {
@@ -892,7 +903,7 @@ pub fn cleanup_after_update() {
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
-    });
+    }
 }
 
 /// After an update: the version this start was updated to (once), for the launcher to say.
