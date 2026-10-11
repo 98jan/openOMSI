@@ -145,4 +145,4 @@ forbid omsi-launcher-core omsi-ui
 forbid omsi-launcher-core omsi-render
 
 # Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
-app-lines 128041
+app-lines 65873
