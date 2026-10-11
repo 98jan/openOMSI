@@ -235,33 +235,7 @@ impl Pose {
         self.landed = false;
         // a new floor frame (boarding, getting off): keep the feet where they are
         if self.init && input.frame != self.frame {
-            let dyaw = angle_diff(self.heading, input.heading);
-            for k in 0..2 {
-                let f = self.feet[k];
-                let (lp, la, lt) = (
-                    self.to_local(f.pos),
-                    self.to_local(f.from_ankle),
-                    self.to_local(f.to),
-                );
-                let floor = f.to_floor - self.origin.z + input.origin.z;
-                let from_floor = f.from_floor - self.origin.z + input.origin.z;
-                let land_z = f.land_z - self.origin.z + input.origin.z;
-                let g = &mut self.feet[k];
-                g.pos = Self::place(input.origin, input.heading, lp);
-                g.from_ankle = Self::place(input.origin, input.heading, la);
-                g.to = Self::place(input.origin, input.heading, lt);
-                g.to_floor = floor;
-                g.from_floor = from_floor;
-                g.land_z = land_z;
-                g.yaw += dyaw;
-                g.from_yaw += dyaw;
-                g.to_yaw += dyaw;
-                g.to_sampled = DVec2::splat(f64::MAX);
-            }
-            self.frame = input.frame;
-            self.origin = input.origin;
-            self.heading = input.heading;
-            self.vel = input.velocity;
+            self.follow_floor_frame(input);
         }
         // first frame, or a jump no step could follow: stand where they are
         let jumped = self.init
@@ -311,97 +285,9 @@ impl Pose {
         }
         let seated = self.sit > 0.0;
 
-        // reaching for the cash desk, holding on
-        match input.reach {
-            Some(r) if !seated => {
-                // the hand moves on to a new target, it does not jump there
-                if self.reach <= 0.0 {
-                    self.reach_at = r;
-                } else {
-                    self.reach_at += (r - self.reach_at) * ease_k(dt, 0.22);
-                }
-                self.reach = approach(self.reach, 1.0, dt / 0.55);
-            }
-            _ => self.reach = approach(self.reach, 0.0, dt / 0.6),
-        }
-        match input.grips {
-            Some(g) => {
-                self.grip_at = g;
-                self.grip_frame = input.grip_frames;
-                self.grip_extra += (input.grip_lean - self.grip_extra) * ease_k(dt, 0.3);
-                self.grip = approach(self.grip, 1.0, dt / 0.8);
-            }
-            None => self.grip = approach(self.grip, 0.0, dt / 0.8),
-        }
-        let hold_to = if seated {
-            0.0
-        } else {
-            input.hold.clamp(0.0, 1.0)
-        };
-        self.hold = approach(
-            self.hold,
-            hold_to,
-            dt / if hold_to > self.hold { 0.7 } else { 1.3 },
-        );
+        self.ease_hands(input, seated, dt);
 
-        // balance against the bus: a damped spring pulled by the floor's acceleration
-        let pull = -input.sway.clamp(Vec2::splat(-4.0), Vec2::splat(4.0));
-        let k = 38.0;
-        let damp = 7.5;
-        let acc = (pull - self.lean) * k - self.lean_v * damp;
-        self.lean_v += acc * dt;
-        self.lean += self.lean_v * dt;
-
-        // breathing, weight shifts, fidgeting, glances
-        self.breath = (self.breath + dt * TAU / (3.6 + 0.6 * self.style[0])) % (TAU * 64.0);
-        self.shift_t -= dt;
-        if self.shift_t <= 0.0 {
-            self.shift_t = 4.0 + self.rand() * 7.0;
-            self.shift_to = (self.rand() * 2.0 - 1.0) * 0.03 * rig.scale;
-        }
-        self.shift += (self.shift_to - self.shift) * ease_k(dt, 1.2);
-        self.fidget_t -= dt;
-        if self.fidget_t <= 0.0 {
-            self.fidget_t = 9.0 + self.rand() * 14.0;
-            let side = (self.rand() * 2.0) as usize % 2;
-            self.fidget[side] =
-                Vec2::new((self.rand() - 0.5) * 0.05, (self.rand() - 0.5) * 0.12) * rig.scale;
-        }
-        self.glance_t -= dt;
-        if self.glance_t <= 0.0 {
-            let walking = self.walk > 0.3;
-            self.glance_t = if walking {
-                2.0 + self.rand() * 4.0
-            } else {
-                1.5 + self.rand() * 5.0
-            };
-            self.glance = if self.rand() < 0.35 {
-                Vec2::ZERO
-            } else if walking {
-                Vec2::new((self.rand() - 0.5) * 50.0, -4.0 - self.rand() * 8.0)
-            } else {
-                Vec2::new((self.rand() - 0.5) * 110.0, (self.rand() - 0.6) * 18.0)
-            };
-        }
-        let look_to = match input.look {
-            Some(p) => {
-                let from = rig.neck + Vec3::Z * 0.08;
-                let d = p - from;
-                let yaw = d.x.atan2(d.y).to_degrees();
-                let pitch = d.z.atan2(d.truncate().length()).to_degrees();
-                if yaw.abs() > 125.0 {
-                    Vec2::new(0.0, pitch.clamp(-35.0, 25.0))
-                } else {
-                    Vec2::new(yaw.clamp(-80.0, 80.0), pitch.clamp(-38.0, 28.0))
-                }
-            }
-            None => self.glance,
-        };
-        let step = 220.0 * dt;
-        let k_head = ease_k(dt, 0.14);
-        let want = self.head + (look_to - self.head) * k_head;
-        self.head.x = approach(self.head.x, want.x, step);
-        self.head.y = approach(self.head.y, want.y, step);
+        self.idle_motion(rig, input, dt);
 
         // the gait: on while moving, off when stopped or sitting
         let moving = if self.gait {
@@ -449,57 +335,7 @@ impl Pose {
         let prev_phase = self.phase;
         if self.gait {
             self.phase = (self.phase + dt * cadence) % 1.0;
-            // a foot left too far behind (the body was pushed on or sped up faster than the
-            // stride): a quick step catches up rather than the hips sinking to reach it. A
-            // foot left on another floor (a stair the body has gone down from, the bus floor
-            // after stepping off) goes first: it lifts the body's floor, so the other foot
-            // could never reach down and stepped again and again while this one was dragged
-            // along a flight up.
-            if self.feet.iter().all(|f| f.planted) {
-                let reach = (rig.thigh + rig.shin) * 0.997;
-                let mut worst: Option<(usize, f32)> = None;
-                for side in 0..2 {
-                    let f = &self.feet[side];
-                    let u = (self.phase + if side == 0 { 0.0 } else { 0.5 }) % 1.0;
-                    if f.walk && u >= beta - 0.04 {
-                        // lifts now anyway
-                        continue;
-                    }
-                    let pitch = if f.walk {
-                        stance_pitch(u, beta, self.walk)
-                    } else {
-                        0.0
-                    };
-                    let a = self.to_local(Self::stance_ankle(rig, f, pitch));
-                    let hip = rig.hip[side] + Vec3::Z * self.body_floor;
-                    let horiz = (a - hip).truncate().length();
-                    let stranded = (f.pos.z - self.origin.z).abs() as f32;
-                    let need = if stranded > STRANDED {
-                        1.0 + stranded
-                    } else {
-                        (hip.z - a.z) - (reach * reach - horiz * horiz).max(0.0).sqrt()
-                    };
-                    if need > CATCH_UP && worst.map(|w| need > w.1).unwrap_or(true) {
-                        worst = Some((side, need));
-                    }
-                }
-                if let Some((side, _)) = worst {
-                    let f = &mut self.feet[side];
-                    f.from_ankle = Self::stance_ankle(rig, f, 0.0);
-                    f.from_yaw = f.yaw;
-                    f.from_pitch = 0.0;
-                    f.from_floor = f.pos.z;
-                    f.planted = false;
-                    f.walk = false;
-                    f.t = 0.0;
-                    f.dur = 0.26;
-                    f.lift = 0.05 * rig.scale;
-                    f.to_sampled = DVec2::splat(f64::MAX);
-                    f.land_z = f.pos.z;
-                    f.land_wait = 0.0;
-                    self.catch_ups += 1;
-                }
-            }
+            self.catch_up(rig, beta);
         }
         for side in 0..2 {
             let offset = if side == 0 { 0.0 } else { 0.5 };
@@ -571,22 +407,186 @@ impl Pose {
         }
         // standing: step when a foot is left too far from where it belongs
         if !self.gait && !seated && self.feet.iter().all(|f| f.planted) {
-            let mut worst: Option<(usize, f32)> = None;
-            for side in 0..2 {
-                let (rp, ryaw) = self.rest_target(rig, side, self.origin, self.heading, false);
-                let off = (self.feet[side].pos - rp).truncate().length() as f32;
-                let yaw_off = angle_diff(self.feet[side].yaw, ryaw).abs() as f32;
-                let reach = self.to_local(self.feet[side].pos).truncate().length();
-                let stranded = (self.feet[side].pos.z - self.origin.z).abs() as f32;
-                let bad = (off / 0.13)
-                    .max(yaw_off / 12.0)
-                    .max(reach / (0.6 * rig.leg()))
-                    .max(stranded / STRANDED);
-                if bad > 1.0 && worst.map(|w| bad > w.1).unwrap_or(true) {
-                    worst = Some((side, bad));
+            self.step_to_rest(rig);
+        }
+        // last resort: a planted foot the legs cannot reach (pushed away while the other
+        // one was in the air) shuffles along the floor until they can
+        if !seated {
+            self.shuffle_unreachable(rig, beta);
+        }
+        self.follow_feet_floor(dt);
+        // the pelvis may rise again only gradually
+        self.drop = approach(self.drop, 0.0, dt * 0.4);
+        self.swing_floor(input, dt);
+    }
+
+    /// A new floor frame (boarding, getting off): the feet stay where they are in the world.
+    fn follow_floor_frame(&mut self, input: &PoseInput) {
+        let dyaw = angle_diff(self.heading, input.heading);
+        for k in 0..2 {
+            let f = self.feet[k];
+            let (lp, la, lt) = (
+                self.to_local(f.pos),
+                self.to_local(f.from_ankle),
+                self.to_local(f.to),
+            );
+            let floor = f.to_floor - self.origin.z + input.origin.z;
+            let from_floor = f.from_floor - self.origin.z + input.origin.z;
+            let land_z = f.land_z - self.origin.z + input.origin.z;
+            let g = &mut self.feet[k];
+            g.pos = Self::place(input.origin, input.heading, lp);
+            g.from_ankle = Self::place(input.origin, input.heading, la);
+            g.to = Self::place(input.origin, input.heading, lt);
+            g.to_floor = floor;
+            g.from_floor = from_floor;
+            g.land_z = land_z;
+            g.yaw += dyaw;
+            g.from_yaw += dyaw;
+            g.to_yaw += dyaw;
+            g.to_sampled = DVec2::splat(f64::MAX);
+        }
+        self.frame = input.frame;
+        self.origin = input.origin;
+        self.heading = input.heading;
+        self.vel = input.velocity;
+    }
+
+    /// The hands on their way to the cash desk, a grip or a hold, and back.
+    fn ease_hands(&mut self, input: &PoseInput, seated: bool, dt: f32) {
+        // reaching for the cash desk, holding on
+        match input.reach {
+            Some(r) if !seated => {
+                // the hand moves on to a new target, it does not jump there
+                if self.reach <= 0.0 {
+                    self.reach_at = r;
+                } else {
+                    self.reach_at += (r - self.reach_at) * ease_k(dt, 0.22);
+                }
+                self.reach = approach(self.reach, 1.0, dt / 0.55);
+            }
+            _ => self.reach = approach(self.reach, 0.0, dt / 0.6),
+        }
+        match input.grips {
+            Some(g) => {
+                self.grip_at = g;
+                self.grip_frame = input.grip_frames;
+                self.grip_extra += (input.grip_lean - self.grip_extra) * ease_k(dt, 0.3);
+                self.grip = approach(self.grip, 1.0, dt / 0.8);
+            }
+            None => self.grip = approach(self.grip, 0.0, dt / 0.8),
+        }
+        let hold_to = if seated {
+            0.0
+        } else {
+            input.hold.clamp(0.0, 1.0)
+        };
+        self.hold = approach(
+            self.hold,
+            hold_to,
+            dt / if hold_to > self.hold { 0.7 } else { 1.3 },
+        );
+    }
+
+    /// What a body does whatever its feet do: the balance against the bus, breathing, weight
+    /// shifts, fidgeting, glances and the head turning to what it looks at.
+    fn idle_motion(&mut self, rig: &Rig, input: &PoseInput, dt: f32) {
+        // balance against the bus: a damped spring pulled by the floor's acceleration
+        let pull = -input.sway.clamp(Vec2::splat(-4.0), Vec2::splat(4.0));
+        let k = 38.0;
+        let damp = 7.5;
+        let acc = (pull - self.lean) * k - self.lean_v * damp;
+        self.lean_v += acc * dt;
+        self.lean += self.lean_v * dt;
+
+        // breathing, weight shifts, fidgeting, glances
+        self.breath = (self.breath + dt * TAU / (3.6 + 0.6 * self.style[0])) % (TAU * 64.0);
+        self.shift_t -= dt;
+        if self.shift_t <= 0.0 {
+            self.shift_t = 4.0 + self.rand() * 7.0;
+            self.shift_to = (self.rand() * 2.0 - 1.0) * 0.03 * rig.scale;
+        }
+        self.shift += (self.shift_to - self.shift) * ease_k(dt, 1.2);
+        self.fidget_t -= dt;
+        if self.fidget_t <= 0.0 {
+            self.fidget_t = 9.0 + self.rand() * 14.0;
+            let side = (self.rand() * 2.0) as usize % 2;
+            self.fidget[side] =
+                Vec2::new((self.rand() - 0.5) * 0.05, (self.rand() - 0.5) * 0.12) * rig.scale;
+        }
+        self.glance_t -= dt;
+        if self.glance_t <= 0.0 {
+            let walking = self.walk > 0.3;
+            self.glance_t = if walking {
+                2.0 + self.rand() * 4.0
+            } else {
+                1.5 + self.rand() * 5.0
+            };
+            self.glance = if self.rand() < 0.35 {
+                Vec2::ZERO
+            } else if walking {
+                Vec2::new((self.rand() - 0.5) * 50.0, -4.0 - self.rand() * 8.0)
+            } else {
+                Vec2::new((self.rand() - 0.5) * 110.0, (self.rand() - 0.6) * 18.0)
+            };
+        }
+        let look_to = match input.look {
+            Some(p) => {
+                let from = rig.neck + Vec3::Z * 0.08;
+                let d = p - from;
+                let yaw = d.x.atan2(d.y).to_degrees();
+                let pitch = d.z.atan2(d.truncate().length()).to_degrees();
+                if yaw.abs() > 125.0 {
+                    Vec2::new(0.0, pitch.clamp(-35.0, 25.0))
+                } else {
+                    Vec2::new(yaw.clamp(-80.0, 80.0), pitch.clamp(-38.0, 28.0))
                 }
             }
-            if let Some((side, bad)) = worst {
+            None => self.glance,
+        };
+        let step = 220.0 * dt;
+        let k_head = ease_k(dt, 0.14);
+        let want = self.head + (look_to - self.head) * k_head;
+        self.head.x = approach(self.head.x, want.x, step);
+        self.head.y = approach(self.head.y, want.y, step);
+    }
+
+    /// Walking: a quick step for a foot left too far behind (see the comment inside).
+    fn catch_up(&mut self, rig: &Rig, beta: f32) {
+        // a foot left too far behind (the body was pushed on or sped up faster than the
+        // stride): a quick step catches up rather than the hips sinking to reach it. A
+        // foot left on another floor (a stair the body has gone down from, the bus floor
+        // after stepping off) goes first: it lifts the body's floor, so the other foot
+        // could never reach down and stepped again and again while this one was dragged
+        // along a flight up.
+        if self.feet.iter().all(|f| f.planted) {
+            let reach = (rig.thigh + rig.shin) * 0.997;
+            let mut worst: Option<(usize, f32)> = None;
+            for side in 0..2 {
+                let f = &self.feet[side];
+                let u = (self.phase + if side == 0 { 0.0 } else { 0.5 }) % 1.0;
+                if f.walk && u >= beta - 0.04 {
+                    // lifts now anyway
+                    continue;
+                }
+                let pitch = if f.walk {
+                    stance_pitch(u, beta, self.walk)
+                } else {
+                    0.0
+                };
+                let a = self.to_local(Self::stance_ankle(rig, f, pitch));
+                let hip = rig.hip[side] + Vec3::Z * self.body_floor;
+                let horiz = (a - hip).truncate().length();
+                let stranded = (f.pos.z - self.origin.z).abs() as f32;
+                let need = if stranded > STRANDED {
+                    1.0 + stranded
+                } else {
+                    (hip.z - a.z) - (reach * reach - horiz * horiz).max(0.0).sqrt()
+                };
+                if need > CATCH_UP && worst.map(|w| need > w.1).unwrap_or(true) {
+                    worst = Some((side, need));
+                }
+            }
+            if let Some((side, _)) = worst {
                 let f = &mut self.feet[side];
                 f.from_ankle = Self::stance_ankle(rig, f, 0.0);
                 f.from_yaw = f.yaw;
@@ -595,43 +595,82 @@ impl Pose {
                 f.planted = false;
                 f.walk = false;
                 f.t = 0.0;
-                f.dur = if bad > 2.5 { 0.28 } else { 0.38 };
-                f.lift = 0.045 * rig.scale;
+                f.dur = 0.26;
+                f.lift = 0.05 * rig.scale;
                 f.to_sampled = DVec2::splat(f64::MAX);
                 f.land_z = f.pos.z;
                 f.land_wait = 0.0;
+                self.catch_ups += 1;
             }
         }
-        // last resort: a planted foot the legs cannot reach (pushed away while the other
-        // one was in the air) shuffles along the floor until they can
-        if !seated {
-            let reach = (rig.thigh + rig.shin) * 0.997;
-            for side in 0..2 {
-                let f = self.feet[side];
-                if !f.planted {
-                    continue;
-                }
-                let u = (self.phase + if side == 0 { 0.0 } else { 0.5 }) % 1.0;
-                let pitch = if f.walk && self.gait && u < beta + 0.3 {
-                    stance_pitch(u.min(beta), beta, self.walk)
-                } else {
-                    0.0
-                };
-                let a = self.to_local(Self::stance_ankle(rig, &f, pitch));
-                let hip = rig.hip[side] + Vec3::Z * self.body_floor;
-                let off = (a - hip).truncate();
-                let down = hip.z - a.z - MAX_DROP;
-                let horiz_max = (reach * reach - down * down).max(0.0).sqrt();
-                if off.length() > horiz_max + 0.01 && off.length() > 1e-3 {
-                    let pull = off.normalize() * (off.length() - horiz_max);
-                    let h = self.heading.to_radians();
-                    let (sn, cs) = (h.sin(), h.cos());
-                    let (px, py) = (pull.x as f64, pull.y as f64);
-                    self.feet[side].pos -= DVec3::new(px * cs + py * sn, -px * sn + py * cs, 0.0);
-                    self.shuffles += 1;
-                }
+    }
+
+    /// Standing: a step for the foot furthest from where it belongs.
+    fn step_to_rest(&mut self, rig: &Rig) {
+        let mut worst: Option<(usize, f32)> = None;
+        for side in 0..2 {
+            let (rp, ryaw) = self.rest_target(rig, side, self.origin, self.heading, false);
+            let off = (self.feet[side].pos - rp).truncate().length() as f32;
+            let yaw_off = angle_diff(self.feet[side].yaw, ryaw).abs() as f32;
+            let reach = self.to_local(self.feet[side].pos).truncate().length();
+            let stranded = (self.feet[side].pos.z - self.origin.z).abs() as f32;
+            let bad = (off / 0.13)
+                .max(yaw_off / 12.0)
+                .max(reach / (0.6 * rig.leg()))
+                .max(stranded / STRANDED);
+            if bad > 1.0 && worst.map(|w| bad > w.1).unwrap_or(true) {
+                worst = Some((side, bad));
             }
         }
+        if let Some((side, bad)) = worst {
+            let f = &mut self.feet[side];
+            f.from_ankle = Self::stance_ankle(rig, f, 0.0);
+            f.from_yaw = f.yaw;
+            f.from_pitch = 0.0;
+            f.from_floor = f.pos.z;
+            f.planted = false;
+            f.walk = false;
+            f.t = 0.0;
+            f.dur = if bad > 2.5 { 0.28 } else { 0.38 };
+            f.lift = 0.045 * rig.scale;
+            f.to_sampled = DVec2::splat(f64::MAX);
+            f.land_z = f.pos.z;
+            f.land_wait = 0.0;
+        }
+    }
+
+    /// A planted foot the legs cannot reach slides along the floor until they can.
+    fn shuffle_unreachable(&mut self, rig: &Rig, beta: f32) {
+        let reach = (rig.thigh + rig.shin) * 0.997;
+        for side in 0..2 {
+            let f = self.feet[side];
+            if !f.planted {
+                continue;
+            }
+            let u = (self.phase + if side == 0 { 0.0 } else { 0.5 }) % 1.0;
+            let pitch = if f.walk && self.gait && u < beta + 0.3 {
+                stance_pitch(u.min(beta), beta, self.walk)
+            } else {
+                0.0
+            };
+            let a = self.to_local(Self::stance_ankle(rig, &f, pitch));
+            let hip = rig.hip[side] + Vec3::Z * self.body_floor;
+            let off = (a - hip).truncate();
+            let down = hip.z - a.z - MAX_DROP;
+            let horiz_max = (reach * reach - down * down).max(0.0).sqrt();
+            if off.length() > horiz_max + 0.01 && off.length() > 1e-3 {
+                let pull = off.normalize() * (off.length() - horiz_max);
+                let h = self.heading.to_radians();
+                let (sn, cs) = (h.sin(), h.cos());
+                let (px, py) = (pull.x as f64, pull.y as f64);
+                self.feet[side].pos -= DVec3::new(px * cs + py * sn, -px * sn + py * cs, 0.0);
+                self.shuffles += 1;
+            }
+        }
+    }
+
+    /// The floor under the body follows the planted feet.
+    fn follow_feet_floor(&mut self, dt: f32) {
         // the floor under the body follows the planted feet
         let mut floor_sum = 0.0;
         let mut floor_n = 0.0;
@@ -651,9 +690,6 @@ impl Pose {
         };
         let floor_to = floor_to.clamp(-0.6, 0.6);
         self.body_floor += (floor_to - self.body_floor) * ease_k(dt, 0.18);
-        // the pelvis may rise again only gradually
-        self.drop = approach(self.drop, 0.0, dt * 0.4);
-        self.swing_floor(input, dt);
     }
 
     fn fly(
