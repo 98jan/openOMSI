@@ -4562,7 +4562,7 @@ pub fn skin_vertices(
 
 #[cfg(test)]
 mod tests {
-    include!("../../../tools/test-support/original_root.rs");
+    include!("../../../../tools/test-support/original_root.rs");
     use super::*;
     use std::sync::Arc;
 
@@ -5789,7 +5789,7 @@ mod tests {
         let mut ty = coupling_test_type(None);
         let ty = Arc::get_mut(&mut ty).unwrap();
         ty.model = Model::parse(&omsi_cfg::CfgFile::from_str("synthetic.cfg",
-            include_str!("../../omsi-model/tests/fixtures/material-compatibility.cfg")));
+            include_str!("../../../omsi-model/tests/fixtures/material-compatibility.cfg")));
         ty.meshes.push(VehicleMesh {
             def_index: 0, data: MeshData::default(), file: PathBuf::new(),
             materials: (0..2).map(|_| omsi_o3d::Material {
@@ -6415,7 +6415,7 @@ pub fn road_grip(street_cond: f32, temperature: f32) -> f32 {
 
 #[cfg(test)]
 mod grip_tests {
-    include!("../../../tools/test-support/original_root.rs");
+    include!("../../../../tools/test-support/original_root.rs");
     use super::road_grip;
 
     #[test]
