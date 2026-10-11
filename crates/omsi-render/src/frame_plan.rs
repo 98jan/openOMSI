@@ -366,9 +366,7 @@ pub(crate) fn record_bundles(
     // memory) panics in `finish`: that part of the picture is left out for the frame and
     // the game goes on - it ended the game on Windows right after an "Out of memory"
     let record = |chunk: &[Batch]| -> Option<wgpu::RenderBundle> {
-        CATCHING.with(|c| c.set(true));
-        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| record(chunk)));
-        CATCHING.with(|c| c.set(false));
+        let r = catch(|| record(chunk)).ok_or(());
         match r {
             Ok(b) => Some(b),
             Err(_) => {
