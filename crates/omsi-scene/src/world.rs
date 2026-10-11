@@ -169,6 +169,9 @@ pub struct World {
     /// Those of them near the camera, gathered again only when it has moved on (see
     /// `lights::collect`).
     pub(crate) near_lights: Mutex<crate::lights::NearLights>,
+    /// How bright the vehicles' `[spotlight_cookie]` lamps are as they fade (see
+    /// `lights::vehicle_lights`).
+    pub(crate) cookie_fades: Mutex<crate::lights::CookieFades>,
     /// Every tile file of the map read once: splines for the spline attachment rows,
     /// objects for entry points and stops of tiles that are not loaded.
     pub(super) index: Mutex<Option<Arc<MapIndex>>>,

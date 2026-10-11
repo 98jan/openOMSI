@@ -124,6 +124,7 @@ pub fn vehicle_lights(
     coronas: &mut Vec<Corona>,
     lights: &mut Vec<PointLight>,
     night: f32,
+    fades: &parking_lot::Mutex<CookieFades>,
 ) {
     let ty = &v.ty;
     // def index → loaded mesh index (animation transform)
@@ -254,7 +255,7 @@ pub fn vehicle_lights(
         let dir = model.path.parent().unwrap_or(std::path::Path::new(""));
         for (k, c) in model.spotlight_cookies.iter().enumerate() {
             let key = (v as *const VehicleInstance as usize, part, k);
-            let on = cookie_fade(key, value_of(c.variable.as_str()).clamp(0.0, 1.0), c.fade);
+            let on = cookie_fade(&mut fades.lock(), key, value_of(c.variable.as_str()).clamp(0.0, 1.0), c.fade);
             if on <= 0.0 {
                 continue;
             }
@@ -327,18 +328,18 @@ fn push_cookie(lights: &mut Vec<PointLight>, at: DVec3, d: Vec3, c: &omsi_model:
     });
 }
 
+/// The `[spotlight_cookie]` lamps' brightness and when it was last worked out, by vehicle,
+/// part and lamp (kept by the world the vehicles drive in: `World::cookie_fades`).
+pub(crate) type CookieFades = std::collections::HashMap<(usize, usize, usize), (f32, std::time::Instant)>;
+
 /// How bright a `[spotlight_cookie]` is now, coming to `target` with its time constant
 /// `fade` (s; 0 at once): kept per vehicle and lamp from frame to frame. A lamp seen for the
 /// first time is at its target (a picture taken offscreen shows it lit).
-fn cookie_fade(key: (usize, usize, usize), target: f32, fade: f32) -> f32 {
-    type Fades = std::collections::HashMap<(usize, usize, usize), (f32, std::time::Instant)>;
-    static FADES: std::sync::Mutex<Option<Fades>> = std::sync::Mutex::new(None);
+fn cookie_fade(fades: &mut CookieFades, key: (usize, usize, usize), target: f32, fade: f32) -> f32 {
     if fade <= 0.0 {
         return target;
     }
     let now = std::time::Instant::now();
-    let mut g = FADES.lock().unwrap_or_else(|e| e.into_inner());
-    let fades = g.get_or_insert_with(Default::default);
     // (lamps of vehicles gone for a while are forgotten)
     if fades.len() > 256 {
         fades.retain(|_, (_, t)| now.duration_since(*t).as_secs_f32() < 5.0);
@@ -653,7 +654,7 @@ pub fn collect(
     }
     let vehicle_smoke = scene.smoke.len();
     for v in vehicles {
-        vehicle_lights(v, &mut scene.coronas, &mut scene.lights, night);
+        vehicle_lights(v, &mut scene.coronas, &mut scene.lights, night, &world.cookie_fades);
         particle_sprites(&v.particles, &mut scene.smoke, &mut scene.coronas);
         for t in &v.trailers {
             particle_sprites(&t.particles, &mut scene.smoke, &mut scene.coronas);
