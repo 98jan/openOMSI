@@ -5327,7 +5327,7 @@ _version: 2
 "Navigator (Shift+N: map, schedule, off)":
   ca: "Navegador (Maj+N: mapa, horari, desactivat)"
   ru: "Навигатор (Shift+N: карта, расписание, выкл.)"
-  de: "Navigator (Shift+N: Karte, Fahrplan, aus)"
+  de: "Navigator (Umschalt+N: Karte, Fahrplan, aus)"
   fr: "Navigateur (Shift+N : carte, horaire, désactivé)"
   uk: "Навігатор (Shift+N: мапа, розклад, вимк.)"
   be: "Навігатар (Shift+N: мапа, расклад, выкл.)"
@@ -21444,6 +21444,7 @@ _version: 2
   zh-tw: "滑鼠轉向靈敏度 (O)"
   nl: "Gevoeligheid van muissturing (O)"
 "Mouse pedal strength":
+  de: "Stärke des Mauspedals"
   fr: "Force des pédales à la souris"
   nl: "Sterkte van muispedalen"
 "Adjust how much mouse travel is needed to reach full throttle or braking":
@@ -23014,6 +23015,7 @@ _version: 2
 
 "Dynamic steering (slower keys at speed, OMSI's redSteerSpd)":
   ca: "Direcció dinàmica (tecles més lentes a velocitat alta, redSteerSpd d'OMSI)"
+  de: "Dynamische Lenkung (langsameres Lenken bei Geschwindigkeit, redSteerSpd von OMSI)"
   pt: "Direção dinâmica (teclas mais lentas em velocidade, redSteerSpd do OMSI)"
   pt-pt: "Direção dinâmica (teclas mais lentas em velocidade, redSteerSpd do OMSI)"
   zh: "动态转向(高速时按键转向变慢,OMSI 的 redSteerSpd)"
@@ -23024,6 +23026,7 @@ _version: 2
 
 "Driver's view turns with the steering":
   ca: "La vista del conductor gira amb la direcció"
+  de: "Sicht des Fahrers dreht sich mit der Lenkung"
   pt: "A visão do motorista acompanha a direção"
   pt-pt: "A vista do condutor acompanha a direção"
   zh: "驾驶员视角随转向转动"
@@ -23034,6 +23037,7 @@ _version: 2
 
 "Right mouse button turns the view, Shift+right zooms (off: right zooms as in OMSI, the wheel button turns)":
   ca: "El botó dret gira la vista, Maj+dret fa zoom (desactivat: el dret fa zoom com a OMSI i el botó de la roda gira)"
+  de: "Rechte Maustaste dreht die Sicht, Umschalt+R. Maustaste zoomt (aus: R. Maustaste zoomt wie in OMSI, der Lenkrad-Knopf dreht)"
   pt: "O botão direito do mouse gira a visão; Shift+botão direito aplica zoom (desativado: o botão direito aplica zoom como no OMSI e o botão do meio gira a visão)"
   pt-pt: "O botão direito do rato roda a vista; Shift+botão direito aplica zoom (desativado: o botão direito aplica zoom como no OMSI e o botão do meio roda a vista)"
   zh: "鼠标右键转动视角,Shift+右键缩放(关闭时:右键像 OMSI 一样缩放,滚轮键转动视角)"
@@ -23044,6 +23048,7 @@ _version: 2
 
 "Sync the clock with the real time (locks the time)":
   ca: "Sincronitza el rellotge amb l'hora real (bloqueja l'hora)"
+  de: "Uhrzeit mit Echtzeit synchronisieren (Sperrt die Zeit)"
   pt: "Sincronizar o relógio com a hora real (bloqueia o horário)"
   pt-pt: "Sincronizar o relógio com a hora real (bloqueia a hora)"
   zh: "时钟与真实时间同步(锁定时间)"
@@ -23054,6 +23059,7 @@ _version: 2
 
 "Sync the weather with METAR (locks the weather)":
   ca: "Sincronitza el temps amb METAR (bloqueja el temps)"
+  de: "Wetter mit Echtwetter-METAR synchronisieren (Sperrt das Wetter)"
   pt: "Sincronizar o clima com o METAR (bloqueia o clima)"
   pt-pt: "Sincronizar a meteorologia com o METAR (bloqueia a meteorologia)"
   zh: "天气与 METAR 同步(锁定天气)"
@@ -23064,6 +23070,7 @@ _version: 2
 
 "Time speed (not in multiplayer or with the real-time sync)":
   ca: "Velocitat del temps (no disponible en multijugador ni amb la sincronització horària)"
+  de: "Zeitmultiplikator (nicht im Mehrspieler oder mit Echzeit-Synchronisation)"
   pt: "Velocidade do tempo (indisponível no multiplayer ou com sincronização em tempo real)"
   pt-pt: "Velocidade do tempo (indisponível no multijogador ou com sincronização em tempo real)"
   zh: "时间流速(多人游戏中或实时同步时不可用)"
@@ -25613,6 +25620,7 @@ _version: 2
   nl: "De launcher pauzeert tijdens het rijden zodat het spel de grafische kaart voor zichzelf heeft. Na afloop verschijnt hij opnieuw."
 "A right click ends the mouse steering (as in OMSI)":
   ca: "Un clic dret desactiva la direcció amb ratolí (com a OMSI)"
+  de: "Ein Rechtsklick beendet die Maussteuerung"
   fr: "Un clic droit arrête la direction à la souris (comme sur OMSI)"
   zh-tw: "按一下滑鼠右鍵即可停止滑鼠轉向（與 OMSI 相同）"
 
@@ -25658,7 +25666,7 @@ _version: 2
   pt: "Sem bordas em três monitores iguais, lado a lado na horizontal; requer reinicialização"
   pt-pt: "Sem margens em três monitores iguais, lado a lado na horizontal; requer reinício"
   zh: "三个相同显示器水平排列的无边框模式；需要重启"
-  de: "Randlos über drei horizontal nebeneinander angeordnete gleiche Bildschirme; erfordert Neustart"
+  de: "Randlos über drei horizontal nebeneinander angeordnete gleiche Monitore; erfordert Neustart"
   nl: "Randloos over drie gelijke schermen naast elkaar; herstart vereist"
 "All doors, any bus":
   ca: "Totes les portes, qualsevol autobús"
@@ -25698,6 +25706,7 @@ _version: 2
   nl: "Rechtsonder"
 "Cabin and outside, one key":
   ca: "Cabina i exterior, una sola tecla"
+  de: "Fahrerhaus und Außen, eine Taste"
   fr: "Cabine et extérieur, une seule touche"
   zh-tw: "駕駛室與車外，同一按鍵"
 
@@ -25979,6 +25988,7 @@ _version: 2
   nl: "Houd navigator, menu's en informatie op het middelste scherm"
 "Latching":
   ca: "Amb enclavament"
+  de: "Rastschalter"
   fr: "Maintenu"
   zh-tw: "鎖定"
 
@@ -26260,7 +26270,7 @@ _version: 2
   pt: "Usar três monitores ao iniciar"
   pt-pt: "Usar três monitores no arranque"
   zh: "启动时跨越三个显示器"
-  de: "Über drei Monitore beim Start strecken"
+  de: "Beim Start über drei Monitore strecken"
   nl: "Gebruik drie schermen bij het opstarten"
 "Swap":
   de: "Tauschen"
@@ -26359,6 +26369,7 @@ _version: 2
   nl: "Drie schermprojecties"
 "Tools":
   ca: "Eines"
+  de: "Werkzeuge"
   zh-tw: "工具"
   fr: "Outils"
   pt: "Ferramentas"
@@ -26367,6 +26378,7 @@ _version: 2
   nl: "Hulpmiddelen"
 "Top left":
   ca: "Superior esquerra"
+  de: "Oben links"
   zh-tw: "左上"
   fr: "En haut à gauche"
   pt: "Superior esquerdo"
@@ -26375,6 +26387,7 @@ _version: 2
   nl: "Linksboven"
 "Top right":
   ca: "Superior dreta"
+  de: "Oben rechts"
   zh-tw: "右上"
   fr: "En haut à droite"
   pt: "Superior direito"
@@ -26383,6 +26396,7 @@ _version: 2
   nl: "Rechtsboven"
 "Triple screen":
   ca: "Triple pantalla"
+  de: "Triple Screen"
   fr: "Triple écran"
   zh-tw: "三螢幕"
 
@@ -26392,6 +26406,7 @@ _version: 2
   nl: "Drievoudig scherm"
 "triple screen: the window spans three monitors, fullscreen is left alone":
   ca: "triple pantalla: la finestra ocupa tres monitors; no es modifica la pantalla completa"
+  de: "Triple Screen: Das Fenster erstreckt sich über drei Monitore, Vollbild bleibt unverändert"
   zh-tw: "三重螢幕：視窗跨越三個顯示器，全螢幕單獨保留"
   fr: "triple écran : la fenêtre couvre trois écrans, le plein écran n'est pas modifié"
   pt: "tela tripla: a janela ocupa três monitores; a tela cheia não é alterada"
@@ -26466,6 +26481,7 @@ _version: 2
   nl: "Functie van elke as en knop van een stuur, pedalen of joystick - OMSI 2's gamectrler.cfg, opgeslagen in de contentmap."
 "Window size":
   ca: "Mida de la finestra"
+  de: "Fenstergröße"
   fr: "Taille de la fenêtre"
   zh-tw: "視窗大小"
 
@@ -27441,6 +27457,7 @@ _version: 2
   fr: "Le volant suit le stick, même braquage à toute vitesse : pour un volant vu comme une manette Xbox"
 
 "Stick steering smoothing":
+  de: "Glättung der Stick-Lenkung"
   fr: "Lissage du stick"
 
 "Evens out a gamepad stick's small shakes (off: the stick as it reads)":
@@ -27474,6 +27491,7 @@ _version: 2
   fr: "Attribuer la direction, l'accélérateur, le frein et l'embrayage"
 
 "Assign controls and configure latching switches":
+  de: "Weise Steuerungen zu und konfiguriere Rastschalter"
   fr: "Attribuer les commandes et configurer les interrupteurs maintenus"
 
 "Adjust this device's force, vibration and direction":
@@ -27504,6 +27522,7 @@ _version: 2
   fr: "Choisir un événement OMSI ou une action du jeu"
 
 "Latching switch":
+  de: "Rastschalter"
   fr: "Interrupteur maintenu"
 
 "Switch back when a physical switch is released":
@@ -27546,6 +27565,7 @@ _version: 2
   fr: "Boutons attribués"
 
 "Latching switch | choose its action or behaviour":
+  de: "Rastschalter | Wähle die Aktion oder das Verhalten"
   fr: "Interrupteur maintenu | choisissez son action ou son comportement"
 
 "Choose its action or switch behaviour":
@@ -27803,7 +27823,7 @@ _version: 2
   fr: "Fichier de dépôt {} | Shift+U dans le jeu le saisit pour vous"
 
 "Personnel file of {name} deleted.":
-  de: "Speicherstand von {name} gelöscht."
+  de: "Personalakte von {name} gelöscht."
   fr: "Dossier de {name} supprimé."
 
 "Driver {name} created.":
@@ -31149,7 +31169,7 @@ _version: 2
   ca: "Estadístiques"
 
 "Personnel file":
-  de: "Fahrerakte"
+  de: "Personalakte"
   fr: "Dossier du conducteur"
   ru: "Личное дело"
   uk: "Особова справа"
