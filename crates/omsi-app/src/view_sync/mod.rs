@@ -3,7 +3,18 @@
 //! omsi-sim and know nothing of the GPU; what they look like is here:
 //!
 //! * `traffic`: the AI vehicles' renders, their drivers and the traffic light lamps;
-//! * `people`: the people's meshes, posing and skinning, the coins and the ticket blocks.
+//! * `people`: the people's meshes, posing and skinning, the coins and the ticket blocks;
+//! * `vehicle`, `vehicle_damage`: what any vehicle's simulation changed this frame (the
+//!   player's, an AI car's, their coupled parts'): skinned meshes, switched materials, free
+//!   textures, interior lamps, text and script texture uploads, glass cracks and dents.
+//!
+//! What the simulation hands over is data, never pixels it sends or sounds it plays: the
+//! cars it took off the road (`TrafficSim::retired`, `TrafficSim::take_parked`), the
+//! pictures its scripts and pages drew (`ScriptTexture::take_upload`,
+//! `TextTextureState::pending`), the sounds its scripts triggered (`VehicleHost::fired_*`)
+//! and the posts it knocked over (`VehicleInstance::knocked_now`). The pictures it reads
+//! itself (fonts, `STLoadTex`) come through the decoder registered here
+//! ([`install_sim_decoder`]).
 //!
 //! [`sync`] is the frame's view sync. The window runs it twice a frame, each time where the
 //! part it brings up to date used to be synced: the traffic at the end of its step (before
