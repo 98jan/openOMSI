@@ -74,6 +74,8 @@ pub struct TrailerPart {
     /// Per axle of this part: tyre radius less the unloaded hub height, the static load per
     /// wheel and the spring rate - it sits down on its springs like the part it follows.
     pub(super) rest: Vec<(f32, f32, f32)>,
+    /// The share of its weight the part hangs on its coupling with (N; see `joint_load`).
+    pub(super) joint_load: f32,
     /// `Axle_Brakeforce_<axle>_L/R` of this part's axles, in the leading vehicle's scripts.
     pub(super) v_brakes: Vec<Option<omsi_script::VarId>>,
     /// How far the part's origin stands above the ground under its axles (m).
@@ -136,6 +138,23 @@ impl AxleVarIds {
         self.spring_factor = n.map(|k| main.var_slot(&format!("Axle_Springfactor_{k}_L")).map(|i| i as omsi_script::VarId)).collect();
         self.made_for = Some(key);
     }
+}
+
+/// The weight (N) a road part on a single axle hangs on the coupling in front of it, the
+/// share of its centre of gravity ahead of the axle; the axle carries the rest. Omsi.exe
+/// joins the sections of an articulated bus with a ball joint between bodies of their own,
+/// so the GN92's rear section (7.2 t, its axle 4.6 m behind the joint and 0.4 m behind its
+/// centre of gravity) lays 0.6 t on the front section's rear axle. Held up by its axle alone
+/// it pressed its springs a fifth deeper than the front section's and its end sagged (#1835).
+/// None for a part with more axles, which stands on them.
+pub(super) fn joint_load(def: &omsi_vehicle::Vehicle, coupling_y: f32) -> f32 {
+    let [axle] = def.axles.as_slice() else { return 0.0 };
+    if def.is_rail() || coupling_y <= axle.long + 0.5 {
+        return 0.0;
+    }
+    let weight = if def.mass < 100.0 { def.mass * 1000.0 } else { def.mass }.max(0.0) * 9.81;
+    let cog_y = def.cog.map(|c| c[1]).unwrap_or(0.0);
+    (weight * (cog_y - axle.long) / (coupling_y - axle.long)).clamp(0.0, weight * 0.5)
 }
 
 impl TrailerPart {
@@ -234,7 +253,11 @@ impl TrailerPart {
             .map(|a| (a.wheel_diameter / 2.0).max(0.1))
             .unwrap_or(0.5);
         let n = ty.meshes.len();
-        let loads = crate::rigid::wheel_rest_loads(&ty.def);
+        let mut loads = crate::rigid::wheel_rest_loads(&ty.def);
+        let joint_load = if joint == 0 && !reversed { joint_load(&ty.def, coupling_front.y) } else { 0.0 };
+        if let Some(l) = loads.first_mut().filter(|_| joint_load > 0.0) {
+            *l -= joint_load / 2.0;
+        }
         let rest = ty
             .def
             .axles
@@ -261,6 +284,7 @@ impl TrailerPart {
             particles: ParticleSet::new(ty.model.particle_systems(), first_axle as u64 * 7919 + 17),
             light_fade: Vec::new(),
             rest,
+            joint_load,
             v_brakes,
             ground_lift: 0.0,
             pitch: 0.0,

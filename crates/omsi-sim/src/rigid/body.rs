@@ -422,7 +422,7 @@ impl RigidBody {
                     r: r_world,
                     fwd: body_fwd,
                     right: Vec3::ZERO,
-                    base: body_fwd * (-9.81 * d.mass * body_fwd.z),
+                    base: body_fwd * (-9.81 * d.mass * body_fwd.z) - Vec3::Z * d.joint_load,
                     drive: drive * share,
                     brake: d.brake.max(0.0) * share,
                     grip: d.load,
