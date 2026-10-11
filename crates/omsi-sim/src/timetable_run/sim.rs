@@ -11,6 +11,7 @@ mod dispatch;
 mod load;
 mod place;
 mod route;
+mod take_on;
 mod tours;
 
 use super::*;
