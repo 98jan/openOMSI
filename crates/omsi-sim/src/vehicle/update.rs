@@ -192,20 +192,27 @@ impl VehicleInstance {
     /// bellows only above that, and the NL/NG lift may drop by what it reads (up to
     /// 0.3 m). Read the other way round (ground minus point) the sensor sat at 0, the
     /// right-hand bellows of an Urbino never let their air out and the bus leant 1.7° to
-    /// the left all the way.
+    /// the left all the way. The ground is what lies under the point (with the world's
+    /// faces, looked for from half a metre above it, so a kerb a little higher still
+    /// counts): the plain sampler gives the highest face there, which under a petrol
+    /// station's canopy is its roof - the point stood metres "under the ground", the NL/NG
+    /// lift could not go down at all and the arcsine of the ramp's angle turned it on its
+    /// side and then away (#2205).
     pub(super) fn update_ground_probe(&mut self) {
-        if self.ground.is_none() {
+        if self.ground.is_none() && self.contact.is_none() {
             return;
         }
         let rot = self.body_rotation();
         let pos = self.position;
-        let g = self.ground.clone().unwrap();
+        let g = self.ground.clone();
+        let contact = self.contact.clone();
         self.host.ground_probe = Some(std::sync::Arc::new(move |x, y, z| {
             let w = pos + rot.transform_point3(glam::Vec3::new(x, y, z)).as_dvec3();
-            match g(w.x, w.y) {
-                Some(h) => (w.z - h) as f32,
-                None => 0.0,
-            }
+            let h = match &contact {
+                Some(c) => c.probe(w.x, w.y, w.z + 0.5).below,
+                None => g.as_ref().and_then(|g| g(w.x, w.y)),
+            };
+            h.map_or(0.0, |h| (w.z - h) as f32)
         }));
     }
 
@@ -414,6 +421,10 @@ impl VehicleInstance {
     /// behind the vehicle's origin (None: not known, the part follows as it does on a road).
     /// Each part's turning axle is placed there, and the part follows its coupling.
     pub fn retrail(&mut self, dt: f32, at_behind: &dyn Fn(f64) -> Option<DVec3>) {
+        // a single railcar has nothing coupled behind it (Thüringer Wald's AI trains, #2259)
+        if self.trailers.is_empty() {
+            return;
+        }
         let mut trailers = std::mem::take(&mut self.trailers);
         let mut lead: Option<(DVec3, Mat4, f64)> = None;
         // Cumulative distance along the track behind the vehicle's front origin

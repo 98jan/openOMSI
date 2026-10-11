@@ -382,6 +382,8 @@ pub struct CoupledPart {
     /// wheels (N).
     pub brake: f32,
     pub load: f32,
+    /// The weight it hangs on the coupling (N), pressing the body down there.
+    pub joint_load: f32,
 }
 
 #[derive(Debug, Clone)]

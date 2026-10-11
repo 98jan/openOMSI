@@ -113,6 +113,9 @@ pub(crate) struct Photo {
     prev_paused: bool,
     /// The view the game had, to return to.
     prev_camera: Option<Camera>,
+    /// How far the photo's clock was moved (s): moved back on the way out, so that the
+    /// bus's duty goes on at the time it stood at (#2116).
+    clock_shift: f64,
     pub(crate) render: render::State,
     /// A word of what was done (the photo saved), and how long it shows.
     pub note: Option<(String, f32)>,
@@ -144,6 +147,7 @@ impl Photo {
             hide_ui: false,
             prev_paused,
             prev_camera: Some(cam),
+            clock_shift: 0.0,
             render: render::State::default(),
             note: None,
             saved: None,
@@ -371,6 +375,9 @@ impl crate::App {
         let Some(ph) = self.photo.take() else { return };
         self.photo_settings = Some(ph.settings.clone());
         self.paused = ph.prev_paused;
+        if ph.clock_shift != 0.0 {
+            self.shift_clock(-ph.clock_shift);
+        }
         if let Some(c) = ph.prev_camera {
             self.camera = Some(c);
         }
@@ -411,8 +418,12 @@ impl crate::App {
                         ph.note = Some((omsi_ui::tr("In a LAN session the host sets the clock").into_owned(), 3.0));
                     }
                 } else {
+                    let moved = !self.real_time_locked();
                     self.shift_clock(secs);
                     if let Some(ph) = self.photo.as_mut() {
+                        if moved {
+                            ph.clock_shift += secs;
+                        }
                         ph.render.reset();
                     }
                 }

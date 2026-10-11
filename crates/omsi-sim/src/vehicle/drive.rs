@@ -374,6 +374,7 @@ impl VehicleInstance {
                         .sum::<f32>()
                         + def.rolling_resistance.max(0.0),
                     load: (0..def.axles.len()).map(wheel_load).sum(),
+                    joint_load: t.joint_load,
                 }
             })
             .collect()

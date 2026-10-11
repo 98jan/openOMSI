@@ -244,7 +244,7 @@ fn climbs_a_kerb_but_not_a_wall() {
 fn pusher_front_section_is_pushed_through_the_joint() {
     let mut def = bus();
     def.axles.iter_mut().for_each(|a| a.driven = false);
-    let rear = CoupledPart { point: Vec3::new(0.0, -4.456, 0.503), dir: Vec3::Y, mass: 0.0, driven_wheels: 2, radius: 0.47, driven_load: 70_000.0, brake: 0.0, load: 70_000.0 };
+    let rear = CoupledPart { point: Vec3::new(0.0, -4.456, 0.503), dir: Vec3::Y, mass: 0.0, driven_wheels: 2, radius: 0.47, driven_load: 70_000.0, brake: 0.0, load: 70_000.0, joint_load: 0.0 };
     let g = road(1e9, 0.0);
     let start = |def: &Vehicle, parts: Vec<CoupledPart>| {
         let mut rb = RigidBody::from_definition(def, &[]);
@@ -306,7 +306,7 @@ fn towed_weight_on_a_grade() {
     let mut def = bus();
     def.axles.iter_mut().for_each(|a| a.driven = false);
     let g = ramp(0.08);
-    let part = CoupledPart { point: Vec3::new(0.0, -4.456, 0.503), dir: Vec3::Y, mass: 7000.0, driven_wheels: 0, radius: 0.47, driven_load: 0.0, brake: 0.0, load: 70_000.0 };
+    let part = CoupledPart { point: Vec3::new(0.0, -4.456, 0.503), dir: Vec3::Y, mass: 7000.0, driven_wheels: 0, radius: 0.47, driven_load: 0.0, brake: 0.0, load: 70_000.0, joint_load: 0.0 };
     let mut rb = RigidBody::from_definition(&def, &[]);
     rb.coupled = vec![CoupledPart { brake: 40_000.0, ..part }];
     rb.place(DVec3::new(0.0, 50.0, 4.0), 0.0);

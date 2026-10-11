@@ -620,6 +620,10 @@ impl App {
                     if self.args.schedule {
                         let mut sch =
                             schedule::Schedule::new(&self.args.root, &w, &start_clock(&self.args));
+                        // (the tours' buses drawn alike on every machine of a LAN game)
+                        if let Some(lan) = self.net.lan.as_ref() {
+                            sch.sim.vehicle_seed = omsi_script::mix_seed(lan::population_seed(lan) ^ 0x746f_7572_5f62_7573);
+                        }
                         sch.precache(
                             &w,
                             &renderer,

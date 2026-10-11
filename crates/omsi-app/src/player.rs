@@ -1,6 +1,7 @@
 //! The player: their bus, its controls and cameras.
 
 use super::*;
+use omsi_input::auto_shift::{GateMemory, auto_shift_gear};
 
 mod cameras;
 mod doors;
@@ -12,7 +13,6 @@ pub(crate) use cameras::*;
 pub(crate) use doors::*;
 pub(crate) use picking::*;
 pub(crate) use mouse::AutoDrag;
-use mouse::repair_roller_blind;
 
 fn indicator_toggle_action(state: &mut u8, lever: Option<u8>, want: u8) -> &'static str {
     // Scripts can cancel the lever themselves after a turn; prefer their current state.
@@ -231,6 +231,8 @@ pub(crate) struct Player {
     pub(crate) auto_shift_max: f32,
     pub(crate) auto_shift_climb: (f32, f32),
     pub(crate) auto_shift_idle: f32,
+    /// The gate the gear lever was put into last (see [`GateMemory`]).
+    pub(crate) gates: GateMemory,
     /// L switched the side lights on with the headlights (see
     /// [`Player::headlights_with_side_lights`]).
     pub(crate) side_lights_by_l: bool,
@@ -404,10 +406,6 @@ impl Player {
         self.action(action, false);
     }
 
-    pub(crate) fn repair_roller_blind(&mut self, event: &str) {
-        repair_roller_blind(&mut self.vehicle, event);
-    }
-
     /// Fire a keyboard action as a script trigger, falling back to the names the stock
     /// scripts use for it. Returns whether any script block ran.
     pub(crate) fn action(&mut self, name: &str, pressed: bool) -> bool {
@@ -460,7 +458,6 @@ impl Player {
         let headlights = pressed && name.eq_ignore_ascii_case("kw_scheinwerfer_toggle");
         let lamps_before = if headlights { self.outside_lamps_lit() } else { 0 };
         if self.vehicle.trigger(&format!("{name}{suffix}")) {
-            self.repair_roller_blind(&format!("{name}{suffix}"));
             if headlights {
                 self.headlights_with_side_lights(lamps_before);
             }
@@ -479,7 +476,6 @@ impl Player {
         };
         for alias in *aliases {
             if self.vehicle.trigger(&format!("{alias}{suffix}")) {
-                self.repair_roller_blind(&format!("{alias}{suffix}"));
                 return true;
             }
         }
@@ -498,6 +494,10 @@ impl Player {
         let Some(gate) = name.get(..5).filter(|p| p.eq_ignore_ascii_case("kw_s_")).map(|_| &name[5..]) else { return };
         let gate = gate.strip_suffix("_fest").unwrap_or(gate);
         let is_gate = gate.eq_ignore_ascii_case("r") || gate.eq_ignore_ascii_case("n") || gate.parse::<u32>().is_ok();
+        if is_gate && self.vehicle.ty.program.trigger(name).is_some() {
+            let to = if gate.eq_ignore_ascii_case("r") { -1 } else { gate.parse::<i32>().unwrap_or(0) };
+            self.gates.engaged(to, false);
+        }
         let program = &self.vehicle.ty.program;
         // (a manual gearbox only: see `Program::manual_gearbox`)
         if !is_gate || !program.manual_gearbox() || self.vehicle.host.auto_clutch < 0.5 || program.trigger(name).is_none() || program.reads_sys(omsi_script::SysVar::AutoClutch) {
@@ -917,7 +917,12 @@ impl Player {
     /// The gear a gear lever's gates have engaged (`kw_s_1`.. buses and cars): the variable
     /// the gates store (`antrieb_getr_gang` in the stock cars, `antrieb_getr_aktugang` in the
     /// LiAZ). None without gates.
+    /// A script whose variable does not follow its gates: the gate put in last (#1832).
     pub(crate) fn gate_gear(&self) -> Option<i32> {
+        self.script_gate_gear().map(|read| self.gates.gear(read))
+    }
+
+    fn script_gate_gear(&self) -> Option<i32> {
         let program = &self.vehicle.ty.program;
         program.trigger("kw_s_1")?;
         let v = crate::input_script::gate_gear_var(program).and_then(|v| self.vehicle.var(&v));
@@ -940,6 +945,7 @@ impl Player {
         self.axes.clutch = 1.0;
         self.vehicle.trigger(&name);
         self.vehicle.trigger(&format!("{name}_off"));
+        self.gates.engaged(to, true);
         true
     }
 
@@ -950,6 +956,10 @@ impl Player {
     /// clutch is worked as for a shift by key.
     pub(crate) fn tick_auto_shift(&mut self, dt: f32, throttle: f32, brake: f32) {
         self.auto_shift_wait = (self.auto_shift_wait - dt).max(0.0);
+        let read = self.script_gate_gear();
+        if self.gates.tick(dt, read) {
+            log::info!("gear lever: the script's gear variable did not follow gate {:?} (stayed {read:?}); the gate put in last is taken as the gear", self.gates.last);
+        }
         if !self.auto_shift || !self.vehicle.ty.program.manual_gearbox() {
             return;
         }
@@ -1436,60 +1446,5 @@ mod steering_view_tests {
         let centered = steering_view_yaw(30.0, 1.0, 0.1, false, 45.0, 0.25);
         assert!(centered > 0.0 && centered < 30.0);
         assert_eq!(steering_view_yaw(30.0, 0.0, 0.0, true, 45.0, 0.25), 30.0);
-    }
-}
-
-/// The automated manual's choice (#713) from gear `cur` (of `top`), the engine speed as a
-/// multiple of its idle, the highest seen so far (0 when none yet), the pedals and the road
-/// speed.
-pub(crate) fn auto_shift_gear(cur: i32, top: i32, n_over_idle: f32, max_over_idle: f32, throttle: f32, brake: f32, kmh: f32) -> i32 {
-    if cur == 0 {
-        return if throttle > 0.1 && brake < 0.05 && kmh < 3.0 && top >= 1 { 1 } else { 0 };
-    }
-    if cur < 1 {
-        return cur;
-    }
-    // stopping: back to first, ready to pull away
-    if cur > 1 && kmh < 5.0 {
-        return 1;
-    }
-    // (and below what the governor lets the engine turn to: a diesel turning at most three
-    // and a half times its idle - an O305's, a Citybus i280's - never reached 3.4 under full
-    // throttle, and stayed in first, #1832)
-    let mut up = 2.2 + 1.2 * throttle.clamp(0.0, 1.0);
-    if max_over_idle > 2.0 {
-        up = up.min(0.88 * max_over_idle);
-    }
-    if cur < top && throttle > 0.05 && n_over_idle > up {
-        cur + 1
-    } else if cur > 1 && n_over_idle < 1.35 {
-        cur - 1
-    } else {
-        cur
-    }
-}
-
-#[cfg(test)]
-mod auto_shift_tests {
-    use super::auto_shift_gear as g;
-
-    #[test]
-    fn the_automated_manual_shifts_by_the_engine_speed() {
-        // pulling away: first gear in from neutral, never reverse
-        assert_eq!(g(0, 5, 1.0, 0.0, 0.5, 0.0, 0.0), 1);
-        assert_eq!(g(0, 5, 1.0, 0.0, 0.0, 0.0, 0.0), 0);
-        assert_eq!(g(-1, 5, 3.0, 0.0, 1.0, 0.0, 5.0), -1);
-        // up early with a light foot, late with a heavy one
-        assert_eq!(g(2, 5, 2.8, 0.0, 0.3, 0.0, 30.0), 3);
-        assert_eq!(g(2, 5, 2.8, 0.0, 1.0, 0.0, 30.0), 2);
-        assert_eq!(g(2, 5, 3.7, 0.0, 1.0, 0.0, 30.0), 3);
-        // never past the top gear, down near the idle, not below first
-        assert_eq!(g(5, 5, 4.0, 0.0, 1.0, 0.0, 90.0), 5);
-        assert_eq!(g(3, 5, 1.2, 0.0, 0.0, 0.5, 20.0), 2);
-        assert_eq!(g(1, 5, 1.0, 0.0, 0.0, 1.0, 2.0), 1);
-        assert_eq!(g(4, 5, 1.0, 0.0, 0.0, 1.0, 3.0), 1);
-        // an engine the governor holds at 3.6 x its idle: up under full throttle all the same
-        assert_eq!(g(1, 5, 3.4, 3.6, 1.0, 0.0, 15.0), 2);
-        assert_eq!(g(1, 5, 3.4, 0.0, 1.0, 0.0, 15.0), 1);
     }
 }
