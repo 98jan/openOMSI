@@ -4,7 +4,6 @@
 # Lower it with `scripts/size-budget.sh --update`; raise it only by hand, with a reason.
 file 2950 crates/omsi-app/src/lan.rs
 file 2937 crates/omsi-app/src/navigator.rs
-file 3005 crates/omsi-geometry/src/lib.rs
 file 3027 crates/omsi-input/src/controllers.rs
 file 1504 crates/omsi-input/src/dinput.rs
 file 1935 crates/omsi-launcher-core/src/install.rs
