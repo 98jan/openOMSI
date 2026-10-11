@@ -12,6 +12,7 @@ pub mod admin;
 pub mod gateway;
 pub mod mirror;
 pub mod mods;
+pub mod remote;
 pub mod server_cfg;
 pub mod spawn;
 pub mod sync;

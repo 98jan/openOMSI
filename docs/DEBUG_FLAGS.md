@@ -261,7 +261,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_NO_GLASS_PICTURE` | bool | off | frame | render | No picture behind the glass (rain films). |
 | `OMSI_NO_GROUND_PAINT` | bool | off | use | app | No painted ground layers. |
 | `OMSI_NO_GROUND_SPLINE_BATCHING` | bool | off | use | app | No batching of ground splines. |
-| `OMSI_NO_INTERP` | bool | off | once | app | The old way without interpolation, for comparing. |
+| `OMSI_NO_INTERP` | bool | off | once | lan | The old way without interpolation, for comparing. |
 | `OMSI_NO_LAN_MODS` | bool | off | use | lan | LAN: do not exchange mods. |
 | `OMSI_NO_LIGHT_MAP` | bool | off | use | app | No night light maps on the tiles (A/B). |
 | `OMSI_NO_MAIN_SPLIT` | bool | off | frame | render | Do not split the main pass's bundles in two. |
