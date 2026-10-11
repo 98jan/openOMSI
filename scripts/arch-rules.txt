@@ -129,5 +129,11 @@ forbid omsi-photo omsi-ui
 forbid omsi-photo omsi-net
 forbid omsi-photo omsi-launcher-*
 
+# The launcher's data side (what `omsi-launcher --cli` offers a terminal too) knows nothing of
+# its interface: the interface crate stands on it, never the other way round.
+forbid omsi-launcher-core omsi-launcher-ui
+forbid omsi-launcher-core omsi-ui
+forbid omsi-launcher-core omsi-render
+
 # Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
 app-lines 128041
