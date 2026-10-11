@@ -445,7 +445,7 @@ pub(super) fn repair_roller_blind(vehicle: &mut omsi_sim::VehicleInstance, event
 
 #[cfg(test)]
 mod roller_blind_tests {
-    include!("../../../tools/test-support/original_root.rs");
+    include!("../../../../tools/test-support/original_root.rs");
     use super::{auto_drag_click, repair_roller_blind};
     use crate::schedule::tests::script_test_vehicle;
 
