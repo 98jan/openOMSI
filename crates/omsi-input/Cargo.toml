@@ -35,5 +35,6 @@ windows = { workspace = true, features = ["Win32_Devices_HumanInterfaceDevice", 
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
 block2 = { version = "0.6", default-features = false, features = ["std"] }
 objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFArray", "CFSet", "CFString", "CFDictionary", "CFNumber"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSEnumerator", "NSString"] }
 objc2-io-kit = { version = "0.3.2", default-features = false, features = ["std", "libc", "hid"] }
 objc2-game-controller = { version = "0.3.2", default-features = false, features = ["std", "GCController", "GCDevice", "GCExtendedGamepad", "GCPhysicalInputProfile", "GCControllerElement", "GCControllerButtonInput", "GCControllerDirectionPad", "GCControllerAxisInput", "GCProductCategories", "block2"] }
