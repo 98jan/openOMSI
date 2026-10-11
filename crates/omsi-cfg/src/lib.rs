@@ -27,6 +27,7 @@ pub mod codepage;
 pub mod flags;
 mod keywords;
 pub mod number;
+pub mod panic_guard;
 pub mod vfs;
 pub mod install_search;
 pub use install_search::find_original_install;
