@@ -216,27 +216,17 @@ impl Traffic {
     }
 
     pub(super) fn sync(&mut self, view: &mut TrafficView, world: &World, renderer: &Renderer, scene: &mut Scene) {
-        // cars that have parked: the parked object stands in their place from now on
-        let mut i = 0;
-        while i < self.sim.cars.len() {
-            match self.sim.cars[i].park {
-                Some(p) if p.done => {
-                    let c = self.sim.take_off(i, omsi_sim::ai_traffic::control::Removal::Finished);
-                    if world.return_parked(renderer, scene, p.key) {
-                        if let Some(list) = self.sim.parked.get_mut(&p.lane) {
-                            list.push((p.s, p.lat));
-                        } else {
-                            self.sim.parked.insert(p.lane, vec![(p.s, p.lat)]);
-                        }
-                    }
-                    if omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set() {
-                        log::info!("car {} has parked (space {})", c.id, p.key);
-                    }
-                    self.drop_sounds(c.id);
-                    view.retire(c.id);
-                }
-                _ => i += 1,
+        // cars that have parked (the simulation takes them off): the parked object stands
+        // in their place from now on
+        while let Some((c, p)) = self.sim.take_parked() {
+            if world.return_parked(renderer, scene, p.key) {
+                self.sim.space_taken_back(&p);
             }
+            if omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set() {
+                log::info!("car {} has parked (space {})", c.id, p.key);
+            }
+            self.drop_sounds(c.id);
+            view.retire(c.id);
         }
         for r in std::mem::take(&mut view.released) {
             world.release_vehicle(renderer, scene, r);
