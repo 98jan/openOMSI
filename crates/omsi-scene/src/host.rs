@@ -3,6 +3,9 @@
 //! simulation draws its pictures with. The game sets these at its start; a world a test or
 //! a tool opens takes the defaults.
 
+// The settings below are set by the game at every session start and read while worlds and
+// vehicles load, where no game state is at hand.
+
 /// Enhanced graphics wanted (from the settings, `--enhanced`, or OMSI_ENHANCED=1).
 pub static ENHANCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Vanilla graphics: the picture as OMSI 2 draws it (no Vanilla+ extras, see
@@ -25,6 +28,7 @@ pub struct OpenSettings {
     pub max_parked: i64,
 }
 
+// (an install-once hook: the game's settings file is the process's, read when a world opens)
 static OPEN_SETTINGS: std::sync::OnceLock<fn() -> OpenSettings> = std::sync::OnceLock::new();
 
 /// Where a world opening reads the game's settings from (the game's settings file; set once,

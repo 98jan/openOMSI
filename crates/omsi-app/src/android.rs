@@ -521,6 +521,8 @@ impl ApplicationHandler for Shell {
 
 // --- the phone's tilt as a steering wheel ----------------------------------------------
 
+// (the sensor's thread writes these and the frame reads them: platform input, outside any
+// session, like the sensor itself)
 static TILT_ON: AtomicBool = AtomicBool::new(false);
 /// The latest turn (-1 .. 1) as f32 bits, and whether the sensor gave one yet.
 static TILT: AtomicU32 = AtomicU32::new(0);

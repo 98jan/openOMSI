@@ -300,7 +300,8 @@ pub(super) fn surface_flush() -> f32 {
 
 /// Whether this session's weather lies as snow (`[snow]` in the `.owt`), set by the app
 /// when it reads the weather and asked while the vehicles go onto the GPU.
-/// (Global: `weather_setup` and `input_script` set it, before and apart from any `World`.)
+/// (Global: `weather_setup` and `input_script` set it, before and apart from any `World`;
+/// every session sets it again when it reads its weather.)
 pub static SNOW_WEATHER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub(super) fn snowing() -> bool {

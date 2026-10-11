@@ -431,6 +431,7 @@ pub(crate) fn run(app: &mut App, kind: &ListKind, action: &str, mv: Move) -> Opt
 /// Called after the existing controller's single poll for this frame.
 pub(crate) fn frame(app: &mut App) {
     if matches!(app.menus.list_kind, Some(ListKind::ControllerDevices(_) | ListKind::Controller(..) | ListKind::ControllerAxis(..))) {
+        // (a rate limit of the list's refresh, nothing the game goes by)
         thread_local! {
             static LAST_REFRESH: std::cell::RefCell<std::time::Instant> = std::cell::RefCell::new(std::time::Instant::now());
         }

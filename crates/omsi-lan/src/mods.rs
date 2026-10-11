@@ -572,6 +572,8 @@ fn sandbox_base() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".openomsi").join("lan-mods"))
 }
 
+/// The host's mods of this session, mounted as a content root (process-wide like the
+/// content roots; taken away by `clean_up` when the session ends).
 static SANDBOX: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 /// Remove the session folders of games that are no longer running (one that ended without

@@ -665,7 +665,9 @@ pub(crate) fn window_icon() -> Option<winit::window::Icon> {
 }
 
 /// Enhanced+ (ray tracing) asked for by `--enhanced-plus` or OMSI_ENHANCED_PLUS=1 whatever
-/// the settings say (see `Settings::render_options`).
+/// the settings say (see `Settings::render_options`). These settings statics are set again
+/// by every session start (`make_app`) and read deep in loading and sound code that has no
+/// App to ask.
 pub(crate) static ENHANCED_PLUS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Volume of the AI vehicles and of the scenery's own sounds (OMSI's `sound_ai` and
 /// `sound_scenery`), as the bits of an f32.

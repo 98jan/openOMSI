@@ -846,7 +846,8 @@ pub fn corona_texture_id(model_dir: &std::path::Path, name: &str) -> u16 {
     id
 }
 
-/// The id of a game picture not looked for yet in the current game folder.
+/// The id of a game picture not looked for yet in the current game folder. (The ids below
+/// are numbers of `CORONA_TEXTURES`, the same for every renderer.)
 const UNKNOWN_ID: u32 = u32::MAX;
 static CONE_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(UNKNOWN_ID);
 static GLOW_ID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(UNKNOWN_ID);
@@ -916,6 +917,8 @@ pub fn upload_corona_textures(renderer: &mut omsi_render::Renderer) {
 /// How strongly the lamps' cones show (0..1): fog, falling rain or snow, and the dark.
 static CONE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
+/// How dark it is for the cones (0 day … 1 night). Both are set by every frame's
+/// `set_cone_strength` before the lights are gathered.
 static CONE_NIGHT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// The weather the lamps' cones are drawn in: the fog's visibility (m) and how dark it is

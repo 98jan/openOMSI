@@ -7,7 +7,8 @@ use omsi_render::{Corona, Scene};
 
 const HALF_WIDTH: f32 = 16.0;
 
-/// The `rain_quality` setting in force: 2 high, 1 medium, 0 low (see [`set_quality`]).
+/// The `rain_quality` setting in force: 2 high, 1 medium, 0 low (see [`set_quality`]); a
+/// setting, set again by every session start (`make_app`).
 static QUALITY: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(2);
 
 /// Take the `rain_quality` setting (`high`, `medium`, `low`).

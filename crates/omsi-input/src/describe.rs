@@ -288,6 +288,7 @@ pub fn language_code(s: &str) -> String {
     omsi_cfg::lang::language_code(s).to_string()
 }
 
+// (read-only once made: the original's key and control names)
 static NAMES: OnceLock<ControlNames> = OnceLock::new();
 
 /// The process-wide names (the language is read once, from the first caller).

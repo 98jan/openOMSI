@@ -62,6 +62,8 @@ pub(super) fn natural(a: &str, b: &str) -> std::cmp::Ordering {
     key(a).cmp(&key(b))
 }
 
+// The settings file's keys waiting to be written, and the file as last read: process-wide
+// like the file itself (written on exit by `flush_settings(true)`).
 pub(super) static PENDING_SETTINGS: std::sync::Mutex<(Vec<(String, String)>, Option<std::time::Instant>)> =
     std::sync::Mutex::new((Vec::new(), None));
 pub(super) const SETTINGS_FLUSH_MS: u128 = 250;

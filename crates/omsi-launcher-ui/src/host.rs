@@ -188,6 +188,7 @@ pub struct CityMap {
     pub places: HashMap<i64, DVec3>,
 }
 
+// (an install-once hook: the program's side, the same for every launcher window)
 static HOST: OnceLock<Box<dyn Host>> = OnceLock::new();
 
 /// Install the program's side of the launcher (once; later calls are ignored).
