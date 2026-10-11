@@ -130,6 +130,42 @@ impl Traffic {
                 }
             }
         }
+        self.play_horns(audio, listener, muffled);
+    }
+
+    /// The horns of the cars that honked (`TrafficSim::honked`): a car whose own sound set
+    /// answers `ev_AI_Horn` was heard by it already; every other one sounds OMSI's own AI
+    /// horn (`Sounds/AI_Cars`, the lorry's for the heavy ones) where it stands - the stock
+    /// cars have nothing on that trigger, and the AI's honking was never heard.
+    fn play_horns(&mut self, audio: &omsi_audio::AudioEngine, listener: DVec3, muffled: bool) {
+        for (id, heavy) in std::mem::take(&mut self.sim.honked) {
+            let Some(c) = self.sim.cars.iter().find(|c| c.id == id) else { continue };
+            if (c.vehicle.position - listener).length() > 250.0 {
+                continue;
+            }
+            let own = sound_plan(&mut self.sound_plans, &mut self.sound_cfgs, &c.vehicle.ty.def)
+                .is_some_and(|p| p.cfg.sounds.iter().any(|s| s.triggers.iter().any(|t| t.trim().eq_ignore_ascii_case("ev_AI_Horn"))));
+            if own {
+                continue;
+            }
+            let file = if heavy { "Sounds/AI_Cars/Hupe_Lkw.wav" } else { "Sounds/AI_Cars/hupe.wav" };
+            let path = omsi_cfg::resolve_path(&self.sim.root, file);
+            let Some(clip) = audio.load_clip(&path) else { continue };
+            let at = c.vehicle.position + DVec3::Z * 0.8;
+            audio.play(
+                clip,
+                omsi_audio::mixer::VoiceParams {
+                    gain: crate::sound_gain(&crate::SOUND_AI),
+                    pitch: 1.0,
+                    looping: false,
+                    position: Some(at.as_vec3()),
+                    doppler: true,
+                    range: 12.0,
+                    lowpass_hz: if muffled { 1500.0 } else { 0.0 },
+                    important: false,
+                },
+            );
+        }
     }
 
     /// The AI bus ridden in on foot: its full `[sound]` set from inside ([viewpoint] 2, the

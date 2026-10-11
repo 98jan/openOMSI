@@ -32,6 +32,8 @@ pub struct AiState {
     pub rng: u64,
     pub blinker: i32,
     pub braking: bool,
+    /// Seconds the brake lights have been on (they stay on at least `BRAKE_LIGHT_MIN`).
+    pub brake_lamp: f32,
     /// Distance travelled, for wheel animation.
     pub odometer: f32,
     /// Lane chosen for after the current one.
@@ -258,6 +260,19 @@ const STANDSTILL_SLACK: f32 = 0.75;
 const EMERGENCY_HYSTERESIS: f32 = 0.5;
 /// Gap a car leaves before a stop line or a stop point (m).
 const STOP_LINE_GAP: f32 = 0.6;
+/// The brake lights go on when the driver brakes harder than this (m/s²) and off again only
+/// once he brakes less than `BRAKE_LIGHT_OFF`, after `BRAKE_LIGHT_MIN` seconds at least: easing
+/// off a little is the throttle let go, not the brake. Lit at every -0.6 the command crossed,
+/// the lamps flashed several times a minute on every car.
+const BRAKE_LIGHT_ON: f32 = -1.0;
+const BRAKE_LIGHT_OFF: f32 = -0.4;
+const BRAKE_LIGHT_MIN: f32 = 0.6;
+/// How hard a driver slows for a bend ahead (m/s²): early and gently. At 2 m/s² the car ran
+/// up to the bend's speed profile and then braked at once, a jolt before every turn.
+const BEND_DECEL: f32 = 1.2;
+/// Braking gentler than this (m/s²) is put on at `BRAKE_JERK`, not in one step.
+const GENTLE_BRAKE: f32 = 2.5;
+const BRAKE_JERK: f32 = 5.0;
 
 /// A lane change: the car moves over from its lane to `to` along `length` metres of road
 /// (by distance, not by time: a car that has to stop halfway stands still, and so does its
@@ -345,7 +360,7 @@ impl LaneSeq {
 
 impl AiState {
     pub fn new(lane: usize, s: f32, seed: u64) -> AiState {
-        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None, ordinary_brake: ORDINARY_BRAKE, emergency_brake: MAX_BRAKE, jerk: JERK, cmd: 0.0, emergency: false, emergency_began: false, body: BodyLink::default(), nudge_ramp: (0.0, 0.0, 0.0, 1.0), priority_drive: false, speed_cap: None }
+        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, brake_lamp: 0.0, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None, ordinary_brake: ORDINARY_BRAKE, emergency_brake: MAX_BRAKE, jerk: JERK, cmd: 0.0, emergency: false, emergency_began: false, body: BodyLink::default(), nudge_ramp: (0.0, 0.0, 0.0, 1.0), priority_drive: false, speed_cap: None }
     }
 
     fn rand(&mut self) -> u64 {
@@ -629,7 +644,7 @@ impl AiState {
     }
 
     /// How fast the car may be going now so that it can take every bend of the next stretch
-    /// of its way at `lat_accel`, braking gently (2 m/s²) into the tight ones. Without this
+    /// of its way at `lat_accel`, braking gently (`BEND_DECEL`) into the tight ones. Without this
     /// the cars swept round a junction at 40 km/h - well over a g. The bend is the lane's
     /// own curvature or the turn of the way over 6 m, whichever is sharper: lanes are linked
     /// with up to 40° between them, and such a kink is a bend too.
@@ -644,7 +659,7 @@ impl AiState {
     }
 
     fn curve_speed_on(&self, net: &Network, q: &LaneSeq, s: f32) -> f32 {
-        let reach = (self.speed * self.speed / 4.0 + 12.0).min(90.0);
+        let reach = (self.speed * self.speed / (2.0 * BEND_DECEL) + 12.0).min(130.0);
         let mut best = f32::MAX;
         // The samples lie at fixed places of the road (every 2.5 m of the odometer), not at
         // fixed distances ahead of the car: moving with the car, the sample that caught a
@@ -662,7 +677,7 @@ impl AiState {
                 // (a bend may begin anywhere up to a sample's spacing before the sample
                 // that finds it: the speed is taken from there, or the car met the start of
                 // a tight turn half a metre after its profile had allowed 1 m/s more)
-                best = best.min((v * v + 2.0 * 2.0 * (d - 2.5).max(0.0)).sqrt());
+                best = best.min((v * v + 2.0 * BEND_DECEL * (d - 2.5).max(0.0)).sqrt());
             }
             d = next;
             next += 2.5;
@@ -792,11 +807,11 @@ impl AiState {
             // road's term, which fades out as the speed nears the limit
             acc = acc.min(-(LIMIT_GAIN * (v - v0)).min(1.5 * b));
         }
-        // bends: follow the speed profile `curve_speed` lays out (it assumes 2 m/s² of
+        // bends: follow the speed profile `curve_speed` lays out (it assumes `BEND_DECEL` of
         // braking), blending in over the last metre per second above it
         let bend = self.curve_speed(net);
         if bend < v0 && v > bend - 1.0 {
-            let track = -2.0 + (bend - v) / 0.6;
+            let track = -BEND_DECEL + (bend - v) / 0.6;
             let k = ((v - (bend - 1.0)) / 1.0).clamp(0.0, 1.0);
             acc = acc.min(acc + (track - acc) * k);
         }
@@ -889,7 +904,12 @@ impl AiState {
         if target < from {
             // (more braking goes on at once: put on at `jerk` too, the queue rolling past
             // the side road in `scenario_tests` closed up behind each car that braked and
-            // never left the side road's car a gap)
+            // never left the side road's car a gap. Gentle braking is eased into - the
+            // throttle let go at once, the brake pressed over a moment - else every small
+            // correction was a jolt)
+            if target > -GENTLE_BRAKE {
+                return (from.min(0.0) - BRAKE_JERK * dt).max(target);
+            }
             return target;
         }
         from + (target - from).clamp(-step, step)
@@ -952,7 +972,16 @@ impl AiState {
         self.speed = v1;
         self.acc = if dt > 0.0 { (v1 - v0) / dt } else { 0.0 };
         // brake lights: braking, or holding the car on the brake
-        self.braking = acc < -0.6 || (v1 < 0.3 && self.held);
+        let press = acc < BRAKE_LIGHT_ON || (v1 < 0.3 && self.held);
+        if self.braking {
+            self.brake_lamp += dt;
+            if !press && acc > BRAKE_LIGHT_OFF && !(v1 < 0.3 && self.held) && self.brake_lamp >= BRAKE_LIGHT_MIN {
+                self.braking = false;
+            }
+        } else if press {
+            self.braking = true;
+            self.brake_lamp = 0.0;
+        }
         self.s += ds;
         self.odometer += ds;
         // lane change: signal, glide over to the neighbour, then continue there

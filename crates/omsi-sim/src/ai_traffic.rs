@@ -281,6 +281,10 @@ pub struct TrafficSim {
     /// Cars the last `tick` took off the road (their ids): their sounds and pictures are
     /// for the game to let go (see omsi-app's `Traffic::tick`).
     pub retired: Vec<u64>,
+    /// The cars that honked since the game last asked (`horn`): id and whether it is a heavy
+    /// vehicle. The stock cars' sounds have nothing on `ev_AI_Horn`, so the game plays
+    /// OMSI's own AI horn for them.
+    pub honked: Vec<(u64, bool)>,
     /// The LAN players' vehicles as of this tick (`others` is taken for the tick's scene):
     /// the lane changes look at them (`players_on`).
     pub others_now: Vec<PlayerBox>,
