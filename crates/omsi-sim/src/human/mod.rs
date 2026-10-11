@@ -27,11 +27,9 @@ use omsi_model::Model;
 use std::f32::consts::{PI, TAU};
 use std::path::{Path, PathBuf};
 
-#[path = "human/support.rs"]
 mod support;
 
 #[cfg(test)]
-#[path = "human/contact_tests.rs"]
 mod contact_tests;
 
 /// Engine bone ids of `[setbone]`.
