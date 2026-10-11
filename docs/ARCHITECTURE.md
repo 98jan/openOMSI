@@ -248,13 +248,30 @@ checked against it.
   `view_sync/vehicle.rs` and `vehicle_damage.rs`, and the AI cars' sounds in
   `view_sync/traffic_audio.rs`.
 
-* **Global mutable state.** The introduction's "no global mutable state" is not true today:
-  `omsi-app` has about 45 module-level `static`s with interior mutability (`Mutex`, atomics,
-  `OnceLock`, `Lazy`), about as many again inside functions, and a dozen `thread_local!`s
-  (count them with
-  `grep -rnE '^(pub(\([a-z]+\))? )?static ' crates/omsi-app/src | grep -E 'Mutex|Atomic|OnceLock|RwLock|Cell|Lazy'`).
-  Some are caches of environment switches or platform handles; those that carry game state
-  between frames are to move into the app's state as the frame phases above take shape.
+* **Global mutable state.** The introduction's "no global mutable state" is still not
+  quite true, but what is left no longer carries a session's state into the next one. The
+  game state that lived in statics (a second drive started from the phone's launcher runs
+  in the same process, and the window, the offscreen run and the launcher's showroom share
+  it) moved into its owners: the physical weather model and the classic sky's cloud type
+  into `weather_setup::SkyState` (kept by the session, the offscreen run and the showroom),
+  the duty start's opened world and the real-time start into `Args`, the map lights near
+  the camera, the fading spotlight cookies, the spline-check ends and the season-mix counts
+  into `World`, the passengers' waiting voice lines, the photo mode's settings and the
+  settings window's flags into `App`'s groups, the `/admin` password into `LanGame`, the
+  drive's extremes into `Offscreen`, and which corona pictures a renderer holds into the
+  `Renderer` (`pictures_taken`). Left: in `omsi-app` 20 module-level statics with interior
+  mutability, 35 more inside functions and `thread_local!` blocks (9 of those); in
+  `omsi-scene` 14 and 15, no `thread_local!` (count them with
+  `grep -rnE '^\s*(pub(\([a-z:]+\))? )?static ' crates/omsi-app/src | grep -E 'Mutex|Atomic|OnceLock|RwLock|Cell|Lazy|Once\b'`
+  and `grep -rn 'thread_local!'`). They are install-once hooks, platform
+  handles and process resources (the signal handler, the tilt sensor, the translation
+  worker, thread pools, the LAN gateway and mods root), memos of file contents and
+  environment switches, rate limits of log lines and refreshes, the picture-file numbering
+  that is the same for every renderer, and a handful of settings and the session's weather
+  broadcast to loading code without game state at hand (`scene::host`, `SNOW_WEATHER`,
+  `rain::QUALITY`, `startup::{CLOUDS, SOUND_AI, ENHANCED_PLUS}`, the lamps' cone weather),
+  set again at every session start or frame. Those last are the next to go, once the
+  vehicle and world loading take them as arguments.
 * **Very long functions and files.** `scripts/size-budget.sh` (run on every pull request)
   keeps them from growing; `scripts/size-budget.txt` lists those over the limits
   (1500 lines a file, 300 a function) with their recorded sizes. The baseline only goes down.
