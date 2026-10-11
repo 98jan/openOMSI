@@ -12,9 +12,9 @@ impl Renderer {
                 continue;
             }
             let view = if cascade == 0 {
-                &self.shadow_view
+                &self.shadows.shadow_view
             } else {
-                &self.shadow_view_far
+                &self.shadows.shadow_view_far
             };
             let keep_near = cascade == 0 && !redraw_near;
             let mut pass = shadow_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -46,24 +46,24 @@ impl Renderer {
                 let sz = self.options.shadow_size as f32;
                 pass.set_viewport(0.0, 0.0, sz, sz, 0.0, 1.0);
                 encode_batches(&mut pass, scene, &shadow_batches[0], |pipe| {
-                    &self.shadow_pipelines[pipe as usize]
+                    &self.shadows.shadow_pipelines[pipe as usize]
                 });
                 let csz = self.options.shadow_size.min(SHADOW_CLOSE_MAX) as f32;
                 pass.set_viewport(sz, 0.0, csz, csz, 0.0, 1.0);
                 if keep_near {
                     // (the near half is last frame's: only the close part is cleared)
-                    pass.set_pipeline(&self.shadow_clear_pipeline);
+                    pass.set_pipeline(&self.shadows.shadow_clear_pipeline);
                     pass.draw(0..3, 0..1);
                     pass.set_bind_group(0, scene.shadow_bind_group.as_ref().unwrap(), &[]);
                 }
                 encode_batches(&mut pass, scene, &shadow_batches[2], |pipe| {
-                    &self.shadow_pipelines[4 + pipe as usize]
+                    &self.shadows.shadow_pipelines[4 + pipe as usize]
                 });
             } else {
                 let sz = self.options.shadow_size as f32;
                 pass.set_viewport(0.0, 0.0, sz, sz, 0.0, 1.0);
                 encode_batches(&mut pass, scene, &shadow_batches[cascade], |pipe| {
-                    &self.shadow_pipelines[cascade * 2 + pipe as usize]
+                    &self.shadows.shadow_pipelines[cascade * 2 + pipe as usize]
                 });
             }
         }
@@ -78,7 +78,7 @@ impl Renderer {
                 label: Some("lamp shadows"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_view_far,
+                    view: &self.shadows.shadow_view_far,
                     depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
                     stencil_ops: None,
                 }),
@@ -90,11 +90,11 @@ impl Renderer {
             let tile = sz / LAMP_SHADOWS as f32;
             for k in 0..lamp_shadows.len() {
                 pass.set_viewport(k as f32 * tile, sz, tile, tile, 0.0, 1.0);
-                pass.set_pipeline(&self.shadow_clear_pipeline);
+                pass.set_pipeline(&self.shadows.shadow_clear_pipeline);
                 pass.draw(0..3, 0..1);
                 pass.set_bind_group(0, scene.shadow_bind_group.as_ref().unwrap(), &[]);
                 encode_batches(&mut pass, scene, &shadow_batches[3 + k], |pipe| {
-                    &self.shadow_pipelines[6 + 2 * k + pipe as usize]
+                    &self.shadows.shadow_pipelines[6 + 2 * k + pipe as usize]
                 });
             }
         }

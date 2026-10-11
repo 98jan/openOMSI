@@ -15,13 +15,14 @@ use glam::{DVec3, Vec3};
 use omsi_render::Camera;
 use winit::keyboard::KeyCode;
 
-mod develop;
-mod lens;
 mod pad;
 mod panel;
 mod render;
 
+// (the lens and the darkroom are the omsi-photo crate)
+use omsi_photo::{develop, lens};
 pub(crate) use develop::Grade;
+pub(crate) use omsi_photo::stretch;
 
 /// A request of the photo mode's panel.
 #[derive(Clone, Debug, PartialEq)]
@@ -112,6 +113,9 @@ pub(crate) struct Photo {
     prev_paused: bool,
     /// The view the game had, to return to.
     prev_camera: Option<Camera>,
+    /// How far the photo's clock was moved (s): moved back on the way out, so that the
+    /// bus's duty goes on at the time it stood at (#2116).
+    clock_shift: f64,
     pub(crate) render: render::State,
     /// A word of what was done (the photo saved), and how long it shows.
     pub note: Option<(String, f32)>,
@@ -143,6 +147,7 @@ impl Photo {
             hide_ui: false,
             prev_paused,
             prev_camera: Some(cam),
+            clock_shift: 0.0,
             render: render::State::default(),
             note: None,
             saved: None,
@@ -284,22 +289,6 @@ impl Photo {
     }
 }
 
-/// `px` (`w` x `h`) stretched to `tw` x `th` (the nearest pixel), for the input script's
-/// pictures of the window.
-pub(crate) fn stretch(w: u32, h: u32, px: &[u8], tw: u32, th: u32) -> Vec<u8> {
-    let mut out = vec![0u8; (tw * th * 4) as usize];
-    for y in 0..th {
-        let sy = (y as u64 * h as u64 / th.max(1) as u64) as u32;
-        for x in 0..tw {
-            let sx = (x as u64 * w as u64 / tw.max(1) as u64) as u32;
-            let a = ((sy * w + sx) * 4) as usize;
-            let b = ((y * tw + x) * 4) as usize;
-            out[b..b + 4].copy_from_slice(&px[a..a + 4]);
-        }
-    }
-    out
-}
-
 /// `OMSI_PHOTO`: settings for a test, `key=value` by commas.
 fn test_settings(s: &mut Settings, text: &str) {
     for part in text.split(',') {
@@ -330,11 +319,6 @@ fn test_settings(s: &mut Settings, text: &str) {
     }
 }
 
-thread_local! {
-    /// The photo mode's settings, kept from one photo to the next in a session.
-    static LAST: std::cell::RefCell<Option<Settings>> = const { std::cell::RefCell::new(None) };
-}
-
 impl crate::App {
     pub(crate) fn photo_on(&self) -> bool {
         self.photo.is_some()
@@ -356,7 +340,7 @@ impl crate::App {
             }
             None => (cam.position, Vec3::ZERO),
         };
-        let mut settings = LAST.with(|l| l.borrow().clone()).unwrap_or_default();
+        let mut settings = self.photo_settings.clone().unwrap_or_default();
         if let Some(t) = omsi_cfg::flags::OMSI_PHOTO.var() {
             test_settings(&mut settings, t);
         }
@@ -389,8 +373,11 @@ impl crate::App {
     /// Out of the photo mode: the game as it was.
     pub(crate) fn exit_photo(&mut self) {
         let Some(ph) = self.photo.take() else { return };
-        LAST.with(|l| *l.borrow_mut() = Some(ph.settings.clone()));
+        self.photo_settings = Some(ph.settings.clone());
         self.paused = ph.prev_paused;
+        if ph.clock_shift != 0.0 {
+            self.shift_clock(-ph.clock_shift);
+        }
         if let Some(c) = ph.prev_camera {
             self.camera = Some(c);
         }
@@ -431,8 +418,12 @@ impl crate::App {
                         ph.note = Some((omsi_ui::tr("In a LAN session the host sets the clock").into_owned(), 3.0));
                     }
                 } else {
+                    let moved = !self.real_time_locked();
                     self.shift_clock(secs);
                     if let Some(ph) = self.photo.as_mut() {
+                        if moved {
+                            ph.clock_shift += secs;
+                        }
                         ph.render.reset();
                     }
                 }

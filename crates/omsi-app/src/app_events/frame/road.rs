@@ -6,7 +6,6 @@ impl App {
     /// The AI traffic: what it needs to know, the timetable's departures, its step, its
     /// sound and its pictures.
     pub(super) fn frame_traffic(&mut self, dt: f32) {
-        let __t = Instant::now();
         // (with a triple screen, all of its three panels are in sight)
         let sight = self.camera.as_ref().zip(self.gfx.surface.as_ref())
             .and_then(|(c, s)| self.sight_extent(c, (s.config.width, s.config.height)));
@@ -98,7 +97,8 @@ impl App {
                     .as_ref()
                     .map(|w| street_condition(w, self.session.wetness))
                     .unwrap_or(0.0);
-                let muffled = self.cam.in_cab;
+                // (a walker in the doorway: muffled by as much as the eyes are in, see `on_foot`)
+                let muffled = self.cam.in_cab || self.sound.foot_in.is_some_and(|w| w > 0.0);
                 // heard round the camera (the ear), not round the player's bus: a
                 // free camera following an AI bus lost its sound 250 m from the bus
                 let ear = self.camera.as_ref().map(|c| c.position).unwrap_or(center);
@@ -119,6 +119,5 @@ impl App {
             *self.perf.profile.entry("traffic.sync").or_default() +=
                 __t4.elapsed().as_secs_f64();
         }
-        *self.perf.profile.entry("traffic").or_default() += __t.elapsed().as_secs_f64();
     }
 }

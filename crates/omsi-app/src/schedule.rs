@@ -18,8 +18,7 @@ use crate::traffic::Traffic;
 use crate::view_sync::traffic::TrafficView;
 use hashbrown::{HashMap, HashSet};
 use omsi_sim::VehicleType;
-use parking_lot::MutexGuard;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use omsi_sim::timetable_run::*;
@@ -57,37 +56,6 @@ impl std::ops::Deref for Schedule {
 impl std::ops::DerefMut for Schedule {
     fn deref_mut(&mut self) -> &mut ScheduleSim {
         &mut self.sim
-    }
-}
-
-/// What the timetable needs of the loaded world (see `omsi_sim::timetable_run::TimetableWorld`).
-impl TimetableWorld for World {
-    fn root(&self) -> &Path {
-        &self.root
-    }
-    fn map_dir(&self) -> &Path {
-        &self.map_dir
-    }
-    fn chrono_dirs(&self) -> Vec<PathBuf> {
-        self.chrono_dirs.read().clone()
-    }
-    fn ailists(&self) -> &omsi_map::AiLists {
-        &self.ailists
-    }
-    fn raw_tiles(&self) -> Vec<(i32, i32)> {
-        self.global.raw_tiles.clone()
-    }
-    fn has_tile(&self, key: (i32, i32)) -> bool {
-        World::has_tile(self, key)
-    }
-    fn date(&self) -> i32 {
-        self.date
-    }
-    fn object_positions(&self) -> MutexGuard<'_, HashMap<i64, (glam::DVec3, [f64; 3])>> {
-        self.object_positions.lock()
-    }
-    fn stop_side(&self, id: i64) -> f32 {
-        World::stop_side(self, id)
     }
 }
 
@@ -138,7 +106,6 @@ impl Schedule {
         world: &World,
         traffic: Option<&Traffic>,
         duty: Option<&PlayerDuty>,
-        player_hof: Option<&omsi_vehicle::Hof>,
         clock: &omsi_sim::SimClock,
     ) {
         let now = clock.time;
@@ -152,7 +119,7 @@ impl Schedule {
         }
         let (wanted, wanted_names) = (boards.wanted.clone(), boards.wanted_names.clone());
         let (by_stop, departures) =
-            self.sim.make_boards(traffic.map(|t| &t.sim), wanted, wanted_names, duty, player_hof, clock);
+            self.sim.make_boards(traffic.map(|t| &t.sim), wanted, wanted_names, duty, clock);
         boards.by_stop = by_stop;
         boards.departures = departures;
         boards.departures_gen = boards.departures_gen.wrapping_add(1);

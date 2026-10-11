@@ -57,6 +57,8 @@ impl App {
         // under the game's own interface; not under its menus, nor in VR
         let plugin_focus = crate::plugin_ui::focused(&self.integrations.plugins);
         self.frame_plugin_panels(dt, hud, vr_active);
+        // the game's own panels (the quick menu, the trip summary, ...: `game_panels`)
+        self.frame_game_panels(dt, hud, vr_active);
         // the mirror panels (Ctrl+M): over the picture and the navigator, under the notes
         // and the menus - drawn after them, they covered the pause menu (#1880)
         if self.cam.in_cab {
@@ -158,10 +160,14 @@ impl App {
         vr_nav_display: Option<crate::vr_navigator::Display>,
     ) {
         let (Some(r), Some(scene)) = (self.renderer.as_ref(), self.scene.as_mut()) else { return };
-        if let (Some(nav), Some(p), Some(_)) = (
+        // (on foot with no bus of one's own the navigator and the city map go on as well:
+        // a walker who had deleted the bus could not open the map, #2118)
+        let p = self.player.as_ref();
+        let walking = self.session.on_foot.is_some();
+        if let (Some(nav), Some(_), true) = (
             self.menus.navigator.as_mut(),
-            self.player.as_ref(),
             self.gfx.surface.as_ref(),
+            p.is_some() || walking,
         ) {
             let old_enabled = nav.enabled;
             let old_opacity = nav.opacity;
@@ -200,26 +206,33 @@ impl App {
                 }
                 _ => nav.clear_route(),
             }
-            let (outside_temp, inside_temp) = vehicle_temperatures(p);
+            let (outside_temp, inside_temp) = match p {
+                Some(p) => vehicle_temperatures(p),
+                None => {
+                    let t = omsi_sim::host::ambient_weather().map_or(15.0, |w| w.0);
+                    (t, t)
+                }
+            };
             // (on foot the map follows the walker, not the bus left standing)
-            let (at, heading) = match self.session.on_foot.as_ref() {
-                Some(f) => (f.pos, f.heading),
-                None => (p.vehicle.position, p.vehicle.heading),
+            let (at, heading) = match (self.session.on_foot.as_ref(), p) {
+                (Some(f), _) => (f.pos, f.heading),
+                (None, Some(p)) => (p.vehicle.position, p.vehicle.heading),
+                (None, None) => return,
             };
             let frame = navigator::NavFrame {
                 traffic: self.session.traffic.as_ref(),
                 players: self.net.lan.as_ref().map(|l| crate::lan::nav_players(&self.net.remotes, l.my_id)).unwrap_or_default(),
                 bus: at,
                 heading,
-                speed_kmh: p.vehicle.physics.velocity_kmh(),
+                speed_kmh: p.map_or(0.0, |p| p.vehicle.physics.velocity_kmh()),
                 outside_temp,
                 inside_temp,
                 line,
                 terminus,
                 stops,
-                delay: self.session.duty.as_ref().map(|_| p.vehicle.host.tt_delay as f64),
+                delay: self.session.duty.as_ref().zip(p).map(|(_, p)| p.vehicle.host.tt_delay as f64),
                 passengers: self.session.humans.as_ref().map(|h| h.riding()),
-                stop_requested: navigator::stop_requested(&p.vehicle),
+                stop_requested: p.is_some_and(|p| navigator::stop_requested(&p.vehicle)),
                 time: self.clock.time,
                 weekday: self.clock.weekday(),
                 language: &self.settings.language,

@@ -35,11 +35,13 @@ impl Renderer {
         // seals them. Reusing prepass depth would reject those faces (or let terrain
         // reject them first). The prepass still supplies AO; colour rebuilds its depth.
         // A depth-writing window in the colour pass must not replace the road receiver.
-        let share_depth = prepass_on && single && self.ao.is_some() && !has_presurface && !f.puddles_wanted;
+        let share_depth = prepass_on && single && self.targets.ao.is_some() && !has_presurface && !f.puddles_wanted;
+        // (the colour only where the picture is drawn into it: not into the HDR targets)
+        let msaa_color = !single && !(f.masked_frame && self.targets.hdr_targets.contains_key(&(width, height)));
         let targets = if share_depth {
             None
         } else {
-            Some(self.msaa_targets(width, height))
+            Some(self.msaa_targets(width, height, msaa_color))
         };
         // With multisampling the prepass above (single-sampled, for the ambient occlusion)
         // cannot be the main pass's depth: the enhanced picture lays its depth again into
@@ -72,14 +74,14 @@ impl Renderer {
             // colour out to white instead) keeps a real gap from ever reading as a rendering
             // bug of its own.
             let sky = if lighting.classic && !enhanced { lighting.sky_color.map(|v| if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }) } else { lighting.sky_color };
-            let msaa_color = targets.as_ref().map(|t| &t.0);
+            let msaa_color = targets.as_ref().and_then(|t| t.0.as_ref());
             let depth_view: &wgpu::TextureView = match &targets {
                 Some(t) => &t.1,
-                None => &self.ao.as_ref().unwrap().depth_view,
+                None => &self.targets.ao.as_ref().unwrap().depth_view,
             };
             // the enhanced path draws into a high-range picture the post pass then grades
             let hdr = if f.masked_frame {
-                self.hdr_targets.get(&(width, height))
+                self.targets.hdr_targets.get(&(width, height))
             } else {
                 None
             };
@@ -101,8 +103,8 @@ impl Renderer {
             let pp = self.main_pass(enhanced, f.reflection_frame);
             // (a mirror of an Enhanced picture, plainly shaded: the window's sky, see
             // `sky_mirror_pipeline`)
-            let sky_pipe = match &self.sky_mirror_pipeline {
-                Some(p) if lighting.enhanced && !enhanced && !with_overlays && self.sky_state.is_some() && !f.env.no_enhanced => p,
+            let sky_pipe = match &self.sky.sky_mirror_pipeline {
+                Some(p) if lighting.enhanced && !enhanced && !with_overlays && self.sky.sky_state.is_some() && !f.env.no_enhanced => p,
                 _ => &pp.sky_pipeline,
             };
             let per_part = main_bundles.len().div_ceil(parts.max(1));
@@ -223,9 +225,9 @@ impl Renderer {
             if let Some(sky) = &scene.sky_bind_group {
                 pass.set_pipeline(sky_pipe);
                 pass.set_bind_group(1, sky, &[]);
-                pass.set_vertex_buffer(0, self.sky_mesh.0.slice(..));
-                pass.set_index_buffer(self.sky_mesh.1.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..self.sky_mesh.2, 0, 0..1);
+                pass.set_vertex_buffer(0, self.sky.sky_mesh.0.slice(..));
+                pass.set_index_buffer(self.sky.sky_mesh.1.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..self.sky.sky_mesh.2, 0, 0..1);
             }
         }
         pass.execute_bundles(bundles.iter());
@@ -298,9 +300,9 @@ impl Renderer {
         if let Some(sky) = scene.sky_bind_group.as_ref().filter(|_| parts == 1) {
             pass.set_pipeline(sky_pipe);
             pass.set_bind_group(1, sky, &[]);
-            pass.set_vertex_buffer(0, self.sky_mesh.0.slice(..));
-            pass.set_index_buffer(self.sky_mesh.1.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..self.sky_mesh.2, 0, 0..1);
+            pass.set_vertex_buffer(0, self.sky.sky_mesh.0.slice(..));
+            pass.set_index_buffer(self.sky.sky_mesh.1.slice(..), wgpu::IndexFormat::Uint32);
+            pass.draw_indexed(0..self.sky.sky_mesh.2, 0, 0..1);
         }
         if presurface_prefill {
             // Colour and seal the excavation first; prefill ordinary scenery without
@@ -339,7 +341,7 @@ impl Renderer {
         if scene.smoke_count > 0 && !f.env.no_smoke {
             if let Some(sb) = &scene.smoke_buf {
                 pass.set_pipeline(&pp.smoke_pipeline);
-                pass.set_bind_group(1, &self.smoke_bind_group, &[]);
+                pass.set_bind_group(1, &self.lights.smoke_bind_group, &[]);
                 pass.set_vertex_buffer(0, sb.slice(..));
                 pass.draw(0..6, 0..scene.smoke_count);
             }
@@ -352,10 +354,10 @@ impl Renderer {
                 wind: lighting.wind.extend(self.started.elapsed().as_secs_f32() % 20000.0).to_array(),
                 fall: [lighting.snowfall, mean, counts[0] as f32, counts[1] as f32],
             };
-            self.queue.write_buffer(&self.snow_buf, 0, bytemuck::bytes_of(&u));
+            self.queue.write_buffer(&self.lights.snow_buf, 0, bytemuck::bytes_of(&u));
             pass.set_pipeline(snow);
             pass.set_bind_group(0, scene.camera_bind_group.as_ref().unwrap(), &[]);
-            pass.set_bind_group(1, &self.snow_bind_group, &[]);
+            pass.set_bind_group(1, &self.lights.snow_bind_group, &[]);
             pass.draw(0..6, 0..counts.iter().sum::<u32>());
         }
         // light coronas, additive: the world's, then the vehicle the camera is in -
@@ -372,7 +374,7 @@ impl Renderer {
                 pass.set_vertex_buffer(0, cb.slice(..));
                 // in runs by picture (the standard glow, the lights' own bitmaps, the cone)
                 for &(tex, first, count, _) in scene.corona_runs.iter().filter(|r| r.3 == late) {
-                    let bg = self.corona_textures.get(tex as usize).and_then(|b| b.as_ref()).unwrap_or(&self.corona_bind_group);
+                    let bg = self.lights.corona_textures.get(tex as usize).and_then(|b| b.as_ref()).unwrap_or(&self.lights.corona_bind_group);
                     pass.set_bind_group(1, bg, &[]);
                     pass.draw(0..6, first..first + count);
                 }

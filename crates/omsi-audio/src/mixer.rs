@@ -73,6 +73,11 @@ struct Voice {
     cur_gain: f32,
     /// One-pole low-pass filter state, left/right.
     lp: [f32; 2],
+    /// The low-pass was just switched on: it starts from the sound as it is (from the
+    /// state it was left in a while ago, a voice coming into the cab clicked).
+    lp_fresh: bool,
+    /// The bus radio's effects on a stream (see `radio_fx`); None plays it as it is.
+    fx: Option<Box<crate::radio_fx::RadioFx>>,
     /// The Doppler shift: the distance to the listener when the position last came, when,
     /// and the (smoothed) pitch factor it gives.
     doppler: (f32, Option<std::time::Instant>, f32),
@@ -234,6 +239,9 @@ impl Shared {
                     continue;
                 }
                 let step = buf.rate as f64 / dev_rate;
+                if let Some(fx) = v.fx.as_mut() {
+                    fx.set(fx.params(), rate);
+                }
                 for f in 0..frames {
                     v.cur_gain += (target_gain - v.cur_gain) * 0.005;
                     // silence while the buffer fills (at the start, after a stall)
@@ -241,9 +249,15 @@ impl Shared {
                     let t = v.pos as f32;
                     let (mut l, mut r) = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
                     if v.params.lowpass_hz > 0.0 {
+                        if std::mem::take(&mut v.lp_fresh) {
+                            v.lp = [l, r];
+                        }
                         v.lp[0] += (l - v.lp[0]) * lp_alpha;
                         v.lp[1] += (r - v.lp[1]) * lp_alpha;
                         (l, r) = (v.lp[0], v.lp[1]);
+                    }
+                    if let Some(fx) = v.fx.as_mut() {
+                        (l, r) = fx.process(l, r);
                     }
                     let g = v.cur_gain;
                     out[f * ch] += l * g * left;
@@ -306,6 +320,9 @@ impl Shared {
                     (m, m)
                 };
                 let (l, r) = if v.params.lowpass_hz > 0.0 {
+                    if std::mem::take(&mut v.lp_fresh) {
+                        v.lp = [l, r];
+                    }
                     v.lp[0] += (l - v.lp[0]) * lp_alpha;
                     v.lp[1] += (r - v.lp[1]) * lp_alpha;
                     (v.lp[0], v.lp[1])
@@ -319,6 +336,10 @@ impl Shared {
                 }
                 v.pos += step;
             }
+        }
+        if crate::trace::on() {
+            let ended: Vec<VoiceId> = voices.iter().filter(|v| v.finished).map(|v| v.id).collect();
+            crate::trace::ended(&ended);
         }
         voices.retain(|v| !v.finished);
         drop(voices);
@@ -366,6 +387,9 @@ fn apply_params(v: &mut Voice, params: VoiceParams, now: std::time::Instant, lis
         v.doppler = (dist, Some(now), f);
     } else {
         v.doppler = (0.0, None, 1.0);
+    }
+    if params.lowpass_hz > 0.0 && !(v.params.lowpass_hz > 0.0) {
+        v.lp_fresh = true;
     }
     v.params = params;
 }
@@ -427,7 +451,7 @@ fn muted() -> bool {
 pub fn read_clip(path: &Path) -> Option<Arc<Clip>> {
     let bytes = omsi_cfg::vfs::read(path).ok()?;
     let compressed = bytes.starts_with(b"OggS") || bytes.starts_with(b"fLaC") || crate::wav::is_mp3(&bytes);
-    match if compressed { crate::wav::parse_compressed(&bytes) } else { crate::wav::parse_wav(&bytes) } {
+    let clip = match if compressed { crate::wav::parse_compressed(&bytes) } else { crate::wav::parse_wav(&bytes) } {
         Ok(w) => Some(Arc::new(Clip {
             sample_rate: w.sample_rate,
             channels: w.channels,
@@ -437,7 +461,11 @@ pub fn read_clip(path: &Path) -> Option<Arc<Clip>> {
             log::warn!("{}: {e}", path.display());
             None
         }
+    };
+    if let Some(c) = &clip {
+        crate::trace::clip_read(Arc::as_ptr(c) as usize, path);
     }
+    clip
 }
 
 /// Every two seconds, the name of the system's default output device: when it is not the
@@ -461,6 +489,7 @@ impl AudioEngine {
     /// An engine without a device: clips load and voices are kept, nothing is mixed or
     /// heard - for tools that look at sound configurations.
     pub fn silent() -> AudioEngine {
+        crate::trace::engine("silent");
         AudioEngine {
             stream: std::cell::RefCell::new(None),
             device: std::cell::RefCell::new(String::new()),
@@ -481,6 +510,7 @@ impl AudioEngine {
     /// long a picture takes. Clips are read at once (a background read would leave the
     /// first seconds silent), and the clock of the parameters is the mixed sound's own.
     pub fn capture(rate: u32) -> AudioEngine {
+        crate::trace::engine("capture");
         AudioEngine {
             stream: std::cell::RefCell::new(None),
             device: std::cell::RefCell::new(String::new()),
@@ -503,10 +533,19 @@ impl AudioEngine {
             return Vec::new();
         };
         let mut out = vec![0.0f32; frames * 2];
+        crate::trace::mixed(frames);
         self.shared.render(&mut out);
         let rate = self.shared.sample_rate.load(Ordering::Relaxed).max(1) as u64;
         us.fetch_add(frames as u64 * 1_000_000 / rate, Ordering::Relaxed);
         out
+    }
+
+    /// The time the engine goes by: the wall clock, or a recording's own (the mixed sound's,
+    /// see [`AudioEngine::capture`]) - a sound's fade-in by the seconds it has played
+    /// (`[volcurve] -1`) is heard in a recording as it is in the game, however long the
+    /// pictures take to draw.
+    pub fn clock(&self) -> std::time::Instant {
+        self.shared.now()
     }
 
     /// The device's (or the capture's) sample rate.
@@ -516,6 +555,7 @@ impl AudioEngine {
 
     /// Open the default output device. Returns a silent engine if none is available.
     pub fn new() -> AudioEngine {
+        crate::trace::engine("device");
         let shared = Arc::new(Shared::new(48_000, 2, muted(), false));
         let reopen = Arc::new(AtomicBool::new(false));
         let engine = AudioEngine {
@@ -737,6 +777,7 @@ impl AudioEngine {
 
     fn play_at(&self, clip: Arc<Clip>, params: VoiceParams, start: f64) -> VoiceId {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        crate::trace::play(id, Some(Arc::as_ptr(&clip) as usize), &params, start);
         self.shared.voices.lock().push(Voice {
             id,
             clip,
@@ -746,6 +787,8 @@ impl AudioEngine {
             finished: false,
             cur_gain: 0.0,
             lp: [0.0, 0.0],
+            lp_fresh: false,
+            fx: None,
             doppler: (0.0, None, 1.0),
         });
         id
@@ -755,6 +798,7 @@ impl AudioEngine {
     /// stream is closed.
     pub fn play_stream(&self, stream: Arc<crate::stream::StreamBuf>, params: VoiceParams) -> VoiceId {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        crate::trace::play(id, None, &params, 0.0);
         self.shared.voices.lock().push(Voice {
             id,
             clip: Arc::new(Clip { sample_rate: 44100, channels: 2, samples: Vec::new() }),
@@ -764,15 +808,32 @@ impl AudioEngine {
             finished: false,
             cur_gain: 0.0,
             lp: [0.0, 0.0],
+            lp_fresh: false,
+            fx: None,
             doppler: (0.0, None, 1.0),
         });
         id
+    }
+
+    /// The bus radio's effects on stream voice `id` (see `radio_fx`): made, retuned, or
+    /// done away with when all of them are 0.
+    pub fn set_radio_fx(&self, id: VoiceId, params: crate::radio_fx::RadioFxParams) {
+        crate::trace::radio_fx(id, &params);
+        let rate = self.shared.sample_rate.load(Ordering::Relaxed);
+        if let Some(v) = self.shared.voices.lock().iter_mut().find(|v| v.id == id) {
+            match (v.fx.as_mut(), params.is_off()) {
+                (_, true) => v.fx = None,
+                (Some(fx), false) => fx.set(params, rate),
+                (None, false) => v.fx = crate::radio_fx::RadioFx::new(params, rate).map(Box::new),
+            }
+        }
     }
 
     /// New parameters for a voice: queued for the mixer's next block (a few milliseconds),
     /// so the game never waits for a block being mixed. Given twice before that block, the
     /// later ones win.
     pub fn set_params(&self, id: VoiceId, params: VoiceParams) {
+        crate::trace::set(id, &params);
         // (no device, no mixer to take them in: straight onto the voice)
         if !self.enabled {
             let listener = self.shared.listener.lock().position;
@@ -812,6 +873,7 @@ impl AudioEngine {
     }
 
     pub fn stop(&self, id: VoiceId) {
+        crate::trace::stop(id);
         if let Some(v) = self.shared.voices.lock().iter_mut().find(|v| v.id == id) {
             v.finished = true;
         }
@@ -822,6 +884,7 @@ impl AudioEngine {
     }
 
     pub fn set_listener(&self, l: Listener) {
+        crate::trace::listener(&l);
         *self.shared.listener.lock() = l;
     }
 
@@ -848,6 +911,8 @@ mod tests {
             finished: false,
             cur_gain: gain,
             lp: [0.0; 2],
+            lp_fresh: false,
+            fx: None,
             doppler: (0.0, None, 1.0),
         }
     }
@@ -889,6 +954,18 @@ mod tests {
         }
         assert_eq!(own.doppler.2, 1.0);
         assert!(passing.doppler.2 < 1.0);
+    }
+
+    /// A recording's clock is the sound it mixed, not the wall clock: a fade-in by seconds
+    /// played comes out the same however slowly the run goes.
+    #[test]
+    fn a_recording_goes_by_the_sound_it_mixed() {
+        let e = AudioEngine::capture(48_000);
+        let t0 = e.clock();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        assert_eq!(e.clock(), t0);
+        e.render_capture(24_000);
+        assert_eq!(e.clock() - t0, std::time::Duration::from_millis(500));
     }
 
     /// The stream opened again (as when the system's output device changed) keeps playing;
@@ -935,6 +1012,66 @@ mod tests {
         fn new_for_test_device_less() -> AudioEngine {
             AudioEngine::silent()
         }
+    }
+
+    /// A stream with its effects all at 0 plays exactly as one never given any; with the
+    /// speaker on it does not.
+    #[test]
+    fn a_stream_with_no_effects_is_bit_identical() {
+        let render = |fx: Option<crate::radio_fx::RadioFxParams>| {
+            let e = AudioEngine::capture(48_000);
+            let buf = Arc::new(crate::stream::StreamBuf::default());
+            buf.push(48_000, (0..48_000 * 3).map(|i| {
+                let t = i as f32 / 48_000.0;
+                [(t * 440.0 * std::f32::consts::TAU).sin() * 0.5, (t * 660.0 * std::f32::consts::TAU).sin() * 0.4]
+            }));
+            let id = e.play_stream(buf, VoiceParams { gain: 0.8, ..Default::default() });
+            if let Some(p) = fx {
+                e.set_radio_fx(id, p);
+            }
+            e.render_capture(48_000 * 2)
+        };
+        let plain = render(None);
+        assert!(plain.iter().any(|x| x.abs() > 0.1));
+        let off = render(Some(Default::default()));
+        assert!(plain.iter().zip(&off).all(|(a, b)| a.to_bits() == b.to_bits()));
+        let speaker = render(Some(crate::radio_fx::RadioFxParams { speaker: 1.0, ..Default::default() }));
+        assert!(plain.iter().zip(&speaker).any(|(a, b)| (a - b).abs() > 0.01));
+    }
+
+    /// The one-pole low-pass of a voice heard through the bodywork: a 5 kHz tone through
+    /// 500 Hz comes out some 20 dB down, a 100 Hz one hardly touched.
+    #[test]
+    fn the_voice_low_pass_follows_its_corner() {
+        let level = |hz: f32| {
+            let n = 48_000usize;
+            let samples: Vec<i16> = (0..n).map(|i| ((i as f32 / 48_000.0 * hz * std::f32::consts::TAU).sin() * 16_000.0) as i16).collect();
+            let clip = Arc::new(Clip { sample_rate: 48_000, channels: 1, samples });
+            let s = shared();
+            let mut v = voice(clip, 1.0);
+            v.params.lowpass_hz = 500.0;
+            v.params.looping = false;
+            s.voices.lock().push(v);
+            let mut out = vec![0.0f32; n];
+            s.render(&mut out);
+            let tail = &out[n / 2..];
+            (tail.iter().map(|x| x * x).sum::<f32>() / tail.len() as f32).sqrt() / (16_000.0 / 32_768.0 / 2f32.sqrt())
+        };
+        let high = 20.0 * level(5_000.0).log10();
+        assert!((high + 20.0).abs() < 1.5, "{high} dB");
+        assert!(level(100.0) > 0.97);
+    }
+
+    #[test]
+    fn a_low_pass_switched_on_starts_from_the_sound() {
+        let mut v = voice(Arc::new(Clip { sample_rate: 48_000, channels: 1, samples: vec![0; 4] }), 1.0);
+        v.lp = [0.7, -0.7];
+        apply_params(&mut v, VoiceParams { lowpass_hz: 800.0, ..Default::default() }, std::time::Instant::now(), Vec3::ZERO);
+        assert!(v.lp_fresh);
+        apply_params(&mut v, VoiceParams { lowpass_hz: 0.0, ..Default::default() }, std::time::Instant::now(), Vec3::ZERO);
+        let mut w = voice(Arc::new(Clip { sample_rate: 48_000, channels: 1, samples: vec![0; 4] }), 1.0);
+        apply_params(&mut w, VoiceParams { lowpass_hz: 0.0, ..Default::default() }, std::time::Instant::now(), Vec3::ZERO);
+        assert!(!w.lp_fresh);
     }
 
     #[test]

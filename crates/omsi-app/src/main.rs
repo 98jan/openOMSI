@@ -19,5 +19,23 @@ pub static NvOptimusEnablement: u32 = 1;
 pub static AmdPowerXpressRequestHighPerformance: u32 = 1;
 
 fn main() -> anyhow::Result<()> {
-    openomsi_game::run()
+    // Before anything that could break (see omsi-guard): `--self-test`, the start guard's
+    // watcher, and safe mode's switches.
+    if let Some(code) = omsi_guard::early() {
+        std::process::exit(code);
+    }
+    omsi_guard::apply_safe_mode();
+    // A launcher start (a double click: no arguments; or --launcher) gets its watcher, or is
+    // healed right now when this version failed here before.
+    let mut args = std::env::args_os().skip(1);
+    let launcher = std::env::args_os().len() == 1 || args.any(|a| a == "--launcher");
+    if launcher {
+        if !omsi_guard::start(omsi_guard::journal::Kind::Launcher) {
+            return Ok(());
+        }
+        omsi_guard::test_break();
+    }
+    let r = openomsi_game::run();
+    omsi_guard::exited(r.is_ok());
+    r
 }

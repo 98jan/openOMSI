@@ -97,6 +97,28 @@ goes on). `OMSI_NO_UPDATE=1` switches the checks off; `OMSI_UPDATE_URL` points t
 release description (GitHub's format; `file://` works, for testing - the game then looks after
 3 s).
 
+**When a version does not start.** openOMSI heals a start that breaks on its own, before
+anything that could break has run: when it is started (a double click, the launcher) it first
+starts a small watcher without a window. If the launcher crashes, ends on an error or has not
+drawn its first frames after two minutes (it is then ended), the watcher steps in - when that
+version never started on this computer, or failed twice in a row:
+
+1. a newer release, when there is one, is downloaded and installed (its program must start
+   before it replaces anything) and openOMSI starts again;
+2. else the version the last update replaced - kept beside it until the new version has
+   started well once - is put back, and openOMSI starts again;
+3. else openOMSI starts once more in **safe mode** (the basic render pipelines, no plugins);
+4. else a message says what to do (download the latest release, where the log is).
+
+Each step is told in a message box. A version that failed is never installed again on this
+computer, only a newer one. The project can also list a released version as broken
+(`release/health.json`); such a version goes back to the one before, or on to a fixed one, at
+the next start even when it starts well. A crash in the middle of a drive is not a broken
+start: nothing is changed then. The guard keeps its own record in `~/.openomsi/guard/`
+(`guard.log`, `starts.json`, `bad-versions`). `OMSI_NO_GUARD=1` switches it off. On Android
+the next start after one that never reached the launcher looks for an update at once (the
+system's installer asks); going back is the system's business there.
+
 **Playing now.** While a session runs the game tells the project's counter (a Cloudflare
 Worker, `services/presence/`) every ten minutes that it is being played, and says goodbye
 when it ends; the website and the README show how many play right now. What goes out is a
@@ -663,6 +685,20 @@ running through its line where they do not fit (ten characters on Dmitrij's "Mag
 P3ta's SOR buses and its kin, whose first line then shows the map's frequency for the
 place, e.g. `94.6 MHz`). Without stations, or with the radio off, a display shows its own texts.
 
+**Where it is heard.** In the cab the radio sounds from the driver's corner, a little ahead
+of the driver's eyes - from half as far as it really is, since a bus's speakers are spread
+along it: towards the back it is heard from the front but does not fade away. Changing the
+view, the sound glides to its new side in a quarter of a second. From outside it is the bus
+playing through its windows.
+
+**The radio's own sound.** Settings → Sound (in the game: Options → Sound) has three sliders,
+all off at first: *Radio: small speaker* plays it through a small dashboard speaker (no deep
+bass, no bright treble, nearly mono and a little pushed on the loud parts), *Radio: FM hiss*
+adds the hiss and crackle of a weak signal, *Radio: signal dropouts* loses the signal now
+and then for a moment (a bridge, a tall building). With all three at 0 the stream is played
+untouched. They are `radio_speaker`, `radio_hiss` and `radio_dropouts` (0..1) in
+`settings.cfg`.
+
 **When nothing plays.** `~/.openomsi/game.log` says what happened:
 `radio: 23 stations` (the list), `radio: station 1 Radiozurnal (https://…)` (a button
 pressed), then `Radio 1: Radiozurnal - buffering …` and the song, or `no signal (…)` with
@@ -700,6 +736,34 @@ original map is never written; delete the copy to have the original back. Only a
 `[object]` records can be edited: splines, the ground, spline rows, new objects and the
 timetable are not part of it.
 
+## Developer tools
+
+For those who build vehicles: **Ctrl+Shift+D** opens a panel at the right of the picture
+over the running game (again: closes it; closed it costs nothing). The game goes on under it;
+the mouse works the panel where it is over it and the cab everywhere else. Four pages:
+
+* **Variables**: the search lists the bus's script variables (`$` before the text: its string
+  variables) with their values; a click puts one on the watch list at the top, which is kept
+  per bus in `~/.openomsi/devtools/<bus file>.watch`. A watched variable chosen can be **Set**
+  to a value once, or **Held** at it - written into the bus before its scripts run and after
+  them, every frame, until *Let go* or until the panel closes.
+* **Overlays** over the picture: the paths and their points (with the entries and exits), the
+  seats and standing places (and the way they face), the bounding boxes, the axles and
+  wheels, the interior lights with their variables and values, the ticket and stamper
+  points, the mirrors, the centre of gravity and the views - of every part of an articulated
+  bus in its own place.
+* **Mirrors**: each mirror moved, turned and widened while you look at it, and *Copy the
+  block* puts it on the clipboard as the `[add_camera_reflexion_2]` block it has become, to
+  paste into the `.bus` (the block is shown under the buttons, and written to the log too).
+* **Files**: what changes in the bus's files is read again within a second while the panel
+  is open (or on its button): paths.cfg and `[passengercabin]` (not while people are aboard
+  and places, doors or points would go), sound.cfg, the `.bus` (physics, cameras, mirrors,
+  bounding box; not when its axles change), model.cfg (animations, visibility and lights, as
+  long as it names the same meshes) and the constfiles (as long as the scripts and their
+  variables stay). A changed script needs the bus placed anew. *Open the log* opens the
+  game's log. Change a copy of a bus in your content folder, never the installation's own
+  files.
+
 ## Mirror panels
 
 Copies of the bus's mirrors can be laid over the picture, so that the street behind is in
@@ -726,7 +790,11 @@ A new panel has the shape of the mirror's glass in the model. The layout is kept
 `~/.openomsi/mirror_hud.cfg`. The setting `mirror_hud` (0 off, 1 the right mirror, 2 the left,
 3 both) gives a bus with no layout of its own its first panels. The panels need the mirrors
 themselves to be drawn (`mirror_size` not 0); they are redrawn at the rate `mirror_refresh`
-sets, also when the glass is not in the view.
+sets, also when the glass is not in the view. With **Mirror panels every frame** (Settings →
+Graphics, `mirror_hud_every_frame=1`) the mirrors the panels show are drawn every frame instead,
+as ETS2 draws its screen mirrors, whatever `mirror_refresh` says (even with no real-time
+reflections); the other mirrors take their turns without them. It costs one mirror picture a
+frame for each mirror on the panels (none in VR, where the panels are not drawn).
 
 ## Debug and test switches
 

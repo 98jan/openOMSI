@@ -23,7 +23,7 @@ impl Renderer {
             };
             self.queue
                 .write_buffer(&self.ao_buf, 0, bytemuck::bytes_of(&u));
-            let ao = self.ao.as_ref().unwrap();
+            let ao = self.targets.ao.as_ref().unwrap();
             {
                 let mut pass = prepass_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("depth prepass"),
@@ -80,7 +80,7 @@ impl Renderer {
     pub(crate) fn encode_sky_cube(&mut self, prepass_encoder: &mut wgpu::CommandEncoder, scene: &Scene, f: &FrameCtx, redraw_near: bool, probe_redraw: bool, timers: &mut PassTimers) {
         let (enhanced, lead_view) = (f.enhanced, f.lead_view);
         if enhanced && (lead_view || probe_redraw) {
-            if let (Some(probe), Some(sky_bg)) = (self.probe.as_mut(), scene.sky_bind_group.as_ref()) {
+            if let (Some(probe), Some(sky_bg)) = (self.tone.probe.as_mut(), scene.sky_bind_group.as_ref()) {
                 // (face, round, the old picture's share): a whole new cube is every round
                 // of every face averaged; afterwards one face a frame, blended in
                 let full = !probe.cube_filled || self.instant_exposure;
@@ -141,7 +141,7 @@ impl Renderer {
     pub(crate) fn encode_probe(&self, prepass_encoder: &mut wgpu::CommandEncoder, scene: &Scene, probe_redraw: bool, timers: &mut PassTimers) {
         if probe_redraw {
             if let (Some(probe), Some(sky_bg)) =
-                (self.probe.as_ref(), scene.sky_bind_group.as_ref())
+                (self.tone.probe.as_ref(), scene.sky_bind_group.as_ref())
             {
                 for (m, faces) in probe.faces.iter().enumerate() {
                     for (half, bg) in probe.bind_groups[m].iter().enumerate() {
