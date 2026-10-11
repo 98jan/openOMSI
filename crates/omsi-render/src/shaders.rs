@@ -8,6 +8,10 @@
 //! however harmless it looks, has to be tried there. The tests below hold the assembled text
 //! to the old files' size and hash; a deliberate edit of a part updates them.
 
+mod sources;
+
+pub(crate) use sources::*;
+
 /// The scene module's own part: the vanilla path, the shadow passes, the rain on the glass
 /// (`shader.wgsl`). Joined with the shared parts in `scene_shader_text`.
 pub(crate) const SCENE: &str = concat!(
