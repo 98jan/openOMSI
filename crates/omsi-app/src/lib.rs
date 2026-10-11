@@ -773,6 +773,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         exiting: false,
         shell: crate::shell::Shell::new(),
         photo: None,
+        photo_settings: None,
         devtools: None,
     }
 }

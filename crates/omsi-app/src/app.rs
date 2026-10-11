@@ -80,6 +80,8 @@ pub(crate) struct App {
     pub(crate) shell: crate::shell::Shell,
     /// The photo mode, while it is on.
     pub(crate) photo: Option<crate::photo::Photo>,
+    /// The photo mode's settings, kept from one photo to the next in the session.
+    pub(crate) photo_settings: Option<crate::photo::Settings>,
     /// The developer tools, while they are open (Ctrl+Shift+D).
     pub(crate) devtools: Option<Box<crate::devtools::DevTools>>,
 }

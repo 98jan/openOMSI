@@ -315,11 +315,6 @@ fn test_settings(s: &mut Settings, text: &str) {
     }
 }
 
-thread_local! {
-    /// The photo mode's settings, kept from one photo to the next in a session.
-    static LAST: std::cell::RefCell<Option<Settings>> = const { std::cell::RefCell::new(None) };
-}
-
 impl crate::App {
     pub(crate) fn photo_on(&self) -> bool {
         self.photo.is_some()
@@ -341,7 +336,7 @@ impl crate::App {
             }
             None => (cam.position, Vec3::ZERO),
         };
-        let mut settings = LAST.with(|l| l.borrow().clone()).unwrap_or_default();
+        let mut settings = self.photo_settings.clone().unwrap_or_default();
         if let Some(t) = omsi_cfg::flags::OMSI_PHOTO.var() {
             test_settings(&mut settings, t);
         }
@@ -374,7 +369,7 @@ impl crate::App {
     /// Out of the photo mode: the game as it was.
     pub(crate) fn exit_photo(&mut self) {
         let Some(ph) = self.photo.take() else { return };
-        LAST.with(|l| *l.borrow_mut() = Some(ph.settings.clone()));
+        self.photo_settings = Some(ph.settings.clone());
         self.paused = ph.prev_paused;
         if let Some(c) = ph.prev_camera {
             self.camera = Some(c);
