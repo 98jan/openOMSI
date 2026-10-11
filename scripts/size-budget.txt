@@ -21,7 +21,6 @@ file 1935 crates/omsi-launcher-core/src/install.rs
 file 3551 crates/omsi-launcher-core/src/lib.rs
 file 3236 crates/omsi-net/src/lib.rs
 file 1517 crates/omsi-net/src/tests.rs
-file 11702 crates/omsi-render/src/lib.rs
 file 2902 crates/omsi-sim/src/human.rs
 file 2398 crates/omsi-sim/src/rigid.rs
 file 3341 crates/omsi-sim/src/traffic.rs
