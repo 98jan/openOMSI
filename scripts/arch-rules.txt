@@ -86,5 +86,20 @@ forbid omsi-plugin-ui omsi-sim
 forbid omsi-plugin-ui omsi-audio
 forbid omsi-plugin-ui omsi-net
 
+# Multiplayer above the transport: what a session needs of the world comes in as values - no
+# drawing, sound, interface or launcher in it.
+forbid omsi-lan omsi-render
+forbid omsi-lan omsi-audio
+forbid omsi-lan omsi-ui
+forbid omsi-lan omsi-launcher-*
+
+# The platform services (updates, presence) know nothing of the game: no simulation, drawing,
+# sound or network sessions.
+forbid omsi-platform omsi-sim
+forbid omsi-platform omsi-render
+forbid omsi-platform omsi-audio
+forbid omsi-platform omsi-net
+forbid omsi-platform omsi-lan
+
 # Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
 app-lines 128041
