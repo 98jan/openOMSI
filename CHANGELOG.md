@@ -4,6 +4,11 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.32 - 2026-10-11
+
+### Fixes
+- **Windows x64 is built again**: 0.2.31 came out without it (a check of the shaders failed on Windows' line endings, not the game). 0.2.32 is 0.2.31 for every platform - see below for what it brings.
+
 ## 0.2.31 - 2026-10-11
 
 ### New
