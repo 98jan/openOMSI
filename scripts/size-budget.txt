@@ -13,7 +13,7 @@ file 3551 crates/omsi-launcher-core/src/lib.rs
 file 3236 crates/omsi-net/src/lib.rs
 file 1517 crates/omsi-net/src/tests.rs
 file 2902 crates/omsi-sim/src/human.rs
-file 2398 crates/omsi-sim/src/rigid.rs
+file 2398 crates/omsi-sim/src/rigid/mod.rs
 file 3341 crates/omsi-sim/src/traffic.rs
 fn 315 crates/omsi-app::toggle_set crates/omsi-app/src/game_lists/options.rs
 fn 349 crates/omsi-launcher-ui::game_controllers crates/omsi-launcher-ui/src/pages/controls.rs
@@ -26,5 +26,5 @@ fn 491 crates/omsi-model::handle_keyword crates/omsi-model/src/lib.rs
 fn 366 crates/omsi-script::aachen_ibox_route_pad crates/omsi-script/src/compat.rs
 fn 441 crates/omsi-sim::advance crates/omsi-sim/src/human.rs
 fn 437 crates/omsi-sim::bones crates/omsi-sim/src/human.rs
-fn 496 crates/omsi-sim::step_slice crates/omsi-sim/src/rigid.rs
+fn 496 crates/omsi-sim::step_slice crates/omsi-sim/src/rigid/mod.rs
 fn 343 crates/omsi-launcher-ui::draw crates/omsi-launcher-ui/src/timetable.rs
