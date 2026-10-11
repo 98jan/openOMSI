@@ -837,3 +837,12 @@ fn string_only_restore_preserves_and_reuploads_main_and_articulated_displays() {
         }
     }
 }
+
+/// A railcar running alone (no coupled parts) is put on its track without a panic (#2259).
+#[test]
+fn a_single_railcar_retrails_without_trailers() {
+    let mut v = synthetic_rail_consist();
+    v.trailers.clear();
+    v.retrail(1.0 / 30.0, &|d| Some(DVec3::new(0.0, -d, 0.0)));
+    assert!(v.trailers.is_empty());
+}

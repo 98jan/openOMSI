@@ -382,6 +382,10 @@ impl VehicleInstance {
     /// behind the vehicle's origin (None: not known, the part follows as it does on a road).
     /// Each part's turning axle is placed there, and the part follows its coupling.
     pub fn retrail(&mut self, dt: f32, at_behind: &dyn Fn(f64) -> Option<DVec3>) {
+        // a single railcar has nothing coupled behind it (Thüringer Wald's AI trains, #2259)
+        if self.trailers.is_empty() {
+            return;
+        }
         let mut trailers = std::mem::take(&mut self.trailers);
         let mut lead: Option<(DVec3, Mat4, f64)> = None;
         // Cumulative distance along the track behind the vehicle's front origin
