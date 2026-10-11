@@ -12,7 +12,6 @@ file 1609 crates/omsi-launcher-ui/src/ui.rs
 file 3236 crates/omsi-net/src/lib.rs
 file 1517 crates/omsi-net/src/tests.rs
 file 2902 crates/omsi-sim/src/human.rs
-file 2398 crates/omsi-sim/src/rigid/mod.rs
 file 3091 crates/omsi-sim/src/traffic.rs
 fn 370 crates/omsi-app::draw crates/omsi-app/src/navigator.rs
 fn 424 crates/omsi-app::draw_menu crates/omsi-app/src/ui/menu.rs
@@ -25,5 +24,5 @@ fn 491 crates/omsi-model::handle_keyword crates/omsi-model/src/lib.rs
 fn 366 crates/omsi-script::aachen_ibox_route_pad crates/omsi-script/src/compat.rs
 fn 441 crates/omsi-sim::advance crates/omsi-sim/src/human.rs
 fn 437 crates/omsi-sim::bones crates/omsi-sim/src/human.rs
-fn 496 crates/omsi-sim::step_slice crates/omsi-sim/src/rigid/mod.rs
+fn 496 crates/omsi-sim::step_slice crates/omsi-sim/src/rigid/body.rs
 fn 454 crates/omsi-xr::render crates/omsi-xr/src/openxr.rs
