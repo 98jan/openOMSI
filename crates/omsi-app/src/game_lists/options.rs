@@ -608,6 +608,14 @@ pub(super) fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static 
             app.settings.collision_pedestrians = on;
             Some(("collision_pedestrians", bit))
         }
+        _ => toggle_set_graphics_and_controls(app, id, on, bit),
+    }
+}
+
+/// `toggle_set`'s second half: the picture, the screens and VR, sound, the controls and the
+/// interface (`bit` is the switch's value as kept).
+fn toggle_set_graphics_and_controls(app: &mut App, id: &str, on: bool, bit: String) -> Option<(&'static str, String)> {
+    match id {
         "ssao" => {
             app.settings.ssao = on;
             Some(("ssao", bit))
