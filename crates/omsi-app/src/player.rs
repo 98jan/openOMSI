@@ -230,6 +230,8 @@ pub(crate) struct Player {
     pub(crate) auto_shift_max: f32,
     pub(crate) auto_shift_climb: (f32, f32),
     pub(crate) auto_shift_idle: f32,
+    /// The gate the gear lever was put into last (see [`GateMemory`]).
+    pub(crate) gates: GateMemory,
     /// L switched the side lights on with the headlights (see
     /// [`Player::headlights_with_side_lights`]).
     pub(crate) side_lights_by_l: bool,
@@ -491,6 +493,10 @@ impl Player {
         let Some(gate) = name.get(..5).filter(|p| p.eq_ignore_ascii_case("kw_s_")).map(|_| &name[5..]) else { return };
         let gate = gate.strip_suffix("_fest").unwrap_or(gate);
         let is_gate = gate.eq_ignore_ascii_case("r") || gate.eq_ignore_ascii_case("n") || gate.parse::<u32>().is_ok();
+        if is_gate && self.vehicle.ty.program.trigger(name).is_some() {
+            let to = if gate.eq_ignore_ascii_case("r") { -1 } else { gate.parse::<i32>().unwrap_or(0) };
+            self.gates.engaged(to, false);
+        }
         let program = &self.vehicle.ty.program;
         // (a manual gearbox only: see `Program::manual_gearbox`)
         if !is_gate || !program.manual_gearbox() || self.vehicle.host.auto_clutch < 0.5 || program.trigger(name).is_none() || program.reads_sys(omsi_script::SysVar::AutoClutch) {
@@ -910,7 +916,12 @@ impl Player {
     /// The gear a gear lever's gates have engaged (`kw_s_1`.. buses and cars): the variable
     /// the gates store (`antrieb_getr_gang` in the stock cars, `antrieb_getr_aktugang` in the
     /// LiAZ). None without gates.
+    /// A script whose variable does not follow its gates: the gate put in last (#1832).
     pub(crate) fn gate_gear(&self) -> Option<i32> {
+        self.script_gate_gear().map(|read| self.gates.gear(read))
+    }
+
+    fn script_gate_gear(&self) -> Option<i32> {
         let program = &self.vehicle.ty.program;
         program.trigger("kw_s_1")?;
         let v = crate::input_script::gate_gear_var(program).and_then(|v| self.vehicle.var(&v));
@@ -933,6 +944,7 @@ impl Player {
         self.axes.clutch = 1.0;
         self.vehicle.trigger(&name);
         self.vehicle.trigger(&format!("{name}_off"));
+        self.gates.engaged(to, true);
         true
     }
 
@@ -943,6 +955,10 @@ impl Player {
     /// clutch is worked as for a shift by key.
     pub(crate) fn tick_auto_shift(&mut self, dt: f32, throttle: f32, brake: f32) {
         self.auto_shift_wait = (self.auto_shift_wait - dt).max(0.0);
+        let read = self.script_gate_gear();
+        if self.gates.tick(dt, read) {
+            log::info!("gear lever: the script's gear variable did not follow gate {:?} (stayed {read:?}); the gate put in last is taken as the gear", self.gates.last);
+        }
         if !self.auto_shift || !self.vehicle.ty.program.manual_gearbox() {
             return;
         }
@@ -1432,6 +1448,48 @@ mod steering_view_tests {
     }
 }
 
+/// The gate a gear lever was put into last. Some mods keep their gear in a variable of
+/// their own and also declare the automatics' `antrieb_getr_aktugang`, which then never
+/// moves: read as the gear, the automated manual saw neutral after every shift and put
+/// first in again and again (an O305 Schaltwagen, a Citybus i280, #1832). A gate put in
+/// with the clutch down whose variable has not followed a second later marks the
+/// variable deaf, and from then on the gate put in last is the gear.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct GateMemory {
+    pub(crate) last: Option<i32>,
+    check: Option<(i32, f32)>,
+    deaf: bool,
+}
+
+impl GateMemory {
+    /// Gate `gate` was put in; `checked`: with the clutch down, so its variable must follow.
+    pub(crate) fn engaged(&mut self, gate: i32, checked: bool) {
+        self.last = Some(gate);
+        if checked && !self.deaf {
+            self.check = Some((gate, 1.0));
+        }
+    }
+
+    /// A frame of `dt` seconds with the script's variable reading `read`: true when it is
+    /// found deaf now.
+    pub(crate) fn tick(&mut self, dt: f32, read: Option<i32>) -> bool {
+        let Some((gate, left)) = &mut self.check else { return false };
+        *left -= dt;
+        if *left > 0.0 {
+            return false;
+        }
+        let gate = *gate;
+        self.check = None;
+        self.deaf = read.is_some_and(|r| r != gate);
+        self.deaf
+    }
+
+    /// The gear engaged, from the script's variable reading `read`.
+    pub(crate) fn gear(&self, read: i32) -> i32 {
+        if self.deaf { self.last.unwrap_or(read) } else { read }
+    }
+}
+
 /// The automated manual's choice (#713) from gear `cur` (of `top`), the engine speed as a
 /// multiple of its idle, the highest seen so far (0 when none yet), the pedals and the road
 /// speed.
@@ -1465,6 +1523,29 @@ pub(crate) fn auto_shift_gear(cur: i32, top: i32, n_over_idle: f32, max_over_idl
 #[cfg(test)]
 mod auto_shift_tests {
     use super::auto_shift_gear as g;
+    use super::GateMemory;
+
+    #[test]
+    fn a_gear_variable_that_does_not_follow_the_gates_gives_way_to_the_gate() {
+        // the variable follows: it stays the gear, a refused gate included
+        let mut m = GateMemory::default();
+        m.engaged(1, true);
+        assert!(!m.tick(0.5, Some(0)));
+        assert!(!m.tick(0.6, Some(1)));
+        assert_eq!(m.gear(1), 1);
+        m.engaged(2, false);
+        assert_eq!(m.gear(1), 1);
+        // it stays at neutral after first went in with the clutch down (#1832)
+        let mut m = GateMemory::default();
+        m.engaged(1, true);
+        assert!(m.tick(1.1, Some(0)));
+        assert_eq!(m.gear(0), 1);
+        m.engaged(2, true);
+        assert!(!m.tick(1.1, Some(0)), "found deaf once");
+        assert_eq!(m.gear(0), 2);
+        m.engaged(-1, false);
+        assert_eq!(m.gear(0), -1);
+    }
 
     #[test]
     fn the_automated_manual_shifts_by_the_engine_speed() {
