@@ -7,7 +7,7 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 ## 0.2.32 - 2026-10-11
 
 ### Fixes
-- **Windows x64 is built again**: 0.2.31 came out without it (a check of the shaders failed on Windows' line endings, not the game). 0.2.32 is 0.2.31 for every platform - see below for what it brings.
+- 0.2.31 was never published: its Windows x64 build stopped at a check of the shaders that read Windows' line endings (not the game itself). 0.2.32 is 0.2.31 for every platform - see below for what it brings.
 
 ## 0.2.31 - 2026-10-11
 
