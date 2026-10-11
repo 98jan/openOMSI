@@ -3590,7 +3590,6 @@ dependencies = [
 ]
 
 [[package]]
-[[package]]
 name = "omsi-photo"
 version = "0.1.0"
 dependencies = [
@@ -3599,6 +3598,7 @@ dependencies = [
  "rayon",
 ]
 
+[[package]]
 name = "omsi-platform"
 version = "0.1.0"
 dependencies = [
