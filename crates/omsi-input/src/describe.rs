@@ -116,7 +116,7 @@ impl ControlNames {
     }
 
     /// The same names from a table (tests).
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_table(lang: &str, table: &[(&str, &str)]) -> ControlNames {
         ControlNames {
             lang: language_code(lang),
@@ -285,7 +285,7 @@ mod script_action_tests {
 
 /// `ENG` / `DEU` / `FRA` from the settings' spelling (default English).
 pub fn language_code(s: &str) -> String {
-    omsi_launcher_lib::language_code(s).to_string()
+    omsi_cfg::lang::language_code(s).to_string()
 }
 
 static NAMES: OnceLock<ControlNames> = OnceLock::new();

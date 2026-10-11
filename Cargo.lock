@@ -3449,7 +3449,6 @@ dependencies = [
  "objc2-io-kit",
  "omsi-cfg",
  "omsi-content",
- "omsi-launcher-core",
  "omsi-script",
  "omsi-sim",
  "omsi-vehicle",

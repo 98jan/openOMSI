@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 
 pub mod codepage;
 pub mod flags;
+pub mod lang;
 mod keywords;
 pub mod number;
 pub mod panic_guard;

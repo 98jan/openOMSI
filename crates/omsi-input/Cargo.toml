@@ -5,14 +5,16 @@ edition.workspace = true
 license.workspace = true
 description = "openOMSI's input devices: game controllers and their mappings, force feedback, head tracking, key names"
 
+[features]
+# `describe::ControlNames::from_table` for the tests of crates that use the names
+test-support = []
+
 [dependencies]
 omsi-cfg = { path = "../omsi-cfg" }
 omsi-content = { path = "../omsi-content" }
 omsi-script = { path = "../omsi-script" }
 omsi-sim = { path = "../omsi-sim" }
 omsi-vehicle = { path = "../omsi-vehicle" }
-# (`language_code`: the settings' language as OMSI spells it)
-omsi-launcher-core = { path = "../omsi-launcher-core" }
 winit.workspace = true
 glam.workspace = true
 log.workspace = true
