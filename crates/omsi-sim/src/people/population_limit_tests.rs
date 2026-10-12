@@ -30,18 +30,13 @@ fn the_pool_counts_local_people_and_never_recycles_riders_or_avatars() {
         pace: 1.1,
         activity: Activity::Stand,
         anim: OmsiAnim::default(),
-        procedural: None,
         state: if standing {
             State::Standing
         } else {
             State::Pax(Box::new(Pax::new(1.1, 0.5)))
         },
         t_state: 0.0,
-        skins: Vec::new(),
-        skin_bones: None,
-        pose_changed: false,
         interior: 0.0,
-        lit: 0.0,
         tilt: Mat4::IDENTITY,
         age: 40.0,
         stuck: 0.0,
@@ -50,10 +45,6 @@ fn the_pool_counts_local_people_and_never_recycles_riders_or_avatars() {
         detour: 0.0,
         detour_side: 0.0,
         why: "",
-        skinned: false,
-        since_posed: 0,
-        posed_at: (DVec3::ZERO, 0.0),
-        ankles: [Vec3::ZERO; 2],
         puppet,
         remote,
     };

@@ -73,6 +73,7 @@ pub mod pax_task;
 pub mod pax_driver;
 // What the renderer has to follow, the money on the desk and what the people need of the map.
 pub mod bodies;
+pub mod pose_facts;
 pub mod money;
 pub mod world;
 #[cfg(test)]
@@ -93,6 +94,7 @@ pub use bodies::{BodyOp, BodyOps};
 pub use mirror::{placed_bus_id, remote_bus_id, remote_bus_player, LanPerson, MirrorPose};
 pub use model::{BusId, DoorWants, Eye, Footfall, PeopleSim, Person, Place, State, VoiceLine};
 pub use money::Money;
+pub use pose_facts::PoseFacts;
 pub use pax::DutyTrip;
 pub use world::World;
 

@@ -201,6 +201,86 @@ impl crate::ai_traffic::TrafficSim {
     }
 }
 
+/// What the people's posing reads of the simulation at the end of a step: every person's
+/// place, motion, animation and what the enhanced pose needs of their state - owned data,
+/// `Send`, so that the posing (the view's: `view_sync::people`) never reads `PeopleSim`
+/// and the simulation can step on meanwhile. Kept from one to the next (`PeopleSim::snapshot_into`).
+#[derive(Default)]
+pub struct PeopleFrame {
+    /// The people's clock (s).
+    pub time: f64,
+    /// Where the player looks from (None: the camera stands in).
+    pub eye: Option<crate::people::Eye>,
+    /// The buses as the passengers saw them in the step (their floors, for the feet).
+    pub buses: Arc<Vec<crate::people::cabin::BusNow>>,
+    /// Everybody, in the simulation's order.
+    pub people: Vec<PersonFrame>,
+}
+
+/// One person of a [`PeopleFrame`].
+#[derive(Clone)]
+pub struct PersonFrame {
+    pub id: u32,
+    pub ty: Arc<crate::human::HumanType>,
+    pub position: glam::DVec3,
+    pub heading: f64,
+    /// Heading in the bus frame while inside one.
+    pub lheading: f64,
+    pub place: crate::people::Place,
+    pub vel: glam::DVec2,
+    /// Omsi.exe's walk phase and joint angles, as the step left them.
+    pub anim: crate::human_omsi::OmsiAnim,
+    /// The tilt of the floor the person stands on (riders are drawn with it).
+    pub tilt: glam::Mat4,
+    /// The interior light of the bus the person is in (0 outside).
+    pub interior: f32,
+    /// A scripted test person (`OMSI_PAX_GALLERY`): never posed procedurally.
+    pub puppet: bool,
+    /// An avatar: Some(hidden) - the first-person view leaves its own body out.
+    pub hidden: Option<bool>,
+    /// What the enhanced pose reads of the state.
+    pub facts: crate::people::PoseFacts,
+    /// The state's name (`OMSI_TRACE_PAX`).
+    pub state: &'static str,
+    /// `OMSI_CHECK_TPOSE`: the person's label and state, and a passenger's details.
+    pub debug: Option<[String; 2]>,
+}
+
+impl crate::people::PeopleSim {
+    /// Everybody as the posing needs them now (see [`PeopleFrame`]), into `out` (its
+    /// buffer kept).
+    pub fn snapshot_into(&self, out: &mut PeopleFrame) {
+        let debug = omsi_cfg::flags::OMSI_CHECK_TPOSE.is_set();
+        out.time = self.time;
+        out.eye = self.eye;
+        out.buses = self.last_buses.clone();
+        out.people.clear();
+        out.people.extend(self.people.iter().map(|p| PersonFrame {
+            id: p.id,
+            ty: p.ty.clone(),
+            position: p.position,
+            heading: p.heading,
+            lheading: p.lheading,
+            place: p.place,
+            vel: p.vel,
+            anim: p.anim.clone(),
+            tilt: p.tilt,
+            interior: p.interior,
+            puppet: p.puppet.is_some(),
+            hidden: self.avatar_hidden.get(&p.id).copied(),
+            facts: p.pose_facts(),
+            state: p.state.name(),
+            debug: debug.then(|| {
+                let pax = match &p.state {
+                    crate::people::State::Pax(x) => format!("pax_state {} speed {:.2} seat_h {:.2} room {:.2} st {}", x.pax_state, x.speed, x.seat_h, x.room, x.st),
+                    _ => String::new(),
+                };
+                [format!("{} {}", p.label(), p.state_name()), pax]
+            }),
+        }));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -214,6 +294,7 @@ mod tests {
         handed_across_threads::<Vec<TrafficEvent>>();
         handed_across_threads::<crate::people::BodyOp>();
         handed_across_threads::<FrameSnapshot>();
+        handed_across_threads::<PeopleFrame>();
     }
 
     /// The flat buffers hand every mesh its own run of slot values, and a cleared snapshot
