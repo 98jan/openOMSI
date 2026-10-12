@@ -36,6 +36,7 @@
 //! same order.
 
 pub(crate) mod digest;
+pub(crate) mod lan;
 pub(crate) mod people;
 pub(crate) mod traffic;
 pub(crate) mod traffic_audio;
@@ -55,6 +56,7 @@ use traffic::TrafficView;
 pub(crate) use crate::scene::host::install_sim_decoder;
 pub(crate) use people::apply_people;
 pub(crate) use traffic::apply_traffic;
+pub(crate) use lan::apply_lan;
 
 /// What the renderer shows of the simulation, kept for the next view sync: the AI traffic's
 /// renders and drivers, and the people's meshes, posing and ticket blocks. Each part starts
@@ -63,6 +65,8 @@ pub(crate) use traffic::apply_traffic;
 pub(crate) struct SimView {
     pub(crate) traffic: TrafficView,
     pub(crate) people: PeopleView,
+    /// The other LAN players' vehicles as drawn and heard (`lan::apply_lan`).
+    pub(crate) lan: lan::LanView,
 }
 
 /// The people to bring up to date in a view sync.

@@ -44,6 +44,9 @@ impl App {
             duty,
             &frame,
         );
+        if let (Some(w), Some(r), Some(scene)) = (self.world.as_deref(), self.renderer.as_ref(), self.scene.as_mut()) {
+            crate::view_sync::apply_lan(&mut self.net.remotes, &mut self.gfx.sim_view.lan, w, r, scene, &frame, dt);
+        }
         for u in updates {
             self.apply_world_update(u);
         }

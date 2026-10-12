@@ -1183,7 +1183,7 @@ impl App {
     /// Other players on foot: their avatars.
     pub(crate) fn sync_remote_walkers(&mut self) {
         let walkers: Vec<(u32, Option<omsi_net::Walker>, String, Option<Arc<HumanType>>)> =
-            self.net.remotes.remotes.iter().map(|(id, r)| (*id, r.last.walker, r.last.figure.clone(), r.figure_type())).collect();
+            self.net.remotes.remotes.iter().map(|(id, r)| (*id, r.last.walker, r.last.figure.clone(), self.gfx.sim_view.lan.figure_type(*id))).collect();
         if walkers.iter().all(|w| w.1.is_none()) && self.net.remote_walkers.is_empty() {
             return;
         }

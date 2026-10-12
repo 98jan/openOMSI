@@ -810,6 +810,7 @@ impl Offscreen<'_> {
                 None,
                 &frame,
             );
+            crate::view_sync::apply_lan(remotes_off, &mut sim_view.lan, world, renderer, scene, &frame, dt);
             for u in updates {
                 if let (lan::WorldUpdate::Tours(tours), Some(s)) = (u, schedule.as_mut()) {
                     s.set_lan_tours(tours);

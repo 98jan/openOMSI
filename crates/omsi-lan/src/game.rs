@@ -19,7 +19,7 @@
 //! code to show it with a copy button. `<instance>` is the id the launcher gives the game in
 //! `OMSI_INSTANCE`, else the process id.
 
-use crate::scene::{self, World};
+use crate::scene::World;
 use crate::{Args, Player};
 use glam::DVec3;
 use omsi_lan::remote::lan_now;
@@ -41,8 +41,6 @@ pub const WELCOME_WAIT: Duration = Duration::from_secs(3);
 pub const HOST_ANSWER_WAIT: Duration = Duration::from_secs(8);
 /// The largest vehicle file loaded for another player (a `.bus` is a few hundred KB).
 const MAX_VEHICLE_FILE: u64 = 16 << 20;
-/// Other players' buses are heard within this distance (m), and fall silent beyond 1.2 times it.
-const HEAR_RANGE: f64 = 250.0;
 /// A clock further off the host's than this (s) is set; a smaller difference is caught up.
 const CLOCK_JUMP: f64 = 2.0;
 /// Chat lines shown, and for how long (s).
@@ -85,23 +83,13 @@ fn sync_table(game: &mut LanGame, v: &omsi_sim::VehicleInstance) -> Arc<SyncTabl
 
 /// Another player's bus as we draw and hear it: their vehicle type run as an AI vehicle
 /// whose pose comes off the network instead of a lane.
-impl RemoteVehicle {
-    /// The figure they are drawn as: the one at their wheel, which their avatar on foot
-    /// wears too (`sync_remote_walkers`).
-    pub(crate) fn figure_type(&self) -> Option<Arc<omsi_sim::human::HumanType>> {
-        self.driver.as_ref().map(|d| d.human_type())
-    }
-}
-
+/// Another player's vehicle as this game runs it: an AI copy of their vehicle type posed
+/// from the network. How it is drawn and heard (its renders, sounds and driver figure) is
+/// the view's (`view_sync::lan`), told by [`LanGame::drawn`].
 pub struct RemoteVehicle {
     vehicle: omsi_sim::VehicleInstance,
-    render: scene::VehicleRender,
-    trailer_renders: Vec<scene::VehicleRender>,
     pub name: String,
     table: Arc<SyncTable>,
-    sounds: Vec<omsi_audio::SoundSet>,
-    /// Its `[sound]` heard from inside, while we ride in it (`SyncTable::interior`).
-    inside_sounds: Option<omsi_audio::SoundSet>,
     /// Where the latest pose puts the bus and its rear sections, for smoothing between
     /// network updates.
     target: (DVec3, f64),
@@ -126,12 +114,6 @@ pub struct RemoteVehicle {
     /// The bus file and paint scheme it was made in (`last` is the state drawn, which may be
     /// an interpolated older one).
     made_as: (String, String),
-    /// The driver at the wheel (their bus stood empty here), hidden while they walk about.
-    driver: Option<crate::driver::DriverFigure>,
-    /// The figure (`Pose::figure`) the driver was made for: made again when another comes.
-    /// (Made once, it kept the figure guessed before their INFO named theirs - one of the
-    /// map's drivers -, and on foot they were a passenger picked by their id.)
-    driver_for: Option<String>,
     /// Their states as they came, and the moment of theirs drawn (`omsi_lan::remote`).
     track: omsi_lan::remote::PoseTrack,
     /// Every variable of theirs as it came (`omsi_net::vars`), pinned each frame, and their
@@ -159,6 +141,31 @@ impl RemoteVehicle {
     pub fn vehicle_mut(&mut self) -> &mut omsi_sim::VehicleInstance {
         &mut self.vehicle
     }
+
+    /// What of their vehicle goes over the network, and the sounds it has.
+    pub fn table(&self) -> &SyncTable {
+        &self.table
+    }
+}
+
+/// What changed of the other players' vehicles in a tick, for the view to follow
+/// (`view_sync::lan`): in the order it happened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteEvent {
+    /// Player `id`'s vehicle was made (with its rear sections): draw it.
+    Made(u32),
+    /// Player `id`'s vehicle went (or is made again): its renders, sounds and driver go.
+    Gone(u32),
+}
+
+/// The view's part of a tick: the vehicles made and gone, the ones posed this tick (in
+/// order, with whether we ride in it: their sounds follow), and the players whose sounds
+/// `OMSI_DEBUG_LAN` lists now.
+#[derive(Default)]
+pub struct RemoteChanges {
+    pub events: Vec<RemoteEvent>,
+    pub heard: Vec<(u32, bool)>,
+    pub debug_sounds: Vec<u32>,
 }
 
 // The chat's keys are `chat_toggle` and `chat_open` of keyboard.cfg's [game]
@@ -240,6 +247,8 @@ pub enum WorldUpdate {
 #[derive(Default)]
 pub struct LanGame {
     pub remotes: hashbrown::HashMap<u32, RemoteVehicle>,
+    /// What the last tick did to them that the view has to follow (taken by it).
+    pub drawn: RemoteChanges,
     pub chat: Chat,
     /// The chat's lines (name, text) not yet handed to the plugins (`lan_chat`).
     pub plugin_chat: Vec<(String, String)>,
@@ -1738,8 +1747,6 @@ fn new_remote(
     pose: &Pose,
     player: Option<&Player>,
     world: &World,
-    r: &Renderer,
-    scene: &mut Scene,
     clock: Option<&omsi_sim::SimClock>,
 ) -> Option<RemoteVehicle> {
     let (ty, stand_in) = remote_type(args, pose, player)?;
@@ -1766,9 +1773,7 @@ fn new_remote(
         });
     }
     vehicle.apply_paint_vars(scheme);
-    let render = world.add_vehicle_shared(r, scene, &ty, scheme, None);
-    // the coupled sections of an articulated bus
-    let mut trailer_renders = Vec::new();
+    // the coupled sections of an articulated bus (drawn by the view as they are attached)
     let mut lead = ty.clone();
     let mut lead_rev = false;
     let mut seen = vec![lead.def.path.clone()];
@@ -1782,13 +1787,6 @@ fn new_remote(
         match omsi_sim::VehicleType::load(&args.root, &path) {
             Ok(t) => {
                 let t = Arc::new(t);
-                trailer_renders.push(world.add_vehicle_shared(
-                    r,
-                    scene,
-                    &t,
-                    scheme.filter(|i| *i < t.paint_schemes.len()),
-                    Some(&render),
-                ));
                 vehicle.attach_trailer_ex(t.clone(), rev);
                 seen.push(path);
                 lead = t;
@@ -1823,10 +1821,10 @@ fn new_remote(
         pose.x,
         pose.y,
         pose.heading,
-        if trailer_renders.is_empty() {
+        if vehicle.trailers.is_empty() {
             String::new()
         } else {
-            format!(", {} rear section(s)", trailer_renders.len())
+            format!(", {} rear section(s)", vehicle.trailers.len())
         },
         if matched {
             "lamps, switches and sound values follow theirs".to_string()
@@ -1836,12 +1834,8 @@ fn new_remote(
     );
     Some(RemoteVehicle {
         vehicle,
-        render,
-        trailer_renders,
         name: pose.name.clone(),
         table,
-        sounds: Vec::new(),
-        inside_sounds: None,
         target: (DVec3::new(pose.x, pose.y, pose.z), pose.heading as f64),
         rear,
         pose_seen: (DVec3::new(pose.x, pose.y, pose.z), Instant::now()),
@@ -1855,8 +1849,6 @@ fn new_remote(
         stand_in,
         last: pose.clone(),
         made_as: (pose.bus.clone(), pose.paint.clone()),
-        driver: None,
-        driver_for: None,
         track: Default::default(),
         vars: None,
         synced: Default::default(),
@@ -1874,28 +1866,6 @@ impl RemoteVehicle {
     /// Their state as it is drawn now (see `omsi_lan::remote::PoseTrack::interpolated`).
     fn interpolated(&mut self) -> Option<Pose> {
         self.track.interpolated()
-    }
-}
-
-/// A remote vehicle has gone: its sounds stop and its instances go back to the world.
-fn release(
-    r: &Renderer,
-    scene: &mut Scene,
-    world: &World,
-    audio: Option<&omsi_audio::AudioEngine>,
-    rv: RemoteVehicle,
-) {
-    if let Some(a) = audio {
-        for mut s in rv.sounds {
-            s.stop_all(a);
-        }
-    }
-    if let Some(mut d) = rv.driver {
-        d.hide(r, scene);
-    }
-    world.release_vehicle(r, scene, rv.render);
-    for t in rv.trailer_renders {
-        world.release_vehicle(r, scene, t);
     }
 }
 
@@ -2142,96 +2112,6 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&Player>, 
     }
 }
 
-/// The outside sounds of a remote bus: made when it comes into earshot, dropped beyond.
-fn sound_remote(
-    rv: &mut RemoteVehicle,
-    audio: Option<&omsi_audio::AudioEngine>,
-    listener: Option<DVec3>,
-    muffled: bool,
-    inside: bool,
-) {
-    let fired: Vec<String> = std::mem::take(&mut rv.vehicle.host.fired_triggers);
-    let fired_files: Vec<(String, String)> =
-        std::mem::take(&mut rv.vehicle.host.fired_file_triggers);
-    let (Some(audio), Some(at)) = (audio, listener) else {
-        return;
-    };
-    // Riding in it: its whole `[sound]` heard from inside, as our own bus is heard from its
-    // cab - not its outside sounds muffled, which a passenger heard as if standing in the
-    // street beside it (the exterior engine, the tyres, the doors from outside).
-    let interior = inside.then_some(()).and(rv.table.interior.clone());
-    if let Some((cfg, dir)) = interior {
-        for mut s in rv.sounds.drain(..) {
-            s.stop_all(audio);
-        }
-        if rv.inside_sounds.is_none() && audio.clips_ready(&omsi_audio::SoundSet::clip_paths(&cfg, &dir)) {
-            let number = rv.vehicle.number();
-            rv.inside_sounds = Some(omsi_audio::SoundSet::new(audio, &cfg.chosen_for(&number), &dir));
-        }
-        if let Some(ss) = rv.inside_sounds.as_mut() {
-            let xf = rv.vehicle.world_transform();
-            let v = &rv.vehicle;
-            ss.set_inside(true);
-            ss.set_muffled(true);
-            ss.set_listener_vehicle(true);
-            // its own outside sounds come in through what this bus has open - its
-            // `Snd_OutsideVol`, not the walker's own bus's (or 1 without one): riding along
-            // the exterior engine drowned the cab (#1759)
-            omsi_audio::soundset::set_outside_open(Some(v.var("Snd_OutsideVol").unwrap_or(0.0)));
-            ss.update(audio, &|n| v.var(n), &xf, &fired);
-            for (t, f) in &fired_files {
-                ss.play_file_trigger(audio, t, f, &|n| v.var(n), &xf);
-            }
-        }
-        return;
-    }
-    if let Some(mut s) = rv.inside_sounds.take() {
-        s.stop_all(audio);
-    }
-    let d = (rv.vehicle.position - at).length();
-    if d > HEAR_RANGE * 1.2 {
-        for mut s in rv.sounds.drain(..) {
-            s.stop_all(audio);
-        }
-        return;
-    }
-    if rv.sounds.is_empty() && d < HEAR_RANGE && !rv.table.sounds.is_empty() {
-        // the clips are read in the background the first time; silent till then
-        let ready = rv
-            .table
-            .sounds
-            .iter()
-            .map(|(cfg, dir)| (cfg, dir))
-            .chain(rv.table.part_sounds.iter().map(|(_, cfg, dir)| (cfg, dir)))
-            .all(|(cfg, dir)| audio.clips_ready(&omsi_audio::SoundSet::clip_paths(cfg, dir)));
-        if ready {
-            let number = rv.vehicle.number();
-            rv.sounds = rv
-                .table
-                .sounds
-                .iter()
-                .map(|(cfg, dir)| omsi_audio::SoundSet::new_exterior(audio, &cfg.chosen_for(&number), dir))
-                .collect();
-            // the rear sections' sounds ride on the first set, each at its section
-            if let Some(first) = rv.sounds.first_mut() {
-                for (k, cfg, dir) in &rv.table.part_sounds {
-                    first.add_part(*k, omsi_audio::SoundSet::new_exterior(audio, &cfg.chosen_for(&number), dir));
-                }
-            }
-        }
-    }
-    let xf = rv.vehicle.world_transform();
-    let v = &rv.vehicle;
-    for ss in rv.sounds.iter_mut() {
-        ss.set_muffled(muffled);
-        ss.update(audio, &|n| v.var(n), &xf, &fired);
-        ss.update_parts(audio, &|n| v.var(n), &|i| v.trailers.get(i).map(|t| t.world_transform()), &fired);
-        for (t, f) in &fired_files {
-            ss.play_file_trigger(audio, t, f, &|n| v.var(n), &xf);
-        }
-    }
-}
-
 /// LAN play, once a frame: send our bus, take in the others', answer joining players,
 /// place our bus when the host's list arrives late, keep a drawn and heard vehicle for
 /// each player, follow the host's world and clock, and collect the chat. Returns what the
@@ -2389,13 +2269,14 @@ pub fn tick(
         write_status(lan, game, player.as_deref());
         game.status_t = 2.0;
     }
-    let (Some(w), Some(r), Some(scene)) = (world, renderer, scene) else {
+    // (the others' vehicles are kept only while there is a world to draw them in)
+    let (Some(w), Some(_), Some(_)) = (world, renderer, scene) else {
         return updates;
     };
     for id in gone {
         if let Some(rv) = game.remotes.remove(&id) {
             log::info!("LAN: no longer drawing player {id} '{}'", rv.name);
-            release(r, scene, w, frame.audio, rv);
+            game.drawn.events.push(RemoteEvent::Gone(id));
         }
     }
     // a player the session forgot (timed out), or one that has no bus any more, is dropped
@@ -2412,8 +2293,8 @@ pub fn tick(
         .filter(|id| !known.contains(id))
         .collect();
     for id in stale {
-        if let Some(rv) = game.remotes.remove(&id) {
-            release(r, scene, w, frame.audio, rv);
+        if game.remotes.remove(&id).is_some() {
+            game.drawn.events.push(RemoteEvent::Gone(id));
         }
     }
     let poses: Vec<Pose> = lan
@@ -2430,8 +2311,8 @@ pub fn tick(
             .map(|rv| rv.made_as.0 != pose.bus || rv.made_as.1 != pose.paint)
             .unwrap_or(false)
         {
-            if let Some(rv) = game.remotes.remove(&pose.id) {
-                release(r, scene, w, frame.audio, rv);
+            if game.remotes.remove(&pose.id).is_some() {
+                game.drawn.events.push(RemoteEvent::Gone(pose.id));
             }
         }
         if !game.remotes.contains_key(&pose.id) {
@@ -2445,8 +2326,6 @@ pub fn tick(
                 &pose,
                 player.as_deref(),
                 w,
-                r,
-                scene,
                 frame.clock,
             ) else {
                 game.failed.insert(key, std::time::Instant::now());
@@ -2454,6 +2333,7 @@ pub fn tick(
             };
             game.failed.remove(&key);
             game.remotes.insert(pose.id, rv);
+            game.drawn.events.push(RemoteEvent::Made(pose.id));
         }
         let Some(rv) = game.remotes.get_mut(&pose.id) else {
             continue;
@@ -2504,43 +2384,25 @@ pub fn tick(
         }
         show_display_texts(&mut rv.vehicle, &pose.texts);
         show_freetex(&mut rv.vehicle, &pose.freetex);
-        let inside = frame.inside_of == Some(pose.id);
-        sound_remote(rv, frame.audio, frame.listener, frame.muffled, inside);
+        // (its sounds follow it: `view_sync::lan`)
+        game.drawn.heard.push((pose.id, frame.inside_of == Some(pose.id)));
     }
-    // draw them like AI traffic
-    for (id, rv) in game.remotes.iter_mut() {
-        if rv.driver_for.as_deref() != Some(rv.last.figure.as_str()) && !rv.stand_in {
-            rv.driver_for = Some(rv.last.figure.clone());
-            if let Some(mut d) = rv.driver.take() {
-                d.hide(r, scene);
-            }
-            // their own figure at the wheel (a figure picked by their id otherwise)
-            rv.driver = crate::driver::DriverFigure::new_named(w, r, scene, &rv.vehicle, omsi_net::human_path(&rv.last.figure).as_deref(), 1000 + *id as u64);
-        }
-        if let Some(d) = rv.driver.as_mut() {
-            d.update(r, scene, &rv.vehicle, &rv.render, dt.max(1.0 / 120.0), rv.last.walker.is_none(), false);
-        }
-        // drawn as the own bus is: its outside meshes from outside, its inside ones to
-        // whoever stands in it (the outside and the AI meshes together fought over the
-        // same surfaces - the flicker and the black patches in the saloon), opaque slots
-        // never faded by an alpha variable the AI scripts left at 0, the bellows skinned
-        let inside = frame.inside_of == Some(*id);
-        // OMSI_TRACE_REMOTE=<file.csv>: where each other player's bus is drawn, every frame
-        if let Some(path) = omsi_cfg::flags::OMSI_TRACE_REMOTE.var() {
-            use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    // OMSI_TRACE_REMOTE=<file.csv>: where each other player's bus is drawn, every frame
+    if let Some(path) = omsi_cfg::flags::OMSI_TRACE_REMOTE.var() {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            for (id, rv) in game.remotes.iter() {
                 let _ = writeln!(f, "{:.4},{id},{:.3},{:.3},{:.3},{:.2},{}", lan_now(), rv.vehicle.position.x, rv.vehicle.position.y, rv.vehicle.position.z, rv.vehicle.heading, rv.track.has_offset());
             }
         }
-        crate::player::sync_vehicle_transforms(r, scene, &mut rv.vehicle, &mut rv.render, &mut rv.trailer_renders, inside);
     }
-    debug_log(lan, game, dt, frame);
+    debug_log(lan, game, dt);
     updates
 }
 
 /// `OMSI_DEBUG_LAN`: every few seconds, what we know of every player, what their bus
 /// shows and plays here, and the bytes that went over the network.
-fn debug_log(lan: &LanSession, game: &mut LanGame, dt: f32, frame: &Frame) {
+fn debug_log(lan: &LanSession, game: &mut LanGame, dt: f32) {
     if !omsi_cfg::flags::OMSI_DEBUG_LAN.is_set() {
         return;
     }
@@ -2636,29 +2498,8 @@ fn debug_log(lan: &LanSession, game: &mut LanGame, dt: f32, frame: &Frame) {
                 v.var("AI_Light"),
                 v.var("lights_sw_blinker")
             );
-            if let Some(a) = frame.audio {
-                let playing: Vec<String> = rv
-                    .sounds
-                    .iter()
-                    .flat_map(|s| s.playing(a))
-                    .filter(|p| p.1 > 1.0e-4)
-                    .map(|(f, g, pitch)| {
-                        format!(
-                            "{} {:.3}x{:.2}",
-                            f.rsplit(['\\', '/']).next().unwrap_or(&f),
-                            g,
-                            pitch
-                        )
-                    })
-                    .take(10)
-                    .collect();
-                log::info!(
-                    "LAN sounds of player {} ({} set(s)): {:?}",
-                    q.id,
-                    rv.sounds.len(),
-                    playing
-                );
-            }
+            // (what it plays is the view's to tell: `view_sync::lan`)
+            game.drawn.debug_sounds.push(q.id);
         }
     }
 }
