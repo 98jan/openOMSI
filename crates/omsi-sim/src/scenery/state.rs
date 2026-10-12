@@ -170,6 +170,8 @@ pub struct SceneryState {
     /// What the scripts took last frame, to give the next frame's run as many helpers as
     /// that work is worth.
     scripts_last: f64,
+    /// Counts up whenever objects come or go.
+    generation: u64,
 }
 
 /// A vector's allocation for another element type of the same size (the parallel run's
@@ -201,6 +203,12 @@ impl SceneryState {
         &self.objects[index as usize]
     }
 
+    /// Counts up whenever objects come or go (indices kept elsewhere are good while it
+    /// stays).
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
     /// The first object of id `map_id`.
     pub fn find(&self, map_id: i64) -> Option<u32> {
         self.by_id.get(&map_id).copied()
@@ -214,6 +222,7 @@ impl SceneryState {
     /// A newly placed object goes to the end of the list (its index is returned); it runs
     /// from the next step when it is within reach of the camera's cell.
     pub fn push(&mut self, o: SceneryObject) -> u32 {
+        self.generation += 1;
         let i = self.objects.len() as u32;
         self.by_id.entry(o.map_id).or_insert(i);
         if let Some(cell) = self.cell {
@@ -231,6 +240,7 @@ impl SceneryState {
         if !self.objects.iter().any(|o| o.tile == key) {
             return false;
         }
+        self.generation += 1;
         let mut i = 0;
         self.objects.retain(|o| {
             let stays = o.tile != key;

@@ -37,6 +37,9 @@ pub struct ScriptedTimes {
 pub struct ScriptedSet {
     pub sim: omsi_sim::scenery::SceneryState,
     pub views: Vec<ScriptedView>,
+    /// The objects that are railway signals (`World::signal_ids`), in order, and the list's
+    /// generation they were found at.
+    signals: (u64, Vec<u32>),
 }
 
 /// The render side of a scripted scenery object (see [`ScriptedObject`] for the fields).
@@ -209,10 +212,15 @@ impl World {
         // (the signals of the routes, gathered once when the map opened)
         let ids = &self.signal_ids;
         let mut scripted = self.scripted.lock();
-        for o in scripted.sim.objects_mut() {
-            if !ids.contains(&o.map_id) {
-                continue;
-            }
+        let ScriptedSet { sim, signals, .. } = &mut *scripted;
+        // (found anew only when objects came or went, not by a walk of the list each frame)
+        if signals.0 != sim.generation() {
+            signals.0 = sim.generation();
+            signals.1.clear();
+            signals.1.extend(sim.objects().iter().enumerate().filter(|(_, o)| ids.contains(&o.map_id)).map(|(i, _)| i as u32));
+        }
+        for &i in &signals.1 {
+            let o = &mut sim.objects_mut()[i as usize];
             let a = aspects.get(&o.map_id).copied().unwrap_or(0.0);
             if o.inst.var("Signal") != Some(a) {
                 o.inst.set_var("Signal", a);
@@ -554,7 +562,7 @@ impl World {
         // The scripts run in the simulation's list (what each is given gathered in order
         // first, then the scripts side by side on the worker threads), and what they did
         // comes back as commands, in object order, applied here.
-        let ScriptedSet { sim, views } = &mut *scripted;
+        let ScriptedSet { sim, views, .. } = &mut *scripted;
         let mut step = omsi_sim::scenery::StepTimes::default();
         {
             let controllers = self.controller_of_object.lock();
