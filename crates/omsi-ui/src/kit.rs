@@ -10,10 +10,10 @@
 
 use glam::Vec2;
 use hashbrown::HashMap;
-use omsi_ui::paint::Align;
-use omsi_ui::{Atlas, Color, Fonts, Layer, Painter, Rect, Vertex, Weight};
+use crate::paint::Align;
+use crate::{Atlas, Color, Fonts, Layer, Painter, Rect, Vertex, Weight};
 
-use super::theme::*;
+use crate::theme::*;
 
 pub type Id = u64;
 
@@ -184,7 +184,7 @@ impl Popup {
 }
 
 pub fn matches(text: &str, q: &str) -> bool {
-    text.to_lowercase().contains(q) || omsi_ui::tr(text).to_lowercase().contains(q)
+    text.to_lowercase().contains(q) || crate::tr(text).to_lowercase().contains(q)
 }
 
 /// A calendar dropdown for a date field.
@@ -416,7 +416,7 @@ impl Ui {
         let clip = intersect(self.clip_now(), r);
         self.push_layer(clip, radius);
         self.layers.last_mut().unwrap().2 = tex;
-        let sprite = omsi_ui::Sprite { uv: [0.0, 0.0, 1.0, 1.0], w: r.w, h: r.h, ascent: 0.0 };
+        let sprite = crate::Sprite { uv: [0.0, 0.0, 1.0, 1.0], w: r.w, h: r.h, ascent: 0.0 };
         self.p().sprite(sprite, Vec2::new(r.x, r.y), Vec2::new(r.w, r.h), Color::WHITE);
         let (c, rad) = self.clip_stack.last().copied().unwrap_or((Rect::new(0.0, 0.0, self.size.x, self.size.y), 0.0));
         self.push_layer(c, rad);
@@ -482,7 +482,7 @@ impl Ui {
 
     /// Several lines broken at spaces to `width`; returns the height used.
     pub fn paragraph(&mut self, text: &str, at: Vec2, width: f32, px: f32, weight: Weight, c: Color) -> f32 {
-        let text = &*omsi_ui::tr(text);
+        let text = &*crate::tr(text);
         let lh = px * 1.38;
         let mut y = at.y + px;
         let mut n = 0;
@@ -508,7 +508,7 @@ impl Ui {
 
     /// Height `paragraph` would take.
     pub fn paragraph_height(&self, text: &str, width: f32, px: f32, weight: Weight) -> f32 {
-        let text = &*omsi_ui::tr(text);
+        let text = &*crate::tr(text);
         let lh = px * 1.38;
         let mut n = 0;
         for para in text.split('\n') {
@@ -561,7 +561,7 @@ impl Ui {
     /// A section heading inside a panel: an accent tick and the title in capitals.
     pub fn heading(&mut self, r: Rect, title: &str, icon: Option<&str>) -> Rect {
         let _ = icon;
-        self.text(&omsi_ui::tr(title).to_uppercase(), Vec2::new(r.x, r.y + 14.0), 11.0, Weight::Bold, TEXT_DIM, Align::Left);
+        self.text(&crate::tr(title).to_uppercase(), Vec2::new(r.x, r.y + 14.0), 11.0, Weight::Bold, TEXT_DIM, Align::Left);
         Rect::new(r.x, r.y + 26.0, r.w, (r.h - 26.0).max(0.0))
     }
 
@@ -764,13 +764,13 @@ impl Ui {
         let click_x = self.text_click.remove(&id);
         if focused {
             let (caret, mut moved) = self.caret.get(&id).copied().unwrap_or((value.chars().count(), self.time));
-            // (the keys' work is `omsi_ui::edit`: Shift selects, Ctrl - Option on a Mac -
+            // (the keys' work is `crate::edit`: Shift selects, Ctrl - Option on a Mac -
             // goes and deletes by words, the clipboard takes the selection)
             let anchor = self.selection.get(&id).map(|&(a, b)| if b == caret { a } else { caret }).unwrap_or(caret);
-            let mut edit = omsi_ui::edit::LineEdit { caret, anchor };
+            let mut edit = crate::edit::LineEdit { caret, anchor };
             let (shift, word) = (self.input.shift, self.input.ctrl || self.input.alt);
             for k in self.input.keys.clone() {
-                use omsi_ui::edit::EditKey as E;
+                use crate::edit::EditKey as E;
                 let key = match k {
                     Key::Left => E::Left,
                     Key::Right => E::Right,

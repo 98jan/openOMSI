@@ -3864,9 +3864,11 @@ dependencies = [
  "image",
  "log",
  "naga",
+ "omsi-content",
  "pollster",
  "resvg",
  "wgpu",
+ "winit",
 ]
 
 [[package]]

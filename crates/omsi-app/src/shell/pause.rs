@@ -13,12 +13,10 @@ use omsi_ui::paint::Align;
 use omsi_ui::{Color, Rect, Weight};
 
 use super::{Action, Shell};
-use crate::launcher::theme::*;
-use crate::launcher::ui::{id_of, ButtonKind, Ui};
+use omsi_ui::theme::*;
+use omsi_ui::kit::{id_of, ButtonKind, Ui};
 use crate::ui::{DropdownView, MenuKind, Preview};
 
-/// The launcher's rail width.
-const RAIL_W: f32 = crate::launcher::RAIL_W;
 /// The launcher page's background.
 const PAGE: Color = BG;
 /// A list's row.

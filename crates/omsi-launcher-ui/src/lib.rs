@@ -22,9 +22,9 @@ pub mod pages;
 mod season;
 pub mod state;
 pub use state::crash_of;
-pub mod theme;
+pub use omsi_ui::theme;
 mod timetable;
-pub mod ui;
+pub use omsi_ui::kit as ui;
 mod update;
 
 use host::host;
@@ -92,8 +92,7 @@ impl Clipboard {
     }
 }
 
-/// Width of the left rail (points).
-pub const RAIL_W: f32 = 236.0;
+pub use theme::RAIL_W;
 
 /// How often the launcher made its device again after losing it (see `recover_device`).
 static LAUNCHER_RECOVERIES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);

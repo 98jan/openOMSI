@@ -9,8 +9,8 @@ use omsi_ui::{Color, Rect, Weight};
 
 use super::develop::Filter;
 use super::{lens, Photo, Request, ASPECTS, BLADES, FSTOPS, GRIDS, QUALITY, RANGES, SHUTTERS, SIZES};
-use crate::launcher::theme::*;
-use crate::launcher::ui::{ButtonKind, Ui};
+use omsi_ui::theme::*;
+use omsi_ui::kit::{ButtonKind, Ui};
 use crate::shell::{Action, Shell};
 
 pub(crate) const TABS: [&str; 5] = ["Camera", "Lens", "Colour", "Effects", "Scene"];
@@ -247,7 +247,7 @@ pub(crate) fn draw(sh: &mut Shell, ph: &mut Photo, info: &Info) {
         }
         let w = w.min(size.x - 40.0);
         let r = Rect::new(size.x - w - 20.0, 20.0, w, if place.is_some() { 58.0 } else { 40.0 });
-        let (hover, _, clicked) = if path.is_some() { ui.interact(crate::launcher::ui::id_of("ph-saved"), r) } else { (false, false, false) };
+        let (hover, _, clicked) = if path.is_some() { ui.interact(omsi_ui::kit::id_of("ph-saved"), r) } else { (false, false, false) };
         ui.solid(r);
         // (it stays while the mouse is on it)
         let left = if hover { left.max(1.0) } else { left };

@@ -1,6 +1,6 @@
 //! The game's own screens over the picture - the pause menu, its settings windows and lists,
-//! and the photo mode - drawn with the launcher's toolkit (`launcher::ui`), so that they are
-//! the launcher's widgets, type and colours rather than a look of their own.
+//! and the photo mode - drawn with the widget kit (`omsi_ui::kit`), so that they have the
+//! launcher's widgets, type and colours rather than a look of their own.
 //!
 //! The toolkit is immediate-mode: every frame the screen is drawn anew from the game's state
 //! and the widgets answer what was clicked. What the game is to do about it is collected as
@@ -14,7 +14,7 @@ use glam::Vec2;
 use omsi_render::Renderer;
 use omsi_ui::{Draw, Gpu, Layer, Vertex};
 
-use crate::launcher::ui::Ui;
+use omsi_ui::kit::Ui;
 
 pub(crate) mod pause;
 

@@ -1,7 +1,7 @@
 //! The launcher's look: flat and dark (neutral greys, no tint), one amber accent used
 //! sparingly - after the calm menus of Euro Truck Simulator 2.
 
-use omsi_ui::Color;
+use crate::Color;
 
 pub const ACCENT: Color = Color::rgba(232, 160, 48, 1.0);
 pub const ACCENT_2: Color = Color::rgba(96, 160, 232, 1.0);
@@ -40,3 +40,5 @@ pub const RADIUS: f32 = 8.0;
 /// Height of a control row.
 pub const ROW: f32 = 36.0;
 pub const GAP: f32 = 12.0;
+/// Width of the left rail (points).
+pub const RAIL_W: f32 = 236.0;

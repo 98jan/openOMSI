@@ -39,7 +39,8 @@ arboard = { version = "3", default-features = false }
 
 [features]
 # what an app's tests see of the toolkit: every clickable thing's place (`Ui::drawn`)
-test-support = []
+test-support = ["omsi-ui/test-support"]
 
 [dev-dependencies]
 omsi-input = { path = "../omsi-input", features = ["test-support"] }
+omsi-ui = { path = "../omsi-ui", features = ["test-support"] }
