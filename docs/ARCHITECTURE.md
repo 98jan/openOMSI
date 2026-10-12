@@ -272,9 +272,13 @@ checked against it.
 * **The stages' declarations are checked.** `App::parts` (`omsi-app/src/app/parts.rs`)
   takes `App` apart into one borrow per `Group`, naming every field of `App` and of
   `SessionState` (a new field does not build until it has its group). A stage handed a
-  context made by `stage_ctx!` (wheel_surface, after_humans, audio, lighting, trace_look)
-  can touch its groups only, and its declaration is that context's `READS`/`WRITES`, so the
-  compiler holds it to it. The other window stages still take the whole `App`; for them
+  context made by `stage_ctx!` (streaming, traffic, humans, after_humans, on_foot,
+  player_tick, scripted, lights, wheel_surface, audio, lighting, trace_look) can touch its
+  groups only, and its declaration is that context's `READS`/`WRITES`, so the compiler holds
+  it to it.
+  The other window stages still take the whole `App`: they call `App` methods of many groups,
+  and several write what `Common` lends read-only (the controllers, duty and weather stages
+  the command line's `Args`, the view camera the seat in `Settings`). For them
   `frame_stages/access_tests.rs` reads the crate's source (`omsi-srcscan`) and fails when a stage reaches,
   through `App` methods and the functions handed the `App`, a field of a group it does not
   declare. What the declarations show: the stages that take the whole `App` reach most of

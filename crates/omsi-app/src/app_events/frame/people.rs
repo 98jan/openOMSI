@@ -9,12 +9,6 @@ impl App {
         self.tick_lan(dt);
     }
 
-    /// The player on foot, and the other players walking about.
-    pub(super) fn frame_on_foot(&mut self, dt: f32) {
-        self.tick_on_foot(if self.paused { 0.0 } else { dt });
-        self.sync_remote_walkers();
-    }
-
     /// The player's duty, the personnel file's step, the placing of vehicles, the host's map
     /// edits and `--on-foot`.
     pub(super) fn frame_duty(&mut self, dt: f32) {
@@ -240,4 +234,11 @@ pub(super) fn humans(cx: HumansCx, dt: f32) {
         let bus = cx.player.player.as_ref().map(|p| &p.vehicle);
         view_sync::sync(ViewSync::people(h, bus, center), &mut cx.gfx.gfx.sim_view, w, r, scene);
     }
+}
+
+/// The player on foot, and the other players walking about.
+pub(super) fn on_foot(mut cx: crate::on_foot::OnFootCx, dt: f32) {
+    let dt = if *cx.clock.paused { 0.0 } else { dt };
+    crate::on_foot::tick(&mut cx, dt);
+    crate::on_foot::remote_walkers(&mut cx);
 }

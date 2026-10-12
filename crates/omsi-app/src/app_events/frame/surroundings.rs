@@ -44,75 +44,6 @@ impl App {
         }
         daylight
     }
-
-    /// The departure boards, the map's route arrows and the scenery's scripts.
-    pub(super) fn frame_scripted(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
-        if let (Some(w), Some(r), Some(scene), Some(cam)) = (
-            self.world.as_ref(),
-            self.renderer.as_ref(),
-            self.scene.as_mut(),
-            self.camera.as_ref(),
-        ) {
-            let traffic = self.session.traffic.as_ref();
-            let phase = |c: usize, li: usize| {
-                traffic.map(|t| t.light_vars(c, li)).unwrap_or((omsi_sim::traffic::UNLINKED_PHASE as f32, 0.0))
-            };
-            let __tb = Instant::now();
-            if let Some(p) = self.player.as_mut() {
-                w.sync_html_departures(&mut p.vehicle.host);
-            }
-            steps::departure_boards(
-                self.session.schedule.as_mut(),
-                w,
-                traffic,
-                self.session.duty.as_ref(),
-                &self.clock,
-            );
-            self.perf.profile.add(crate::profile_keys::ProfKey::ScriptedBoards, __tb.elapsed().as_secs_f64());
-            // the map's own route arrows, with OMSI 2's route arrows
-            w.show_help_arrows(r, scene, self.settings.nav_arrows);
-            let mut times = omsi_scene::ScriptedTimes::default();
-            // (OMSI_SIM_THREAD: what the scripts made during the last picture is shown now,
-            // and their next step is made with this one's, see `sim_thread`)
-            if self.pipeline.take_scenery_stepped() {
-                w.scenery_apply(self.session.scenery.outputs(), r, scene, dt, cam.position, self.sound.audio.as_ref(), self.cam.in_cab, &mut times);
-            }
-            if self.pipeline.takes_scenery(traffic.map(|t| &t.sim)) {
-                let inputs = w.scenery_prepare(&mut self.session.scenery, cam.position, daylight.brightness, &mut times);
-                self.pipeline.owe_scenery(move |s, phase_of| {
-                    s.step(dt, &inputs.as_inputs(phase_of), &mut omsi_sim::scenery::StepTimes::default());
-                });
-                // (the lamps' scripts stay here: their sounds every frame, as update_scripted plays them)
-                w.lamp_sounds(&mut self.session.scenery.lamps, cam.position, self.sound.audio.as_ref(), self.cam.in_cab, &mut times);
-            } else {
-                w.update_scripted(
-                    &mut self.session.scenery,
-                    r,
-                    scene,
-                    dt,
-                    cam.position,
-                    daylight.brightness,
-                    &phase,
-                    self.sound.audio.as_ref(),
-                    self.cam.in_cab,
-                    &mut times,
-                );
-            }
-            if omsi_cfg::flags::OMSI_PROFILE.is_set() {
-                use crate::profile_keys::ProfKey as K;
-                for (k, v) in [
-                    (K::ScriptedLock, times.lock),
-                    (K::ScriptedInputs, times.inputs),
-                    (K::ScriptedScripts, times.scripts),
-                    (K::ScriptedApply, times.apply),
-                    (K::ScriptedTextures, times.textures),
-                    (K::ScriptedLamps, times.lamps),
-                ] {
-                    self.perf.profile.add(k, v);
-                }
-            }
-        }
-    }
 }
 
 crate::app::stage_ctx!(
@@ -291,6 +222,80 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+crate::app::stage_ctx!(
+    /// The scripted stage's part of the game: the boards, the route arrows, the scenery's scripts.
+    ScriptedCx { reads: [clock, duty, view, sound], writes: [world, traffic, player, gfx, perf] }
+);
+
+/// The departure boards, the map's route arrows and the scenery's scripts.
+pub(super) fn scripted(cx: ScriptedCx, dt: f32, daylight: omsi_sim::Daylight) {
+    if let (Some(w), Some(r), Some(scene), Some(cam)) = (
+        cx.world.world.as_ref(),
+        cx.gfx.renderer.as_ref(),
+        cx.gfx.scene.as_mut(),
+        cx.view.camera.as_ref(),
+    ) {
+        let traffic = cx.traffic.traffic.as_ref();
+        let phase = |c: usize, li: usize| {
+            traffic.map(|t| t.light_vars(c, li)).unwrap_or((omsi_sim::traffic::UNLINKED_PHASE as f32, 0.0))
+        };
+        let __tb = Instant::now();
+        if let Some(p) = cx.player.player.as_mut() {
+            w.sync_html_departures(&mut p.vehicle.host);
+        }
+        steps::departure_boards(
+            cx.traffic.schedule.as_mut(),
+            w,
+            traffic,
+            cx.duty.duty.as_ref(),
+            &*cx.clock.clock,
+        );
+        cx.perf.profile.add(crate::profile_keys::ProfKey::ScriptedBoards, __tb.elapsed().as_secs_f64());
+        // the map's own route arrows, with OMSI 2's route arrows
+        w.show_help_arrows(r, scene, cx.common.settings.nav_arrows);
+        let mut times = omsi_scene::ScriptedTimes::default();
+        // (OMSI_SIM_THREAD: what the scripts made during the last picture is shown now,
+        // and their next step is made with this one's, see `sim_thread`)
+        if cx.traffic.pipeline.take_scenery_stepped() {
+            w.scenery_apply(cx.world.scenery.outputs(), r, scene, dt, cam.position, cx.sound.audio.as_ref(), cx.view.cam.in_cab, &mut times);
+        }
+        if cx.traffic.pipeline.takes_scenery(traffic.map(|t| &t.sim)) {
+            let inputs = w.scenery_prepare(&mut *cx.world.scenery, cam.position, daylight.brightness, &mut times);
+            cx.traffic.pipeline.owe_scenery(move |s, phase_of| {
+                s.step(dt, &inputs.as_inputs(phase_of), &mut omsi_sim::scenery::StepTimes::default());
+            });
+            // (the lamps' scripts stay here: their sounds every frame, as update_scripted plays them)
+            w.lamp_sounds(&mut cx.world.scenery.lamps, cam.position, cx.sound.audio.as_ref(), cx.view.cam.in_cab, &mut times);
+        } else {
+            w.update_scripted(
+                &mut *cx.world.scenery,
+                r,
+                scene,
+                dt,
+                cam.position,
+                daylight.brightness,
+                &phase,
+                cx.sound.audio.as_ref(),
+                cx.view.cam.in_cab,
+                &mut times,
+            );
+        }
+        if omsi_cfg::flags::OMSI_PROFILE.is_set() {
+            use crate::profile_keys::ProfKey as K;
+            for (k, v) in [
+                (K::ScriptedLock, times.lock),
+                (K::ScriptedInputs, times.inputs),
+                (K::ScriptedScripts, times.scripts),
+                (K::ScriptedApply, times.apply),
+                (K::ScriptedTextures, times.textures),
+                (K::ScriptedLamps, times.lamps),
+            ] {
+                cx.perf.profile.add(k, v);
             }
         }
     }

@@ -71,15 +71,6 @@ impl App {
         Ok(())
     }
 
-    /// The player's bus's step for one tick (`TICKED_SIM`): what `frame_player` does to the
-    /// simulation.
-    pub(super) fn frame_player_tick(&mut self, dt: f32) {
-        if self.player.is_none() || self.renderer.is_none() || self.scene.is_none() {
-            return;
-        }
-        self.frame_player_step(dt);
-    }
-
     /// The player's bus as the frame shows it (`TICKED_POST`): between its last two ticks,
     /// into the scene and under the camera, then back where the simulation has it.
     pub(super) fn frame_player_view(&mut self, dt: f32) {
@@ -93,7 +84,7 @@ impl App {
         if let (Some((_, at)), Some(p)) = (between.as_ref(), self.player.as_mut()) {
             omsi_sim::tick::put(&mut p.vehicle, at);
         }
-        self.frame_player_to_scene(dt);
+        super::driving::player_to_scene(super::driving::PlayerToSceneCx::of(&mut self.parts()), dt);
         self.frame_view_camera(dt);
         if let (Some((cur, _)), Some(p)) = (between.as_ref(), self.player.as_mut()) {
             omsi_sim::tick::put(&mut p.vehicle, cur);

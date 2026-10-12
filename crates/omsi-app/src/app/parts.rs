@@ -258,6 +258,8 @@ macro_rules! stage_ctx {
             $(pub(crate) $w: &'a mut $crate::app::part_ty!($w, 'p),)*
         }
 
+        // (a context a helper takes, not a stage, has no declaration to give)
+        #[allow(dead_code)]
         impl<'a, 'p> $name<'a, 'p> {
             /// The groups the stage reads only.
             pub(crate) const READS: &'static [$crate::frame_stages::Group] = &[$($crate::app::part_group!($r)),*];

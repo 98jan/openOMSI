@@ -45,178 +45,189 @@ impl App {
     /// The bus's step (scripts, physics, the head), the situation's other vehicles, and the
     /// bus and its driver into the scene.
     fn frame_player_physics(&mut self, dt: f32) {
-        self.frame_player_step(dt);
-        self.frame_player_to_scene(dt);
+        player_step(PlayerStepCx::of(&mut self.parts()), dt);
+        player_to_scene(PlayerToSceneCx::of(&mut self.parts()), dt);
     }
+}
 
-    /// The bus's step (scripts, physics, the head) and the situation's other vehicles.
-    pub(super) fn frame_player_step(&mut self, dt: f32) {
-        let (Some(p), Some(r), Some(scene)) = (
-            self.player.as_mut(),
-            self.renderer.as_ref(),
-            self.scene.as_mut(),
-        ) else {
-            return;
-        };
-        // (while the tile under the bus is being read again - the weather turned
-        // to snow and every tile came back with the winter textures - there is
-        // no ground under it: it is held where it is rather than falling through
-        // the world and being put back somewhere in the sky)
-        // (the tile's wheel surfaces - its roads, bridges and yards - not its
-        // terrain alone: the terrain comes first while the tile is placed, and a
-        // parked bus taken over after a restart fell through its yard onto the
-        // ground below before the surfaces came, as Omsi.exe holds it, #1279)
-        let ground_here = self.world.as_ref().is_none_or(|w| ground_under(w, p.vehicle.position));
-        if let Some((v, crashes)) = self.input.cruise {
-            if p.vehicle.crashes != crashes {
-                log::info!("cruise: crashed at {:.1}, {:.1}, {:.1} - let go", p.vehicle.position.x, p.vehicle.position.y, p.vehicle.position.z);
-                self.input.cruise = None;
-            } else {
-                p.vehicle.set_speed(v);
-            }
+crate::app::stage_ctx!(
+    /// The player's bus's step: its part of the game.
+    PlayerStepCx { reads: [sound, menus], writes: [player, gfx, world, input, clock, ui, view, integrations, traffic] }
+);
+
+/// The bus's step (scripts, physics, the head) and the situation's other vehicles (with the
+/// fixed step, the `player_tick` stage's, once per tick).
+pub(super) fn player_step(cx: PlayerStepCx, dt: f32) {
+    let (Some(p), Some(r), Some(scene)) = (
+        cx.player.player.as_mut(),
+        cx.gfx.renderer.as_ref(),
+        cx.gfx.scene.as_mut(),
+    ) else {
+        return;
+    };
+    // (while the tile under the bus is being read again - the weather turned
+    // to snow and every tile came back with the winter textures - there is
+    // no ground under it: it is held where it is rather than falling through
+    // the world and being put back somewhere in the sky)
+    // (the tile's wheel surfaces - its roads, bridges and yards - not its
+    // terrain alone: the terrain comes first while the tile is placed, and a
+    // parked bus taken over after a restart fell through its yard onto the
+    // ground below before the surfaces came, as Omsi.exe holds it, #1279)
+    let ground_here = cx.world.world.as_ref().is_none_or(|w| ground_under(w, p.vehicle.position));
+    if let Some((v, crashes)) = cx.input.cruise {
+        if p.vehicle.crashes != crashes {
+            log::info!("cruise: crashed at {:.1}, {:.1}, {:.1} - let go", p.vehicle.position.x, p.vehicle.position.y, p.vehicle.position.z);
+            cx.input.cruise = None;
+        } else {
+            p.vehicle.set_speed(v);
         }
-        if !self.paused && ground_here {
-            // (the developer tools' held variables: before the scripts and after them)
-            crate::devtools::apply_holds(self.devtools.as_deref(), &mut p.vehicle);
-            p.tick(
-                dt,
-                self.sound.audio.as_ref(),
-                self.cam.in_cab,
-                !matches!(self.view.as_str(), "free" | "foot"),
-            );
-            crate::devtools::apply_holds(self.devtools.as_deref(), &mut p.vehicle);
-            crate::plugins::plugin_impacts(&p.vehicle, &mut self.integrations);
-            steps::deliver_player_impacts(p, self.session.traffic.as_mut());
-            // After scripts: zero-movement `_drag` for a held switch. Running this
-            // *before* `tick` cleared Aachen ibox momentary flags (incl. digit 0 /
-            // `ibox_taste_D11`) before the frame could act when the click path had
-            // not already consumed them (#744).
-            if self.input.dragging {
-                let (dx, dy) = std::mem::take(&mut self.input.drag_delta);
-                if let Some((map_id, ref ev)) = self.input.pressed_scenery_object {
-                    if let Some(w) = self.world.as_ref() {
-                        w.scenery_object_drag(&mut self.session.scenery, map_id, ev, dx, dy);
-                    }
-                } else {
-                    p.drag(dx, dy);
-                }
-            }
-            // (not in the headset: the player's own head moves there, and a head
-            // thrown about by the bus on top of it made the whole cab sway and
-            // shift before the eyes)
-            #[cfg(windows)]
-            let vr_on = self.xr.vr.is_some();
-            #[cfg(not(windows))]
-            let vr_on = false;
-            p.move_head(dt, self.settings.head_movement && !vr_on);
-            // (a head that is doing nothing still breathes and shifts its weight:
-            // the sway goes on the head and the view while the bus waits, never
-            // into the springs above. Nothing of it while a headset or a real
-            // head tracker moves the head - that head is not a still one)
-            let idle = if vr_on || (self.settings.head_tracking && self.input.headtrack.is_some()) { 0.0 } else { self.settings.head_idle };
-            // (at a standstill, as the setting says: it fades out over the first
-            // few km/h as the bus pulls away and comes back when it stands - it
-            // swayed on the road as well, #1325)
-            let idle = idle * crate::head_idle::standstill(p.vehicle.physics.velocity_kmh().abs());
-            // (a switch under the cursor is a hand reaching for it, and a view that
-            // goes on sliding under the pointer is a view that misses what it was
-            // reaching for. Held, not reset: the camera stays where it is, which is
-            // where any camera is while the player is busy with something)
-            let reaching = idle > 0.0 && (self.menus.hover.is_some() || self.menus.hover_hand);
-            if !self.cam.head_idle_hold.step(dt, reaching) {
-                p.move_head_idle(dt, idle, self.settings.head_idle_pace);
-            }
-            if let Some(w) = self.world.as_ref() {
-                crate::rail_drive::frame(p, self.session.traffic.as_ref().map(|t| &t.net), w, &mut self.session.scenery, dt);
-            }
-        } else if self.input.dragging {
-            // paused / no ground: still deliver held-switch `_drag` (was unconditional before)
-            let (dx, dy) = std::mem::take(&mut self.input.drag_delta);
-            if let Some((map_id, ref ev)) = self.input.pressed_scenery_object {
-                if let Some(w) = self.world.as_ref() {
-                    w.scenery_object_drag(&mut self.session.scenery, map_id, ev, dx, dy);
+    }
+    if !*cx.clock.paused && ground_here {
+        // (the developer tools' held variables: before the scripts and after them)
+        crate::devtools::apply_holds(cx.ui.devtools.as_deref(), &mut p.vehicle);
+        p.tick(
+            dt,
+            cx.sound.audio.as_ref(),
+            cx.view.cam.in_cab,
+            !matches!(cx.view.view.as_str(), "free" | "foot"),
+        );
+        crate::devtools::apply_holds(cx.ui.devtools.as_deref(), &mut p.vehicle);
+        crate::plugins::plugin_impacts(&p.vehicle, &mut **cx.integrations);
+        steps::deliver_player_impacts(p, cx.traffic.traffic.as_mut());
+        // After scripts: zero-movement `_drag` for a held switch. Running this
+        // *before* `tick` cleared Aachen ibox momentary flags (incl. digit 0 /
+        // `ibox_taste_D11`) before the frame could act when the click path had
+        // not already consumed them (#744).
+        if cx.input.dragging {
+            let (dx, dy) = std::mem::take(&mut cx.input.drag_delta);
+            if let Some((map_id, ref ev)) = cx.input.pressed_scenery_object {
+                if let Some(w) = cx.world.world.as_ref() {
+                    w.scenery_object_drag(&mut *cx.world.scenery, map_id, ev, dx, dy);
                 }
             } else {
                 p.drag(dx, dy);
             }
         }
-        // a script that set the time of day (`(S.S.Time)`) moves the game's clock
-        if let Some(t) = p.vehicle.host.time_written.take() {
-            self.session.pending_time = Some(t);
+        // (not in the headset: the player's own head moves there, and a head
+        // thrown about by the bus on top of it made the whole cab sway and
+        // shift before the eyes)
+        #[cfg(windows)]
+        let vr_on = cx.gfx.xr.vr.is_some();
+        #[cfg(not(windows))]
+        let vr_on = false;
+        p.move_head(dt, cx.common.settings.head_movement && !vr_on);
+        // (a head that is doing nothing still breathes and shifts its weight:
+        // the sway goes on the head and the view while the bus waits, never
+        // into the springs above. Nothing of it while a headset or a real
+        // head tracker moves the head - that head is not a still one)
+        let idle = if vr_on || (cx.common.settings.head_tracking && cx.input.headtrack.is_some()) { 0.0 } else { cx.common.settings.head_idle };
+        // (at a standstill, as the setting says: it fades out over the first
+        // few km/h as the bus pulls away and comes back when it stands - it
+        // swayed on the road as well, #1325)
+        let idle = idle * crate::head_idle::standstill(p.vehicle.physics.velocity_kmh().abs());
+        // (a switch under the cursor is a hand reaching for it, and a view that
+        // goes on sliding under the pointer is a view that misses what it was
+        // reaching for. Held, not reset: the camera stays where it is, which is
+        // where any camera is while the player is busy with something)
+        let reaching = idle > 0.0 && (cx.menus.menus.hover.is_some() || cx.menus.menus.hover_hand);
+        if !cx.view.cam.head_idle_hold.step(dt, reaching) {
+            p.move_head_idle(dt, idle, cx.common.settings.head_idle_pace);
         }
-        // the situation's further vehicles stand and run their scripts, and the
-        // player's bus meets them
-        let mut placed_boxes = Vec::new();
-        for q in self.session.placed.iter_mut() {
-            // (held where it stands while its tile is not loaded, as the driven bus is:
-            // with the player far off the tile goes, and the bus fell through the world
-            // and was saved there, #2132)
-            if !self.paused && self.world.as_ref().is_none_or(|w| ground_under(w, q.vehicle.position)) {
-                if let Some(w) = self.world.as_ref() {
-                    reground(w, &mut q.vehicle);
-                }
-                q.vehicle.update(dt);
+        if let Some(w) = cx.world.world.as_ref() {
+            crate::rail_drive::frame(p, cx.traffic.traffic.as_ref().map(|t| &t.net), w, &mut *cx.world.scenery, dt);
+        }
+    } else if cx.input.dragging {
+        // paused / no ground: still deliver held-switch `_drag` (was unconditional before)
+        let (dx, dy) = std::mem::take(&mut cx.input.drag_delta);
+        if let Some((map_id, ref ev)) = cx.input.pressed_scenery_object {
+            if let Some(w) = cx.world.world.as_ref() {
+                w.scenery_object_drag(&mut *cx.world.scenery, map_id, ev, dx, dy);
             }
-            q.sync_transforms(r, scene, false, self.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
-            let f = crate::lan::footprint_of(&q.vehicle, [2.5, 11.5, 3.0, 0.0, 0.0, 1.5]);
-            placed_boxes.push(omsi_sim::collision::Obb {
-                center: glam::DVec2::new(f.x, f.y),
-                half: glam::DVec2::new(f.width as f64 * 0.5, f.length as f64 * 0.5),
-                heading: (f.heading as f64).to_radians(),
-                z0: f.z,
-                z1: f.z + 3.0,
-                velocity: glam::DVec2::ZERO,
-                mass: 12_000.0,
-                pole: None,
-                id: -1,
-            });
-        }
-        if !self.session.placed.is_empty() {
-            // (the traffic writes the list afresh every frame; without it, this does)
-            if self.session.traffic.is_none() {
-                p.vehicle.dynamic_boxes.clear();
-            }
-            p.vehicle.dynamic_boxes.extend(placed_boxes);
-        }
-        if let Some(w) = self.world.as_ref() {
-            lay_down_poles(w, r, scene, &mut p.vehicle);
-        }
-        static EVERY: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
-        if let Some(every) = *EVERY.get_or_init(|| {
-            omsi_cfg::flags::OMSI_DEBUG_PHYSICS.parse::<f32>()
-                .filter(|v| *v > 0.0)
-        }) {
-            static LAST: std::sync::atomic::AtomicU32 =
-                std::sync::atomic::AtomicU32::new(u32::MAX);
-            // (with the fixed step the simulation's own time: the same ticks at any frame rate)
-            let t = match self.fixed_tick.as_ref() {
-                Some(ft) => ft.sim_time().0 as f32,
-                None => self.started.elapsed().as_secs_f32(),
-            };
-            let bucket = (t / every) as u32;
-            if LAST.swap(bucket, std::sync::atomic::Ordering::Relaxed) != bucket {
-                log_physics(&p.vehicle, t);
-            }
+        } else {
+            p.drag(dx, dy);
         }
     }
-
-    /// The bus and its driver into the scene.
-    pub(super) fn frame_player_to_scene(&mut self, dt: f32) {
-        let (Some(p), Some(r), Some(scene)) = (
-            self.player.as_mut(),
-            self.renderer.as_ref(),
-            self.scene.as_mut(),
-        ) else {
-            return;
+    // a script that set the time of day (`(S.S.Time)`) moves the game's clock
+    if let Some(t) = p.vehicle.host.time_written.take() {
+        *cx.clock.pending_time = Some(t);
+    }
+    // the situation's further vehicles stand and run their scripts, and the
+    // player's bus meets them
+    let mut placed_boxes = Vec::new();
+    for q in cx.player.placed.iter_mut() {
+        // (held where it stands while its tile is not loaded, as the driven bus is:
+        // with the player far off the tile goes, and the bus fell through the world
+        // and was saved there, #2132)
+        if !*cx.clock.paused && cx.world.world.as_ref().is_none_or(|w| ground_under(w, q.vehicle.position)) {
+            if let Some(w) = cx.world.world.as_ref() {
+                reground(w, &mut q.vehicle);
+            }
+            q.vehicle.update(dt);
+        }
+        q.sync_transforms(r, scene, false, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
+        let f = crate::lan::footprint_of(&q.vehicle, [2.5, 11.5, 3.0, 0.0, 0.0, 1.5]);
+        placed_boxes.push(omsi_sim::collision::Obb {
+            center: glam::DVec2::new(f.x, f.y),
+            half: glam::DVec2::new(f.width as f64 * 0.5, f.length as f64 * 0.5),
+            heading: (f.heading as f64).to_radians(),
+            z0: f.z,
+            z1: f.z + 3.0,
+            velocity: glam::DVec2::ZERO,
+            mass: 12_000.0,
+            pole: None,
+            id: -1,
+        });
+    }
+    if !cx.player.placed.is_empty() {
+        // (the traffic writes the list afresh every frame; without it, this does)
+        if cx.traffic.traffic.is_none() {
+            p.vehicle.dynamic_boxes.clear();
+        }
+        p.vehicle.dynamic_boxes.extend(placed_boxes);
+    }
+    if let Some(w) = cx.world.world.as_ref() {
+        lay_down_poles(w, r, scene, &mut p.vehicle);
+    }
+    static EVERY: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
+    if let Some(every) = *EVERY.get_or_init(|| {
+        omsi_cfg::flags::OMSI_DEBUG_PHYSICS.parse::<f32>()
+            .filter(|v| *v > 0.0)
+    }) {
+        static LAST: std::sync::atomic::AtomicU32 =
+            std::sync::atomic::AtomicU32::new(u32::MAX);
+        // (with the fixed step the simulation's own time: the same ticks at any frame rate)
+        let t = match cx.clock.fixed_tick.as_ref() {
+            Some(ft) => ft.sim_time().0 as f32,
+            None => cx.common.started.elapsed().as_secs_f32(),
         };
-        let inside = self.cam.in_cab;
-        p.sync_transforms(r, scene, inside, self.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
-        crate::scene::sync_vehicle_damage(r, scene, &mut p.vehicle, &mut p.render);
-        // from the driver's seat the figure stays in the mirrors
-        // (from the driver's seat only the mirrors show him)
-        // (out of the seat: nobody at the wheel)
-        p.sync_driver_hands(r, scene, dt, self.settings.driver && self.session.on_foot.is_none(), self.view == "driver", self.settings.hands_in_cab);
+        let bucket = (t / every) as u32;
+        if LAST.swap(bucket, std::sync::atomic::Ordering::Relaxed) != bucket {
+            log_physics(&p.vehicle, t);
+        }
     }
+}
+
+crate::app::stage_ctx!(
+    /// The player's bus into the scene: its part of the game.
+    PlayerToSceneCx { reads: [view, world, people], writes: [player, gfx] }
+);
+
+/// The bus and its driver into the scene.
+pub(super) fn player_to_scene(cx: PlayerToSceneCx, dt: f32) {
+    let (Some(p), Some(r), Some(scene)) = (
+        cx.player.player.as_mut(),
+        cx.gfx.renderer.as_ref(),
+        cx.gfx.scene.as_mut(),
+    ) else {
+        return;
+    };
+    let inside = cx.view.cam.in_cab;
+    p.sync_transforms(r, scene, inside, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
+    crate::scene::sync_vehicle_damage(r, scene, &mut p.vehicle, &mut p.render);
+    // from the driver's seat the figure stays in the mirrors
+    // (from the driver's seat only the mirrors show him)
+    // (out of the seat: nobody at the wheel)
+    p.sync_driver_hands(r, scene, dt, cx.common.settings.driver && cx.people.on_foot.is_none(), *cx.view.view == "driver", cx.common.settings.hands_in_cab);
 }
 
 crate::app::stage_ctx!(

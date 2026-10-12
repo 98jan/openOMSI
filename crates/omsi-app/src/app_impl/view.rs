@@ -9,15 +9,7 @@ impl App {
     /// view left is put away and the one of the view entered comes back (straight ahead
     /// the first time).
     pub(crate) fn sync_view_look(&mut self) {
-        let key = self.look_key();
-        let left = self.cam.look_view.clone();
-        // A change of view is not a turn of the head: the direction of the view entered is
-        // where the head already is, so the angle the camera is drawn at starts there as
-        // well (a glide belongs between angles of one and the same view).
-        if swap_view_look(&mut self.cam.look, &mut self.cam.view_looks, &mut self.cam.look_view, &key) {
-            self.cam.look_smooth = self.cam.look;
-            swap_cam_zoom(&mut self.cam.view_zoom, &mut self.cam.cam_zooms, &left, &key, &self.view);
-        }
+        sync_view_look(&mut self.cam, &self.view, self.player.as_ref());
     }
 
     /// Which camera the look belongs to: the view, and for the driver's and the passengers'
@@ -165,6 +157,19 @@ pub(crate) fn look_key_is(key: &str, view: &str, cam: Option<(usize, usize)>) ->
         ("driver", Some((d, _))) => numbered("driver", d),
         ("pax", Some((_, x))) => numbered("pax", x),
         _ => key == view,
+    }
+}
+
+/// [`App::sync_view_look`] on the view's state `cam`, the view `view` and the bus driven.
+pub(crate) fn sync_view_look(cam: &mut ViewState, view: &str, player: Option<&Player>) {
+    let key = look_key_of(view, player.map(|p| p.cam_choice));
+    let left = cam.look_view.clone();
+    // A change of view is not a turn of the head: the direction of the view entered is
+    // where the head already is, so the angle the camera is drawn at starts there as
+    // well (a glide belongs between angles of one and the same view).
+    if swap_view_look(&mut cam.look, &mut cam.view_looks, &mut cam.look_view, &key) {
+        cam.look_smooth = cam.look;
+        swap_cam_zoom(&mut cam.view_zoom, &mut cam.cam_zooms, &left, &key, view);
     }
 }
 
