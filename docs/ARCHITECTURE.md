@@ -270,6 +270,22 @@ checked against it.
   cars, where it starts, whether it may appear there), which needs the app's `Traffic`
   (`trailer_chain`, `may_appear`, `blocked`) besides the GPU.
 
+* **The map world the simulation reads** is `omsi-sim::world_data`: `WorldData`, an
+  immutable snapshot of Arc'd parts - the loaded tiles' ground (`GroundTiles`: terrain and
+  road faces, with the wheel, walking, camera and drawn-ground questions), the lists made
+  from the tiles (`TileLists`: stops, waiting places, obstacles, parked cars' boxes, petrol
+  stations, echoing places), where the map's objects stand (`ObjectPlaces`), the map
+  index's stop facts and the map's own facts (`MapFacts`: the only copy of the AI lists, the
+  date and the chrono folders). `omsi-scene::World` holds it in a `WorldCell` (arc-swap) and
+  publishes a new one where a tile's ground comes or goes and where the tile lists are
+  rebuilt; readers take it without a lock (`peek` for one look, `snapshot` for a step), the
+  vehicles' wheels through `LiveGround`. It implements `people::World` and `TimetableWorld`.
+  What loading hands the simulation goes through `omsi-sim::handover::Inbox` (pushed by the
+  loader's threads, taken whole at the start of a step): the traffic's `TrafficArrival`s -
+  the crossings' light programs as they are numbered, a tile's lanes and parked cars. Still
+  in `World` and locked: the GPU side, the type and file caches of loading, the light
+  programs' numbering by owner object, the scripted objects' view halves and the lamps.
+
 * **The view sync phase** (`omsi-app/src/view_sync/`): the code that turns the traffic's
   and the people's state into renderer instances is in one module - `traffic.rs` (the AI
   vehicles' renders, their drivers, the traffic lamps), `people.rs` (the people's meshes,
