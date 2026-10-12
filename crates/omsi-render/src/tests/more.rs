@@ -576,6 +576,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("ray-traced lighting", rt::lighting_source()),
         ("ray-traced reflections", rt::reflect_source()),
         ("texture means", include_str!("../rt_avg.wgsl").to_string()),
+        ("rt texture coordinates", include_str!("../rt_uv.wgsl").to_string()),
     ];
     let sizes: &[(&str, usize)] = &[
         ("Enhanced", std::mem::size_of::<EnhancedUniform>()),
@@ -588,6 +589,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("Camera", std::mem::size_of::<CameraUniform>()),
         ("MaterialParams", std::mem::size_of::<MaterialUniform>()),
         ("RtParams", rt::PARAMS_SIZE),
+        ("Record", rt::RECORD_SIZE),
     ];
     let mut checked = std::collections::HashSet::new();
     for (name, src) in &modules {
