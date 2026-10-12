@@ -1053,7 +1053,8 @@ impl App {
         if let (Some(h), Some(w), Some(r), Some(scene)) = (self.session.humans.as_mut(), self.world.as_ref(), self.renderer.as_ref(), self.scene.as_mut()) {
             // (stepping through a door the feet keep to the step, not to the road under it)
             let cmd = AvatarCmd { pos: f.pos, heading: f.heading, vel: f.vel, lift: f.lift, seat: f.seat, floor: f.inside.map(|_| f.pos.z).or(f.transit.map(|_| f.pos.z)), aboard: f.inside };
-            h.avatar(&mut self.gfx.sim_view.people, AVATAR_KEY, w, r, scene, cmd, f.kind);
+            h.avatar(AVATAR_KEY, w, cmd, f.kind);
+            crate::view_sync::apply_people(h, &mut self.gfx.sim_view.people, w, r, scene);
             h.avatar_show(AVATAR_KEY, show);
         }
         // seated, the walker is where the seat is
@@ -1231,7 +1232,8 @@ impl App {
                 None if wk.seated => continue,
                 None => AvatarCmd { pos: DVec3::new(wk.x, wk.y, wk.z), heading: wk.heading as f64, vel: DVec2::new(hh.sin(), hh.cos()) * wk.speed as f64, lift: 0.0, seat: None, floor: w.walk_height(wk.x, wk.y).filter(|g| wk.z > g + 0.25).map(|_| wk.z), aboard: None },
             };
-            h.avatar(&mut self.gfx.sim_view.people, REMOTE_KEY + id, w, r, scene, cmd, kind);
+            h.avatar(REMOTE_KEY + id, w, cmd, kind);
+            crate::view_sync::apply_people(h, &mut self.gfx.sim_view.people, w, r, scene);
             if !self.net.remote_walkers.iter().any(|&(i, _)| i == id) {
                 log::info!("LAN: player {id} got up and walks at ({:.1}, {:.1})", wk.x, wk.y);
             }

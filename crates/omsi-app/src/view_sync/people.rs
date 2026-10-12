@@ -4,12 +4,12 @@
 //! The simulation does not touch the renderer. What it does that the renderer has to
 //! follow - somebody appearing, somebody going, coins put on the desk - it writes down as
 //! `BodyOp`s (`PeopleSim::bodies`), and the view replays them in the order they happened
-//! (`show_bodies`), at the end of the same call that made them: the renderer sees the very
+//! ([`apply_people`]), right after the call that made them: the renderer sees the very
 //! calls, in the very order, it saw when the simulation made them itself.
 //!
-//! The replay runs at the end of every `Humans` call that can make or remove people
-//! (`tick`, `populate`, `avatar`, `mirror_add`, `seed_riders`), which take the people's
-//! `PeopleView` (`SimView::people`, apart from the `Humans`) for it; the coins handed out,
+//! The replay follows every `Humans` call that can make or remove people (`tick` - in
+//! `steps::tick_humans` -, `populate`, `avatar`, `mirror_add`, `seed_riders`), with the
+//! people's `PeopleView` (`SimView::people`, apart from the `Humans`); the coins handed out,
 //! the ticket blocks and the posing are the view sync's (`view_sync::sync`).
 
 use crate::humans::Humans;
@@ -87,6 +87,13 @@ impl PeopleView {
     pub(crate) fn tracing(&self) -> bool {
         self.trace.is_some()
     }
+}
+
+/// Bring the renderer up to what the people's calls did since the last time (see
+/// [`BodyOp`]): called right after each call that can make or remove people, where those
+/// calls used to show them themselves.
+pub(crate) fn apply_people(h: &mut Humans, view: &mut PeopleView, world: &World, renderer: &Renderer, scene: &mut Scene) {
+    h.show_bodies(view, world, renderer, scene);
 }
 
 impl Humans {

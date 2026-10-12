@@ -191,7 +191,8 @@ impl<'a> Offscreen<'a> {
                     .as_ref(),
             );
             steps::set_ai_daylight(t, daylight, steps::gloomy_weather(Some(&weather)));
-            t.populate(&mut sim_view.traffic, &world, &renderer, &mut scene, center);
+            t.populate(&world, center);
+            crate::view_sync::apply_traffic(t, &mut sim_view.traffic, &world, &renderer, &mut scene);
         }
         ground_sample(&world, traffic.as_ref(), center)?;
         // LAN in an offscreen run too, so that one game's view of another can be rendered
@@ -440,10 +441,12 @@ fn new_humans(
         h.stop_names = schedule.as_ref().map(|s| s.stop_names());
         // (the trips due at the stops soon, as in the window: #1415)
         h.due_dests = schedule.as_ref().map(|s| s.due_destinations(parse_time(&args.time)));
-        h.populate(view, world, renderer, scene, center);
+        h.populate(world, center);
+        crate::view_sync::apply_people(&mut h, view, world, renderer, scene);
         if let Some(p) = player.as_ref() {
             if args.riders > 0 {
-                h.seed_riders(view, args.riders, &p.vehicle, world, renderer, scene);
+                h.seed_riders(args.riders, &p.vehicle, world);
+                crate::view_sync::apply_people(&mut h, view, world, renderer, scene);
             }
         }
         Some(h)

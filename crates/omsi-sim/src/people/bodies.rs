@@ -2,9 +2,10 @@
 //!
 //! The simulation does not touch the renderer. What it does that the renderer has to
 //! follow - somebody appearing, somebody going, coins put on the desk - it writes down as
-//! [`BodyOp`]s, and omsi-app's view replays them in the order they happened, at the end of
-//! the same call that made them: the renderer sees the very calls, in the very order, it
-//! saw when the simulation made them itself.
+//! [`BodyOp`]s, and omsi-app's view replays them in the order they happened, right after
+//! the call that made them (`view_sync::apply_people`): the renderer sees the very calls,
+//! in the very order, it saw when the simulation made them itself. (The traffic's are
+//! `crate::view_events::TrafficEvent`s.)
 
 use super::*;
 

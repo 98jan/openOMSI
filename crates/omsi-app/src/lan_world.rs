@@ -427,7 +427,9 @@ impl LanWorld {
                 }
                 let local = self.next_up_id;
                 self.next_up_id += 1;
-                if h.mirror_add(view, world, renderer, scene, local, ty, &pose) {
+                let added = h.mirror_add(world, local, ty, &pose);
+                crate::view_sync::apply_people(h, view, world, renderer, scene);
+                if added {
                     up.ids.insert(*pid, local);
                 }
             }
@@ -773,7 +775,8 @@ impl Mirror {
         if want_on != m.on {
             m.on = want_on;
             if let Some(t) = traffic.as_deref_mut() {
-                t.set_mirror(&mut view.traffic, world, renderer, scene, want_on);
+                t.set_mirror(want_on);
+                crate::view_sync::apply_traffic(t, &mut view.traffic, world, renderer, scene);
             }
             if let Some(h) = humans.as_deref_mut() {
                 h.set_mirror(want_on);
@@ -935,7 +938,8 @@ impl Mirror {
             .filter(|id| !m.cars.contains_key(id))
             .collect();
         for id in gone {
-            t.remove_car(&mut view.traffic, world, renderer, scene, id as u64);
+            t.remove_car(id as u64);
+            crate::view_sync::apply_traffic(t, &mut view.traffic, world, renderer, scene);
             m.drawn_cars.remove(&id);
             m.shown.remove(&id);
             m.odometer.remove(&id);
@@ -989,10 +993,7 @@ impl Mirror {
                 continue;
             };
             t.add_mirror_car(
-                &mut view.traffic,
                 world,
-                renderer,
-                scene,
                 id as u64,
                 ty,
                 scheme.map(|s| s as usize),
@@ -1000,6 +1001,7 @@ impl Mirror {
                 DVec3::new(first.x, first.y, first.z),
                 first.heading as f64,
             );
+            crate::view_sync::apply_traffic(t, &mut view.traffic, world, renderer, scene);
             m.drawn_cars.insert(id);
         }
     }
@@ -1202,7 +1204,9 @@ impl Mirror {
             let Some(ty) = h.type_by_file(file) else {
                 continue;
             };
-            if h.mirror_add(&mut view.people, world, renderer, scene, *id, ty, &pose) {
+            let added = h.mirror_add(world, *id, ty, &pose);
+            crate::view_sync::apply_people(h, &mut view.people, world, renderer, scene);
+            if added {
                 m.drawn_people.insert(*id);
             }
         }

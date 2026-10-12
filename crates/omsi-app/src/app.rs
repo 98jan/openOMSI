@@ -590,8 +590,10 @@ impl App {
                     if let Some(p) = self.player.as_ref() {
                         if self.args.riders > 0 {
                             let centre = p.vehicle.position;
-                            h.populate(&mut self.gfx.sim_view.people, &w, &renderer, &mut scene, centre);
-                            h.seed_riders(&mut self.gfx.sim_view.people, self.args.riders, &p.vehicle, &w, &renderer, &mut scene);
+                            h.populate(&w, centre);
+                            crate::view_sync::apply_people(&mut h, &mut self.gfx.sim_view.people, &w, &renderer, &mut scene);
+                            h.seed_riders(self.args.riders, &p.vehicle, &w);
+                            crate::view_sync::apply_people(&mut h, &mut self.gfx.sim_view.people, &w, &renderer, &mut scene);
                         }
                     }
                     self.session.humans = Some(h);

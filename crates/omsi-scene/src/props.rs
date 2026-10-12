@@ -37,11 +37,17 @@ impl World {
     /// Parked car `key` drives off: it is hidden, its box leaves the obstacles, and its space
     /// stays empty for the rest of the run. What it was, for the car that takes its place.
     pub fn depart_parked(&self, renderer: &Renderer, scene: &mut Scene, key: i64) -> Option<ParkedObject> {
+        let p = self.take_departing_parked(key)?;
+        show_parked_instances(renderer, scene, &p.instances, false);
+        Some(p)
+    }
+
+    /// The world's side of [`World::depart_parked`] (its box and space), without the
+    /// renderer: the simulation's, which hands the hiding of `instances` on to the view
+    /// (`show_parked_instances`).
+    pub fn take_departing_parked(&self, key: i64) -> Option<ParkedObject> {
         let p = self.parked_objects.lock().remove(&key)?;
         self.departed.lock().insert(key);
-        for inst in &p.instances {
-            hide_instance(renderer, scene, *inst);
-        }
         let (mut obst, mut boxes) = (Vec::new(), Vec::new());
         if let Some(st) = self.tile_state.lock().get_mut(&p.tile) {
             obst = st.obstacles.iter().filter(|b| b.id == key).cloned().collect();
@@ -189,22 +195,30 @@ impl World {
     /// An AI car has parked in the space of departed parked car `key`: the parked object is
     /// there again (shown, an obstacle, a parked car the traffic keeps clear of).
     pub fn return_parked(&self, renderer: &Renderer, scene: &mut Scene, key: i64) -> bool {
-        let Some((p, obst, boxes)) = self.departed_objects.lock().remove(&key) else { return false };
+        match self.take_returning_parked(key) {
+            Some(instances) => {
+                show_parked_instances(renderer, scene, &instances, true);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The world's side of [`World::return_parked`] (the box and the space back), without
+    /// the renderer: the instances to show again (`show_parked_instances`), None when the
+    /// object is not there to come back.
+    pub fn take_returning_parked(&self, key: i64) -> Option<Vec<usize>> {
+        let (p, obst, boxes) = self.departed_objects.lock().remove(&key)?;
         let mut states = self.tile_state.lock();
-        let Some(st) = states.get_mut(&p.tile) else { return false };
+        let st = states.get_mut(&p.tile)?;
         st.obstacles.extend(obst);
         st.parked_boxes.extend(boxes);
         drop(states);
-        for &inst in &p.instances {
-            if let Some(i) = scene.instances.get(inst) {
-                let (alpha, uv) = (i.slot_alpha.clone(), i.slot_uv.clone());
-                renderer.set_params(scene, inst, &alpha, true, &uv);
-            }
-        }
+        let instances = p.instances.clone();
         self.departed.lock().remove(&key);
         self.parked_objects.lock().insert(key, p);
         self.refresh_tile_lists();
-        true
+        Some(instances)
     }
 
     /// The object editor changed map object `id` (the whole edit so far, from where the
@@ -1191,6 +1205,17 @@ pub(super) fn hide_instance(renderer: &Renderer, scene: &mut Scene, inst: usize)
 
 pub(super) fn fallen_pole(xf: Mat4, push: DVec3) -> Mat4 {
     let dir = glam::Vec3::new(push.x as f32, push.y as f32, 0.0).normalize_or(glam::Vec3::Y);
+/// The renderer's side of a parked car driving off (`visible` false) or coming back (true):
+/// its object's instances hidden or shown, their other parameters kept.
+pub fn show_parked_instances(renderer: &Renderer, scene: &mut Scene, instances: &[usize], visible: bool) {
+    for &inst in instances {
+        if let Some(i) = scene.instances.get(inst) {
+            let (alpha, uv) = (i.slot_alpha.clone(), i.slot_uv.clone());
+            renderer.set_params(scene, inst, &alpha, visible, &uv);
+        }
+    }
+}
+
     let axis = glam::Vec3::Z.cross(dir).normalize_or(glam::Vec3::X);
     Mat4::from_axis_angle(axis, 86f32.to_radians()) * xf
 }

@@ -85,7 +85,8 @@ impl App {
         }
         if let (Some(s), Some(w), Some(t), Some(r), Some(scene)) = (self.session.schedule.as_mut(), self.world.as_ref(), self.session.traffic.as_mut(), self.renderer.as_ref(), self.scene.as_mut()) {
             let day_time = t.day_time;
-            s.restart(w, t, &mut self.gfx.sim_view.traffic, r, scene, day_time);
+            s.restart(t, day_time);
+            crate::view_sync::apply_traffic(t, &mut self.gfx.sim_view.traffic, w, r, scene);
         }
     }
 

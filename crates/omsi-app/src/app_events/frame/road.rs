@@ -55,7 +55,8 @@ impl App {
                 heavy = true;
                 let __t5 = Instant::now();
                 let view = self.camera.as_ref().map(|c| c.forward().as_dvec3());
-                t.populate_seen(&mut self.gfx.sim_view.traffic, w, r, scene, center, view);
+                t.populate_seen(w, center, view);
+                view_sync::apply_traffic(t, &mut self.gfx.sim_view.traffic, w, r, scene);
                 *self.perf.profile.entry("traffic.populate").or_default() +=
                     __t5.elapsed().as_secs_f64();
             }
@@ -87,7 +88,7 @@ impl App {
             steps::set_ai_daylight(t, daylight, gloomy);
             let __t2 = Instant::now();
             let rail = self.player.as_ref().and_then(|p| p.rail.as_ref()).map(|r| (r.lane, r.along));
-            let signals = steps::traffic_tick(t, &mut self.gfx.sim_view.traffic, w, dt, self.paused, self.player.as_ref(), &self.net.remotes, &self.session.placed, rail);
+            let signals = steps::traffic_tick(t, w, dt, self.paused, self.player.as_ref(), &self.net.remotes, &self.session.placed, rail);
             *self.perf.profile.entry("traffic.tick.signals").or_default() += signals;
             *self.perf.profile.entry("traffic.tick").or_default() +=
                 __t2.elapsed().as_secs_f64();

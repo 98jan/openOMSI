@@ -1,8 +1,6 @@
 //! What the timetable and the rest of the game ask of the traffic and tell it.
 
 use super::*;
-use crate::scene::World;
-use omsi_render::{Renderer, Scene};
 
 impl Traffic {
     /// Would a vehicle of type `ty` with its origin at `pos`, heading `heading` (and its
@@ -59,29 +57,23 @@ impl Traffic {
     /// Take all random AI cars off the road now, keeping timetable buses. Returns how many
     /// vehicles were removed. The configured target is unchanged, so random traffic can
     /// populate the roads again normally.
-    pub fn clear_random(&mut self, view: &mut TrafficView, world: &World, renderer: &Renderer, scene: &mut Scene) -> usize {
+    pub fn clear_random(&mut self) -> usize {
         let ids: Vec<u64> = self.sim.cars.iter().filter(|c| !c.is_bus()).map(|c| c.id).collect();
         let removed = ids.len();
         for id in ids {
-            self.remove_car(view, world, renderer, scene, id);
+            self.remove_car(id);
         }
         removed
     }
 
-    /// Take a car off the road now (the player took over its tour).
-    pub fn remove_car(
-        &mut self,
-        view: &mut TrafficView,
-        world: &World,
-        renderer: &Renderer,
-        scene: &mut Scene,
-        id: u64,
-    ) -> bool {
+    /// Take a car off the road now (the player took over its tour); its renders follow with
+    /// `view_sync::apply_traffic`.
+    pub fn remove_car(&mut self, id: u64) -> bool {
         let Some(c) = self.sim.take_off_id(id, omsi_sim::ai_traffic::control::Removal::TakenOver) else {
             return false;
         };
         self.drop_sounds(c.id);
-        view.release_car(world, renderer, scene, c.id);
+        self.events.push(TrafficEvent::Released { id: c.id });
         true
     }
 

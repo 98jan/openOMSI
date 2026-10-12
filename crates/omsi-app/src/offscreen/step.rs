@@ -130,8 +130,9 @@ impl Offscreen<'_> {
                     if let Some(t) = traffic.as_mut() {
                         let ids: Vec<u64> = t.cars.iter().filter(|c| !c.is_bus()).map(|c| c.id).collect();
                         for id in &ids {
-                            t.remove_car(&mut sim_view.traffic, world, renderer, scene, *id);
+                            t.remove_car(*id);
                         }
+                        view_sync::apply_traffic(t, &mut sim_view.traffic, world, renderer, scene);
                         log::info!("server: {} AI vehicles taken off the road", ids.len());
                     }
                 }
@@ -227,7 +228,8 @@ impl Offscreen<'_> {
             if i.is_multiple_of(60) {
                 // (following a car, the population goes with the camera)
                 let pc = if args.follow.is_some() { view_cam.position } else { center };
-                t.populate(&mut sim_view.traffic, world, renderer, scene, pc);
+                t.populate(world, pc);
+                view_sync::apply_traffic(t, &mut sim_view.traffic, world, renderer, scene);
                 // (what the window does every frame: cars that parked become parked objects,
                 // released vehicles go back to the world)
                 view_sync::sync(ViewSync::traffic(t), sim_view, world, renderer, scene);
@@ -284,7 +286,7 @@ impl Offscreen<'_> {
             let daylight = omsi_sim::Daylight::compute(run_clock, envir.as_ref());
             steps::set_ai_daylight(t, daylight, steps::gloomy_weather(Some(weather)));
             let rail = player.as_ref().and_then(|p| p.rail.as_ref()).map(|r| (r.lane, r.along));
-            steps::traffic_tick(t, &mut sim_view.traffic, world, dt, false, player.as_ref(), remotes_off, &[], rail);
+            steps::traffic_tick(t, world, dt, false, player.as_ref(), remotes_off, &[], rail);
             steps::traffic_boxes(t, player.as_mut(), settings.collision_vehicles);
         }
         Ok(())
@@ -697,7 +699,8 @@ impl Offscreen<'_> {
                     .chain(player.as_ref().map(|p| p.vehicle.position))
                     .collect();
                 for c in &player_centers {
-                    h.populate(&mut sim_view.people, world, renderer, scene, *c);
+                    h.populate(world, *c);
+                    view_sync::apply_people(h, &mut sim_view.people, world, renderer, scene);
                 }
                 // also update which stops the LAN players are near
                 h.lan_centers = player_centers;

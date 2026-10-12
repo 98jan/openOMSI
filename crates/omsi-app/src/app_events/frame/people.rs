@@ -75,7 +75,8 @@ impl App {
             if self.session.humans_populate_t <= 0.0 && !self.paused && !traffic_heavy && !step_populates {
                 self.session.humans_populate_t = 2.0;
                 let t0 = std::time::Instant::now();
-                h.populate(&mut self.gfx.sim_view.people, w, r, scene, center);
+                h.populate(w, center);
+                view_sync::apply_people(h, &mut self.gfx.sim_view.people, w, r, scene);
                 if omsi_cfg::flags::OMSI_PROFILE.is_set() {
                     h.stage_stats.add("app populate", t0.elapsed().as_secs_f64() * 1000.0);
                 }

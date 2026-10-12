@@ -17,7 +17,6 @@ use crate::view_sync::traffic::TrafficView;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn traffic_tick(
     t: &mut traffic::Traffic,
-    view: &mut TrafficView,
     world: &World,
     dt: f32,
     paused: bool,
@@ -35,7 +34,7 @@ pub(crate) fn traffic_tick(
         // `omsi_net::vars`, for a copy of the same vehicle files)
         t.other_priority = remotes.remotes.iter().filter(|(_, r)| r.vehicle().var("TrafficPriority").is_some_and(|v| v > 0.5)).map(|(id, _)| *id).collect();
         t.player_blinker = player.map(|p| lan::indicator(&p.vehicle)).unwrap_or(0);
-        t.tick(view, dt, player.map(|p| player_outline(p)));
+        t.tick(dt, player.map(|p| player_outline(p)));
         let t0 = Instant::now();
         world.set_switches(&t.switch_requests());
         world.set_signals(&t.signal_aspects(&world.signal_routes, player_rail));
@@ -224,15 +223,12 @@ pub(crate) fn tick_humans(
     scene: &mut Scene,
 ) -> bool {
     let mut traffic = traffic;
-    let took = h.tick(
-        view,
-        dt,
-        world,
-        player.as_deref().map(|p| &p.vehicle),
-        traffic.as_deref(),
-        r,
-        scene,
-    );
+    let started = Instant::now();
+    let took = h.tick(dt, world, player.as_deref().map(|p| &p.vehicle), traffic.as_deref());
+    // what the step did, drawn (people who came and went, coins on the desk)
+    let mark = Instant::now();
+    crate::view_sync::apply_people(h, view, world, r, scene);
+    h.tick_done(dt, world, started, mark.elapsed().as_secs_f64() * 1000.0);
     // validators used: the bus's `ev_Stamper` sound
     for bus in h.take_stamped() {
         match bus {
