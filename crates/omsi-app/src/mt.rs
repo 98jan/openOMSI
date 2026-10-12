@@ -84,6 +84,7 @@ fn nllb(lang: &str) -> Option<&'static str> {
         "hu" => "hun_Latn",
         "pt" | "pt-pt" => "por_Latn",
         "nl" => "nld_Latn",
+        "sv" => "swe_Latn",
         "tr" => "tur_Latn",
         "zh-tw" | "zh-hk" => "zho_Hant",
         "ko" => "kor_Hang",

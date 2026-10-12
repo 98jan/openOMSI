@@ -6,6 +6,10 @@
 //! the game's renderer - it is asked through `Platform`.
 
 pub mod i18n;
+mod updates;
+mod versions;
+
+pub use versions::installing;
 
 use omsi_launcher_lib as core;
 use serde_json::{json, Value};
@@ -27,6 +31,8 @@ pub trait Platform: Send + Sync {
     fn selftest(&self) -> Option<String> {
         None
     }
+    fn before_update(&self) {}
+    fn quit(&self) {}
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -42,6 +48,9 @@ fn to_json<T: serde::Serialize>(v: T) -> Answer {
 /// Everything the page needs before its first picture: versions, where things are, the
 /// settings, the remembered duty and favourites, the languages.
 fn bootstrap(p: &dyn Platform) -> Answer {
+    if versions::available() {
+        versions::settle();
+    }
     let config = core::load_config();
     let settings = core::get_settings().unwrap_or_else(|_| core::settings_from_text(None));
     let lang = settings.get("language").and_then(|v| v.as_str()).unwrap_or("ENG").to_string();
@@ -64,6 +73,8 @@ fn bootstrap(p: &dyn Platform) -> Answer {
         "choice": choice,
         "favourites": favourites,
         "selftest": p.selftest(),
+        "versions": versions::available(),
+        "updated": if versions::swapped() { None } else { updates::just_updated() },
         "now": core::local_now().map(|(y, mo, d, h, mi)| json!({ "date": format!("{y:04}-{mo:02}-{d:02}"), "minutes": h * 60 + mi })),
     }))
 }
@@ -75,12 +86,22 @@ fn translations(lang: String) -> Answer {
 
 /// The OMSI 2 folder and the game program (Setup).
 fn config_save(root: String, game: String) -> Answer {
+    let chosen = root.trim().to_string();
+    if !chosen.is_empty() {
+        let missing = omsi_cfg::missing_original_essentials(std::path::Path::new(&chosen));
+        if !missing.is_empty() {
+            return Ok(json!({ "saved": false, "chosen": chosen, "missing": missing }));
+        }
+    }
     let mut c = core::load_config();
-    c.root = root;
-    c.game = game;
+    c.root = chosen.clone();
+    c.game = game.trim().to_string();
     core::save_config(&c).map_err(err)?;
+    omsi_cfg::content_changed();
+    let config = core::load_config();
+    let other = (!chosen.is_empty() && std::path::Path::new(&chosen) != std::path::Path::new(&config.root)).then(|| config.root.clone());
     let r = core::root_dir().map(|p| p.to_string_lossy().to_string());
-    Ok(json!({ "config": core::load_config(), "root": r.as_ref().ok(), "root_error": r.err().map(err), "game": core::game_binary() }))
+    Ok(json!({ "saved": true, "config": config, "root": r.as_ref().ok(), "root_error": r.err().map(err), "game": core::game_binary(), "used_other": other }))
 }
 
 // --- content ---------------------------------------------------------------------------
@@ -197,8 +218,26 @@ fn settings_get() -> Answer {
 /// Save the settings (the whole set, as `settings_get` gave it, changed); answers them as
 /// read back.
 fn settings_save(settings: Value) -> Answer {
+    let _one = SETTINGS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
     core::save_settings(&settings).map_err(err)?;
     core::get_settings().map_err(err)
+}
+
+static SETTINGS_WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn settings_patch(patch: Value) -> Answer {
+    let _one = SETTINGS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    core::save_settings(&patched(core::get_settings().map_err(err)?, &patch)).map_err(err)?;
+    core::get_settings().map_err(err)
+}
+
+fn patched(mut settings: Value, patch: &Value) -> Value {
+    if let (Some(to), Some(from)) = (settings.as_object_mut(), patch.as_object()) {
+        for (k, v) in from {
+            to.insert(k.clone(), v.clone());
+        }
+    }
+    settings
 }
 
 /// Every setting as it comes (Reset).
@@ -272,6 +311,28 @@ fn poll() -> Answer {
 
 fn stop_game(pid: u32) -> Answer {
     Ok(json!({ "ended_by_itself": core::stop_instance(pid).map_err(err)? }))
+}
+
+pub fn game_ended(game: &core::instances::Instance) -> Option<(&'static str, Value)> {
+    if game.running || game.stopping.is_some() || game.killed {
+        return None;
+    }
+    let log = std::path::Path::new(&game.log);
+    if let Some(why) = core::crash::disconnect_of(log) {
+        return Some(("game-disconnected", json!({ "why": why })));
+    }
+    let (what, tail) = core::crash::crash_of(log)?;
+    let silent = what.contains("closed without a word");
+    Some(("game-crashed", json!({
+        "what": what,
+        "tail": tail,
+        "gap": core::crash::CRASH_TAIL_GAP,
+        "lost": what.contains("graphics device was lost"),
+        "silent": silent,
+        "vulkan": silent && core::crash::died_compiling_on_vulkan(&tail),
+        "version": omsi_platform::VERSION,
+        "os": std::env::consts::OS,
+    })))
 }
 
 fn game_log(pid: u32, lines: Option<usize>) -> Answer {
@@ -409,6 +470,12 @@ fn route_map(p: &dyn Platform, map: String, date: String, trip: String) -> Answe
     serde_json::from_slice(&body).map_err(err)
 }
 
+fn keyboard_actions(p: &dyn Platform, mut req: Value) -> Answer {
+    req["cmd"] = json!("key_actions");
+    let (_, body) = p.renderer(req, Duration::from_secs(30))?;
+    serde_json::from_slice(&body).map_err(err)
+}
+
 fn controllers(p: &dyn Platform, op: &str, mut req: Value, wait: u64) -> Answer {
     req["cmd"] = json!("pads");
     req["op"] = json!(op);
@@ -474,8 +541,13 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "profile_create" => profile_create(arg::<String>(args, "name")?, arg::<String>(args, "sex")?),
         "profile_delete" => profile_delete(arg::<String>(args, "name")?),
         "profile_select" => profile_select(arg::<String>(args, "name")?),
+        "update_status" => Ok(updates::status()),
+        "update_check" => Ok(updates::check(arg::<Option<bool>>(args, "again")?.unwrap_or(false))),
+        "update_install" => Ok(updates::install(p)),
+        "update_dismiss" => Ok(updates::dismiss()),
         "settings_get" => settings_get(),
         "settings_save" => settings_save(arg::<Value>(args, "settings")?),
+        "settings_patch" => settings_patch(arg::<Value>(args, "patch")?),
         "settings_defaults" => settings_defaults(),
         "option_presets" => option_presets(),
         "graphics_presets" => graphics_presets(arg::<String>(args, "mode")?),
@@ -489,6 +561,11 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "mod_remove" => mod_remove(arg::<String>(args, "id")?),
         "mod_inspect" => mod_inspect(arg::<String>(args, "path")?),
         "mod_install" => mod_install(arg::<String>(args, "path")?, arg::<String>(args, "mode")?),
+        "mod_cancel" => Ok(json!(core::install::cancel(arg::<u64>(args, "id")?))),
+        "mods_clear_finished" => {
+            core::install::clear_finished();
+            Ok(json!(true))
+        }
         "poll" => poll(),
         "stop_game" => stop_game(arg::<u32>(args, "pid")?),
         "game_log" => game_log(arg::<u32>(args, "pid")?, arg::<Option<usize>>(args, "lines")?),
@@ -503,12 +580,18 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "preview_look" => preview_look(p, arg::<String>(args, "bus")?, arg::<String>(args, "paint")?, arg::<String>(args, "map")?, arg::<String>(args, "weather")?, arg::<i32>(args, "time")?, arg::<String>(args, "date")?),
         "preview_warm" => preview_warm(p),
         "route_map" => route_map(p, arg::<String>(args, "map")?, arg::<String>(args, "date")?, arg::<String>(args, "trip")?),
+        "keyboard_actions" => keyboard_actions(p, json!({ "lang": arg::<Option<String>>(args, "lang")?, "actions": arg::<Option<Vec<String>>>(args, "actions")?, "vehicles": arg::<Option<Vec<String>>>(args, "vehicles")?, "catalog": arg::<Option<bool>>(args, "catalog")?, "scan": arg::<Option<bool>>(args, "scan")?, "have": arg::<Option<String>>(args, "have")? })),
         "controllers_load" => controllers(p, "load", json!({}), 20),
         "controllers_state" => controllers(p, "state", json!({}), 5),
         "controllers_save" => controllers(p, "save", json!({ "devices": arg::<Value>(args, "devices")? }), 20),
-        "controllers_ffb_test" => controllers(p, "ffb_test", json!({ "name": arg::<String>(args, "name")?, "axis": arg::<usize>(args, "axis")?, "strength": arg::<Option<f32>>(args, "strength")? }), 20),
+        "controllers_ffb_test" => controllers(p, "ffb_test", json!({ "name": arg::<String>(args, "name")?, "axis": arg::<usize>(args, "axis")?, "strength": arg::<Option<f32>>(args, "strength")?, "token": arg::<Option<u64>>(args, "token")? }), 20),
         "controllers_release" => controllers(p, "release", json!({}), 5),
+        "controllers_ffb_stop" => controllers(p, "ffb_stop", json!({ "token": arg::<Option<u64>>(args, "token")? }), 5),
         "support_package" => support_package(),
+        "versions" => versions::list(),
+        "version_install" => versions::install(arg::<String>(args, "version")?),
+        "version_status" => versions::status(),
+        "version_restart" => versions::restart(p),
         "prepare_tunnel" => {
             std::thread::spawn(omsi_net::tunnel::ensure_cloudflared);
             Ok(Value::Null)
@@ -523,5 +606,76 @@ pub fn call_bytes(cmd: &str, args: &Value, p: &dyn Platform) -> Result<Vec<u8>, 
         "content_picture" => content_picture(&arg::<String>(args, "path")?).ok_or_else(|| "not found".to_string()),
         "preview_frame" => preview_frame(p, arg(args, "w")?, arg(args, "h")?, arg::<Option<bool>>(args, "force")?.unwrap_or(false), arg(args, "dx")?, arg(args, "dy")?, arg(args, "zoom")?, arg(args, "quality")?),
         _ => Err(format!("unknown command {cmd}")),
+    }
+}
+
+#[cfg(test)]
+mod setup_tests {
+    use super::*;
+
+    #[test]
+    fn a_folder_that_is_no_complete_omsi_2_is_not_saved() {
+        let home = std::env::temp_dir().join(format!("openomsi-setup-{}", std::process::id()));
+        let not_omsi = home.join("Downloads");
+        std::fs::create_dir_all(&not_omsi).unwrap();
+        let was = (std::env::var_os("HOME"), std::env::var_os("USERPROFILE"));
+        std::env::set_var("HOME", &home);
+        std::env::set_var("USERPROFILE", &home);
+        let r = config_save(not_omsi.to_string_lossy().to_string(), String::new()).unwrap();
+        let written = home.join(".openomsi").join("launcher.json").exists();
+        for (k, v) in [("HOME", was.0), ("USERPROFILE", was.1)] {
+            match v {
+                Some(v) => std::env::set_var(k, v),
+                None => std::env::remove_var(k),
+            }
+        }
+        assert_eq!(r["saved"], json!(false));
+        assert!(!r["missing"].as_array().unwrap().is_empty());
+        assert!(!written);
+        std::fs::remove_dir_all(&home).ok();
+    }
+}
+
+#[cfg(test)]
+mod settings_tests {
+    use super::*;
+
+    #[test]
+    fn a_launcher_change_keeps_what_the_game_changed_meanwhile() {
+        let game_wrote = "volume=0.25\nwheel_range=540\nmsaa=4\n";
+        let on_disk = core::settings_from_text(Some(game_wrote));
+        let text = core::settings_to_text(&patched(on_disk, &json!({ "msaa": 8 })), Some(game_wrote));
+        let now = core::settings_from_text(Some(&text));
+        assert_eq!(now["msaa"], json!(8));
+        assert_eq!(now["volume"], json!(0.25));
+        assert_eq!(now["wheel_range"], json!(540.0));
+    }
+}
+
+#[cfg(test)]
+mod game_end_tests {
+    use super::*;
+
+    #[test]
+    fn a_crash_and_a_server_kick_are_told_and_a_stop_or_a_clean_end_is_not() {
+        let dir = std::env::temp_dir().join(format!("openomsi-game-end-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let game = |pid: u32, log: &str| {
+            let p = dir.join(format!("game-{pid}.log"));
+            std::fs::write(&p, log).unwrap();
+            core::instances::Instance { pid, log: p.to_string_lossy().to_string(), ..Default::default() }
+        };
+        let crashed = game(11, "[t INFO x] starting the game: omsi\n[t ERROR omsi_render] ending the session: the graphics device was lost (Unknown: Out of memory)\n[t INFO x] game ends\n");
+        let (event, what) = game_ended(&crashed).unwrap();
+        assert_eq!(event, "game-crashed");
+        assert_eq!(what["lost"], json!(true));
+        let kicked = game(12, &format!("[t INFO x] starting the game: omsi\n[t WARN openomsi_game::lan] {}Expelled: dangerous driving\n[t INFO x] game ends\n", omsi_net::LEFT_SERVER));
+        assert_eq!(game_ended(&kicked).map(|(e, w)| (e, w["why"].clone())), Some(("game-disconnected", json!("Expelled: dangerous driving"))));
+        assert!(game_ended(&game(13, "[t INFO x] starting the game: omsi\n[t INFO x] game ends\n")).is_none());
+        let mut stopped = game(14, "[t INFO x] starting the game: omsi\n[t ERROR x] the game stopped on an error: panicked at a.rs:1:1\n");
+        assert!(game_ended(&stopped).is_some());
+        stopped.stopping = Some(1);
+        assert!(game_ended(&stopped).is_none());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

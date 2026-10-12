@@ -8,7 +8,9 @@ import { t } from '../i18n.js';
 import { call } from '../api.js';
 import { Button, Card, Select, Input, Toggle, Tabs, Slider, PageHead, useConfirm } from '../ui.js';
 import { saveSettings, applyTheme } from '../data.js';
+import { UpdateRow } from '../updates.js';
 import { SETTINGS_TABS, GRAPHICS_PROFILE_KEYS } from './settings-schema.js';
+import { VersionsDialog } from './versions.js';
 
 const REPO_URL = 'https://github.com/openOmsi-project/openOMSI';
 
@@ -329,14 +331,16 @@ function CornerRow() {
   </div>`;
 }
 
-/** The version, and where the releases are. (No command here looks for updates or installs
- * one yet: the game downloads a newer release during a session, see its update_watch.) */
+/** The version, and where the releases are. */
 function VersionRow() {
-  return html`<div class="setting-row full">
+  const [open, setOpen] = useState(false);
+  return html`<${UpdateRow} /><div class="setting-row full">
     <div class="row wrap">
       <span class="muted small grow">${t('This is openOMSI {version}', { version: S.boot?.version || '' })}</span>
+      ${S.boot?.versions && html`<${Button} small icon="history" label="Choose a version…" onClick=${() => setOpen(true)} />`}
       <${Button} small kind="ghost" icon="external" onClick=${() => call('open_url', { url: REPO_URL }).catch((e) => toast(e.message, 'error'))}>github.com/openOmsi-project/openOMSI</${Button}>
     </div>
+    ${open && html`<${VersionsDialog} onClose=${() => setOpen(false)} />`}
   </div>`;
 }
 
@@ -353,8 +357,7 @@ function ResetRow({ ask }) {
     try {
       const defaults = await call('settings_defaults');
       // (the whole set replaced, not merged: keys the defaults lack go back to the game's own)
-      set({ settings: { ...defaults, language: S.settings.language, texture_memory_auto: S.settings.texture_memory_auto } });
-      await saveSettings({});
+      await saveSettings({ ...defaults, language: S.settings.language, texture_memory_auto: S.settings.texture_memory_auto }, true);
       toast(t('Every setting is back to how it came.'), 'ok');
     } catch (e) {
       toast(e.message, 'error');

@@ -50,6 +50,18 @@ impl VehicleInstance {
         self.ty.program.has_script_var(name)
     }
 
+    /// The door release to fire now: the bus's own, the C2's switch turned over, else `bus_dooraft`.
+    pub fn door_release_trigger(&self) -> Option<&'static str> {
+        let p = &self.ty.program;
+        if let Some(t) = ["bus_doorall", "CG_active", "C2_CP_doorall_1"].into_iter().find(|t| p.trigger(t).is_some()) {
+            return Some(t);
+        }
+        if p.trigger("C2_CP_Tuerfreigabe_1").is_some() && p.trigger("C2_CP_Tuerfreigabe_0").is_some() {
+            return Some(if self.var("C2_CP_Tuerfreigabe").is_some_and(|x| x > 0.5) { "C2_CP_Tuerfreigabe_0" } else { "C2_CP_Tuerfreigabe_1" });
+        }
+        p.trigger("bus_dooraft").is_some().then_some("bus_dooraft")
+    }
+
     /// The name of script variable `index` (lower case), for diagnostics and key helpers.
     pub fn var_name(&self, index: usize) -> Option<&str> {
         self.var_index

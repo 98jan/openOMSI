@@ -7,6 +7,7 @@
 //! launcher's model (`AppHost`): the interface's language, machine translation and the city map
 //! read the way the navigator reads it.
 
+mod key_actions;
 mod pads;
 mod service;
 pub(crate) mod showroom;
