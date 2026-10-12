@@ -217,7 +217,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_ROAD_PHOTO_SLANT` | num | - | use | app | With OMSI_ROAD_PHOTO: from a driver's eye this far back instead of from above. |
 | `OMSI_SCENE_DIGEST` | bool | off | use | app | Log a hash of the renderer's scene (its instances in order, their places, materials and parameters) before each offscreen picture: two runs whose renderers saw the same calls log the same digests. |
 | `OMSI_SEED` | num | random | use | app | Seed of the scripts' random numbers (repeat a session). |
-| `OMSI_SIM_THREAD` | bool | off | use | sim | Window: the AI traffic's step runs on a thread of its own while the picture is drawn (one step later); the offscreen run ignores it. |
+| `OMSI_SIM_THREAD` | bool | off | use | sim | Window: the AI traffic's and the scenery scripts' steps run on a thread of its own while the picture is drawn (one frame later); the offscreen run ignores it. |
 | `OMSI_SKIP_OBJECT` | text | - | use | scene | Leave out the objects whose file name contains this text. |
 | `OMSI_SKIP_PIPE` | text | - | frame | render | Pipeline kinds to leave out of the main pass (comma-separated numbers). |
 | `OMSI_SPOT_SELECT` | num | - | use | scene | Turn on spotlight n (headlight pictures). |

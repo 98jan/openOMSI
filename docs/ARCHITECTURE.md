@@ -91,7 +91,12 @@ Bottom up:
   traffic on what the last step left, and the stepped traffic is back before the frame is
   counted. The cars are one traffic step later than the rest of the frame; the player's
   vehicle and its input stay in their stage (no added input latency). The offscreen run never
-  reads the switch. The rest of the sim follows once the view takes `FrameSnapshot`s.
+  reads the switch. The scenery objects' scripts go in the same job after the traffic's
+  step (they read its lights, as the scripted stage did after the traffic stage); the
+  scripted stage then shows the commands of the step made during the last picture and owes
+  the next one with its inputs owned (`OwnedSceneryInputs`). The people's and the
+  timetable's steps still run in their stages (the people read the player's bus, which the
+  picture keeps; the timetable's fleet uploads sit between its two halves).
 * Scenery object scripts (`omsi_sim::scenery::SceneryState`, held by the session, not by
   `World`): the scripts and variables of the loaded tiles' scripted objects are one owned
   list in the simulation; the view's half (render instances, materials, texts, sounds) stays

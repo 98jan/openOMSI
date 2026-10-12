@@ -431,7 +431,7 @@ flags! {
     OMSI_SEED: Num, Test, Use, "random", "Seed of the scripts' random numbers (repeat a session).";
     OMSI_SHADOW_FAR_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the far shadow map every frame.";
     OMSI_SHADOW_NEAR_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the near shadow map every frame.";
-    OMSI_SIM_THREAD: Bool, Switch, Use, "off", "Window: the AI traffic's step runs on a thread of its own while the picture is drawn (one step later); the offscreen run ignores it.";
+    OMSI_SIM_THREAD: Bool, Switch, Use, "off", "Window: the AI traffic's and the scenery scripts' steps run on a thread of its own while the picture is drawn (one frame later); the offscreen run ignores it.";
     OMSI_SKIP_OBJECT: Text, Test, Use, "-", "Leave out the objects whose file name contains this text.";
     OMSI_SKIP_PIPE: Text, Test, Frame, "-", "Pipeline kinds to leave out of the main pass (comma-separated numbers).";
     OMSI_SPOT_SELECT: Num, Test, Use, "-", "Turn on spotlight n (headlight pictures).";

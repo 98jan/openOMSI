@@ -249,18 +249,30 @@ impl App {
             // the map's own route arrows, with OMSI 2's route arrows
             w.show_help_arrows(r, scene, self.settings.nav_arrows);
             let mut times = omsi_scene::ScriptedTimes::default();
-            w.update_scripted(
-                &mut self.session.scenery,
-                r,
-                scene,
-                dt,
-                cam.position,
-                daylight.brightness,
-                &phase,
-                self.sound.audio.as_ref(),
-                self.cam.in_cab,
-                &mut times,
-            );
+            // (OMSI_SIM_THREAD: what the scripts made during the last picture is shown now,
+            // and their next step is made with this one's, see `sim_thread`)
+            if self.pipeline.take_scenery_stepped() {
+                w.scenery_apply(self.session.scenery.outputs(), r, scene, dt, cam.position, self.sound.audio.as_ref(), self.cam.in_cab, &mut times);
+            }
+            if self.pipeline.takes_scenery(traffic.map(|t| &t.sim)) {
+                let inputs = w.scenery_prepare(&mut self.session.scenery, cam.position, daylight.brightness, &mut times);
+                self.pipeline.owe_scenery(move |s, phase_of| {
+                    s.step(dt, &inputs.as_inputs(phase_of), &mut omsi_sim::scenery::StepTimes::default());
+                });
+            } else {
+                w.update_scripted(
+                    &mut self.session.scenery,
+                    r,
+                    scene,
+                    dt,
+                    cam.position,
+                    daylight.brightness,
+                    &phase,
+                    self.sound.audio.as_ref(),
+                    self.cam.in_cab,
+                    &mut times,
+                );
+            }
             if omsi_cfg::flags::OMSI_PROFILE.is_set() {
                 use crate::profile_keys::ProfKey as K;
                 for (k, v) in [
