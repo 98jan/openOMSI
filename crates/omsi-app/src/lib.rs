@@ -56,7 +56,11 @@ mod hud;
 mod humans;
 mod journey;
 use omsi_input::keys;
+// (LAN play's game side, on its way into omsi-lan: the files are there already and are
+// compiled here until they need nothing of the app)
+#[path = "../../omsi-lan/src/game.rs"]
 mod lan;
+#[path = "../../omsi-lan/src/game_world.rs"]
 mod lan_world;
 use omsi_scene::lights;
 mod launcher;
