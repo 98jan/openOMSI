@@ -136,6 +136,85 @@ impl BodyPose {
     }
 }
 
+/// The poses of a vehicle as drawn: the body, then each trailer.
+pub fn poses_of(v: &crate::VehicleInstance) -> Vec<BodyPose> {
+    let mut out = Vec::with_capacity(1 + v.trailers.len());
+    out.push(BodyPose { position: v.position, heading: v.heading, pitch: v.pitch, bank: v.bank });
+    out.extend(v.trailers.iter().map(|t| BodyPose { position: t.position, heading: t.heading, pitch: t.pitch, bank: t.bank }));
+    out
+}
+
+/// Puts a vehicle at `poses` (as [`poses_of`] gave them).
+pub fn put(v: &mut crate::VehicleInstance, poses: &[BodyPose]) {
+    if let Some(b) = poses.first() {
+        (v.position, v.heading, v.pitch, v.bank) = (b.position, b.heading, b.pitch, b.bank);
+    }
+    for (t, p) in v.trailers.iter_mut().zip(poses.iter().skip(1)) {
+        (t.position, t.heading, t.pitch, t.bank) = (p.position, p.heading, p.pitch, p.bank);
+    }
+}
+
+/// The fixed step of a session as its frames take it: the accumulator, the player's vehicle
+/// before the last tick (to draw it between), the last tick's daylight, and a line in the log
+/// every ten seconds of the wall clock.
+pub struct SimTicks {
+    pub step: FixedStep,
+    prev: Vec<BodyPose>,
+    alpha: f32,
+    daylight: Option<crate::Daylight>,
+    frames: u32,
+    since: Option<std::time::Instant>,
+}
+
+impl SimTicks {
+    /// The fixed step when the switch asks for one (`OMSI_FIXED_STEP`), else none.
+    pub fn from_flag() -> Option<Self> {
+        let step = FixedStep::from_flag()?;
+        log::info!("fixed step: the simulation runs at {:.0} ticks a second (OMSI_FIXED_STEP)", step.rate());
+        Some(SimTicks { step, prev: Vec::new(), alpha: 1.0, daylight: None, frames: 0, since: None })
+    }
+
+    /// The simulation's time (s) and its ticks since the start.
+    pub fn sim_time(&self) -> (f64, u64) {
+        (self.step.sim_time(), self.step.ticks())
+    }
+
+    /// The vehicle as it stands before the frame's last tick.
+    pub fn remember(&mut self, v: Option<&crate::VehicleInstance>) {
+        self.prev = v.map(poses_of).unwrap_or_default();
+    }
+
+    /// The vehicle's poses now and where the frame draws it (between its last two ticks), or
+    /// none when there is nothing to blend.
+    pub fn between(&self, v: &crate::VehicleInstance) -> Option<(Vec<BodyPose>, Vec<BodyPose>)> {
+        let cur = poses_of(v);
+        (!self.prev.is_empty() && cur.len() == self.prev.len()).then(|| {
+            let at = self.prev.iter().zip(&cur).map(|(a, b)| BodyPose::between(a, b, self.alpha)).collect();
+            (cur, at)
+        })
+    }
+
+    /// The daylight the frame takes: its last tick's, else the one kept from before.
+    pub fn daylight(&self) -> Option<crate::Daylight> {
+        self.daylight
+    }
+
+    /// The frame's ticks are done: where the picture stands, the last daylight.
+    pub fn frame_done(&mut self, ticks: Ticks, daylight: crate::Daylight) {
+        self.alpha = ticks.alpha;
+        self.daylight = Some(daylight);
+        self.frames += 1;
+        let since = *self.since.get_or_insert_with(std::time::Instant::now);
+        let wall = since.elapsed().as_secs_f32();
+        if wall >= 10.0 {
+            let (t, n) = self.sim_time();
+            log::info!("fixed step: {n} ticks, {t:.2} s simulated; {} frames in the last {wall:.1} s", self.frames);
+            self.frames = 0;
+            self.since = Some(std::time::Instant::now());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
