@@ -551,7 +551,7 @@ impl Offscreen<'_> {
         // second, and at once when the ground is not under it any more)
         if omsi_cfg::flags::OMSI_AUTOPILOT.is_set() {
             let at = player.vehicle.position;
-            let under = crate::scene::drive_probe(&world.terrains, &world.surfaces, at.x, at.y, at.z + 1.5).below;
+            let under = world.data.peek().drive_probe(at.x, at.y, at.z + 1.5).below;
             let lost = under.is_none_or(|g| at.z < g - 0.6);
             if i.is_multiple_of(15) || lost {
                 log::info!("autopilot t={t_s:.1} at ({:.1}, {:.1}, {:.2}) heading {:.0} {:.0} km/h, ground under {:?}{}", at.x, at.y, at.z, player.vehicle.heading, player.vehicle.physics.velocity_kmh(), under.map(|g| (g * 100.0).round() / 100.0), if lost { " FELL" } else { "" });

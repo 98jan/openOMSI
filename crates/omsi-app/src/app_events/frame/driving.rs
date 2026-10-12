@@ -252,7 +252,7 @@ impl App {
 /// the terrain alone): a vehicle there has ground to stand on.
 fn ground_under(w: &crate::scene::World, at: glam::DVec3) -> bool {
     let k = ((at.x / omsi_map::tile_size()).floor() as i32, (at.y / omsi_map::tile_size()).floor() as i32);
-    w.surfaces.read().contains_key(&k)
+    w.data.peek().ground.surfaces.contains_key(&k)
 }
 
 /// A placed vehicle found under the ground (one saved after it had fallen through a tile that
@@ -260,7 +260,7 @@ fn ground_under(w: &crate::scene::World, at: glam::DVec3) -> bool {
 /// does for the driven bus.
 fn reground(w: &crate::scene::World, v: &mut omsi_sim::VehicleInstance) {
     let at = v.position;
-    if crate::scene::drive_probe(&w.terrains, &w.surfaces, at.x, at.y, at.z + 1.5).below.is_some() {
+    if w.data.peek().drive_probe(at.x, at.y, at.z + 1.5).below.is_some() {
         return;
     }
     let Some(g) = w.walk_height(at.x, at.y) else { return };

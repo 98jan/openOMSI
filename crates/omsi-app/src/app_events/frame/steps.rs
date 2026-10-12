@@ -296,7 +296,7 @@ pub(crate) fn duty_step(
         }
     }
     if learn_loaded {
-        d.learn_loaded(&world.object_positions.lock());
+        d.learn_loaded(&world.data.peek().objects);
     }
     let due = (d.trip_index, d.next_stop);
     let served = d.update(&mut p.vehicle, time);

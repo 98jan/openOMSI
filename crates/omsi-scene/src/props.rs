@@ -296,8 +296,11 @@ impl World {
         }
         let freed = self.gpu.lock().release_tile(renderer, scene, state.gpu);
         self.drop_scripted(key, audio);
-        self.terrains.write().remove(&key);
-        self.surfaces.write().remove(&key);
+        self.data.update(|d| {
+            let g = Arc::make_mut(&mut d.ground);
+            g.terrains.remove(&key);
+            g.surfaces.remove(&key);
+        });
         freed > 0
     }
 
@@ -460,19 +463,24 @@ impl World {
             night.extend(s.night_slots.iter().cloned());
             modes.extend(s.night_modes.iter().cloned());
         }
-        *self.bus_stops.lock() = stops;
-        *self.waiting_places.lock() = waiting;
-        *self.collision.lock() = Arc::new(collision);
-        *self.parked_boxes.lock() = Arc::new(parked);
+        let generation = self.tiles_generation.load(std::sync::atomic::Ordering::Relaxed) + 1;
+        self.data.update(|d| {
+            d.lists = Arc::new(omsi_sim::world_data::TileLists {
+                generation,
+                bus_stops: stops,
+                waiting_places: waiting,
+                collision: Arc::new(collision),
+                parked_boxes: Arc::new(parked),
+                petrol_stations: petrol,
+                reverb_zones: reverb,
+            })
+        });
         *self.static_coronas.lock() = coronas;
         *self.static_lights.lock() = lights;
         *self.light_objects.lock() = lamps;
         *self.night_slots.lock() = night;
         *self.night_modes.lock() = modes;
-        *self.petrol_stations.lock() = petrol;
-        *self.reverb_zones.lock() = reverb;
-        self.tiles_generation
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.tiles_generation.store(generation, std::sync::atomic::Ordering::Relaxed);
         if omsi_cfg::flags::OMSI_PROFILE.is_set() {
             log::info!("tile lists: {} tiles in {:.1} ms", states.len(), t0.elapsed().as_secs_f64() * 1000.0);
         }
@@ -500,7 +508,7 @@ impl World {
             (x / tile_size()).floor() as i32,
             (y / tile_size()).floor() as i32,
         );
-        self.terrains.read().contains_key(&key)
+        self.data.peek().ground.terrains.contains_key(&key)
     }
 
     /// What the loaded tiles hold, for the streaming statistics.
@@ -678,16 +686,17 @@ impl World {
             }
         }
         let (mut rasters, mut drive, mut tris) = (0usize, 0usize, 0usize);
-        let surfaces = self.surfaces.read();
+        let data = self.data.peek();
+        let surfaces = &data.ground.surfaces;
         for sf in surfaces.values() {
             let (r, d) = sf.heap_bytes();
             rasters += r;
             drive += d;
             tris += sf.drive.tris.len();
         }
-        let terrains: usize = self
+        let terrains: usize = data
+            .ground
             .terrains
-            .read()
             .values()
             .map(|t| t.heights.capacity() * 4)
             .sum();

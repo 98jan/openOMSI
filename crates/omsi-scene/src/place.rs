@@ -236,7 +236,7 @@ impl World {
         let (tx, ty) = key;
         let first_load = self.seeded.lock().insert(key);
         let terrain: &Terrain = &res.terrain;
-        self.terrains.write().insert(key, res.terrain.clone());
+        self.data.update(|d| Arc::make_mut(&mut d.ground).terrains.insert(key, res.terrain.clone()));
         let ground_at = |x: f64, y: f64| -> f64 {
             let lx = (x - st.origin.x).clamp(0.0, tile_size()) as f32;
             let ly = (y - st.origin.y).clamp(0.0, tile_size()) as f32;
@@ -255,6 +255,8 @@ impl World {
         let check_objects = omsi_cfg::flags::OMSI_CHECK_OBJECTS.is_set();
         let debug_float = omsi_cfg::flags::OMSI_DEBUG_FLOAT.is_set();
         let index = self.index();
+        // where the tile's objects stand, published with the tile's (`WorldData::objects`)
+        let mut placed_at: Vec<(i64, omsi_sim::world_data::Place)> = Vec::new();
         for (oi, (o, fp)) in st.objects.iter().zip(res.poses.iter()).enumerate() {
             let Some(Pose { pos, rot: xf }) = *fp else {
                 continue;
@@ -276,13 +278,7 @@ impl World {
             // (a spline attachment row's first object stands for the row: an entry point or a
             // stop put on a road is found by its id)
             if o.map_object || o.instance == 0 {
-                self.object_positions
-                    .lock()
-                    .insert(o.id, (pos, [heading, 0.0, 0.0]));
-                let mut dups = self.object_dups.lock();
-                if let Some(d) = dups.get_mut(&(key, o.id)) {
-                    *d = (pos, [heading, 0.0, 0.0]);
-                }
+                placed_at.push((o.id, (pos, [heading, 0.0, 0.0])));
             }
             if o.parked {
                 state.parked_count += 1;
@@ -450,6 +446,7 @@ impl World {
                 script: None,
             });
         }
+        self.data.update(|d| Arc::make_mut(&mut d.objects).place(key, placed_at));
         if first_load {
             // together, under the lanes lock (see `World::lane_tiles`)
             let mut all = self.lanes.lock();

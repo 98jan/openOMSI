@@ -78,8 +78,8 @@ impl World {
         // roads cut away, as text (to compare a whole-map load with a streamed one)
         if let Some(path) = omsi_cfg::flags::OMSI_DUMP_GROUND.os() {
             let mut out = String::new();
-            let terrains = self.terrains.read();
-            let surfaces = self.surfaces.read();
+            let data = self.data.peek();
+            let (terrains, surfaces) = (&data.ground.terrains, &data.ground.surfaces);
             let mut keys: Vec<&(i32, i32)> = terrains.keys().collect();
             keys.sort();
             for k in keys {
@@ -144,8 +144,11 @@ impl World {
                 }
             }
         }
-        *self.chrono_dirs.write() = new;
+        *self.chrono_dirs.write() = new.clone();
+        // (the index is built again when next asked; the simulation keeps the old one's stops
+        // until then)
         *self.index.lock() = None;
+        self.data.update(|d| Arc::make_mut(&mut d.map).chrono_dirs = new);
         let keys: Vec<(i32, i32)> = tiles.into_iter().collect();
         self.forget_staged(&keys);
         keys
@@ -197,15 +200,9 @@ impl World {
         // the index's object positions go to `object_positions` (kept once, not twice: 345 000
         // objects on Ahlheim took 30 MB in each)
         let objects = std::mem::take(&mut built.objects);
-        {
-            let dups = std::mem::take(&mut built.duplicates);
-            if !dups.is_empty() {
-                log::info!("map index: {} objects share their id with an object of another tile", dups.len());
-            }
-            let mut d = self.object_dups.lock();
-            for (k, v) in dups {
-                d.entry(k).or_insert(v);
-            }
+        let dups = std::mem::take(&mut built.duplicates);
+        if !dups.is_empty() {
+            log::info!("map index: {} objects share their id with an object of another tile", dups.len());
         }
         let ix = Arc::new(built);
         // what the map names that is not installed: counted always, listed on request
@@ -228,13 +225,12 @@ impl World {
                 }
             }
         }
-        {
-            let mut positions = self.object_positions.lock();
-            positions.reserve(objects.len());
-            for (id, (_, pos, rot)) in objects {
-                positions.entry(id).or_insert((pos, rot));
-            }
-        }
+        // (published together: the stops' facts and where the objects stand. A rebuilt index
+        // - new chrono folders - adds the objects it did not know)
+        self.data.update(|d| {
+            Arc::make_mut(&mut d.objects).add_index(objects.into_iter().map(|(id, (_, pos, rot))| (id, (pos, rot))), dups);
+            d.index = Some(ix.clone());
+        });
         *g = Some(ix.clone());
         ix
     }
@@ -504,6 +500,8 @@ impl World {
             );
         }
         let layout = Arc::new(TileLayout { paths, sources });
+        let files = Arc::new(layout.paths.keys().copied().collect());
+        self.data.update(|d| d.tile_files = Some(files));
         *self.layout.lock() = Some(layout.clone());
         layout
     }

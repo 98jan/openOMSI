@@ -237,7 +237,7 @@ impl World {
     pub fn reverb_at(&self, p: DVec3) -> (f32, f32) {
         let me = omsi_sim::collision::Obb::point(p, 0.01);
         let mut best = (0.0f32, 0.0f32);
-        for (b, time, fade) in self.reverb_zones.lock().iter() {
+        for (b, time, fade) in self.data.peek().lists.reverb_zones.iter() {
             if p.z < b.z0 - 1.0 || p.z > b.z1 + 1.0 {
                 continue;
             }

@@ -463,7 +463,7 @@ fn ground_sample(world: &World, traffic: Option<&traffic::Traffic>, center: DVec
     if let (Some(path), Some(t)) = (omsi_cfg::flags::OMSI_GROUND_SAMPLE.var(), traffic.as_ref()) {
         use std::io::Write;
         let Ok(mut f) = std::fs::File::create(&path) else { return Err(anyhow::anyhow!("OMSI_GROUND_SAMPLE: cannot write {path}")) };
-        let collision = world.collision.lock().clone();
+        let collision = world.data.peek().lists.collision.clone();
         for (li, l) in t.net.lanes.iter().enumerate() {
             if l.kind != omsi_sim::traffic::LaneKind::Street { continue; }
             let len = l.length();
@@ -471,7 +471,7 @@ fn ground_sample(world: &World, traffic: Option<&traffic::Traffic>, center: DVec
             while s < len {
                 let (p, _) = l.at(s);
                 if (p.truncate() - center.truncate()).length() < 400.0 {
-                    let g = crate::scene::drive_probe(&world.terrains, &world.surfaces, p.x, p.y, p.z + 0.5);
+                    let g = world.data.peek().drive_probe(p.x, p.y, p.z + 0.5);
                     // and a wall there: a 2 m box from 0.3 m to 3 m over the ground, against
                     // the objects' collision meshes (the id of the first one it touches)
                     let base = g.below.unwrap_or(p.z);
@@ -487,7 +487,7 @@ fn ground_sample(world: &World, traffic: Option<&traffic::Traffic>, center: DVec
                         .iter()
                         .map(|&d| {
                             let w = p.truncate() + glam::DVec2::new(dir.y, -dir.x) * d;
-                            crate::scene::drive_probe(&world.terrains, &world.surfaces, w.x, w.y, p.z + 0.5).below.map(|z| format!("{z:.4}")).unwrap_or_default()
+                            world.data.peek().drive_probe(w.x, w.y, p.z + 0.5).below.map(|z| format!("{z:.4}")).unwrap_or_default()
                         })
                         .collect();
                     let _ = writeln!(f, "{li},{s:.1},{:.2},{:.2},{:.3},{},{},{}", p.x, p.y, p.z, g.below.map(|z| format!("{z:.4}")).unwrap_or_default(), wall.map(|w| w.to_string()).unwrap_or_default(), side.join(","));

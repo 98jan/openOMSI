@@ -60,6 +60,8 @@ clap = { version = "4", features = ["derive"] }
 hashbrown = "0.17"
 smallvec = "1"
 parking_lot = "0.12"
+# (the world snapshot the simulation reads without a lock: `omsi-sim::world_data`)
+arc-swap = "1.7"
 rand = "0.9"
 wgpu = { version = "29", default-features = false, features = ["std", "parking_lot", "metal", "vulkan", "dx12", "gles", "wgsl", "noop"] }
 # wgpu's parts that are used directly: always wgpu's own version, or their types do not

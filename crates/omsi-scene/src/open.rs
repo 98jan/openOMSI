@@ -95,6 +95,18 @@ impl World {
                     .collect::<Vec<_>>()
             );
         }
+        let data = Arc::new(omsi_sim::world_data::WorldCell::new(omsi_sim::world_data::WorldData {
+            map: Arc::new(omsi_sim::world_data::MapFacts {
+                root: root.to_path_buf(),
+                map_dir: map_dir.clone(),
+                raw_tiles: global.raw_tiles.clone(),
+                tiles: global.tiles.iter().map(|t| ((t.x, t.y), t.file.clone())).collect(),
+                ailists: ailists.clone(),
+                date,
+                chrono_dirs: chrono_dirs.clone(),
+            }),
+            ..Default::default()
+        }));
         Ok(World {
             root: root.to_path_buf(),
             global,
@@ -112,10 +124,7 @@ impl World {
             object_type_loads: Default::default(),
             spline_type_loads: Default::default(),
             textures: Arc::new(TextureCache::new()),
-            object_positions: Mutex::new(HashMap::new()),
-            object_dups: Mutex::new(HashMap::new()),
-            terrains: Arc::new(RwLock::new(HashMap::new())),
-            surfaces: Arc::new(RwLock::new(HashMap::new())),
+            data,
             vehicle_gpu: Mutex::new(HashMap::new()),
             vehicle_textures: Default::default(),
             vehicle_meshes: Default::default(),
@@ -132,7 +141,6 @@ impl World {
             controller_of_object: Mutex::new(HashMap::new()),
             light_objects: Mutex::new(Vec::new()),
             scripted: Mutex::new(ScriptedSet::default()),
-            collision: Mutex::new(Default::default()),
             poles: Mutex::new(HashMap::new()),
             fallen_poles: Mutex::new(HashMap::new()),
             parked_objects: Mutex::new(HashMap::new()),
@@ -145,14 +153,9 @@ impl World {
             edit_objects: Mutex::new(HashMap::new()),
             object_edits: Mutex::new(HashMap::new()),
             terrain_edits: Mutex::new(HashMap::new()),
-            bus_stops: Mutex::new(Vec::new()),
-            waiting_places: Mutex::new(Vec::new()),
             waiting_cabins: Mutex::new(HashMap::new()),
             tiles_generation: std::sync::atomic::AtomicU64::new(0),
             parked_cars: Mutex::new(Vec::new()),
-            parked_boxes: Mutex::new(Arc::new(Vec::new())),
-            petrol_stations: Mutex::new(Vec::new()),
-            reverb_zones: Mutex::new(Vec::new()),
             light_maps: Mutex::new(HashMap::new()),
             light_maps_generation: std::sync::atomic::AtomicU64::new(0),
             light_map_atlas: Mutex::new(None),

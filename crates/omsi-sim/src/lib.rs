@@ -28,6 +28,7 @@ pub mod traffic;
 pub mod vehicle;
 pub mod vehicle_api;
 pub mod view_events;
+pub mod world_data;
 
 pub use anim::{AnimState, MeshAnimator};
 pub use clock::SimClock;

@@ -394,12 +394,11 @@ pub(super) struct StopExtra {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use parking_lot::Mutex;
 
     struct EmptyWorld {
         path: PathBuf,
         ai: omsi_map::AiLists,
-        positions: Mutex<HashMap<i64, (DVec3, [f64; 3])>>,
+        positions: crate::world_data::ObjectPlaces,
     }
 
     impl TimetableWorld for EmptyWorld {
@@ -410,7 +409,7 @@ mod tests {
         fn raw_tiles(&self) -> Vec<(i32, i32)> { Vec::new() }
         fn has_tile(&self, _: (i32, i32)) -> bool { false }
         fn date(&self) -> i32 { 20221010 }
-        fn object_positions(&self) -> MutexGuard<'_, HashMap<i64, (DVec3, [f64; 3])>> { self.positions.lock() }
+        fn object_positions(&self) -> &crate::world_data::ObjectPlaces { &self.positions }
         fn stop_side(&self, _: i64) -> f32 { 0.0 }
     }
 

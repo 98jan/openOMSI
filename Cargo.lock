@@ -3785,6 +3785,7 @@ name = "omsi-sim"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "glam",
  "hashbrown 0.17.1",
  "log",
@@ -3800,6 +3801,7 @@ dependencies = [
  "omsi-texture",
  "omsi-timetable",
  "omsi-vehicle",
+ "omsi-world",
  "parking_lot",
  "rayon",
 ]

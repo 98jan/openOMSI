@@ -224,7 +224,7 @@ fn outside_at(world: Option<&crate::scene::World>, v: &omsi_sim::VehicleInstance
         let walls = world
             .map(|w| {
                 let probe = Obb { center: q, half: DVec2::splat(1.0), heading: 0.0, z0: z - 1.0, z1: z + 2.5, velocity: DVec2::ZERO, mass: 0.0, pole: None, id: -1 };
-                w.collision.lock().obstacles_near(&probe)
+                w.data.peek().lists.collision.obstacles_near(&probe)
             })
             .unwrap_or_default();
         walls.iter().filter(|o| o.z0 < z + 1.6 && o.z1 > z + 0.45).chain(others.iter()).any(|o| (push_out(q, o, RADIUS) - q).length() > 0.05)
@@ -999,7 +999,7 @@ impl App {
             } else if let Some(w) = self.world.as_ref() {
                 let z = f.pos.z;
                 let probe = Obb { center: next, half: DVec2::splat(3.0), heading: 0.0, z0: z - 1.0, z1: z + 2.5, velocity: DVec2::ZERO, mass: 0.0, pole: None, id: -1 };
-                let walls = w.collision.lock().obstacles_near(&probe);
+                let walls = w.data.peek().lists.collision.obstacles_near(&probe);
                 let mut boxes: Vec<Obb> = walls.into_iter().filter(|o| o.z0 < z + 1.6 + f.lift && o.z1 > z + 0.45 + f.lift).collect();
                 boxes.extend(self.vehicle_boxes(next, 20.0));
                 for _ in 0..2 {

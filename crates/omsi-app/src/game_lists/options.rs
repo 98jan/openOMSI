@@ -464,7 +464,7 @@ pub(super) fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static 
         // (at once: stuck under a bridge a map made too low, the bus drives on)
         "coll_objects" => {
             app.settings.collision_objects = on;
-            let cw = app.world.as_ref().map(|w| w.collision.lock().clone());
+            let cw = app.world.as_ref().map(|w| w.data.peek().lists.collision.clone());
             if let Some(p) = app.player.as_mut() {
                 p.vehicle.collision = cw.filter(|_| on);
             }

@@ -905,7 +905,7 @@ impl App {
         w.texture_budget_after_streaming(r, scene, &centers);
         if let Some(p) = self.player.as_mut() {
             // (OMSI's [no_collision]: no solid object stops the bus)
-            p.vehicle.collision = self.settings.collision_objects.then(|| w.collision.lock().clone());
+            p.vehicle.collision = self.settings.collision_objects.then(|| w.data.peek().lists.collision.clone());
             p.vehicle.wheel_walls = self.settings.collision_objects;
         }
         match self.session.traffic.as_mut() {

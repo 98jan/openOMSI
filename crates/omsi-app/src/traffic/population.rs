@@ -14,19 +14,17 @@ pub(super) const PHANTOM_WAIT: f32 = 90.0;
 /// Ground height for an AI vehicle's wheels: the road surface (blended between raster
 /// texels), else any surface, else the terrain.
 pub(super) fn ai_ground(world: &World) -> Arc<dyn Fn(f64, f64) -> Option<f64> + Send + Sync> {
-    let terrains = world.terrains.clone();
-    let surfaces = world.surfaces.clone();
+    let data = world.data.clone();
     Arc::new(move |x, y| {
         let tx = (x / omsi_map::tile_size()).floor() as i32;
         let ty = (y / omsi_map::tile_size()).floor() as i32;
         let lx = (x - tx as f64 * omsi_map::tile_size()) as f32;
         let ly = (y - ty as f64 * omsi_map::tile_size()) as f32;
-        let surface = surfaces.read().get(&(tx, ty)).cloned();
-        if let Some(h) = surface.and_then(|s| s.sample_road_smooth(lx, ly)) {
+        let d = data.peek();
+        if let Some(h) = d.ground.surfaces.get(&(tx, ty)).and_then(|s| s.sample_road_smooth(lx, ly)) {
             return Some(h as f64);
         }
-        let t = terrains.read();
-        Some(t.get(&(tx, ty))?.sample(lx, ly) as f64)
+        Some(d.ground.terrains.get(&(tx, ty))?.sample(lx, ly) as f64)
     })
 }
 
@@ -34,8 +32,8 @@ pub(super) fn ai_ground(world: &World) -> Arc<dyn Fn(f64, f64) -> Option<f64> + 
 pub(super) fn terrain_height(world: &World, x: f64, y: f64) -> Option<f64> {
     let tx = (x / omsi_map::tile_size()).floor() as i32;
     let ty = (y / omsi_map::tile_size()).floor() as i32;
-    let t = world.terrains.read();
-    let terrain = t.get(&(tx, ty))?;
+    let d = world.data.peek();
+    let terrain = d.ground.terrains.get(&(tx, ty))?;
     Some(terrain.sample(
         (x - tx as f64 * omsi_map::tile_size()) as f32,
         (y - ty as f64 * omsi_map::tile_size()) as f32,
@@ -79,7 +77,7 @@ impl Traffic {
         let p = target;
         let blocker = match &self.sim.occluders {
             Some(c) => c.ray_blocker(v.pos, target, 2.5, 3.0),
-            None => world.collision.lock().ray_blocker(v.pos, target, 2.5, 3.0),
+            None => world.data.peek().lists.collision.ray_blocker(v.pos, target, 2.5, 3.0),
         };
         if let Some(b) = blocker {
             if self.sim.debug_population {
@@ -629,10 +627,7 @@ impl Traffic {
         // height it is at - the plain sampler gave it the deck of a bridge over its road
         // (`OMSI_AI_WAY_ONLY=1`: on the way and the plain sampler, as before - A/B runs)
         vehicle.contact = (kind == LaneKind::Street && !omsi_cfg::flags::OMSI_AI_WAY_ONLY.is_set()).then(|| {
-            std::sync::Arc::new(crate::scene::DriveGround {
-                terrains: world.terrains.clone(),
-                surfaces: world.surfaces.clone(),
-            }) as std::sync::Arc<dyn omsi_sim::rigid::Ground>
+            std::sync::Arc::new(crate::scene::LiveGround(world.data.clone())) as std::sync::Arc<dyn omsi_sim::rigid::Ground>
         });
         vehicle.apply_paint_vars(scheme);
         // (its renders, and those of the parts its `[couple_back]` chain couples to it, are
