@@ -19,7 +19,7 @@ fn field_group(field: &str) -> Option<Option<Group>> {
         "input" => Some(Input),
         "menus" | "shell" => Some(Menus),
         "clock" | "paused" | "fixed_tick" => Some(Clock),
-        "world" => Some(World),
+        "world" | "session.scenery" => Some(World),
         "player" => Some(Player),
         "integrations" => Some(Integrations),
         "net" => Some(Net),

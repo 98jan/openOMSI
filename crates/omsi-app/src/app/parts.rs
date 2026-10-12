@@ -61,9 +61,10 @@ pub(crate) struct WeatherPart<'p> {
     pub(crate) sky: &'p mut crate::weather_setup::SkyState,
 }
 
-/// `Group::World`: the map.
+/// `Group::World`: the map and its scenery objects' simulation.
 pub(crate) struct WorldPart<'p> {
     pub(crate) world: &'p mut Option<Arc<World>>,
+    pub(crate) scenery: &'p mut omsi_sim::scenery::SceneryState,
 }
 
 /// `Group::Traffic`: the AI traffic and the timetable.
@@ -174,7 +175,7 @@ impl App {
             cabin_air, spray, lamps_on, populate_t, humans_populate_t, traffic_heavy_frame,
             first_populate, envir, weather, clock_jump, seat_bus, on_foot, safe_pose, safe_age,
             pending_time, autosave_t, pumping, career, journey, wetness, cloud_drift, weather_blend,
-            weather_cycle, metar_rx, metar_once, metar_next, sky,
+            weather_cycle, metar_rx, metar_once, metar_next, sky, scenery,
         } = session;
         Parts {
             common: Common { args, settings, started: *started, last: *last, exiting: *exiting },
@@ -185,7 +186,7 @@ impl App {
                 rain, cabin_air, spray, lamps_on, envir, weather, wetness, cloud_drift,
                 weather_blend, weather_cycle, metar_rx, metar_once, metar_next, sky,
             },
-            world: WorldPart { world },
+            world: WorldPart { world, scenery },
             traffic: TrafficPart { traffic, schedule, timetable_book, populate_t, traffic_heavy_frame, first_populate, pipeline },
             player: PlayerPart { player, placed, seat_bus, safe_pose, safe_age, pumping },
             people: PeoplePart { humans, humans_populate_t, on_foot },
