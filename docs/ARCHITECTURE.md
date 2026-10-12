@@ -76,8 +76,15 @@ Bottom up:
   also culls in parallel, records the main pass as render bundles and finishes the command
   buffers on helper threads, and the enhanced sky is computed on a helper thread and taken
   in when it is ready.
-* Planned: scenery object scripts in parallel, physics on its own step loop, audio on the
-  audio thread.
+* Audio: the mixer owns the voices and runs on the device's callback; the game (any thread:
+  `AudioEngine` is `Send + Sync`) hands it commands (play, parameters, stop, the radio's
+  effects) through a lock-free single-producer ring (`omsi_audio::spsc`) and gets the voices
+  that ended back through another, to free their clips on its side. The callback takes no
+  lock and allocates nothing (room for more voices is made on the game's side); the game
+  keeps its own list of the voices playing and never waits for a block being mixed. The
+  cpal stream lives on the "audio device" thread, which also follows the default output.
+  The internet radio's frames come through a ring as well (`stream::StreamBuf`).
+* Planned: scenery object scripts in parallel, physics on its own step loop.
 
 ## Memory
 
