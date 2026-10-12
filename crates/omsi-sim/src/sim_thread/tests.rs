@@ -92,7 +92,7 @@ fn scenery_of(n: i64) -> SceneryState {
     for i in 0..n {
         let inst = SceneryInstance::new(std::sync::Arc::new(omsi_script::Program::default()), &[], crate::SimClock::default(), &[]);
         let p = glam::DVec3::new((i * 37 % 1700) as f64 - 850.0, (i * 91 % 1300) as f64 - 650.0, 0.0);
-        s.push(SceneryObject::new(1000 + i as u64, i, p, ((p.x / 300.0).floor() as i32, 0), inst, 0));
+        s.push(SceneryObject::new(i, p, ((p.x / 300.0).floor() as i32, 0), inst, 0));
     }
     s
 }
@@ -119,7 +119,7 @@ fn scenery_step(dt: f32, center: glam::DVec3) -> impl FnOnce(&mut SceneryState, 
 }
 
 fn outputs_of(s: &mut SceneryState) -> String {
-    let o = s.outputs();
+    let (o, _) = s.outputs();
     format!("{:?} {:?} {:?} {:?} {}", o.cmds, o.vars, o.transforms, o.visible, o.ran)
 }
 
