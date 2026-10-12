@@ -188,6 +188,8 @@ pub struct Scene {
     pub smoke: Vec<SmokeParticle>,
     pub(crate) smoke_buf: Option<wgpu::Buffer>,
     pub(crate) smoke_count: u32,
+    /// What `smoke_buf` holds (the bytes last written), as `corona_sent` for the coronas.
+    pub(crate) smoke_sent: Vec<u8>,
     /// Runs of this frame's coronas by picture: (texture, first, count).
     /// (and whether the run belongs to the vehicle the camera is in, drawn after it)
     pub(crate) corona_runs: Vec<(u16, u32, u32, bool)>,

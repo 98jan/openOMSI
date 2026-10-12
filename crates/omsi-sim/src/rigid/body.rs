@@ -231,8 +231,11 @@ impl RigidBody {
         self.steer_axles(steer);
         // (substeps of at most ~4 ms whatever the frame: a frame held up by loading - 50 ms -
         // made 12 ms substeps, too long for the stiff tyres, and the body hopped on its
-        // springs for no reason the driver could see)
-        let substeps = ((dt / 0.0042).ceil() as usize).clamp(4, 16);
+        // springs for no reason the driver could see. As many as the frame's time needs and
+        // no more: at least four a frame made the physics cost grow with the frame rate - a
+        // thousand substeps a second at 240 frames, four times those at 60 - for substeps
+        // of a millisecond the tyres do not need)
+        let substeps = ((dt / 0.0042).ceil() as usize).clamp(1, 16);
         let h = dt / substeps as f32;
         let mut accel_sum = Vec3::ZERO;
         self.wheel_impacts.clear();

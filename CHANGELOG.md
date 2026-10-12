@@ -4,6 +4,44 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.37 - 2026-10-12
+
+### New
+- **WebView2 installed from the launcher**: on a Windows without Microsoft WebView2 the new launcher cannot open its window; the game's own launcher then offers to install it with Microsoft's own installer, and opens the new launcher once it is there.
+- **The clock moves by a tap**: World options has -1 h, -10 min, +10 min and +1 h buttons beside the hour and minute, so the time can be moved on a phone too (typing the time needs Enter, holding it needs Ctrl+Shift+Page Up).
+
+### Fixes
+- **The new launcher shows the right version** on every system; it said 0.1.0.
+- **A tour can be picked and started on a phone**: in the pause menu's Line and tour the timetable with its Start button is under the list on a narrow screen; it was left out there, so a tour could only be marked.
+
+## 0.2.36 - 2026-10-11
+
+(0.2.35 was not released: its changes come with this version.)
+
+### New
+- **A new desktop launcher** (on Windows, macOS and Linux; on phones the same page in the app): the duty on one page - the map with its picture, the bus turning in a preview the game itself draws (drag to turn, wheel to zoom, sharp while it moves), paint, fleet number and depot, line, tour and trips with the route and its stops on the city map, time, date, season, weather and traffic - and Multiplayer, the driver's profile and runs, Mods, Settings, Controls, the running games and Setup. Calm graphite surfaces without outlines, one amber accent, Material Symbols icons, English unless another language is chosen. It stays open while a game runs and knows when a game has ended. Built on the organisation's fork of Tauri 2 ([tauri-openomsi](https://github.com/openOMSI-org/tauri-openomsi)). A plain start of openOMSI opens it; it needs WebView2 on Windows (part of Windows 10 and 11) and WebKitGTK 4.1 on Linux (`libwebkit2gtk-4.1-0`), and where it cannot start the game's own launcher opens instead.
+- **A launcher made for phones**: a rail of icons, the bus with the destination sign and Start, the duty as a list whose rows open full-screen pickers (maps as pictures, buses, lines, tours, trips beside the route map, time and date by steps, weather). On Android the game's own launcher is no longer made under it, so the app starts faster.
+- **openOMSI for iPhone, iPad and Mac** (built from the source with Xcode, see docs/APPLE.md): the game on iOS with touch controls inside the safe area, and a SwiftUI launcher in the same design.
+- **Inter instead of Roboto** everywhere: the game's interface, pause menu, navigator, chat, photo mode, the html pages and the destination signs' fallback text.
+- **A new loading screen**: the openOMSI logo large in the middle, the map's name under it, a striped bar along the bottom with tips on the left and how far on the right. The bar moves evenly along the time the last loads of the map took and the screen fades over the first pictures. The window opens dark, not blue.
+- **Notifications as cards** in the launcher's look, with an icon in their kind's colour; the notes in the top left corner are gone: what the driver has to do (engine, gearbox, parking brake, air, stop brake, doors, change, a passenger's wish) comes as a to-do card.
+- **Pause menu, navigator, city map and timetable window (Insert) redesigned** in the launcher's look: the pause menu with its sidebar, Material icons and a summary card; the navigator and city map with rounded corners and no dark halos; the timetable with the line on an amber sign and the stops as a table.
+- **Weather in the interface's language**: the presets are named as their file names them in that language, else in English with a translation, instead of in German everywhere.
+- **Photo mode moves with W A S D**, Space up, Ctrl down, Shift faster; the keys are shown in the panel.
+- **No dashes or raised dots in the interface**: a plain hyphen, a colon or a comma instead.
+
+### Performance
+- **Steadier frames**: the scenery scripts, traffic step and people run on the frame's thread with workers joining in instead of waiting for them (4.5 ms to 0.24 ms a frame for the scripts standing still on Spandau, and no more 20-70 ms frames from them); the population, timetable and people fill the map in different frames; far traffic light lamps update in turns.
+- **Less work per frame**: street lamps' shadow tiles kept while nothing in them changes, mirrors keep their draw bundles, smoke written only when it changed, sky and shadow passes spread evenly, Enhanced passes that cannot show are left out, tiles streamed in batches and a season change read a few tiles a frame.
+- **Frame limiter**: no sleep on top of V-sync and a real limit; mimalloc as the desktop allocator; the autosave written on a thread of its own.
+
+### Fixes
+- **Pedestrians no longer walk round and round a roundabout's pavement** or pile up there: they can turn into a path that meets theirs midway ([#2294](https://github.com/openOMSI-org/openOMSI/pull/2294), by @thibautgnt).
+- **Cars behind the bus at a red light wait with it**; after 10 s they went round it on the oncoming lane ([#2293](https://github.com/openOMSI-org/openOMSI/pull/2293), by @thibautgnt).
+- **Vanilla lighting no longer washes out** where lights overlap, **large textures no longer whiten** from their transparent pixels when they are scaled or compressed, and **invisible transparent faces no longer hide** what is behind them ([#2272](https://github.com/openOMSI-org/openOMSI/pull/2272), by @isaacsa2).
+- **Enhanced clouds**: a deck's underside shows its heaps instead of one smooth grey, and the clouds no longer jump every few minutes.
+- **Bus physics** take as many substeps as the frame's time needs instead of at least four a frame.
+
 ## 0.2.34 - 2026-10-11
 
 ### New

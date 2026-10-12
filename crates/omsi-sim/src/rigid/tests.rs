@@ -895,3 +895,60 @@ fn inputs_that_are_no_number_leave_the_body_whole() {
     assert!(rb.position.is_finite() && (rb.position - at).length() < 1e-9, "{:?}", rb.position);
     assert_eq!(rb.velocity, Vec3::ZERO);
 }
+
+/// The body moves alike at 60 and at 240 frames a second (one substep a frame there, four
+/// at 60): it sags as far, pulls away as far, rides a hump as calmly, brakes to a stand on
+/// the same spot, and at 240 frames stands still on a slope with its parking brake.
+#[test]
+fn moves_alike_at_any_frame_rate() {
+    let hump = |_x: f64, y: f64, z_top: f64| {
+        let z = if (30.0..30.6).contains(&y) { 0.06 } else { 0.0 };
+        if z <= z_top { GroundProbe { below: Some(z), above: None } } else { GroundProbe { below: Some(0.0), above: Some(z) } }
+    };
+    let drive = |fps: f32| {
+        let dt = 1.0 / fps;
+        let n = |secs: f32| (secs * fps).round() as usize;
+        let mut rb = RigidBody::from_definition(&bus(), &[]);
+        rb.place(DVec3::ZERO, 0.0);
+        for _ in 0..n(2.0) {
+            rb.step(dt, 0.0, &[5000.0; 4], 0.0, &hump);
+        }
+        let sag = rb.origin().z;
+        let (z0, mut lift) = (rb.position.z, 0.0f64);
+        for _ in 0..n(8.0) {
+            rb.step(dt, 12_000.0, &[0.0; 4], 0.0, &hump);
+            lift = lift.max(rb.position.z - z0);
+        }
+        let (pulled, speed) = (rb.origin().y, rb.forward_speed());
+        let mut t = 0.0;
+        while rb.forward_speed() > 0.01 && t < 10.0 {
+            rb.step(dt, 0.0, &[15_000.0; 4], 0.0, &hump);
+            t += dt;
+        }
+        (sag, pulled, speed, lift, rb.origin().y, t)
+    };
+    let (a, b) = (drive(60.0), drive(240.0));
+    eprintln!("60 fps {a:?}\n240 fps {b:?}");
+    assert!((a.0 - b.0).abs() < 0.003, "sag {} / {}", a.0, b.0);
+    assert!(a.1 > 30.6 && (a.1 - b.1).abs() < 0.01 * a.1, "pulled away {} / {} m", a.1, b.1);
+    assert!((a.2 - b.2).abs() < 0.01 * a.2, "speed {} / {}", a.2, b.2);
+    assert!(b.3 < 0.05 && b.3 < a.3 + 0.01, "the body lifted {} / {} m", a.3, b.3);
+    assert!((a.4 - b.4).abs() < 0.25, "stood at {} / {} m", a.4, b.4);
+    assert!((a.5 - b.5).abs() < 0.1, "stopped after {} / {} s", a.5, b.5);
+
+    let slope = |_x: f64, y: f64, top: f64| {
+        let z = y * 0.08;
+        if z <= top { GroundProbe { below: Some(z), above: None } } else { GroundProbe { below: None, above: Some(z) } }
+    };
+    let mut rb = RigidBody::from_definition(&bus(), &[]);
+    rb.place(DVec3::ZERO, 0.0);
+    let park = [0.0, 0.0, 20_000.0, 20_000.0];
+    for _ in 0..240 * 5 {
+        rb.step(1.0 / 240.0, 0.0, &park, 0.0, &slope);
+    }
+    let y = rb.origin().y;
+    for _ in 0..240 * 5 {
+        rb.step(1.0 / 240.0, 0.0, &park, 0.0, &slope);
+    }
+    assert!((rb.origin().y - y).abs() < 0.005, "crept {} m at 240 fps", rb.origin().y - y);
+}

@@ -426,6 +426,7 @@ impl World {
 
     /// Rebuild the world's lists (stops, obstacles, lights, lamps) from the loaded tiles.
     pub fn refresh_tile_lists(&self) {
+        let t0 = std::time::Instant::now();
         let states = self.tile_state.lock();
         let mut keys: Vec<&(i32, i32)> = states.keys().collect();
         keys.sort();
@@ -472,6 +473,9 @@ impl World {
         *self.reverb_zones.lock() = reverb;
         self.tiles_generation
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if omsi_cfg::flags::OMSI_PROFILE.is_set() {
+            log::info!("tile lists: {} tiles in {:.1} ms", states.len(), t0.elapsed().as_secs_f64() * 1000.0);
+        }
     }
 
     /// The passenger cabin of a waiting object (a `people_standing_*` marker, a shelter),
@@ -789,11 +793,25 @@ impl World {
             swapped.push(id);
         }
         let n = swapped.len();
-        if n > 0 {
+        // The materials are pointed at the new textures a quarter of a second after the
+        // first of them came in, all together: the rebinding looks through every material of
+        // the map (half a millisecond on Berlin-Spandau), and while driving a texture or two
+        // came in nearly every frame. Until then they draw the texture they had (the same
+        // picture: uncompressed, or with fewer levels).
+        let mut memo = self.budget_checked.lock();
+        if memo.rebind.is_empty() && n > 0 {
+            memo.rebind_since = Some(std::time::Instant::now());
+        }
+        memo.rebind.extend_from_slice(&swapped);
+        // (without a deadline - a picture - at once)
+        let due = deadline.is_none() || memo.rebind.len() >= 64 || memo.rebind_since.is_some_and(|t| t.elapsed().as_secs_f32() >= 0.25);
+        if due && !memo.rebind.is_empty() {
+            let ids = std::mem::take(&mut memo.rebind);
+            drop(memo);
             let t = std::time::Instant::now();
-            let rebound = renderer.rebind_textures(scene, &swapped);
+            let rebound = renderer.rebind_textures(scene, &ids);
             if omsi_cfg::flags::OMSI_PROFILE.is_set() {
-                log::info!("textures: {n} compressed ones swapped in, {rebound} materials rebound in {:.1} ms", t.elapsed().as_secs_f64() * 1000.0);
+                log::info!("textures: {} compressed ones swapped in, {rebound} materials rebound in {:.1} ms", ids.len(), t.elapsed().as_secs_f64() * 1000.0);
             }
         }
         n
@@ -811,19 +829,43 @@ impl World {
         self.texture_limit.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Keep the textures within their budget, once a second (`force`: now): while they take
+    /// Keep the textures within their budget, once a second (`force`: now, whatever was
+    /// looked at last - the offscreen pictures): while they take
     /// more, the scenery textures only far tiles use lose their finest mip level, the
     /// farthest first, down to 64 texels a side and never within 150 m of `centers` (the
     /// camera, the player's bus); when there is room again, those that came within 400 m
     /// are read again whole on a worker and swapped back. Vehicle textures count but keep
     /// their levels (a fleet set nobody draws leaves the GPU anyway). Returns the textures
     /// shrunk or sent to be read again.
+    ///
+    /// A look that found nothing to do is not repeated while the tiles, the bytes in use
+    /// and the centers (within 25 m) stay the same: once a texture had lost a level, the
+    /// whole scan, its sort and the restores' search ran every second for good, standing
+    /// still included. The shrinking stops after 2 ms of it and goes on next frame.
     pub fn update_texture_budget(
         &self,
         renderer: &Renderer,
         scene: &mut Scene,
         centers: &[DVec3],
         force: bool,
+    ) -> usize {
+        self.texture_budget_pass(renderer, scene, centers, if force { BudgetPass::Now } else { BudgetPass::Timed })
+    }
+
+    /// The texture budget after a streaming frame that changed the tiles: uploads can take
+    /// the textures over their budget before the next second's look, so the far ones are
+    /// made smaller at once - but only when they are over it (a tenth of a second apart at
+    /// most). This was a whole look at every texture in every such frame.
+    pub fn texture_budget_after_streaming(&self, renderer: &Renderer, scene: &mut Scene, centers: &[DVec3]) -> usize {
+        self.texture_budget_pass(renderer, scene, centers, BudgetPass::AfterStreaming)
+    }
+
+    fn texture_budget_pass(
+        &self,
+        renderer: &Renderer,
+        scene: &mut Scene,
+        centers: &[DVec3],
+        pass: BudgetPass,
     ) -> usize {
         const NEAR: f64 = 150.0;
         const RESTORE: f64 = 400.0;
@@ -834,16 +876,19 @@ impl World {
         if limit == 0 || centers.is_empty() {
             return 0;
         }
+        let mut memo = self.budget_checked.lock();
         {
-            let mut last = self.budget_checked.lock();
-            if !force
-                && last
-                    .map(|t| t.elapsed().as_secs_f32() < 1.0)
-                    .unwrap_or(false)
-            {
+            let since = memo.checked.map(|t| t.elapsed().as_secs_f32()).unwrap_or(f32::MAX);
+            // (a pass cut short by its time goes on in the next frame; one after streaming
+            // waits a tenth of a second after the last)
+            let due = memo.resume || match pass {
+                BudgetPass::Now => true,
+                BudgetPass::AfterStreaming => since >= 0.1,
+                BudgetPass::Timed => since >= 1.0,
+            };
+            if !due {
                 return 0;
             }
-            *last = Some(std::time::Instant::now());
         }
         let t0 = std::time::Instant::now();
         let vehicle_bytes: u64 = self
@@ -852,6 +897,26 @@ impl World {
             .values()
             .map(|(t, _)| scene.texture_bytes_of(*t))
             .sum();
+        let generation = self.tiles_generation.load(std::sync::atomic::Ordering::Relaxed);
+        let states = self.tile_state.lock();
+        let mut gpu = self.gpu.lock();
+        let (scenery_bytes, any_dropped) = gpu
+            .textures
+            .values()
+            .fold((0u64, false), |(b, d), e| (b + e.bytes, d || e.dropped > 0));
+        let usage = scenery_bytes + vehicle_bytes;
+        if pass == BudgetPass::AfterStreaming && usage <= limit && !memo.resume {
+            // (the bytes are all a forced look is for: the restores wait for the second's)
+            return 0;
+        }
+        memo.checked = Some(t0);
+        if usage <= limit && !any_dropped {
+            memo.resume = false;
+            return 0;
+        }
+        if pass != BudgetPass::Now && !memo.resume && memo.unchanged(generation, usage, limit, centers) {
+            return 0;
+        }
         let ts = tile_size();
         let tile_distance = |k: &(i32, i32)| -> f64 {
             centers
@@ -864,11 +929,6 @@ impl World {
                 })
                 .fold(f64::MAX, f64::min)
         };
-        let states = self.tile_state.lock();
-        let mut gpu = self.gpu.lock();
-        if gpu.textures.values().map(|e| e.bytes).sum::<u64>() + vehicle_bytes <= limit && gpu.textures.values().all(|e| e.dropped == 0) {
-            return 0;
-        }
         // how near each scenery texture is: the nearest tile that uses it
         let mut near: hashbrown::HashMap<TextureId, f64> = hashbrown::HashMap::new();
         let mut spline_textures = hashbrown::HashSet::new();
@@ -908,7 +968,6 @@ impl World {
         }
         drop((trees, shared));
         drop(states);
-        let usage: u64 = gpu.textures.values().map(|e| e.bytes).sum::<u64>() + vehicle_bytes;
         let mut entries: Vec<(f64, PathBuf)> = gpu
             .textures
             .iter()
@@ -916,6 +975,11 @@ impl World {
             .collect();
         let mut shrunk: Vec<TextureId> = Vec::new();
         let mut restoring = 0usize;
+        let mut cut_short = false;
+        // (2 ms of shrinking a frame, the scan's own time not counted; a picture takes
+        // what it takes)
+        let budget_end = std::time::Instant::now()
+            + if pass == BudgetPass::Now { std::time::Duration::from_secs(3600) } else { std::time::Duration::from_millis(2) };
         // A texture shrunk while its tiles were far that is near now comes back whole at
         // once, room or not: the far ones give way for it in the seconds after. (Waiting for
         // room left the buildings right in front of the bus blurred for good on a map that
@@ -935,10 +999,15 @@ impl World {
         if usage > limit {
             entries.sort_by(|a, b| b.0.total_cmp(&a.0));
             let mut over = usage - limit;
+            let mut drops = renderer.begin_level_drops();
             for (d, p) in &entries {
                 // (96 a second: at 16 a map's first tiles stayed over a small card's budget
                 // for a minute and a half)
                 if over == 0 || shrunk.len() >= 96 || *d < NEAR {
+                    break;
+                }
+                if std::time::Instant::now() >= budget_end {
+                    cut_short = true;
                     break;
                 }
                 if spline_textures.contains(p) {
@@ -956,7 +1025,7 @@ impl World {
                 let before = e.bytes;
                 // far away and big: two levels at once
                 let n = if *d > 700.0 && w.min(h) / 4 >= MIN_SIDE.max(256) && levels > 2 { 2 } else { 1 };
-                if renderer.drop_top_levels(scene, e.id, n) {
+                if renderer.drop_top_levels_in(&mut drops, scene, e.id, n) {
                     e.bytes = scene.texture_bytes_of(e.id);
                     e.dropped += n;
                     over = over.saturating_sub(before - e.bytes);
@@ -967,7 +1036,7 @@ impl World {
             // to 1024 pixels a side. Counted but never made smaller, the timetable's fleet
             // filled 5 GB of textures on a graphics chip with 0.5 GB of its own until the
             // device was lost (#1463).
-            if over > 0 && shrunk.len() < 96 {
+            if over > 0 && shrunk.len() < 96 && !cut_short {
                 let mut own: Vec<(TextureId, u64)> = self
                     .vehicle_textures
                     .lock()
@@ -979,20 +1048,28 @@ impl World {
                     if over == 0 || shrunk.len() >= 96 {
                         break;
                     }
+                    if std::time::Instant::now() >= budget_end {
+                        cut_short = true;
+                        break;
+                    }
                     let Some((w, h, levels)) = renderer.texture_levels(scene, id) else { continue };
                     if w.min(h) / 2 < 1024 || levels < 2 {
                         continue;
                     }
-                    if renderer.drop_top_levels(scene, id, 1) {
+                    if renderer.drop_top_levels_in(&mut drops, scene, id, 1) {
                         over = over.saturating_sub(before.saturating_sub(scene.texture_bytes_of(id)));
                         shrunk.push(id);
                     }
                 }
             }
+            renderer.finish_level_drops(drops);
         } else {
-            // room for the near ones to come back (with a tenth kept free)
+            // Room for the near ones to come back, with 15 % kept free: a texture
+            // restored only into the room under 85 % of the budget is not shrunk again
+            // before the textures have grown by that much (with a tenth, textures at
+            // 150-400 m went back and forth as the tiles around came and went).
             entries.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let mut room = (limit - limit / 10).saturating_sub(usage);
+            let mut room = (limit - limit / 100 * 15).saturating_sub(usage);
             let pending = self.upgrades_pending.lock();
             for (d, p) in &entries {
                 if *d > RESTORE || restoring >= 16 {
@@ -1014,11 +1091,20 @@ impl World {
             }
         }
         drop(gpu);
+        // Nothing left to do for now: not looked at again before something changed. (A pass
+        // that shrank or sent back textures changes the bytes in use, now or when they come
+        // back, and looks again.)
+        memo.remember(generation, usage, centers, shrunk.is_empty() && restoring == 0);
+        memo.resume = cut_short;
+        // (the swapped-in textures waiting for theirs go along)
+        let shrunk_n = shrunk.len();
+        shrunk.append(&mut memo.rebind);
+        drop(memo);
         let rebound = renderer.rebind_textures(scene, &shrunk);
-        if (!shrunk.is_empty() || restoring > 0) && omsi_cfg::flags::OMSI_PROFILE.is_set() {
-            log::info!("texture budget: {:.0} of {:.0} MB in use, {} textures lost a level ({} materials rebound), {} coming back, in {:.1} ms", usage as f64 / 1e6, limit as f64 / 1e6, shrunk.len(), rebound, restoring, t0.elapsed().as_secs_f64() * 1000.0);
+        if omsi_cfg::flags::OMSI_PROFILE.is_set() {
+            log::info!("texture budget: {:.0} of {:.0} MB in use, {} textures lost a level ({} materials rebound), {} coming back{}, in {:.1} ms", usage as f64 / 1e6, limit as f64 / 1e6, shrunk_n, rebound, restoring, if cut_short { ", more next frame" } else { "" }, t0.elapsed().as_secs_f64() * 1000.0);
         }
-        shrunk.len() + restoring
+        shrunk_n + restoring
     }
 
     /// After big unloads, cut the free tail off the scene's arrays (meshes, textures,
@@ -1207,4 +1293,89 @@ pub(super) fn mesh_bounds(m: &MeshData, xf: &Mat4, origin: DVec3) -> [f64; 4] {
         b[3] = b[3].max(w.y);
     }
     b
+}
+
+/// Which look at the texture budget (see [`World::update_texture_budget`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BudgetPass {
+    /// The one a second.
+    Timed,
+    /// Now, the whole of it.
+    Now,
+    /// After a streaming frame: only when over the budget.
+    AfterStreaming,
+}
+
+/// What the texture budget's last look found (see [`World::update_texture_budget`]).
+#[derive(Default)]
+pub(super) struct BudgetMemo {
+    /// When it last looked.
+    pub(super) checked: Option<std::time::Instant>,
+    /// The last pass ran out of its time: the next frame goes on with it.
+    pub(super) resume: bool,
+    /// Textures swapped in whose materials still bind the texture they replaced (see
+    /// `World::apply_texture_upgrades`), and since when.
+    rebind: Vec<TextureId>,
+    rebind_since: Option<std::time::Instant>,
+    /// The last full look found nothing to do, with these tiles (`World::tiles_generation`),
+    /// these bytes in use (within a hundredth of the budget below: the textures compressed
+    /// on the workers come in one by one and change it a little all the time) and the
+    /// centers here.
+    idle: bool,
+    generation: u64,
+    usage: u64,
+    centers: Vec<DVec3>,
+}
+
+impl BudgetMemo {
+    /// How far a center may move before the textures' distances are looked at again.
+    const MOVED: f64 = 25.0;
+
+    fn unchanged(&self, generation: u64, usage: u64, limit: u64, centers: &[DVec3]) -> bool {
+        self.idle
+            && self.generation == generation
+            && usage <= self.usage.max(limit)
+            && usage + limit / 100 >= self.usage
+            && self.centers.len() == centers.len()
+            && self
+                .centers
+                .iter()
+                .zip(centers)
+                .all(|(a, b)| a.truncate().distance_squared(b.truncate()) < Self::MOVED * Self::MOVED)
+    }
+
+    fn remember(&mut self, generation: u64, usage: u64, centers: &[DVec3], idle: bool) {
+        self.idle = idle;
+        self.generation = generation;
+        self.usage = usage;
+        self.centers.clear();
+        self.centers.extend_from_slice(centers);
+    }
+}
+
+#[cfg(test)]
+mod budget_memo_tests {
+    use super::*;
+
+    #[test]
+    fn an_idle_look_is_kept_until_something_changes() {
+        let mut m = BudgetMemo::default();
+        let c = [DVec3::new(10.0, 20.0, 5.0)];
+        let limit = 1000;
+        assert!(!m.unchanged(1, 900, limit, &c), "nothing remembered yet");
+        m.remember(1, 900, &c, true);
+        assert!(m.unchanged(1, 900, limit, &c));
+        // a little way on, or up a hill: the same distances for the budget's purposes
+        assert!(m.unchanged(1, 900, limit, &[DVec3::new(30.0, 20.0, 50.0)]));
+        assert!(!m.unchanged(1, 900, limit, &[DVec3::new(40.0, 20.0, 5.0)]), "moved 30 m");
+        assert!(!m.unchanged(2, 900, limit, &c), "the tiles changed");
+        assert!(!m.unchanged(1, 900, limit, &[c[0], c[0]]), "another center");
+        // a texture compressed meanwhile: a little less or more, still nothing to do
+        assert!(m.unchanged(1, 895, limit, &c));
+        assert!(m.unchanged(1, 990, limit, &c));
+        assert!(!m.unchanged(1, 1001, limit, &c), "over the budget");
+        assert!(!m.unchanged(1, 880, limit, &c), "room for a texture to come back");
+        m.remember(1, 900, &c, false);
+        assert!(!m.unchanged(1, 900, limit, &c), "a look that did something looks again");
+    }
 }

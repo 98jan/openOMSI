@@ -36,7 +36,7 @@
 //! `0.1.1313-pr1192`) is never offered a release: it would replace the build being tested.
 
 // (a phone installs through the system: the unpacking and swapping below are the computers')
-#![cfg_attr(target_os = "android", allow(dead_code))]
+#![cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -46,6 +46,11 @@ use std::sync::{Arc, Mutex};
 pub const REPO: &str = "openOMSI-org/openOMSI";
 pub const REPO_URL: &str = "https://github.com/openOMSI-org/openOMSI";
 const LATEST_API: &str = "https://api.github.com/repos/openOMSI-org/openOMSI/releases/latest";
+
+/// A build the App Store delivers (every iPhone and iPad build, and a Mac build made with
+/// `OPENOMSI_STORE=1`): the store installs its updates, and a store app may not fetch and run
+/// a program of its own, so no release is ever looked for or offered.
+pub const STORE_BUILD: bool = cfg!(target_os = "ios") || option_env!("OPENOMSI_STORE").is_some();
 
 /// A release newer than this build, with the file for this platform.
 #[derive(Clone, Debug, PartialEq)]
@@ -73,7 +78,7 @@ pub enum Status {
     Downloaded(Release),
     Installing(Release),
     /// Android: the system's installer has the APK and asks the player.
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "android", target_os = "ios")), allow(dead_code))]
     WaitingForInstaller(Release),
     /// A computer: the new launcher is being started; this one ends.
     Restarting(Release),
@@ -329,6 +334,9 @@ fn short_error(e: &ureq::Error) -> String {
 
 /// The latest release when it is newer than this build and has a file for this platform.
 pub fn latest() -> anyhow::Result<Option<Release>> {
+    if STORE_BUILD {
+        return Ok(None);
+    }
     let url = omsi_cfg::flags::OMSI_UPDATE_URL.var().map(str::to_string).unwrap_or_else(|| LATEST_API.to_string());
     match fetch_text(&url).and_then(|t| Ok(serde_json::from_str::<serde_json::Value>(&t)?)) {
         Ok(v) => parse_release(&v, current_version()),
@@ -540,7 +548,7 @@ pub fn install_now(r: &Release) -> anyhow::Result<()> {
 
 fn download_and_install(r: &Release, status: &Mutex<Status>) -> anyhow::Result<()> {
     // (on a computer: where it goes must be writable before 15 MB are fetched for nothing)
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let place = install_place()?;
         if !writable(&place.dir) {
@@ -560,7 +568,7 @@ fn download_and_install(r: &Release, status: &Mutex<Status>) -> anyhow::Result<(
         *lock(status) = Status::WaitingForInstaller(r.clone());
         Ok(())
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let place = install_place()?;
         if let Err(e) = install_archive(&file, &place) {
@@ -575,6 +583,11 @@ fn download_and_install(r: &Release, status: &Mutex<Status>) -> anyhow::Result<(
         let _ = std::fs::remove_file(checked_note(&file));
         *lock(status) = Status::Restarting(r.clone());
         Ok(())
+    }
+    #[cfg(target_os = "ios")]
+    {
+        let _ = file;
+        anyhow::bail!("openOMSI {} comes from the App Store", r.version)
     }
 }
 
@@ -935,7 +948,19 @@ pub fn open_url(url: &str) {
     let _ = std::process::Command::new("open").arg(url).spawn();
     #[cfg(target_os = "windows")]
     let _ = std::process::Command::new("rundll32").arg("url.dll,FileProtocolHandler").arg(url).spawn();
-    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+    #[cfg(target_os = "ios")]
+    {
+        // (the Swift app's UIApplication.open, linked into the same program, see omsi-app's
+        // `apple.rs`)
+        extern "C" {
+            fn openomsi_swift_open_url(url: *const std::ffi::c_char);
+        }
+        if let Ok(u) = std::ffi::CString::new(url) {
+            // SAFETY: a nul-terminated string the call only reads
+            unsafe { openomsi_swift_open_url(u.as_ptr()) }
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos"), not(target_os = "android"), not(target_os = "ios")))]
     let _ = std::process::Command::new("xdg-open").arg(url).spawn();
 }
 

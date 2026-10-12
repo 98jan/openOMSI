@@ -144,6 +144,7 @@ flags! {
     OMSI_AMBIENCE_DENSITY: Text, Debug, Once, "1", "The ambience's one-shots (birds, the far life, thunder, the objects' calls) this many times as often (a number), or only some of them (slot=factor,…: bird.geese=40) - what fits the place, season and hour stays the same (for demos and checks).";
     OMSI_AMBIENCE_DIR: Text, Setup, Use, "-", "The folder of the ambience's recordings (its pack.json), instead of `ambience` beside the program or in ~/.openomsi.";
     OMSI_API_BLESS: Bool, Test, Use, "off", "cargo test -p omsi-plugin api_manifest: write docs/plugin-api.json and the reference tables of docs/PLUGINS.md again from the plugin API registry.";
+    OMSI_APPLE_EXIT_AFTER: Num, Test, Use, "-", "iPhone/iPad: the session ends by itself after this many seconds (checks the way back to the Swift launcher without a person).";
     OMSI_AUDIO_TRACE: Text, Debug, Once, "-", "Write what the game asks of the mixer (every sound started, changed, stopped, the listener each frame) into this file, rounded and deterministic for offscreen recordings (see scripts/audio-trace.sh).";
     OMSI_AUDIT_LINE: Num, Test, Test, "-", "bus_audit example: the line (number and letter code) the IBIS typist enters instead of the bus's own.";
     OMSI_AUTOPILOT: Num, Test, Use, "-", "Offscreen: the player's bus follows the lanes at this speed in km/h (finds where it falls through or leaves the road).";
@@ -172,11 +173,12 @@ flags! {
     OMSI_CHECK_WALLS: Bool, Test, Use, "off", "Check: everybody inside a bus who stands away from its walkways.";
     OMSI_CHECK_WHEELS: Bool, Test, Use, "off", "Map check: probe the ground along every lane's wheel tracks (invisible walls, humps, holes).";
     OMSI_CHURN: Text, Test, Use, "-", "Offscreen: x,y - load the tiles round that point and unload/reload the start area (streaming test).";
+    OMSI_CLASSIC_LAUNCHER: Bool, Switch, Use, "off", "A plain start opens the game's own launcher window even when the desktop launcher (openomsi-launcher-app) is beside the program.";
     OMSI_CLICK_ALL: Bool, Test, Use, "off", "Check: aim at every clickable item of the cab and report which one would actually be operated.";
     OMSI_CLOUDFLARED: Text, Setup, Use, "-", "Path of the cloudflared binary for the LAN tunnel (searched after the game's folder, before the PATH).";
     OMSI_CLOUDFLARED_OWN: Bool, Test, Use, "off", "LAN tunnel: only the game's own downloaded cloudflared, to test the download.";
     OMSI_CONDENSATION: Text, Test, Use, "-", "Offscreen: minutes,people[,engine] - the cabin air and condensation on the glass after that long.";
-    OMSI_CONTENT: Text, Setup, Use, "beside the game", "The content folder (mods, archives, screenshots). Set at runtime on Android.";
+    OMSI_CONTENT: Text, Setup, Use, "beside the game", "The content folder (mods, archives, screenshots). Set at runtime on Android and iOS.";
     OMSI_CONTENT_ZIP: Text, Setup, Use, "-", "Extra content archives, separated like PATH (as --content-zip).";
     OMSI_CROSSING_DEFORM: Bool, Switch, Use, "off", "Apply the crossings' ground deformation again (A/B; Omsi.exe does not).";
     OMSI_CUT_PLAIN: Bool, Switch, Use, "off", "Road-cut textures uploaded without GPU-made mipmaps.";
@@ -299,7 +301,7 @@ flags! {
     OMSI_HIDE_MESH: Text, Test, Use, "-", "a|b: leave out the meshes whose file names contain one of the parts.";
     OMSI_HIDE_WINDOW: Text, Test, Use, "-", "from,to: treat the window as hidden between these seconds.";
     OMSI_HOLE_PHOTO: Bool, Test, Use, "off", "With OMSI_ROAD_PHOTO: photograph from above down to 25 m under the lane (holes in the world).";
-    OMSI_HTML_FALLBACK_FONT: Text, Switch, Use, "-", "Font file for the html pages' characters Roboto lacks (Hangul, CJK); else Malgun Gothic (Windows) or AppleGothic (macOS).";
+    OMSI_HTML_FALLBACK_FONT: Text, Switch, Use, "-", "Font file for the html pages' characters Inter lacks (Hangul, CJK); else Malgun Gothic (Windows) or AppleGothic (macOS).";
     OMSI_HTML_FALLBACK_FONT_BOLD: Text, Switch, Use, "-", "With OMSI_HTML_FALLBACK_FONT: its bold face.";
     OMSI_IBIS_BUDGET: Num, Tuning, Use, "10", "Seconds the IBIS typist may take per entry.";
     OMSI_INPUT: Text, Test, Use, "-", "Scripted keyboard, mouse and camera input for window runs.";
@@ -307,6 +309,7 @@ flags! {
     OMSI_INTEL_FULL_GPU: Bool, Switch, Use, "off", "Keep the requested settings on an Intel Vulkan adapter.";
     OMSI_JOINT_ANGLE: Num, Test, Use, "-", "Degrees: the rear section of an articulated bus held at that angle.";
     OMSI_KEEP_ALLOCATOR: Bool, Switch, Use, "off", "Skip the restart that swaps in the faster allocator at start.";
+    OMSI_LAMP_SHADOWS_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the street lamps' shadow tiles every frame (not only when they change).";
     OMSI_LANES_NEAR: Text, Test, Use, "-", "x,y,r: log the driving lanes passing there.";
     OMSI_LAN_AUDIO: Bool, Test, Use, "off", "Offscreen LAN: with the other buses' sounds.";
     OMSI_LAN_IP: Text, Setup, Use, "-", "a.b.c.d[,e.f.g.h]: LAN addresses to offer first (when the detection gets them wrong).";

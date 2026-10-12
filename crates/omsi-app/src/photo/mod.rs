@@ -188,7 +188,10 @@ impl Photo {
         let keys = self.keys.clone();
         let k = |c: KeyCode| keys.contains(&c);
         let axis = |plus: bool, minus: bool| (plus as i32 - minus as i32) as f32;
-        let mut m = Vec3::new(axis(k(KeyCode::KeyD), k(KeyCode::KeyA)), axis(k(KeyCode::KeyW), k(KeyCode::KeyS)), axis(k(KeyCode::KeyE) || k(KeyCode::Space), k(KeyCode::KeyQ)));
+        // W A S D move, Space (or E) rises and Ctrl (or C, Q) sinks, as in a game's free camera
+        let up = k(KeyCode::Space) || k(KeyCode::KeyE);
+        let down = k(KeyCode::ControlLeft) || k(KeyCode::ControlRight) || k(KeyCode::KeyC) || k(KeyCode::KeyQ);
+        let mut m = Vec3::new(axis(k(KeyCode::KeyD), k(KeyCode::KeyA)), axis(k(KeyCode::KeyW), k(KeyCode::KeyS)), axis(up, down));
         m += self.pad.moves();
         let fast = if k(KeyCode::ShiftLeft) || k(KeyCode::ShiftRight) { 4.0 } else if k(KeyCode::AltLeft) || k(KeyCode::AltRight) { 0.25 } else { 1.0 };
         // the arrows and the right stick turn the view; Z and X roll it
@@ -214,7 +217,7 @@ impl Photo {
         let speed = 5.0 * self.settings.speed * fast;
         let range = RANGES[self.settings.range.min(RANGES.len() - 1)].0;
         if self.settings.orbit {
-            // W and S come closer and back away, A and D go round, E and Q up and down
+            // W and S come closer and back away, A and D go round, Space and Ctrl up and down
             let target = Vec3::new(m.x * 60.0, -m.y * speed, m.z * 40.0);
             self.vel += (target - self.vel) * (1.0 - (-dt / 0.12).exp());
             if self.vel.length() < 0.05 && target == Vec3::ZERO {

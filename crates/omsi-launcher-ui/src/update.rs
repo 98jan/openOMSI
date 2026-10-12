@@ -247,6 +247,64 @@ impl Launcher {
         }
     }
 
+    /// Windows without WebView2: the desktop launcher could not open. Microsoft's installer is
+    /// fetched and run on a thread; once it succeeded the desktop launcher opens and this
+    /// window goes.
+    pub(super) fn draw_webview_dialog(&mut self) {
+        let Some(job) = self.state.webview.clone() else { return };
+        let st = job.lock().map(|s| s.clone()).unwrap_or_default();
+        if st == "done" {
+            let app = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("openomsi-launcher-app.exe"))).filter(|p| p.is_file());
+            if let Some(app) = app {
+                if std::process::Command::new(&app).spawn().is_ok() {
+                    std::process::exit(0);
+                }
+            }
+            self.state.webview = None;
+            return;
+        }
+        let size = self.ui.size;
+        let full = Rect::new(0.0, 0.0, size.x, size.y);
+        self.ui.solid(full);
+        self.ui.p().rect(full, omsi_ui::Color::rgba(0, 0, 0, 0.62));
+        let w = (size.x - 48.0).min(600.0);
+        let busy = st == "busy";
+        let text = if let Some(e) = st.strip_prefix("error: ") {
+            format!("{}\n\n{e}", omsi_ui::tr("WebView2 could not be installed. Try again, or install it from Microsoft's website."))
+        } else if busy {
+            omsi_ui::tr("Microsoft's installer is running: follow its window. The new launcher opens when it has finished.").into_owned()
+        } else {
+            omsi_ui::tr("The new launcher draws its window with Microsoft WebView2, which this Windows does not have. Install it now (a small installer from Microsoft, about a minute), or go on with this launcher.").into_owned()
+        };
+        let th = self.ui.paragraph_height(&text, w - 48.0, 13.0, Weight::Regular).min(size.y * 0.5);
+        let h = (140.0 + th).min(size.y - 24.0);
+        let r = Rect::new((size.x - w) * 0.5, (size.y - h) * 0.5, w, h);
+        self.ui.panel(r);
+        let inner = Rect::new(r.x + 24.0, r.y + 20.0, r.w - 48.0, r.h - 40.0);
+        self.ui.icon("info", Vec2::new(inner.x + 14.0, inner.y + 14.0), 26.0, WARN);
+        self.ui.text_in("The new launcher needs Microsoft WebView2", Rect::new(inner.x + 38.0, inner.y, inner.w - 38.0, 28.0), 18.0, Weight::Bold, TEXT, Align::Left);
+        self.ui.paragraph(&text, Vec2::new(inner.x, inner.y + 40.0), inner.w, 13.0, Weight::Regular, TEXT_DIM);
+        let by = inner.bottom() - 38.0;
+        if !busy && self.ui.button("webview-later", Rect::new(inner.right() - 110.0, by, 110.0, 38.0), "Not now", None, ButtonKind::Normal) {
+            self.state.webview = None;
+        }
+        let label = if busy { "Installing..." } else { "Install WebView2" };
+        if self.ui.button("webview-install", Rect::new(inner.right() - 300.0, by, 180.0, 38.0), label, Some("download"), ButtonKind::Primary) && !busy {
+            if let Ok(mut s) = job.lock() {
+                *s = "busy".into();
+            }
+            std::thread::spawn(move || {
+                let out = match omsi_platform::webview2::install() {
+                    Ok(()) => "done".to_string(),
+                    Err(e) => format!("error: {e:#}"),
+                };
+                if let Ok(mut s) = job.lock() {
+                    *s = out;
+                }
+            });
+        }
+    }
+
     /// A game started from here ended on an error: what it said, and the ways to report it
     /// (the end of its log copied, or a GitHub issue opened with it).
     pub(super) fn draw_crash_dialog(&mut self) {

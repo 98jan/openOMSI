@@ -125,7 +125,10 @@ impl Renderer {
         let masked_frame = enhanced || reflection_frame;
         let (grid, lamp_shadows) = self.prepare_lights(scene, cam_rel, enhanced_frame, lighting.lamp_shadows && with_overlays && projection.is_none() && self.shadows.shadow_pipelines.len() > 6, lighting.inside.as_ref());
         self.prepare_coronas(scene, lighting.night, lighting.inside.as_ref().filter(|v| point_in_vehicle_box(camera.position, v)));
-        self.prepare_smoke(scene, camera.position);
+        // (the mirrors draw no smoke, see `encode_main_late`)
+        if exclude_texture.is_none() {
+            self.prepare_smoke(scene, camera.position);
+        }
         // ambient occlusion only for the real picture, not for the mirrors
         // Enhanced+: the window's picture traces its sun shadow and ambient occlusion (not the
         // mirrors, a headset's eyes or a triple screen's panels: they keep the shadow map)
@@ -134,16 +137,16 @@ impl Renderer {
         // the enhanced path's shading is costly: the depth prepass keeps it to the visible
         // surface (without multisampling, see `share_depth`)
         let prepass_on = ao_on || puddles_wanted || glass_on || (enhanced && (with_overlays || xr_view));
+        // (only the bind group is made again, by `upload_draw_list`: dropping the instance
+        // buffers for it wrote every instance's entries again at each render-scale step)
         if prepass_on && self.ensure_ao(width, height) {
             // a new AO texture: the camera bind group must point at it
-            scene.dirty = true;
-            scene.model_buf = None;
+            scene.camera_bind_group = None;
             self.targets.hdr_targets.clear();
         }
         if rt_frame && self.rt.as_mut().is_some_and(|rt| rt.ensure_targets(&self.device, width, height)) {
             // the camera bind group must point at the new lighting texture
-            scene.dirty = true;
-            scene.model_buf = None;
+            scene.camera_bind_group = None;
         }
         if masked_frame {
             self.hdr_targets(width, height);

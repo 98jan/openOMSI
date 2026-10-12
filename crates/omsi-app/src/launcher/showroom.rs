@@ -415,7 +415,10 @@ impl Showroom {
         // from the focus to the right edge)
         let free = ((1.0 - focus) * 2.0).clamp(0.3, 1.0);
         let fit = (s.length * 0.5 + 1.0) / (half_v * aspect * free * 0.92).max(0.1);
-        let dist = (fit * zoom).max(8.0);
+        // and its height the picture's (a wide, low picture - a card on a page - had a
+        // double-decker cut at the roof and the wheels)
+        let fit_v = (s.centre.z.max(1.0) * 1.3 + 1.0) / half_v.max(0.05);
+        let dist = (fit.max(fit_v) * zoom).max(8.0);
         let (sy, cy) = yaw.to_radians().sin_cos();
         let (sp, cp) = pitch.to_radians().sin_cos();
         let target_pt = DVec3::new(s.centre.x as f64, s.centre.y as f64, (s.centre.z * 0.75) as f64);
@@ -431,6 +434,60 @@ impl Showroom {
         s.scene.overlays.clear();
         let _ = &s.weather;
         renderer.render(&mut s.scene, target, w, h, &cam, &s.lighting);
+    }
+
+    /// The picture's texture as last drawn (the desktop launcher's service reads it back).
+    pub fn picture(&self) -> Option<&wgpu::Texture> {
+        self.target.as_ref().map(|t| &t.0)
+    }
+
+    /// The camera is still easing towards where the mouse turned it (or turning by itself):
+    /// more pictures are coming.
+    pub fn moving(&self) -> bool {
+        self.dirty || (self.yaw_to - self.yaw).abs() > 0.05 || (self.pitch_to - self.pitch).abs() > 0.05 || (self.zoom_to - self.zoom).abs() > 0.001 || (self.auto_turn && self.idle > 4.0)
+    }
+
+    /// The last picture drawn, as RGBA rows (width, height, pixels) - read back from the
+    /// graphics card for a launcher that shows it itself (the Swift one, see `apple_bridge`).
+    #[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
+    pub fn pixels(&self, renderer: &Renderer) -> Option<(u32, u32, Vec<u8>)> {
+        let (tex, _, w, h) = self.target.as_ref()?;
+        let (w, h) = (*w, *h);
+        // (rows of a copy are 256-byte aligned)
+        let row = w * 4;
+        let padded = row.div_ceil(256) * 256;
+        let device = &renderer.device;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor { label: Some("bus preview read-back"), size: (padded * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("bus preview read-back") });
+        enc.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyBufferInfo { buffer: &buffer, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: Some(h) } },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+        renderer.queue.submit([enc.finish()]);
+        let slice = buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().ok()?.ok()?;
+        let data = slice.get_mapped_range();
+        let bgra = matches!(renderer.format(), wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
+        let mut out = Vec::with_capacity((row * h) as usize);
+        for y in 0..h as usize {
+            let line = &data[y * padded as usize..y * padded as usize + row as usize];
+            if bgra {
+                for p in line.chunks_exact(4) {
+                    out.extend_from_slice(&[p[2], p[1], p[0], p[3]]);
+                }
+            } else {
+                out.extend_from_slice(line);
+            }
+        }
+        drop(data);
+        buffer.unmap();
+        Some((w, h, out))
     }
 
     /// A bus is there to show.

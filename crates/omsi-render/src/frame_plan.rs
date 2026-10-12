@@ -409,13 +409,16 @@ pub(crate) struct ShadowRes {
     /// The far shadow cascade as last drawn: its light matrix, frames since, the render
     /// origin and the sun it was drawn for.
     pub(crate) shadow_far_cache: std::cell::Cell<(Mat4, u32, DVec3, Vec3)>,
-    /// The same for the near cascade, drawn every other frame (see `render_inner`).
+    /// The same for the near cascade, drawn every other frame (see `render_inner`), with the
+    /// window frames counted instead of its age (the frame's `ShadowPhase`).
     pub(crate) shadow_near_cache: std::cell::Cell<(Mat4, u32, DVec3, Vec3)>,
     /// Shadow atlas matrices from the first OpenXR eye, reused by the second eye.
     pub(crate) xr_shadow_cache: std::cell::Cell<Option<(DVec3, Vec3, Mat4, Mat4, Mat4)>>,
     /// Depth-only pipeline that fills its viewport with the far depth: clears the close
     /// cascade's part of the atlas when the near part is kept from the frame before.
     pub(crate) shadow_clear_pipeline: wgpu::RenderPipeline,
+    /// What the street lamps' shadow tiles hold, kept while nothing in them changes.
+    pub(crate) lamp_tiles: std::cell::Cell<passes::LampTiles>,
 }
 
 /// What the views drew in their last frames, which the next frame's culling and bundles go by.
@@ -426,6 +429,8 @@ pub(crate) struct ViewHistory {
     /// The window's main-pass bundles as last recorded, with what they were made of (see
     /// `record_main_bundles`).
     pub(crate) main_bundles: std::cell::RefCell<Option<passes::batch::MainBundles>>,
+    /// The same for each mirror (by its picture's texture), the latest last.
+    pub(crate) mirror_bundles: std::cell::RefCell<Vec<(TextureId, passes::batch::MainBundles)>>,
     /// The window's last main pass: bundles recorded anew and bundles kept from the frame
     /// before (the tests check the reuse by it).
     pub(crate) bundle_stats: std::cell::Cell<(usize, usize)>,

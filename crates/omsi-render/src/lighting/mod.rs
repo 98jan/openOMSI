@@ -3,6 +3,8 @@
 
 mod enhanced;
 mod lights;
+mod sky_sched;
 
 pub(crate) use enhanced::*;
 pub use lights::*;
+pub(crate) use sky_sched::*;

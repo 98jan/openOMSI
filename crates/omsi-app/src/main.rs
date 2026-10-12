@@ -18,6 +18,15 @@ pub static NvOptimusEnablement: u32 = 1;
 #[used]
 pub static AmdPowerXpressRequestHighPerformance: u32 = 1;
 
+/// mimalloc in place of the system's allocator: the frame allocates and frees many small
+/// and middle-sized blocks (traffic, people, scripts, the render lists), which the system
+/// allocators serve slowly - Windows' heap especially, and macOS's with its large-block
+/// cache turned off (see `startup::restart_with_allocator_settings`), where every big
+/// block was a call into the kernel. (Not on Android: the game is a library there.)
+#[cfg(not(target_os = "android"))]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> anyhow::Result<()> {
     // Before anything that could break (see omsi-guard): `--self-test`, the start guard's
     // watcher, and safe mode's switches.

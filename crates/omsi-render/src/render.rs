@@ -690,7 +690,7 @@ impl Renderer {
         if f.rt_frame {
             self.encode_ray_tracing(&mut enc.prepass, scene, timers.set.as_ref(), &mut timers.timed);
         }
-        self.encode_sky_cube(&mut enc.prepass, scene, &f, sh.redraw_near, probe_redraw, &mut timers);
+        self.encode_sky_cube(&mut enc.prepass, scene, &f, probe_redraw, &mut timers);
         self.encode_probe(&mut enc.prepass, scene, probe_redraw, &mut timers);
         let main_parts = self.encode_main_pass(&mut enc.picture, scene, &f, &plan, &main_bundles, &mut timers);
         let puddles_on = self.encode_scene_reflections(&mut enc.picture, scene, &f, &plan, &cu, &mut timers);
@@ -858,4 +858,7 @@ pub(crate) struct ToneMapping {
     pub(crate) view_lamps: Option<f32>,
     /// The pre-exposure (natural log) as it follows the sky's.
     pub(crate) exposure: Option<f32>,
+    /// The enhanced lighting uniform as last written (`prepare_enhanced`), for the passes
+    /// that decide on the CPU whether they have anything to draw (`shafts_seen`).
+    pub(crate) enh_last: crate::uniforms::EnhancedUniform,
 }

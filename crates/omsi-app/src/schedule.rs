@@ -44,6 +44,8 @@ pub struct Schedule {
     fleet_ready: Arc<parking_lot::Mutex<Vec<crate::scene::VehicleKey>>>,
     /// Time of day of the last look at the next departures' vehicles.
     fleet_check: f64,
+    /// Seconds until the next look for due departures (see `frame_traffic`).
+    pub(crate) tick_t: f32,
 }
 
 impl std::ops::Deref for Schedule {
@@ -69,6 +71,8 @@ impl Schedule {
             fleet_reading: HashMap::new(),
             fleet_ready: Default::default(),
             fleet_check: f64::NEG_INFINITY,
+            // (a second after the population's, never in the same frame)
+            tick_t: 1.0,
         }
     }
 

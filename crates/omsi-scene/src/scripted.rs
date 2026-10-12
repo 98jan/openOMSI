@@ -30,6 +30,24 @@ pub use omsi_map::calendar::DayKind;
 /// instances and the slots' switches.
 type TextureUpdate = (Arc<ObjectType>, Vec<usize>, Vec<usize>, Vec<((usize, usize), bool)>);
 
+/// What the scenery scripts took last frame (f64 bits), to give the next frame's loop as many
+/// helpers as that work is worth.
+static SCRIPTS_LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Where a frame's scenery scripts went (seconds), for OMSI_PROFILE: waiting for the script
+/// list (the tile loader places objects under the same lock), gathering what the scripts are
+/// given, the scripts themselves, applying what they did (text and HTML textures, sounds,
+/// materials, transforms), the dynamic textures, the lamps' sounds.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct ScriptedTimes {
+    pub lock: f64,
+    pub inputs: f64,
+    pub scripts: f64,
+    pub apply: f64,
+    pub textures: f64,
+    pub lamps: f64,
+}
+
 impl InUse {
     /// The window of object `seed` (its map id: the same building keeps its hours).
     pub fn new(mode: i32, seed: u64) -> InUse {
@@ -490,13 +508,17 @@ impl World {
         phase_of: &dyn Fn(usize, usize) -> (f32, f32),
         audio: Option<&omsi_audio::AudioEngine>,
         muffled: bool,
+        times: &mut ScriptedTimes,
     ) -> usize {
         self.update_particles(dt, center);
         let mut updated = 0;
         let now = self.script_clock();
         let day = self.day_kind(&now);
+        let t = std::time::Instant::now();
         let mut scripted = self.scripted.lock();
         let mut boards = self.timetable_boards.lock();
+        times.lock += t.elapsed().as_secs_f64();
+        let t = std::time::Instant::now();
         let mut wanted: Vec<i64> = Vec::new();
         let mut wanted_names: Vec<String> = Vec::new();
         let mut texture_updates: Vec<TextureUpdate> = Vec::new();
@@ -592,14 +614,26 @@ impl World {
             inputs.push(Some(vars));
         }
         drop(controllers);
+        times.inputs += t.elapsed().as_secs_f64();
+        let t = std::time::Instant::now();
         {
-            use rayon::prelude::*;
-            scripted.par_iter_mut().zip(inputs.par_iter()).for_each(|(o, vars)| {
-                if let Some(vars) = vars {
-                    o.inst.update(dt, vars);
-                }
+            // (on this thread, workers joining in as they are free: handed whole to the pool,
+            // the frame waited on a latch for busy or unscheduled workers - 20-70 ms frames
+            // standing still on a city map - for 4 ms of scripts)
+            let mut near: Vec<(&mut ScriptedObject, &omsi_sim::scenery::SceneryVars)> = scripted
+                .iter_mut()
+                .zip(inputs.iter())
+                .filter_map(|(o, vars)| vars.as_ref().map(|v| (o, v)))
+                .collect();
+            let last = f64::from_bits(SCRIPTS_LAST.load(std::sync::atomic::Ordering::Relaxed));
+            omsi_cfg::par::frame_each(&mut near, omsi_cfg::par::helpers_for(last, 0.0005), |(o, vars)| {
+                o.inst.update(dt, vars);
             });
         }
+        let spent = t.elapsed().as_secs_f64();
+        SCRIPTS_LAST.store(spent.to_bits(), std::sync::atomic::Ordering::Relaxed);
+        times.scripts += spent;
+        let t = std::time::Instant::now();
         for (o, vars) in scripted.iter_mut().zip(inputs.iter()) {
             let Some(nightlight) = vars.as_ref().map(|v| v.nightlight) else {
                 continue;
@@ -729,7 +763,11 @@ impl World {
         boards.wanted_names = wanted_names;
         drop(scripted);
         drop(boards);
+        times.apply += t.elapsed().as_secs_f64();
+        let t = std::time::Instant::now();
         self.apply_texture_updates(renderer, scene, texture_updates);
+        times.textures += t.elapsed().as_secs_f64();
+        let t = std::time::Instant::now();
         // the lamps' own sounds (a level crossing's bell): their scripts run with the light
         // programs (`Traffic::sync`), what they fired is heard here
         for lamp in self.light_objects.lock().iter() {
@@ -753,6 +791,7 @@ impl World {
                 self.object_sounds(a, &mut sounds, path, dist, muffled, lamp.pos, lamp.xf, &|n| inst.var(n), &fired);
             }
         }
+        times.lamps += t.elapsed().as_secs_f64();
         updated
     }
 

@@ -191,7 +191,7 @@ mod tests {
             places_off: Vec::new(),
             served: None,
         };
-        people.last_buses = vec![bus.clone()];
+        people.last_buses = Arc::new(vec![bus.clone()]);
         std::fs::remove_dir_all(dir).ok();
         (people, bus, vehicle)
     }
@@ -266,7 +266,7 @@ mod tests {
         bus.exit_open[0] = true;
         people.merge_manual_door_requests(0.1, &[bus.clone()]);
         assert!(!people.manual_door_requests.contains_key(&3));
-        people.last_buses = vec![bus];
+        people.last_buses = Arc::new(vec![bus]);
         assert!(people.requested_door_open(exit_req));
         people.set_manual_door_request(3, entry_req, 1.0);
         people.clear_manual_door_request(3);

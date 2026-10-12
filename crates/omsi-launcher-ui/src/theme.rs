@@ -22,6 +22,20 @@ pub const HOVER: Color = Color::rgba(38, 38, 38, 1.0);
 pub const SELECTED: Color = Color::rgba(44, 44, 44, 1.0);
 pub const EDGE: Color = Color::rgba(255, 255, 255, 0.06);
 
+/// The desktop launcher's calm look (`launcher/ui/styles.css`), which the game's own screens
+/// over the picture follow (`Ui::flat`): graphite surfaces one step lighter each, no edges.
+pub const BG: Color = Color::rgba(18, 18, 18, 1.0);
+pub const SIDEBAR: Color = Color::rgba(23, 23, 23, 1.0);
+pub const SURFACE: Color = Color::rgba(28, 28, 28, 1.0);
+pub const SURFACE_2: Color = Color::rgba(37, 37, 37, 1.0);
+pub const SURFACE_3: Color = Color::rgba(47, 47, 47, 1.0);
+pub const INK: Color = Color::rgba(237, 237, 237, 1.0);
+pub const INK_2: Color = Color::rgba(184, 184, 184, 1.0);
+pub const INK_MUTED: Color = Color::rgba(138, 138, 138, 1.0);
+pub const ACCENT_HOVER: Color = Color::rgba(240, 173, 69, 1.0);
+pub const ACCENT_INK: Color = Color::rgba(26, 18, 6, 1.0);
+pub const DANGER_2: Color = Color::rgba(229, 83, 75, 1.0);
+
 pub const RADIUS: f32 = 8.0;
 /// Height of a control row.
 pub const ROW: f32 = 36.0;

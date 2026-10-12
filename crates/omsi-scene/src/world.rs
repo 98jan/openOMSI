@@ -44,13 +44,16 @@ pub struct World {
     /// Textures uploaded as RGBA to spare a frame, being compressed on the workers, and the
     /// compressed ones waiting to be swapped in.
     pub(super) upgrades_pending: Mutex<hashbrown::HashSet<PathBuf>>,
+    /// The textures prepared tiles decoded for their upload, while some prepared tile
+    /// still holds them (see `decode_wanted_textures`).
+    pub(super) decoded_in_flight: Mutex<HashMap<PathBuf, std::sync::Weak<TextureData>>>,
     pub(super) upgrades_done: Arc<Mutex<Vec<(PathBuf, Arc<TextureData>)>>>,
     /// Roller-blind pictures (`[matl_freetex]`) uploaded as RGBA, to be compressed.
     pub(super) freetex_upgrades: Arc<Mutex<Vec<PathBuf>>>,
     /// OMSI's `[texmemlimit]`: bytes the scenery and vehicle textures may take on the GPU
-    /// (0 = no limit), and when the budget was last looked at.
+    /// (0 = no limit), and what the budget's last look found (see `BudgetMemo`).
     pub(super) texture_limit: std::sync::atomic::AtomicU64,
-    pub(super) budget_checked: Mutex<Option<std::time::Instant>>,
+    pub(super) budget_checked: Mutex<super::props::BudgetMemo>,
     /// Traffic-path lanes collected while building tiles.
     pub lanes: Mutex<Vec<omsi_sim::traffic::Lane>>,
     /// The tiles whose lanes and parked cars have been put into `lanes` and `parked_cars`.

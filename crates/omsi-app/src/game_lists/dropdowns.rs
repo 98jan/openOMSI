@@ -46,7 +46,9 @@ pub(crate) fn dropdown_for(app: &App, row: usize, id: &str) -> Option<Dropdown> 
                     if stem.eq_ignore_ascii_case(&now) {
                         current = Some(i);
                     }
-                    (stem, format!("wx {f}"))
+                    // (shown by its name in the interface's language, not its German file name)
+                    let name = omsi_launcher_lib::content_path(&f).map(|p| omsi_launcher_lib::weather_name(&p)).unwrap_or(stem);
+                    (omsi_ui::tr(&name).into_owned(), format!("wx {f}"))
                 })
                 .collect()
         }
@@ -174,6 +176,20 @@ pub(crate) fn dropdown_apply(app: &mut App, action: &str) {
             }
         }),
         _ => {}
+    }
+}
+
+/// The session's weather as the player reads it (its name in the interface's language).
+pub(super) fn weather_shown(app: &App) -> String {
+    match app.args.weather.as_deref() {
+        Some(p) => {
+            let p = p.replace('\\', "/");
+            match omsi_launcher_lib::content_path(&p) {
+                Ok(f) => omsi_ui::tr(&omsi_launcher_lib::weather_name(&f)).into_owned(),
+                Err(_) => weather_name(app),
+            }
+        }
+        None => weather_name(app),
     }
 }
 

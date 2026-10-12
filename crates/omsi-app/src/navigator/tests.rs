@@ -49,19 +49,19 @@ fn the_navigator_is_dragged_by_the_mouse() {
 fn the_navigator_keeps_where_it_was_dragged_on_a_phone_and_clear_of_the_information_bar() {
     let mut n = Navigator::new(true, 0.85, "bottom-left");
     let (screen, size) = ((1280.0, 720.0), (300.0, 250.0));
-    assert_eq!(n.panel_origin(screen, size, true, None), (490.0, 13.0));
-    assert_eq!(n.panel_origin(screen, size, true, Some([311.0, 20.0, 898.0, 69.0])), (490.0, 76.0));
-    assert_eq!(n.panel_origin(screen, size, false, Some([311.0, 20.0, 898.0, 69.0])), (13.0, 457.0));
+    assert_eq!(n.panel_origin(screen, size, true, None, None), (490.0, 13.0));
+    assert_eq!(n.panel_origin(screen, size, true, Some([311.0, 20.0, 898.0, 69.0]), None), (490.0, 76.0));
+    assert_eq!(n.panel_origin(screen, size, false, Some([311.0, 20.0, 898.0, 69.0]), None), (13.0, 457.0));
     n.corner = "top-left".into();
-    assert_eq!(n.panel_origin(screen, size, false, Some([330.0, 20.0, 950.0, 69.0])), (13.0, 13.0));
-    assert_eq!(n.panel_origin(screen, size, false, Some([300.0, 20.0, 980.0, 69.0])), (13.0, 76.0));
+    assert_eq!(n.panel_origin(screen, size, false, Some([330.0, 20.0, 950.0, 69.0]), None), (13.0, 13.0));
+    assert_eq!(n.panel_origin(screen, size, false, Some([300.0, 20.0, 980.0, 69.0]), None), (13.0, 76.0));
     // a finger's drag: there, on the phone as on the computer
     n.panel_rect = [490.0, 13.0, 790.0, 263.0];
     n.panel_press(600.0, 100.0);
     assert!(n.panel_move(600.0 - 490.0, 100.0 + 457.0));
     assert_eq!(n.panel_release(), Some(true));
-    assert_eq!(n.panel_origin(screen, size, true, None), (0.0, 470.0));
-    assert_eq!(n.panel_origin(screen, size, false, None), (0.0, 470.0));
+    assert_eq!(n.panel_origin(screen, size, true, None, None), (0.0, 470.0));
+    assert_eq!(n.panel_origin(screen, size, false, None, None), (0.0, 470.0));
 }
 
 use super::*;

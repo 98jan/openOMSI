@@ -144,6 +144,8 @@ pub(crate) struct GfxState {
     pub(crate) spanned: bool,
     /// Mirror pictures due (see `MIRROR_RATE`), and which mirror is next.
     pub(crate) mirror_budget: f32,
+    /// The frame time the mirrors' count a frame follows (see `mirror_updates`).
+    pub(crate) mirror_dt: f32,
     pub(crate) mirrors_seen: usize,
     pub(crate) mirror_turn: usize,
     /// The mirrors the panels show, drawn every frame (kept for its room).
@@ -415,8 +417,13 @@ pub(crate) struct MenuState {
     pub(crate) info_bar: bool,
     /// OMSI's timetable window (`view_set_schedule`, Insert).
     pub(crate) timetable: bool,
-    /// The server's notifications on the screen (`notify`), oldest first.
+    /// The notifications on the screen (the server's `notify`, the plugins', the update
+    /// check's and the game's own), oldest first.
     pub(crate) notices: Vec<crate::ui::Notice>,
+    /// What the game tells the driver to do, turned into notifications when it starts.
+    pub(crate) note_watch: crate::ui::NoteWatch,
+    /// The loading screen at the session's start, and its fade over the first pictures.
+    pub(crate) loading: crate::ui::Loading,
 }
 
 /// The simulated session besides the map, the player's bus and the clock: the other
@@ -446,6 +453,10 @@ pub(crate) struct SessionState {
     pub(crate) lamps_on: Option<bool>,
     pub(crate) populate_t: f32,
     pub(crate) humans_populate_t: f32,
+    /// The traffic put out vehicles or departures this frame (`populate_seen` /
+    /// `schedule_tick`, or a slice of them): the people's own filling of the map waits a
+    /// frame, so that the two never land in the same frame.
+    pub(crate) traffic_heavy_frame: bool,
     pub(crate) first_populate: bool,
     pub(crate) envir: Option<omsi_content::Envir>,
     pub(crate) weather: Option<omsi_content::weather::Weather>,
@@ -475,7 +486,7 @@ pub(crate) struct SessionState {
     pub(crate) wetness: f32,
     /// How far the cloud cover has drifted with the wind (fractions of its tiling), summed
     /// up frame by frame so that a change of wind does not throw the sky around.
-    pub(crate) cloud_drift: [f32; 4],
+    pub(crate) cloud_drift: [f64; 4],
     /// A change of weather coming in (see `weather_cycle`).
     pub(crate) weather_blend: Option<crate::weather_cycle::Blend>,
     /// The weather cycle, when the weather chosen is `cycle`.

@@ -231,6 +231,10 @@ pub struct Ui {
     pub clipboard_in: Option<String>,
     /// Rects the mouse is over UI in (the rest of the window is the 3D showroom).
     pub over_ui: bool,
+    /// The desktop launcher's calm look for the game's screens over the picture: the
+    /// surfaces in its graphite steps (`SURFACE`, `SURFACE_2` ...) and no edge round a panel,
+    /// a field, a button or a popup.
+    pub flat: bool,
     tooltip: Option<(String, Vec2)>,
     /// (tests) Where each clickable widget was this frame, by id.
     #[cfg(any(test, feature = "test-support"))]
@@ -264,6 +268,7 @@ impl Ui {
             clipboard_out: None,
             clipboard_in: None,
             over_ui: false,
+            flat: false,
             tooltip: None,
             #[cfg(any(test, feature = "test-support"))]
             drawn: HashMap::new(),
@@ -533,12 +538,24 @@ impl Ui {
 
     // --- surfaces ------------------------------------------------------------------------
 
-    /// A panel: flat, dark, a hairline edge.
+    /// A panel: flat, dark, a hairline edge (none in the `flat` look).
     pub fn panel(&mut self, r: Rect) {
         self.solid(r);
-        let p = self.p();
-        p.rounded(r, RADIUS, PANEL);
-        p.rounded_border(r, RADIUS, 1.0, EDGE);
+        let fill = if self.flat { SURFACE } else { PANEL };
+        self.p().rounded(r, RADIUS, fill);
+        self.border(r, RADIUS, 1.0, EDGE);
+    }
+
+    /// A hairline round a rounded rectangle, unless the look is `flat`.
+    pub fn border(&mut self, r: Rect, radius: f32, width: f32, c: Color) {
+        if !self.flat {
+            self.p().rounded_border(r, radius, width, c);
+        }
+    }
+
+    /// A field's fill and its fill under the mouse.
+    pub fn field_fill(&self) -> (Color, Color) {
+        if self.flat { (SURFACE_2, SURFACE_3) } else { (FIELD, HOVER) }
     }
 
     /// A section heading inside a panel: an accent tick and the title in capitals.
@@ -561,15 +578,18 @@ impl Ui {
         let t = self.anim(id, if h { 1.0 } else { 0.0 }, 0.06);
         let rr = if held { r.inset(0.5) } else { r };
         let (fill, text_c, edge) = match kind {
+            ButtonKind::Primary if self.flat => (ACCENT.mix(ACCENT_HOVER, t), ACCENT_INK, Color::CLEAR),
             ButtonKind::Primary => (ACCENT.lighten(0.08 * t), Color::rgba(18, 14, 8, 1.0), Color::CLEAR),
+            ButtonKind::Danger if self.flat => (SURFACE_2.mix(Color::rgba(58, 34, 32, 1.0), t), DANGER_2, Color::CLEAR),
             ButtonKind::Danger => (FIELD.mix(HOVER, t), DANGER, DANGER.alpha(0.35 + 0.3 * t)),
+            ButtonKind::Normal if self.flat => (SURFACE_2.mix(SURFACE_3, t), INK, Color::CLEAR),
             ButtonKind::Normal => (FIELD.mix(HOVER, t), TEXT, EDGE),
             ButtonKind::Ghost => (Color::WHITE.alpha(0.05 * t), if h { TEXT } else { TEXT_DIM }, Color::CLEAR),
         };
         let rad = 6.0;
         self.p().rounded(rr, rad, fill);
         if edge.0[3] > 0.0 {
-            self.p().rounded_border(rr, rad, 1.0, edge);
+            self.border(rr, rad, 1.0, edge);
         }
         let px = if rr.h >= 44.0 { 14.5 } else { 13.0 };
         let weight = if kind == ButtonKind::Primary { Weight::Bold } else { Weight::Medium };
@@ -659,11 +679,12 @@ impl Ui {
     pub fn segmented(&mut self, name: &str, r: Rect, selected: &mut usize, labels: &[&str]) -> bool {
         let n = labels.len().max(1);
         let id = id_of(name);
-        self.p().rounded(r, 6.0, FIELD);
+        let (track, knob_c) = if self.flat { (SURFACE, SURFACE_3) } else { (FIELD, Color::rgba(62, 62, 62, 1.0)) };
+        self.p().rounded(r, 6.0, track);
         let w = r.w / n as f32;
         let at = self.anim(id, *selected as f32, 0.07);
         let knob = Rect::new(r.x + 3.0 + w * at, r.y + 3.0, w - 6.0, r.h - 6.0);
-        self.p().rounded(knob, 4.0, Color::rgba(62, 62, 62, 1.0));
+        self.p().rounded(knob, 4.0, knob_c);
         let mut changed = false;
         for (k, l) in labels.iter().enumerate() {
             let cell = Rect::new(r.x + w * k as f32, r.y, w, r.h);
@@ -694,8 +715,9 @@ impl Ui {
         let (h, _, clicked) = self.interact(id, r);
         let open = self.popup.as_ref().map(|p| p.id == id).unwrap_or(false);
         let t = self.anim(id, if h || open { 1.0 } else { 0.0 }, 0.08);
-        self.p().rounded(r, 6.0, FIELD.mix(HOVER, t));
-        self.p().rounded_border(r, 6.0, 1.0, if open { ACCENT.alpha(0.7) } else { EDGE });
+        let (field, field_hot) = self.field_fill();
+        self.p().rounded(r, 6.0, field.mix(field_hot, t));
+        self.border(r, 6.0, 1.0, if open { ACCENT.alpha(0.7) } else { EDGE });
         let txt = options.get(*selected).cloned().unwrap_or_default();
         self.text_in(&txt, Rect::new(r.x + 12.0, r.y, r.w - 40.0, r.h), 13.0, Weight::Regular, TEXT, Align::Left);
         let rot = self.anim(id ^ 9, if open { 1.0 } else { 0.0 }, 0.08);
@@ -782,8 +804,9 @@ impl Ui {
             self.caret.insert(id, (caret, moved));
         }
         let t = self.anim(id, if focused { 1.0 } else if h { 0.5 } else { 0.0 }, 0.08);
-        self.p().rounded(r, 6.0, FIELD.mix(HOVER, t * 0.5));
-        self.p().rounded_border(r, 6.0, 1.0, if focused { ACCENT.alpha(0.7) } else { EDGE });
+        let (field, field_hot) = self.field_fill();
+        self.p().rounded(r, 6.0, field.mix(field_hot, t * 0.5));
+        self.border(r, 6.0, 1.0, if focused { ACCENT.alpha(0.7) } else { EDGE });
         let mut x = r.x + 12.0;
         if let Some(i) = icon {
             self.icon(i, Vec2::new(x + 8.0, r.center().y), 18.0, TEXT_DIM);
@@ -882,8 +905,9 @@ impl Ui {
     /// Hours and minutes with arrows (and the wheel over either).
     pub fn time_field(&mut self, name: &str, r: Rect, minutes: &mut i32) -> bool {
         let before = *minutes;
-        self.p().rounded(r, 6.0, FIELD);
-        self.p().rounded_border(r, 6.0, 1.0, EDGE);
+        let fill = self.field_fill().0;
+        self.p().rounded(r, 6.0, fill);
+        self.border(r, 6.0, 1.0, EDGE);
         let half = (r.w - 16.0) * 0.5;
         for (k, (unit, step)) in [(60, 60), (1, 5)].iter().enumerate() {
             let cell = Rect::new(r.x + k as f32 * (half + 16.0), r.y, half, r.h);
@@ -927,8 +951,9 @@ impl Ui {
         let (h, _, clicked) = self.interact(id, r);
         let open = self.date_popup.as_ref().map(|p| p.id == id).unwrap_or(false);
         let t = self.anim(id, if h || open { 1.0 } else { 0.0 }, 0.08);
-        self.p().rounded(r, 6.0, FIELD.mix(HOVER, t));
-        self.p().rounded_border(r, 6.0, 1.0, if open { ACCENT.alpha(0.7) } else { EDGE });
+        let (field, field_hot) = self.field_fill();
+        self.p().rounded(r, 6.0, field.mix(field_hot, t));
+        self.border(r, 6.0, 1.0, if open { ACCENT.alpha(0.7) } else { EDGE });
         self.icon("calendar_month", Vec2::new(r.x + 20.0, r.center().y), 17.0, TEXT_DIM);
         let (y, m, d) = parse_date(date);
         let shown = format!("{} {} {}", d, MONTHS[(m as usize).clamp(1, 12) - 1], y);
@@ -1063,8 +1088,9 @@ impl Ui {
                 (self.size.y - h - 8.0).max(8.0)
             };
             let r = Rect::new(x, y, w, h);
-            self.p().rounded(r, 6.0, Color::rgba(34, 34, 34, 1.0));
-            self.p().rounded_border(r, 7.0, 1.0, Color::WHITE.alpha(0.1));
+            let fill = if self.flat { SURFACE_3 } else { Color::rgba(34, 34, 34, 1.0) };
+            self.p().rounded(r, 6.0, fill);
+            self.border(r, 7.0, 1.0, Color::WHITE.alpha(0.1));
             self.push_clip(Rect::new(r.x + 10.0, r.y + 4.0, text_w, (h - 8.0).max(0.0)), 2.0);
             self.paragraph(&t, Vec2::new(r.x + 10.0, r.y + 4.0), text_w, 12.5, Weight::Medium, TEXT_SOFT);
             self.pop_clip();
@@ -1119,8 +1145,9 @@ impl Ui {
         p.opened = (p.opened + self.dt / 0.3).min(1.0);
         let e = 1.0 - (1.0 - p.opened).powi(3);
         let rr = Rect::new(r.x, r.y - 6.0 * (1.0 - e), r.w, r.h);
-        self.p().rounded(rr, 8.0, Color::rgba(28, 28, 28, e));
-        self.p().rounded_border(rr, 8.0, 1.0, Color::WHITE.alpha(0.1 * e));
+        let fill = if self.flat { SURFACE_2.alpha(e) } else { Color::rgba(28, 28, 28, e) };
+        self.p().rounded(rr, 8.0, fill);
+        self.border(rr, 8.0, 1.0, Color::WHITE.alpha(0.1 * e));
         let row = 34.0;
         let shown = p.shown();
         // (what was typed, over the options it leaves)
@@ -1198,8 +1225,9 @@ impl Ui {
         let r = date_rect(&p, self.size);
         p.opened = (p.opened + self.dt / 0.12).min(1.0);
         let e = 1.0 - (1.0 - p.opened).powi(3);
-        self.p().rounded(r, 8.0, Color::rgba(28, 28, 28, e));
-        self.p().rounded_border(r, 8.0, 1.0, Color::WHITE.alpha(0.1 * e));
+        let fill = if self.flat { SURFACE_2.alpha(e) } else { Color::rgba(28, 28, 28, e) };
+        self.p().rounded(r, 8.0, fill);
+        self.border(r, 8.0, 1.0, Color::WHITE.alpha(0.1 * e));
         let m = self.input.mouse;
         let click = self.input.released;
         // month header with arrows

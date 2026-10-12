@@ -758,7 +758,7 @@ impl App {
     /// right-button drag does, the free and outside cameras too), `set name=value` (a script
     /// variable), `trigger name`, `log name` (with what the HUD says about the cursor),
     /// `dumptex <folder>` (the display pictures), `shot <file>` (the window's picture as a
-    /// PNG) and `type <text>` (into the LAN chat line that `key V` opened; `key Enter`
+    /// PNG), `notify <id> <seconds> <kind> <text>` (a notification card) and `type <text>` (into the LAN chat line that `key V` opened; `key Enter`
     /// sends it).
     pub(crate) fn run_input_script(&mut self, event_loop: &ActiveEventLoop) {
         if self.perf.input_script.is_empty() {
@@ -963,6 +963,10 @@ impl App {
                     }
                 }
                 // `log pose`: where the bus and the camera are, and whether the bus has ground
+                "log" if arg == "clock" => {
+                    let t = self.clock.time;
+                    log::info!("input script: clock {:02}:{:02}:{:02} (day {}, sync {})", (t / 3600.0) as u32, (t / 60.0) as u32 % 60, t as u32 % 60, self.clock.day_of_year, self.real_time_locked());
+                }
                 "log" if arg == "pose" => {
                     let bus = self.player.as_ref().map(|p| {
                         (
@@ -1049,6 +1053,12 @@ impl App {
                 // `shot <file>`: the window's own view into a PNG, drawn from the scene the
                 // window is showing (the only way to see what the window path renders)
                 "shot" => self.perf.shot = Some((PathBuf::from(arg), true)),
+                // `notify <id> <seconds> <kind> <text>`: a notification, as the server's
+                // `notify` sends one (to look at the cards)
+                "notify" => match cmd.split_once(' ').and_then(|(_, rest)| crate::ui::Notice::parse(rest)) {
+                    Some((_, n)) => crate::ui::push_notice(&mut self.menus.notices, n),
+                    None => log::warn!("input script: notify <id> <seconds> <info|warn|alert|action|success> <text>"),
+                },
                 // `dumptex <folder>`: the player's display pictures as the window has them
                 "dumptex" => {
                     if let Some(p) = self.player.as_ref() {

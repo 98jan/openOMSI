@@ -235,7 +235,7 @@ The launcher is the game's own window (`crates/omsi-app/src/launcher`): `omsi` s
 without arguments (or with `--launcher`) opens it. It is drawn with wgpu - no web engine -
 flat and dark (neutral greys, one amber accent), every control custom (sliders, switches,
 dropdowns, a calendar, a time picker, text fields, segmented buttons), Material Symbols
-icons and Roboto (`crates/omsi-ui`). The Drive page shows the chosen bus in a card, as a
+icons and Inter (`crates/omsi-ui`). The Drive page shows the chosen bus in a card, as a
 picture **drawn by the game's renderer** - its model, paint, materials, reflections and
 shadows exactly as in the game, under the light of the chosen time and weather - drawn
 again only when something changes; drag on it to turn the bus, scroll to zoom. Its pages:

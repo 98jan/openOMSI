@@ -141,9 +141,53 @@ fn fs_puddle_glass_depth(in: FsIn) {
 
 @fragment
 fn fs_shadow_test(in: FsIn) {
-    var duv = tex_address(in.uv);
+    cutout_coverage(in.uv, in.params);
+}
+
+// the depth-only passes' (`vs_depth`) fragment shaders: plain, cut out, a transmap's
+// opaque part
+@fragment
+fn fs_depth(in: DepthIn) {
+}
+
+@fragment
+fn fs_depth_test(in: DepthIn) {
+    cutout_coverage(in.uv, in.params);
+}
+
+// (a transmap's opaque part, see `transmap_coverage`)
+@fragment
+fn fs_depth_transmap(in: DepthIn) {
+    transmap_coverage(in.uv, in.params);
+}
+
+// The multisampled prefill's cut-outs (foliage): their depth only where the colour pass
+// is sure to cover every sample - the alpha-to-coverage of an alpha of 1 (`shade_enhanced`:
+// the texture's alpha past the cutoff's smoothed edge, a plain material at full opacity,
+// no pane, LED panel, transmap, ground or shadow blob). The edges, which alpha-to-coverage
+// covers in part, are left to the colour pass: a sample laid here that the colour then
+// left uncovered would hide what lies behind it (the sky showed through the houses).
+@fragment
+fn fs_depth_cover(in: DepthIn) {
+    let mode = material.params.x;
+    if (mode < 0.5 || mode > 1.5 || material.params.z > 0.5 || material.extra.x > 0.5
+        || material.wipe_bounds.z != 0.0 || abs(material.emissive.w) > 1.5
+        || material.color.a < 1.0 || in.params.x < 1.0 || in.surf > 1.5) {
+        discard;
+    }
+    let duv = tex_address(in.uv);
+    let a = diffuse_border(textureSample(t_diffuse, s_diffuse, duv), duv).a;
+    let aa = max(fwidth(a) * 0.5, 1.0 / 255.0);
+    if (a < ALPHA_REF + aa + 4.0 / 255.0) {
+        discard;
+    }
+}
+
+// A cut-out's texel: kept where its alpha reaches the cutoff.
+fn cutout_coverage(uv: vec2<f32>, params: vec4<f32>) {
+    var duv = tex_address(uv);
     if (material.extra.x > 0.5) {
-        duv = in.uv * material.extra.z;
+        duv = uv * material.extra.z;
     }
     // Use the light-pass footprint for cutout coverage. Forcing mip 0 here aliases dense
     // foliage and alpha layers into a checkerboard when the light projection moves by a
@@ -155,7 +199,7 @@ fn fs_shadow_test(in: FsIn) {
     var a = select(diffuse_border(textureSample(t_diffuse, s_diffuse, duv), duv).a, 1.0, material.params.x > 1.5 && material.params.z < 0.5);
     if (material.params.z > 0.5) {
         // (the transmap stays where it is: [texcoordtransX/Y] only moves the diffuse stage)
-        let tm = sample_transmap(tex_address(in.uv - in.params.zw));
+        let tm = sample_transmap(tex_address(uv - params.zw));
         a = select(1.0, tm.a, material.params.w > 0.5);
     }
     if (a < ALPHA_REF) {
@@ -183,13 +227,12 @@ fn fs_surface_depth(in: FsIn) -> @location(0) vec4<f32> {
 // until the colour pass (where blend order can expose the bus through the car). Keep only
 // the effectively opaque part of a transmap in a separate depth-only pass; window pixels
 // remain out of the prepass and are composited normally.
-@fragment
-fn fs_transmap_depth(in: FsIn) {
+fn transmap_coverage(uv: vec2<f32>, params: vec4<f32>) {
     if (material.params.z < 0.5) {
         discard;
     }
-    let tm = sample_transmap(tex_address(in.uv - in.params.zw));
-    let a = select(1.0, tm.a, material.params.w > 0.5) * in.params.x;
+    let tm = sample_transmap(tex_address(uv - params.zw));
+    let a = select(1.0, tm.a, material.params.w > 0.5) * params.x;
     // Only what the colour pass will cover completely may hide what lies behind it: a
     // texel that is merely more opaque than not (the dimmer and anti-aliased dots of a
     // display's text layer, whose transmap is its script texture) wrote depth here, the

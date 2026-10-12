@@ -7,7 +7,9 @@
 //!
 //! The game is this library; `main.rs` calls [`run`], and on Android the NativeActivity
 //! calls `android_main` (see `android.rs`), which runs the launcher and the game in one
-//! window of one process.
+//! window of one process. On an iPhone or an iPad the Swift app calls `openomsi_ios_main`
+//! (see `ios.rs`); its launcher, and the Mac's Swift launcher, read and change what the
+//! launcher knows through `apple_bridge`.
 
 mod admin;
 use omsi_platform::discord;
@@ -20,6 +22,14 @@ use omsi_input::headtrack;
 use omsi_xr::openxr;
 #[cfg(target_os = "android")]
 mod android;
+#[cfg(target_os = "android")]
+mod android_launcher;
+#[cfg(target_os = "ios")]
+mod ios;
+#[cfg(target_os = "ios")]
+mod apple;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod apple_bridge;
 mod platform;
 mod touch;
 mod placing;
@@ -217,6 +227,10 @@ pub fn run() -> Result<()> {
             ""
         }
     );
+    // the desktop launcher's helper: no window, requests on stdin (see `launcher::service`)
+    if std::env::args().nth(1).as_deref() == Some("--launcher-service") {
+        return launcher::run_service();
+    }
     let args = Args::parse();
     // (before the content and the graphics device are looked for: it must work without them)
     if let Some(out) = &args.export_diagnostics {
@@ -231,8 +245,13 @@ pub fn run() -> Result<()> {
     let Some((args, server_cfg)) = prepare(args, bare)? else { return Ok(()) };
     if args.launcher || (bare && !args.menu) {
         // the launcher window (the game started again by it with a full command line);
-        // OMSI_LAUNCHER=<program> still opens another launcher instead
+        // OMSI_LAUNCHER=<program> still opens another launcher instead, and a plain start
+        // the desktop launcher beside the game
         if omsi_cfg::flags::OMSI_LAUNCHER.is_set() && open_launcher()? {
+            return Ok(());
+        }
+        // a plain start (not `--launcher`): the desktop launcher when it is beside the game
+        if !args.launcher && open_app_launcher()? {
             return Ok(());
         }
         launcher_statics();
@@ -340,7 +359,7 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
                 } else {
                     fatal_dialog("openOMSI cannot start", &text);
                 }
-                if cfg!(target_os = "android") {
+                if cfg!(any(target_os = "android", target_os = "ios")) {
                     // (a phone's app is not ended from inside: back to the launcher)
                     return Ok(None);
                 }
@@ -547,6 +566,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             streamer: None,
             spanned: false,
             mirror_budget: 1.0,
+            mirror_dt: 0.0,
             mirrors_seen: 2,
             mirror_turn: 0,
             mirror_panel_cams: Vec::new(),
@@ -587,6 +607,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             lamps_on: None,
             populate_t: 0.0,
             humans_populate_t: 0.0,
+            traffic_heavy_frame: false,
             first_populate: true,
             envir: None,
             weather: None,
@@ -646,6 +667,8 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             info_bar,
             timetable: false,
             notices: Vec::new(),
+            note_watch: Default::default(),
+            loading: Default::default(),
             menu_edit: None,
             menu_edit_icao: false,
             menu_edit_search: false,

@@ -241,6 +241,9 @@ impl PeopleSim {
                 "; {:.2} ms a frame, longest {worst:.1} ms",
                 total / n as f64
             ));
+            if !self.stage_stats.0.is_empty() {
+                out.push_str(&format!("; stages avg/longest ms: {}", self.stage_stats.line(n)));
+            }
         }
         out
     }

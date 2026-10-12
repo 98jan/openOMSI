@@ -70,15 +70,15 @@ const PAGES: [(Page, &str, &str); 10] = [
     (Page::Setup, "Setup", "folder_open"),
 ];
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 type Clipboard = arboard::Clipboard;
 
 /// A phone: text copied in the launcher can be pasted in it (the system's clipboard is
 /// Java's).
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 struct Clipboard(String);
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 impl Clipboard {
     fn new() -> Result<Clipboard, ()> {
         Ok(Clipboard(String::new()))
@@ -175,9 +175,9 @@ pub struct Launcher {
     ime: bool,
     /// Updates from the GitHub releases (see `omsi_platform::updater`, `update.rs`).
     pub update: omsi_platform::updater::Updater,
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     discord: Option<omsi_platform::discord::Discord>,
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     discord_next_try: Instant,
     /// Background drop of the graphics device given up while a game runs (see `frame`).
     /// Joined before a new device is opened so the two do not meet on the card.
@@ -260,9 +260,9 @@ impl Launcher {
         page_max: 0.0,
         ime: false,
         update: Default::default(),
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         discord: None,
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         discord_next_try: Instant::now(),
         gpu_rest_drop: None,
     };
@@ -334,7 +334,7 @@ impl Launcher {
 
     /// The window, its surface and the renderer, given up for the game (a phone plays in the
     /// launcher's window).
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "android", target_os = "ios")), allow(dead_code))]
     pub fn release_window(&mut self) -> Option<Arc<Window>> {
         self.pages.pads.release_io();
         self.surface = None;
@@ -350,7 +350,7 @@ impl Launcher {
     }
 
     /// Back from a game: the window again (the launcher draws into it from the next resume).
-    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "android", target_os = "ios")), allow(dead_code))]
     pub fn adopt_window(&mut self, window: Arc<Window>) {
         self.window = Some(window);
         self.surface = None;
@@ -621,7 +621,7 @@ impl ApplicationHandler for Launcher {
             self.last = Instant::now();
             self.run_script();
             self.state.update(dt);
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             self.update_discord();
             self.update_tick(event_loop);
             self.check_exit(event_loop);
@@ -663,7 +663,7 @@ impl Launcher {
         dpi * (lw / 1440.0).min(lh / 820.0).clamp(0.8, 2.2)
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     fn update_discord(&mut self) {
         let enabled = self.state.settings.get("discord_status").and_then(|v| v.as_bool()).unwrap_or(true);
         let launching = self.state.queued_launch.is_some()
@@ -735,7 +735,7 @@ impl Launcher {
         }
         let desktop = !mobile::mobile() && self.window.is_some();
         let presence_released = {
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             {
                 if self.state.queued_launch.is_some() {
                     if let Some(discord) = self.discord.as_ref() {
@@ -744,7 +744,7 @@ impl Launcher {
                 }
                 self.discord.as_ref().is_none_or(|discord| discord.is_finished())
             }
-            #[cfg(target_os = "android")]
+            #[cfg(any(target_os = "android", target_os = "ios"))]
             { true }
         };
         // (looked at while a game runs: drawn as usual, see `awake_in_game`)
@@ -759,7 +759,7 @@ impl Launcher {
                 self.run_script();
                 self.state.update(dt);
                 self.ui.discard_input();
-                #[cfg(not(target_os = "android"))]
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 self.update_discord();
                 // `update` may have seen the game end: open the device this frame instead of
                 // returning with the resting picture until another redraw happens to notice.
@@ -815,7 +815,7 @@ impl Launcher {
         }
         if let Some(d) = presence_released.then(|| self.state.queued_launch.take()).flatten() {
             // Finish the Discord handoff in the background before starting the child.
-            #[cfg(not(target_os = "android"))]
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             drop(self.discord.take());
             // The Controls page may still own the same DirectInput wheel non-exclusively.
             // Drop it before the child asks for exclusive foreground access for force feedback.
@@ -838,7 +838,7 @@ impl Launcher {
 
         self.run_script();
         self.state.update(dt);
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.update_discord();
         self.update_tick(event_loop);
         // the preview shows the chosen bus in the chosen light
@@ -1080,7 +1080,7 @@ impl Launcher {
         // finger meanwhile
         let dialog = self.update_dialog_open();
         let disconnected = !dialog && self.state.disconnected.is_some();
-        let crash = !dialog && !disconnected && self.state.crash.is_some();
+        let crash = !dialog && !disconnected && (self.state.crash.is_some() || self.state.webview.is_some());
         let reset = !dialog && !crash && !disconnected && self.pages.confirm_reset;
         let key_picker = self.browser.is_none()
             && !dialog
@@ -1151,6 +1151,8 @@ impl Launcher {
                 self.draw_update_dialog();
             } else if disconnected {
                 self.draw_disconnect_dialog();
+            } else if crash && self.state.webview.is_some() {
+                self.draw_webview_dialog();
             } else if crash {
                 self.draw_crash_dialog();
             } else if reset {

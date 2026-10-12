@@ -41,10 +41,14 @@ const NAV_REDRAW_S: f32 = 1.0 / 30.0;
 /// wgpu makes the GL calls in the submit, 4.2 ms of a 43 ms frame (a Radeon R7 200, 23
 /// fps), against 0.6 ms on Vulkan. Every other frame halves that where frames are slow.
 const NAV_REDRAW_FRAMES: u32 = 2;
-const PANEL: Color = Color::rgba(10, 10, 10, 0.70);
-// (the bars under the texts darken whatever the opacity setting leaves of the panel: at a
-// third the cab showed through behind the next stop)
-const BAR: Color = Color::rgba(0, 0, 0, 0.55);
+// (the launcher's graphite surface, a little see-through over the cab; no edge round it)
+const PANEL: Color = Color::rgba(28, 28, 28, 0.88);
+// (the bars under the texts: the panel's own grey a step darker, which also keeps whatever the
+// opacity setting leaves of the panel readable - at a third the cab showed through behind the
+// next stop)
+const BAR: Color = Color::rgba(18, 18, 18, 0.55);
+/// The plates over the map (the next turn, the street): the launcher's raised surface.
+const PLATE: Color = Color::rgba(37, 37, 37, 0.92);
 // (the launcher's map picture draws with these too, so the two maps cannot look apart)
 pub(crate) const ROAD_CASING: Color = Color::rgba(30, 30, 30, 0.9);
 pub(crate) const ROAD: Color = Color::rgba(92, 92, 92, 1.0);
@@ -132,9 +136,9 @@ fn level(score: f32) -> usize {
         _ => 4,
     }
 }
-const TEXT: Color = Color::rgba(235, 235, 235, 1.0);
+const TEXT: Color = Color::rgba(237, 237, 237, 1.0);
 // (the second texts - units, the day, the times - bright enough to read on a lit cab)
-const TEXT_DIM: Color = Color::rgba(178, 178, 178, 1.0);
+const TEXT_DIM: Color = Color::rgba(184, 184, 184, 1.0);
 const LATE: Color = Color::rgba(235, 85, 70, 1.0);
 const EARLY: Color = Color::rgba(90, 160, 240, 1.0);
 const ON_TIME: Color = Color::rgba(110, 200, 120, 1.0);
@@ -222,6 +226,9 @@ pub struct NavFrame<'a> {
     /// Where the information bar is (`ui::Ui::info_rect`): a navigator along the top keeps
     /// below it.
     pub info_rect: Option<[f32; 4]>,
+    /// The on-screen controls' row along the top (`touch::Touch::top_gap`): the gap between
+    /// its buttons, left and right, and the buttons' bottom.
+    pub touch_gap: Option<[f32; 3]>,
 }
 
 /// The texts, per language.
@@ -974,7 +981,9 @@ impl Navigator {
         // sixth of a 4K screen's - but 300 px at least, where its smallest texts were 8 px
         // high on a 720p window; made larger, still short enough to fit the window with its
         // schedule)
-        let base = (sh * 0.33).max(300.0);
+        // (of the shorter side: a tablet held upright gave it half the screen's width, over
+        // the on-screen buttons along the top)
+        let base = (sh.min(sw) * 0.33).max(300.0);
         let base = if f.follow_window { base } else { base.min(480.0) };
         let pw = (base * f.ui_scale).min((sh * 0.7).max(300.0)).round();
         let map_h = (pw * 0.62).round();
@@ -983,7 +992,7 @@ impl Navigator {
         let sched = if self.schedule { (f.stops.len().clamp(1, 5) as f32 * 22.0 + 12.0) * s } else { 0.0 };
         let ph = (map_h + bars + sched).round();
         let (w, h) = (pw as u32, ph as u32);
-        let (x0, y0) = self.panel_origin((sw, sh), (pw, ph), crate::platform::touch_controls(), f.info_rect);
+        let (x0, y0) = self.panel_origin((sw, sh), (pw, ph), crate::platform::touch_controls(), f.info_rect, f.touch_gap);
 
         if self.gpu.is_none() {
             self.gpu = Some(Gpu::new(&renderer.device, renderer.format(), map_samples(renderer.format()), self.atlas.size));
@@ -1024,7 +1033,8 @@ impl Navigator {
         let wd = words(f.language);
         self.atlas.begin_frame();
         let panel = Rect::new(0.0, 0.0, pw, ph);
-        let radius = 7.0 * s;
+        // (the corners of the other panels: 8 px at their size, never less)
+        let radius = (8.0 * s).max(8.0);
         let top_h = (34.0 * s).round();
         let map = Rect::new(0.0, top_h, pw, map_h);
         let vp = [map.x, map.y, map.w, map.h];
@@ -1088,7 +1098,7 @@ impl Navigator {
 
         // --- background (half transparent), traffic, markers, text
         let mut bg = Painter::new();
-        bg.rounded(panel, radius, if self.cockpit_display { Color::rgba(10, 10, 10, 1.0) } else { PANEL });
+        bg.rounded(panel, radius, if self.cockpit_display { Color::rgba(28, 28, 28, 1.0) } else { PANEL });
         let n_bg = bg.len();
 
         let mut dy = Painter::new();
@@ -1181,7 +1191,7 @@ impl Navigator {
     fn draw_map_marks(&mut self, ui: &mut Painter, f: &NavFrame, map: Rect, vpm: Mat4, vp: [f32; 4], anchor: DVec2, s: f32, mut lines: Vec<(DVec3, Color, String)>) {
         let rel = |p: DVec3| Vec3::new((p.x - anchor.x) as f32, (p.y - anchor.y) as f32, 0.0);
         // the far end of the map fades into the panel
-        ui.gradient(Rect::new(map.x, map.y, map.w, map.h * 0.3), Color::rgba(10, 10, 10, 0.75), Color::rgba(10, 10, 10, 0.0));
+        ui.gradient(Rect::new(map.x, map.y, map.w, map.h * 0.3), Color::rgba(28, 28, 28, 0.75), Color::rgba(28, 28, 28, 0.0));
         // the next turn: an arrow and how far, top left of the map
         if let Some((dir, angle, dist, street)) = self.next_turn.as_ref() {
             let icon = match *dir {
@@ -1197,7 +1207,7 @@ impl Navigator {
             let street = street.as_deref().map(|n| self.fonts.fit(n, 12.0 * s, Weight::Medium, map.w * 0.62 - 50.0 * s - tw));
             let sw_ = street.as_deref().map(|n| self.fonts.width(n, 12.0 * s, Weight::Medium) + 10.0 * s).unwrap_or(0.0);
             let b = Rect::new(map.x + 8.0 * s, map.y + 8.0 * s, 44.0 * s + tw + sw_, 34.0 * s);
-            ui.rounded(b, 5.0 * s, Color::rgba(10, 10, 10, 0.85));
+            ui.rounded(b, 6.0 * s, PLATE);
             ui.icon(&mut self.atlas, icon, Vec2::new(b.x + 18.0 * s, b.center().y), 24.0 * s, TEXT);
             ui.text_in(&mut self.atlas, &self.fonts, &t, 14.0 * s, Weight::Bold, Rect::new(b.x + 34.0 * s, b.y, tw + 4.0, b.h), Align::Left, TEXT);
             if let Some(n) = street.as_deref() {
@@ -1210,7 +1220,7 @@ impl Navigator {
             let n = self.fonts.fit(n, px, Weight::Medium, map.w * 0.7);
             let w = self.fonts.width(&n, px, Weight::Medium) + 14.0 * s;
             let r = Rect::new(map.center().x - w * 0.5, map.bottom() - 24.0 * s, w, 18.0 * s);
-            ui.rounded(r, 9.0 * s, Color::rgba(10, 10, 10, 0.8));
+            ui.rounded(r, 9.0 * s, PLATE);
             ui.text_in(&mut self.atlas, &self.fonts, &n, px, Weight::Medium, r, Align::Center, STREET);
         }
         // Stops ahead use a bus badge so they read as stops, not generic route dots.
@@ -1222,7 +1232,6 @@ impl Navigator {
             }
             let next = k == 0;
             let badge = if next { 8.0 } else { 6.5 } * s;
-            ui.circle(sp, badge + 1.5 * s, Color::rgba(10, 10, 10, 0.95));
             let fill = if next { Color::rgba(45, 116, 205, 1.0) } else if k + 1 == n_stops { ROUTE } else { Color::rgba(76, 91, 112, 0.98) };
             ui.circle(sp, badge, fill);
             ui.icon(&mut self.atlas, "directions_bus", sp, if next { 12.5 } else { 10.5 } * s, TEXT);
@@ -1244,7 +1253,6 @@ impl Navigator {
                 continue;
             }
             taken.push(r);
-            ui.rounded(Rect::new(r.x - 1.0 * s, r.y - 1.0 * s, r.w + 2.0 * s, r.h + 2.0 * s), 4.0 * s, Color::rgba(10, 10, 10, 0.9));
             ui.rounded(r, 3.5 * s, PLAYER);
             ui.text_in(&mut self.atlas, &self.fonts, &name, px, Weight::Bold, r, Align::Center, LINE_TEXT);
         }
@@ -1258,7 +1266,6 @@ impl Navigator {
                 continue;
             }
             taken.push(r);
-            ui.rounded(Rect::new(r.x - 1.0 * s, r.y - 1.0 * s, r.w + 2.0 * s, r.h + 2.0 * s), 4.0 * s, Color::rgba(10, 10, 10, 0.9));
             ui.rounded(r, 3.5 * s, *color);
             ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, LINE_TEXT);
         }
@@ -1381,7 +1388,7 @@ impl Navigator {
                     let (txt, c) = if d > 59.0 {
                         (format!("+{}:{:02}", (d / 60.0) as i32, (d % 60.0) as i32), LATE)
                     } else if d < -59.0 {
-                        (format!("−{}:{:02}", (-d / 60.0) as i32, (-d % 60.0) as i32), EARLY)
+                        (format!("-{}:{:02}", (-d / 60.0) as i32, (-d % 60.0) as i32), EARLY)
                     } else {
                         (wd.on_time.to_string(), ON_TIME)
                     };
@@ -1432,7 +1439,7 @@ fn congestion_on(net: &Network, traffic: &Network, c: &HashMap<usize, f32>) -> H
 
 impl<'a> NavFrame<'a> {
     fn clone_ref(&self) -> NavFrame<'a> {
-        NavFrame { traffic: self.traffic, players: self.players.clone(), bus: self.bus, heading: self.heading, speed_kmh: self.speed_kmh, outside_temp: self.outside_temp, inside_temp: self.inside_temp, line: self.line.clone(), terminus: self.terminus.clone(), stops: self.stops.clone(), delay: self.delay, passengers: self.passengers, time: self.time, weekday: self.weekday, language: self.language, screen: self.screen, ui_scale: self.ui_scale, follow_window: self.follow_window, dt: self.dt, stop_requested: self.stop_requested, info_rect: self.info_rect }
+        NavFrame { traffic: self.traffic, players: self.players.clone(), bus: self.bus, heading: self.heading, speed_kmh: self.speed_kmh, outside_temp: self.outside_temp, inside_temp: self.inside_temp, line: self.line.clone(), terminus: self.terminus.clone(), stops: self.stops.clone(), delay: self.delay, passengers: self.passengers, time: self.time, weekday: self.weekday, language: self.language, screen: self.screen, ui_scale: self.ui_scale, follow_window: self.follow_window, dt: self.dt, stop_requested: self.stop_requested, info_rect: self.info_rect, touch_gap: self.touch_gap }
     }
 }
 

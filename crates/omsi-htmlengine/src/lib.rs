@@ -88,10 +88,10 @@ use style::*;
 
 pub use renderer::EngineRenderer;
 
-pub(crate) const ROBOTO: &[u8] = include_bytes!("../../../assets/fonts/Roboto-VariableFont_wdth,wght.ttf");
+pub(crate) const INTER: &[u8] = include_bytes!("../../../assets/fonts/InterVariable.ttf");
 thread_local! {
     /// The regular and the bold face, parsed once per thread instead of once per frame.
-    static FONTS: Option<(FontRef<'static>, FontRef<'static>)> = FontRef::try_from_slice(ROBOTO).ok().map(|reg| {
+    static FONTS: Option<(FontRef<'static>, FontRef<'static>)> = FontRef::try_from_slice(INTER).ok().map(|reg| {
         let mut bold = reg.clone();
         bold.set_variation(b"wght", 700.0);
         (reg, bold)
@@ -103,7 +103,7 @@ pub(crate) fn with_fonts<R>(f: impl FnOnce(&FontRef<'static>, &FontRef<'static>)
     FONTS.with(|p| p.as_ref().map(|(reg, bold)| f(reg, bold)))
 }
 
-/// The bytes of the face for the characters Roboto lacks (Hangul, CJK ...): the file in
+/// The bytes of the face for the characters Inter lacks (Hangul, CJK ...): the file in
 /// `OMSI_HTML_FALLBACK_FONT` (and `..._BOLD`), else Malgun Gothic from the Windows fonts or
 /// AppleGothic on macOS.
 /// Read once per process; `None` when there is none.

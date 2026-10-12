@@ -17,6 +17,9 @@ pub struct GpuMesh {
     /// Which mesh this is (a page's range handed to another mesh is another): what the ray
     /// tracer's structures are kept by, with the mesh's place.
     pub(crate) gen: u64,
+    /// Counts the vertices' rewrites (`update_mesh`, a skinned human's poses): a street
+    /// lamp's shadow tile kept from an earlier frame is drawn anew when it changes.
+    pub(crate) pose: u32,
     pub ranges: Vec<(u32, u32, u32)>,
     pub bounds_center: Vec3,
     pub bounds_radius: f32,
@@ -160,6 +163,7 @@ impl MeshPage {
             vertex_bytes: vb.len() as u64,
             index_bytes: ib.len() as u64,
             gen: next_gen(),
+            pose: 0,
             ranges: data.ranges.clone(),
             bounds_center: center,
             bounds_radius: radius,
@@ -271,6 +275,7 @@ impl Renderer {
         if (m.vertex_bytes as usize) < bytes.len() {
             return;
         }
+        m.pose = m.pose.wrapping_add(1);
         {
             // (a newer pose of the same mesh replaces one still waiting)
             let mut pending = self.pending_meshes.borrow_mut();
