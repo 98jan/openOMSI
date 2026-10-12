@@ -43,9 +43,7 @@ impl App {
     /// The triple screen's rig as drawn this frame (the view's zoom applied), while it is on
     /// and no headset is asked for.
     pub(crate) fn triple_rig(&self, size: (u32, u32)) -> Option<omsi_render::TripleScreen> {
-        (self.settings.triple.enabled && !self.settings.vr_requested()).then(|| {
-            self.settings.triple.zoomed(size.0, size.1, self.cam.view_zoom.get(&self.view).copied().unwrap_or(1.0))
-        })
+        triple_rig(&self.settings, &self.cam, &self.view, size)
     }
 
     /// The desktop ray under the cursor for placing and editing on the ground: the window's
@@ -58,15 +56,6 @@ impl App {
             }
             None => cursor_ray(cam, self.input.cursor.0, self.input.cursor.1, size.0 as f32, size.1 as f32),
         }
-    }
-
-    /// With a triple screen, the frustum around all three panels for "nothing appears or
-    /// vanishes in sight": tangents of its half-angles, horizontal and vertical (None: the
-    /// window's own view is the whole picture).
-    pub(crate) fn sight_extent(&self, cam: &Camera, size: (u32, u32)) -> Option<(f64, f64)> {
-        let rig = self.triple_rig(size)?;
-        let (tx, ty) = rig.view_extent(cam, size.0, size.1);
-        Some((tx as f64, ty as f64))
     }
 
     pub(crate) fn update_hover(&mut self) {
@@ -211,4 +200,19 @@ impl App {
             0
         }
     }
+}
+
+/// The triple screen's panels as the view's zoom has them (None: no triple screen).
+pub(crate) fn triple_rig(settings: &settings::Settings, cam: &ViewState, view: &str, size: (u32, u32)) -> Option<omsi_render::TripleScreen> {
+    (settings.triple.enabled && !settings.vr_requested())
+        .then(|| settings.triple.zoomed(size.0, size.1, cam.view_zoom.get(view).copied().unwrap_or(1.0)))
+}
+
+/// With a triple screen, the frustum around all three panels for "nothing appears or
+/// vanishes in sight": tangents of its half-angles, horizontal and vertical (None: the
+/// window's own view is the whole picture).
+pub(crate) fn sight_extent(settings: &settings::Settings, view: &crate::app::ViewPart<'_>, cam: &Camera, size: (u32, u32)) -> Option<(f64, f64)> {
+    let rig = triple_rig(settings, view.cam, view.view, size)?;
+    let (tx, ty) = rig.view_extent(cam, size.0, size.1);
+    Some((tx as f64, ty as f64))
 }

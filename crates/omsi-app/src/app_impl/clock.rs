@@ -8,19 +8,13 @@ impl App {
     /// How fast the clock runs: the session's in LAN play (the host's, which its time speed
     /// setting or its administration set), else the settings'.
     pub(crate) fn time_speed(&self) -> f64 {
-        if self.real_time_locked() {
-            return 1.0;
-        }
-        match self.net.lan.as_ref() {
-            Some(l) => l.clock_speed,
-            None => self.settings.time_speed.clamp(1.0, 30.0),
-        }
+        time_speed(&self.settings, &self.net)
     }
 
     /// The clock follows the real time and cannot be changed (the `time_sync` setting). In a
     /// LAN session as a client the host's clock counts: the host or the server syncs, not us.
     pub(crate) fn real_time_locked(&self) -> bool {
-        self.settings.time_sync && !self.net.lan.as_ref().is_some_and(|l| l.role == omsi_net::Role::Client)
+        real_time_locked(&self.settings, &self.net)
     }
 
     /// With the real-time sync on: hold the clock to this device's date and time (a second
@@ -119,4 +113,21 @@ impl App {
             st.reload(Some(&changed));
         }
     }
+}
+
+/// The clock's speed: 1 under the real-time sync, the host's in a LAN session, else the
+/// settings' (`App::time_speed`).
+pub(crate) fn time_speed(settings: &settings::Settings, net: &NetState) -> f64 {
+    if real_time_locked(settings, net) {
+        return 1.0;
+    }
+    match net.lan.as_ref() {
+        Some(l) => l.clock_speed,
+        None => settings.time_speed.clamp(1.0, 30.0),
+    }
+}
+
+/// The clock follows the real time and cannot be changed (`App::real_time_locked`).
+pub(crate) fn real_time_locked(settings: &settings::Settings, net: &NetState) -> bool {
+    settings.time_sync && !net.lan.as_ref().is_some_and(|l| l.role == omsi_net::Role::Client)
 }

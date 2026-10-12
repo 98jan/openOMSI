@@ -41,6 +41,30 @@ fn field_group(field: &str) -> Option<Option<Group>> {
     })
 }
 
+/// The group of a part's name in a stage context (`app::stage_ctx!`).
+fn part_group(part: &str) -> Group {
+    use Group::*;
+    match part {
+        "input" => Input,
+        "menus" => Menus,
+        "clock" => Clock,
+        "weather" => Weather,
+        "world" => World,
+        "traffic" => Traffic,
+        "player" => Player,
+        "people" => People,
+        "duty" => Duty,
+        "net" => Net,
+        "integrations" => Integrations,
+        "sound" => Sound,
+        "view" => View,
+        "ui" => Ui,
+        "gfx" => Gfx,
+        "perf" => Perf,
+        _ => panic!("no group for the part {part:?}"),
+    }
+}
+
 fn src(path: &str) -> String {
     std::fs::read_to_string(format!("{}/src/{path}", env!("CARGO_MANIFEST_DIR"))).unwrap_or_else(|e| panic!("{path}: {e}"))
 }
@@ -64,27 +88,34 @@ fn window_stages_touch_only_what_they_declare() {
     let stages = WINDOW_FRAME.iter().chain(&[WindowStage::PlayerTick, WindowStage::PlayerView]);
     let sources = omsi_srcscan::sources(std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")));
     let code = omsi_srcscan::Code::read(&sources, "App");
+    // the contexts the `App`'s methods take of it (`XCx::of(&mut self.parts())`), by name
+    let contexts: std::collections::BTreeMap<String, Vec<Group>> = sources
+        .iter()
+        .flat_map(|(_, s)| omsi_srcscan::contexts(s))
+        .map(|(name, parts)| (format!("{name}::of"), parts.iter().map(|p| part_group(p)).collect()))
+        .collect();
     let arms = omsi_srcscan::match_arms(&src("app_events/frame/stages.rs"), "run_stage", "stage");
+    assert!(arms.len() >= WINDOW_FRAME.len(), "run_stage's arms not found: {:?}", arms.keys());
     let mut wrong = Vec::new();
-    let mut whole_app = 0;
     for s in stages {
         let i = s.info();
         let arm = arms.get(&format!("{s:?}")).unwrap_or_else(|| panic!("no run_stage arm for {s:?}"));
-        // (a stage handed its context, `XCx::of(&mut app.parts())`, is held to it by the compiler)
-        if arm.contains("::of(") {
-            continue;
-        }
-        whole_app += 1;
-        let (mut fields, entries) = code.scan("app", arm);
+        // (a stage handed its context, `XCx::of(&mut app.parts())`, is held to it by the
+        // compiler; what its arm calls on the `App` besides is checked here as for the others)
+        let (mut fields, mut entries) = code.scan("app", arm);
+        entries.remove("parts");
         fields.extend(code.reach(&entries));
         let declared: BTreeSet<Group> = i.reads.iter().chain(i.writes).copied().collect();
         // (None: what every stage may read; not in the table: no field of `App`)
-        let touched: BTreeSet<Group> = fields.iter().filter_map(|f| field_group(f).flatten()).collect();
+        let touched: BTreeSet<Group> = fields
+            .iter()
+            .filter_map(|f| field_group(f).flatten())
+            .chain(fields.iter().filter_map(|f| contexts.get(f)).flatten().copied())
+            .collect();
         let undeclared: Vec<_> = touched.difference(&declared).collect();
         if !undeclared.is_empty() {
             wrong.push(format!("{}: reaches {undeclared:?} (from {entries:?})", i.name));
         }
     }
-    assert!(whole_app > 10, "the scan found too few stages: {whole_app}");
     assert!(wrong.is_empty(), "stages reach groups they do not declare (app_events/frame/stages.rs):\n{}", wrong.join("\n"));
 }

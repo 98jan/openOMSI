@@ -45,183 +45,6 @@ impl App {
         daylight
     }
 
-    /// The lights (the lamps' cones, the light maps, every light that shines), the rain and
-    /// the snow, the cabin air, the tyres' spray and the sounds of the street.
-    pub(super) fn frame_lights(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
-        // the lamps' cones in fog and falling rain or snow, and new light pictures
-        let cone = self.session.weather.as_ref().map(|wt| lights::ConeWeather::new(wt.fog.0, daylight.night)).unwrap_or_default();
-        if let Some(r) = self.renderer.as_mut() {
-            lights::upload_corona_textures(r);
-        }
-        // the tile light maps around the camera, for the roads' night light
-        let __ta = Instant::now();
-        if let (Some(w), Some(r), Some(cam)) = (self.world.as_ref(), self.renderer.as_ref(), self.camera.as_ref()) {
-            w.update_light_map_atlas(r, cam.position);
-        }
-        self.perf.profile.add(crate::profile_keys::ProfKey::LightsAtlas, __ta.elapsed().as_secs_f64());
-        if let (Some(w), Some(scene), Some(cam)) = (
-            self.world.as_ref(),
-            self.scene.as_mut(),
-            self.camera.as_ref(),
-        ) {
-            let vehicles = steps::light_vehicles(self.player.as_ref(), self.session.traffic.as_ref(), &self.net.remotes);
-            let __tc = Instant::now();
-            lights::collect(w, scene, &daylight, cam.position, &vehicles, cone);
-            self.perf.profile.add(crate::profile_keys::ProfKey::LightsCollect, __tc.elapsed().as_secs_f64());
-            // the object editor's pick: a magenta glow over it
-            if let Some(id) = self.menus.editor.as_ref().and_then(|e| e.selected) {
-                let at = w.edit_objects.lock().get(&id).map(|o| o.pos);
-                let moved = w.object_edits.lock().get(&id).map(|e| e.moved).unwrap_or_default();
-                if let Some(p) = at {
-                    scene.coronas.push(omsi_render::Corona {
-                        position: p + moved + glam::DVec3::Z * 3.0,
-                        size: 0.6,
-                        color: [1.0, 0.1, 0.9],
-                        brightness: 2.0,
-                        ..Default::default()
-                    });
-                }
-            }
-            if let Some(wt) = &self.session.weather {
-                let (kind, rate) = precip_of(wt);
-                let rain_quality = crate::rain::quality_of(&self.settings.rain_quality);
-                w.settings.set_rain_quality(rain_quality);
-                self.session.rain.set(kind, rate, rain_quality);
-                // [wind] direction (deg) speed (m/s)
-                let wind = crate::rain::weather_wind(wt);
-                let spray_wind = steps::spray_wind(wt);
-                // every bus one may ride in keeps the weather out: the own, another
-                // player's, a timetable bus - each part of it: an articulated bus's
-                // rear section is a coupled part with its own [boundingbox] (#777)
-                let boxed = crate::rain::vehicle_boxes;
-                let mut buses: Vec<(glam::DVec3, f64, [f32; 6])> = self.player.as_ref().map(|p| boxed(&p.vehicle)).unwrap_or_default();
-                buses.extend(self.net.remotes.remotes.values().flat_map(|rv| boxed(rv.vehicle())));
-                if let Some(t) = self.session.traffic.as_ref() {
-                    buses.extend(t.cars.iter().filter(|c| c.is_bus() && (c.vehicle.position - cam.position).length() < 40.0).flat_map(|c| boxed(&c.vehicle)));
-                }
-                let __tr = Instant::now();
-                self.session.rain.tick(if self.paused { 0.0 } else { dt }, cam.position, wind, scene, &buses);
-                // the player's bus's cabin air and the condensation on its glass
-                if let Some(p) = self.player.as_ref() {
-                    steps::cabin_air_step(&mut self.session.cabin_air, if self.paused { 0.0 } else { dt }, p, wt, self.session.humans.as_ref());
-                }
-                self.perf.profile.add(crate::profile_keys::ProfKey::LightsRain, __tr.elapsed().as_secs_f64());
-                // what every vehicle's tyres throw up from the water on the road: the
-                // puddles and the wet asphalt the renderer draws (the same wetness:
-                // none under snow, OMSI_WETNESS as the picture takes it)
-                let wetness = puddles::road_wetness(self.session.wetness, wt.snow);
-                if (wetness > 0.0 || !self.session.spray.is_empty()) && !omsi_cfg::flags::OMSI_NO_SPRAY.is_set() {
-                    let __ts = Instant::now();
-                    steps::throw_spray(
-                        &mut self.session.spray,
-                        if self.paused { 0.0 } else { dt },
-                        self.player.as_ref(),
-                        self.session.traffic.as_ref(),
-                        &self.net.remotes,
-                        cam.position,
-                        spray_wind,
-                        w,
-                        wetness,
-                        rain_quality,
-                    );
-                    self.session.spray.sprites(cam.position, &mut scene.smoke);
-                    self.perf.profile.add(crate::profile_keys::ProfKey::LightsSpray, __ts.elapsed().as_secs_f64());
-                }
-                // the rain heard in the street and the footsteps on the pavement
-                if let (Some(amb), Some(a)) = (self.sound.ambience.as_mut(), self.sound.audio.as_ref())
-                {
-                    let steps = self
-                        .session.humans
-                        .as_mut()
-                        .map(|h| h.take_footfalls())
-                        .unwrap_or_default();
-                    // what the passengers say, where they stand. A clip heard for the first
-                    // time is read in the background and the line spoken as soon as it is
-                    // there (read here, in the frame, it stalled the picture); one still not
-                    // read after two seconds is let go.
-                    let said = self.session.humans.as_mut().map(|h| h.take_voice_lines()).unwrap_or_default();
-                    {
-                        let waiting = &mut self.sound.voices_waiting;
-                        waiting.extend(said.into_iter().map(|line| (line, Instant::now())));
-                        waiting.retain(|(line, since)| {
-                            if !a.clips_ready(std::slice::from_ref(&line.path)) {
-                                return since.elapsed() < std::time::Duration::from_secs(2);
-                            }
-                            if let Some(clip) = a.load_clip(&line.path) {
-                                a.play(
-                                    clip,
-                                    omsi_audio::mixer::VoiceParams {
-                                        gain: 1.0,
-                                        pitch: 1.0,
-                                        looping: false,
-                                        position: Some(line.position.as_vec3()),
-                                        doppler: true,
-                                        range: 3.0,
-                                        lowpass_hz: 0.0,
-                                        important: false,
-                                    },
-                                );
-                            }
-                            false
-                        });
-                    }
-                    let inside = self.cam.in_cab;
-                    let __tm = Instant::now();
-                    // openOMSI's ambience; with its recordings the street's rain is its own
-                    let ours = if let Some(s) = self.sound.soundscape.as_mut() {
-                        s.enabled = self.settings.ambient;
-                        s.volume = self.settings.vol_ambient;
-                        let people = self.session.humans.as_ref().map(|h| h.people.iter().filter(|p| (p.position - cam.position).length() < 40.0).count() as u32).unwrap_or(0);
-                        let open = self.player.as_ref().and_then(|p| p.vehicle.var("Snd_OutsideVol")).unwrap_or(0.0);
-                        s.update(
-                            a,
-                            crate::soundscape::Moment {
-                                world: self.world.as_deref(),
-                                weather: Some(wt),
-                                clock: &self.clock,
-                                sun: daylight.altitude_deg,
-                                wetness,
-                                ear: cam.position,
-                                inside,
-                                open,
-                                people,
-                                paused: self.paused,
-                                dt,
-                            },
-                        );
-                        s.active()
-                    } else {
-                        false
-                    };
-                    self.perf.profile.add(crate::profile_keys::ProfKey::LightsSoundscape, __tm.elapsed().as_secs_f64());
-                    amb.update(
-                        a,
-                        dt,
-                        if ours { (0, 0.0) } else { (kind, rate) },
-                        inside,
-                        street_condition(wt, self.session.wetness),
-                        cam.position,
-                        &steps,
-                    );
-                    self.perf.profile.add(crate::profile_keys::ProfKey::LightsAmbience, __tm.elapsed().as_secs_f64());
-                    if let Some(every) = debug_sound_every() {
-                        static LAST: std::sync::atomic::AtomicU32 =
-                            std::sync::atomic::AtomicU32::new(u32::MAX);
-                        let bucket = (self.clock.time / every as f64) as u32;
-                        if LAST.swap(bucket, std::sync::atomic::Ordering::Relaxed) != bucket
-                        {
-                            log::info!("sound: environment - {} (precip {kind} {rate:.2}, StreetCond {:.2}, {} voices)", amb.last, street_condition(wt, self.session.wetness), a.voice_count());
-                            if let Some(sc) = self.sound.soundscape.as_mut() {
-                                let heard = sc.take_heard();
-                                log::info!("sound: ambience - {}; heard {heard}", sc.last);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     /// The departure boards, the map's route arrows and the scenery's scripts.
     pub(super) fn frame_scripted(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
         if let (Some(w), Some(r), Some(scene), Some(cam)) = (
@@ -286,6 +109,187 @@ impl App {
                     (K::ScriptedLamps, times.lamps),
                 ] {
                     self.perf.profile.add(k, v);
+                }
+            }
+        }
+    }
+}
+
+crate::app::stage_ctx!(
+    /// The lights' stage's part of the game: the lamps, the rain and the spray, the sounds of the world around.
+    LightsCx { reads: [player, clock, traffic, world, net, view, menus], writes: [perf, sound, weather, people, gfx] }
+);
+
+/// The lights (the lamps' cones, the light maps, every light that shines), the rain and
+/// the snow, the cabin air, the tyres' spray and the sounds of the street.
+pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight) {
+    // the lamps' cones in fog and falling rain or snow, and new light pictures
+    let cone = cx.weather.weather.as_ref().map(|wt| lights::ConeWeather::new(wt.fog.0, daylight.night)).unwrap_or_default();
+    if let Some(r) = cx.gfx.renderer.as_mut() {
+        lights::upload_corona_textures(r);
+    }
+    // the tile light maps around the camera, for the roads' night light
+    let __ta = Instant::now();
+    if let (Some(w), Some(r), Some(cam)) = (cx.world.world.as_ref(), cx.gfx.renderer.as_ref(), cx.view.camera.as_ref()) {
+        w.update_light_map_atlas(r, cam.position);
+    }
+    cx.perf.profile.add(crate::profile_keys::ProfKey::LightsAtlas, __ta.elapsed().as_secs_f64());
+    if let (Some(w), Some(scene), Some(cam)) = (
+        cx.world.world.as_ref(),
+        cx.gfx.scene.as_mut(),
+        cx.view.camera.as_ref(),
+    ) {
+        let vehicles = steps::light_vehicles(cx.player.player.as_ref(), cx.traffic.traffic.as_ref(), &cx.net.remotes);
+        let __tc = Instant::now();
+        lights::collect(w, scene, &daylight, cam.position, &vehicles, cone);
+        cx.perf.profile.add(crate::profile_keys::ProfKey::LightsCollect, __tc.elapsed().as_secs_f64());
+        // the object editor's pick: a magenta glow over it
+        if let Some(id) = cx.menus.menus.editor.as_ref().and_then(|e| e.selected) {
+            let at = w.edit_objects.lock().get(&id).map(|o| o.pos);
+            let moved = w.object_edits.lock().get(&id).map(|e| e.moved).unwrap_or_default();
+            if let Some(p) = at {
+                scene.coronas.push(omsi_render::Corona {
+                    position: p + moved + glam::DVec3::Z * 3.0,
+                    size: 0.6,
+                    color: [1.0, 0.1, 0.9],
+                    brightness: 2.0,
+                    ..Default::default()
+                });
+            }
+        }
+        if let Some(wt) = &cx.weather.weather {
+            let (kind, rate) = precip_of(wt);
+            let rain_quality = crate::rain::quality_of(&cx.common.settings.rain_quality);
+            w.settings.set_rain_quality(rain_quality);
+            cx.weather.rain.set(kind, rate, rain_quality);
+            // [wind] direction (deg) speed (m/s)
+            let wind = crate::rain::weather_wind(wt);
+            let spray_wind = steps::spray_wind(wt);
+            // every bus one may ride in keeps the weather out: the own, another
+            // player's, a timetable bus - each part of it: an articulated bus's
+            // rear section is a coupled part with its own [boundingbox] (#777)
+            let boxed = crate::rain::vehicle_boxes;
+            let mut buses: Vec<(glam::DVec3, f64, [f32; 6])> = cx.player.player.as_ref().map(|p| boxed(&p.vehicle)).unwrap_or_default();
+            buses.extend(cx.net.remotes.remotes.values().flat_map(|rv| boxed(rv.vehicle())));
+            if let Some(t) = cx.traffic.traffic.as_ref() {
+                buses.extend(t.cars.iter().filter(|c| c.is_bus() && (c.vehicle.position - cam.position).length() < 40.0).flat_map(|c| boxed(&c.vehicle)));
+            }
+            let __tr = Instant::now();
+            cx.weather.rain.tick(if *cx.clock.paused { 0.0 } else { dt }, cam.position, wind, scene, &buses);
+            // the player's bus's cabin air and the condensation on its glass
+            if let Some(p) = cx.player.player.as_ref() {
+                steps::cabin_air_step(&mut cx.weather.cabin_air, if *cx.clock.paused { 0.0 } else { dt }, p, wt, cx.people.humans.as_ref());
+            }
+            cx.perf.profile.add(crate::profile_keys::ProfKey::LightsRain, __tr.elapsed().as_secs_f64());
+            // what every vehicle's tyres throw up from the water on the road: the
+            // puddles and the wet asphalt the renderer draws (the same wetness:
+            // none under snow, OMSI_WETNESS as the picture takes it)
+            let wetness = puddles::road_wetness(*cx.weather.wetness, wt.snow);
+            if (wetness > 0.0 || !cx.weather.spray.is_empty()) && !omsi_cfg::flags::OMSI_NO_SPRAY.is_set() {
+                let __ts = Instant::now();
+                steps::throw_spray(
+                    &mut cx.weather.spray,
+                    if *cx.clock.paused { 0.0 } else { dt },
+                    cx.player.player.as_ref(),
+                    cx.traffic.traffic.as_ref(),
+                    &cx.net.remotes,
+                    cam.position,
+                    spray_wind,
+                    w,
+                    wetness,
+                    rain_quality,
+                );
+                cx.weather.spray.sprites(cam.position, &mut scene.smoke);
+                cx.perf.profile.add(crate::profile_keys::ProfKey::LightsSpray, __ts.elapsed().as_secs_f64());
+            }
+            // the rain heard in the street and the footsteps on the pavement
+            if let (Some(amb), Some(a)) = (cx.sound.ambience.as_mut(), cx.sound.audio.as_ref())
+            {
+                let steps = cx.people.humans
+                    .as_mut()
+                    .map(|h| h.take_footfalls())
+                    .unwrap_or_default();
+                // what the passengers say, where they stand. A clip heard for the first
+                // time is read in the background and the line spoken as soon as it is
+                // there (read here, in the frame, it stalled the picture); one still not
+                // read after two seconds is let go.
+                let said = cx.people.humans.as_mut().map(|h| h.take_voice_lines()).unwrap_or_default();
+                {
+                    let waiting = &mut cx.sound.voices_waiting;
+                    waiting.extend(said.into_iter().map(|line| (line, Instant::now())));
+                    waiting.retain(|(line, since)| {
+                        if !a.clips_ready(std::slice::from_ref(&line.path)) {
+                            return since.elapsed() < std::time::Duration::from_secs(2);
+                        }
+                        if let Some(clip) = a.load_clip(&line.path) {
+                            a.play(
+                                clip,
+                                omsi_audio::mixer::VoiceParams {
+                                    gain: 1.0,
+                                    pitch: 1.0,
+                                    looping: false,
+                                    position: Some(line.position.as_vec3()),
+                                    doppler: true,
+                                    range: 3.0,
+                                    lowpass_hz: 0.0,
+                                    important: false,
+                                },
+                            );
+                        }
+                        false
+                    });
+                }
+                let inside = cx.view.cam.in_cab;
+                let __tm = Instant::now();
+                // openOMSI's ambience; with its recordings the street's rain is its own
+                let ours = if let Some(s) = cx.sound.soundscape.as_mut() {
+                    s.enabled = cx.common.settings.ambient;
+                    s.volume = cx.common.settings.vol_ambient;
+                    let people = cx.people.humans.as_ref().map(|h| h.people.iter().filter(|p| (p.position - cam.position).length() < 40.0).count() as u32).unwrap_or(0);
+                    let open = cx.player.player.as_ref().and_then(|p| p.vehicle.var("Snd_OutsideVol")).unwrap_or(0.0);
+                    s.update(
+                        a,
+                        crate::soundscape::Moment {
+                            world: cx.world.world.as_deref(),
+                            weather: Some(wt),
+                            clock: &*cx.clock.clock,
+                            sun: daylight.altitude_deg,
+                            wetness,
+                            ear: cam.position,
+                            inside,
+                            open,
+                            people,
+                            paused: *cx.clock.paused,
+                            dt,
+                        },
+                    );
+                    s.active()
+                } else {
+                    false
+                };
+                cx.perf.profile.add(crate::profile_keys::ProfKey::LightsSoundscape, __tm.elapsed().as_secs_f64());
+                amb.update(
+                    a,
+                    dt,
+                    if ours { (0, 0.0) } else { (kind, rate) },
+                    inside,
+                    street_condition(wt, *cx.weather.wetness),
+                    cam.position,
+                    &steps,
+                );
+                cx.perf.profile.add(crate::profile_keys::ProfKey::LightsAmbience, __tm.elapsed().as_secs_f64());
+                if let Some(every) = debug_sound_every() {
+                    static LAST: std::sync::atomic::AtomicU32 =
+                        std::sync::atomic::AtomicU32::new(u32::MAX);
+                    let bucket = (cx.clock.clock.time / every as f64) as u32;
+                    if LAST.swap(bucket, std::sync::atomic::Ordering::Relaxed) != bucket
+                    {
+                        log::info!("sound: environment - {} (precip {kind} {rate:.2}, StreetCond {:.2}, {} voices)", amb.last, street_condition(wt, *cx.weather.wetness), a.voice_count());
+                        if let Some(sc) = cx.sound.soundscape.as_mut() {
+                            let heard = sc.take_heard();
+                            log::info!("sound: ambience - {}; heard {heard}", sc.last);
+                        }
+                    }
                 }
             }
         }

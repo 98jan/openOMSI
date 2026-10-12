@@ -168,6 +168,30 @@ pub fn match_arms(source: &str, fn_name: &str, scrutinee: &str) -> BTreeMap<Stri
     out
 }
 
+/// The contexts `stage_ctx!` declares in a source: name -> the parts it reads and writes.
+pub fn contexts(source: &str) -> BTreeMap<String, Vec<String>> {
+    let s = code_only(source);
+    let mut out = BTreeMap::new();
+    let mut from = 0;
+    while let Some(k) = s[from..].find("stage_ctx!(") {
+        let at = from + k + "stage_ctx!(".len();
+        from = at;
+        let Some(open) = s[at..].find('{').map(|o| at + o) else { break };
+        let name = s[at..open].split_whitespace().last().unwrap_or("").to_string();
+        let body = &s[open + 1..block_end(&s, open) - 1];
+        let parts = body
+            .split(|c| c == '[' || c == ']' || c == ',')
+            .map(str::trim)
+            .filter(|w| !w.is_empty() && w.chars().all(|c| c.is_ascii_lowercase() || c == '_') && *w != "reads" && *w != "writes")
+            .map(str::to_string)
+            .collect();
+        if !name.is_empty() {
+            out.insert(name, parts);
+        }
+    }
+    out
+}
+
 /// The functions that can reach a value of one type: the type's own methods (by `self`), and
 /// the free functions (and other types' methods) with a parameter of it (by that name).
 #[derive(Default)]
@@ -281,6 +305,18 @@ impl Code {
             }
             fields.insert(name.to_string());
         }
+        // a context taken from the value (`XCx::of(&mut self.parts())`): `XCx::of`, for the
+        // caller to look up what that context holds
+        let mut from = 0;
+        while let Some(k) = body[from..].find("::of(") {
+            let at = from + k;
+            from = at + 5;
+            let head = &body[..at];
+            let start = head.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).map_or(0, |k| k + 1);
+            if start < at && body[from..].chars().take(40).collect::<String>().contains(who) {
+                fields.insert(format!("{}::of", &head[start..]));
+            }
+        }
         if who == "self" {
             let mut from = 0;
             while let Some(k) = body[from..].find("Self::") {
@@ -392,6 +428,14 @@ fn other(x: &mut Other) { x.c = 1; }
         let s = code_only("let a = '{'; let b = \"}\"; // {\nlet c: &'a str = r#\"{\"#; /* } */ x");
         assert!(!s.contains('{') && !s.contains('}'));
         assert!(s.contains("&'a str") && s.ends_with('x'));
+    }
+
+    #[test]
+    fn contexts_and_their_use() {
+        let src = "stage_ctx!(\n    /// doc\n    ACx { reads: [world, clock], writes: [player] }\n);\nimpl App { fn f(&mut self) { g(ACx::of(&mut self.parts())); } }\n";
+        assert_eq!(contexts(src)["ACx"], ["world", "clock", "player"]);
+        let code = Code::read(&[("a.rs".into(), src.into())], "App");
+        assert!(code.reach(&["f".to_string()].into_iter().collect()).contains("ACx::of"));
     }
 
     #[test]
