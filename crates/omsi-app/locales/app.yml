@@ -27230,18 +27230,22 @@ _version: 2
   fr: "Retirer cet appareil"
   nl: "Dit apparaat verwijderen"
 "A vehicle is still loading":
+  fr: "Un véhicule est encore en cours de chargement"
   pt: "Um veículo ainda está carregando"
   pt-pt: "Ainda está a carregar um veículo"
   nl: "Een voertuig wordt nog geladen"
 "Loading vehicle...":
+  fr: "Chargement du véhicule..."
   pt: "Carregando veículo..."
   pt-pt: "A carregar veículo..."
   nl: "Voertuig laden..."
 "Vehicle loading stopped unexpectedly":
+  fr: "Le chargement du véhicule s'est arrêté de façon inattendue"
   pt: "O carregamento do veículo parou inesperadamente"
   pt-pt: "O carregamento do veículo parou inesperadamente"
   nl: "Laden van voertuig onverwacht gestopt"
 "Vehicle loaded":
+  fr: "Véhicule chargé"
   pt: "Veículo carregado"
   pt-pt: "Veículo carregado"
   nl: "Voertuig geladen"
@@ -33183,3 +33187,42 @@ _version: 2
   de: "Wird installiert..."
   ru: "Установка..."
   uk: "Встановлення..."
+
+"End of the trip. Next: {} to {}, from {} at {} (it starts by itself a minute before)":
+  fr: "Fin de la course. Suivante : {} vers {}, depuis {} à {} (elle démarre d'elle-même une minute avant)"
+
+"line {}":
+  fr: "ligne {}"
+
+"service trip":
+  fr: "haut-le-pied"
+
+"Placed: {} ({how} to drive it)":
+  fr: "Placé : {} ({how} pour le conduire)"
+
+"Weather: Custom weather":
+  fr: "Météo : météo personnalisée"
+
+"Turn METAR sync off before editing its current weather":
+  fr: "Désactivez la synchro METAR avant de modifier la météo actuelle"
+
+"Weather: no METAR report could be loaded":
+  fr: "Météo : aucun bulletin METAR n'a pu être chargé"
+
+"Weather: METAR request failed":
+  fr: "Météo : la requête METAR a échoué"
+
+"ICAO must be exactly 4 letters":
+  fr: "Le code OACI doit faire exactement 4 lettres"
+
+"Situation saved (quicksave): the launcher continues from it":
+  fr: "Situation enregistrée (sauvegarde rapide) : le launcher reprendra à partir d'elle"
+
+"A rail vehicle cannot be moved off its track":
+  fr: "Un véhicule ferroviaire ne peut pas quitter sa voie"
+
+"Ctrl+click on the ground to move the bus there":
+  fr: "Ctrl+clic sur le sol pour y déplacer le bus"
+
+"Refuelling: {now:.0} l":
+  fr: "Plein en cours : {now:.0} l"

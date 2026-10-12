@@ -107,7 +107,7 @@ impl App {
             let text = match d.trips.get(d.trip_index + 1) {
                 Some(next) => format!(
                     "End of the trip. Next: {} to {}, from {} at {} (it starts by itself a minute before)",
-                    if next.line.trim().is_empty() { "service trip".to_string() } else { format!("line {}", next.line) },
+                    if next.line.trim().is_empty() { omsi_ui::tr("service trip").into_owned() } else { omsi_ui::tr("line {}").replacen("{}", &next.line, 1) },
                     next.terminus.strip_prefix(&format!("{} ", next.line)).unwrap_or(&next.terminus),
                     next.stops.first().map(|s| s.name.trim()).unwrap_or("?"),
                     crate::schedule::hhmm(next.departure)
