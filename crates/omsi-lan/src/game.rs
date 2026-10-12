@@ -20,7 +20,9 @@
 //! `OMSI_INSTANCE`, else the process id.
 
 use crate::scene::World;
-use crate::{Args, Player};
+use crate::Player;
+use omsi_lan::config::LanConfig;
+use omsi_lan::host::LanHost;
 use glam::DVec3;
 use omsi_lan::remote::lan_now;
 use omsi_net::{Footprint, LanEvent, LanSession, PartPose, Pose, Role};
@@ -316,7 +318,7 @@ fn date_of(clock: &omsi_sim::SimClock) -> String {
 /// The name the other players see: `--lan-name` (the launcher passes the driver profile's
 /// name), else the personnel file's name, else the computer account's - never a name to
 /// type in, and never the bare "Driver" everybody would share.
-pub fn player_name(args: &Args) -> String {
+pub fn player_name(args: &LanConfig) -> String {
     let given = args.lan_name.trim();
     if !given.is_empty() && given != "Driver" {
         return given.to_string();
@@ -338,8 +340,8 @@ pub fn player_name(args: &Args) -> String {
 }
 
 /// Our world as the other side sees it.
-pub fn world_info(args: &Args) -> omsi_net::WorldInfo {
-    let clock = crate::start_clock(args);
+pub fn world_info(args: &LanConfig) -> omsi_net::WorldInfo {
+    let clock = args.start_clock();
     omsi_net::WorldInfo {
         map: args.map.replace('\\', "/"),
         date: date_of(&clock),
@@ -362,7 +364,7 @@ pub fn publish_vehicles(root: PathBuf, only: Vec<String>) {
 /// Host or join as the command line says (`--lan-host`, `--lan-join`). A session that
 /// cannot be started is reported and the game runs on alone. A joining player waits
 /// briefly for the host's welcome, so that its map is loaded with the host's world.
-pub fn start(args: &Args) -> Option<LanSession> {
+pub fn start(args: &LanConfig) -> Option<LanSession> {
     // (every bus offered until the server joined now says otherwise, see `ServerOffers`)
     let offers_session = omsi_lan::gateway::new_offers_session();
     let world = world_info(args);
@@ -475,7 +477,7 @@ pub fn start(args: &Args) -> Option<LanSession> {
             ),
         }
     }
-    if session.role == Role::Host && args.server.is_none() {
+    if session.role == Role::Host && !args.server {
         // the way in over the internet that always works (see `open_public_gateway`)
         let info = omsi_net::ws::ServerInfo { name: format!("{}'s game", player_name(args)), map: args.map.clone(), max_players: 16, version: omsi_platform::VERSION.into(), ..Default::default() };
         open_public_gateway(&session, info, 0, true);
@@ -503,11 +505,11 @@ pub fn turned_away(lan: &LanSession) -> Option<String> {
 /// (TCP), a joining player fetches what it lacks before its world is made, and says how
 /// far it has got in the status the launcher shows.
 /// What of our command line decides the mods we share as the host.
-fn mod_source(args: &Args) -> crate::lan_mods::ModSource {
+fn mod_source(args: &LanConfig) -> crate::lan_mods::ModSource {
     crate::lan_mods::ModSource { root: args.root.clone(), map: args.map.clone(), bus: args.bus.clone(), weather: args.weather.clone() }
 }
 
-pub fn share_mods(args: &mut Args, lan: &mut LanSession) {
+pub fn share_mods(args: &mut LanConfig, lan: &mut LanSession) {
     match lan.role {
         Role::Host => {
             if let Some(port) = lan.local_addr().map(|a| a.port()) {
@@ -629,7 +631,7 @@ pub fn answering_while<T>(lan: &mut Option<LanSession>, bus: Option<&str>, work:
 /// come in time: listing a big add-on map (thousands of objects to find and hash) took the
 /// host longer than the joining game waited, and the player was left on its own map, where
 /// nobody ever met them.
-pub fn take_host_map(args: &mut Args, lan: &mut LanSession) {
+pub fn take_host_map(args: &mut LanConfig, lan: &mut LanSession) {
     if lan.role != Role::Client {
         return;
     }
@@ -708,18 +710,18 @@ pub fn host_time_now(lan: &LanSession) -> Option<String> {
 }
 
 /// A weather file the host uses, if this machine has it (None: the map's default).
-fn host_weather(args: &Args, weather: &str) -> Result<Option<String>, String> {
+fn host_weather(args: &LanConfig, host: &dyn LanHost, weather: &str) -> Result<Option<String>, String> {
     let w = weather.trim();
     if w.is_empty() {
         return Ok(None);
     }
     // the natural model and the cycle are made on each machine: no file to have
-    if crate::weather_model::is_natural(Some(w)) || w == "cycle" || crate::weather_setup::custom_weather(Some(w)).is_some() {
+    if host.weather_without_file(w) {
         return Ok(Some(w.to_string()));
     }
     // a METAR report's values: made into a weather here, no file and no sync of our own
-    if w.starts_with(crate::weather_setup::REPORT) {
-        return if crate::weather_setup::from_report(w).is_some() {
+    if let Some(readable) = host.weather_report(w) {
+        return if readable {
             Ok(Some(w.to_string()))
         } else {
             Err(format!("the host's weather {w} cannot be read here"))
@@ -745,7 +747,7 @@ fn runtime_weather_changed(host: &str, local: Option<&str>, seen: Option<&str>) 
 /// Take the host's world (a joining player, before the map is loaded): the date, the time
 /// of day as the host's clock has it now, the weather and the season go into the
 /// arguments the world is made from. The map stays ours (a different one is warned about).
-pub fn adopt_host_world(args: &mut Args, lan: &mut LanSession, game: &mut LanGame) {
+pub fn adopt_host_world(args: &mut LanConfig, host: &dyn LanHost, lan: &mut LanSession, game: &mut LanGame) {
     if lan.role != Role::Client {
         return;
     }
@@ -767,7 +769,7 @@ pub fn adopt_host_world(args: &mut Args, lan: &mut LanSession, game: &mut LanGam
         );
     }
     let mut warnings = Vec::new();
-    match host_weather(args, &hw.weather) {
+    match host_weather(args, host, &hw.weather) {
         Ok(wt) => args.weather = wt,
         Err(e) => warnings.push(e),
     }
@@ -794,10 +796,10 @@ pub fn adopt_host_world(args: &mut Args, lan: &mut LanSession, game: &mut LanGam
 /// The host's world after the map was loaded (a late welcome, a reconnect): the clock is
 /// set and the weather changed; the season needs the map loaded again, which is said.
 fn adopt_at_runtime(
-    args: &Args,
+    args: &LanConfig,
+    host: &dyn LanHost,
     lan: &mut LanSession,
     game: &mut LanGame,
-    world: Option<&World>,
     clock: &omsi_sim::SimClock,
 ) -> Vec<WorldUpdate> {
     let mut out = Vec::new();
@@ -828,7 +830,7 @@ fn adopt_at_runtime(
     }
     let mut warnings = Vec::new();
     let mut weather = args.weather.clone();
-    match host_weather(args, &hw.weather) {
+    match host_weather(args, host, &hw.weather) {
         Ok(wt) => {
             let norm = |s: &Option<String>| {
                 s.as_deref()
@@ -845,15 +847,14 @@ fn adopt_at_runtime(
         Err(e) => warnings.push(e),
     }
     // the season is in the textures that are loaded: say so when the host's differs
-    if let Some(world) = world {
-        let mut theirs = args.clone();
-        theirs.date = Some(hw.date.clone());
-        theirs.day_of_year = None;
-        theirs.season = (!hw.season.trim().is_empty()).then(|| hw.season.trim().to_string());
-        theirs.weather = weather.clone();
-        let want = crate::season_folder(&theirs, &world.global).1;
-        if want != omsi_texture::season_folder() {
-            warnings.push(format!("the host's season ({}) differs from the one loaded here ({}) - start the game again to see it", want.as_deref().unwrap_or("summer"), omsi_texture::season_folder().as_deref().unwrap_or("summer")));
+    let mut theirs = args.clone();
+    theirs.date = Some(hw.date.clone());
+    theirs.day_of_year = None;
+    theirs.season = (!hw.season.trim().is_empty()).then(|| hw.season.trim().to_string());
+    theirs.weather = weather.clone();
+    if let Some((want, loaded)) = host.season_folders(&theirs) {
+        if want != loaded {
+            warnings.push(format!("the host's season ({}) differs from the one loaded here ({}) - start the game again to see it", want.as_deref().unwrap_or("summer"), loaded.as_deref().unwrap_or("summer")));
         }
     }
     let mut mine = world_info(args);
@@ -1119,7 +1120,7 @@ fn content_relative(path: &Path, root: &Path) -> String {
 }
 
 /// The paint scheme `--paint` picked, by name.
-pub fn paint_name(args: &Args, ty: &omsi_sim::VehicleType) -> String {
+pub fn paint_name(args: &LanConfig, ty: &omsi_sim::VehicleType) -> String {
     // (none chosen: the model's own textures, sent as no name)
     let Some(p) = args.paint.as_deref() else {
         return String::new();
@@ -1191,7 +1192,7 @@ pub(crate) fn indicator(v: &omsi_sim::VehicleInstance) -> u8 {
 pub fn my_pose(
     game: &mut LanGame,
     p: Option<&Player>,
-    args: &Args,
+    args: &LanConfig,
     duty: Option<(&str, &str)>,
     riders: usize,
 ) -> Pose {
@@ -1643,7 +1644,7 @@ pub fn settle_spawn(
     lan: &mut LanSession,
     game: &mut LanGame,
     p: &mut Player,
-    args: &Args,
+    args: &LanConfig,
     world: &World,
     net: Option<&Network>,
     wait: Duration,
@@ -1675,7 +1676,7 @@ pub fn settle_spawn(
 /// it must be a plain relative `.bus` / `.ovh` path (`omsi_net::vehicle_path`), found under
 /// one of our content roots, and a regular file of a sane size - never a device such as
 /// `/dev/zero`, never a file elsewhere on the disk.
-fn remote_bus_file(args: &Args, bus: &str) -> Result<PathBuf, String> {
+fn remote_bus_file(args: &LanConfig, bus: &str) -> Result<PathBuf, String> {
     let rel = omsi_net::vehicle_path(bus)
         .ok_or_else(|| "not a vehicle file inside a content folder".to_string())?;
     let mut path = omsi_cfg::resolve_path(&args.root, &rel);
@@ -1715,7 +1716,7 @@ fn remote_bus_file(args: &Args, bus: &str) -> Result<PathBuf, String> {
 /// the buses its `vehicles` list allows. A bus the list does not allow is not loaded at all
 /// (a player joining with another than the server offers).
 fn remote_type(
-    args: &Args,
+    args: &LanConfig,
     pose: &Pose,
     player: Option<&Player>,
 ) -> Option<(Arc<omsi_sim::VehicleType>, bool)> {
@@ -1742,17 +1743,18 @@ fn remote_type(
 #[allow(clippy::too_many_arguments)]
 fn new_remote(
     game: &mut LanGame,
-    args: &Args,
+    args: &LanConfig,
     pose: &Pose,
     player: Option<&Player>,
     world: &World,
+    lan_host: &dyn LanHost,
     clock: Option<&omsi_sim::SimClock>,
 ) -> Option<RemoteVehicle> {
     let (ty, stand_in) = remote_type(args, pose, player)?;
     let mut host =
-        omsi_sim::VehicleHost::new(clock.cloned().unwrap_or_else(|| crate::start_clock(args)));
+        omsi_sim::VehicleHost::new(clock.cloned().unwrap_or_else(|| args.start_clock()));
     host.font_lib = Some(world.fonts.clone());
-    let hof = crate::find_hof(args, world, &ty);
+    let hof = lan_host.depot_of(args, &ty);
     host.hof = hof.clone();
     let scheme = if pose.paint.is_empty() {
         None
@@ -2120,7 +2122,8 @@ pub fn tick(
     lan: &mut LanSession,
     game: &mut LanGame,
     dt: f32,
-    args: &Args,
+    args: &LanConfig,
+    host: &dyn LanHost,
     mut player: Option<&mut Player>,
     world: Option<&World>,
     renderer: Option<&Renderer>,
@@ -2177,14 +2180,14 @@ pub fn tick(
     // the host's world: taken over at a late welcome, the clock kept in step
     if let (Role::Client, Some(clock)) = (lan.role, frame.clock) {
         if lan.welcomes != game.adopted && lan.welcome.is_some() {
-            updates.extend(adopt_at_runtime(args, lan, game, world, clock));
+            updates.extend(adopt_at_runtime(args, host, lan, game, clock));
             game.slew = 0.0;
             lan.take_host_clock();
         } else if let Some(h) = lan.take_host_clock() {
             // the host changed its weather (its administration): ours follows
             if runtime_weather_changed(&h.world.weather, args.weather.as_deref(), game.weather_seen.as_deref()) {
                 game.weather_seen = Some(h.world.weather.clone());
-                if let Ok(wt) = host_weather(args, &h.world.weather) {
+                if let Ok(wt) = host_weather(args, host, &h.world.weather) {
                     let shown = if h.world.weather.trim().is_empty() { "the map's default" } else { h.world.weather.as_str() };
                     log::info!("LAN: the host's weather is now {shown}");
                     updates.push(WorldUpdate::Weather(wt));
@@ -2325,6 +2328,7 @@ pub fn tick(
                 &pose,
                 player.as_deref(),
                 w,
+                host,
                 frame.clock,
             ) else {
                 game.failed.insert(key, std::time::Instant::now());
@@ -2696,12 +2700,14 @@ mod tests {
     #[test]
     fn a_hosts_natural_weather_or_cycle_is_taken_without_a_file() {
         use clap::Parser;
-        let args = crate::cli::Args::parse_from(["openomsi"]);
+        let full = crate::cli::Args::parse_from(["openomsi"]);
+        let args = full.lan_config();
+        let host = crate::app_impl::lan_tick::AppLanHost { args: &full, world: None };
         for w in ["natural", "Natural", "cycle"] {
-            assert_eq!(host_weather(&args, w), Ok(Some(w.to_string())), "{w}");
+            assert_eq!(host_weather(&args, &host, w), Ok(Some(w.to_string())), "{w}");
         }
-        assert_eq!(host_weather(&args, ""), Ok(None));
-        assert!(host_weather(&args, "weather/none_such.owt").is_err());
+        assert_eq!(host_weather(&args, &host, ""), Ok(None));
+        assert!(host_weather(&args, &host, "weather/none_such.owt").is_err());
     }
 
     #[test]

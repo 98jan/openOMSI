@@ -395,7 +395,9 @@ impl App {
     fn load_world_with(&mut self, event_loop: &ActiveEventLoop, opened: Option<Result<(World, Camera, DVec3)>>) {
         // a joining player loads the host's date, time, weather and season (after the menu)
         if let Some(l) = self.net.lan.as_mut() {
-            lan::adopt_host_world(&mut self.args, l, &mut self.net.remotes);
+            let mut c = self.args.lan_config();
+            lan::adopt_host_world(&mut c, &crate::app_impl::lan_tick::AppLanHost { args: &self.args, world: None }, l, &mut self.net.remotes);
+            self.args.take_lan_config(&c);
         }
         let renderer = self.renderer.take().expect("renderer");
         let mut scene = renderer.new_scene();
@@ -708,7 +710,7 @@ impl App {
                         lan,
                         &mut self.net.remotes,
                         p,
-                        &self.args,
+                        &self.args.lan_config(),
                         &w,
                         self.session.traffic.as_ref().map(|t| &t.net),
                         // (still loading: a moment's wait for the host's list puts the bus

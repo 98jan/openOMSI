@@ -207,7 +207,7 @@ impl<'a> Offscreen<'a> {
                 l,
                 &mut remotes_off,
                 p,
-                args,
+                &args.lan_config(),
                 &world,
                 traffic.as_ref().map(|t| &t.net),
                 lan::WELCOME_WAIT,

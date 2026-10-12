@@ -9,7 +9,9 @@
 //! plain values.
 
 pub mod admin;
+pub mod config;
 pub mod gateway;
+pub mod host;
 pub mod mirror;
 pub mod mods;
 pub mod remote;

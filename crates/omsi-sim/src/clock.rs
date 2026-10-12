@@ -21,7 +21,34 @@ impl Default for SimClock {
     }
 }
 
+/// A time of day as the command line and the files write it (`hh[:mm[:ss]]`) in seconds
+/// since midnight; a missing hour is 9, missing minutes and seconds 0.
+pub fn parse_day_time(s: &str) -> f64 {
+    let mut it = s.split(':');
+    let h: f64 = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(9.0);
+    let m: f64 = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0.0);
+    let sec: f64 = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0.0);
+    h * 3600.0 + m * 60.0 + sec
+}
+
 impl SimClock {
+    /// The clock a game starts on: `date` (`yyyy-mm-dd`), else the default's; `day_of_year`
+    /// over it when given; the time of day `time` (see [`parse_day_time`]).
+    pub fn starting(date: Option<&str>, day_of_year: Option<i32>, time: &str) -> SimClock {
+        let mut c = SimClock::default();
+        if let Some(d) = date {
+            let v: Vec<i32> = d.split('-').filter_map(|x| x.trim().parse().ok()).collect();
+            if v.len() == 3 {
+                c.set_date(v[0], v[1], v[2]);
+            }
+        }
+        if let Some(doy) = day_of_year {
+            c.day_of_year = doy.max(1);
+        }
+        c.time = parse_day_time(time);
+        c
+    }
+
     pub fn advance(&mut self, dt: f32) {
         self.timegap = dt;
         if !self.paused {

@@ -438,7 +438,7 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     // the LAN session (offscreen too, so that one game's view of another can be rendered);
     // a joining player's world is the host's (taken over again when the window loads it)
     let mut lan = if args.export_glb.is_none() {
-        lan::start(&args)
+        lan::start(&args.lan_config())
     } else {
         None
     };
@@ -451,8 +451,10 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     // made (see `lan_mods`)
     lan_mods::remove_stale();
     if let Some(l) = lan.as_mut() {
-        lan::share_mods(&mut args, l);
-        lan::take_host_map(&mut args, l);
+        let mut c = args.lan_config();
+        lan::share_mods(&mut c, l);
+        lan::take_host_map(&mut c, l);
+        args.take_lan_config(&c);
     }
     if let (Some(cfg), Some(l)) = (server_cfg.as_ref(), lan.as_ref()) {
         lan::open_public_gateway(l, server::info_of(cfg), cfg.web_port, cfg.tunnel);
@@ -489,7 +491,9 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     }
     if let Some(out) = args.offscreen.clone() {
         if let Some(l) = lan.as_mut() {
-            lan::adopt_host_world(&mut args, l, &mut lan_game);
+            let mut c = args.lan_config();
+            lan::adopt_host_world(&mut c, &crate::app_impl::lan_tick::AppLanHost { args: &args, world: None }, l, &mut lan_game);
+            args.take_lan_config(&c);
         }
         let r = run_offscreen(&args, &out, lan, lan_game);
         lan_mods::clean_up();

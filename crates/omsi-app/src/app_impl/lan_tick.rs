@@ -29,11 +29,14 @@ impl App {
             inside_of: self.net.inside_remote,
             radio_keyed,
         };
+        let config = self.args.lan_config();
+        let host = AppLanHost { args: &self.args, world: self.world.as_deref() };
         let updates = lan::tick(
             lan,
             &mut self.net.remotes,
             dt,
-            &self.args,
+            &config,
+            &host,
             self.player.as_mut(),
             self.world.as_deref(),
             self.renderer.as_ref(),
@@ -155,4 +158,77 @@ pub(crate) fn chat_key_of(code: winit::keyboard::KeyCode) -> lan::ChatKey {
         _ => lan::ChatRole::Other,
     };
     lan::ChatKey { id: h.finish(), role }
+}
+
+impl crate::Args {
+    /// What LAN play takes from the command line (see `omsi_lan::config::LanConfig`).
+    pub(crate) fn lan_config(&self) -> omsi_lan::config::LanConfig {
+        omsi_lan::config::LanConfig {
+            root: self.root.clone(),
+            map: self.map.clone(),
+            weather: self.weather.clone(),
+            season: self.season.clone(),
+            date: self.date.clone(),
+            day_of_year: self.day_of_year,
+            time: self.time.clone(),
+            bus: self.bus.clone(),
+            paint: self.paint.clone(),
+            driver: self.driver.clone(),
+            lan_name: self.lan_name.clone(),
+            lan_host: self.lan_host,
+            lan_join: self.lan_join.clone(),
+            server: self.server.is_some(),
+            entry: self.entry,
+            spawn: self.spawn.clone(),
+            hof: self.hof.clone(),
+            line: self.line.clone(),
+            tour: self.tour.clone(),
+            trip: self.trip.clone(),
+        }
+    }
+
+    /// Take back what LAN play changed (a joining player's map, date, time and weather, and
+    /// the spawn choices a new map drops).
+    pub(crate) fn take_lan_config(&mut self, c: &omsi_lan::config::LanConfig) {
+        self.map = c.map.clone();
+        self.weather = c.weather.clone();
+        self.season = c.season.clone();
+        self.date = c.date.clone();
+        self.day_of_year = c.day_of_year;
+        self.time = c.time.clone();
+        self.entry = c.entry;
+        self.spawn = c.spawn.clone();
+        self.hof = c.hof.clone();
+        self.line = c.line.clone();
+        self.tour = c.tour.clone();
+        self.trip = c.trip.clone();
+    }
+}
+
+/// What LAN play asks of the game (see `omsi_lan::host::LanHost`): its arguments as they
+/// are now and the world, when one is loaded.
+pub(crate) struct AppLanHost<'a> {
+    pub(crate) args: &'a crate::Args,
+    pub(crate) world: Option<&'a crate::scene::World>,
+}
+
+impl omsi_lan::host::LanHost for AppLanHost<'_> {
+    fn season_folders(&self, cfg: &omsi_lan::config::LanConfig) -> Option<(Option<String>, Option<String>)> {
+        let world = self.world?;
+        let mut theirs = self.args.clone();
+        theirs.take_lan_config(cfg);
+        Some((crate::season_folder(&theirs, &world.global).1, omsi_texture::season_folder()))
+    }
+
+    fn weather_without_file(&self, w: &str) -> bool {
+        crate::weather_model::is_natural(Some(w)) || w == "cycle" || crate::weather_setup::custom_weather(Some(w)).is_some()
+    }
+
+    fn weather_report(&self, w: &str) -> Option<bool> {
+        w.starts_with(crate::weather_setup::REPORT).then(|| crate::weather_setup::from_report(w).is_some())
+    }
+
+    fn depot_of(&self, cfg: &omsi_lan::config::LanConfig, ty: &omsi_sim::VehicleType) -> Option<std::sync::Arc<omsi_vehicle::Hof>> {
+        crate::find_hof_named(cfg.hof.as_deref(), self.world?, ty)
+    }
 }

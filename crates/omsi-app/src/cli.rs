@@ -280,11 +280,7 @@ pub(crate) struct Args {
 }
 
 pub(crate) fn parse_time(s: &str) -> f64 {
-    let mut it = s.split(':');
-    let h: f64 = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(9.0);
-    let m: f64 = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0.0);
-    let sec: f64 = it.next().and_then(|x| x.trim().parse().ok()).unwrap_or(0.0);
-    h * 3600.0 + m * 60.0 + sec
+    omsi_sim::clock::parse_day_time(s)
 }
 
 pub(crate) fn parse_cam(s: &str) -> Result<Camera> {

@@ -795,11 +795,14 @@ impl Offscreen<'_> {
                 inside_of: None,
                 radio_keyed: false,
             };
+            let config = args.lan_config();
+            let host = crate::app_impl::lan_tick::AppLanHost { args, world: Some(world) };
             let updates = lan::tick(
                 l,
                 remotes_off,
                 dt,
-                args,
+                &config,
+                &host,
                 player.as_mut(),
                 Some(world),
                 Some(renderer),
