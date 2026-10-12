@@ -1,5 +1,5 @@
 use glam::Vec2;
-use omsi_launcher_ui::ui::Ui;
+use omsi_ui::kit::Ui;
 use omsi_ui::Rect;
 
 fn frame(ui: &mut Ui, sliders: &[(&str, Rect)], v: &mut f32) -> bool {
