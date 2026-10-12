@@ -75,7 +75,7 @@ function fixChoice() {
     c.paint = '';
     c.number = '';
   }
-  if (S.weather && c.weather && !S.weather.some((w) => w.file === c.weather)) c.weather = '';
+  if (S.weather && c.weather && !c.weather.startsWith('metar:') && c.weather !== 'cycle' && !S.weather.some((w) => w.file === c.weather)) c.weather = '';
   set({ choice: c });
 }
 
