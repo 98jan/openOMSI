@@ -17,8 +17,9 @@ use omsi_ui::theme::*;
 use omsi_ui::kit::{id_of, ButtonKind, Ui};
 use crate::ui::{DropdownView, MenuKind, Preview};
 
-/// The launcher page's background.
-const PAGE: Color = BG;
+/// The page's background: the launcher's, see-through so that the paused game stays in view
+/// behind the menu, dimmed (it was the launcher's opaque page, all black around the menu).
+const PAGE: Color = Color([BG.0[0], BG.0[1], BG.0[2], 0.72]);
 /// A list's row.
 const LIST_ROW: f32 = 40.0;
 
@@ -215,7 +216,7 @@ fn rail(sh: &mut Shell, v: &PauseView) {
     let logo = sh.logo_tex;
     let ui = &mut sh.ui;
     ui.solid(r);
-    ui.p().rect(r, SIDEBAR);
+    ui.p().rect(r, SIDEBAR.alpha(0.88));
     // the brand
     if let Some(tex) = logo {
         ui.image(Rect::new(18.0, 16.0, 32.0, 32.0), tex, 7.0);
