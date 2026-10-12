@@ -11,6 +11,57 @@ use omsi_scenery::sco::ScriptSet;
 use std::path::Path;
 use std::sync::Arc;
 
+mod state;
+pub use state::*;
+
+pub use omsi_map::calendar::DayKind;
+
+/// When a building with a `[NightMapMode]` is in use and when its windows are lit, as
+/// OMSI decides once per object and every frame: in use
+/// between `on` and `off` (seconds of the day; mode 2 homes 5.5-9.5 h until 22-24 h, mode 3
+/// offices 6-8 h until 17-19 h on working days that are no holiday, mode 4 schools 6-8 h until
+/// 14-16 h on school days, any other mode all day); lit while in use and the daylight under
+/// `threshold` (0.6 for mode 0, else 0.3-0.75).
+#[derive(Clone, Copy, Debug)]
+pub struct InUse {
+    pub mode: i32,
+    pub on: f64,
+    pub off: f64,
+    pub threshold: f32,
+}
+
+impl InUse {
+    /// The window of object `seed` (its map id: the same building keeps its hours).
+    pub fn new(mode: i32, seed: u64) -> InUse {
+        let r = |k: u64| {
+            let h = (seed ^ k.wrapping_mul(0x9E37_79B9_7F4A_7C15)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            ((h >> 11) % 1_000_000) as f64 / 1_000_000.0
+        };
+        let (on, off) = match mode {
+            2 => (5.5 + 4.0 * r(1), 22.0 + 2.0 * r(2)),
+            3 => (6.0 + 2.0 * r(1), 17.0 + 2.0 * r(2)),
+            4 => (6.0 + 2.0 * r(1), 14.0 + 2.0 * r(2)),
+            _ => (0.0, 24.0),
+        };
+        let threshold = if mode == 0 { 0.6 } else { (0.3 + 0.45 * r(3)) as f32 };
+        InUse { mode, on: on * 3600.0, off: off * 3600.0, threshold }
+    }
+
+    pub fn in_use(&self, time: f64, day: DayKind) -> bool {
+        let t = time.rem_euclid(86_400.0);
+        let hours = t >= self.on && t <= self.off;
+        match self.mode {
+            3 => hours && day.workday && !day.holiday,
+            4 => hours && day.workday && !day.holiday && !day.school_holiday,
+            _ => hours,
+        }
+    }
+
+    pub fn lit(&self, time: f64, day: DayKind, brightness: f32) -> bool {
+        self.in_use(time, day) && brightness < self.threshold
+    }
+}
+
 /// Builtin variables of scenery objects (`program/varlist_scenobj.txt`).
 pub fn builtin_scenobj_vars(root: &Path) -> Vec<String> {
     let mut v: Vec<String> = match omsi_cfg::CfgFile::read(root.join("program/varlist_scenobj.txt")) {
@@ -164,6 +215,21 @@ impl SceneryInstance {
     pub fn trigger(&mut self, name: &str) -> bool {
         let p = self.program.clone();
         self.vm.run_trigger(&p, name, &mut self.state, &mut self.host)
+    }
+
+    /// [`Self::update`] on the simulation's clock: the object's own clock is set to
+    /// `clock` before it moves on by `dt` (None: it keeps its own).
+    pub fn update_on(&mut self, dt: f32, vars: &SceneryVars, clock: Option<&crate::SimClock>) {
+        if let Some(c) = clock {
+            let own = &mut self.host.clock;
+            own.clone_from(c);
+            // (the update moves it on by `dt` again)
+            if !own.paused {
+                own.time -= dt as f64;
+                own.run_time -= dt as f64;
+            }
+        }
+        self.update(dt, vars);
     }
 
     pub fn update(&mut self, dt: f32, vars: &SceneryVars) {
