@@ -14,10 +14,15 @@ fn headlamp(t: vec3<f32>, dir: vec3<f32>, low: bool) -> f32 {
     let across = abs(t.x * fwd.y - t.y * fwd.x) / ahead;
     let wide = 0.12 * smoothstep(1.0, 0.45, across) + 0.88 * exp(-across * across / 0.06);
     let drop = -t.z / max(length(t.xy), 1e-3);
-    // full out to where the road is 0.06 under the lamp's horizon, then less as the cube of
+    // full out to where the road is `knee` under the lamp's horizon, then less as the cube of
     // the drop and a little more: the road is lit evenly from the bumper on, a little
-    // brighter as far as the beam reaches, and not as one hot pool where its axis lands
-    var up = min(1.0, pow(0.06 / max(abs(drop), 1e-4), 3.4));
+    // brighter as far as the beam reaches, and not as one hot pool where its axis lands.
+    // The knee is lower to the sides: a low beam's far light is its middle, just under the
+    // cut-off (ECE R112's 50L/50R at 0.86 deg down), and aside it is aimed nearer (25L/25R,
+    // 2 deg down 9 deg out) - so the lit road ends in a rounded tip ahead, not along a
+    // circle round the lamp, which is a straight line across the road from the cab
+    let knee = mix(0.045, 0.085, smoothstep(0.0, 0.4, across));
+    var up = min(1.0, pow(knee / max(abs(drop), 1e-4), 3.4));
     if (low) {
         up = up * smoothstep(-0.012, 0.025, drop);
         return wide * up;
