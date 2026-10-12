@@ -13,7 +13,7 @@
 use super::*;
 use std::path::Path;
 
-pub(crate) use omsi_lan::server_cfg::{allows, enforce_vehicles, player_info, ServerCfg, SERVER_VEHICLES};
+pub(crate) use omsi_lan::server_cfg::{enforce_vehicles, player_info, ServerCfg, SERVER_VEHICLES};
 
 /// The server's status as the web gateway tells it (see `omsi_net::ws::ServerInfo`).
 pub(crate) fn info_of(cfg: &ServerCfg) -> omsi_net::ws::ServerInfo {

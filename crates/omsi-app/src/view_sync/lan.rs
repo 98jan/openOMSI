@@ -50,7 +50,8 @@ pub(crate) fn apply_lan(
     w: &World,
     r: &Renderer,
     scene: &mut Scene,
-    frame: &crate::lan::Frame,
+    audio: Option<&omsi_audio::AudioEngine>,
+    frame: &crate::lan::LanInput,
     dt: f32,
 ) {
     let changes = std::mem::take(&mut game.drawn);
@@ -58,7 +59,7 @@ pub(crate) fn apply_lan(
         match e {
             RemoteEvent::Gone(id) => {
                 if let Some(v) = view.remotes.remove(&id) {
-                    release(r, scene, w, frame.audio, v);
+                    release(r, scene, w, audio, v);
                 }
             }
             RemoteEvent::Made(id) => {
@@ -70,10 +71,10 @@ pub(crate) fn apply_lan(
     }
     for (id, inside) in changes.heard {
         if let (Some(rv), Some(v)) = (game.remotes.get_mut(&id), view.remotes.get_mut(&id)) {
-            sound_remote(rv, v, frame.audio, frame.listener, frame.muffled, inside);
+            sound_remote(rv, v, audio, frame.listener, frame.muffled, inside);
         }
     }
-    if let Some(a) = frame.audio {
+    if let Some(a) = audio {
         for id in changes.debug_sounds {
             if let Some(v) = view.remotes.get(&id) {
                 let playing: Vec<String> = v

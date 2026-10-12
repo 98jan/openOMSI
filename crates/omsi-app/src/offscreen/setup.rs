@@ -203,12 +203,14 @@ impl<'a> Offscreen<'a> {
                 a
             });
         if let (Some(l), Some(p)) = (lan_off.as_mut(), player.as_mut()) {
+            let figure = p.driver.as_ref().map(|d| d.human_type().def.path.clone());
             lan::settle_spawn(
                 l,
                 &mut remotes_off,
-                p,
+                &mut p.vehicle,
+                figure.as_deref(),
                 &args.lan_config(),
-                &world,
+                &lan::AppLanHost { args, world: Some(&world) },
                 traffic.as_ref().map(|t| &t.net),
                 lan::WELCOME_WAIT,
             );
@@ -288,6 +290,7 @@ impl<'a> Offscreen<'a> {
             lan_audio,
             lan_off,
             remotes_off,
+            lan_world_off: Default::default(),
             run_clock,
             wetness,
             cabin_air,

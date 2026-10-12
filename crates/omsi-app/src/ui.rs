@@ -20,10 +20,9 @@ use text::*;
 // ---------------------------------------------------------------------------------------
 // the chat
 
-/// How many rows the chat shows (a long line takes several), and how many lines it keeps to
-/// scroll back.
+/// How many rows the chat shows (a long line takes several; the lines it keeps to scroll
+/// back: `omsi_lan::game::CHAT_KEEP`).
 const CHAT_SHOWN: usize = 8;
-pub const CHAT_KEEP: usize = 200;
 
 /// A notification: a card over the navigator that goes by itself - from the server
 /// (`notify`), the plugins, the update check, and what the game tells the driver to do
@@ -1406,11 +1405,9 @@ fn clip_left(tc: &TextCache, text: &str, px: f32, width: f32) -> String {
     t.into_iter().collect()
 }
 
-/// A chat line with its bad words starred out (rustrict: profanity, slurs and the usual
-/// ways of writing around a filter, without a word list to keep).
+/// A chat line with its bad words starred out (see `omsi_lan::game::filter_chat`).
 pub fn filter_chat(text: &str) -> String {
-    use rustrict::CensorStr;
-    text.censor()
+    omsi_lan::game::filter_chat(text)
 }
 
 /// Fit all VR page buttons above the separately reserved Back button.

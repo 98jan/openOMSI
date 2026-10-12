@@ -759,6 +759,7 @@ impl Offscreen<'_> {
             ref run_clock,
             ref duty,
             ref mut remotes_off,
+            ref mut lan_world_off,
             ref world,
             ref renderer,
             ref mut scene,
@@ -784,8 +785,7 @@ impl Offscreen<'_> {
             // a host tells the others its clock (a client here keeps the one it started with;
             // a server's runs at its speed, moved by its admins)
             let clock = (l.role == omsi_net::Role::Host).then_some(run_clock);
-            let frame = lan::Frame {
-                audio: lan_audio.as_ref(),
+            let frame = lan::LanInput {
                 listener,
                 muffled: false,
                 riders: humans_off.as_ref().map(|h| h.riding()).unwrap_or(0),
@@ -794,26 +794,40 @@ impl Offscreen<'_> {
                 walker: None,
                 inside_of: None,
                 radio_keyed: false,
+                figure: player.as_ref().and_then(|p| p.driver.as_ref()).map(|d| d.human_type().def.path.clone()),
+                drawn: true,
             };
             let config = args.lan_config();
-            let host = crate::app_impl::lan_tick::AppLanHost { args, world: Some(world) };
-            let updates = lan::tick(
+            let host = lan::AppLanHost { args, world: Some(world) };
+            let sent = {
+                let traffic = traffic.as_ref();
+                let cars = || traffic.map(|t| t.cars.iter().map(|c| lan::car_footprint(&c.vehicle)).collect()).unwrap_or_default();
+                lan::tick_send(l, remotes_off, dt, &config, player.as_ref().map(|p| &p.vehicle), &cars, None, &frame)
+            };
+            lan_world_off.tick(
                 l,
-                remotes_off,
                 dt,
                 &config,
-                &host,
-                player.as_mut(),
                 Some(world),
                 Some(renderer),
                 Some(scene),
                 traffic.as_mut(),
                 humans_off.as_mut(),
                 sim_view,
-                None,
+                player.as_ref().map(|p| p.vehicle.position),
+            );
+            let updates = lan::tick_receive(
+                l,
+                remotes_off,
+                sent,
+                dt,
+                &config,
+                &host,
+                player.as_mut().map(|p| &mut p.vehicle),
+                traffic.as_ref().map(|t| &t.net),
                 &frame,
             );
-            crate::view_sync::apply_lan(remotes_off, &mut sim_view.lan, world, renderer, scene, &frame, dt);
+            crate::view_sync::apply_lan(remotes_off, &mut sim_view.lan, world, renderer, scene, lan_audio.as_ref(), &frame, dt);
             for u in updates {
                 if let (lan::WorldUpdate::Tours(tours), Some(s)) = (u, schedule.as_mut()) {
                     s.set_lan_tours(tours);

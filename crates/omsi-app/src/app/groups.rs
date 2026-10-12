@@ -50,6 +50,8 @@ pub(crate) struct NetState {
     /// chat line.
     pub(crate) lan: Option<omsi_net::LanSession>,
     pub(crate) remotes: lan::LanGame,
+    /// The shared world: the host's traffic and people, sent (host) or mirrored (client).
+    pub(crate) lan_world: crate::lan_world::LanWorld,
 }
 
 /// What the game talks to besides itself: the OMSI and Lua plugins, Discord, Steam, the

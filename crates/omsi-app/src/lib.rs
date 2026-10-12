@@ -56,10 +56,10 @@ mod hud;
 mod humans;
 mod journey;
 use omsi_input::keys;
-// (LAN play's game side, on its way into omsi-lan: the files are there already and are
-// compiled here until they need nothing of the app)
-#[path = "../../omsi-lan/src/game.rs"]
-mod lan;
+// (LAN play: the session is omsi-lan's `game`, see `lan_play`; the shared world's mirror
+// is on its way there and compiled here until it needs nothing of the app)
+mod lan_play;
+use lan_play as lan;
 #[path = "../../omsi-lan/src/game_world.rs"]
 mod lan_world;
 use omsi_scene::lights;
@@ -438,7 +438,7 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     // the LAN session (offscreen too, so that one game's view of another can be rendered);
     // a joining player's world is the host's (taken over again when the window loads it)
     let mut lan = if args.export_glb.is_none() {
-        lan::start(&args.lan_config())
+        lan::start(&args.lan_config(), &lan::AppLanHost { args: &args, world: None })
     } else {
         None
     };
@@ -792,6 +792,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             is_admin: false,
             lan: None,
             remotes: Default::default(),
+            lan_world: Default::default(),
         },
         service_msg: clock_note.map(|m| (m, 10.0)),
         settings,

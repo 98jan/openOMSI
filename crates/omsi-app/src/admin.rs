@@ -261,13 +261,6 @@ fn who_id(arg: &str) -> Option<u32> {
     arg.trim().parse::<u32>().ok()
 }
 
-/// Ask the server for its administration with `password` (see the module); the password
-/// waits in the session's `LanGame::admin_password` for the server's challenge.
-pub(crate) fn request(lan: &mut LanSession, game: &mut crate::lan::LanGame, password: &str) {
-    game.admin_password = Some(password.to_string());
-    lan.command(1, "auth?");
-}
-
 /// The own bus (or the walker) put beside another vehicle.
 fn teleport_beside(app: &mut App, pos: glam::DVec3, heading: f64) {
     let (x, y) = beside(pos, heading, 8.0);

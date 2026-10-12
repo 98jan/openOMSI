@@ -73,7 +73,7 @@ struct View {
 
 
 
-pub(crate) use omsi_lan::mirror::{relative_to_roots, PlayClock};
+pub(crate) use omsi_lan::mirror::PlayClock;
 use omsi_lan::mirror::{fnv, lerp_angle, local_file, net_activity, quant, relative_file, sim_activity, Track};
 
 /// A client's copy of the host's world.

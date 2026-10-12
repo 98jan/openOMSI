@@ -179,15 +179,8 @@ pub struct NavStop {
     pub arrival: f64,
 }
 
-/// Another player of the session as the maps show them.
-#[derive(Debug, Clone, PartialEq)]
-pub struct NavPlayer {
-    /// Where they are: their bus, or on foot where they walk (riding in someone's bus: that bus).
-    pub position: DVec3,
-    /// Compass heading (degrees, 0 = +y, clockwise).
-    pub heading: f64,
-    pub name: String,
-}
+/// Another player of the session as the maps show them (the session's, see `lan`).
+pub use omsi_lan::game::NavPlayer;
 
 /// What the navigator is told each frame.
 pub struct NavFrame<'a> {

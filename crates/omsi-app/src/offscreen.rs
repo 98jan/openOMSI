@@ -67,6 +67,7 @@ struct Offscreen<'a> {
     lan_audio: Option<omsi_audio::AudioEngine>,
     lan_off: Option<omsi_net::LanSession>,
     remotes_off: lan::LanGame,
+    lan_world_off: crate::lan_world::LanWorld,
     /// the clock of the moment the run has reached (the start, the workshop's wait and the
     /// seconds run; a dedicated server's own), as the window's goes on
     run_clock: omsi_sim::SimClock,
