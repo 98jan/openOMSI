@@ -197,6 +197,7 @@ pub(super) fn material_extra(
             .filter(|o| o.tex_address == omsi_model::TexAddress::Border)
             .map(|o| o.border_color.map(|c| (c / 255.0).clamp(0.0, 1.0))),
         metal_ok: false,
+        solid: false,
         glow: glow_strength(ov),
         led_glow: led_glow_effect(ov),
     }

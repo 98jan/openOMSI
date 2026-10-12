@@ -155,7 +155,8 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     }
     // Leaves and fences transmit light. A terrain road-cut mask only removes ground:
     // its remaining pixels must shade like the uncut ground on terrain-mapped splines.
-    let thin = !terrain && mode > 0.5 && mode < 1.5;
+    // (people's cut-out hair and clothes are bodies: material flag 8)
+    let thin = !terrain && mode > 0.5 && mode < 1.5 && (u32(material.params2.w + 0.5) & 8u) == 0u;
     let has_env = material.params2.y > 0.0;
     // A blended transmap body is a masked paint surface, not glass. Traffic cars often
     // use this material layout for their body; depth-disabled blends remain glass.

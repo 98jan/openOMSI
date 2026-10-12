@@ -237,7 +237,9 @@ impl PeopleView {
                         2 => AlphaMode::Blend,
                         _ => AlphaMode::Opaque,
                     };
-                    mats.push(renderer.add_material(scene, tex, alpha, [1.0; 4], false));
+                    // (a body: its cut-out hair and clothes are not leaves, see `MaterialExtra::solid`)
+                    let extra = omsi_render::MaterialExtra { solid: true, ..Default::default() };
+                    mats.push(renderer.add_material_extra(scene, tex, alpha, [1.0; 4], false, None, None, None, None, [0.0; 3], extra));
                 }
                 self.gpu_materials.insert(key, mats);
             }
