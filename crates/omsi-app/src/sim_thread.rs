@@ -8,7 +8,7 @@ pub(crate) use omsi_sim::sim_thread::Pipeline;
 impl crate::App {
     /// What the stages left to the sim thread, started there (right before the picture).
     pub(crate) fn start_sim_thread(&mut self) {
-        self.pipeline.start_traffic(self.session.traffic.as_mut().map(|t| &mut t.sim));
+        self.pipeline.start(self.session.traffic.as_mut().map(|t| &mut t.sim), None);
     }
 
     /// Everything out on the sim thread back (right after the picture is presented; again at
@@ -16,10 +16,10 @@ impl crate::App {
     pub(crate) fn join_sim_thread(&mut self) {
         if self.pipeline.busy() {
             use crate::profile_keys::ProfKey;
-            let (stepped, waited) = self.pipeline.join(self.session.traffic.as_mut().map(|t| &mut t.sim));
-            // (the step's own time, off the frame's thread, and what the frame waited for it)
-            self.perf.profile.add(ProfKey::SimThreadStep, stepped);
-            self.perf.profile.add(ProfKey::SimThreadWait, waited);
+            let j = self.pipeline.join(self.session.traffic.as_mut().map(|t| &mut t.sim), None);
+            // (the steps' own time, off the frame's thread, and what the frame waited for them)
+            self.perf.profile.add(ProfKey::SimThreadStep, j.traffic + j.scenery);
+            self.perf.profile.add(ProfKey::SimThreadWait, j.waited);
         }
     }
 }

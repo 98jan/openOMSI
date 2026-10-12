@@ -18,6 +18,12 @@
 //! (the same frames' times summed, the same fixed steps). The player's own vehicle and its
 //! input stay on the main thread in their stage: driving has no frame more of latency.
 //!
+//! The scenery objects' scripts (`SceneryState::step`) can go along in the same job, after the
+//! traffic's step (they read its lights, as the scripted stage read them after the traffic
+//! stage): the scripted stage then applies the commands of the step made during the last
+//! picture and owes the next one, its inputs owned (`Pipeline::owe_scenery`). Their
+//! commands are one frame later; the scripts' results are the same.
+//!
 //! The offscreen run never reads the switch: its step is the same code, inline. The window's
 //! side (where the stages owe the step, where it starts and joins) is `omsi-app`'s
 //! `sim_thread`.
@@ -28,6 +34,7 @@ use std::time::Instant;
 
 use crate::ai_traffic::model::PlayerBox;
 use crate::ai_traffic::TrafficSim;
+use crate::scenery::SceneryState;
 
 type Job = Box<dyn FnOnce() + Send>;
 
@@ -121,6 +128,54 @@ struct OwedStep {
     player: Option<PlayerBox>,
 }
 
+/// The light programs' state as the scenery scripts read it: (`TrafficLightPhase`,
+/// `TrafficLightApproach`) of a controller's light.
+pub type PhaseOf<'a> = &'a dyn Fn(usize, usize) -> (f32, f32);
+
+/// The scenery's step the scripted stage left to be made with the picture: the step with its
+/// inputs (owned, moved in), given the lights' state to read.
+type ScenerySteps = Box<dyn FnOnce(&mut SceneryState, PhaseOf) + Send>;
+
+/// What one job takes to the sim thread and brings back.
+#[derive(Default)]
+struct SimJob {
+    traffic: Option<(Box<TrafficSim>, OwedStep)>,
+    scenery: Option<(SceneryState, ScenerySteps)>,
+    /// Seconds of the traffic's step and of the scenery's (each part's own).
+    traffic_secs: f64,
+    scenery_secs: f64,
+}
+
+impl SimJob {
+    /// The parts in the frame's order: the traffic first, then the scenery scripts, which
+    /// read the lights as the traffic's step left them (as the scripted stage did after the
+    /// traffic stage). Without the traffic here there is none: its lights read unlinked.
+    fn run(&mut self) {
+        let t = Instant::now();
+        if let Some((sim, owed)) = self.traffic.as_mut() {
+            sim.advance(owed.dt, owed.player);
+        }
+        let mid = Instant::now();
+        self.traffic_secs = (mid - t).as_secs_f64();
+        if let Some((state, step)) = self.scenery.take() {
+            let mut state = state;
+            let traffic = self.traffic.as_ref().map(|(sim, _)| &**sim);
+            let phase = |c: usize, li: usize| traffic.map(|t| t.light_vars(c, li)).unwrap_or((crate::traffic::UNLINKED_PHASE as f32, 0.0));
+            step(&mut state, &phase);
+            self.scenery = Some((state, Box::new(|_, _| {})));
+        }
+        self.scenery_secs = mid.elapsed().as_secs_f64();
+    }
+}
+
+/// What came back at a join: the seconds of each part's step there and of the wait here.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Joined {
+    pub traffic: f64,
+    pub scenery: f64,
+    pub waited: f64,
+}
+
 /// The window's pipeline: the sim thread (made the first time a step goes there) and what is
 /// under way on it.
 #[derive(Default)]
@@ -128,15 +183,25 @@ pub struct Pipeline {
     thread: Option<SimThread>,
     /// The traffic stage's step, while it waits for the picture.
     owed: Option<OwedStep>,
-    /// The traffic out on the sim thread.
-    traffic: Option<InFlight<Box<TrafficSim>>>,
+    /// The scripted stage's step, while it waits for the picture.
+    owed_scenery: Option<ScenerySteps>,
+    /// The job out on the sim thread.
+    out: Option<InFlight<SimJob>>,
     /// What stands in `Traffic::sim` while the traffic is out: an empty traffic, made once.
     stand_in: Option<Box<TrafficSim>>,
+    /// The scenery came back from a step whose commands the view has not applied yet.
+    scenery_stepped: bool,
 }
 
 /// `OMSI_SIM_THREAD`: the window's simulation steps go to the sim thread.
 pub fn enabled() -> bool {
     omsi_cfg::flags::OMSI_SIM_THREAD.is_set()
+}
+
+/// The steps go to the sim thread at all: the switch is on and the fixed step
+/// (`OMSI_FIXED_STEP`) is off (its ticks run the stages inline, as they want them).
+fn pipelined() -> bool {
+    enabled() && !omsi_cfg::flags::OMSI_FIXED_STEP.is_set()
 }
 
 /// An empty traffic: nothing on the road, no lanes. It stands in `Traffic::sim` while the real
@@ -161,7 +226,7 @@ impl Pipeline {
     /// frame by frame, inline). Under the fixed step (`OMSI_FIXED_STEP`) the traffic runs
     /// once per tick, inline, as the ticks want it.
     pub fn takes_traffic(&self, sim: &TrafficSim) -> bool {
-        enabled() && !sim.mirror && !omsi_cfg::flags::OMSI_FIXED_STEP.is_set()
+        pipelined() && !sim.mirror
     }
 
     /// The traffic stage's step, left to be made with the picture (`dt` of this frame, the
@@ -171,52 +236,88 @@ impl Pipeline {
         self.owed = Some(OwedStep { dt, player });
     }
 
-    /// The step owed, started on the sim thread with the traffic's simulation `sim` (an
-    /// empty one stands in for it until `join`). Nothing owed, nothing starts.
-    pub fn start_traffic(&mut self, sim: Option<&mut TrafficSim>) {
-        let Some(owed) = self.owed.take() else { return };
-        let Some(sim) = sim else { return };
-        if self.traffic.is_some() {
+    /// Whether the scripted stage leaves the scenery's step to the sim thread this frame: the
+    /// scripts read the lights after the traffic's step, so only with the traffic's step
+    /// going there too, or without a traffic (whose lights read unlinked anyway).
+    pub fn takes_scenery(&self, traffic: Option<&TrafficSim>) -> bool {
+        pipelined() && traffic.is_none_or(|_| self.owed.is_some())
+    }
+
+    /// The scripted stage's step (its inputs moved into `step`), left to be made with the
+    /// picture after the traffic's.
+    pub fn owe_scenery(&mut self, step: impl FnOnce(&mut SceneryState, PhaseOf) + Send + 'static) {
+        self.owed_scenery = Some(Box::new(step));
+    }
+
+    /// The scenery came back from the sim thread with commands not applied yet: the
+    /// scripted stage applies them (`SceneryState::outputs`) before it owes the next step.
+    pub fn take_scenery_stepped(&mut self) -> bool {
+        std::mem::take(&mut self.scenery_stepped)
+    }
+
+    /// The steps owed, started on the sim thread with the traffic's simulation `sim` (an
+    /// empty one stands in for it until `join`) and the scenery (an empty list meanwhile).
+    /// Nothing owed, nothing starts.
+    pub fn start(&mut self, sim: Option<&mut TrafficSim>, scenery: Option<&mut SceneryState>) {
+        if self.out.is_some() {
             return;
         }
-        let mut out = self.stand_in.take().unwrap_or_else(|| Box::new(empty_traffic()));
-        std::mem::swap(sim, &mut *out);
-        let step = move |sim: &mut Box<TrafficSim>| {
-            sim.advance(owed.dt, owed.player);
-        };
+        let mut job = SimJob::default();
+        if let (Some(owed), Some(sim)) = (self.owed.take(), sim) {
+            let mut out = self.stand_in.take().unwrap_or_else(|| Box::new(empty_traffic()));
+            std::mem::swap(sim, &mut *out);
+            job.traffic = Some((out, owed));
+        }
+        if let (Some(step), Some(scenery)) = (self.owed_scenery.take(), scenery) {
+            job.scenery = Some((std::mem::take(scenery), step));
+        }
+        if job.traffic.is_none() && job.scenery.is_none() {
+            return;
+        }
         if self.thread.is_none() {
             match SimThread::spawn() {
                 Ok(th) => self.thread = Some(th),
                 Err(e) => log::warn!("sim thread: not started ({e}); its steps run in the frame"),
             }
         }
-        self.traffic = Some(match self.thread.as_ref() {
-            Some(th) => th.start(out, step),
-            None => SimThread::inline(out, step),
+        let run = |job: &mut SimJob| job.run();
+        self.out = Some(match self.thread.as_ref() {
+            Some(th) => th.start(job, run),
+            None => SimThread::inline(job, run),
         });
     }
 
-    /// Everything out on the sim thread back in place (waits for it): the seconds its step
-    /// took there and the seconds waited for it here. Nothing out: nothing.
-    /// `sim`: where the traffic's simulation stands in the frame (`Traffic::sim`).
-    pub fn join(&mut self, sim: Option<&mut TrafficSim>) -> (f64, f64) {
-        let Some(f) = self.traffic.take() else { return (0.0, 0.0) };
-        let (mut back, secs, waited) = f.join();
-        match sim {
-            Some(sim) => {
-                std::mem::swap(sim, &mut *back);
-                self.stand_in = Some(back);
+    /// Everything out on the sim thread back in place (waits for it). Nothing out: nothing.
+    /// `sim`, `scenery`: where the traffic's simulation and the scenery stand in the frame.
+    pub fn join(&mut self, sim: Option<&mut TrafficSim>, scenery: Option<&mut SceneryState>) -> Joined {
+        let Some(f) = self.out.take() else { return Joined::default() };
+        let (job, _, waited) = f.join();
+        if let Some((mut back, _)) = job.traffic {
+            match sim {
+                Some(sim) => {
+                    std::mem::swap(sim, &mut *back);
+                    self.stand_in = Some(back);
+                }
+                // (the traffic was let go meanwhile - nothing of the frame does that while it
+                // is out, but should it, the stepped one is dropped with it)
+                None => log::warn!("sim thread: the traffic went away while it was stepped"),
             }
-            // (the traffic was let go meanwhile - nothing of the frame does that while it is
-            // out, but should it, the stepped one is dropped with it)
-            None => log::warn!("sim thread: the traffic went away while it was stepped"),
         }
-        (secs, waited)
+        if let Some((back, _)) = job.scenery {
+            match scenery {
+                Some(s) => {
+                    *s = back;
+                    self.scenery_stepped = true;
+                }
+                None => log::warn!("sim thread: the scenery went away while it was stepped"),
+            }
+        }
+        Joined { traffic: job.traffic_secs, scenery: job.scenery_secs, waited }
     }
 
     /// Something is out on the sim thread.
     pub fn busy(&self) -> bool {
-        self.traffic.is_some()
+        self.out.is_some()
     }
 }
 
