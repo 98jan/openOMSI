@@ -107,7 +107,7 @@ impl App {
             let text = match d.trips.get(d.trip_index + 1) {
                 Some(next) => format!(
                     "End of the trip. Next: {} to {}, from {} at {} (it starts by itself a minute before)",
-                    if next.line.trim().is_empty() { "service trip".to_string() } else { format!("line {}", next.line) },
+                    if next.line.trim().is_empty() { omsi_ui::tr("service trip").into_owned() } else { omsi_ui::tr("line {}").replacen("{}", &next.line, 1) },
                     next.terminus.strip_prefix(&format!("{} ", next.line)).unwrap_or(&next.terminus),
                     next.stops.first().map(|s| s.name.trim()).unwrap_or("?"),
                     crate::schedule::hhmm(next.departure)
@@ -358,6 +358,7 @@ impl App {
     ) {
         // (the steering cross: before the renderer and the scene are borrowed)
         let steer_cross = self.steer_cross_point();
+        self.refresh_perf_overlay();
         // (the pause menu is the launcher toolkit's, `frame_shell`, unless a headset shows it)
         let shell_menu = self.shell_takes_mouse();
         let (Some(r), Some(scene)) = (self.renderer.as_ref(), self.scene.as_mut()) else { return };
@@ -456,6 +457,9 @@ impl App {
                 // once they stood on the timetable's line)
                 notes: if !map_open && self.menus.game_menu.is_none() { notes } else { &[] },
                 fps: self.settings.show_fps.then_some(self.perf.fps),
+                perf: self.settings.perf_overlay_on().then_some(&self.perf.overlay),
+                perf_detailed: self.settings.perf_overlay == "detailed",
+                perf_touch: self.input.touch.enabled.then(|| self.input.touch.top_gap.map(|g| g[2])),
                 paused: self.paused,
                 menu: match chooser_sel {
                     _ if shell_menu => None,

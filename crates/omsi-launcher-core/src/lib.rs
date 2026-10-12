@@ -1158,6 +1158,10 @@ pub struct WeatherInfo {
     pub installed: bool,
 }
 
+pub use omsi_content::weather_choice::metar_airports;
+mod airports;
+pub use airports::nearest_airport;
+
 pub fn list_weather() -> Result<Vec<WeatherInfo>> {
     root()?;
     let mut out = Vec::new();
@@ -1330,6 +1334,8 @@ pub struct TourInfo {
 pub struct LineInfo {
     pub name: String,
     pub user_allowed: bool,
+    /// The line's ends: the first and the last stop of its longest trip (the trips' own
+    /// termini where no trip has two stops).
     pub termini: Vec<String>,
     pub tours: Vec<TourInfo>,
 }
@@ -1433,6 +1439,9 @@ fn lines_on(map_dir: &Path, date: &str) -> Result<Vec<LineInfo>> {
     let mut out = Vec::new();
     for l in &data.lines {
         let mut termini: Vec<String> = Vec::new();
+        // the line's two ends: the first and last stop of its longest trip (the termini of
+        // every short working and depot run, listed one after another, read as all its stops)
+        let mut ends: Option<(usize, String, String)> = None;
         let mut tours = Vec::new();
         for t in &l.tours {
             let mask = t.extra.trim().parse::<i32>().unwrap_or(1023);
@@ -1483,6 +1492,9 @@ fn lines_on(map_dir: &Path, date: &str) -> Result<Vec<LineInfo>> {
                     termini.push(trip.terminus.trim().to_string());
                 }
                 let from = stops.first().map(|s| s.name.clone()).unwrap_or_default();
+                if stops.len() >= 2 && ends.as_ref().is_none_or(|e| stops.len() > e.0) {
+                    ends = Some((stops.len(), from.clone(), stops.last().map(|s| s.name.clone()).unwrap_or_default()));
+                }
                 let index = trips.len() + 1;
                 trips.push(TripInfo { name: trip.name.clone(), index, line: trip.line.trim().to_string(), from, terminus: trip.terminus.trim().to_string(), departure, arrival: departure + duration, stops, km: total / 1000.0 });
             }
@@ -1495,6 +1507,9 @@ fn lines_on(map_dir: &Path, date: &str) -> Result<Vec<LineInfo>> {
             tours.push(TourInfo { number: t.number.clone(), ai_group: t.ai_group.clone(), first, last, days: days_of(mask), runs, next_run, trips });
         }
         tours.sort_by(|a, b| a.first.total_cmp(&b.first));
+        if let Some((_, first, last)) = ends {
+            termini = if first == last { vec![first] } else { vec![first, last] };
+        }
         out.push(LineInfo { name: l.name.clone(), user_allowed: l.user_allowed, termini, tours });
     }
     out.sort_by(|a, b| natural_key(&a.name).cmp(&natural_key(&b.name)));
@@ -1999,6 +2014,14 @@ fn mirror_refresh(x: &str) -> &'static str {
     }
 }
 
+pub fn perf_overlay_mode(value: &str) -> &'static str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "compact" | "1" | "true" | "on" => "compact",
+        "detailed" | "2" => "detailed",
+        _ => "off",
+    }
+}
+
 /// The page's view of a `settings.cfg` text (None: no file yet, the game's defaults).
 pub fn settings_from_text(text: Option<&str>) -> Value {
     let mut v = json!({ "msaa": 4, "anisotropy": 8, "ssao": true, "shadows": true, "shadow_size": 2048, "navigator": true, "ui_opacity": 0.85, "navigator_corner": "bottom-left", "boarding": "auto", "detail_textures": true, "exact_fare": true, "enhanced": false, "graphics": "vanilla_plus", "fullscreen": false, "vsync": true, "volume": 0.6, "drive_keys": "simple", "render_scale": "auto", "view_distance": "auto", "language": "ENG", "texture_memory": 0, "texture_compression": true, "gpu_texture_compression": true, "chat": true, "tooltips": true, "name_tags": true, "show_fps": false, "clouds": true, "cloud_quality": "high", "rain_quality": "high", "pax_density": 1.0, "vol_ai": 1.0, "vol_scenery": 1.0, "ambient": true, "vol_ambient": 0.8, "mirror_size": 256, "doppler": true, "driver": true, "max_fps": 0, "min_obj_size": 0.013, "max_obj_dist": "auto" });
@@ -2032,6 +2055,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
     v["resolution"] = json!("auto");
     // the game's information bar along the top, as the last session left it (#1164)
     v["info_bar"] = json!(false);
+    v["perf_overlay"] = json!("off");
     // Human posing; the original OMSI behavior remains the default.
     v["passenger_animation"] = json!("original");
     // the trees' foliage bends and sways in the weather's wind
@@ -2154,6 +2178,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
             "head_tracking_yaw_sens" | "head_tracking_pitch_sens" | "head_tracking_roll_sens" | "head_tracking_x_sens" | "head_tracking_y_sens" | "head_tracking_z_sens" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.0, 100.0)).unwrap_or(100.0)),
             "nav_arrows" | "nav_ai" | "get_up" | "time_sync" | "metar_sync" | "ui_scale_window" | "notes" | "machine_translation" | "update_check" | "update_auto" | "update_notify" | "presence" | "reflections" | "steering_linear" | "old_steering" | "red_steer_spd" | "ff_invert" | "ff_enabled" | "brake_hold" | "auto_clutch" | "momentary_gears" | "auto_shift" | "mouse_steering" | "mouse_right_off" | "mouse_smooth" | "mouse_hold" | "blinker_cancel" => v[&k] = json!(b(val)),
             "info_bar" => v[&k] = json!(b(val)),
+            "perf_overlay" => v[&k] = json!(perf_overlay_mode(val)),
             "windy_trees" | "mirror_hud_every_frame" | "ai_wait_timed_stops_only" | "ambient" => v[&k] = json!(b(val)),
             "time_speed" => v[&k] = json!(val.trim_start_matches(['x', 'X']).parse::<f64>().map(|x| x.clamp(1.0, 30.0)).map(|x| if x.fract() == 0.0 { format!("{}", x as i64) } else { x.to_string() }).unwrap_or_else(|_| "1".into())),
             "language" => v[&k] = json!(language_code(val)),
@@ -2552,7 +2577,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("triple_hud_center={}\ntriple_fov_deg={}\n", b("triple_hud_center", true), if triple_fov < 20.0 { 0.0 } else { triple_fov.min(120.0) }));
     text.push_str(&format!("triple_screen={}\ntriple_span={}\n", b("triple_screen", false), b("triple_span", true)));
     text.push_str(&format!("triple_width_mm={}\ntriple_distance_mm={}\ntriple_bezel_mm={}\n", f("triple_width_mm", 600.0).clamp(200.0, 2000.0), f("triple_distance_mm", 650.0).clamp(200.0, 3000.0), f("triple_bezel_mm", 0.0).clamp(0.0, 100.0)));
-    text.push_str(&format!("info_bar={}\n", b("info_bar", false)));
+    text.push_str(&format!("info_bar={}\nperf_overlay={}\n", b("info_bar", false), perf_overlay_mode(&v.get("perf_overlay").map(|x| x.as_str().map_or_else(|| x.to_string(), str::to_string)).unwrap_or_default())));
     text.push_str(&format!("windy_trees={}\n", b("windy_trees", true)));
     text.push_str(&format!("mirror_hud_every_frame={}\n", b("mirror_hud_every_frame", false)));
     text.push_str(&format!("standing_chance={}\n", n("standing_chance", 5).clamp(0, 100)));
@@ -3407,6 +3432,8 @@ mod tests {
         let on = settings_from_text(Some("info_bar=1\n"));
         assert_eq!(on["info_bar"], json!(true));
         assert!(settings_to_text(&on, None).lines().any(|l| l == "info_bar=1"));
+        assert_eq!(settings_from_text(None)["perf_overlay"], json!("off"));
+        assert!(settings_to_text(&settings_from_text(Some("perf_overlay=detailed\n")), None).lines().any(|l| l == "perf_overlay=detailed"));
     }
 
     /// The opacity is the whole interface's now: a file of an older build, where it was the
@@ -3544,47 +3571,7 @@ pub fn local_now() -> Option<(i32, i32, i32, i32, i32)> {
 }
 
 #[cfg(test)]
-mod omsi_options_tests {
-    include!("../../../tools/test-support/original_root.rs");
-
-    #[test]
-    #[ignore = "needs the original OMSI 2 install (OMSI_ROOT)"]
-    fn the_originals_options_are_read() {
-        let root = &original_root();
-        let o = super::omsi_options(root).expect("options.cfg of the original install");
-        assert_eq!(o.last_map.as_deref(), Some("maps/Berlin-Spandau/global.cfg"));
-        assert_eq!(o.last_driver.as_deref(), Some("OMSI-Fan"));
-        assert_eq!(o.settings["max_fps"], 30);
-        assert_eq!(o.settings["mirror_size"], 512);
-        assert_eq!(o.settings["language"], "ENG");
-        assert_eq!(o.settings["head_movement"], true);
-        assert_eq!(o.settings["collision_vehicles"], false);
-    }
-
-    #[test]
-    fn the_real_time_reflections_are_read_as_omsi_writes_them() {
-        let root = std::env::temp_dir().join(format!("omsi-realrefl-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        for (word, mode) in [("none", "off"), ("economy", "eco"), ("full", "full")] {
-            std::fs::write(root.join("options.cfg"), format!("[performance_realreflexions]\r\n{word}\r\n\r\n[performance_reflTexSize]\r\n9\r\n")).unwrap();
-            let o = super::omsi_options(&root).unwrap();
-            assert_eq!(o.settings["mirror_refresh"], mode, "{word}");
-        }
-        let _ = std::fs::remove_dir_all(&root);
-    }
-}
+mod omsi_options_tests;
 
 #[cfg(test)]
-mod right_stick_look_tests {
-    #[test]
-    fn launcher_saves_the_switch_as_a_boolean_without_duplicate_keys() {
-        assert_eq!(super::settings_from_text(None)["right_stick_look"], serde_json::json!(true));
-        for enabled in [false, true] {
-            let mut settings = super::settings_from_text(None);
-            settings["right_stick_look"] = serde_json::json!(enabled);
-            let saved = super::settings_to_text(&settings, Some("right_stick_look=1\n"));
-            assert_eq!(saved.lines().filter(|line| line.starts_with("right_stick_look=")).count(), 1);
-            assert_eq!(super::settings_from_text(Some(&saved))["right_stick_look"], serde_json::json!(enabled));
-        }
-    }
-}
+mod right_stick_look_tests;

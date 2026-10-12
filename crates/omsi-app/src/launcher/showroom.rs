@@ -86,12 +86,31 @@ pub struct Showroom {
 
 /// Names the bus whose preview is being read and placed, until it is in the picture.
 fn placing_mark() -> PathBuf {
-    omsi_launcher_lib::data_dir().join("showroom-placing.txt")
+    preview_guard_path(&omsi_launcher_lib::data_dir(), "placing", omsi_platform::VERSION)
+}
+
+fn preview_guard_path(dir: &Path, kind: &str, version: &str) -> PathBuf {
+    // A newer renderer or loader must get a chance to retry previews an older one failed.
+    dir.join(format!("showroom-{kind}-{version}.txt"))
+}
+
+fn preview_is_skipped(dir: &Path, version: &str, bus: &str) -> bool {
+    let mark = preview_guard_path(dir, "placing", version);
+    let skip = preview_guard_path(dir, "skip", version);
+    if std::fs::read_to_string(&mark).is_ok_and(|b| b.trim() == bus.trim()) {
+        log::warn!("showroom: the preview of {bus} did not finish when it was last tried; it is left out for this version ({})", skip.display());
+        let _ = std::fs::remove_file(mark);
+        let mut list = std::fs::read_to_string(&skip).unwrap_or_default();
+        list.push_str(bus.trim());
+        list.push('\n');
+        let _ = std::fs::write(&skip, list);
+    }
+    std::fs::read_to_string(skip).is_ok_and(|t| t.lines().any(|b| b.trim() == bus.trim()))
 }
 
 /// The launcher ends in order (closed, or a test's time is up) while a preview is being
 /// placed: that is no hang, and the bus must not be left out of the previews from then on
-/// (a test ended mid-placing put the bus it showed into `showroom-skip.txt`).
+/// (a test ended mid-placing put the bus it showed into the skip list).
 pub(super) fn clear_placing_mark() {
     let _ = std::fs::remove_file(placing_mark());
 }
@@ -156,7 +175,19 @@ impl Showroom {
     pub fn want(&mut self, look: Look) {
         if self.wanted.as_ref() != Some(&look) {
             self.wanted = Some(look);
+            self.failed = None;
+            self.error = None;
         }
+    }
+
+    fn fail(&mut self, look: Look, error: String) {
+        self.error = Some(error);
+        self.failed = Some(look);
+        // A failed selection must not expose the previous bus through any preview API.
+        self.shown = None;
+        self.target = None;
+        self.loading = None;
+        self.opening = None;
     }
 
     /// `want` the launcher's choice: compared first, the look is made only when it changed
@@ -210,18 +241,12 @@ impl Showroom {
                 Ok(Err(e)) => {
                     let _ = std::fs::remove_file(placing_mark());
                     log::warn!("showroom {}: {e}", look.bus);
-                    self.error = Some(e);
-                    // (the bus before stayed in the picture as if it were the one chosen, and
-                    // the failed one was read again every frame)
-                    self.failed = Some(look.clone());
-                    self.shown = None;
-                    self.loading = None;
+                    self.fail(look.clone(), e);
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 Err(_) => {
                     let _ = std::fs::remove_file(placing_mark());
-                    self.failed = Some(look.clone());
-                    self.loading = None;
+                    self.fail(look.clone(), "The preview loader stopped before the bus was ready".into());
                 }
             }
         }
@@ -271,22 +296,10 @@ impl Showroom {
     }
 
     fn start_loading(&mut self, look: Look) {
-        // A preview that never came (the launcher hung while placing it, and had to be
-        // ended) is not tried again for that bus: the bus is remembered and the launcher hung
-        // at every start, whatever version (#1478, #1635).
-        // (`showroom-skip.txt` keeps such buses, a line each; delete it to try them again)
-        let skip = omsi_launcher_lib::data_dir().join("showroom-skip.txt");
-        if std::fs::read_to_string(placing_mark()).is_ok_and(|b| b.trim() == look.bus.trim()) {
-            log::warn!("showroom: the preview of {} hung the launcher when it was last tried; it is left out from now on ({})", look.bus, skip.display());
-            let _ = std::fs::remove_file(placing_mark());
-            let mut list = std::fs::read_to_string(&skip).unwrap_or_default();
-            list.push_str(look.bus.trim());
-            list.push('\n');
-            let _ = std::fs::write(&skip, list);
-        }
-        if std::fs::read_to_string(&skip).is_ok_and(|t| t.lines().any(|b| b.trim() == look.bus.trim())) {
-            self.error = Some("The 3D preview of this bus stopped the launcher once, so it is left out".into());
-            self.failed = Some(look);
+        self.error = None;
+        // Prevent a repeat hang on restart, but retry after an update (#1478, #1635).
+        if preview_is_skipped(&omsi_launcher_lib::data_dir(), omsi_platform::VERSION, &look.bus) {
+            self.fail(look, "The 3D preview of this bus stopped the launcher once, so it is left out".into());
             return;
         }
         let _ = std::fs::write(placing_mark(), &look.bus);
@@ -497,6 +510,59 @@ impl Showroom {
 
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::ManuallyDrop;
+
+    fn look(bus: &str) -> Look {
+        Look { bus: bus.into(), ..Look::default() }
+    }
+
+    #[test]
+    fn failure_ends_loading_and_hides_the_picture() {
+        // Avoid Drop's installation-wide placing marker in these self-contained tests.
+        let mut showroom = ManuallyDrop::new(Showroom::new());
+        let selected = look("unavailable.bus");
+        showroom.want(selected.clone());
+        let (_tx, rx) = channel();
+        showroom.loading = Some((selected.clone(), rx));
+        let (_world_tx, world_rx) = channel();
+        let (prefetch_tx, _prefetch_rx) = channel();
+        showroom.opening = Some((world_rx, prefetch_tx));
+
+        showroom.fail(selected.clone(), "Cannot load the bus".into());
+
+        assert_eq!(showroom.failed.as_ref(), Some(&selected));
+        assert_eq!(showroom.error.as_deref(), Some("Cannot load the bus"));
+        assert!(showroom.loading.is_none());
+        assert!(showroom.opening.is_none());
+        assert!(!showroom.has_picture());
+        assert!(showroom.picture().is_none());
+    }
+
+    #[test]
+    fn changed_selection_clears_failure_but_unchanged_selection_does_not_retry() {
+        let mut showroom = ManuallyDrop::new(Showroom::new());
+        let failed = look("unavailable.bus");
+        showroom.want(failed.clone());
+        showroom.fail(failed.clone(), "Cannot load the bus".into());
+
+        showroom.want(failed.clone());
+        assert_eq!(showroom.failed.as_ref(), Some(&failed));
+        assert!(showroom.error.is_some());
+
+        showroom.want(look("available.bus"));
+        assert!(showroom.failed.is_none());
+        assert!(showroom.error.is_none());
+
+        showroom.want(failed.clone());
+        assert_eq!(showroom.wanted.as_ref(), Some(&failed));
+        assert!(showroom.failed.is_none());
+        assert!(showroom.error.is_none());
+    }
+}
+
 /// The light of the look's time and weather, with the sun's shadow under the bus. Always
 /// the plain renderer, whatever the game's graphics setting: a preview is to be quick and
 /// clear, not the game's picture (no enhanced exposure and glow, no weather effects).
@@ -536,4 +602,42 @@ fn add_floor(renderer: &Renderer, scene: &mut Scene) {
     let mesh = renderer.add_mesh(scene, &data);
     let mat = renderer.add_material(scene, None, omsi_render::AlphaMode::Opaque, [0.12, 0.125, 0.135, 1.0], false);
     renderer.add_instance(scene, mesh, DVec3::new(0.0, 0.0, -0.005), glam::Mat4::IDENTITY, vec![mat]);
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    #[test]
+    fn old_preview_failures_do_not_block_a_new_version() {
+        let dir = std::env::temp_dir().join(format!("openomsi-preview-old-failures-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bus = "Vehicles/test/bus.bus";
+        std::fs::write(dir.join("showroom-skip.txt"), bus).unwrap();
+        std::fs::write(dir.join("showroom-placing.txt"), bus).unwrap();
+        std::fs::write(preview_guard_path(&dir, "skip", "0.1.1"), bus).unwrap();
+        std::fs::write(preview_guard_path(&dir, "placing", "0.1.1"), bus).unwrap();
+
+        assert!(!preview_is_skipped(&dir, "0.1.2", bus));
+        assert!(!preview_guard_path(&dir, "skip", "0.1.2").exists());
+        assert!(preview_guard_path(&dir, "placing", "0.1.1").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unfinished_preview_is_still_blocked_in_the_same_version() {
+        let dir = std::env::temp_dir().join(format!("openomsi-preview-current-failure-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bus = "Vehicles/test/bus.bus";
+        std::fs::write(preview_guard_path(&dir, "placing", "0.1.1"), bus).unwrap();
+
+        assert!(preview_is_skipped(&dir, "0.1.1", bus));
+        assert!(!preview_guard_path(&dir, "placing", "0.1.1").exists());
+        assert!(preview_is_skipped(&dir, "0.1.1", bus));
+        assert!(!preview_is_skipped(&dir, "0.1.1", "Vehicles/test/other.bus"));
+        assert!(!preview_is_skipped(&dir, "0.1.2", bus));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

@@ -18,6 +18,7 @@ omsi-vehicle = { path = "../omsi-vehicle" }
 winit.workspace = true
 glam.workspace = true
 log.workspace = true
+serde_json.workspace = true
 gilrs = "0.11"
 
 [target.'cfg(unix)'.dependencies]

@@ -616,6 +616,17 @@ pub(super) fn texture_is_clear(mask: &[u8]) -> bool {
     !mask.is_empty() && mask.iter().all(|&a| a <= 8)
 }
 
+/// Whether an alpha-tested texture (`mask`, see [`alpha_mask`]) is a tint: a quarter of it
+/// partly clear above Omsi.exe's cut (129 to 254) and nearly nothing that the cut throws
+/// away (1 to 128), like the darkened glass a livery paints on a window layer (GPM C2's
+/// `741_vitres.tga`, black at 140). Omsi.exe blends what passes its alpha test; cut out
+/// and drawn solid, the windows went black.
+pub(super) fn texture_is_tint(mask: &[u8]) -> bool {
+    let tinted = mask.iter().filter(|&&a| a > 128 && a < 255).count();
+    let cut = mask.iter().filter(|&&a| a > 0 && a <= 128).count();
+    !mask.is_empty() && tinted * 4 >= mask.len() && cut * 100 <= mask.len()
+}
+
 /// Return whether the triangles of one material occupy a volumetric part of the vehicle.
 /// Windows and rain films are normally very thin sheets; this lets unnamed/modded body
 /// meshes be repaired without maintaining a language-specific list of mesh names.

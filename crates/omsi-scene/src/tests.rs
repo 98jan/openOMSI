@@ -160,6 +160,27 @@ fn a_clear_texture_is_an_invisible_cover() {
 }
 
 #[test]
+fn a_livery_tint_on_an_alpha_tested_layer_is_blended_a_cutout_is_not() {
+    // GPM C2's `741_vitres.tga`: the windows black at 140, stickers at 255, the rest clear
+    let mut vitres = vec![140u8; 64];
+    vitres[..8].fill(255);
+    vitres[8..16].fill(0);
+    assert!(texture_is_tint(&vitres));
+    // the model's own layer, black at 39 throughout: all of it under the cut, stays cut
+    assert!(!texture_is_tint(&vec![39u8; 64]));
+    // a cut-out (a fence, leaves): clear or solid, partial only along its outline
+    let mut fence = vec![0u8; 64];
+    fence[..40].fill(255);
+    fence[40..44].fill(200);
+    assert!(!texture_is_tint(&fence));
+    // a tint with much under the cut is not blended: the cut would show
+    let mut mixed = vec![140u8; 64];
+    mixed[..8].fill(60);
+    assert!(!texture_is_tint(&mixed));
+    assert!(!texture_is_tint(&[]));
+}
+
+#[test]
 fn a_transmapped_slot_is_see_through_by_its_transmap_not_its_reflection_mask() {
     // the stock Golf 2: diffuse alpha 0 (reflection mask), transmap opaque (#928, #932)
     assert_eq!(coverage_texture(Some("Golf2_main1_T.tga"), "Golf2_main1.tga"), "Golf2_main1_T.tga");

@@ -484,7 +484,7 @@ pub fn start(args: &Args) -> Option<LanSession> {
     }
     if session.role == Role::Host && args.server.is_none() {
         // the way in over the internet that always works (see `open_public_gateway`)
-        let info = omsi_net::ws::ServerInfo { name: format!("{}'s game", player_name(args)), map: args.map.clone(), max_players: 16, version: env!("CARGO_PKG_VERSION").into(), ..Default::default() };
+        let info = omsi_net::ws::ServerInfo { name: format!("{}'s game", player_name(args)), map: args.map.clone(), max_players: 16, version: omsi_platform::VERSION.into(), ..Default::default() };
         open_public_gateway(&session, info, 0, true);
         publish_vehicles(args.root.clone(), Vec::new());
     }

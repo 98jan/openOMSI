@@ -1252,7 +1252,6 @@ impl World {
     }
 }
 
-
 /// One material slot of a vehicle mesh being uploaded (see [`World::vehicle_slot_material`]).
 #[derive(Clone, Copy)]
 struct SlotCx<'s> {
@@ -1354,6 +1353,7 @@ fn slot_alpha(cx: &SlotCx, ov: &[&MaterialDef], tex: Option<TextureId>, transmap
     if see_through {
         log::debug!("  {} slot {slot} '{}': see-through by its texture's alpha, writes no depth", def.file, m.texture);
     }
+    if declared_alpha == AlphaMode::Test && coverage.as_ref().is_some_and(|mask| texture_is_tint(mask)) { alpha = AlphaMode::Blend; } // (a livery's tinted glass)
     // (the name alone still says what is drawn as glass: the same test finds
     // a gauge's needle film, a blind's net and the shadow under the bus)
     let transparent_layer_hint = named_pane;

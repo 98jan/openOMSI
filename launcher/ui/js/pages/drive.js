@@ -36,13 +36,17 @@ export function DrivePage() {
     <${PageHead} title="Drive" text="Choose where and what you drive, then start." />
     ${s.errors.maps && html`<${Notice} kind="danger">${s.errors.maps}</${Notice}>`}
     <div class="drive">
-      <div class="stack">
-        <${MapCard} onPick=${() => setPicker('map')} />
-        <${BusCard} onPick=${() => setPicker('bus')} preview=${picker !== 'bus'} />
-        <${DutyCard} />
-        <div class="grid-2" style="gap:16px">
-          <${TimeCard} />
-          <${ConditionsCard} />
+      <div class="drive-cols">
+        <div class="stack">
+          <${MapCard} onPick=${() => setPicker('map')} />
+          <${BusCard} onPick=${() => setPicker('bus')} preview=${picker !== 'bus'} />
+        </div>
+        <div class="stack">
+          <${DutyCard} />
+          <div class="grid-2" style="gap:16px">
+            <${TimeCard} />
+            <${ConditionsCard} />
+          </div>
         </div>
       </div>
       <div class="side">
@@ -246,6 +250,12 @@ export async function setSeason(season, phase) {
   choose({ season, phase, own_date: own, ...(r?.date ? { date: r.date } : {}) });
 }
 
+export function localNow() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return { time: d.getHours() * 60 + d.getMinutes(), date: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` };
+}
+
 function TimeCard() {
   const s = useStore();
   const c = s.choice;
@@ -253,23 +263,46 @@ function TimeCard() {
   const cur = w.find((x) => x.file === c.weather);
   const rt = realTime();
   const rd = realDate();
+  const [airport, setAirport] = useState('');
+  useEffect(() => {
+    setAirport('');
+    if (c.map) call('nearest_airport', { map: c.map }).then(setAirport).catch(() => {});
+  }, [c.map]);
+  const metar = c.weather?.startsWith('metar:') ? c.weather.slice(6) || airport : airport;
+  const [airports, setAirports] = useState([]);
+  useEffect(() => {
+    if (c.weather?.startsWith('metar:') && !airports.length) call('metar_airports').then(setAirports).catch(() => {});
+  }, [c.weather]);
+  const weatherHelp = cur ? cur.description
+    : c.weather?.startsWith('metar:') ? t('METAR of {} (fetched at the start)', [metar])
+    : c.weather === 'cycle' ? 'Changes every 25-60 minutes, as the month allows'
+    : c.weather ? null : 'Develops by itself through the day and the season';
   return html`<${Card} title="Time and weather">
     <div class="stack">
       <div class="grid-2">
         <${Field} label="Start time" help=${rt ? 'Follows the computer\'s clock (Settings)' : null}>
-          <${TimeInput} minutes=${c.time} disabled=${rt} onChange=${(time) => choose({ time })} />
+          <div class="row" style="gap:6px">
+            <div class="grow"><${TimeInput} minutes=${c.time} disabled=${rt} onChange=${(time) => choose({ time })} /></div>
+            ${!rt && html`<${Button} icon="clock" title="Current time" onClick=${() => choose({ time: localNow().time })} />`}
+          </div>
         </${Field}>
         <${Field} label="Date" help=${rd ? 'Today (Settings)' : null}>
-          <${DateInput} value=${c.date} disabled=${rd} onChange=${(date) => choose({ date, season: 'auto', own_date: null })} />
+          <div class="row" style="gap:6px">
+            <div class="grow"><${DateInput} value=${c.date} disabled=${rd} onChange=${(date) => choose({ date, season: 'auto', own_date: null })} /></div>
+            ${!rd && html`<${Button} icon="calendar" title="Current date" onClick=${() => choose({ date: localNow().date, season: 'auto', own_date: null })} />`}
+          </div>
         </${Field}>
       </div>
       <${Field} label="Season">
         <${Select} value=${c.season} options=${SEASONS} onChange=${(v) => setSeason(v, c.phase)} />
       </${Field}>
       ${c.season !== 'auto' && html`<${Segmented} full value=${c.phase} options=${PHASES} onChange=${(p) => setSeason(c.season, p)} />`}
-      <${Field} label="Weather" help=${cur ? cur.description : c.weather ? null : 'Develops by itself through the day and the season'}>
-        <${Select} raw value=${c.weather} options=${[['', t('Natural weather')], ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => choose({ weather })} />
+      <${Field} label="Weather" help=${weatherHelp}>
+        <${Select} raw value=${c.weather} options=${[['', t('Natural weather')], ...(metar ? [[`metar:${metar}`, t('Current weather')]] : []), ['cycle', t('Weather cycle')], ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => choose({ weather })} />
       </${Field}>
+      ${c.weather?.startsWith('metar:') && airports.length > 0 && html`<${Field} label="Airport">
+        <${Select} raw value=${metar} options=${airports} onChange=${(code) => choose({ weather: `metar:${code}` })} />
+      </${Field}>`}
     </div>
   </${Card}>`;
 }

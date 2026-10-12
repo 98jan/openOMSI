@@ -669,7 +669,15 @@ pub fn is_dev_build(exe: &Path) -> bool {
     let text = exe.to_string_lossy().to_ascii_lowercase();
     let parts: Vec<&str> = text.split(['/', '\\']).filter(|p| !p.is_empty()).collect();
     let profile = |s: &str| s == "release" || s == "debug";
-    parts.windows(2).any(|w| w[0] == "target" && profile(w[1])) || parts.windows(3).any(|w| w[0] == "target" && profile(w[2]))
+    parts.windows(2).any(|w| w[0] == "target" && profile(w[1])) || parts.windows(3).any(|w| w[0] == "target" && profile(w[2])) || in_cargo_target_dir(exe)
+}
+
+/// Whether `exe` was built into a Cargo target directory of any name (`CARGO_TARGET_DIR`):
+/// Cargo marks its root with a `CACHEDIR.TAG`, one or two folders above the program. A build
+/// in a folder not called `target` was taken for an installed game, so the start guard
+/// "updated" it from the releases and opened its dialog over the desktop.
+fn in_cargo_target_dir(exe: &Path) -> bool {
+    exe.ancestors().skip(2).take(2).any(|d| std::fs::read_to_string(d.join("CACHEDIR.TAG")).is_ok_and(|t| t.contains("cargo")))
 }
 
 const STAGING: &str = ".openomsi-update";
@@ -1081,6 +1089,11 @@ mod tests {
         assert!(is_dev_build(Path::new("C:\\src\\target\\x86_64-pc-windows-msvc\\release\\openomsi.exe")));
         assert!(!is_dev_build(Path::new("/Applications/openOMSI.app/Contents/MacOS/openomsi")));
         assert!(!is_dev_build(Path::new("/home/me/Games/openOMSI/openomsi")));
+        let dir = std::env::temp_dir().join(format!("openomsi-dev-build-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("builds/release")).unwrap();
+        std::fs::write(dir.join("builds/CACHEDIR.TAG"), "Signature: 8a477f597d28d172789f06886806bc55\n# This file is a cache directory tag created by cargo.\n").unwrap();
+        assert!(is_dev_build(&dir.join("builds/release/openomsi")));
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// The whole swap on a folder: the program files replaced, a file only the old version

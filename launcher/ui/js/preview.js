@@ -6,7 +6,7 @@
 // round trip. Every picture is full size, turning or not. Nothing is asked while nothing moves.
 
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
-import { call } from './api.js';
+import { call, on } from './api.js';
 import { t } from './i18n.js';
 import { Icon } from './icons.js';
 import { Spinner } from './ui.js';
@@ -70,10 +70,12 @@ export function BusPreview({ look, class: cls = '' }) {
     })();
     const ro = new ResizeObserver(() => wake(true));
     ro.observe(host.current);
+    const off = on('games-ended', () => wake(true));
     return () => {
       st.alive = false;
       wake();
       ro.disconnect();
+      off();
     };
   }, []);
 
@@ -109,7 +111,7 @@ export function BusPreview({ look, class: cls = '' }) {
         r.current.zoom *= e.deltaY > 0 ? 1.08 : 1 / 1.08;
         wake();
       }}>
-    <canvas ref=${canvas}></canvas>
+    <canvas ref=${canvas} style=${{ visibility: state === 'failed' || state === 'loading' ? 'hidden' : 'visible' }}></canvas>
     ${state === 'loading' && html`<div class="state"><${Spinner} /> ${t('Preparing the preview…')}</div>`}
     ${state === 'switching' && html`<div class="state corner"><${Spinner} /></div>`}
     ${state === 'failed' && html`<div class="state"><${Icon} name="bus" size=${28} /> ${t('No preview of this bus')}</div>`}

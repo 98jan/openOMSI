@@ -3514,6 +3514,7 @@ dependencies = [
  "omsi-script",
  "omsi-sim",
  "omsi-vehicle",
+ "serde_json",
  "windows 0.62.2",
  "winit",
 ]

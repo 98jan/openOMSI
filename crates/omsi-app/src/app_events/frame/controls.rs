@@ -67,6 +67,12 @@ impl App {
         if let Some(n) = ctl.notice.take() {
             self.service_msg = Some((n, 8.0));
         }
+        // a device set up by itself: kept for the next start and the launcher's page
+        if let Some(cfg) = ctl.auto_saved.take() {
+            if let Err(e) = crate::controllers::save_cfg(crate::startup::content_dir(), &cfg) {
+                log::warn!("game controllers: the automatic set-up could not be saved: {e}");
+            }
+        }
         // the bus's force feedback (OMSI's FF_Vib_Amp, and on a wheel its forces)
         // (in every view of the bus - the wheel went slack outside and in the
         // passenger view)
