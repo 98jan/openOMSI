@@ -72,11 +72,11 @@ impl Pose {
         // legs naturally put it instead of at the average distance - on a long bench with
         // no footwell to hide a mismatch in, a longer-legged rig forced to the average
         // distance bent its knee enough to poke through the seat ahead.
-        let seated_c = Vec3::new(
+        let seated_c = self.seat_pelvis.unwrap_or(Vec3::new(
             self.seat.x,
             -rig.seat_front() + 0.03,
             self.seat.z + rig.seat_lift,
-        );
+        ));
         let mut pc = Vec3::new(
             stand_c.x + (seated_c.x - stand_c.x) * s_back,
             stand_c.y + (seated_c.y - stand_c.y) * s_back,
@@ -172,12 +172,14 @@ impl Pose {
                 let flat = Vec3::new(pelvis_fwd.x, pelvis_fwd.y, 0.0).normalize_or(Vec3::Y);
                 let knee_n = hip_at + flat * rig.thigh * 0.95;
                 let hang = knee_n - Vec3::Z * rig.shin * 0.97;
-                if ankle_t[side].z < hang.z - 0.12 || (ankle_t[side] - hip_at).length() > (rig.thigh + rig.shin) * 0.99 {
-                    let blend = ((sit - 0.5) * 2.0).clamp(0.0, 1.0);
-                    let floor_z = ankle_t[side].z.max(hang.z);
-                    let target = Vec3::new(hang.x, hang.y, floor_z);
-                    ankle_t[side] = ankle_t[side] + (target - ankle_t[side]) * blend;
-                }
+                // (always, not only where the standing place is out of reach: a bench's
+                // hip point has the feet that stood up to it right under the pelvis, and the
+                // legs went straight down from the seat as if kneeling)
+                let blend = ((sit - 0.5) * 2.0).clamp(0.0, 1.0);
+                // (a floor within reach of a hanging shin is stood on: the knee bends a little more)
+                let floor_z = if ankle_t[side].z >= hang.z - 0.12 { ankle_t[side].z } else { hang.z };
+                let target = Vec3::new(hang.x, hang.y, floor_z);
+                ankle_t[side] = ankle_t[side] + (target - ankle_t[side]) * blend;
             }
             let (knee_at, ankle_at, hinge) =
                 two_bone(hip_at, rig.thigh, rig.shin, ankle_t[side], pole);

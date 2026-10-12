@@ -46,6 +46,14 @@ pub(super) fn bones(p: &PersonFrame, st: &mut PersonView, dt: f32, world: &World
         None => origin.z,
     };
     let sample = |at| floor::sample(world, bus, at, level);
+    // (seated: the pelvis where the original seated pose has it - on a bus seat and on a
+    // stop's bench alike - in the pose's frame, which stands `floor_lift` higher)
+    let seat_pelvis = seat.map(|_| {
+        let b = omsi_sim::human::slots_from_omsi(&p.anim.bones(&p.ty.omsi));
+        let r = &p.ty.rig;
+        let mid = (b[0].transform_point3(r.hip[0]) + b[1].transform_point3(r.hip[1])) * 0.5;
+        mid + (r.pelvis - (r.hip[0] + r.hip[1]) * 0.5) - Vec3::Z * floor_lift
+    });
     let input = PoseInput {
         activity,
         // The simulation's renderer still places a seated person at hip - model height.
@@ -55,6 +63,7 @@ pub(super) fn bones(p: &PersonFrame, st: &mut PersonView, dt: f32, world: &World
         frame,
         velocity: p.vel,
         seat,
+        seat_pelvis,
         reach,
         hold,
         floor: Some(&sample),

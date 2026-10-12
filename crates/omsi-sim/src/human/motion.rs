@@ -23,6 +23,7 @@ impl Pose {
             fidget_t: 0.0,
             sit: 0.0,
             seat: Vec3::ZERO,
+            seat_pelvis: None,
             reach: 0.0,
             reach_at: Vec3::new(0.3, 0.5, 1.1),
             grip: 0.0,
@@ -277,6 +278,7 @@ impl Pose {
         let wants_sit = input.activity == Activity::Sit && input.seat.is_some();
         if let Some(s) = input.seat {
             self.seat = s;
+            self.seat_pelvis = input.seat_pelvis.filter(|p| p.is_finite());
         }
         if wants_sit {
             self.sit = approach(self.sit, 1.0, dt / 1.3);

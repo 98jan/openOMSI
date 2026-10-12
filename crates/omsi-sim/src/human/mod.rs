@@ -129,6 +129,11 @@ pub struct PoseInput<'a> {
     pub velocity: DVec2,
     /// While sitting: the seat point (`[passpos]`, the hip) in the model frame.
     pub seat: Option<Vec3>,
+    /// While sitting: where the pelvis itself goes (model frame), when the caller knows it
+    /// better than the seat point does - a passenger takes it from the original seated pose,
+    /// which sits on every kind of seat (a bench at a stop has no person standing in front
+    /// of its hip point, as `seat` takes for granted).
+    pub seat_pelvis: Option<Vec3>,
     /// Something to look at.
     pub look: Option<Vec3>,
     /// Where the right hand reaches (the cash desk).
@@ -160,6 +165,7 @@ impl Default for PoseInput<'_> {
             frame: 0,
             velocity: DVec2::ZERO,
             seat: None,
+            seat_pelvis: None,
             look: None,
             reach: None,
             grips: None,
@@ -256,6 +262,7 @@ pub struct Pose {
     /// 0 standing … 1 seated, and the seat.
     sit: f32,
     seat: Vec3,
+    seat_pelvis: Option<Vec3>,
     reach: f32,
     reach_at: Vec3,
     /// Both hands on a steering wheel: how far (0 … 1) and where.
