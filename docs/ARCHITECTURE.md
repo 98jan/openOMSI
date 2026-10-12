@@ -245,8 +245,8 @@ checked against it.
   queued, waiting for their tiles or awaiting their tour's bus, the tours' vehicles
   (`choose`), the routes on the lanes and where on its route a due bus is
   (`place_departure`), the routes carried on as tiles load, the tours, the duty taken
-  from one and the departure boards. It reads the map through `TimetableWorld` (omsi-app's
-  `World` implements it) and the traffic as `TrafficSim`. `omsi-app::schedule::Schedule`
+  from one and the departure boards. It reads the map through `TimetableWorld` (the world
+  snapshot `omsi_sim::world_data::WorldData` implements it) and the traffic as `TrafficSim`. `omsi-app::schedule::Schedule`
   holds it (`Deref` to `ScheduleSim`) as the GPU adapter: `fleet` reads and uploads the
   vehicle sets of the next departures, `dispatch` and `spawn` put the buses on the road
   (`Traffic::spawn_bus`, `set_trailers`, `attach_cars`, `turn_train`), hand a tour's bus
@@ -284,6 +284,18 @@ checked against it.
   `SimView` they change (`&mut TrafficView`, `&mut PeopleView`) with the renderer, and
   the timetable's and the LAN world's steps that make them pass it through. The traffic's sync still hands the AI vehicles `Envir_Brightness`; the cars that
   finished parking are taken off by the simulation itself (`TrafficSim::take_parked`), the
+* **The map world the simulation reads** is `omsi-sim::world_data`: `WorldData`, an
+  immutable snapshot of Arc'd parts - the loaded tiles' ground (`GroundTiles`: terrain and
+  road faces, with the wheel, walking, camera and drawn-ground questions), the lists made
+  from the tiles (`TileLists`: stops, waiting places, obstacles, parked cars' boxes, petrol
+  stations, echoing places), where the map's objects stand (`ObjectPlaces`) and the map
+  index's stop facts. `omsi-scene::World` holds it in a `WorldCell` (arc-swap) and publishes
+  a new one where a tile's ground comes or goes and where the tile lists are rebuilt;
+  readers take it without a lock (`peek` for one look, `snapshot` for a step), the vehicles'
+  wheels through `LiveGround`. It implements `people::World` and `TimetableWorld`. Still in
+  `World` and locked: the GPU side, the type and file caches of loading, the scripted
+  objects, the lamps and the lanes handed to the traffic as tiles load.
+
   sync only puts their parked objects back. The player's and the AI buses' per-frame sync
   (materials, lamps, script and text textures, glass cracks, dents) is in the phase too:
   `view_sync/vehicle.rs` and `vehicle_damage.rs`, and the AI cars' sounds in
