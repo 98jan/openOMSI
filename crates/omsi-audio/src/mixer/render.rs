@@ -16,6 +16,8 @@ pub(super) struct Voice {
     pub(super) clip: Arc<Clip>,
     /// A voice fed while it plays (internet radio) instead of from `clip`.
     pub(super) stream: Option<Arc<crate::stream::StreamBuf>>,
+    /// The mixer's end of `stream` (none when another voice took it).
+    tap: Option<crate::stream::StreamInner>,
     pub(super) params: VoiceParams,
     pub(super) pos: f64,
     pub(super) finished: bool,
@@ -36,10 +38,12 @@ pub(super) struct Voice {
 impl Voice {
     /// A voice on `clip` (or on `stream`), playing from frame `start`.
     pub(super) fn new(id: VoiceId, clip: Arc<Clip>, stream: Option<Arc<crate::stream::StreamBuf>>, params: VoiceParams, start: f64) -> Voice {
+        let tap = stream.as_ref().and_then(|s| s.take_tap());
         Voice {
             id,
             clip,
             stream,
+            tap,
             params,
             pos: start,
             finished: false,
@@ -435,7 +439,11 @@ fn mix_voice(v: &mut Voice, out: &mut [f32], ch: usize, frames: usize, rate: u32
         } else {
             1.0
         };
-        let mut buf = sb.lock();
+        let Some(buf) = v.tap.as_mut() else {
+            v.finished = sb.is_closed();
+            return;
+        };
+        buf.sync(&sb);
         if buf.closed {
             v.finished = true;
             return;
@@ -472,6 +480,7 @@ fn mix_voice(v: &mut Voice, out: &mut [f32], ch: usize, frames: usize, rate: u32
                 buf.advance();
             }
         }
+        buf.publish(&sb);
         return;
     }
     let clip = &v.clip;

@@ -117,13 +117,18 @@ impl<T> Consumer<T> {
 
     /// The oldest value, left in.
     pub fn peek(&mut self) -> Option<&T> {
-        if self.head == self.tail {
+        self.get(0)
+    }
+
+    /// The `i`-th oldest value, left in.
+    pub fn get(&mut self, i: usize) -> Option<&T> {
+        if self.tail - self.head <= i {
             self.tail = self.ring.tail.0.load(Ordering::Acquire);
-            if self.head == self.tail {
+            if self.tail - self.head <= i {
                 return None;
             }
         }
-        Some(unsafe { (*self.ring.slots[self.head & self.ring.mask].get()).assume_init_ref() })
+        Some(unsafe { (*self.ring.slots[(self.head + i) & self.ring.mask].get()).assume_init_ref() })
     }
 
     /// How many values wait.
@@ -151,6 +156,8 @@ mod tests {
         assert_eq!(p.push(9), Err(9));
         assert_eq!((p.len(), c.len()), (4, 4));
         assert_eq!(c.peek(), Some(&0));
+        assert_eq!(c.get(3), Some(&3));
+        assert_eq!(c.get(4), None);
         assert_eq!(c.pop(), Some(0));
         p.push(4).unwrap();
         let got: Vec<u32> = std::iter::from_fn(|| c.pop()).collect();
