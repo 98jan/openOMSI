@@ -94,9 +94,13 @@ Bottom up:
   reads the switch. The scenery objects' scripts go in the same job after the traffic's
   step (they read its lights, as the scripted stage did after the traffic stage); the
   scripted stage then shows the commands of the step made during the last picture and owes
-  the next one with its inputs owned (`OwnedSceneryInputs`). The people's and the
-  timetable's steps still run in their stages (the people read the player's bus, which the
-  picture keeps; the timetable's fleet uploads sit between its two halves).
+  the next one with its inputs owned (`OwnedSceneryInputs`). The people's step goes in the
+  same job between the two (it reads the traffic after its step): the people go out whole and
+  read the player's bus, which the picture keeps, from a copy made in the humans stage
+  (`omsi_sim::people::PlayerBusView`, the same values the inline step reads); the humans
+  stage then applies what the step made during the last picture (`steps::humans_after_step`)
+  and owes the next. The timetable's step still runs in its stage (its fleet uploads sit
+  between its two halves).
 * Scenery object scripts (`omsi_sim::scenery::SceneryState`, held by the session, not by
   `World`): the scripts and variables of the loaded tiles' scripted objects are one owned
   list in the simulation; the view's half (render instances, materials, texts, sounds) stays

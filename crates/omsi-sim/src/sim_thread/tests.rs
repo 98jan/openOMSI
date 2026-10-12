@@ -45,13 +45,13 @@ fn a_panic_comes_back_at_join() {
 fn the_traffic_goes_out_and_comes_back() {
     let mut p = Pipeline::default();
     // nothing owed: nothing starts
-    p.start(None, None);
+    p.start(None, None, None);
     assert!(!p.busy());
     let mut sim = empty_traffic();
     sim.time = 5.0;
     p.owe_traffic(0.25, None);
     p.owe_traffic(0.25, None);
-    p.start(Some(&mut sim), None);
+    p.start(Some(&mut sim), None, None);
     assert!(p.busy());
     // (the stand-in meanwhile)
     assert_eq!(sim.time, 0.0);
@@ -76,7 +76,7 @@ fn pipelined_frames_match_inline_frames() {
         let dt = 0.004 + (x >> 8) as f32 / (1u32 << 24) as f32 * 0.05;
         inline.advance(dt, None);
         p.owe_traffic(dt, None);
-        p.start(Some(&mut piped), None);
+        p.start(Some(&mut piped), None, None);
         p.join(Some(&mut piped), None);
     }
     assert_eq!(piped.time.to_bits(), inline.time.to_bits());
@@ -138,11 +138,80 @@ fn pipelined_scenery_matches_inline_scenery() {
         scenery_step(dt, center)(&mut inline, &unlinked);
         p.owe_traffic(dt, None);
         p.owe_scenery(scenery_step(dt, center));
-        p.start(Some(&mut piped_t), Some(&mut piped));
+        p.start(Some(&mut piped_t), Some(&mut piped), None);
         assert!(piped.is_empty(), "an empty list stands in meanwhile");
         p.join(Some(&mut piped_t), Some(&mut piped));
         assert!(p.take_scenery_stepped());
         assert_eq!(outputs_of(&mut piped), outputs_of(&mut inline), "frame {k}");
     }
     assert_eq!(piped_t.time.to_bits(), inline_t.time.to_bits());
+}
+
+/// A bus with a passenger cabin (a front door, an aisle, six seats) and a person type, for
+/// riders to sit in it.
+fn bus_and_people() -> (crate::VehicleInstance, PeopleSim) {
+    let dir = std::env::temp_dir().join(format!("omsi-sim-thread-people-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let write = |name: &str, text: &str| std::fs::write(dir.join(name), text).unwrap();
+    write("test.bus", "[model]\nmodel.cfg\n[passengercabin]\ncabin.cfg\n[paths]\npaths.cfg\n[boundingbox]\n2.5\n12\n3\n0\n0\n1.5\n[script]\n1\nmain.osc\n");
+    write("model.cfg", "");
+    write("main.osc", "{init}\n{end}\n");
+    let pts: String = [5.0, 4.0, 0.0, -4.0].iter().map(|y| format!("[pathpnt]\n0\n{y}\n0.5\n\n")).collect();
+    write("paths.cfg", &format!("[pathpnt]\n1.1\n5\n0.4\n\n{pts}[pathlink]\n0\n1\n\n[pathlink]\n1\n2\n\n[pathlink]\n2\n3\n\n[pathlink]\n3\n4\n"));
+    let seats: String = (0..6).map(|k| format!("[passpos]\n-0.6\n{}\n0.9\n0.45\n0\n\n", 3.0 - k as f32 * 1.2)).collect();
+    write("cabin.cfg", &format!("[entry]\n0\n\n[exit]\n0\n\n{seats}"));
+    write("person.hum", "[model]\nmodel.cfg\n");
+    let ty = std::sync::Arc::new(crate::VehicleType::load(&dir, &dir.join("test.bus")).unwrap());
+    let human = std::sync::Arc::new(crate::human::HumanType::load(&dir.join("person.hum")).unwrap());
+    let mut bus = crate::VehicleInstance::new(ty, crate::VehicleHost::new(Default::default()));
+    let mut people = PeopleSim::new(std::path::Path::new("/nonexistent"), 50);
+    people.types = vec![human];
+    // (the cabin is read from its files here)
+    people.set_cabin(&mut bus);
+    std::fs::remove_dir_all(&dir).ok();
+    (bus, people)
+}
+
+fn people_digest(p: &PeopleSim) -> String {
+    let mut out = format!("t {} rng {} n {}", p.time.to_bits(), p.rng, p.people.len());
+    for q in &p.people {
+        out.push_str(&format!(" | {} {:?} {} {:?}", q.id, q.position.to_array().map(f64::to_bits), q.heading.to_bits(), q.place));
+    }
+    out
+}
+
+/// The people stepped on the sim thread (after the traffic, from a view of the player's bus
+/// read before) come out where the same frames' steps leave them inline.
+#[test]
+fn pipelined_people_match_inline_people() {
+    let (mut bus, mut inline) = bus_and_people();
+    let (_, mut piped) = bus_and_people();
+    let world = std::sync::Arc::new(crate::world_data::WorldData::default());
+    inline.seed_riders(4, &bus, &*world);
+    piped.seed_riders(4, &bus, &*world);
+    assert!(!inline.people.is_empty(), "the riders sat down");
+    let sat_at = inline.people[0].position;
+    let (mut piped_t, mut inline_t) = (empty_traffic(), empty_traffic());
+    let mut p = Pipeline::default();
+    let mut piped = Some(piped);
+    for k in 0..150 {
+        let dt = 1.0 / 60.0 + (k % 5) as f32 * 0.004;
+        // the bus drives off and turns
+        bus.position += glam::DVec3::new((k as f64 * 0.02).sin(), 0.3, 0.0);
+        bus.heading = k as f64 * 0.4;
+        inline_t.advance(dt, None);
+        let view = inline.player_bus_view(&bus);
+        inline.tick_stages.clear();
+        let took_inline = inline.tick_inner(dt, &*world, Some(&view), Some(&inline_t));
+        p.owe_traffic(dt, None);
+        let view = piped.as_ref().unwrap().player_bus_view(&bus);
+        p.owe_people(dt, world.clone(), Some(view));
+        assert!(p.start(Some(&mut piped_t), None, piped.take()).is_none(), "the people went along");
+        let (_, back) = p.join(Some(&mut piped_t), None);
+        piped = back;
+        let stepped = p.take_people_stepped().expect("stepped");
+        assert_eq!((stepped.took, stepped.dt), (took_inline, dt));
+        assert_eq!(people_digest(piped.as_ref().unwrap()), people_digest(&inline), "frame {k}");
+    }
+    assert!((inline.people[0].position - sat_at).length() > 10.0, "the riders went along with the bus");
 }

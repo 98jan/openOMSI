@@ -34,7 +34,10 @@ use std::time::Instant;
 
 use crate::ai_traffic::model::PlayerBox;
 use crate::ai_traffic::TrafficSim;
+use crate::people::{PeopleSim, PlayerBusView};
 use crate::scenery::SceneryState;
+use crate::world_data::WorldData;
+use std::sync::Arc;
 
 type Job = Box<dyn FnOnce() + Send>;
 
@@ -136,27 +139,54 @@ pub type PhaseOf<'a> = &'a dyn Fn(usize, usize) -> (f32, f32);
 /// inputs (owned, moved in), given the lights' state to read.
 type ScenerySteps = Box<dyn FnOnce(&mut SceneryState, PhaseOf) + Send>;
 
+/// The people's step the humans stage left to be made with the picture: its time, the map
+/// as the step reads it and the player's bus as it stood (`PeopleSim::player_bus_view`).
+struct OwedPeople {
+    dt: f32,
+    world: Arc<WorldData>,
+    bus: Option<PlayerBusView>,
+}
+
+/// The people back from a step on the sim thread: whether a passenger took the printed
+/// ticket (what `PeopleSim::tick_inner` returns), the step's time and how long it took.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PeopleStepped {
+    pub took: bool,
+    pub dt: f32,
+    pub secs: f64,
+}
+
 /// What one job takes to the sim thread and brings back.
 #[derive(Default)]
 struct SimJob {
     traffic: Option<(Box<TrafficSim>, OwedStep)>,
+    people: Option<(PeopleSim, OwedPeople, bool)>,
     scenery: Option<(SceneryState, ScenerySteps)>,
     /// Seconds of the traffic's step and of the scenery's (each part's own).
     traffic_secs: f64,
+    people_secs: f64,
     scenery_secs: f64,
 }
 
 impl SimJob {
-    /// The parts in the frame's order: the traffic first, then the scenery scripts, which
-    /// read the lights as the traffic's step left them (as the scripted stage did after the
-    /// traffic stage). Without the traffic here there is none: its lights read unlinked.
+    /// The parts in the frame's order: the traffic first, then the people (who read the
+    /// traffic as its step left it, as the humans stage did after the traffic stage), then
+    /// the scenery scripts, which read the lights so too. Without the traffic here there is
+    /// none: the people see no traffic, its lights read unlinked.
     fn run(&mut self) {
         let t = Instant::now();
         if let Some((sim, owed)) = self.traffic.as_mut() {
             sim.advance(owed.dt, owed.player);
         }
+        let after_traffic = Instant::now();
+        self.traffic_secs = (after_traffic - t).as_secs_f64();
+        if let Some((people, owed, took)) = self.people.as_mut() {
+            people.tick_stages.clear();
+            let traffic = self.traffic.as_ref().map(|(sim, _)| &**sim);
+            *took = people.tick_inner(owed.dt, &*owed.world, owed.bus.as_ref(), traffic);
+        }
         let mid = Instant::now();
-        self.traffic_secs = (mid - t).as_secs_f64();
+        self.people_secs = (mid - after_traffic).as_secs_f64();
         if let Some((state, step)) = self.scenery.take() {
             let mut state = state;
             let traffic = self.traffic.as_ref().map(|(sim, _)| &**sim);
@@ -172,6 +202,7 @@ impl SimJob {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Joined {
     pub traffic: f64,
+    pub people: f64,
     pub scenery: f64,
     pub waited: f64,
 }
@@ -185,6 +216,10 @@ pub struct Pipeline {
     owed: Option<OwedStep>,
     /// The scripted stage's step, while it waits for the picture.
     owed_scenery: Option<ScenerySteps>,
+    /// The humans stage's step, while it waits for the picture.
+    owed_people: Option<OwedPeople>,
+    /// The people came back from a step whose results the humans stage has not taken yet.
+    people_stepped: Option<PeopleStepped>,
     /// The job out on the sim thread.
     out: Option<InFlight<SimJob>>,
     /// What stands in `Traffic::sim` while the traffic is out: an empty traffic, made once.
@@ -243,6 +278,33 @@ impl Pipeline {
         pipelined() && traffic.is_none_or(|_| self.owed.is_some())
     }
 
+    /// Whether the humans stage leaves the people's step to the sim thread this frame: as
+    /// the scenery (after the traffic's step, or without a traffic), and not for a LAN
+    /// client's people, who follow the host's.
+    pub fn takes_people(&self, traffic: Option<&TrafficSim>, people: &PeopleSim) -> bool {
+        pipelined() && !people.mirror && traffic.is_none_or(|_| self.owed.is_some())
+    }
+
+    /// The humans stage's step: `dt`, the map as the step reads it, the player's bus as it
+    /// stands now. A step still owed (a frame that ended before its picture) is made one with
+    /// this one, as the traffic's (`owe_traffic`): no time is lost.
+    pub fn owe_people(&mut self, dt: f32, world: Arc<WorldData>, bus: Option<PlayerBusView>) {
+        let dt = self.owed_people.as_ref().map_or(0.0, |o| o.dt) + dt;
+        self.owed_people = Some(OwedPeople { dt, world, bus });
+    }
+
+    /// The people came back from a step on the sim thread whose results (the people who
+    /// came and went, the exchange with the bus and the traffic) the humans stage applies
+    /// now, before it owes the next one.
+    pub fn take_people_stepped(&mut self) -> Option<PeopleStepped> {
+        self.people_stepped.take()
+    }
+
+    /// A people's step is owed (the render stage hands the people over with it).
+    pub fn owes_people(&self) -> bool {
+        self.owed_people.is_some()
+    }
+
     /// The scripted stage's step (its inputs moved into `step`), left to be made with the
     /// picture after the traffic's.
     pub fn owe_scenery(&mut self, step: impl FnOnce(&mut SceneryState, PhaseOf) + Send + 'static) {
@@ -256,11 +318,12 @@ impl Pipeline {
     }
 
     /// The steps owed, started on the sim thread with the traffic's simulation `sim` (an
-    /// empty one stands in for it until `join`) and the scenery (an empty list meanwhile).
-    /// Nothing owed, nothing starts.
-    pub fn start(&mut self, sim: Option<&mut TrafficSim>, scenery: Option<&mut SceneryState>) {
+    /// empty one stands in for it until `join`), the people (taken out of the frame by the
+    /// caller, given back by `join`; with no people's step owed they are given back at
+    /// once) and the scenery (an empty list meanwhile). Nothing owed, nothing starts.
+    pub fn start(&mut self, sim: Option<&mut TrafficSim>, scenery: Option<&mut SceneryState>, people: Option<PeopleSim>) -> Option<PeopleSim> {
         if self.out.is_some() {
-            return;
+            return people;
         }
         let mut job = SimJob::default();
         if let (Some(owed), Some(sim)) = (self.owed.take(), sim) {
@@ -271,8 +334,14 @@ impl Pipeline {
         if let (Some(step), Some(scenery)) = (self.owed_scenery.take(), scenery) {
             job.scenery = Some((std::mem::take(scenery), step));
         }
-        if job.traffic.is_none() && job.scenery.is_none() {
-            return;
+        let mut people = people;
+        if let Some(owed) = self.owed_people.take() {
+            if let Some(p) = people.take() {
+                job.people = Some((p, owed, false));
+            }
+        }
+        if job.traffic.is_none() && job.scenery.is_none() && job.people.is_none() {
+            return people;
         }
         if self.thread.is_none() {
             match SimThread::spawn() {
@@ -285,12 +354,14 @@ impl Pipeline {
             Some(th) => th.start(job, run),
             None => SimThread::inline(job, run),
         });
+        people
     }
 
-    /// Everything out on the sim thread back in place (waits for it). Nothing out: nothing.
+    /// Everything out on the sim thread back in place (waits for it), the people given back
+    /// to the caller. Nothing out: nothing.
     /// `sim`, `scenery`: where the traffic's simulation and the scenery stand in the frame.
-    pub fn join(&mut self, sim: Option<&mut TrafficSim>, scenery: Option<&mut SceneryState>) -> Joined {
-        let Some(f) = self.out.take() else { return Joined::default() };
+    pub fn join(&mut self, sim: Option<&mut TrafficSim>, scenery: Option<&mut SceneryState>) -> (Joined, Option<PeopleSim>) {
+        let Some(f) = self.out.take() else { return (Joined::default(), None) };
         let (job, _, waited) = f.join();
         if let Some((mut back, _)) = job.traffic {
             match sim {
@@ -312,7 +383,11 @@ impl Pipeline {
                 None => log::warn!("sim thread: the scenery went away while it was stepped"),
             }
         }
-        Joined { traffic: job.traffic_secs, scenery: job.scenery_secs, waited }
+        let people = job.people.map(|(p, owed, took)| {
+            self.people_stepped = Some(PeopleStepped { took, dt: owed.dt, secs: job.people_secs });
+            p
+        });
+        (Joined { traffic: job.traffic_secs, people: job.people_secs, scenery: job.scenery_secs, waited }, people)
     }
 
     /// Something is out on the sim thread.

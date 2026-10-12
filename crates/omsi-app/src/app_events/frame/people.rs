@@ -187,16 +187,30 @@ pub(super) fn humans(cx: HumansCx, dt: f32) {
                 .as_ref()
                 .and_then(|d| d.trip().stops.get(d.next_stop)),
         );
-        let took = steps::tick_humans(
-            h,
-            &mut cx.gfx.gfx.sim_view.people,
-            if *cx.clock.paused { 0.0 } else { dt },
-            w,
-            cx.player.player.as_mut(),
-            cx.traffic.traffic.as_mut(),
-            r,
-            scene,
-        );
+        let step_dt = if *cx.clock.paused { 0.0 } else { dt };
+        // (OMSI_SIM_THREAD: what the people's step made during the last picture is taken
+        // now, and their next step goes there with this frame's, see `sim_thread`)
+        let mut took = false;
+        if let Some(back) = cx.traffic.pipeline.take_people_stepped() {
+            let started = Instant::now().checked_sub(std::time::Duration::from_secs_f64(back.secs)).unwrap_or_else(Instant::now);
+            steps::humans_after_step(h, &mut cx.gfx.gfx.sim_view.people, back.dt, w, cx.player.player.as_mut(), cx.traffic.traffic.as_mut(), r, scene, started);
+            took = back.took;
+        }
+        if cx.traffic.pipeline.takes_people(cx.traffic.traffic.as_ref().map(|t| &t.sim), h) {
+            let bus = cx.player.player.as_ref().map(|p| h.player_bus_view(&p.vehicle));
+            cx.traffic.pipeline.owe_people(step_dt, w.data(), bus);
+        } else {
+            took |= steps::tick_humans(
+                h,
+                &mut cx.gfx.gfx.sim_view.people,
+                step_dt,
+                w,
+                cx.player.player.as_mut(),
+                cx.traffic.traffic.as_mut(),
+                r,
+                scene,
+            );
+        }
         if let Some(m) = h.take_message() {
             *cx.ui.service_msg = Some((m, 6.0));
         }
