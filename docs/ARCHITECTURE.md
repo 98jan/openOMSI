@@ -352,7 +352,8 @@ checked against it.
   per-slot values in flat buffers kept from frame to frame), taken at the sync.
 
   Still read from the simulation's state while syncing (the sync is therefore a point where
-  the simulation stands still): the traffic's lamps (their scripts run there, World-held),
+  the simulation stands still): the traffic's lamps (their scripts run there: the scenery
+  state's `LampScripts`, by key),
   the timetable buses' drivers, the AI cars' and the player's materials, interior lamps,
   script, text and HTML textures, skinned bellows, glass cracks and dents
   (`view_sync/vehicle.rs`, `vehicle_damage.rs`), their sounds (`view_sync/traffic_audio.rs`)
