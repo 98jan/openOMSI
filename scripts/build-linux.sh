@@ -12,8 +12,8 @@ cargo build --locked --release -p omsi-app -p omsi-launcher-core
 out=dist/linux
 mkdir -p "$out"   # (the folder is also the content folder: mods stay)
 cp target/release/openomsi target/release/openomsi-launcher "$out/"
-# the desktop launcher (launcher/, Tauri on WebKitGTK): a plain start of openomsi opens it, and
-# the game's own launcher where WebKitGTK is missing
+# the desktop launcher (launcher/, Tauri on WebKitGTK): a plain start of openomsi opens it (it
+# needs WebKitGTK 4.1; where it is missing the game says so)
 TAURI_CONFIG="{\"version\":\"${OPENOMSI_VERSION%%-*}\"}" cargo build --locked --release --manifest-path launcher/src-tauri/Cargo.toml
 cp launcher/src-tauri/target/release/openomsi-launcher-app "$out/"
 cp assets/icons/app/openomsi-256.png "$out/openomsi.png"

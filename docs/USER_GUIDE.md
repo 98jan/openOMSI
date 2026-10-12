@@ -51,7 +51,7 @@ Everything can also be given on the command line, which then skips both:
 | `--season winter` (`autumn-late`, `spring-early`, …) / `--situation x.osn` / `--physics simple` | season override, a saved situation, the kinematic dynamics instead of the rigid body |
 | `--enhanced` / `--export-glb bus.glb` | the physically based renderer; write the bus as glTF (the launcher's preview) and quit |
 | `--enhanced-plus` | Enhanced+: the physically based renderer with ray-traced shadows, ambient occlusion and reflections |
-| `--launcher` / `--menu` / `--no-menu` | open the launcher (the default without arguments), the in-game menu, or neither |
+| `--menu` / `--no-menu` | the in-game start menu instead of the launcher (which a start without arguments opens), or neither |
 
 **Experimental passenger animation A/B test.** In the launcher open **Settings → Gameplay →
 Passengers → Passenger animations** and choose **Procedural (experimental)** to test the
@@ -73,7 +73,10 @@ second (starter), **Shift+D** (drive), **.** (parking brake off), then throttle.
 whole start-up by itself (main switch, ignition, starter, gearbox to neutral); `--autostart`
 is the same thing for an offscreen run.
 
-**Updates.** When the launcher starts it asks
+**Updates.** (Not yet in the desktop launcher and the Android page: offering and installing an
+update was the game's old launcher window's, which is gone, and their update page is still to
+come - until then a new release is downloaded from the releases page. During a session the game
+still downloads a newer release and says so, as below.) When the launcher starts it asks
 [github.com/openOMSI-org/openOMSI](https://github.com/openOMSI-org/openOMSI) for the latest release
 and, when there is a newer one, offers it: **Update now** downloads it (checked against the
 SHA-256 GitHub lists), puts the new program in place of the old one and starts the launcher
@@ -231,16 +234,18 @@ nothing - what virtual bus companies ask their drivers for.
 
 ## The launcher
 
-The launcher is the game's own window (`crates/omsi-app/src/launcher`): `omsi` started
-without arguments (or with `--launcher`) opens it. It is drawn with wgpu - no web engine -
-flat and dark (neutral greys, one amber accent), every control custom (sliders, switches,
-dropdowns, a calendar, a time picker, text fields, segmented buttons), Material Symbols
-icons and Inter (`crates/omsi-ui`). The Drive page shows the chosen bus in a card, as a
-picture **drawn by the game's renderer** - its model, paint, materials, reflections and
-shadows exactly as in the game, under the light of the chosen time and weather - drawn
-again only when something changes; drag on it to turn the bus, scroll to zoom. Its pages:
+The launcher is a program of its own beside the game, `openomsi-launcher-app` (a Tauri window,
+`launcher/`, see its README): `openomsi` started without arguments opens it, and where it is
+missing - or its window cannot open, for want of WebView2 on an old Windows (the game offers
+Microsoft's installer) or of WebKitGTK 4.1 on Linux - the game says so and where it belongs.
+On Android the same page shows in a web view over the game's window; iPhone, iPad and the Mac
+app have a launcher of their own (SwiftUI). The Drive page shows the chosen bus as a picture
+**drawn by the game's renderer** (the game program runs beside the launcher as its helper,
+`openomsi --launcher-service`) - its model, paint, materials, reflections and shadows exactly
+as in the game, under the light of the chosen time and weather; drag on it to turn the bus,
+scroll to zoom. Its pages:
 
-* **Drive** - four steps: the bus (search, liveries, depot file, number plate), the route (map, start
+* **Drive** - the bus (search, liveries, depot file, number plate), the route (map, start
   point, line and tour - the lines that run on the chosen date), time and weather (time,
   date, season, traffic, passengers, timetable buses, autostart, *LAN play: host / join*,
   the weather presets that suit the season), and the roadbook with the IBIS codes; the
@@ -255,11 +260,10 @@ again only when something changes; drag on it to turn the bus, scroll to zoom. I
   head tracking, VR), *Sound*, *Gameplay* (passengers, traffic, collisions, the clock) and
   *General* (language, the game's interface size, navigator, Discord Rich Presence,
   updates, and resetting every setting).
-  **Discord Rich Presence** shows the launcher while preparing a drive, then the map and
-  line above the vehicle type and tour while playing. The full vehicle name is in the logo's
-  tooltip. The launcher status returns when the game ends.
+  **Discord Rich Presence** shows the map and line above the vehicle type and tour while
+  playing. The full vehicle name is in the logo's tooltip.
   It is enabled by default and can be turned off under Settings → General; the switch
-  affects the launcher immediately and the game on its next start. Discord must be running
+  affects the game on its next start. Discord must be running
   on the same computer.
   **Voice chat through GreenTeaSpeak** (on by default): in multiplayer, the other players
   are heard from where they are, when GreenTeaSpeak 2 runs with the openOMSI plugin and the
@@ -306,9 +310,6 @@ again only when something changes; drag on it to turn the bus, scroll to zoom. I
   session, the code to copy, who is playing and the chat.
 * **Mods** - installing mods and archives (see *Mods and the content folder*); a folder or
   .zip, .7z or .rar dropped on the window is installed.
-* **Timetable** - a map's lines, their tours and trips. Changes stay while you move between
-  lines and are saved together (*Save all*); **New line** makes a line, **Repeat** turns a tour
-  into a whole day of them (every *n* minutes up to a last departure).
 * **Setup** - where the original installation and the game binary are. The OMSI 2 folder may
   be given as a path with quotes, as `Omsi.exe` itself or as a folder inside it; unpacked into
   the OMSI 2 folder itself, openOMSI keeps its own content in an `openOMSI` folder there and
@@ -318,11 +319,9 @@ again only when something changes; drag on it to turn the bus, scroll to zoom. I
 scripts/build-macos.sh   # or build-windows.cmd / build-linux.sh: the game opens the launcher
 ```
 
-Without a person at it: `OMSI_LAUNCHER_PAGE=drive:2` opens a page (and a Drive step;
-`settings:3` or `controls:1` a tab), `OMSI_LAUNCHER_SHOT=secs:file.png` writes a picture,
-`OMSI_LAUNCHER_EXIT=secs` closes it,
-`OMSI_LAUNCHER_INPUT="t=2 click 412,60; t=3 type 76; t=4 key Enter; t=5 shot a.png"` works
-it (logical pixels). The data side is `crates/omsi-launcher-core`:
+Without a person at it: `OPENOMSI_LAUNCHER_SELFTEST=1 openomsi-launcher-app` checks the page in
+a hidden window and prints a report (see `launcher/README.md`). The data side is
+`crates/omsi-launcher-core`:
 `openomsi-launcher --cli lines '{"map":"maps/Grundorf/global.cfg"}'` runs any of its commands
 from a terminal - `config`, `maps`, `vehicles`, `weather`, `lines`, `ibis`, `profiles`,
 `profile`, `mods`, `modinfo`, `install`, `instances`, `stop`, `log`, `join`, `settings`,

@@ -1,8 +1,8 @@
 //! Microsoft's WebView2, which the desktop launcher draws its page with on Windows: part of
 //! Windows 11 and of an updated Windows 10, missing on some older or trimmed systems. Where
-//! the launcher's window could not open for want of it, the game's own launcher offers to
-//! install it with Microsoft's own small installer (the "Evergreen Bootstrapper", which
-//! downloads the runtime itself).
+//! the launcher's window could not open, the game offers to install it (its `launcher_link`)
+//! with Microsoft's own small installer (the "Evergreen Bootstrapper", which downloads the
+//! runtime itself).
 
 /// Microsoft's permanent link to the Evergreen Bootstrapper.
 const BOOTSTRAPPER: &str = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";

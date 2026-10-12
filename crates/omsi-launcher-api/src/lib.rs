@@ -358,8 +358,8 @@ fn base64(bytes: &[u8]) -> String {
 
 // --- what the page keeps ---------------------------------------------------------------
 
-/// The duty as chosen, kept for the next start (`launcher-duty.json`, the file the game's
-/// own launcher window reads as well).
+/// The duty as chosen, kept for the next start (`launcher-duty.json`, which the Swift
+/// launcher's model reads as well).
 fn choice_save(choice: Value) -> Answer {
     std::fs::write(core::data_dir().join("launcher-duty.json"), serde_json::to_vec_pretty(&choice).map_err(err)?).map_err(err)?;
     Ok(json!(true))

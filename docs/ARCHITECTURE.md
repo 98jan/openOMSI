@@ -27,7 +27,7 @@ change behaviour is checked is in [REFACTOR_CHECKS.md](REFACTOR_CHECKS.md).
 | `mc_Form_Main`, main loop              | `omsi-app`                    | offscreen + window, start menu, HUD, tile streaming; the original's dialogs are the launcher |
 | vehicle runtime (`TRoadVehicleInst`)   | `omsi-sim`                    | scripts, animations, dynamic materials, keyboard/mouse input, IBIS typing, coupled parts |
 | AI (`mc_path`, `mc_pathrule`), humans, physics (ODE) | `omsi-sim` | `traffic` + `ai_motion` (rules, light programs, following, passing), `human` + `crowd` (poses, queues, avoidance), `rigid` + `physics` (wheels, collisions) |
-| Optionen and the start dialogs         | `omsi-launcher-ui` + `omsi-launcher-core` | the game's own window (wgpu, `omsi-ui`): profile, bus, map, duty, weather, settings, mods, running games (the Tauri launcher is gone since round 9) |
+| Optionen and the start dialogs         | `launcher/` (Tauri) + `omsi-launcher-core`, `omsi-launcher-api`, `omsi-launcher-model` | the desktop launcher, a program of its own (its page also in Android's web view; SwiftUI on Apple's systems): profile, bus, map, duty, weather, settings, mods, running games; the game has no launcher window |
 | - (no original counterpart)            | `omsi-net`, `omsi-lan`, `omsi-app::lan` | LAN play: UDP session, bit-packed vehicle states, chat |
 
 ## Crates
@@ -38,13 +38,13 @@ Bottom up:
 
 | Layer | Crates | What they hold |
 |---|---|---|
-| base | `omsi-cfg`, `omsi-ui` | text files, the virtual file system, settings, the `OMSI_*` flag registry, the panic guard; the immediate-mode UI toolkit |
+| base | `omsi-cfg`, `omsi-ui` | text files, the virtual file system, settings, the `OMSI_*` flag registry, the panic guard; interface drawing and the immediate-mode widget kit (`omsi_ui::kit`, `theme`) the pause menu, photo mode and developer tools are drawn with |
 | formats and content | `omsi-o3d`, `omsi-texture`, `omsi-model`, `omsi-map`, `omsi-scenery`, `omsi-vehicle`, `omsi-timetable`, `omsi-content`, `omsi-script`, `omsi-geometry`, `omsi-world` | files in, plain data out; the map-wide index and the placement of attached objects (`omsi-world`) |
 | simulation | `omsi-sim` | vehicles (`vehicle/` by subsystem), scripts' host (`host/`), AI traffic, people, timetable, physics; no renderer, audio, texture decoder or network: pictures and HTML pages come through hooks the game registers (`image_decode`, `htmltex::set_backend`) |
 | beside the simulation | `omsi-htmlengine`, `omsi-weather`, `omsi-career` | the `[htmltexture]` engine; the weather and season models; the driver's career and real-time mode |
 | presentation | `omsi-render`, `omsi-audio`, `omsi-soundscape`, `omsi-photo`, `omsi-scene` | the renderer (`gpu/`, `resources/`, `scene/`, `lighting/`, `frame_plan`, shader parts); the mixer; ambience, scenery sounds and the radio; photo mode's lens and darkroom; the scene: loaded content turned into renderer data |
 | devices and services | `omsi-input`, `omsi-xr`, `omsi-net`, `omsi-lan`, `omsi-platform`, `omsi-plugin`, `omsi-plugin-ui` | controllers, force feedback, head tracking, key names; OpenXR; the LAN transport and the game-side session; updater, Discord, the presence count, version stamp; plugin hosting and its UI |
-| launcher | `omsi-launcher-core`, `omsi-launcher-ui` | the launcher's logic; its window and pages, talking to the game through `omsi_launcher_ui::host::Host` |
+| launcher | `omsi-launcher-core`, `omsi-launcher-api`, `omsi-launcher-model` | the launcher's data side; the page's commands (desktop launcher and Android's web view); the window-free model the Swift launcher works on (`state`, the map as data), asking the game through `omsi_launcher_model::host::Host`. The launcher's window is `launcher/` (Tauri, a workspace of its own) |
 | app | `omsi-app` | the glue: `App` and its field groups, the frame (`frame_stages`: one declared list of stages for the window and one for the offscreen run, one runner), view sync, the adapters that hold the crates' state in `App` |
 
 ## Threading
@@ -216,8 +216,8 @@ rules forbid it the renderer, the UI, the simulation, the scene, the audio and t
   mode's switches, then `omsi_guard::start(Launcher)` for a launcher start, which starts the
   watcher - the same program again, without a window - or heals right away when this version
   already failed here.
-* The watcher waits for the launcher's first frames (`omsi_guard::healthy`, called by the
-  launcher at its first presented frame and by a game session after 60 frames), its end, or
+* The watcher waits for the launcher's start (`omsi_guard::healthy`, called once the desktop
+  launcher a plain start opens is running, and by a game session after 60 frames), its end, or
   `OMSI_GUARD_DEADLINE` (120 s, then it ends it). A failed start of a version that never ran
   here, or two in a row, is healed (`rescue`): a newer release, else the version before
   (`omsi_platform::recovery::rollback` - the updater keeps the replaced files until the new

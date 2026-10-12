@@ -329,8 +329,8 @@ function CornerRow() {
   </div>`;
 }
 
-/** The version, and where the releases are. (Looking for updates is the game's own launcher's
- * job for now: there is no command for it here.) */
+/** The version, and where the releases are. (No command here looks for updates or installs
+ * one yet: the game downloads a newer release during a session, see its update_watch.) */
 function VersionRow() {
   return html`<div class="setting-row full">
     <div class="row wrap">

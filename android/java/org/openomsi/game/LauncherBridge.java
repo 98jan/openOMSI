@@ -60,7 +60,7 @@ public final class LauncherBridge {
         try {
             a.getAssets().open("launcher/ui/index.html").close();
         } catch (Exception e) {
-            // (an APK without the page: the game's own launcher, drawn in the window)
+            // (an APK without the page has no launcher: the game logs it)
             return;
         }
         WebView w = new WebView(a);
