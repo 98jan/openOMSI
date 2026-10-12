@@ -105,8 +105,6 @@ pub struct Person {
     pub ty: Arc<HumanType>,
     /// Clothing variant (`HumanType::variant_texture`).
     pub variant: usize,
-    /// The renderer's meshes and instances of the person (the view gives them).
-    pub meshes: Vec<(usize, usize)>,
     pub position: DVec3,
     pub heading: f64,
     /// Heading in the bus frame while inside one.

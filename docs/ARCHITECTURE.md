@@ -291,30 +291,33 @@ checked against it.
     both before each snapshot (the traffic, the player's pose, then the people from the
     snapshot's camera) and in the closing reports.
 
-  Not yet in the phase: renders made or let go inside the wrappers' own calls, at the
-  moment the simulation needs them - a car's when the traffic puts it on the road or takes
-  it off (population, timetable departures, trains, the LAN mirror, its step's retired
-  cars), and the people who appeared or went at the end of every `Humans` call that made
-  them (`BodyOp`s replayed by `Humans::show_bodies`). Those calls take the part of the
-  `SimView` they change (`&mut TrafficView`, `&mut PeopleView`) with the renderer, and
-  the timetable's and the LAN world's steps that make them pass it through. The traffic's sync still hands the AI vehicles `Envir_Brightness`; the cars that
-  finished parking are taken off by the simulation itself (`TrafficSim::take_parked`), the
-* **The map world the simulation reads** is `omsi-sim::world_data`: `WorldData`, an
-  immutable snapshot of Arc'd parts - the loaded tiles' ground (`GroundTiles`: terrain and
-  road faces, with the wheel, walking, camera and drawn-ground questions), the lists made
-  from the tiles (`TileLists`: stops, waiting places, obstacles, parked cars' boxes, petrol
-  stations, echoing places), where the map's objects stand (`ObjectPlaces`) and the map
-  index's stop facts. `omsi-scene::World` holds it in a `WorldCell` (arc-swap) and publishes
-  a new one where a tile's ground comes or goes and where the tile lists are rebuilt;
-  readers take it without a lock (`peek` for one look, `snapshot` for a step), the vehicles'
-  wheels through `LiveGround`. It implements `people::World` and `TimetableWorld`. Still in
-  `World` and locked: the GPU side, the type and file caches of loading, the scripted
-  objects, the lamps and the lanes handed to the traffic as tiles load.
+  The simulation's calls hand the view data, never renderer calls: what they did that the
+  renders have to follow - a car put on the road with its coupled parts or taken off (now,
+  or at the next sync for the step's retired and parked cars), parts coupled or let go, a
+  train made anew under its id, a parked car driving off or one parking - is written down
+  as `omsi_sim::view_events::TrafficEvent`s (`Traffic::events`), somebody appearing, going
+  or renamed and coins on the desk as `omsi_sim::people::BodyOp`s (`PeopleSim::bodies`).
+  `view_sync::apply_traffic` and `apply_people` replay them in order, called right after
+  each call that can make them (population, the timetable's tick - before its vehicle sets
+  go up and at its end -, the LAN mirror, admin and plugin removals, the clock's restart,
+  the people's step, the avatar), where those calls made the renderer calls before: the
+  renderer sees the same calls in the same order (`OMSI_SCENE_DIGEST` checks it on an
+  offscreen run). None of those calls takes a renderer, a scene or a part of the view;
+  `Traffic::tick` is `TrafficSim::advance` plus `Traffic::after_step` (the step's retired
+  cars to events), so the step can run on another thread. The people hold no renderer
+  handles (`PeopleView::meshes`, by person id); the parked cars' world side
+  (`World::take_departing_parked`, `take_returning_parked`) is apart from their renderer
+  side (`show_parked_instances`). The AI cars are drawn from an owned `FrameSnapshot`
+  (`omsi_sim::view_events`: every car's parts, their meshes' transforms, visibility and
+  per-slot values in flat buffers kept from frame to frame), taken at the sync.
 
-  sync only puts their parked objects back. The player's and the AI buses' per-frame sync
-  (materials, lamps, script and text textures, glass cracks, dents) is in the phase too:
-  `view_sync/vehicle.rs` and `vehicle_damage.rs`, and the AI cars' sounds in
-  `view_sync/traffic_audio.rs`.
+  Still read from the simulation's state while syncing (the sync is therefore a point where
+  the simulation stands still): the traffic's lamps (their scripts run there, World-held),
+  the timetable buses' drivers, the AI cars' and the player's materials, interior lamps,
+  script, text and HTML textures, skinned bellows, glass cracks and dents
+  (`view_sync/vehicle.rs`, `vehicle_damage.rs`), their sounds (`view_sync/traffic_audio.rs`)
+  and the people's posing and skinning; the sync also hands the AI vehicles
+  `Envir_Brightness` and swaps their poses between the traffic's last two steps.
 
 * **Global mutable state.** The introduction's "no global mutable state" is still not
   quite true, but what is left no longer carries a session's state into the next one. The
