@@ -4,6 +4,11 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.36 - 2026-10-11
+
+### New
+- **The new launcher on Windows and Linux too**: the Windows and Linux downloads carry the desktop launcher of 0.2.35 beside the game (`openomsi-launcher-app`), and a plain start of openOMSI opens it, as on macOS. It needs WebView2 on Windows (part of Windows 10 and 11) and WebKitGTK 4.1 on Linux (`libwebkit2gtk-4.1-0`); where it cannot start, the game's own launcher opens instead, as before.
+
 ## 0.2.35 - 2026-10-11
 
 ### New

@@ -54,7 +54,22 @@ pub(crate) fn open_app_launcher() -> Result<bool> {
     log::info!("starting the desktop launcher {}", bin.display());
     let exe = std::env::current_exe().unwrap_or_default();
     match std::process::Command::new(&bin).env("OPENOMSI_BIN", &exe).spawn() {
-        Ok(_) => Ok(true),
+        Ok(mut child) => {
+            // (a program that cannot even load - Linux without WebKitGTK's library - ends at
+            // once with an error, before it could open the game's own launcher itself)
+            let t0 = std::time::Instant::now();
+            while t0.elapsed() < std::time::Duration::from_secs(2) {
+                match child.try_wait() {
+                    Ok(Some(status)) if !status.success() => {
+                        log::warn!("the desktop launcher {} ended at once ({status}): the game's own opens", bin.display());
+                        return Ok(false);
+                    }
+                    Ok(Some(_)) | Err(_) => break,
+                    Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+                }
+            }
+            Ok(true)
+        }
         Err(e) => {
             log::warn!("the desktop launcher {} did not start ({e}): the game's own opens", bin.display());
             Ok(false)
