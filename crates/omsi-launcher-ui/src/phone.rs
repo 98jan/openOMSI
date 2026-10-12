@@ -697,7 +697,7 @@ fn servers_sheet(l: &mut Launcher, r: Rect) -> bool {
         } else if l.state.servers.iter().any(|s| s.address.eq_ignore_ascii_case(&addr)) {
             l.state.set_status("That server is in the list already", true);
         } else {
-            l.state.servers.push(super::state::ServerEntry { name: l.phone.server_name.trim().to_string(), address: addr.clone() });
+            l.state.servers.push(super::state::ServerEntry { name: l.phone.server_name.trim().to_string(), address: addr.clone(), protocol: super::state::JoinProto::Auto });
             l.state.save_servers();
             l.state.ask_server(&addr, 0.0);
             l.phone.server_addr.clear();
@@ -720,12 +720,14 @@ fn servers_sheet(l: &mut Launcher, r: Rect) -> bool {
     let list = Rect::new(inner.x, controls.bottom() + 8.0, inner.w, inner.bottom() - controls.bottom() - 8.0);
     let mut join_addr: Option<String> = None;
     let mut remove_addr: Option<String> = None;
+    let mut protocol_change = None;
+    let server_row_h = 96.0;
     l.ui.scroll_area("pserver-list", list, &mut |ui, v| {
         if entries.is_empty() {
             ui.text_in("No saved servers yet.", Rect::new(v.x + 12.0, v.y, v.w - 24.0, 40.0), 13.0, Weight::Regular, TEXT_DIM, Align::Left);
         }
         for (k, entry) in entries.iter().enumerate() {
-            let rr = Rect::new(v.x, v.y + k as f32 * (ROW_H + 8.0), v.w - 8.0, ROW_H);
+            let rr = Rect::new(v.x, v.y + k as f32 * (server_row_h + 8.0), v.w - 8.0, server_row_h);
             ui.p().rounded(rr, 10.0, FIELD);
             let info = l.state.server_info.get(&entry.address).map(|x| x.1.clone());
             let name = if !entry.name.is_empty() { entry.name.clone() } else { info.as_ref().and_then(|x| x.as_ref().ok()).map(|x| x.name.clone()).unwrap_or_else(|| entry.address.clone()) };
@@ -736,6 +738,11 @@ fn servers_sheet(l: &mut Launcher, r: Rect) -> bool {
             };
             ui.text_in(&name, Rect::new(rr.x + 14.0, rr.y + 7.0, rr.w - 190.0, 21.0), 14.0, Weight::Bold, TEXT, Align::Left);
             ui.text_in(&sub, Rect::new(rr.x + 14.0, rr.y + 31.0, rr.w - 190.0, 18.0), 11.5, Weight::Regular, TEXT_DIM, Align::Left);
+            let protocols = [super::state::JoinProto::Auto, super::state::JoinProto::Udp, super::state::JoinProto::WebSocket];
+            let mut protocol = protocols.iter().position(|p| *p == entry.protocol).unwrap_or(0);
+            if ui.select(&format!("pserver-proto-{k}"), Rect::new(rr.x + 14.0, rr.y + 56.0, 130.0, 30.0), &mut protocol, &["Auto".into(), "UDP".into(), "WebSocket".into()]) {
+                protocol_change = Some((entry.address.clone(), protocols[protocol]));
+            }
             if ui.button(&format!("pserver-join-{k}"), Rect::new(rr.right() - 142.0, rr.y + 12.0, 92.0, 38.0), "Join", Some("login"), ButtonKind::Primary) {
                 join_addr = Some(entry.address.clone());
             }
@@ -743,8 +750,15 @@ fn servers_sheet(l: &mut Launcher, r: Rect) -> bool {
                 remove_addr = Some(entry.address.clone());
             }
         }
-        entries.len().max(1) as f32 * (ROW_H + 8.0)
+        entries.len().max(1) as f32 * (server_row_h + 8.0)
     });
+    if let Some((address, protocol)) = protocol_change {
+        if let Some(entry) = l.state.servers.iter_mut().find(|s| s.address == address) {
+            entry.protocol = protocol;
+            l.state.save_servers();
+        }
+    }
+
     if let Some(addr) = remove_addr {
         if let Some(k) = l.state.servers.iter().position(|s| s.address == addr) {
             l.state.servers.remove(k);
@@ -1142,7 +1156,8 @@ fn online(l: &mut Launcher, body: Rect) {
 
 fn join(l: &mut Launcher, address: &str) {
     l.state.ask_server(address, 5.0);
-    l.state.join_server(address, super::state::JoinProto::Auto);
+    let protocol = l.state.servers.iter().find(|s| s.address == address).map(|s| s.protocol).unwrap_or_default();
+    l.state.join_server(address, protocol);
     if l.state.joined_server.as_deref() == Some(address) {
         l.phone.tab = Tab::Play;
         l.go(Page::Drive);

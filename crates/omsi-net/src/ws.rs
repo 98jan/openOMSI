@@ -255,9 +255,9 @@ pub fn http_base(target: &str) -> Option<String> {
 }
 
 /// The web addresses a server may answer at, for whatever address a player gave: a web
-/// address as it is; a bare `host` or `host:port` (an IP, a domain) at that port, at the
+/// address as it is; a bare `host` or `host:port` (an IP, a domain) at the
 /// port ten above it (the game's port was given: a server's web port is its game port + 10
-/// unless `web_port` says otherwise), at the servers' default 27025, and over https.
+/// unless `web_port` says otherwise), at the servers' default 27025, and over https. For an explicit port, try port + 10 then HTTPS first.
 pub fn web_bases(target: &str) -> Vec<String> {
     if let Some(b) = http_base(target) {
         return vec![b];
@@ -283,10 +283,11 @@ pub fn web_bases(target: &str) -> Vec<String> {
         }
     };
     if let Some(p) = port {
-        add(format!("http://{host}:{p}"));
         if p <= 65525 {
             add(format!("http://{host}:{}", p + 10));
         }
+        add(format!("https://{host}"));
+        add(format!("http://{host}:{p}"));
     }
     add(format!("http://{host}:27025"));
     if port.is_none() {
@@ -872,10 +873,12 @@ mod tests {
         assert_eq!(ws_url("http://10.0.0.2:27025/").as_deref(), Some("ws://10.0.0.2:27025/ws"));
         assert_eq!(ws_url("192.168.1.4:27015"), None);
         assert_eq!(http_base("https://abc.trycloudflare.com").as_deref(), Some("https://abc.trycloudflare.com"));
-        assert_eq!(web_bases("192.168.1.4:27015"), ["http://192.168.1.4:27015", "http://192.168.1.4:27025"]);
+        assert_eq!(web_bases("192.168.1.4:27015"), ["http://192.168.1.4:27025", "https://192.168.1.4", "http://192.168.1.4:27015"]);
         assert_eq!(web_bases("play.example.org"), ["http://play.example.org:27025", "https://play.example.org", "http://play.example.org"]);
+        assert_eq!(web_bases("play.example.org:47015"), ["http://play.example.org:47025", "https://play.example.org", "http://play.example.org:47015", "http://play.example.org:27025"]);
+        assert_eq!(web_bases("https://play.example.org"), ["https://play.example.org"]);
         assert_eq!(web_bases("::1")[0], "http://[::1]:27025");
-        assert_eq!(web_bases("[::1]:27025"), ["http://[::1]:27025", "http://[::1]:27035"]);
+        assert_eq!(web_bases("[::1]:27025"), ["http://[::1]:27035", "https://[::1]", "http://[::1]:27025"]);
     }
 
     #[test]

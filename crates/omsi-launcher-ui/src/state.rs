@@ -50,12 +50,14 @@ pub enum Msg {
 pub struct ServerEntry {
     pub name: String,
     pub address: String,
+    pub protocol: JoinProto,
 }
 
 /// How the Multiplayer page joins a server.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum JoinProto {
-    /// The web gateway where the server answered, else UDP.
+    /// UDP for game addresses, WebSocket for web links.
     #[default]
     Auto,
     /// Straight to the game port over UDP (no status needed).
@@ -81,7 +83,7 @@ fn host_status(code: &str) -> Result<omsi_net::ws::ServerInfo, String> {
 /// The list as saved, with the official server first when it is not in it.
 fn with_official(mut list: Vec<ServerEntry>) -> Vec<ServerEntry> {
     if !list.iter().any(|s| omsi_net::official::is_alias(&s.address)) {
-        list.insert(0, ServerEntry { name: omsi_net::official::NAME.into(), address: omsi_net::official::ALIAS.into() });
+        list.insert(0, ServerEntry { name: omsi_net::official::NAME.into(), address: omsi_net::official::ALIAS.into(), protocol: JoinProto::Auto });
     }
     list
 }
@@ -559,13 +561,13 @@ impl State {
 
     /// The Drive page joins `address`: the server's map is the map, the session is joined.
     /// `proto` says how: over UDP straight to the game port, over the server's web gateway
-    /// (a WebSocket), or `Auto` (the web gateway where the server answered, else UDP).
+    /// (a WebSocket), or `Auto` (UDP for game addresses, WebSocket for web links).
     pub fn join_server(&mut self, address: &str, proto: JoinProto) {
         let info = self.server_info.get(address).cloned().and_then(|(_, r)| r.ok());
         let is_web = omsi_net::ws::ws_url(address).is_some() || omsi_net::official::is_alias(address);
         let proto = match (proto, &info) {
-            (JoinProto::Auto, Some(_)) => JoinProto::WebSocket,
-            (JoinProto::Auto, None) if !is_web => JoinProto::Udp,
+            (JoinProto::Auto, _) if !is_web => JoinProto::Udp,
+            (JoinProto::Auto, _) => JoinProto::WebSocket,
             (p, _) => p,
         };
         let lan_addr = match proto {
@@ -1408,6 +1410,17 @@ mod disconnect_tests {
 
 #[cfg(test)]
 mod choice_tests {
+    #[test]
+    fn server_protocol_defaults_to_auto_and_survives_saving() {
+        let old: super::ServerEntry = serde_json::from_str(r#"{"name":"Example","address":"play.example.org:47015"}"#).unwrap();
+        assert_eq!(old.protocol, super::JoinProto::Auto);
+        for protocol in [super::JoinProto::Auto, super::JoinProto::Udp, super::JoinProto::WebSocket] {
+            let entry = super::ServerEntry { protocol, ..old.clone() };
+            let back: super::ServerEntry = serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
+            assert_eq!(entry, back);
+        }
+    }
+
     /// `launcher-duty.json` from before the number plate field: the missing key falls back to
     /// the default (no plate), and a typed plate survives a round trip.
     #[test]

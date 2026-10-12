@@ -26,8 +26,6 @@ pub struct MultiplayerView {
     pub add_address: String,
     pub add_name: String,
     pub selected: Option<usize>,
-    /// 0 Auto, 1 UDP, 2 WebSocket (see `JoinProto`).
-    pub proto: usize,
 }
 
 pub fn draw(l: &mut Launcher, area: Rect) {
@@ -152,7 +150,7 @@ fn servers(l: &mut Launcher, r: Rect) {
         } else if l.state.servers.iter().any(|s| s.address.eq_ignore_ascii_case(&addr)) {
             l.state.set_status("That server is in the list already", true);
         } else {
-            l.state.servers.push(ServerEntry { name: l.mp.add_name.trim().to_string(), address: addr.clone() });
+            l.state.servers.push(ServerEntry { name: l.mp.add_name.trim().to_string(), address: addr.clone(), protocol: JoinProto::Auto });
             l.state.save_servers();
             l.state.ask_server(&addr, 0.0);
             l.mp.add_address.clear();
@@ -170,7 +168,7 @@ fn servers(l: &mut Launcher, r: Rect) {
         l.ui.paragraph("No servers yet. Add a server by the address its owner gives you.", Vec2::new(list.x + 80.0, list.y + 32.0), list.w - 110.0, 13.0, Weight::Regular, TEXT_DIM);
     }
     let row_h = 84.0;
-    let mut join: Option<String> = None;
+    let mut join: Option<(String, JoinProto)> = None;
     let mut remove: Option<usize> = None;
     for (k, e) in entries.iter().enumerate() {
         let rr = Rect::new(list.x, list.y + k as f32 * (row_h + 8.0), list.w, row_h);
@@ -201,25 +199,31 @@ fn servers(l: &mut Launcher, r: Rect) {
         }
         let x = ir.right() + 14.0;
         let title = if !e.name.is_empty() { e.name.clone() } else { info.as_ref().and_then(|i| i.as_ref().ok()).map(|i| i.name.clone()).unwrap_or_else(|| e.address.clone()) };
-        l.ui.text_in(&title, Rect::new(x, rr.y + 10.0, rr.w - 320.0, 22.0), 15.0, Weight::Medium, TEXT, Align::Left);
+        l.ui.text_in(&title, Rect::new(x, rr.y + 10.0, rr.w - 430.0, 22.0), 15.0, Weight::Medium, TEXT, Align::Left);
         match info.as_ref() {
             Some(Ok(i)) => {
-                l.ui.text_in(&i.motd, Rect::new(x, rr.y + 32.0, rr.w - 320.0, 18.0), 12.5, Weight::Regular, TEXT_SOFT, Align::Left);
+                l.ui.text_in(&i.motd, Rect::new(x, rr.y + 32.0, rr.w - 430.0, 18.0), 12.5, Weight::Regular, TEXT_SOFT, Align::Left);
                 let map = std::path::Path::new(&i.map.replace('\\', "/")).parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| i.map.clone());
-                l.ui.text_in(&format!("{map} | {} | {}", i.time, if i.weather.is_empty() { "the map's weather" } else { i.weather.as_str() }), Rect::new(x, rr.y + 52.0, rr.w - 320.0, 18.0), 11.5, Weight::Regular, TEXT_FAINT, Align::Left);
+                l.ui.text_in(&format!("{map} | {} | {}", i.time, if i.weather.is_empty() { "the map's weather" } else { i.weather.as_str() }), Rect::new(x, rr.y + 52.0, rr.w - 430.0, 18.0), 11.5, Weight::Regular, TEXT_FAINT, Align::Left);
                 l.ui.text_in(&format!("{}/{}", i.players, i.max_players), Rect::new(rr.right() - 300.0, rr.y + 10.0, 80.0, 22.0), 14.0, Weight::Medium, OK, Align::Right);
                 l.ui.icon("signal_cellular_alt", Vec2::new(rr.right() - 206.0, rr.y + 21.0), 16.0, OK);
             }
             Some(Err(err)) => {
-                l.ui.text_in(&format!("Can't reach the server: {err}"), Rect::new(x, rr.y + 32.0, rr.w - 320.0, 18.0), 12.0, Weight::Regular, DANGER, Align::Left);
-                l.ui.text_in(&e.address, Rect::new(x, rr.y + 52.0, rr.w - 320.0, 18.0), 11.5, Weight::Regular, TEXT_FAINT, Align::Left);
+                l.ui.text_in(&format!("Can't reach the server: {err}"), Rect::new(x, rr.y + 32.0, rr.w - 430.0, 18.0), 12.0, Weight::Regular, DANGER, Align::Left);
+                l.ui.text_in(&e.address, Rect::new(x, rr.y + 52.0, rr.w - 430.0, 18.0), 11.5, Weight::Regular, TEXT_FAINT, Align::Left);
             }
             None => {
-                l.ui.text_in("Asking the server...", Rect::new(x, rr.y + 32.0, rr.w - 320.0, 18.0), 12.0, Weight::Regular, TEXT_DIM, Align::Left);
+                l.ui.text_in("Asking the server...", Rect::new(x, rr.y + 32.0, rr.w - 430.0, 18.0), 12.0, Weight::Regular, TEXT_DIM, Align::Left);
             }
         }
+        let protocols = [JoinProto::Auto, JoinProto::Udp, JoinProto::WebSocket];
+        let mut protocol = protocols.iter().position(|p| *p == e.protocol).unwrap_or(0);
+        if l.ui.select(&format!("srv-proto-{k}"), Rect::new(rr.right() - 320.0, rr.y + 44.0, 130.0, 30.0), &mut protocol, &["Auto".into(), "UDP".into(), "WebSocket".into()]) {
+            l.state.servers[k].protocol = protocols[protocol];
+            l.state.save_servers();
+        }
         if l.ui.button(&format!("srv-join-{k}"), Rect::new(rr.right() - 180.0, rr.y + 24.0, 120.0, 36.0), "Join", Some("exit_to_app"), ButtonKind::Primary) {
-            join = Some(e.address.clone());
+            join = Some((e.address.clone(), l.state.servers[k].protocol));
         }
         if l.ui.icon_button(&format!("srv-del-{k}"), Vec2::new(rr.right() - 30.0, rr.y + 42.0), 16.0, "delete", "Remove from the list") {
             remove = Some(k);
@@ -231,9 +235,8 @@ fn servers(l: &mut Launcher, r: Rect) {
         l.state.save_servers();
         l.mp.selected = None;
     }
-    if let Some(a) = join {
+    if let Some((a, proto)) = join {
         l.state.ask_server(&a, 5.0);
-        let proto = [JoinProto::Auto, JoinProto::Udp, JoinProto::WebSocket][l.mp.proto.min(2)];
         l.state.join_server(&a, proto);
         if l.state.joined_server.as_deref() == Some(a.as_str()) {
             l.go(super::Page::Drive);
@@ -243,12 +246,6 @@ fn servers(l: &mut Launcher, r: Rect) {
         for e in &entries {
             l.state.ask_server(&e.address, 0.0);
         }
-    }
-    // how Join connects: UDP goes straight to the game port and needs no status answer
-    l.ui.text_in("Join via", Rect::new(r.x + 170.0, r.bottom() - ROW, 70.0, ROW), 12.5, Weight::Regular, TEXT_DIM, Align::Left);
-    let mut proto = l.mp.proto;
-    if l.ui.segmented("mp-proto", Rect::new(r.x + 244.0, r.bottom() - ROW, 330.0, ROW), &mut proto, &["Auto", "UDP", "WebSocket"]) {
-        l.mp.proto = proto;
     }
     let _ = id_of;
 }
