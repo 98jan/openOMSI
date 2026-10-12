@@ -205,9 +205,12 @@ pub(super) fn player_to_scene(cx: PlayerToSceneCx, dt: f32) {
     p.sync_transforms(r, scene, inside, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
     crate::scene::sync_vehicle_damage(r, scene, &mut p.vehicle, &mut p.render);
     // from the driver's seat the figure stays in the mirrors
-    // (from the driver's seat only the mirrors show him)
+    // (from the driver's seat only the mirrors show him - while the camera is at his eyes:
+    // the photo mode keeps the driver's view while its camera flies off, and taken from
+    // there every photo showed the bus without its driver)
     // (out of the seat: nobody at the wheel)
-    p.sync_driver_hands(r, scene, dt, cx.common.settings.driver && cx.people.on_foot.is_none(), *cx.view.view == "driver", cx.common.settings.hands_in_cab);
+    let at_eyes = *cx.view.view == "driver" && cx.view.camera.as_ref().is_none_or(|c| (c.position - crate::camera_util::driver_eye(p)).length() < 0.5);
+    p.sync_driver_hands(r, scene, dt, cx.common.settings.driver && cx.people.on_foot.is_none(), at_eyes, cx.common.settings.hands_in_cab);
 }
 
 crate::app::stage_ctx!(
