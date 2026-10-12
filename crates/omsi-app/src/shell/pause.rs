@@ -135,10 +135,13 @@ fn home_page(sh: &mut Shell, v: &PauseView, page: Rect) {
     let ui = &mut sh.ui;
     let title = omsi_ui::tr(if v.paused { "Paused" } else { "Menu" }).to_string();
     let title_w = ui.width(&title, 26.0, Weight::Bold);
-    ui.text(&title, Vec2::new(x, 28.0 + 26.0), 26.0, Weight::Bold, INK, Align::Left);
+    // (one axis for the head: the title centred on the buttons' row, the row on the sidebar's
+    // brand - its logo is 16..48)
+    let h = 36.0;
+    let head_y = 32.0 - h * 0.5;
+    ui.text_in(&title, Rect::new(x, head_y, title_w + 4.0, h), 26.0, Weight::Bold, INK, Align::Left);
 
     // the row: the destination sign, then the buttons, each as wide as its label
-    let h = 36.0;
     let amber = Color::rgba(255, 176, 46, 1.0);
     let (sign_main, sign_to) = match (&sm.line, &sm.terminus) {
         (Some(line), Some(to)) => (line.clone(), Some(to.to_uppercase())),
@@ -168,7 +171,8 @@ fn home_page(sh: &mut Shell, v: &PauseView, page: Rect) {
     let row_w = sign_w + widths.iter().map(|w| w + gap).sum::<f32>();
     // beside the head when it fits, else on a line of its own under the facts
     let beside = x + title_w + 28.0 + row_w <= right;
-    let (mut bx, by) = if beside { (x + title_w + 28.0, 23.0) } else { (x, 118.0) };
+    let line_y = head_y + h + 6.0;
+    let (mut bx, by) = if beside { (x + title_w + 24.0, head_y) } else { (x, line_y + 20.0 + 26.0) };
     let sign = Rect::new(bx, by, sign_w, h);
     ui.p().rounded(sign, 6.0, Color::rgba(14, 15, 17, 0.92));
     match &sign_to {
@@ -193,7 +197,6 @@ fn home_page(sh: &mut Shell, v: &PauseView, page: Rect) {
     // the line under the head: the map and the time, then the session's facts
     let sub = [sm.map.as_str(), sm.time.as_str()].iter().filter(|t| !t.is_empty()).copied().collect::<Vec<_>>().join("  -  ");
     let mut fx = x;
-    let line_y = 28.0 + 34.0;
     fx += ui.text_in(&sub, Rect::new(fx, line_y, (right - fx).max(0.0), 20.0), 13.0, Weight::Regular, INK_MUTED, Align::Left);
     let facts: Vec<(&str, String)> = [
         Some(("Bus", sm.bus.clone())),
@@ -221,7 +224,7 @@ fn home_page(sh: &mut Shell, v: &PauseView, page: Rect) {
     }
     // the keys, quietly under them
     if v.keys {
-        let ky = if beside { line_y + 24.0 } else { by + h + 10.0 };
+        let ky = if beside { line_y + 22.0 } else { by + h + 10.0 };
         ui.text_in(&omsi_ui::tr("Esc resumes  |  P pauses"), Rect::new(x, ky, (right - x).max(0.0), 18.0), 12.0, Weight::Regular, INK_MUTED, Align::Left);
     }
     sh.actions.extend(acts);
