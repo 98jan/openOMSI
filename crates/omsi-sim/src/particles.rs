@@ -172,18 +172,7 @@ impl ParticleSet {
                     }
                     // (braked against the air, which moves with the wind: smoke drifts off
                     // with it - it rose straight up in a gale, #1798)
-                    let mut keep = p.brake.clamp(BRAKE_MIN, 1.5).powf(dt * BRAKE_RATE);
-                    // A puff of gas (exhaust, steam: one that does not fall) keeps its momentum
-                    // while it takes in the air round it: its mass grows with its volume, so
-                    // its speed against the air falls with the cube of its width. Braked by the
-                    // factor alone, the stock buses' exhaust, sent off at 10 m/s, coasted ten
-                    // metres from the pipe before it slowed, and its widest, oldest puffs hung
-                    // there as a cloud beside the bus.
-                    if p.gravity <= 0.0 && p.grow > 0.0 && p.size0 > 0.0 {
-                        let (before, now) = ((p.size0 + p.grow * (p.age - dt).max(0.0)).max(1e-3), p.size0 + p.grow * p.age);
-                        keep *= (before / now).powi(3);
-                    }
-                    p.vel = wind + (p.vel - wind) * keep;
+                    p.vel = wind + (p.vel - wind) * p.brake.clamp(BRAKE_MIN, 1.5).powf(dt * BRAKE_RATE);
                     p.vel.z -= 9.81 * p.gravity * dt;
                     p.pos += p.vel.as_dvec3() * dt as f64;
                     true
@@ -337,29 +326,10 @@ mod tests {
         def.brake = (PsValue::Const(0.5), PsValue::Const(0.0));
         def.gravity = (PsValue::Const(0.0), PsValue::Const(0.0));
         def.velocity = (PsValue::Const(2.0), PsValue::Const(0.0));
-        // (a puff that does not grow: the air it takes in slows it too, see below)
-        def.size_grow = (PsValue::Const(0.0), PsValue::Const(0.0));
         let at_60 = one_puff(def.clone(), 1.0 / 60.0, 30).vel.length();
         let at_30 = one_puff(def, 1.0 / 30.0, 15).vel.length();
         let want = 2.0 * 0.5f32.powi(10);
         assert!((at_60 - want).abs() < want * 0.01 && (at_30 - want).abs() < want * 0.01, "half a second at 60 fps {at_60}, at 30 fps {at_30}, want {want}");
-    }
-
-    /// A growing puff of gas slows with the cube of its width, at any frame rate: the stock
-    /// buses' exhaust (10 m/s, brake 0.95, 0.5 m growing 3 m a second) stops within a metre
-    /// or so of the pipe instead of coasting ten.
-    #[test]
-    fn a_growing_puff_of_gas_stops_near_where_it_was_sent_off() {
-        let mut def = smoke(0.0);
-        def.velocity = (PsValue::Const(10.0), PsValue::Const(0.0));
-        def.life = (PsValue::Const(3.0), PsValue::Const(0.0));
-        let at_60 = one_puff(def.clone(), 1.0 / 60.0, 120);
-        let at_30 = one_puff(def, 1.0 / 30.0, 60);
-        for p in [&at_60, &at_30] {
-            let went = (p.pos - DVec3::new(0.0, -5.0, 0.4)).truncate().length();
-            assert!(went < 1.5, "went {went} m");
-        }
-        assert!((at_60.vel.length() - at_30.vel.length()).abs() < 0.05);
     }
 
     /// A puff remembers the height of the ground under where it was set off: the plane its
