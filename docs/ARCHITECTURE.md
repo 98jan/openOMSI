@@ -328,8 +328,9 @@ checked against it.
   vehicles, destination displays). A frame is `tick_send`, the shared world, `tick_receive`,
   then `view_sync::apply_lan` draws and sounds the others from `LanGame::drawn`. The app's
   side is `omsi-app/src/lan_play.rs` (name tags, the HUD's line, `AppLanHost`). Still the
-  app's: the shared world's mirror (`omsi-lan/src/game_world.rs`, compiled by omsi-app as
-  `lan_world` through `#[path]`), which drives `Traffic`, `Humans` and their view directly.
+  app's: the shared world's mirror (`omsi-app/src/lan_world.rs`), which drives `Traffic`,
+  `Humans` and their view directly; it goes to omsi-lan once it is simulation state plus
+  events for the view, as the other players' vehicles are.
 
 * **The view sync phase** (`omsi-app/src/view_sync/`): the code that turns the traffic's
   and the people's state into renderer instances is in one module - `traffic.rs` (the AI

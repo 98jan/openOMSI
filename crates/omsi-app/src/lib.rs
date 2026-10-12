@@ -57,10 +57,9 @@ mod humans;
 mod journey;
 use omsi_input::keys;
 // (LAN play: the session is omsi-lan's `game`, see `lan_play`; the shared world's mirror
-// is on its way there and compiled here until it needs nothing of the app)
+// stays here: it drives the app's `Traffic`, `Humans` and their view directly)
 mod lan_play;
 use lan_play as lan;
-#[path = "../../omsi-lan/src/game_world.rs"]
 mod lan_world;
 use omsi_scene::lights;
 mod launcher;

@@ -2014,7 +2014,7 @@ pub struct Sent {
 
 /// LAN play, once a frame, first half: send our bus, answer joining players (with our
 /// bus and `cars`, the host's AI cars' footprints) and take our vehicle's variables to the
-/// others. The game then mirrors the shared world (`game_world`) and calls
+/// others. The game then mirrors the shared world (omsi-app's `lan_world`) and calls
 /// [`tick_receive`].
 pub fn tick_send(
     lan: &mut LanSession,
