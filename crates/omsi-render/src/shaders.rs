@@ -44,14 +44,14 @@ mod tests {
     }
 
     /// The assembled modules are byte for byte the single files they were cut from (sizes
-    /// and hashes taken of `shader.wgsl` and `enhanced.wgsl` before the cut; the scene's
-    /// since 0.2.30's capped surface pull, #2197).
+    /// and hashes taken of `shader.wgsl` and `enhanced.wgsl` before the cut, updated for
+    /// 0.2.30's capped surface pull and the Vanilla/transparency fixes in both modules).
     /// (with Unix line ends: a Windows checkout may turn the parts' into CRLF, as it did the
     /// single files', and the 0.2.31 release's Windows test failed on that alone)
     #[test]
     fn assembled_shaders_are_the_old_files() {
         let (scene, enhanced) = (super::SCENE.replace("\r\n", "\n"), super::ENHANCED.replace("\r\n", "\n"));
-        assert_eq!((scene.len(), fnv1a(&scene)), (116_891, 0x5058_671b_fe59_f311));
-        assert_eq!((enhanced.len(), fnv1a(&enhanced)), (83_366, 0x8e9f_e48c_fe3d_40f5));
+        assert_eq!((scene.len(), fnv1a(&scene)), (117_705, 0xbd9e_feaf_2165_a174));
+        assert_eq!((enhanced.len(), fnv1a(&enhanced)), (83_414, 0x529f_739f_825b_5775));
     }
 }

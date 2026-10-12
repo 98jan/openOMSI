@@ -226,6 +226,12 @@ pub(crate) fn upload_texture_format(
         if mip + 1 == mip_count {
             break;
         }
+        if format.is_srgb() {
+            // Match GPU colour mips, including coverage weighting at clear edges.
+            let (next, nw, nh) = omsi_texture::bc::downsample_alpha_weighted(&level, w, h);
+            (level, w, h) = (next, nw, nh);
+            continue;
+        }
         let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
         let mut next = vec![0u8; (nw * nh * 4) as usize];
         for y in 0..nh {
@@ -293,17 +299,7 @@ pub fn fit_texture(data: &omsi_texture::TextureData, max: u32) -> Option<omsi_te
     };
     let (mut cw, mut ch) = (w, h);
     for _ in 0..k {
-        let (nw, nh) = ((cw / 2).max(1), (ch / 2).max(1));
-        let mut next = vec![0u8; (nw * nh * 4) as usize];
-        for y in 0..nh {
-            for x in 0..nw {
-                for c in 0..4 {
-                    let at = |xx: u32, yy: u32| rgba[((yy.min(ch - 1) * cw + xx.min(cw - 1)) * 4 + c) as usize] as u32;
-                    let v = at(2 * x, 2 * y) + at(2 * x + 1, 2 * y) + at(2 * x, 2 * y + 1) + at(2 * x + 1, 2 * y + 1);
-                    next[((y * nw + x) * 4 + c) as usize] = (v / 4) as u8;
-                }
-            }
-        }
+        let (next, nw, nh) = omsi_texture::bc::downsample_alpha_weighted(&rgba, cw, ch);
         rgba = next;
         (cw, ch) = (nw, nh);
     }
