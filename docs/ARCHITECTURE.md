@@ -92,14 +92,19 @@ Bottom up:
   counted. The cars are one traffic step later than the rest of the frame; the player's
   vehicle and its input stay in their stage (no added input latency). The offscreen run never
   reads the switch. The rest of the sim follows once the view takes `FrameSnapshot`s.
-* Scenery object scripts (`omsi_sim::scenery::SceneryState`): the scripts and variables of
-  the loaded tiles' scripted objects are one owned list in the simulation, the view's half
-  (render instances, materials, texts, sounds) beside it at the same index
-  (`omsi_scene::ScriptedSet`). Only the objects within reach of the camera's 50 m cell are
-  looked at (a candidate set made anew when the camera changes cell or a tile goes); the
-  exact 800 m cut picks among them. Their scripts run side by side (`frame_each`) on inputs
-  gathered before (light phases, boards, clock), and the step ends in commands in object
-  order (`SceneryCmd`) that the view applies as it did when it walked the list.
+* Scenery object scripts (`omsi_sim::scenery::SceneryState`, held by the session, not by
+  `World`): the scripts and variables of the loaded tiles' scripted objects are one owned
+  list in the simulation; the view's half (render instances, materials, texts, sounds) stays
+  in `World` (`omsi_scene::ScriptedSet`) under the same key. The tile loader hands the
+  simulation's halves over through a `SceneryInbox` (placed objects, tiles that went, the
+  particle emitters' owners), which the list takes at the start of its step and before the
+  player's clicks and the trains' points reach it. Only the objects within reach of the
+  camera's 50 m cell are looked at (a candidate set made anew when the camera changes cell
+  or a tile goes); the exact 800 m cut picks among them. Their scripts run side by side
+  (`frame_each`) on inputs gathered before (light phases, boards, clock), and the step ends
+  in commands in object order (`SceneryCmd`) that carry values - the meshes' transforms,
+  the variables the view reads, changed texts, page pictures, fired triggers - so the view
+  (`World::apply_scripted`) applies them without reading the simulation's list.
 * The fixed step (`omsi_sim::tick::FixedStep`, `OMSI_FIXED_STEP`, off unless set): the
   window's frame runs its stages as three lists (`app_events/frame/ticked.rs`): the
   housekeeping and the player's input once a frame, the simulation (traffic, the player's bus

@@ -256,6 +256,7 @@ impl<'a> Offscreen<'a> {
             traffic,
             schedule,
             player,
+            scenery: Default::default(),
             spawn_z,
             center,
             duty,

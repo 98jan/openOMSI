@@ -30,6 +30,8 @@ struct Offscreen<'a> {
     renderer: Renderer,
     scene: Scene,
     world: World,
+    /// the scenery objects' scripts (see `World::scenery_sync`)
+    scenery: omsi_sim::scenery::SceneryState,
     camera: Camera,
     traffic: Option<traffic::Traffic>,
     schedule: Option<schedule::Schedule>,

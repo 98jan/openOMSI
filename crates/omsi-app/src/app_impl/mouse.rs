@@ -170,7 +170,7 @@ impl App {
             let Some((o, d, _)) = self.cursor_ray_now() else { return };
             let Some(w) = self.world.clone() else { return };
             if let Some(h) = w.html_object_hit(o, d, HTML_OBJECT_REACH).filter(|h| h.map_id == id && h.page == page) {
-                w.html_object_pointer(id, page, h.u, h.v, omsi_sim::htmltex::PointerKind::Move);
+                w.html_object_pointer(&mut self.session.scenery, id, page, h.u, h.v, omsi_sim::htmltex::PointerKind::Move);
                 self.input.html_object_pressed = Some((id, page, h.u, h.v));
             }
             return;
@@ -569,7 +569,7 @@ impl App {
                 .and_then(|(o, d, _)| w.html_object_hit(o, d, HTML_OBJECT_REACH))
                 .filter(|h| h.map_id == id && h.page == page)
                 .map_or((u, v), |h| (h.u, h.v));
-            w.html_object_pointer(id, page, u, v, omsi_sim::htmltex::PointerKind::Up);
+            w.html_object_pointer(&mut self.session.scenery, id, page, u, v, omsi_sim::htmltex::PointerKind::Up);
             self.input.dragging = false;
             return true;
         }
@@ -587,7 +587,7 @@ impl App {
         if let Some(p) = self.player.as_mut() {
             p.release();
         }
-        w.html_object_pointer(h.map_id, h.page, h.u, h.v, omsi_sim::htmltex::PointerKind::Down);
+        w.html_object_pointer(&mut self.session.scenery, h.map_id, h.page, h.u, h.v, omsi_sim::htmltex::PointerKind::Down);
         self.input.html_object_pressed = Some((h.map_id, h.page, h.u, h.v));
         self.input.dragging = false;
         true
@@ -598,7 +598,7 @@ impl App {
         let Some(w) = self.world.as_ref() else { return false };
         if !pressed {
             if let Some((map_id, ev)) = self.input.pressed_scenery_object.take() {
-                w.scenery_object_release(map_id, &ev);
+                w.scenery_object_release(&mut self.session.scenery, map_id, &ev);
                 self.input.dragging = false;
                 return true;
             }
@@ -623,7 +623,7 @@ impl App {
             p.release();
         }
         self.input.drag_delta = (0.0, 0.0);
-        w.scenery_object_click(hit.map_id, &hit.event);
+        w.scenery_object_click(&mut self.session.scenery, hit.map_id, &hit.event);
         self.input.pressed_scenery_object = Some((hit.map_id, hit.event));
         self.input.dragging = true;
         true
@@ -652,7 +652,7 @@ impl App {
         let (dx, dy) = std::mem::take(&mut self.input.drag_delta);
         if let Some((map_id, ref ev)) = self.input.pressed_scenery_object {
             if let Some(w) = self.world.as_ref() {
-                w.scenery_object_drag(map_id, ev, dx, dy);
+                w.scenery_object_drag(&mut self.session.scenery, map_id, ev, dx, dy);
             }
         } else if let Some(p) = self.player.as_mut() {
             p.drag(dx, dy);

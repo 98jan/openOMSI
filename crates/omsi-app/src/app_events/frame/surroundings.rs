@@ -250,6 +250,7 @@ impl App {
             w.show_help_arrows(r, scene, self.settings.nav_arrows);
             let mut times = omsi_scene::ScriptedTimes::default();
             w.update_scripted(
+                &mut self.session.scenery,
                 r,
                 scene,
                 dt,

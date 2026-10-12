@@ -437,6 +437,9 @@ pub(crate) struct SessionState {
     /// `follow_date`).
     pub(crate) world_day: Option<(i32, Option<String>)>,
     pub(crate) traffic: Option<traffic::Traffic>,
+    /// The scripts and variables of the map's scripted scenery objects (the world's tile
+    /// loader hands them over, see `World::scenery_sync`).
+    pub(crate) scenery: omsi_sim::scenery::SceneryState,
     pub(crate) schedule: Option<schedule::Schedule>,
     /// The map's timetable read for the menu while it does not run (timetable traffic off):
     /// its lines and tours can be looked at and picked, as in OMSI 2. Picking a duty makes

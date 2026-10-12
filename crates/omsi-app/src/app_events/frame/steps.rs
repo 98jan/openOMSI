@@ -18,6 +18,7 @@ use crate::view_sync::traffic::TrafficView;
 pub(crate) fn traffic_tick(
     t: &mut traffic::Traffic,
     world: &World,
+    scenery: &mut omsi_sim::scenery::SceneryState,
     dt: f32,
     paused: bool,
     player: Option<&Player>,
@@ -36,8 +37,8 @@ pub(crate) fn traffic_tick(
         t.player_blinker = player.map(|p| lan::indicator(&p.vehicle)).unwrap_or(0);
         t.tick(dt, player.map(|p| player_outline(p)));
         let t0 = Instant::now();
-        world.set_switches(&t.switch_requests());
-        world.set_signals(&t.signal_aspects(&world.signal_routes, player_rail));
+        world.set_switches(scenery, &t.switch_requests());
+        world.set_signals(scenery, &t.signal_aspects(&world.signal_routes, player_rail));
         return t0.elapsed().as_secs_f64();
     }
     0.0

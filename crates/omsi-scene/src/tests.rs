@@ -1058,18 +1058,21 @@ fn scenery_mouseevent_hit_and_trigger() {
     let miss = world.scenery_object_hit(DVec3::ZERO, -glam::Vec3::Y, 50.0, 0.0);
     assert!(miss.is_none());
 
-    // 3. Test click triggers toggle_switch: Switch was 0, becomes 1
-    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(0.0));
-    assert!(world.scenery_object_click(42, "toggle_switch"));
-    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(1.0));
+    // 3. Test click triggers toggle_switch: Switch was 0, becomes 1 (the simulation's list
+    // takes the placed object from the world's inbox first)
+    let mut scenery = omsi_sim::scenery::SceneryState::default();
+    world.scenery_sync(&mut scenery);
+    assert_eq!(scenery.objects()[0].inst.var("Switch"), Some(0.0));
+    assert!(world.scenery_object_click(&mut scenery, 42, "toggle_switch"));
+    assert_eq!(scenery.objects()[0].inst.var("Switch"), Some(1.0));
 
     // 4. Test drag triggers toggle_switch_drag with mouse_x
-    assert!(world.scenery_object_drag(42, "toggle_switch", 0.75, 0.0));
-    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(0.75));
+    assert!(world.scenery_object_drag(&mut scenery, 42, "toggle_switch", 0.75, 0.0));
+    assert_eq!(scenery.objects()[0].inst.var("Switch"), Some(0.75));
 
     // 5. Test release triggers toggle_switch_off
-    assert!(world.scenery_object_release(42, "toggle_switch"));
-    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(0.0));
+    assert!(world.scenery_object_release(&mut scenery, 42, "toggle_switch"));
+    assert_eq!(scenery.objects()[0].inst.var("Switch"), Some(0.0));
 
     let _ = std::fs::remove_dir_all(&dir);
 }

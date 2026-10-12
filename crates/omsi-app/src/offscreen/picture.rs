@@ -132,6 +132,7 @@ impl Offscreen<'_> {
             ref traffic,
             ref mut schedule,
             ref world,
+            ref mut scenery,
             ref duty,
             ref renderer,
             ref mut scene,
@@ -159,6 +160,7 @@ impl Offscreen<'_> {
                     clock,
                 );
                 n = world.update_scripted(
+                    scenery,
                     renderer,
                     scene,
                     dt,

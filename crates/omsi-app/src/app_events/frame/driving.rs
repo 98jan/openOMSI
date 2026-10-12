@@ -95,7 +95,7 @@ impl App {
                 let (dx, dy) = std::mem::take(&mut self.input.drag_delta);
                 if let Some((map_id, ref ev)) = self.input.pressed_scenery_object {
                     if let Some(w) = self.world.as_ref() {
-                        w.scenery_object_drag(map_id, ev, dx, dy);
+                        w.scenery_object_drag(&mut self.session.scenery, map_id, ev, dx, dy);
                     }
                 } else {
                     p.drag(dx, dy);
@@ -127,14 +127,14 @@ impl App {
                 p.move_head_idle(dt, idle, self.settings.head_idle_pace);
             }
             if let Some(w) = self.world.as_ref() {
-                crate::rail_drive::frame(p, self.session.traffic.as_ref().map(|t| &t.net), w, dt);
+                crate::rail_drive::frame(p, self.session.traffic.as_ref().map(|t| &t.net), w, &mut self.session.scenery, dt);
             }
         } else if self.input.dragging {
             // paused / no ground: still deliver held-switch `_drag` (was unconditional before)
             let (dx, dy) = std::mem::take(&mut self.input.drag_delta);
             if let Some((map_id, ref ev)) = self.input.pressed_scenery_object {
                 if let Some(w) = self.world.as_ref() {
-                    w.scenery_object_drag(map_id, ev, dx, dy);
+                    w.scenery_object_drag(&mut self.session.scenery, map_id, ev, dx, dy);
                 }
             } else {
                 p.drag(dx, dy);

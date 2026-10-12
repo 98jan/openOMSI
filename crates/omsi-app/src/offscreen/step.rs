@@ -200,6 +200,7 @@ impl Offscreen<'_> {
             ref camera,
             ref settings,
             ref world,
+            ref mut scenery,
             ref mut renderer,
             ref mut scene,
             ref mut sim_view,
@@ -286,7 +287,7 @@ impl Offscreen<'_> {
             let daylight = omsi_sim::Daylight::compute(run_clock, envir.as_ref());
             steps::set_ai_daylight(t, daylight, steps::gloomy_weather(Some(weather)));
             let rail = player.as_ref().and_then(|p| p.rail.as_ref()).map(|r| (r.lane, r.along));
-            steps::traffic_tick(t, world, dt, false, player.as_ref(), remotes_off, &[], rail);
+            steps::traffic_tick(t, world, scenery, dt, false, player.as_ref(), remotes_off, &[], rail);
             steps::traffic_boxes(t, player.as_mut(), settings.collision_vehicles);
         }
         Ok(())
@@ -518,6 +519,7 @@ impl Offscreen<'_> {
         let Self {
             ref mut player,
             ref world,
+            ref mut scenery,
             ref traffic,
             ref settings,
             ref snapshot_times,
@@ -546,7 +548,7 @@ impl Offscreen<'_> {
                 t.place_pivot(c - DVec3::new(h.sin(), h.cos(), 0.0) * t.pivot_length() as f64);
             }
         }
-        crate::rail_drive::frame(player, traffic.as_ref().map(|t| &t.net), world, dt);
+        crate::rail_drive::frame(player, traffic.as_ref().map(|t| &t.net), world, scenery, dt);
         // (the autopilot's log: where the bus is against the ground under it, twice a
         // second, and at once when the ground is not under it any more)
         if omsi_cfg::flags::OMSI_AUTOPILOT.is_set() {

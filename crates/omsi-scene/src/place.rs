@@ -388,6 +388,8 @@ impl World {
             if !ot.model.smokes.is_empty() || !ot.model.particle_emitters.is_empty() {
                 let set = omsi_sim::particles::ParticleSet::new(ot.model.particle_systems(), (o.id as u64) ^ 0x51ed_2701);
                 self.particle_objects.lock().entry(key).or_default().push(ParticleObject { map_id: o.id, pos, rot: xf, set });
+                // (its emitters read the variables of the scripted object of the same id)
+                self.scripted.lock().inbox.push(omsi_sim::scenery::SceneryChange::Watch(o.id));
             }
             for tb in &ot.sco.trigger_boxes {
                 if let Some((time, fade)) = tb.reverb {

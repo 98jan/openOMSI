@@ -11,7 +11,9 @@ use omsi_scenery::sco::ScriptSet;
 use std::path::Path;
 use std::sync::Arc;
 
+mod handover;
 mod state;
+pub use handover::*;
 pub use state::*;
 
 pub use omsi_map::calendar::DayKind;

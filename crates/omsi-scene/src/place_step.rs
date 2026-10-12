@@ -1207,7 +1207,7 @@ impl World {
     ) {
         let ObjectCx { ot, pos, xf, lamp, map_id, controller, strings, var_parent, key, tkey, images, .. } = *obj;
         let ObjectMade { mut all_instances, object_variants, script_texts, html_pages, .. } = made;
-        let texture_selection = scenery_texture_selection(ot, &inst);
+        let texture_selection = scenery_texture_selection(ot, &|n| inst.var(n));
         if !ot.dynamic_textures.is_empty() {
             if let Some(rows) = gpu.dynamic_texture_variant(
                 renderer,

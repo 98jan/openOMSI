@@ -94,7 +94,7 @@ impl App {
             } else {
                 dt
             };
-            let signals = steps::traffic_tick(t, w, step_dt, self.paused, self.player.as_ref(), &self.net.remotes, &self.session.placed, rail);
+            let signals = steps::traffic_tick(t, w, &mut self.session.scenery, step_dt, self.paused, self.player.as_ref(), &self.net.remotes, &self.session.placed, rail);
             self.perf.profile.add(crate::profile_keys::ProfKey::TrafficTickSignals, signals);
             self.perf.profile.add(crate::profile_keys::ProfKey::TrafficTick, __t2.elapsed().as_secs_f64());
             for (k, v) in [crate::profile_keys::ProfKey::TrafficTickLanes, crate::profile_keys::ProfKey::TrafficTickPlan, crate::profile_keys::ProfKey::TrafficTickAi]

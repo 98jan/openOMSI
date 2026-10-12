@@ -6,9 +6,11 @@ use super::{InUse, SceneryInstance, SceneryVars};
 use crate::host::Arrival;
 use crate::vehicle_api::Departure;
 use crate::SimClock;
-use glam::DVec3;
-use omsi_map::calendar::DayKind;
+use glam::{DVec3, Mat4};
 use hashbrown::HashMap;
+use omsi_map::calendar::DayKind;
+use std::path::Path;
+use std::sync::Arc;
 
 /// Objects farther than this from the listener do not run (OMSI's own cut).
 pub const SCRIPT_RANGE: f64 = 800.0;
@@ -19,8 +21,11 @@ pub const SCRIPT_RANGE: f64 = 800.0;
 const CELL: f64 = 50.0;
 
 /// A placed scenery object with a running script: what the simulation keeps of it (its
-/// render side, materials and sounds stay with the view, at the same index).
+/// render side, materials and sounds stay with the view, under the same key).
 pub struct SceneryObject {
+    /// Given when it was placed, counting up (see [`SceneryInbox`]): the list is in key
+    /// order, and the view finds its half of the object by it.
+    pub key: u64,
     pub map_id: i64,
     pub pos: DVec3,
     /// The tile it belongs to (it goes when the tile is unloaded).
@@ -39,18 +44,27 @@ pub struct SceneryObject {
     pub var_parent: Option<i64>,
     /// The script asks for the buses due at its stop (`GetArrBus*`).
     pub arrivals: bool,
-    /// It has `[texttexture]`s (drawn from its string variables).
-    pub has_texts: bool,
+    /// The string variables its `[texttexture]`s show, and what each showed last.
+    pub text_vars: Vec<String>,
+    pub text_last: Vec<Option<String>>,
     /// It has `[htmltexture]` pages.
     pub has_pages: bool,
+    /// The view reads its variables by name (materials, faded slots, texture choices,
+    /// sounds): they go with each frame's [`SceneryShow`].
+    pub needs_vars: bool,
+    /// Per `[path]` its `[switchdir]` (points: the `Switch` value that sets it).
+    pub switch_dirs: Vec<Option<i32>>,
+    /// The type's `.sco` (for the switches' log).
+    pub sco_path: Option<Arc<Path>>,
     /// Its `[NightMapMode]` hours (the same building keeps its hours: seeded by its id).
     pub use_: InUse,
 }
 
 impl SceneryObject {
     /// `night_map_mode`: the type's `[NightMapMode]`.
-    pub fn new(map_id: i64, pos: DVec3, tile: (i32, i32), inst: SceneryInstance, night_map_mode: i32) -> SceneryObject {
+    pub fn new(key: u64, map_id: i64, pos: DVec3, tile: (i32, i32), inst: SceneryInstance, night_map_mode: i32) -> SceneryObject {
         SceneryObject {
+            key,
             map_id,
             pos,
             tile,
@@ -60,8 +74,12 @@ impl SceneryObject {
             light_parent: None,
             var_parent: None,
             arrivals: false,
-            has_texts: false,
+            text_vars: Vec::new(),
+            text_last: Vec::new(),
             has_pages: false,
+            needs_vars: false,
+            switch_dirs: Vec::new(),
+            sco_path: None,
             use_: InUse::new(night_map_mode, map_id as u64),
         }
     }
@@ -93,19 +111,55 @@ pub struct SceneryInputs<'a> {
     pub pages_near: f64,
 }
 
-/// What the view does for one object after a step, in object order.
+/// [`SceneryInputs`] as owned values, to step the scripts on another thread: made where
+/// the world's boards and light owners are (`World::scenery_prepare`); the light phases
+/// come from the traffic of the same step.
+#[derive(Clone, Default)]
+pub struct OwnedSceneryInputs {
+    pub clock: Option<SimClock>,
+    pub time: f64,
+    pub day: DayKind,
+    pub brightness: f32,
+    pub center: DVec3,
+    pub controllers: Arc<HashMap<i64, usize>>,
+    pub by_stop: Arc<HashMap<i64, Vec<(String, String, f64)>>>,
+    pub departures: Arc<std::collections::HashMap<String, Vec<Departure>>>,
+    pub departures_gen: u64,
+    pub pages_near: f64,
+}
+
+impl OwnedSceneryInputs {
+    pub fn as_inputs<'a>(&'a self, phase_of: &'a dyn Fn(usize, usize) -> (f32, f32)) -> SceneryInputs<'a> {
+        SceneryInputs {
+            clock: self.clock.as_ref(),
+            time: self.time,
+            day: self.day,
+            brightness: self.brightness,
+            center: self.center,
+            phase_of,
+            controllers: &self.controllers,
+            by_stop: &self.by_stop,
+            departures: &self.departures,
+            departures_gen: self.departures_gen,
+            pages_near: self.pages_near,
+        }
+    }
+}
+
+/// What the view does for one object after a step, in object order (by key).
 #[derive(Debug)]
 pub enum SceneryCmd {
-    /// The object is out of range: its sounds stop.
-    Silence(u32),
-    /// The object ran: show what its script made of it (meshes, materials, texts, pages,
-    /// sounds; the view reads its variables through [`SceneryState::get`]).
+    /// The object (its key) is out of range: its sounds stop.
+    Silence(u64),
+    /// The object ran: show what its script made of it.
     Show(SceneryShow),
 }
 
+/// What an object that ran looks like now, as values (the view does not read the
+/// simulation's list).
 #[derive(Debug)]
 pub struct SceneryShow {
-    pub index: u32,
+    pub key: u64,
     /// From the listener (m).
     pub dist: f64,
     /// Its `NightlightA` this frame.
@@ -114,31 +168,69 @@ pub struct SceneryShow {
     pub fired: Vec<String>,
     /// The new pictures of its pages: (script texture index, width, height, RGBA).
     pub pages: Vec<(usize, u32, u32, Vec<u8>)>,
-    /// Its string variables as they were before its pages ran (only for an object with
-    /// texts whose pages ran: the texts show the strings of before, as they always did).
-    pub strings_before_pages: Option<Vec<String>>,
+    /// The texts whose strings changed: (its `[texttexture]` in the object's order, the
+    /// string), as they were before the pages ran.
+    pub texts: Vec<(usize, String)>,
+    /// Its variables after the frame (a span of [`SceneryOutputs::vars`]; empty unless
+    /// [`SceneryObject::needs_vars`]): read by name with [`var_in`].
+    pub vars: (u32, u32),
+    /// Its meshes' transforms and visibility (a span of [`SceneryOutputs::transforms`]
+    /// and [`SceneryOutputs::visible`]).
+    pub meshes: (u32, u32),
 }
 
-impl SceneryShow {
-    /// The string variable `name` of object `o` as its texts show it this frame.
-    pub fn text<'a>(&'a self, o: &'a SceneryObject, name: &str) -> &'a str {
-        match &self.strings_before_pages {
-            Some(strs) => o.inst.program.str_var(name).and_then(|i| strs.get(i as usize)).map(|s| s.as_str()).unwrap_or(""),
-            None => o.inst.str_var(name),
-        }
-    }
+/// Variable `name` of `program` out of a copy of its values (as
+/// [`SceneryInstance::var`] reads it from the object).
+pub fn var_in(program: &omsi_script::Program, vars: &[f32], name: &str) -> Option<f32> {
+    // (no values: an object whose variables the view was not to read)
+    program.var(name).and_then(|i| vars.get(i as usize).copied())
 }
 
 /// The commands of one step and what the timetable is asked for.
 #[derive(Default, Debug)]
 pub struct SceneryOutputs {
     pub cmds: Vec<SceneryCmd>,
+    /// The values the commands' spans point into.
+    pub vars: Vec<f32>,
+    pub transforms: Vec<Mat4>,
+    pub visible: Vec<bool>,
+    /// The variables of the watched objects (particle emitters read them) as they were
+    /// before the step's scripts ran: (map id, its script, span of `vars`), by map id, the
+    /// first object of each id.
+    pub watched: Vec<(i64, Arc<omsi_script::Program>, (u32, u32))>,
     /// The stops whose displays asked (sorted, each once).
     pub wanted: Vec<i64>,
     /// The stop names the HTML pages asked departures for, in the order first asked.
     pub wanted_names: Vec<String>,
     /// How many objects ran.
     pub ran: usize,
+    /// What driving the pages and gathering the values took (s), for the view's profile.
+    pub post: f64,
+}
+
+impl SceneryOutputs {
+    pub fn vars_of(&self, span: (u32, u32)) -> &[f32] {
+        &self.vars[span.0 as usize..span.1 as usize]
+    }
+
+    /// (transforms, visibility) of a span of meshes.
+    pub fn meshes_of(&self, span: (u32, u32)) -> (&[Mat4], &[bool]) {
+        let r = span.0 as usize..span.1 as usize;
+        (&self.transforms[r.clone()], &self.visible[r])
+    }
+
+    /// Variable `name` of watched object `map_id` before the step.
+    pub fn watched_var(&self, map_id: i64, name: &str) -> Option<f32> {
+        let i = self.watched.binary_search_by_key(&map_id, |w| w.0).ok()?;
+        let (_, program, span) = &self.watched[i];
+        var_in(program, self.vars_of(*span), name)
+    }
+}
+
+fn copy_span<T: Copy>(to: &mut Vec<T>, from: &[T]) -> (u32, u32) {
+    let a = to.len() as u32;
+    to.extend_from_slice(from);
+    (a, to.len() as u32)
 }
 
 /// (object, its engine variables, its distance from the listener) for the parallel run;
@@ -172,6 +264,12 @@ pub struct SceneryState {
     scripts_last: f64,
     /// Counts up whenever objects come or go.
     generation: u64,
+    /// The map ids whose variables the particle emitters read (sorted).
+    watched: Vec<i64>,
+    /// The signals' indices (`set_signals`) and the generation they were found at.
+    pub(super) signals: (u64, Vec<u32>),
+    /// The inbox the list follows (see [`SceneryState::take_inbox`]).
+    pub(super) inbox_id: u64,
 }
 
 /// A vector's allocation for another element type of the same size (the parallel run's
@@ -209,6 +307,14 @@ impl SceneryState {
         self.generation
     }
 
+    /// Variables of objects `map_id` go with each step's outputs (a particle emitter
+    /// reads them).
+    pub fn watch(&mut self, map_id: i64) {
+        if let Err(i) = self.watched.binary_search(&map_id) {
+            self.watched.insert(i, map_id);
+        }
+    }
+
     /// The first object of id `map_id`.
     pub fn find(&self, map_id: i64) -> Option<u32> {
         self.by_id.get(&map_id).copied()
@@ -222,6 +328,7 @@ impl SceneryState {
     /// A newly placed object goes to the end of the list (its index is returned); it runs
     /// from the next step when it is within reach of the camera's cell.
     pub fn push(&mut self, o: SceneryObject) -> u32 {
+        debug_assert!(self.objects.last().is_none_or(|l| l.key < o.key), "scenery objects come in key order");
         self.generation += 1;
         let i = self.objects.len() as u32;
         self.by_id.entry(o.map_id).or_insert(i);
@@ -263,9 +370,20 @@ impl SceneryState {
         let t = std::time::Instant::now();
         let out = &mut self.out;
         out.cmds.clear();
+        out.vars.clear();
+        out.transforms.clear();
+        out.visible.clear();
+        out.watched.clear();
         out.wanted.clear();
         out.wanted_names.clear();
         out.ran = 0;
+        for &id in &self.watched {
+            if let Some(&i) = self.by_id.get(&id) {
+                let o = &self.objects[i as usize];
+                let span = copy_span(&mut out.vars, &o.inst.state.vars);
+                out.watched.push((id, o.inst.program.clone(), span));
+            }
+        }
         let cell = cell_of(inputs.center);
         if self.cell != Some(cell) {
             // (the objects that drop out of reach were all farther than the range: they are
@@ -284,7 +402,7 @@ impl SceneryState {
                         j += 1;
                     }
                     if self.candidates.get(j) != Some(&i) {
-                        out.cmds.push(SceneryCmd::Silence(i));
+                        out.cmds.push(SceneryCmd::Silence(self.objects[i as usize].key));
                     }
                 }
             } else {
@@ -294,7 +412,7 @@ impl SceneryState {
                     if self.candidates.get(j) == Some(&i) {
                         j += 1;
                     } else {
-                        out.cmds.push(SceneryCmd::Silence(i));
+                        out.cmds.push(SceneryCmd::Silence(self.objects[i as usize].key));
                     }
                 }
             }
@@ -308,7 +426,7 @@ impl SceneryState {
                 next = i + 1;
                 let dist = (o.pos - inputs.center).length();
                 if dist > SCRIPT_RANGE {
-                    out.cmds.push(SceneryCmd::Silence(i));
+                    out.cmds.push(SceneryCmd::Silence(o.key));
                     continue;
                 }
                 let vars = gather(o, dist, inputs, out);
@@ -318,8 +436,8 @@ impl SceneryState {
         // (the silences of objects that left the candidates, and of the candidates out of
         // range, in object order: as the old walk over the whole list stopped them)
         out.cmds.sort_unstable_by_key(|c| match c {
-            SceneryCmd::Silence(i) => *i,
-            SceneryCmd::Show(s) => s.index,
+            SceneryCmd::Silence(k) => *k,
+            SceneryCmd::Show(s) => s.key,
         });
         out.wanted.sort_unstable();
         out.wanted.dedup();
@@ -335,33 +453,45 @@ impl SceneryState {
         self.scripts_last = t.elapsed().as_secs_f64();
         times.scripts += self.scripts_last;
         let t = std::time::Instant::now();
-        for (o, vars, dist, index) in jobs.iter_mut() {
-            // (what the view did between the scripts and the texts: `Refresh_Strings` is
-            // cleared, then the pages run - and may change the strings the texts show)
-            if o.has_texts {
+        for (o, vars, dist, _) in jobs.iter_mut() {
+            // `Refresh_Strings` is cleared and the texts read (the view drew them before the
+            // pages ran, which may change the strings), then the pages run
+            let mut texts = Vec::new();
+            if !o.text_vars.is_empty() {
                 let _ = o.inst.take_refresh_strings();
+                for (k, (name, last)) in o.text_vars.iter().zip(o.text_last.iter_mut()).enumerate() {
+                    let text = o.inst.str_var(name);
+                    if last.as_deref() != Some(text) {
+                        *last = Some(text.to_string());
+                        texts.push((k, text.to_string()));
+                    }
+                }
             }
-            let pages_run = o.has_pages && *dist < inputs.pages_near;
-            let strings_before_pages = (pages_run && o.has_texts && !o.inst.html_textures.is_empty()).then(|| o.inst.state.str_vars.clone());
-            let pages = if pages_run { o.inst.update_html_textures() } else { Vec::new() };
+            let pages = if o.has_pages && *dist < inputs.pages_near { o.inst.update_html_textures() } else { Vec::new() };
             let fired = std::mem::take(&mut o.inst.host.fired_triggers);
+            let var_span = if o.needs_vars { copy_span(&mut out.vars, &o.inst.state.vars) } else { (0, 0) };
+            let mesh_span = copy_span(&mut out.transforms, &o.inst.mesh_transforms);
+            out.visible.extend_from_slice(&o.inst.mesh_visible);
             out.cmds.push(SceneryCmd::Show(SceneryShow {
-                index: *index,
+                key: o.key,
                 dist: *dist,
                 nightlight: vars.nightlight,
                 fired,
                 pages,
-                strings_before_pages,
+                texts,
+                vars: var_span,
+                meshes: mesh_span,
             }));
         }
         out.ran = jobs.len();
         self.jobs = reuse(jobs);
-        times.post += t.elapsed().as_secs_f64();
+        self.out.post = t.elapsed().as_secs_f64();
+        times.post += self.out.post;
     }
 
-    /// The last step's commands (to be taken by the view), with the objects to read.
-    pub fn outputs(&mut self) -> (&mut SceneryOutputs, &[SceneryObject]) {
-        (&mut self.out, &self.objects)
+    /// The last step's commands, for the view to apply.
+    pub fn outputs(&mut self) -> &mut SceneryOutputs {
+        &mut self.out
     }
 }
 
@@ -454,8 +584,10 @@ mod tests {
 
     fn object(map_id: i64, pos: DVec3, tile: (i32, i32)) -> SceneryObject {
         let inst = SceneryInstance::new(Arc::new(Program::default()), &[], SimClock::default(), &[]);
-        SceneryObject::new(map_id, pos, tile, inst, 0)
+        SceneryObject::new(KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed), map_id, pos, tile, inst, 0)
     }
+
+    static KEY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
     fn step(s: &mut SceneryState, center: DVec3) -> (Vec<u32>, Vec<u32>) {
         let phase = |_: usize, _: usize| (0.0, 0.0);
@@ -474,15 +606,16 @@ mod tests {
             pages_near: 60.0,
         };
         s.step(1.0 / 30.0, &inputs, &mut StepTimes::default());
-        let (out, _) = s.outputs();
+        let index: HashMap<u64, u32> = s.objects().iter().enumerate().map(|(i, o)| (o.key, i as u32)).collect();
+        let out = s.outputs();
         let (mut shown, mut silenced) = (Vec::new(), Vec::new());
         for c in &out.cmds {
             match c {
-                SceneryCmd::Silence(i) => {
+                SceneryCmd::Silence(k) => {
                     assert!(shown.is_empty(), "the silences come first");
-                    silenced.push(*i)
+                    silenced.push(index[k])
                 }
-                SceneryCmd::Show(s) => shown.push(s.index),
+                SceneryCmd::Show(s) => shown.push(index[&s.key]),
             }
         }
         assert!(silenced.windows(2).all(|w| w[0] < w[1]) && shown.windows(2).all(|w| w[0] < w[1]), "in object order");

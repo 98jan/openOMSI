@@ -582,6 +582,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         player: None,
         session: SessionState {
             placed: Vec::new(),
+            scenery: Default::default(),
             traffic: None,
             schedule: None,
             timetable_book: None,
