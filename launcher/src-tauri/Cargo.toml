@@ -43,10 +43,10 @@ debug = false
 # window shown with its first page instead of white (`show_when_loaded`), WebKitGTK's blank
 # window on NVIDIA. Every crate of the fork that Cargo.lock lists is patched.
 [patch.crates-io]
-tauri = { path = "../../../../tauri-openomsi/crates/tauri" }
-tauri-build = { path = "../../../../tauri-openomsi/crates/tauri-build" }
-tauri-codegen = { path = "../../../../tauri-openomsi/crates/tauri-codegen" }
-tauri-macros = { path = "../../../../tauri-openomsi/crates/tauri-macros" }
-tauri-runtime = { path = "../../../../tauri-openomsi/crates/tauri-runtime" }
-tauri-runtime-wry = { path = "../../../../tauri-openomsi/crates/tauri-runtime-wry" }
-tauri-utils = { path = "../../../../tauri-openomsi/crates/tauri-utils" }
+tauri = { git = "https://github.com/openOMSI-org/tauri-openomsi", rev = "880c1b18348a" }
+tauri-build = { git = "https://github.com/openOMSI-org/tauri-openomsi", rev = "880c1b18348a" }
+tauri-codegen = { git = "https://github.com/openOMSI-org/tauri-openomsi", rev = "880c1b18348a" }
+tauri-macros = { git = "https://github.com/openOMSI-org/tauri-openomsi", rev = "880c1b18348a" }
+tauri-runtime = { git = "https://github.com/openOMSI-org/tauri-openomsi", rev = "880c1b18348a" }
+tauri-runtime-wry = { git = "https://github.com/openOMSI-org/tauri-openomsi", rev = "880c1b18348a" }
+tauri-utils = { git = "https://github.com/openOMSI-org/tauri-openomsi", rev = "880c1b18348a" }

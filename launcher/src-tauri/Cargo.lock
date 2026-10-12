@@ -4186,6 +4186,7 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 [[package]]
 name = "tauri"
 version = "2.12.3"
+source = "git+https://github.com/openOMSI-org/tauri-openomsi?rev=880c1b18348a#880c1b18348a7c61815fb80e3ebcfb28eb7cb3c1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4235,6 +4236,7 @@ dependencies = [
 [[package]]
 name = "tauri-build"
 version = "2.7.2"
+source = "git+https://github.com/openOMSI-org/tauri-openomsi?rev=880c1b18348a#880c1b18348a7c61815fb80e3ebcfb28eb7cb3c1"
 dependencies = [
  "anyhow",
  "cargo_toml",
@@ -4254,6 +4256,7 @@ dependencies = [
 [[package]]
 name = "tauri-codegen"
 version = "2.7.2"
+source = "git+https://github.com/openOMSI-org/tauri-openomsi?rev=880c1b18348a#880c1b18348a7c61815fb80e3ebcfb28eb7cb3c1"
 dependencies = [
  "base64 0.23.1",
  "brotli",
@@ -4279,6 +4282,7 @@ dependencies = [
 [[package]]
 name = "tauri-macros"
 version = "2.7.2"
+source = "git+https://github.com/openOMSI-org/tauri-openomsi?rev=880c1b18348a#880c1b18348a7c61815fb80e3ebcfb28eb7cb3c1"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -4291,6 +4295,7 @@ dependencies = [
 [[package]]
 name = "tauri-runtime"
 version = "2.12.1"
+source = "git+https://github.com/openOMSI-org/tauri-openomsi?rev=880c1b18348a#880c1b18348a7c61815fb80e3ebcfb28eb7cb3c1"
 dependencies = [
  "cookie",
  "dpi",
@@ -4314,6 +4319,7 @@ dependencies = [
 [[package]]
 name = "tauri-runtime-wry"
 version = "2.12.1"
+source = "git+https://github.com/openOMSI-org/tauri-openomsi?rev=880c1b18348a#880c1b18348a7c61815fb80e3ebcfb28eb7cb3c1"
 dependencies = [
  "gtk",
  "http",
@@ -4338,6 +4344,7 @@ dependencies = [
 [[package]]
 name = "tauri-utils"
 version = "2.10.1"
+source = "git+https://github.com/openOMSI-org/tauri-openomsi?rev=880c1b18348a#880c1b18348a7c61815fb80e3ebcfb28eb7cb3c1"
 dependencies = [
  "anyhow",
  "brotli",
