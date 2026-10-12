@@ -39,6 +39,12 @@ impl VehicleInstance {
             .map(|i| self.state.vars[i as usize])
     }
 
+    /// The variables' names (lower case) and slots in `state.vars`, shared (the view reads a
+    /// copy of the values by them: `crate::view_events::CarLooks`).
+    pub fn var_index(&self) -> &std::sync::Arc<HashMap<String, omsi_script::VarId>> {
+        &self.var_index
+    }
+
     /// Whether variable `name` was declared in the vehicle's script set (as opposed to built-in host variables).
     pub fn has_script_var(&self, name: &str) -> bool {
         self.ty.program.has_script_var(name)
@@ -69,7 +75,7 @@ impl VehicleInstance {
         if !self.set_var(name, v) {
             let id = self.state.vars.len() as omsi_script::VarId;
             self.state.vars.push(v);
-            self.var_index.insert(name.to_ascii_lowercase(), id);
+            std::sync::Arc::make_mut(&mut self.var_index).insert(name.to_ascii_lowercase(), id);
             self.pax_vars = std::sync::OnceLock::new();
             self.engine_ids = std::sync::OnceLock::new();
         }

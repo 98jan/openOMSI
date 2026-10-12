@@ -51,6 +51,8 @@ pub struct Traffic {
     /// Where the cars and their meshes are drawn, taken at each view sync (its buffers kept
     /// from one to the next; see `FrameSnapshot`).
     pub(crate) snapshot: omsi_sim::view_events::FrameSnapshot,
+    /// What the snapshots sent the view of each car's looks (see `LookTracker`).
+    pub(crate) looks: omsi_sim::view_events::LookTracker,
     /// `[sound_ai]` set of each car near the listener, by car id (see `audio`).
     pub(crate) sounds: HashMap<u64, omsi_audio::SoundSet>,
     /// Sound sets of despawned cars, stopped at the next audio update.
@@ -91,6 +93,7 @@ impl Traffic {
             sim,
             events: Vec::new(),
             snapshot: Default::default(),
+            looks: Default::default(),
             sounds: HashMap::new(),
             orphan_sounds: Vec::new(),
             riding_sounds: None,

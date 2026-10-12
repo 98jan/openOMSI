@@ -659,6 +659,8 @@ impl Traffic {
             }
             log::info!("population t={:.1}: car {id} appears at ({:.0}, {:.0}), {:.0} m from the centre, {:.0} m from the camera, in frame {}, behind a building {}{}", self.sim.time, pos.x, pos.y, (pos - center).length(), v.map(|v| (pos - v.pos).length()).unwrap_or(0.0), v.map(|v| v.frames(pos, 2.5)).unwrap_or(false), v.map(|v| self.occluded(world, &v, pos, 2.5)).unwrap_or(false), if self.sim.initial { " (initial)" } else { "" });
         }
+        // (new renders: what the view was sent of an earlier car of this id is gone with its old ones)
+        self.looks.forget(id);
         self.events.push(TrafficEvent::Spawned { id, ty: body_ty, scheme, trailers });
         id
     }

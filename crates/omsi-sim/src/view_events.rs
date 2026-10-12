@@ -12,6 +12,9 @@
 use crate::VehicleType;
 use std::sync::Arc;
 
+mod looks;
+pub use looks::{CarLooks, LookLimits, LookTracker, ScriptUpload};
+
 /// Something the traffic did that the renderer has to follow, in the order it happened.
 /// Car ids are the traffic's (`AiCar::id`), stable for as long as the car is on the road.
 pub enum TrafficEvent {
@@ -76,6 +79,11 @@ pub struct FrameSnapshot {
     light: Vec<f32>,
     night: Vec<f32>,
     uv: Vec<[f32; 2]>,
+    /// The cars' looks (`TrafficSim::snapshot_looks`), and their variable values and interior
+    /// lamps in flat buffers.
+    looks: Vec<CarLooks>,
+    vars: Vec<f32>,
+    lamps: Vec<bool>,
 }
 
 /// One AI car of a [`FrameSnapshot`].
@@ -87,12 +95,17 @@ pub struct CarFrame {
     /// parts in the snapshot.
     pub shown: bool,
     parts: Span,
+    /// Its looks, when it is in view and they were taken (see [`FrameSnapshot::looks`]).
+    looks: Option<u32>,
 }
 
 /// A vehicle body or a coupled part of a car: where it stands and its meshes.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone)]
 pub struct PartFrame {
+    pub ty: Arc<VehicleType>,
     pub position: glam::DVec3,
+    /// The body's rotation (heading, pitch and roll), for its interior lamps.
+    pub rotation: glam::Mat4,
     meshes: Span,
 }
 
@@ -121,6 +134,9 @@ impl FrameSnapshot {
         self.light.clear();
         self.night.clear();
         self.uv.clear();
+        self.looks.clear();
+        self.vars.clear();
+        self.lamps.clear();
     }
 
     /// Add car `id` (`vehicle` with its coupled parts), as the view sync draws an AI car:
@@ -129,17 +145,17 @@ impl FrameSnapshot {
         let start = self.parts.len() as u32;
         if vehicle.ai_visuals {
             let meshes = (0..vehicle.mesh_props.len()).map(|i| (vehicle.mesh_local_transform(i), &vehicle.mesh_props[i]));
-            self.add_part(vehicle.position, &vehicle.ty, meshes);
+            self.add_part(vehicle.position, &vehicle.ty, vehicle.body_rotation(), meshes);
             for t in &vehicle.trailers {
                 let meshes = (0..t.mesh_props.len()).map(|i| (t.mesh_local_transform(i), &t.mesh_props[i]));
-                self.add_part(t.position, &t.ty, meshes);
+                self.add_part(t.position, &t.ty, t.body_rotation(), meshes);
             }
         }
         let parts = Span { start, len: self.parts.len() as u32 - start };
-        self.cars.push(CarFrame { id, shown: vehicle.ai_visuals, parts });
+        self.cars.push(CarFrame { id, shown: vehicle.ai_visuals, parts, looks: None });
     }
 
-    fn add_part<'a>(&mut self, position: glam::DVec3, ty: &VehicleType, meshes: impl Iterator<Item = (glam::Mat4, &'a crate::vehicle::MeshProps)>) {
+    fn add_part<'a>(&mut self, position: glam::DVec3, ty: &Arc<VehicleType>, rotation: glam::Mat4, meshes: impl Iterator<Item = (glam::Mat4, &'a crate::vehicle::MeshProps)>) {
         let start = self.meshes.len() as u32;
         for (i, (local, p)) in meshes.enumerate() {
             // (a mesh drawn only from some views: an AI car is seen from outside)
@@ -156,7 +172,7 @@ impl FrameSnapshot {
             self.meshes.push(frame);
         }
         let meshes = Span { start, len: self.meshes.len() as u32 - start };
-        self.parts.push(PartFrame { position, meshes });
+        self.parts.push(PartFrame { ty: ty.clone(), position, rotation, meshes });
     }
 
     /// The parts of `car`: its body first, then its coupled parts in their order.
@@ -309,7 +325,7 @@ mod tests {
         assert!(buf[b.range()].is_empty());
         assert_eq!(&buf[c.range()], &[3.0]);
         let mut snap = FrameSnapshot::default();
-        snap.cars.push(CarFrame { id: 7, shown: false, parts: Span::default() });
+        snap.cars.push(CarFrame { id: 7, shown: false, parts: Span::default(), looks: None });
         snap.sim_time = 3.0;
         snap.clear();
         assert!(snap.cars.is_empty());

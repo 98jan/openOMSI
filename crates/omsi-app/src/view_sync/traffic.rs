@@ -14,10 +14,11 @@ use crate::scene::{VehicleRender, World};
 use crate::traffic::Traffic;
 use hashbrown::HashMap;
 use omsi_sim::traffic::TrafficLightController;
-use omsi_sim::view_events::{FrameSnapshot, PartFrame, TrafficEvent};
+use omsi_sim::view_events::{CarLooks, FrameSnapshot, LookLimits, PartFrame, TrafficEvent};
 use omsi_sim::VehicleType;
 use std::sync::Arc;
 use omsi_render::{Renderer, Scene};
+use omsi_texture::Image;
 
 pub(super) const SCRIPT_UPLOAD_BUDGET: usize = 4 << 20;
 
@@ -34,6 +35,8 @@ pub(super) const SKIN_DISTANCE: f64 = 200.0;
 pub(crate) struct CarRender {
     pub(crate) body: VehicleRender,
     pub(crate) trailers: Vec<VehicleRender>,
+    /// The car's string variables as the snapshots sent them (`CarLooks::str_changes`).
+    pub(crate) strs: Vec<String>,
 }
 
 /// The GPU side of the traffic, kept apart from the simulation: the cars' renders by car
@@ -118,7 +121,7 @@ impl TrafficView {
                     .iter()
                     .map(|(t, scheme)| world.add_vehicle_shared(renderer, scene, t, *scheme, Some(&body)))
                     .collect();
-                self.insert(id, CarRender { body, trailers });
+                self.insert(id, CarRender { body, trailers, strs: Vec::new() });
             }
             TrafficEvent::Released { id } => self.release_car(world, renderer, scene, id),
             TrafficEvent::Retired { id } => self.retire(id),
@@ -450,15 +453,11 @@ impl Traffic {
     }
 
     /// The AI vehicles' pictures: where they stand, their materials, their script
-    /// textures (see `sync`).
+    /// textures (see `sync`). What the simulation does for them (their pages and text
+    /// textures run, the uploads, cracks and dents taken, the bellows reshaped) is taken into
+    /// the snapshot first (`TrafficSim::snapshot_looks`); the renderer is then given the
+    /// same calls in the same order as when it was done car by car here.
     fn sync_cars(&mut self, view: &mut TrafficView, world: &World, renderer: &Renderer, scene: &mut Scene) {
-        // A far car's script textures (its destination sign) stay as they are drawn: OMSI
-        // shows them at any distance its model level has them. (They were stood in for by
-        // their mean colour beyond 50 m, and every timetable bus coming up the street had
-        // a blank sign until it was almost there.) What a far car's scripts redraw goes to
-        // the GPU at most every half second, a slice of the cars per frame.
-        let tick = (self.sim.time as f64 * 2.0) as u64;
-        let mut budget = SCRIPT_UPLOAD_BUDGET;
         // `Envir_Brightness`, which Omsi.exe sets for every road vehicle as for the
         // player's: the stock buses fade their windows by it at night (left at the engine's
         // default of 1, an AI bus under the street lamps kept its daytime brown glass)
@@ -468,78 +467,107 @@ impl Traffic {
                 c.vehicle.set_var("Envir_Brightness", b);
             }
         }
+        // A far car's script textures (its destination sign) stay as they are drawn: OMSI
+        // shows them at any distance its model level has them. (They were stood in for by
+        // their mean colour beyond 50 m, and every timetable bus coming up the street had
+        // a blank sign until it was almost there.) What a far car's scripts redraw goes to
+        // the GPU at most every half second, a slice of the cars per frame.
+        let limits = LookLimits { displays_far: crate::scene::DISPLAYS_FAR, skin_distance: SKIN_DISTANCE, upload_budget: SCRIPT_UPLOAD_BUDGET };
+        self.sim.snapshot_looks(&mut self.snapshot, &mut self.looks, &limits);
         // one buffer for the per-mesh alpha of every car: a fresh copy for each mesh of each
         // car was thousands of small allocations a frame in a busy street
         let mut alpha: Vec<f32> = Vec::new();
         let snap = &self.snapshot;
-        for (c, frame) in self.sim.cars.iter_mut().zip(&snap.cars) {
-            debug_assert_eq!(c.id, frame.id);
-            let Some(r) = view.cars.get_mut(&c.id) else { continue };
-            let (render, trailer_renders) = (&mut r.body, &mut r.trailers);
+        for frame in &snap.cars {
+            let Some(r) = view.cars.get_mut(&frame.id) else { continue };
             // out of sight (`tick` decided): hidden once, then left alone until it comes
             // into view again - its many per-mesh updates were a third of this stage
-            if !c.vehicle.ai_visuals {
-                if !render.hidden {
-                    render.hidden = true;
-                    for inst in render
-                        .instances
-                        .iter()
-                        .chain(trailer_renders.iter().flat_map(|r| r.instances.iter()))
-                    {
+            let Some(looks) = snap.looks(frame).filter(|_| frame.shown) else {
+                if !r.body.hidden {
+                    r.body.hidden = true;
+                    for inst in r.body.instances.iter().chain(r.trailers.iter().flat_map(|r| r.instances.iter())) {
                         renderer.set_params(scene, *inst, &[], false, &[]);
                     }
                 }
                 continue;
-            }
-            render.hidden = false;
-            if let Some(cam) = self.sim.camera {
-                let far = (c.vehicle.position - cam).length() > crate::scene::DISPLAYS_FAR;
-                let due = render.display_tick != tick;
-                render.displays_far = far && !due;
-                if far && due {
-                    render.display_tick = tick;
-                }
-            }
-            crate::scene::sync_vehicle_textures(renderer, scene, &mut c.vehicle, &*render, &mut budget);
-            crate::scene::sync_vehicle_materials(renderer, scene, &c.vehicle, render);
-            crate::scene::sync_vehicle_damage(renderer, scene, &mut c.vehicle, render);
-            // a coupled part runs no scripts of its own: its plates, its displays and its
-            // switched materials follow the leading vehicle's, as the player's own rear
-            // sections do (without this an AI bus's rear section kept the blank textures and
-            // the unswitched materials it was built with)
-            {
-                let mut trailers = std::mem::take(&mut c.vehicle.trailers);
-                for (t, r) in trailers.iter_mut().zip(trailer_renders.iter_mut()) {
-                    crate::scene::sync_vehicle_part(renderer, scene, &c.vehicle, t, r);
-                }
-                c.vehicle.trailers = trailers;
-            }
-            // an articulated AI bus (timetable or random traffic) bends its bellows like the
-            // player's while it is near enough for the fold to show; farther out its shape
-            // just stays as it was, which nobody can tell from still following the road
-            if !render.skinned.is_empty()
-                || trailer_renders.iter().any(|r| !r.skinned.is_empty())
-            {
-                let near = self
-                    .sim
-                    .camera
-                    .map(|cam| (c.vehicle.position - cam).length() < SKIN_DISTANCE)
-                    .unwrap_or(true);
-                if near {
-                    crate::scene::sync_skinned(
-                        renderer,
-                        scene,
-                        &mut c.vehicle,
-                        render,
-                        trailer_renders,
-                    );
-                }
-            }
+            };
+            r.body.hidden = false;
+            show_looks(renderer, scene, snap, snap.parts(frame), looks, r);
             // where the body and its coupled parts stand and how their meshes are drawn: from
             // the snapshot (the body first, then the parts, as their renders go)
-            for (part, r) in snap.parts(frame).iter().zip(std::iter::once(&*render).chain(trailer_renders.iter())) {
+            for (part, r) in snap.parts(frame).iter().zip(std::iter::once(&r.body).chain(r.trailers.iter())) {
                 pose_part(renderer, scene, snap, part, r, &mut alpha);
             }
+        }
+    }
+}
+
+/// Bring car `r`'s renders to its looks in the snapshot (`parts`: its body, then its coupled
+/// parts): interior lamps, pictures, switched materials, cracks and dents, bellows - in the
+/// order the view sync gave the renderer these calls when it read the car itself.
+fn show_looks(renderer: &Renderer, scene: &mut Scene, snap: &FrameSnapshot, parts: &[PartFrame], looks: &CarLooks, r: &mut CarRender) {
+    let Some(body) = parts.first() else { return };
+    for (i, s) in &looks.str_changes {
+        let i = *i as usize;
+        if r.strs.len() <= i {
+            r.strs.resize(i + 1, String::new());
+        }
+        r.strs[i].clone_from(s);
+    }
+    let vars = crate::scene::CarVars { ty: &looks.ty, index: &looks.var_index, vars: snap.vars(looks), strs: &r.strs };
+    let text = |renderer: &Renderer, scene: &mut Scene, render: &VehicleRender, part: u32| {
+        for (_, i, width, height, rgba) in looks.text_uploads.iter().filter(|u| u.0 == part) {
+            if let Some(Some(tex)) = render.text_textures.get(*i) {
+                renderer.update_texture_mips(scene, *tex, &Image { width: *width, height: *height, rgba: rgba.clone(), has_alpha: true });
+            }
+        }
+    };
+    // the body: its interior lamps, its text and script textures, its materials, its damage
+    let render = &mut r.body;
+    let lamps = snap.lamps(looks, 0);
+    crate::scene::sync_interior_lamps(renderer, scene, &looks.ty, body.position, body.rotation, |li| lamps.get(li).copied().unwrap_or(false), render);
+    text(renderer, scene, render, 0);
+    let mut rebound = Vec::new();
+    for u in &looks.script_uploads {
+        let Some(Some(tex)) = render.script_textures.get(u.index) else { continue };
+        let img = Image { width: u.width, height: u.height, rgba: u.rgba.clone(), has_alpha: true };
+        if u.mipmaps {
+            if renderer.update_texture_mips(scene, *tex, &img) {
+                rebound.push(*tex);
+            }
+        } else {
+            renderer.update_texture(scene, *tex, &img);
+        }
+    }
+    renderer.rebind_textures(scene, &rebound);
+    crate::scene::sync_materials(renderer, scene, &vars, render);
+    let meshes = snap.meshes(body);
+    let local = |m: usize| meshes.get(m).map_or(glam::Mat4::IDENTITY, |f| f.local);
+    crate::view_sync::vehicle_damage::place_cracks(renderer, scene, render, body.position, local);
+    for (mesh, impact, energy, local) in &looks.cracks {
+        crate::view_sync::vehicle_damage::add_crack(renderer, scene, render, &looks.ty, body.position, *mesh, *impact, *energy, *local);
+    }
+    for dent in &looks.dents {
+        crate::view_sync::vehicle_damage::add_dent(renderer, scene, render, &looks.ty, dent);
+    }
+    // a coupled part runs no scripts of its own: its plates, its displays and its
+    // switched materials follow the leading vehicle's, as the player's own rear
+    // sections do (without this an AI bus's rear section kept the blank textures and
+    // the unswitched materials it was built with)
+    for (k, (part, render)) in parts.iter().skip(1).zip(r.trailers.iter_mut()).enumerate() {
+        let lamps = snap.lamps(looks, k + 1);
+        crate::scene::sync_interior_lamps(renderer, scene, &part.ty, part.position, part.rotation, |li| lamps.get(li).copied().unwrap_or(false), render);
+        crate::scene::sync_materials(renderer, scene, &vars, render);
+        text(renderer, scene, render, k as u32 + 1);
+    }
+    // an articulated AI bus (timetable or random traffic) bends its bellows like the
+    // player's while it is near enough for the fold to show (`SKIN_DISTANCE`; farther out its
+    // shape just stays as it was, which nobody can tell from still following the road)
+    for (part, mesh, pos, nrm) in &looks.skins {
+        let render = if *part == 0 { Some(&r.body) } else { r.trailers.get(*part as usize - 1) };
+        let (Some(render), Some(ty)) = (render, parts.get(*part as usize).map(|p| &p.ty)) else { continue };
+        if let Some((_, id, _)) = render.skinned.iter().find(|(i, _, _)| i == mesh) {
+            renderer.update_mesh(scene, *id, pos, nrm, &ty.meshes[*mesh].data.uvs);
         }
     }
 }

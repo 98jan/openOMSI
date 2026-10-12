@@ -124,6 +124,7 @@ impl Traffic {
             park: None,
             guard: Default::default(),
         });
+        self.looks.forget(id);
         self.events.push(TrafficEvent::Spawned { id, ty: ty.clone(), scheme, trailers });
         self.sim.cars.len() - 1
     }
