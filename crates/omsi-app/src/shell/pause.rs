@@ -124,85 +124,105 @@ fn rail_index(v: &PauseView, ids: &[&str]) -> Option<usize> {
     v.rail.iter().position(|(id, _)| ids.contains(id))
 }
 
-/// The pause menu's home page, as the launcher's duty page: its head (paused, the map and
-/// the time), the summary card - the destination sign, the facts - and the actions as the
-/// launcher's buttons: Resume the primary one, saving and the photo mode beside each other,
-/// ending the session in red.
+/// The pause menu's home page: no card over the game - the actions in one row beside the
+/// page's head (the destination sign first, then Resume, saving, the photo mode and ending
+/// the session), and the session's facts on the line under it beside the map and the time;
+/// the paused game stays in view under the rest of the page.
 fn home_page(sh: &mut Shell, v: &PauseView, page: Rect) {
     let sm = &v.summary;
     let x = page.x + 32.0;
+    let right = page.right() - 32.0;
     let ui = &mut sh.ui;
-    ui.text(if v.paused { "Paused" } else { "Menu" }, Vec2::new(x, 28.0 + 26.0), 26.0, Weight::Bold, INK, Align::Left);
+    let title = omsi_ui::tr(if v.paused { "Paused" } else { "Menu" }).to_string();
+    let title_w = ui.width(&title, 26.0, Weight::Bold);
+    ui.text(&title, Vec2::new(x, 28.0 + 26.0), 26.0, Weight::Bold, INK, Align::Left);
+
+    // the row: the destination sign, then the buttons, each as wide as its label
+    let h = 36.0;
+    let amber = Color::rgba(255, 176, 46, 1.0);
+    let (sign_main, sign_to) = match (&sm.line, &sm.terminus) {
+        (Some(line), Some(to)) => (line.clone(), Some(to.to_uppercase())),
+        _ => (omsi_ui::tr("Free drive").to_uppercase(), None),
+    };
+    let sign_w = match &sign_to {
+        Some(to) => 12.0 + ui.width(&sign_main, 18.0, Weight::Bold).max(26.0) + 10.0 + ui.width(to, 12.5, Weight::Bold).min(240.0) + 14.0,
+        None => 40.0 + ui.width(&sign_main, 12.5, Weight::Bold) + 14.0,
+    };
+    let mut buttons: Vec<(String, usize, String, &str, ButtonKind)> = Vec::new();
+    if let Some(k) = rail_index(v, &["resume"]) {
+        buttons.push(("home-resume".into(), k, "Resume".into(), "play_arrow", ButtonKind::Primary));
+    }
+    for (ids, icon, kind) in [(&["save"][..], "save", ButtonKind::Normal), (&["photo", "shot"][..], "photo_camera", ButtonKind::Normal), (&["quit"][..], "logout", ButtonKind::Danger)] {
+        if let Some(k) = rail_index(v, ids) {
+            buttons.push((format!("home-act-{k}"), k, plain(v.rail[k].1).0.to_string(), icon, kind));
+        }
+    }
+    let widths: Vec<f32> = buttons
+        .iter()
+        .map(|(_, _, label, _, kind)| {
+            let w = if *kind == ButtonKind::Primary { Weight::Bold } else { Weight::Medium };
+            ui.width(&omsi_ui::tr(label), 13.0, w) + 13.0 * 1.3 + 6.0 + 32.0
+        })
+        .collect();
+    let gap = 8.0;
+    let row_w = sign_w + widths.iter().map(|w| w + gap).sum::<f32>();
+    // beside the head when it fits, else on a line of its own under the facts
+    let beside = x + title_w + 28.0 + row_w <= right;
+    let (mut bx, by) = if beside { (x + title_w + 28.0, 23.0) } else { (x, 118.0) };
+    let sign = Rect::new(bx, by, sign_w, h);
+    ui.p().rounded(sign, 6.0, Color::rgba(14, 15, 17, 0.92));
+    match &sign_to {
+        Some(to) => {
+            let nw = ui.text_in(&sign_main, Rect::new(sign.x + 12.0, sign.y, 80.0, sign.h), 18.0, Weight::Bold, amber, Align::Left).max(26.0);
+            ui.text_in(to, Rect::new(sign.x + 22.0 + nw, sign.y, sign.w - nw - 34.0, sign.h), 12.5, Weight::Bold, amber, Align::Left);
+        }
+        None => {
+            ui.icon("route", Vec2::new(sign.x + 20.0, sign.center().y), 18.0, amber);
+            ui.text_in(&sign_main, Rect::new(sign.x + 40.0, sign.y, sign.w - 48.0, sign.h), 12.5, Weight::Bold, amber, Align::Left);
+        }
+    }
+    bx += sign_w + gap;
+    let mut acts = Vec::new();
+    for ((id, k, label, icon, kind), w) in buttons.iter().zip(&widths) {
+        if ui.button(id, Rect::new(bx, by, *w, h), label, Some(icon), *kind) {
+            acts.push(Action::Choose(*k));
+        }
+        bx += w + gap;
+    }
+
+    // the line under the head: the map and the time, then the session's facts
     let sub = [sm.map.as_str(), sm.time.as_str()].iter().filter(|t| !t.is_empty()).copied().collect::<Vec<_>>().join("  -  ");
-    ui.text_in(&sub, Rect::new(x, 28.0 + 34.0, page.w - 64.0, 20.0), 13.0, Weight::Regular, INK_MUTED, Align::Left);
-    // the summary card
-    let cw = (page.w - 64.0).min(480.0);
-    let card = Rect::new(x, 112.0, cw, 0.0);
-    let mut y = card.y + 18.0;
-    let inner = Rect::new(card.x + 20.0, 0.0, card.w - 40.0, 0.0);
-    // (the card's height from what it holds: drawn under its contents, so first laid out)
+    let mut fx = x;
+    let line_y = 28.0 + 34.0;
+    fx += ui.text_in(&sub, Rect::new(fx, line_y, (right - fx).max(0.0), 20.0), 13.0, Weight::Regular, INK_MUTED, Align::Left);
     let facts: Vec<(&str, String)> = [
         Some(("Bus", sm.bus.clone())),
         sm.line.clone().map(|l| ("Line", l)),
         sm.tour.clone().map(|t| ("Tour", t)),
         sm.next_stop.clone().map(|n| ("Next stop", n)),
-        Some(("Time", sm.time.clone())),
-        Some(("Map", sm.map.clone())),
         Some(("Driver", sm.driver.clone())),
     ]
     .into_iter()
     .flatten()
     .filter(|(_, v)| !v.trim().is_empty())
     .collect();
-    let fact_h = 24.0;
-    let h = 18.0 + 44.0 + 16.0 + facts.len() as f32 * fact_h + 18.0 + 44.0 + 10.0 + 38.0 + 20.0;
-    let card = Rect::new(card.x, card.y, card.w, h);
-    ui.solid(card);
-    ui.p().rounded(card, 8.0, SURFACE);
-    // the destination sign: the line and where it goes, amber on near black
-    let sign = Rect::new(inner.x, y, inner.w, 44.0);
-    ui.p().rounded(sign, 6.0, Color::rgba(14, 15, 17, 1.0));
-    let amber = Color::rgba(255, 176, 46, 1.0);
-    match (&sm.line, &sm.terminus) {
-        (Some(line), Some(to)) => {
-            let nw = ui.text_in(line, Rect::new(sign.x + 12.0, sign.y, 80.0, sign.h), 20.0, Weight::Bold, amber, Align::Left).max(34.0);
-            ui.text_in(&to.to_uppercase(), Rect::new(sign.x + 22.0 + nw, sign.y, sign.w - nw - 34.0, sign.h), 13.0, Weight::Bold, amber, Align::Left);
-        }
-        _ => {
-            ui.icon("route", Vec2::new(sign.x + 24.0, sign.center().y), 20.0, amber);
-            ui.text_in(&omsi_ui::tr("Free drive").to_uppercase(), Rect::new(sign.x + 44.0, sign.y, sign.w - 56.0, sign.h), 13.0, Weight::Bold, amber, Align::Left);
-        }
-    }
-    y += 44.0 + 16.0;
-    // the facts: what on the left, muted, the value on the right
     for (what, value) in &facts {
-        ui.text_in(what, Rect::new(inner.x, y, inner.w * 0.4, fact_h), 13.0, Weight::Regular, INK_MUTED, Align::Left);
-        ui.text_in(value, Rect::new(inner.x + inner.w * 0.3, y, inner.w * 0.7, fact_h), 13.0, Weight::Medium, INK, Align::Right);
-        y += fact_h;
-    }
-    y += 18.0;
-    // the actions
-    let mut acts = Vec::new();
-    if let Some(k) = rail_index(v, &["resume"]) {
-        if ui.button("home-resume", Rect::new(inner.x, y, inner.w, 44.0), "Resume", Some("play_arrow"), ButtonKind::Primary) {
-            acts.push(Action::Choose(k));
+        let what = omsi_ui::tr(what).to_string();
+        let ww = ui.width(&what, 13.0, Weight::Regular);
+        let vw = ui.width(value, 13.0, Weight::Medium);
+        if fx + 24.0 + ww + 6.0 + vw > right {
+            break;
         }
+        fx += 24.0;
+        ui.text_in(&what, Rect::new(fx, line_y, ww + 2.0, 20.0), 13.0, Weight::Regular, INK_MUTED, Align::Left);
+        fx += ww + 6.0;
+        ui.text_in(value, Rect::new(fx, line_y, vw + 2.0, 20.0), 13.0, Weight::Medium, INK, Align::Left);
+        fx += vw;
     }
-    y += 44.0 + 10.0;
-    let row: Vec<(usize, &str, &str, ButtonKind)> = [(&["save"][..], "save", ButtonKind::Normal), (&["photo", "shot"][..], "photo_camera", ButtonKind::Normal), (&["quit"][..], "logout", ButtonKind::Danger)]
-        .iter()
-        .filter_map(|(ids, icon, kind)| rail_index(v, ids).map(|k| (k, plain(v.rail[k].1).0, *icon, *kind)))
-        .collect();
-    let n = row.len().max(1) as f32;
-    let bw = (inner.w - 8.0 * (n - 1.0)) / n;
-    for (i, (k, label, icon, kind)) in row.iter().enumerate() {
-        if ui.button(&format!("home-act-{k}"), Rect::new(inner.x + i as f32 * (bw + 8.0), y, bw, 38.0), label, Some(icon), *kind) {
-            acts.push(Action::Choose(*k));
-        }
-    }
-    // the keys, quietly under the card
+    // the keys, quietly under them
     if v.keys {
-        ui.text_in(&omsi_ui::tr("Esc resumes  |  P pauses"), Rect::new(card.x, card.bottom() + 10.0, card.w, 20.0), 12.0, Weight::Regular, INK_MUTED, Align::Left);
+        let ky = if beside { line_y + 24.0 } else { by + h + 10.0 };
+        ui.text_in(&omsi_ui::tr("Esc resumes  |  P pauses"), Rect::new(x, ky, (right - x).max(0.0), 18.0), 12.0, Weight::Regular, INK_MUTED, Align::Left);
     }
     sh.actions.extend(acts);
 }
