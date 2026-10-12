@@ -49,9 +49,7 @@ impl App {
     /// the snow, the cabin air, the tyres' spray and the sounds of the street.
     pub(super) fn frame_lights(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
         // the lamps' cones in fog and falling rain or snow, and new light pictures
-        if let Some(wt) = &self.session.weather {
-            lights::set_cone_strength(wt.fog.0, precip_of(wt).1, daylight.night);
-        }
+        let cone = self.session.weather.as_ref().map(|wt| lights::ConeWeather::new(wt.fog.0, daylight.night)).unwrap_or_default();
         if let Some(r) = self.renderer.as_mut() {
             lights::upload_corona_textures(r);
         }
@@ -68,7 +66,7 @@ impl App {
         ) {
             let vehicles = steps::light_vehicles(self.player.as_ref(), self.session.traffic.as_ref(), &self.net.remotes);
             let __tc = Instant::now();
-            lights::collect(w, scene, &daylight, cam.position, &vehicles);
+            lights::collect(w, scene, &daylight, cam.position, &vehicles, cone);
             *self.perf.profile.entry("lights.collect").or_default() += __tc.elapsed().as_secs_f64();
             // the object editor's pick: a magenta glow over it
             if let Some(id) = self.menus.editor.as_ref().and_then(|e| e.selected) {

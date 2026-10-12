@@ -214,10 +214,9 @@ fn world_lights(
     eye: DVec3,
     vehicles: &[&omsi_sim::VehicleInstance],
 ) {
-    lights::set_cone_strength(weather.fog.0, precip_of(weather).1, daylight.night);
     lights::upload_corona_textures(renderer);
     world.update_light_map_atlas(renderer, eye);
-    lights::collect(world, scene, daylight, eye, vehicles);
+    lights::collect(world, scene, daylight, eye, vehicles, lights::ConeWeather::new(weather.fog.0, daylight.night));
     // (and the pictures the lights asked for first now: a picture has the one frame)
     lights::upload_corona_textures(renderer);
 }
