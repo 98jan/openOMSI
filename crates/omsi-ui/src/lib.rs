@@ -1,7 +1,8 @@
 //! Interface drawing shared by the game's navigator and the launcher.
 //!
-//! * [`text`]: Roboto (variable weight) laid out and rasterised with `ab_glyph`;
+//! * [`text`]: Inter (variable weight) laid out and rasterised with `ab_glyph`;
 //! * [`icons`]: Google's Material Symbols (Rounded, filled), rasterised with `resvg`;
+//! * [`edit`]: what the keys do to a text field's line (caret, selection, words, clipboard);
 //! * [`atlas`]: one RGBA texture both live in, filled on demand and uploaded by region;
 //! * [`paint`]: a vertex list of anti-aliased shapes - rounded boxes with soft shadows,
 //!   circles, rings, lines, text and icons in pixels, and ribbons and markers in a 3D
@@ -10,6 +11,7 @@
 //!   rounded clipping), into a window or a texture.
 
 pub mod atlas;
+pub mod edit;
 pub mod gpu;
 pub mod i18n;
 pub mod icons;

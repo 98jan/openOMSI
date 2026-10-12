@@ -11,10 +11,56 @@ pub struct GroundSound {
     /// terrain's y runs) OMSI's `[surface]` id of the ground layer that shows there.
     pub size: usize,
     pub ids: Vec<u8>,
-    /// The trees: tile-local x, y and their height (m).
-    pub trees: Vec<[f32; 3]>,
+    /// The trees: tile-local x, y, their height (m) and 1 for a conifer (0 for a tree that
+    /// loses its leaves).
+    pub trees: Vec<[f32; 4]>,
     /// The objects placed on the tile (houses, signs, lamps …): how built-up it is.
     pub objects: u32,
+    /// The buildings: tile-local x, y and their height (m) - objects whose model stands as
+    /// tall and as wide as a house.
+    pub buildings: Vec<[f32; 3]>,
+    /// Sources of sound the map places itself: a verified kind of object (a church, a
+    /// school, a petrol station …) or one of the map's own sound objects. `kind` is the
+    /// ambience's own number for it.
+    pub spots: Vec<SoundSpot>,
+    /// Lines that sound: the lanes of the roads and railways, the overhead wires, the
+    /// tunnels - points along them, tile-local.
+    pub lines: Vec<SoundLine>,
+    /// Where the tile's water lies over its ground: tile-local x, y of the cells (some 19 m
+    /// on a Berlin tile) whose water surface stands above the terrain.
+    pub water: Vec<[f32; 2]>,
+}
+
+/// A point the ambience may make heard (see [`GroundSound::spots`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SoundSpot {
+    pub kind: u16,
+    /// Tile-local position (m).
+    pub pos: [f32; 3],
+    /// The map's id of the object: the same object always chooses alike.
+    pub id: i64,
+}
+
+/// What a [`SoundLine`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineKind {
+    /// One lane of a road.
+    Road,
+    /// One track of a railway.
+    Rail,
+    /// Wires strung overhead (a spline that hangs clear of the ground and carries no path).
+    Wire,
+    /// A tunnel's tube (a spline whose file says so).
+    Tunnel,
+}
+
+/// Points every few metres along a lane, a track, a wire or a tunnel (tile-local).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SoundLine {
+    pub kind: LineKind,
+    /// The lane's speed limit (km/h; 0 where none is known).
+    pub speed: f32,
+    pub points: Vec<[f32; 3]>,
 }
 
 impl GroundSound {
@@ -39,7 +85,7 @@ impl GroundSound {
                 }
             }
         }
-        GroundSound { size, ids, trees: Vec::new(), objects: 0 }
+        GroundSound { size, ids, ..Default::default() }
     }
 
     /// The ground's surface id at tile-local (x, y); asphalt where nothing is known.

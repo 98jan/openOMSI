@@ -47,6 +47,8 @@ struct Shown {
     centre: glam::Vec3,
     length: f32,
     weather: omsi_content::weather::Weather,
+    /// The sky's cloud type and weather model its look is drawn with.
+    sky: crate::weather_setup::SkyState,
     lighting: Lighting,
 }
 
@@ -56,6 +58,9 @@ pub struct Showroom {
     /// The last look that could not be shown (not read again until something changes).
     failed: Option<Look>,
     loading: Option<(Look, Receiver<Result<Ready, String>>)>,
+    /// The map the bus being read opened on its worker, for this thread to give it the
+    /// renderer's prefetch (see `start_loading`).
+    opening: Option<(Receiver<Arc<scene::World>>, std::sync::mpsc::Sender<scene::VehiclePrefetch>)>,
     pub error: Option<String>,
     /// Orbit: yaw and pitch (degrees) and distance factor, eased towards the targets.
     pub yaw: f32,
@@ -75,16 +80,37 @@ pub struct Showroom {
     dirty: bool,
     /// Bumped whenever `target` was made anew (the interface binds it again).
     pub generation: u64,
+    /// Bumped at every drawing of the picture (the launcher shows an unchanged one only once).
+    pub drawn: u64,
 }
 
 /// Names the bus whose preview is being read and placed, until it is in the picture.
 fn placing_mark() -> PathBuf {
-    omsi_launcher_lib::data_dir().join("showroom-placing.txt")
+    preview_guard_path(&omsi_launcher_lib::data_dir(), "placing", omsi_platform::VERSION)
+}
+
+fn preview_guard_path(dir: &Path, kind: &str, version: &str) -> PathBuf {
+    // A newer renderer or loader must get a chance to retry previews an older one failed.
+    dir.join(format!("showroom-{kind}-{version}.txt"))
+}
+
+fn preview_is_skipped(dir: &Path, version: &str, bus: &str) -> bool {
+    let mark = preview_guard_path(dir, "placing", version);
+    let skip = preview_guard_path(dir, "skip", version);
+    if std::fs::read_to_string(&mark).is_ok_and(|b| b.trim() == bus.trim()) {
+        log::warn!("showroom: the preview of {bus} did not finish when it was last tried; it is left out for this version ({})", skip.display());
+        let _ = std::fs::remove_file(mark);
+        let mut list = std::fs::read_to_string(&skip).unwrap_or_default();
+        list.push_str(bus.trim());
+        list.push('\n');
+        let _ = std::fs::write(&skip, list);
+    }
+    std::fs::read_to_string(skip).is_ok_and(|t| t.lines().any(|b| b.trim() == bus.trim()))
 }
 
 /// The launcher ends in order (closed, or a test's time is up) while a preview is being
 /// placed: that is no hang, and the bus must not be left out of the previews from then on
-/// (a test ended mid-placing put the bus it showed into `showroom-skip.txt`).
+/// (a test ended mid-placing put the bus it showed into the skip list).
 pub(super) fn clear_placing_mark() {
     let _ = std::fs::remove_file(placing_mark());
 }
@@ -125,6 +151,7 @@ impl Showroom {
             wanted: None,
             failed: None,
             loading: None,
+            opening: None,
             error: None,
             yaw: 215.0,
             pitch: 8.0,
@@ -140,6 +167,7 @@ impl Showroom {
             target: None,
             dirty: true,
             generation: 0,
+            drawn: 0,
         }
     }
 
@@ -147,6 +175,29 @@ impl Showroom {
     pub fn want(&mut self, look: Look) {
         if self.wanted.as_ref() != Some(&look) {
             self.wanted = Some(look);
+            self.failed = None;
+            self.error = None;
+        }
+    }
+
+    fn fail(&mut self, look: Look, error: String) {
+        self.error = Some(error);
+        self.failed = Some(look);
+        // A failed selection must not expose the previous bus through any preview API.
+        self.shown = None;
+        self.target = None;
+        self.loading = None;
+        self.opening = None;
+    }
+
+    /// `want` the launcher's choice: compared first, the look is made only when it changed
+    /// (it was made, five strings cloned, every frame).
+    pub fn want_choice(&mut self, root: &str, c: &super::state::Choice) {
+        let same = self.wanted.as_ref().is_some_and(|w| {
+            w.map == c.map && w.bus == c.bus && w.paint == c.paint && w.weather == c.weather && w.time == c.time && w.date == c.date && w.root.as_os_str() == root
+        });
+        if !same {
+            self.want(Look { root: PathBuf::from(root), map: c.map.clone(), bus: c.bus.clone(), paint: c.paint.clone(), weather: c.weather.clone(), time: c.time, date: c.date.clone() });
         }
     }
 
@@ -165,6 +216,18 @@ impl Showroom {
     /// camera. Returns true when a new scene was put in place.
     pub fn update(&mut self, renderer: &Renderer, dt: f32) -> bool {
         let mut swapped = false;
+        // the map of the bus being read is open: the worker goes on with the renderer's
+        // prefetch of the bus's textures and meshes
+        if let Some((worlds, prefetch)) = self.opening.as_ref() {
+            match worlds.try_recv() {
+                Ok(world) => {
+                    let _ = prefetch.send(world.vehicle_prefetch(renderer));
+                    self.opening = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(_) => self.opening = None,
+            }
+        }
         // what finished loading
         if let Some((look, rx)) = self.loading.as_ref() {
             match rx.try_recv() {
@@ -178,18 +241,12 @@ impl Showroom {
                 Ok(Err(e)) => {
                     let _ = std::fs::remove_file(placing_mark());
                     log::warn!("showroom {}: {e}", look.bus);
-                    self.error = Some(e);
-                    // (the bus before stayed in the picture as if it were the one chosen, and
-                    // the failed one was read again every frame)
-                    self.failed = Some(look.clone());
-                    self.shown = None;
-                    self.loading = None;
+                    self.fail(look.clone(), e);
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 Err(_) => {
                     let _ = std::fs::remove_file(placing_mark());
-                    self.failed = Some(look.clone());
-                    self.loading = None;
+                    self.fail(look.clone(), "The preview loader stopped before the bus was ready".into());
                 }
             }
         }
@@ -204,13 +261,13 @@ impl Showroom {
                     if let Some(s) = self.shown.as_mut() {
                         s.look = w.clone();
                         let args = args_for(&w);
-                        s.weather = load_weather(&args);
-                        setup_sky(&args, renderer, &mut s.scene, omsi_content::Envir::load(&args.root.join("envir.cfg")).ok().as_ref(), Some(&s.weather));
-                        s.lighting = lighting_for(&args, &s.weather);
+                        (s.weather, s.sky.model) = crate::weather_setup::load_weather_run(&args);
+                        setup_sky(&args, renderer, &mut s.scene, omsi_content::Envir::load(&args.root.join("envir.cfg")).ok().as_ref(), Some(&s.weather), &mut s.sky.clouds);
+                        s.lighting = lighting_for(&args, &s.weather, &s.sky);
                     }
                     self.dirty = true;
                 } else {
-                    self.start_loading(renderer, w);
+                    self.start_loading(w);
                 }
             }
         }
@@ -238,23 +295,11 @@ impl Showroom {
         swapped
     }
 
-    fn start_loading(&mut self, renderer: &Renderer, look: Look) {
-        // A preview that never came (the launcher hung while placing it, and had to be
-        // ended) is not tried again for that bus: the bus is remembered and the launcher hung
-        // at every start, whatever version (#1478, #1635).
-        // (`showroom-skip.txt` keeps such buses, a line each; delete it to try them again)
-        let skip = omsi_launcher_lib::data_dir().join("showroom-skip.txt");
-        if std::fs::read_to_string(placing_mark()).is_ok_and(|b| b.trim() == look.bus.trim()) {
-            log::warn!("showroom: the preview of {} hung the launcher when it was last tried; it is left out from now on ({})", look.bus, skip.display());
-            let _ = std::fs::remove_file(placing_mark());
-            let mut list = std::fs::read_to_string(&skip).unwrap_or_default();
-            list.push_str(look.bus.trim());
-            list.push('\n');
-            let _ = std::fs::write(&skip, list);
-        }
-        if std::fs::read_to_string(&skip).is_ok_and(|t| t.lines().any(|b| b.trim() == look.bus.trim())) {
-            self.error = Some("The 3D preview of this bus stopped the launcher once, so it is left out".into());
-            self.failed = Some(look);
+    fn start_loading(&mut self, look: Look) {
+        self.error = None;
+        // Prevent a repeat hang on restart, but retry after an update (#1478, #1635).
+        if preview_is_skipped(&omsi_launcher_lib::data_dir(), omsi_platform::VERSION, &look.bus) {
+            self.fail(look, "The 3D preview of this bus stopped the launcher once, so it is left out".into());
             return;
         }
         let _ = std::fs::write(placing_mark(), &look.bus);
@@ -262,24 +307,21 @@ impl Showroom {
         let root = look.root.clone();
         let map_cfg = omsi_cfg::resolve_path(&root, &look.map);
         let date = start_clock(&args).date_code();
-        let t0 = std::time::Instant::now();
-        let world = match scene::World::open(&root, &map_cfg, date) {
-            Ok(w) => {
-                log::info!("showroom: {} opened in {:.2} s", map_cfg.display(), t0.elapsed().as_secs_f64());
-                Arc::new(w)
-            }
-            Err(e) => {
-                let _ = std::fs::remove_file(placing_mark());
-                self.error = Some(format!("{e:#}"));
-                self.wanted = None;
-                return;
-            }
-        };
-        let prefetch = world.vehicle_prefetch(renderer);
         let (tx, rx) = channel();
+        // (the map is opened on the worker as well: on this thread it held the launcher's
+        // frames up - a big map's, or any on a phone's storage, for a second and more)
+        let (world_tx, world_rx) = channel();
+        let (prefetch_tx, prefetch_rx) = channel::<scene::VehiclePrefetch>();
         let l2 = look.clone();
         std::thread::spawn(move || {
             let r = (|| -> Result<Ready> {
+                let t0 = std::time::Instant::now();
+                let world = Arc::new(scene::World::open(&root, &map_cfg, date)?);
+                log::info!("showroom: {} opened in {:.2} s", map_cfg.display(), t0.elapsed().as_secs_f64());
+                let _ = world_tx.send(world.clone());
+                // (made by the launcher's thread, which has the renderer; gone with the
+                // showroom when the device is given up meanwhile)
+                let prefetch = prefetch_rx.recv().map_err(|_| anyhow!("the preview was let go of"))?;
                 if l2.bus.is_empty() {
                     return Err(anyhow!("no bus"));
                 }
@@ -305,6 +347,7 @@ impl Showroom {
             })();
             let _ = tx.send(r.map_err(|e| format!("{e:#}")));
         });
+        self.opening = Some((world_rx, prefetch_tx));
         self.loading = Some((look, rx));
     }
 
@@ -312,9 +355,10 @@ impl Showroom {
         let t0 = std::time::Instant::now();
         let mut scene = renderer.new_scene();
         let args = args_for(&r.look);
-        let weather = load_weather(&args);
+        let (weather, model) = crate::weather_setup::load_weather_run(&args);
         let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
-        setup_sky(&args, renderer, &mut scene, envir.as_ref(), Some(&weather));
+        let mut sky = crate::weather_setup::SkyState { clouds: None, model };
+        setup_sky(&args, renderer, &mut scene, envir.as_ref(), Some(&weather), &mut sky.clouds);
         add_floor(renderer, &mut scene);
         let world = r.world;
         let mut vehicle = r.vehicle;
@@ -338,10 +382,10 @@ impl Showroom {
             centre.y = bb[4] + bb[1] * 0.5 - total * 0.5;
             length = total;
         }
-        let lighting = lighting_for(&args, &weather);
+        let lighting = lighting_for(&args, &weather, &sky);
         log::info!("showroom: {} ({} meshes, {:.1} m long) placed in {:.2} s", r.look.bus, render.instances.len(), length, t0.elapsed().as_secs_f64());
         let _ = std::fs::remove_file(placing_mark());
-        Shown { look: r.look, scene, world: Some(world), vehicle: Some(vehicle), render: Some(render), trailers, centre, length, weather, lighting }
+        Shown { look: r.look, scene, world: Some(world), vehicle: Some(vehicle), render: Some(render), trailers, centre, length, weather, sky, lighting }
     }
 
     /// The picture of the bus at `w` x `h` pixels, drawn again when something changed.
@@ -366,6 +410,7 @@ impl Showroom {
         }
         if self.dirty {
             self.dirty = false;
+            self.drawn += 1;
             let view = self.target.as_ref().unwrap().1.clone();
             self.render(renderer, &view, w, h);
         }
@@ -383,7 +428,10 @@ impl Showroom {
         // from the focus to the right edge)
         let free = ((1.0 - focus) * 2.0).clamp(0.3, 1.0);
         let fit = (s.length * 0.5 + 1.0) / (half_v * aspect * free * 0.92).max(0.1);
-        let dist = (fit * zoom).max(8.0);
+        // and its height the picture's (a wide, low picture - a card on a page - had a
+        // double-decker cut at the roof and the wheels)
+        let fit_v = (s.centre.z.max(1.0) * 1.3 + 1.0) / half_v.max(0.05);
+        let dist = (fit.max(fit_v) * zoom).max(8.0);
         let (sy, cy) = yaw.to_radians().sin_cos();
         let (sp, cp) = pitch.to_radians().sin_cos();
         let target_pt = DVec3::new(s.centre.x as f64, s.centre.y as f64, (s.centre.z * 0.75) as f64);
@@ -401,6 +449,60 @@ impl Showroom {
         renderer.render(&mut s.scene, target, w, h, &cam, &s.lighting);
     }
 
+    /// The picture's texture as last drawn (the desktop launcher's service reads it back).
+    pub fn picture(&self) -> Option<&wgpu::Texture> {
+        self.target.as_ref().map(|t| &t.0)
+    }
+
+    /// The camera is still easing towards where the mouse turned it (or turning by itself):
+    /// more pictures are coming.
+    pub fn moving(&self) -> bool {
+        self.dirty || (self.yaw_to - self.yaw).abs() > 0.05 || (self.pitch_to - self.pitch).abs() > 0.05 || (self.zoom_to - self.zoom).abs() > 0.001 || (self.auto_turn && self.idle > 4.0)
+    }
+
+    /// The last picture drawn, as RGBA rows (width, height, pixels) - read back from the
+    /// graphics card for a launcher that shows it itself (the Swift one, see `apple_bridge`).
+    #[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
+    pub fn pixels(&self, renderer: &Renderer) -> Option<(u32, u32, Vec<u8>)> {
+        let (tex, _, w, h) = self.target.as_ref()?;
+        let (w, h) = (*w, *h);
+        // (rows of a copy are 256-byte aligned)
+        let row = w * 4;
+        let padded = row.div_ceil(256) * 256;
+        let device = &renderer.device;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor { label: Some("bus preview read-back"), size: (padded * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("bus preview read-back") });
+        enc.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyBufferInfo { buffer: &buffer, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: Some(h) } },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+        renderer.queue.submit([enc.finish()]);
+        let slice = buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().ok()?.ok()?;
+        let data = slice.get_mapped_range();
+        let bgra = matches!(renderer.format(), wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
+        let mut out = Vec::with_capacity((row * h) as usize);
+        for y in 0..h as usize {
+            let line = &data[y * padded as usize..y * padded as usize + row as usize];
+            if bgra {
+                for p in line.chunks_exact(4) {
+                    out.extend_from_slice(&[p[2], p[1], p[0], p[3]]);
+                }
+            } else {
+                out.extend_from_slice(line);
+            }
+        }
+        drop(data);
+        buffer.unmap();
+        Some((w, h, out))
+    }
+
     /// A bus is there to show.
     pub fn has_picture(&self) -> bool {
         self.shown.as_ref().map(|s| s.vehicle.is_some()).unwrap_or(false) && self.target.is_some()
@@ -408,14 +510,67 @@ impl Showroom {
 
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::ManuallyDrop;
+
+    fn look(bus: &str) -> Look {
+        Look { bus: bus.into(), ..Look::default() }
+    }
+
+    #[test]
+    fn failure_ends_loading_and_hides_the_picture() {
+        // Avoid Drop's installation-wide placing marker in these self-contained tests.
+        let mut showroom = ManuallyDrop::new(Showroom::new());
+        let selected = look("unavailable.bus");
+        showroom.want(selected.clone());
+        let (_tx, rx) = channel();
+        showroom.loading = Some((selected.clone(), rx));
+        let (_world_tx, world_rx) = channel();
+        let (prefetch_tx, _prefetch_rx) = channel();
+        showroom.opening = Some((world_rx, prefetch_tx));
+
+        showroom.fail(selected.clone(), "Cannot load the bus".into());
+
+        assert_eq!(showroom.failed.as_ref(), Some(&selected));
+        assert_eq!(showroom.error.as_deref(), Some("Cannot load the bus"));
+        assert!(showroom.loading.is_none());
+        assert!(showroom.opening.is_none());
+        assert!(!showroom.has_picture());
+        assert!(showroom.picture().is_none());
+    }
+
+    #[test]
+    fn changed_selection_clears_failure_but_unchanged_selection_does_not_retry() {
+        let mut showroom = ManuallyDrop::new(Showroom::new());
+        let failed = look("unavailable.bus");
+        showroom.want(failed.clone());
+        showroom.fail(failed.clone(), "Cannot load the bus".into());
+
+        showroom.want(failed.clone());
+        assert_eq!(showroom.failed.as_ref(), Some(&failed));
+        assert!(showroom.error.is_some());
+
+        showroom.want(look("available.bus"));
+        assert!(showroom.failed.is_none());
+        assert!(showroom.error.is_none());
+
+        showroom.want(failed.clone());
+        assert_eq!(showroom.wanted.as_ref(), Some(&failed));
+        assert!(showroom.failed.is_none());
+        assert!(showroom.error.is_none());
+    }
+}
+
 /// The light of the look's time and weather, with the sun's shadow under the bus. Always
 /// the plain renderer, whatever the game's graphics setting: a preview is to be quick and
 /// clear, not the game's picture (no enhanced exposure and glow, no weather effects).
-fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather) -> Lighting {
+fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather, sky: &crate::weather_setup::SkyState) -> Lighting {
     let clock = start_clock(args);
     let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
     let daylight = omsi_sim::Daylight::compute(&clock, envir.as_ref());
-    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, true);
+    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, true, sky);
     l.shadows = daylight.altitude_deg > 2.0;
     l.enhanced = false;
     l.classic = false;
@@ -447,4 +602,42 @@ fn add_floor(renderer: &Renderer, scene: &mut Scene) {
     let mesh = renderer.add_mesh(scene, &data);
     let mat = renderer.add_material(scene, None, omsi_render::AlphaMode::Opaque, [0.12, 0.125, 0.135, 1.0], false);
     renderer.add_instance(scene, mesh, DVec3::new(0.0, 0.0, -0.005), glam::Mat4::IDENTITY, vec![mat]);
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    #[test]
+    fn old_preview_failures_do_not_block_a_new_version() {
+        let dir = std::env::temp_dir().join(format!("openomsi-preview-old-failures-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bus = "Vehicles/test/bus.bus";
+        std::fs::write(dir.join("showroom-skip.txt"), bus).unwrap();
+        std::fs::write(dir.join("showroom-placing.txt"), bus).unwrap();
+        std::fs::write(preview_guard_path(&dir, "skip", "0.1.1"), bus).unwrap();
+        std::fs::write(preview_guard_path(&dir, "placing", "0.1.1"), bus).unwrap();
+
+        assert!(!preview_is_skipped(&dir, "0.1.2", bus));
+        assert!(!preview_guard_path(&dir, "skip", "0.1.2").exists());
+        assert!(preview_guard_path(&dir, "placing", "0.1.1").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unfinished_preview_is_still_blocked_in_the_same_version() {
+        let dir = std::env::temp_dir().join(format!("openomsi-preview-current-failure-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let bus = "Vehicles/test/bus.bus";
+        std::fs::write(preview_guard_path(&dir, "placing", "0.1.1"), bus).unwrap();
+
+        assert!(preview_is_skipped(&dir, "0.1.1", bus));
+        assert!(!preview_guard_path(&dir, "placing", "0.1.1").exists());
+        assert!(preview_is_skipped(&dir, "0.1.1", bus));
+        assert!(!preview_is_skipped(&dir, "0.1.1", "Vehicles/test/other.bus"));
+        assert!(!preview_is_skipped(&dir, "0.1.2", bus));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

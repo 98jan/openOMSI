@@ -2,7 +2,22 @@
 
 use super::*;
 
+/// CPU seconds this process has used so far (all threads): on Windows from the system,
+/// which has no `ps`; elsewhere from `ps`.
+#[cfg(windows)]
+pub(crate) fn process_cpu_seconds() -> Option<f64> {
+    use windows::Win32::Foundation::FILETIME;
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
+    let (mut created, mut exited, mut kernel, mut user) = Default::default();
+    // SAFETY: the pseudo handle of this process needs no closing; the four times are ours
+    unsafe { GetProcessTimes(GetCurrentProcess(), &mut created, &mut exited, &mut kernel, &mut user) }.ok()?;
+    // (in units of 100 ns)
+    let ticks = |t: FILETIME| ((t.dwHighDateTime as u64) << 32 | t.dwLowDateTime as u64) as f64;
+    Some((ticks(kernel) + ticks(user)) / 1e7)
+}
+
 /// CPU seconds this process has used so far (all threads), from `ps`.
+#[cfg(not(windows))]
 pub(crate) fn process_cpu_seconds() -> Option<f64> {
     let out = std::process::Command::new("ps")
         .args(["-o", "cputime=", "-p", &std::process::id().to_string()])
@@ -33,7 +48,15 @@ pub(crate) fn thread_cpu_seconds() -> Option<f64> {
         }
         None
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Threading::{GetCurrentThread, GetThreadTimes};
+        let (mut created, mut exited, mut kernel, mut user) = Default::default();
+        unsafe { GetThreadTimes(GetCurrentThread(), &mut created, &mut exited, &mut kernel, &mut user) }.ok()?;
+        let ticks = |t: windows::Win32::Foundation::FILETIME| ((t.dwHighDateTime as u64) << 32 | t.dwLowDateTime as u64) as f64;
+        Some((ticks(kernel) + ticks(user)) / 1e7)
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         None
     }
@@ -135,28 +158,7 @@ pub(crate) fn own_bindings(root: &Path, modifier: i32) -> std::collections::Hash
         .collect()
 }
 
-pub(crate) fn content_dir() -> Option<PathBuf> {
-    if let Some(d) = omsi_cfg::flags::OMSI_CONTENT.os() {
-        return Some(PathBuf::from(d));
-    }
-    let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?.to_path_buf();
-    // inside an .app bundle the binary sits in Contents/MacOS: use the folder beside the bundle
-    let dir = if dir.ends_with("Contents/MacOS") {
-        dir.parent()?.parent()?.parent()?.to_path_buf()
-    } else {
-        dir
-    };
-    let cand = omsi_cfg::content_folder_of(&dir);
-    if !omsi_cfg::is_programs_folder(&cand) && (cand.exists() || std::fs::create_dir_all(&cand).is_ok()) && omsi_cfg::is_writable(&cand) {
-        Some(cand)
-    } else {
-        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
-        let fallback = PathBuf::from(home).join(".openomsi").join("content");
-        let _ = omsi_cfg::ensure_content_layout(&fallback);
-        Some(fallback)
-    }
-}
+pub(crate) use omsi_cfg::content_dir;
 
 /// Where a save goes when the content folder takes none (`~/.openomsi/content`): a game
 /// unpacked into Program Files, or a folder Windows' controlled folder access guards, said
@@ -279,7 +281,8 @@ fn angle_available() -> bool {
     })
 }
 
-/// The graphics interfaces in the order they are tried: Metal on a Mac; on Windows DirectX
+/// The graphics interfaces in the order they are tried: Metal on a Mac, an iPhone and an
+/// iPad; on Windows DirectX
 /// 12 first (the Windows drivers' best-kept path: on Vulkan they reset the device -
 /// "the graphics device was lost" - far more often), then Vulkan, then OpenGL for a card
 /// without either (a GeForce GT 530), then OpenGL ES on ANGLE over DirectX 11 when its DLLs
@@ -287,7 +290,7 @@ fn angle_available() -> bool {
 /// OMSI_BACKEND=vulkan|dx12|gl|angle puts one first: a driver whose Vulkan misbehaves is
 /// got round.
 pub(crate) fn backend_order() -> Vec<GraphicsApi> {
-    if cfg!(target_os = "macos") {
+    if cfg!(any(target_os = "macos", target_os = "ios")) {
         return vec![GraphicsApi::Native(wgpu::Backends::METAL)];
     }
     let settings = crate::settings::Settings::load();
@@ -331,24 +334,24 @@ fn backend_instance(api: GraphicsApi) -> wgpu::Instance {
     d.backend_options.gl.context_lock_timeout = Some(GL_CONTEXT_LOCK_TIMEOUT);
     d.backends = api.backends();
     if api == GraphicsApi::Angle {
-        d.backend_options.gl.platform = wgpu::GlPlatform::Angle;
+        return omsi_render::angle::instance(d);
     }
     wgpu::Instance::new(d)
 }
 
-/// The renderer for a window: on `instance` if it can, else on the next graphics interface
-/// and adapter that can (`instance` then becomes that one's). Laptops with a GeForce GT or
-/// GTX beside the processor's graphics listed a Vulkan adapter whose device then could not
-/// be opened (an old driver, the switchable graphics), or whose opening took wgpu down: the
-/// game and the launcher ended before their window showed anything. Now each adapter that
-/// can show the window is tried in turn - the card, then the processor's graphics - on
-/// Vulkan, DirectX 12 and OpenGL, and only when none opens is the game given up, saying so.
-pub(crate) fn window_renderer(
-    instance: &mut wgpu::Instance,
-    window: &std::sync::Arc<winit::window::Window>,
+/// The adapters a window's renderer is tried on, in turn: on `instance` if it can, else on
+/// the next graphics interface and adapter that can (`instance` then becomes that one's).
+/// Laptops with a GeForce GT or GTX beside the processor's graphics listed a Vulkan adapter
+/// whose device then could not be opened (an old driver, the switchable graphics), or whose
+/// opening took wgpu down: the game and the launcher ended before their window showed
+/// anything. Now each adapter that can show the window is tried in turn - the card, then the
+/// processor's graphics - on Vulkan, DirectX 12 and OpenGL, and only when none opens is the
+/// game given up, saying so. (Where the last try stands is kept: a renderer whose pipelines
+/// then fail to build is followed by the next adapter.)
+struct Opener {
+    window: std::sync::Arc<winit::window::Window>,
     options: omsi_render::RenderOptions,
-) -> Result<Renderer> {
-    let mut failures: Vec<String> = Vec::new();
+    failures: Vec<String>,
     // The instance made for the settings' interface first, then every interface in turn -
     // each made only when the ones before it could not draw. Made all at once, a Windows
     // machine drawing on DirectX 12 loaded the Vulkan loader and its layers (Optimus,
@@ -359,64 +362,236 @@ pub(crate) fn window_renderer(
     // when no graphics chip opens on any interface: an Intel HD 2500 has no DirectX 12
     // driver, DirectX 12 listed that renderer alone, and the game "started" on it at a
     // frame every few seconds instead of on the chip's OpenGL (#770).
-    let mut made: Vec<(Option<GraphicsApi>, wgpu::Instance)> = vec![(None, instance.clone())];
-    let mut order = backend_order().into_iter();
-    let mut no_surface: Vec<usize> = Vec::new();
-    for software_round in [false, true] {
-        let mut k = 0;
+    made: Vec<(Option<GraphicsApi>, wgpu::Instance)>,
+    order: std::vec::IntoIter<GraphicsApi>,
+    no_surface: Vec<usize>,
+    /// The round (graphics chips, then software renderers) and the instance in it.
+    software_round: bool,
+    k: usize,
+}
+
+impl Opener {
+    fn new(instance: &wgpu::Instance, window: &std::sync::Arc<winit::window::Window>, options: omsi_render::RenderOptions) -> Opener {
+        Opener {
+            window: window.clone(),
+            options,
+            failures: Vec::new(),
+            made: vec![(None, instance.clone())],
+            order: backend_order().into_iter(),
+            no_surface: Vec::new(),
+            software_round: false,
+            k: 0,
+        }
+    }
+
+    /// The next adapter whose graphics device opens, the device, its name and its instance.
+    fn next(&mut self) -> Option<(omsi_render::Opened, String, wgpu::Instance)> {
         loop {
-            if k == made.len() {
-                let Some(b) = order.next() else { break };
-                log::info!("graphics: trying {b:?}");
-                made.push((Some(b), backend_instance(b)));
+            if self.k == self.made.len() {
+                match self.order.next() {
+                    Some(b) => {
+                        log::info!("graphics: trying {b:?}");
+                        self.made.push((Some(b), backend_instance(b)));
+                    }
+                    None if !self.software_round => {
+                        self.software_round = true;
+                        self.k = 0;
+                        continue;
+                    }
+                    None => return None,
+                }
             }
-            let (b, inst) = made[k].clone();
-            k += 1;
-            if no_surface.contains(&(k - 1)) {
+            let (b, inst) = self.made[self.k].clone();
+            if self.no_surface.contains(&self.k) {
+                self.k += 1;
                 continue;
             }
-            let surface = match inst.create_surface(window.clone()) {
+            let surface = match inst.create_surface(self.window.clone()) {
                 Ok(s) => s,
                 Err(e) => {
-                    failures.push(format!("{}: no surface ({e})", b.map(|b| format!("{b:?}")).unwrap_or_else(|| "first choice".into())));
-                    no_surface.push(k - 1);
+                    self.failures.push(format!("{}: no surface ({e})", b.map(|b| format!("{b:?}")).unwrap_or_else(|| "first choice".into())));
+                    self.no_surface.push(self.k);
+                    self.k += 1;
                     continue;
                 }
             };
             for adapter in Renderer::adapters_for(&inst, &surface) {
                 let info = adapter.get_info();
-                if is_software(&info) != software_round {
+                if is_software(&info) != self.software_round {
                     continue;
                 }
                 let what = format!("{} ({:?})", info.name, info.backend);
-                if failures.iter().any(|f| f.starts_with(&what)) {
+                if self.failures.iter().any(|f| f.starts_with(&what)) {
                     continue;
                 }
-                if software_round {
+                if self.software_round {
                     log::warn!("graphics: no graphics chip could be opened; trying the software renderer {what} (a few frames a second at best)");
                 }
-                match omsi_render::catch(|| pollster::block_on(Renderer::new_on(adapter, Some(&surface), None, options))) {
-                    Some(Ok(r)) => {
-                        if !failures.is_empty() {
-                            log::warn!("graphics: drawing on {what}; before it {}", failures.join("; "));
-                        }
-                        drop(surface);
-                        *instance = inst;
-                        return Ok(r);
-                    }
+                match omsi_render::catch(|| pollster::block_on(Renderer::open_on(adapter, Some(&surface), None, self.options))) {
+                    // (the same instance is looked at again after a renderer that then failed
+                    // to build: its next adapter, the failed one being in `failures`)
+                    Some(Ok(o)) => return Some((o, what, inst)),
                     Some(Err(e)) => {
                         log::warn!("graphics: {what} could not be opened: {e:#}");
-                        failures.push(format!("{what}: {e:#}"));
+                        self.failures.push(format!("{what}: {e:#}"));
                     }
                     None => {
                         log::warn!("graphics: {what} failed while being opened");
-                        failures.push(format!("{what}: failed while being opened"));
+                        self.failures.push(format!("{what}: failed while being opened"));
                     }
                 }
             }
+            self.k += 1;
         }
     }
-    Err(anyhow!("no graphics device could be opened ({}); updating the graphics driver usually helps", if failures.is_empty() { "no adapter can show a window".to_string() } else { failures.join("; ") }))
+
+    fn give_up(&self) -> anyhow::Error {
+        anyhow!("no graphics device could be opened ({}); updating the graphics driver usually helps", if self.failures.is_empty() { "no adapter can show a window".to_string() } else { self.failures.join("; ") })
+    }
+}
+
+/// A window's renderer on its way: the graphics device is open, and the window can be drawn
+/// into with it (a first picture, the launcher's interface) while the ~110 pipelines are
+/// built on a worker. They took seconds on the main thread before the first picture - 8 s on
+/// DirectX 12, a phone's first start half a minute - and a window shown meanwhile stood
+/// blank: white where Windows had made it smaller first, a phone's wallpaper behind it.
+pub(crate) struct RendererStart {
+    /// What the window is drawn with meanwhile: the device, its queue, the renderer's format.
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub format: wgpu::TextureFormat,
+    building: Option<std::thread::JoinHandle<Option<Result<Renderer>>>>,
+    built: Option<Result<Renderer>>,
+    what: String,
+    opener: Opener,
+}
+
+/// The stack of the thread the pipelines are built on: the shader translation recurses
+/// deeply on big shaders (the main thread's 1 MB on Windows was not always enough on ANGLE).
+const BUILD_STACK: usize = 32 << 20;
+
+/// The pipelines are what the window waits for: built at the main thread's priority. On
+/// macOS a new thread's default quality of service had Metal's shader compiler serve it
+/// several times slower than the main thread it was built on before (0.7 s became 5-9 s for
+/// the game's renderer, with every shader in Metal's cache).
+fn as_urgent_as_the_main_thread() {
+    #[cfg(target_os = "macos")]
+    {
+        extern "C" {
+            fn pthread_set_qos_class_self_np(qos_class: u32, relative_priority: i32) -> i32;
+        }
+        const QOS_CLASS_USER_INTERACTIVE: u32 = 0x21;
+        // SAFETY: plain call on the current thread with valid constants
+        unsafe {
+            pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+        }
+    }
+}
+
+impl RendererStart {
+    /// The graphics device for `window`, on `instance` or the next interface and adapter that
+    /// can (`instance` then becomes that one's, see `Opener`); its pipelines are
+    /// being built from here on.
+    pub(crate) fn begin(instance: &mut wgpu::Instance, window: &std::sync::Arc<winit::window::Window>, options: omsi_render::RenderOptions) -> Result<RendererStart> {
+        let mut opener = Opener::new(instance, window, options);
+        let Some((opened, what, inst)) = opener.next() else { return Err(opener.give_up()) };
+        *instance = inst;
+        let (device, queue, format) = (opened.device().clone(), opened.queue().clone(), opened.format());
+        let mut start = RendererStart { device, queue, format, building: None, built: None, what, opener };
+        // ANGLE's window takes its sRGB pictures encoded by the renderer (`SrgbEncode`), and
+        // its pipelines are compiled on a thread of its own already: built on the spot.
+        let angle = opened.adapter_info().backend == wgpu::Backend::Gl && opened.adapter_info().name.contains("ANGLE");
+        if angle {
+            start.built = Some(omsi_render::catch(|| pollster::block_on(opened.finish())).unwrap_or_else(|| Err(anyhow!("failed while its pipelines were built"))));
+            return Ok(start);
+        }
+        let spawned = std::thread::Builder::new().name("renderer pipelines".into()).stack_size(BUILD_STACK).spawn(move || {
+            as_urgent_as_the_main_thread();
+            omsi_render::catch(|| pollster::block_on(opened.finish()))
+        });
+        match spawned {
+            Ok(h) => start.building = Some(h),
+            Err(e) => start.built = Some(Err(anyhow!("no thread for the pipelines: {e}"))),
+        }
+        Ok(start)
+    }
+
+    /// Whether the window can be drawn into before the renderer is there (not on ANGLE).
+    pub(crate) fn early(&self) -> bool {
+        self.building.is_some()
+    }
+
+    /// The pipelines are built (or their build failed): `wait` returns at once.
+    pub(crate) fn is_done(&self) -> bool {
+        self.building.as_ref().is_none_or(|h| h.is_finished())
+    }
+
+    /// Let go of the renderer being built: waits for its pipelines and drops it (on a thread
+    /// that may wait, see the launcher's rest while a game runs).
+    pub(crate) fn abandon(mut self) {
+        if let Some(h) = self.building.take() {
+            let _ = h.join();
+        }
+    }
+
+    /// The renderer, once its pipelines are built. A build that failed is followed by the
+    /// next adapter and interface, as before (on this thread: the
+    /// window keeps the picture it has meanwhile); its renderer is then on another device
+    /// than `device`.
+    pub(crate) fn wait(mut self, instance: &mut wgpu::Instance) -> Result<Renderer> {
+        let mut built = match (self.built.take(), self.building.take()) {
+            (Some(b), _) => b,
+            (None, Some(h)) => h.join().ok().flatten().unwrap_or_else(|| Err(anyhow!("failed while its pipelines were built"))),
+            (None, None) => Err(anyhow!("renderer pipelines: not built")),
+        };
+        loop {
+            match built {
+                Ok(r) => {
+                    if !self.opener.failures.is_empty() {
+                        log::warn!("graphics: drawing on {}; before it {}", self.what, self.opener.failures.join("; "));
+                    }
+                    return Ok(r);
+                }
+                Err(e) => {
+                    log::warn!("graphics: {} could not be opened: {e:#}", self.what);
+                    self.opener.failures.push(format!("{}: {e:#}", self.what));
+                }
+            }
+            let Some((opened, what, inst)) = self.opener.next() else { return Err(self.opener.give_up()) };
+            *instance = inst;
+            self.what = what;
+            built = omsi_render::catch(|| pollster::block_on(opened.finish())).unwrap_or_else(|| Err(anyhow!("failed while its pipelines were built")));
+        }
+    }
+}
+
+/// The colour a window shows before it has anything else to show: the launcher's background
+/// and the game's loading screen (linear, as the sRGB window takes it).
+pub(crate) const WINDOW_BACKGROUND: wgpu::Color = wgpu::Color { r: 0.0056, g: 0.0056, b: 0.0056, a: 1.0 };
+
+/// A picture of `color` alone into `surface`, shown (no pipeline needed: a clear). False when
+/// the window gave no picture to draw into (hidden, covered, being resized).
+pub(crate) fn present_clear(surface: &mut SurfaceState<'_>, device: &wgpu::Device, queue: &wgpu::Queue, window: &winit::window::Window, color: wgpu::Color) -> bool {
+    let frame = match surface.acquire() {
+        wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+        wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+            let size = window.inner_size();
+            surface.resize_on(device, size.width, size.height);
+            return false;
+        }
+        _ => return false,
+    };
+    let view = frame.texture.create_view(&Default::default());
+    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("first picture") });
+    drop(enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("first picture"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(color), store: wgpu::StoreOp::Store } })],
+        ..Default::default()
+    }));
+    queue.submit([enc.finish()]);
+    window.pre_present_notify();
+    frame.present();
+    true
 }
 
 /// Tell the player why the game cannot go on, also where there is no window yet (a message
@@ -436,12 +611,9 @@ pub(crate) fn fatal_message(text: &str) {
     }
 }
 
-/// The commit this binary was built from (see `build.rs`), so a log or a screenshot says
-/// which version is running.
-pub const BUILD: &str = env!("OMSI_BUILD");
-
-/// The release version, `MAJOR.MINOR.COMMIT` (see `build.rs` and docs/VERSIONING.md).
-pub const VERSION: &str = env!("OPENOMSI_VERSION");
+/// The commit this binary was built from, so a log or a screenshot says which version is
+/// running, and the release version (both stamped by omsi-platform's `build.rs`).
+pub use omsi_platform::{BUILD, VERSION};
 
 /// A window of `w` x `h` points made to fit the screen it opens on, and placed in its
 /// middle: 1600 x 900 points at 125 % are 2000 x 1125 pixels, wider than a 1920 screen, and
@@ -501,24 +673,21 @@ pub(crate) fn window_icon() -> Option<winit::window::Icon> {
     winit::window::Icon::from_rgba(img.into_raw(), w, h).ok()
 }
 
-/// Enhanced graphics wanted (from the settings, `--enhanced`, or OMSI_ENHANCED=1).
-pub(crate) static ENHANCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Enhanced+ (ray tracing) asked for by `--enhanced-plus` or OMSI_ENHANCED_PLUS=1 whatever
-/// the settings say (see `Settings::render_options`).
+/// the settings say (see `Settings::render_options`). These settings statics are set again
+/// by every session start (`make_app`) and read deep in loading and sound code that has no
+/// App to ask.
 pub(crate) static ENHANCED_PLUS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// Vanilla graphics: the picture as OMSI 2 draws it (no Vanilla+ extras, see
-/// `omsi_render::Lighting::classic`).
-pub(crate) static CLASSIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Volume of the AI vehicles and of the scenery's own sounds (OMSI's `sound_ai` and
 /// `sound_scenery`), as the bits of an f32.
 pub(crate) static SOUND_AI: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000);
-pub(crate) static SOUND_SCENERY: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000);
+// (the scenery's volume, the graphics' kind and the mirrors' size: the scene's, see `scene::host`)
+pub(crate) use crate::scene::host::{sound_gain, CLASSIC, ENHANCED, MIRROR_SIZE, SOUND_SCENERY};
 
-/// Edge of a mirror's picture (the `mirror_size` setting, OMSI's reflTexSize).
-pub(crate) static MIRROR_SIZE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(256);
-
-pub(crate) fn sound_gain(which: &std::sync::atomic::AtomicU32) -> f32 {
-    f32::from_bits(which.load(std::sync::atomic::Ordering::Relaxed))
+/// The game's settings a world reads as it opens (see `scene::host::OpenSettings`), from the
+/// settings file at that moment.
+pub(crate) fn install_scene_settings() {
+    crate::scene::host::install_open_settings(|| crate::scene::host::OpenSettings { max_parked: crate::settings::Settings::load().ai_max_parked as i64 });
 }
 
 /// The `clouds` setting: clouds in the sky (off: a clear sky whatever the weather says).
@@ -549,16 +718,28 @@ pub(crate) fn restart_with_allocator_settings() {
 }
 
 /// A Windows GUI program has no console; when it was started from one (cmd, PowerShell)
-/// the log and --help still belong there.
+/// the log and --help still belong there, unless its output was sent to a file or a pipe
+/// (`openomsi.exe ... > game.log 2>&1`): attached, the log went to the console instead and
+/// the file stayed empty.
 #[cfg(windows)]
 pub(crate) fn attach_parent_console() {
     extern "system" {
         fn AttachConsole(process: u32) -> i32;
+        fn GetStdHandle(which: u32) -> isize;
+        fn GetFileType(file: isize) -> u32;
     }
     const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
-    // fails harmlessly when there is no parent console (a double click, the launcher, whose
-    // redirected log file stays the output)
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    const FILE_TYPE_DISK: u32 = 1;
+    const FILE_TYPE_PIPE: u32 = 3;
+    // AttachConsole fails harmlessly when there is no parent console (a double click, the
+    // launcher, whose redirected log file stays the output)
+    // SAFETY: plain Win32 calls on this process's own standard handle
     unsafe {
+        let err = GetStdHandle(STD_ERROR_HANDLE);
+        if err != 0 && err != -1 && matches!(GetFileType(err), FILE_TYPE_DISK | FILE_TYPE_PIPE) {
+            return;
+        }
         AttachConsole(ATTACH_PARENT_PROCESS);
     }
 }
@@ -603,5 +784,22 @@ mod window_tests {
         // a big screen keeps the size asked for
         let ((w, h), _) = super::fit_rect((1600.0, 900.0), (3840.0, 2160.0), 1.5);
         assert_eq!((w, h), (1600.0, 900.0));
+    }
+}
+
+#[cfg(all(test, windows))]
+mod cpu_time_tests {
+    /// OMSI_PROFILE's CPU time is read on Windows, which has no `ps` (whose whole seconds
+    /// elsewhere would not show 200 ms).
+    #[test]
+    fn the_process_cpu_time_is_read_and_grows() {
+        let before = super::process_cpu_seconds().expect("CPU time");
+        let t = std::time::Instant::now();
+        let mut x = 0u64;
+        while t.elapsed().as_millis() < 200 {
+            x = std::hint::black_box(x.wrapping_mul(6364136223846793005).wrapping_add(1));
+        }
+        let after = super::process_cpu_seconds().expect("CPU time");
+        assert!(after > before, "{before} -> {after}");
     }
 }

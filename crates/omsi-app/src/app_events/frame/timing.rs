@@ -20,7 +20,7 @@ impl App {
         // OMSI's autosave of the last situation: every five minutes of play
         if !self.paused && self.player.is_some() && self.clock.run_time - self.session.autosave_t >= 300.0 {
             self.session.autosave_t = self.clock.run_time;
-            self.save_last_situation();
+            self.autosave_last_situation();
         }
         // the time of day a script set last frame (the nearer way round the clock)
         // (not with the real-time sync on: the clock stays the device's)
@@ -68,8 +68,14 @@ impl App {
         let now = Instant::now();
         let raw_dt = (now - self.last).as_secs_f32();
         self.log_frame(raw_dt);
+        let draws = self.renderer.as_mut().map_or((0, 0), |r| std::mem::take(&mut r.frame_draws));
+        if self.settings.perf_overlay_on() {
+            self.perf.overlay.sample(raw_dt, &self.perf.profile, draws);
+        } else if self.perf.overlay.started() {
+            self.perf.overlay.reset();
+        }
         let profiling = omsi_cfg::flags::OMSI_PROFILE.is_set();
-        if profiling && self.perf.cpu_mark.is_some() && self.perf.frame_times.len() < crate::perf_report::MAX_FRAMES {
+        if profiling && self.perf.profile_mark.is_some() && self.perf.frame_times.len() < crate::perf_report::MAX_FRAMES {
             self.perf.frame_times.push(raw_dt);
         }
         let waited: f64 = ["acquire", "present", "gpu"].iter()
@@ -132,7 +138,17 @@ impl App {
                     && !omsi_cfg::flags::OMSI_FIXED_SCALE.is_set();
                 if let (Some(r), true) = (self.renderer.as_mut(), free) {
                     let s = r.dynamic_scale();
-                    let step = render_scale_step(fps, wait_share);
+                    let mut step = render_scale_step(fps, wait_share);
+                    // (up only after two readings in a row ask for it, 10 s: a step down
+                    // takes the wait for the card away, and the next reading alone asked
+                    // to go up again - a step up and down every 10 s, each one new targets
+                    // and a full upload of the instances, a stutter every time)
+                    static UP_READINGS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+                    let ups = if step > 0.0 { UP_READINGS.load(std::sync::atomic::Ordering::Relaxed).saturating_add(1) } else { 0 };
+                    if step > 0.0 && ups < 2 {
+                        step = 0.0;
+                    }
+                    UP_READINGS.store(if step > 0.0 { 0 } else { ups }, std::sync::atomic::Ordering::Relaxed);
                     r.set_dynamic_scale(s + step);
                     if (r.dynamic_scale() - s).abs() > 1e-3 {
                         log::info!("frame rate {fps:.0} fps (presentation wait {:.0}%): the 3D picture is drawn at {:.0} % of the window now", wait_share * 100.0, r.dynamic_scale() * 100.0);
@@ -196,9 +212,9 @@ impl App {
                 hud.update(r, scene, &lines);
                 if let wgpu::CurrentSurfaceTexture::Success(frame)
                 | wgpu::CurrentSurfaceTexture::Suboptimal(frame) =
-                    s.surface.get_current_texture()
+                    s.acquire()
                 {
-                    let view = frame.texture.create_view(&Default::default());
+                    let view = s.view(&r.device, &frame);
                     let cam = Camera {
                         position: DVec3::ZERO,
                         yaw: 0.0,
@@ -221,7 +237,7 @@ impl App {
                         &lighting,
                     );
                     win.pre_present_notify();
-                    frame.present();
+                    s.present(&r.device, &r.queue, frame);
                 }
             }
             return false;

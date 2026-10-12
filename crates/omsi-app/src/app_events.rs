@@ -31,6 +31,35 @@ fn vr_mirror_updates(budget: &mut f32, dt: f32, rate: f32, mirrors: usize) -> us
     updates
 }
 
+/// The window's mirror redraws this frame, `rate` pictures a second (at least `min_rate`)
+/// and at most `most` a frame: a steady count. With the credit spent as it came, frames
+/// drew 0, 1 or 2 mirrors (each a few milliseconds) as the frame times wobbled, and two
+/// after a slow frame. Now the count follows the frame time averaged over half a second:
+/// as many a frame as the rate asks for (rounded, every frame alike), or with fewer than
+/// one a frame due, one every so many frames, the fraction carried on and never two at
+/// once. `avg_dt`: the average kept between frames (0 at first).
+fn mirror_updates(budget: &mut f32, avg_dt: &mut f32, dt: f32, rate: f32, min_rate: f32, most: usize) -> usize {
+    let dt = dt.clamp(0.0, 0.1);
+    *avg_dt = if *avg_dt <= 0.0 { dt } else { *avg_dt + (dt - *avg_dt) * (dt / 0.5).min(1.0) };
+    let per_frame = rate.max(0.0) * *avg_dt;
+    if most == 0 || per_frame <= 0.0 {
+        *budget = 0.0;
+        return 0;
+    }
+    if per_frame >= 1.0 {
+        *budget = 0.0;
+        let least = (min_rate.min(rate) * *avg_dt - 0.05).ceil().max(1.0) as usize;
+        return (per_frame.round() as usize).max(least).clamp(1, most);
+    }
+    *budget = (*budget + per_frame).min(1.0 + per_frame);
+    if *budget >= 1.0 {
+        *budget -= 1.0;
+        1
+    } else {
+        0
+    }
+}
+
 fn render_scale_step(fps: f32, slow_frame_wait_share: f32) -> f32 {
     // (three levels, far apart, and a wide band between going down and up again: every
     // step makes the picture's targets anew - hundreds of MB with MSAA and HDR - and a
@@ -49,6 +78,9 @@ use super::*;
 
 mod frame;
 pub(crate) use frame::steps;
+pub(crate) use frame::stages::WINDOW_FRAME;
+#[cfg(test)]
+pub(crate) use frame::stages::WindowStage;
 
 /// How fast a stick turns the head, fully pushed (degrees a second, see `Analog::look`).
 const LOOK_STICK_DEG_S: f32 = 120.0;
@@ -124,6 +156,9 @@ impl ApplicationHandler for App {
             // back count only when pressed anew)
             WindowEvent::KeyboardInput { is_synthetic, ref event, .. } if self.input.input_away || (is_synthetic && event.state == ElementState::Pressed) => {}
             WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } if self.input.input_away => {}
+            // a background test window driven by an input script takes no real mouse (the
+            // person at the computer moving theirs over it clicked through the test)
+            WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } | WindowEvent::CursorMoved { .. } if scripted_window() => {}
             WindowEvent::ModifiersChanged(modifiers) => {
                 for code in input_script::release_inactive_modifiers(&mut self.input.keys, modifiers.state()) {
                     self.on_key(event_loop, code, false, false);
@@ -139,7 +174,11 @@ impl ApplicationHandler for App {
                 // releases go on, so that nothing held stays held)
                 if event.state == ElementState::Pressed {
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        if self.plugin_typing_key(code, event.text.as_deref()) {
+                        if self.plugin_typing_key(code, event.text.as_deref()) || self.devtools_typing(code, event.text.as_deref()) {
+                            return;
+                        }
+                        // the game's panels: the field typed into, Esc closing the one on top
+                        if self.game_panel_key(code, event.text.as_deref()) {
                             return;
                         }
                     }
@@ -249,6 +288,8 @@ impl ApplicationHandler for App {
                 }
                 self.input.mouse_look = state == ElementState::Pressed;
                 self.input.mmb_held = state == ElementState::Pressed;
+                self.sync_look_hold();
+                self.sync_mouse_grab();
                 self.update_hover();
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -296,6 +337,11 @@ impl ApplicationHandler for App {
                     self.plugin_click(state == ElementState::Pressed);
                     return;
                 }
+                self.alt_tap_spoilt();
+                // ... and the game's own panels' (the quick menu, the forms, the editor)
+                if self.game_panel_click(state == ElementState::Pressed) {
+                    return;
+                }
                 if self.input.touch.enabled {
                     let p = glam::Vec2::new(self.input.cursor.0, self.input.cursor.1);
                     if state == ElementState::Pressed {
@@ -316,6 +362,7 @@ impl ApplicationHandler for App {
                     if !pressed && self.input.both_drag.is_some() && !(self.input.buttons_held.1 && self.right_zooms()) {
                         self.input.both_drag = None;
                         self.input.mouse_look = self.input.buttons_held.1;
+                        self.sync_look_hold();
                         self.update_hover();
                     }
                     self.left_button(event_loop, pressed);
@@ -323,7 +370,12 @@ impl ApplicationHandler for App {
             }
             // a finger (a phone; see touch.rs)
             WindowEvent::Touch(t) => self.on_touch(event_loop, t),
-            WindowEvent::RedrawRequested => self.frame(event_loop),
+            // (while the renderer is still being built, the window's start goes on instead)
+            WindowEvent::RedrawRequested => {
+                if !self.drive_window_start(event_loop) {
+                    self.frame(event_loop);
+                }
+            }
             _ => {}
         }
     }
@@ -340,8 +392,16 @@ impl ApplicationHandler for App {
             }
         }
         if let DeviceEvent::MouseMotion { delta } = event {
+            if scripted_window() {
+                return;
+            }
             if self.xr.vr_nav_edit.is_some() {
                 if self.input.window_focused { self.vr_nav_drag(delta.0 as f32, delta.1 as f32); }
+                return;
+            }
+            // (the cursor locked for looking round: the mouse's own movement turns the view
+            // of the bus and the photo camera, in points on macOS - logical pixels)
+            if self.input.window_focused && self.look_raw(delta.0 as f32, delta.1 as f32) {
                 return;
             }
             // (in a view of the bus the cursor's own way turns it: move_cursor)
@@ -379,6 +439,12 @@ impl ApplicationHandler for App {
             return;
         }
         crate::game_lists::flush_settings(false);
+        // The window hidden until its first picture goes on from here: Windows sends no paint
+        // message to a hidden window, so a redraw asked for never came and it was never shown.
+        if self.starts_hidden() {
+            self.drive_window_start(event_loop);
+            return;
+        }
         if let Some(w) = &self.window {
             w.request_redraw();
         }
@@ -429,7 +495,19 @@ impl App {
 
     /// The mouse wheel (or a pinch of two fingers): `amount` notches, up positive.
     pub(crate) fn wheel(&mut self, amount: f32) {
+        // the photo mode: the lens zooms, or its panel scrolls under the mouse
+        if self.photo_on() {
+            if self.shell.over_ui {
+                self.shell.wheel(amount);
+            } else if let Some(ph) = self.photo.as_mut() {
+                ph.zoom(amount);
+            }
+            return;
+        }
         if self.xr.vr_nav_edit.is_some() { self.vr_nav_scroll(amount); return; }
+        if self.devtools_wheel(amount) {
+            return;
+        }
         // over a mirror panel the wheel resizes it (Shift: wider or narrower)
         if let Some(size) = self.mirror_hud_size() {
             let shift =
@@ -525,6 +603,24 @@ impl App {
     /// The left mouse button (or a finger's tap) where the cursor is.
     pub(crate) fn left_button(&mut self, event_loop: &ActiveEventLoop, pressed: bool) {
         if let Some(edit) = self.xr.vr_nav_edit.as_mut() { edit.moving = pressed; return; }
+        // the pause menu (and the photo mode) of the launcher's toolkit take the clicks
+        if self.shell_takes_mouse() {
+            if pressed {
+                self.menus.menu_kbd = false;
+            }
+            self.shell.button(pressed);
+            // (the left button dragged over the photo turns the photo camera)
+            let over = self.shell.over_ui;
+            if let Some(ph) = self.photo.as_mut() {
+                ph.looking = pressed && !over;
+            }
+            self.sync_look_hold();
+            return;
+        }
+        // the developer tools' panel takes the clicks on it
+        if self.devtools_click(pressed) {
+            return;
+        }
         // a mirror panel is dragged with the left button (a release always ends a drag)
         if let Some(size) = self
             .mirror_hud_size()
@@ -713,40 +809,27 @@ impl App {
 
 /// OMSI's timetable window: the current trip's stops with their times, the ones served
 /// greyed, the next one marked.
-fn timetable_rows(duty: Option<&crate::schedule::PlayerDuty>, delay: Option<f64>) -> Option<(String, Vec<(String, String, u8)>)> {
+fn timetable_rows(duty: Option<&crate::schedule::PlayerDuty>, delay: Option<f64>) -> Option<crate::ui::TimetableView> {
     let d = duty?;
     let trip = d.trips.get(d.trip_index)?;
     let hm = |t: f64| format!("{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64);
-    let delay = delay.unwrap_or(0.0);
-    let title = format!(
-        "{} › {}   {}{}:{:02}   ({}/{})",
-        if trip.line.trim().is_empty() { d.line.trim() } else { trip.line.trim() },
-        trip.terminus.trim(),
-        if delay < 0.0 { "−" } else { "+" },
-        (delay.abs() / 60.0) as i64,
-        (delay.abs() % 60.0) as i64,
-        d.trip_index + 1,
-        d.trips.len()
-    );
-    // (as a driver's paper timetable: the departure, the arrival at the last stop; a stop
-    // with a wait shows both)
-    let last = trip.stops.iter().rposition(|s| s.stops);
-    let mut rows: Vec<(String, String, u8)> = trip
-        .stops
+    let line = if trip.line.trim().is_empty() { d.line.trim() } else { trip.line.trim() };
+    let meta = format!("{} {}  -  {} {}/{}", omsi_ui::tr("Tour"), d.tour.trim(), omsi_ui::tr("Trip"), d.trip_index + 1, d.trips.len());
+    // (the first stop is left, the last arrived at; the others both, as the launcher's trips)
+    let stops: Vec<(usize, &_)> = trip.stops.iter().enumerate().filter(|(_, s)| s.stops).collect();
+    let (first, last) = (stops.first().map(|s| s.0), stops.last().map(|s| s.0));
+    let rows = stops
         .iter()
-        .enumerate()
-        .filter(|(_, s)| s.stops)
-        .map(|(k, s)| {
-            let time = if Some(k) == last { hm(s.arr) } else if s.dep - s.arr >= 60.0 { format!("{}-{}", hm(s.arr), &hm(s.dep)[3..]) } else { hm(s.dep) };
-            (s.name.trim().to_string(), time, if k < d.next_stop { 0 } else if k == d.next_stop { 1 } else { 2 })
+        .map(|&(k, s)| crate::ui::TimetableRow {
+            name: s.name.trim().to_string(),
+            arr: if Some(k) == first { String::new() } else { hm(s.arr) },
+            dep: if Some(k) == last { String::new() } else { hm(s.dep) },
+            state: if k < d.next_stop { 0 } else if k == d.next_stop { 1 } else { 2 },
         })
         .collect();
     // the trip after this one
-    if let Some(next) = d.trips.get(d.trip_index + 1) {
-        let name = format!("› {} {}", if next.line.trim().is_empty() { d.line.trim() } else { next.line.trim() }, next.terminus.trim());
-        rows.push((name, hm(next.departure), 0));
-    }
-    Some((title, rows))
+    let next = d.trips.get(d.trip_index + 1).map(|n| (format!("{} {}", if n.line.trim().is_empty() { d.line.trim() } else { n.line.trim() }, n.terminus.trim()), hm(n.departure)));
+    Some(crate::ui::TimetableView { line: line.to_string(), terminus: trip.terminus.trim().to_string(), meta, delay: delay.unwrap_or(0.0), rows, next })
 }
 
 /// The outside air from the weather and the cabin air the vehicle scripts/engine maintain.
@@ -793,7 +876,7 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
                     parts.push(format!("next: {}", s.name.trim()));
                 }
                 let delay = p.vehicle.host.tt_delay;
-                parts.push(format!("{}{}:{:02}", if delay < 0.0 { "−" } else { "+" }, (delay.abs() / 60.0) as i64, (delay.abs() % 60.0) as i64));
+                parts.push(format!("{}{}:{:02}", if delay < 0.0 { "-" } else { "+" }, (delay.abs() / 60.0) as i64, (delay.abs() % 60.0) as i64));
             }
         }
     }
@@ -881,7 +964,36 @@ mod info_tests {
 
 #[cfg(test)]
 mod vr_mirror_tests {
-    use super::vr_mirror_updates;
+    use super::{mirror_updates, vr_mirror_updates};
+
+    /// The window's mirrors: the same count every frame once the frame time has settled,
+    /// never two after a slow frame below one a frame, and the rate kept.
+    #[test]
+    fn window_mirrors_take_a_steady_count() {
+        for (fps, rate, want) in [(140.0f32, 75.0f32, None), (60.0, 75.0, Some(1)), (30.0, 75.0, Some(2)), (240.0, 75.0, None)] {
+            let (mut budget, mut avg) = (1.0, 0.0);
+            let mut total = 0;
+            for n in 0..(fps as usize * 4) {
+                // (frame times wobbling by a tenth)
+                let dt = (1.0 + if n % 3 == 0 { 0.1 } else { -0.05 }) / fps;
+                let k = mirror_updates(&mut budget, &mut avg, dt, rate, 40.0, 2);
+                assert!(k <= 1 || want == Some(2), "fps {fps}: {k}");
+                if let Some(w) = want.filter(|_| n > fps as usize) {
+                    assert_eq!(k, w, "fps {fps} frame {n}");
+                }
+                total += k;
+            }
+            let per_s = total as f32 / 4.0;
+            assert!(per_s >= 40.0 && per_s <= rate.max(fps) + 1.0, "fps {fps}: {per_s} a second");
+            if fps > rate {
+                assert!((per_s - rate).abs() < 2.0, "fps {fps}: {per_s} a second");
+            }
+        }
+        // a slow frame below one a frame: one mirror, not a burst
+        let (mut budget, mut avg) = (0.0, 1.0 / 140.0);
+        assert!(mirror_updates(&mut budget, &mut avg, 0.1, 75.0, 40.0, 2) <= 2);
+        assert_eq!(mirror_updates(&mut budget, &mut avg, 0.0, 0.0, 40.0, 2), 0);
+    }
 
     #[test]
     fn every_frame_updates_all_mirrors_even_at_low_game_fps() {
@@ -918,4 +1030,10 @@ mod vr_mirror_tests {
         assert_eq!(vr_mirror_updates(&mut budget, 0.1, 360.0, 0), 0);
         assert_eq!(budget, 0.0);
     }
+}
+
+/// A test window in the background driven by an input script (`OMSI_BACKGROUND` with
+/// `OMSI_INPUT`): its mouse is the script's alone.
+fn scripted_window() -> bool {
+    omsi_cfg::flags::OMSI_BACKGROUND.is_set() && omsi_cfg::flags::OMSI_INPUT.var().is_some()
 }

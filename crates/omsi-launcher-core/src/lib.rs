@@ -36,8 +36,14 @@ fn home() -> PathBuf {
 }
 
 pub fn data_dir() -> PathBuf {
+    // (made once: asked for dozens of times a second - the launcher's frames, its polls - and
+    // made each time, two system calls for a folder that was there)
+    static MADE: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
     let d = home().join(".openomsi");
-    let _ = std::fs::create_dir_all(&d);
+    let mut made = MADE.lock().unwrap_or_else(|e| e.into_inner());
+    if made.as_ref() != Some(&d) && std::fs::create_dir_all(&d).is_ok() {
+        *made = Some(d.clone());
+    }
     d
 }
 
@@ -161,7 +167,7 @@ pub fn omsi_options(root: &Path) -> Option<OmsiOptions> {
     let mut v = json!({});
     let num = |k: &str| o.str(k).and_then(|x| x.trim().replace(',', ".").parse::<f64>().ok()).filter(|x| x.is_finite());
     // (not on a phone: the PC's OMSI caps at 30, and a phone played at 30 frames)
-    if let Some(x) = num("maxfps").filter(|_| !cfg!(target_os = "android")) {
+    if let Some(x) = num("maxfps").filter(|_| !cfg!(any(target_os = "android", target_os = "ios"))) {
         v["max_fps"] = json!(x.max(0.0) as i64);
     }
     if let Some(x) = num("performance_minobjsize") {
@@ -234,6 +240,65 @@ pub fn save_config(c: &Config) -> Result<()> {
     // the launcher was restarted, however often it was chosen and saved again
     *FOUND.lock().unwrap_or_else(|e| e.into_inner()) = None;
     Ok(())
+}
+
+/// The OMSI 2 folder the launcher works with (configured or found).
+pub fn root_dir() -> Result<PathBuf> {
+    root()
+}
+
+/// The game program a duty is started with (see `find_game`).
+pub fn game_binary() -> Option<PathBuf> {
+    find_game(&load_config().game)
+}
+
+/// Where a content path (`maps/Grundorf/picture.jpg`) is: the content folder and the
+/// archives first, then the OMSI 2 folder.
+pub fn content_path(rel: &str) -> Result<PathBuf> {
+    resolve_content(rel)
+}
+
+/// The depot file a bus uses on `map` on `date`: the one the map's own buses use that day
+/// (the chrono scenarios change it: Berlin's 1994 depot has line 137 where 1986's had 92),
+/// one of the bus's carrying the line driven, the bus's own of that name or one named like
+/// the map, else the bus's first (#896).
+pub fn default_hof(map: Option<&MapInfo>, bus: Option<&VehicleInfo>, date: &str, line: Option<&str>) -> String {
+    let on_date = map.and_then(|m| {
+        let dir = resolve_content(&m.file).ok()?;
+        omsi_map::ailists::depot_hof_on(dir.parent()?, omsi_map::ailists::date_code(date)?)
+    });
+    let want = on_date.or_else(|| map.map(|m| m.hof.clone())).unwrap_or_default();
+    let Some(v) = bus else { return want };
+    let names: Vec<&str> = v.hofs.iter().map(|h| h.as_str()).collect();
+    let like = |hints: &[&str]| omsi_vehicle::hof::closest_name(&names, hints).map(|i| v.hofs[i].clone());
+    let map_hints: Vec<String> = map.map(|m| vec![m.name.clone(), m.friendly.clone(), m.file.trim_end_matches("/global.cfg").rsplit('/').next().unwrap_or("").to_string()]).unwrap_or_default();
+    let map_hints: Vec<&str> = map_hints.iter().map(|h| h.as_str()).collect();
+    let with_line = match (line, root()) {
+        (Some(line), Ok(r)) => depot_names_with_line(&r, &v.file, line),
+        _ => Vec::new(),
+    };
+    // (not over the map's own depot borrowed from elsewhere when it carries the line: a bus
+    // without it took a depot of its folder that had a line of the same number - the map's was
+    // no longer given to a bus that lacks it, #1837)
+    let map_depot_has_line = match (line, want.is_empty()) {
+        (Some(line), false) => depot_has_line(&want, line) == Some(true),
+        _ => false,
+    };
+    if !with_line.is_empty() && !map_depot_has_line && !with_line.iter().any(|h| h.eq_ignore_ascii_case(&want)) {
+        let names: Vec<&str> = with_line.iter().map(|h| h.as_str()).collect();
+        let hints: Vec<&str> = std::iter::once(want.as_str()).chain(map_hints.iter().copied()).collect();
+        let pick = omsi_vehicle::hof::closest_name(&names, &hints).unwrap_or(0);
+        return with_line[pick].clone();
+    }
+    v.hofs
+        .iter()
+        .find(|h| h.eq_ignore_ascii_case(&want))
+        .cloned()
+        .or_else(|| like(&[want.as_str()]))
+        .or(Some(want.clone()).filter(|w| !w.is_empty()))
+        .or_else(|| like(&map_hints))
+        .or_else(|| v.hofs.first().cloned())
+        .unwrap_or_default()
 }
 
 fn root() -> Result<PathBuf> {
@@ -648,7 +713,9 @@ pub fn poll() -> Result<Poll> {
     let content = content_dir();
     let started = content.as_deref().map(watch_inbox).unwrap_or_default();
     let stamp = index::content_stamp(&bases(), content.as_ref().map(|c| c.join("Mods")).as_deref());
-    Ok(Poll { stamp, jobs: install::jobs(), instances: instances::list(), started })
+    // (only the games still running: an ended one stays listed a while for its log, not as running)
+    let running = instances::list().into_iter().filter(|i| i.running).collect();
+    Ok(Poll { stamp, jobs: install::jobs(), instances: running, started })
 }
 
 // ---------------------------------------------------------------------------------------
@@ -926,6 +993,21 @@ pub fn depot_names_with_line(root: &Path, bus: &str, line: &str) -> Vec<String> 
     found
 }
 
+/// Whether the depot file called `name`, wherever it is installed (the bus's own folder,
+/// another bus's, the shared `HOFs/`), carries line `line`; None when there is no such file.
+/// Read once per name and line.
+pub fn depot_has_line(name: &str, line: &str) -> Option<bool> {
+    type Cache = std::collections::HashMap<(String, String), Option<bool>>;
+    static CACHE: std::sync::LazyLock<std::sync::Mutex<Cache>> = std::sync::LazyLock::new(Default::default);
+    let key = (name.trim().to_ascii_lowercase(), line.to_string());
+    if let Some(v) = CACHE.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return *v;
+    }
+    let found = omsi_vehicle::hof::depot_anywhere(name).map(|h| h.has_line(line));
+    CACHE.lock().unwrap_or_else(|e| e.into_inner()).insert(key, found);
+    found
+}
+
 /// The buses, as `list_vehicles`, with `progress` told after every few folders what they
 /// held, how many folders are done and how many there are: a big installation's first
 /// reading (thousands of vehicle folders, nothing in the cache yet) takes minutes, and the
@@ -1064,7 +1146,7 @@ fn read_vehicle_folder(folder: &str, dirs: &[PathBuf], lang: &str) -> (Vec<Vehic
         if !missing_packs.is_empty() {
             log_line(&format!("vehicles: {} borrows parts from packs that are not installed: {}", f.display(), missing_packs.join(", ")));
         }
-        out.push(VehicleInfo { name: if name.is_empty() { stem.clone() } else { name }, manufacturer: v.manufacturer.trim().to_string(), type_name: v.type_name.trim().to_string(), file: rel, folder: folder.to_string(), description, default_paint: v.default_paint.trim().to_string(), paints, hofs, installed: in_content(f), missing_packs, numbers: v.numbers_with_plates() });
+        out.push(VehicleInfo { name: if name.is_empty() { stem.clone() } else { name }, manufacturer: v.manufacturer.trim().to_string(), type_name: v.type_name.trim().to_string(), file: rel, folder: folder.to_string(), description, default_paint: v.default_paint.trim().to_string(), paints, hofs, installed: in_content(f), missing_packs, numbers: v.numbers_with_plates().to_vec() });
     }
     deps.sort();
     deps.dedup();
@@ -1087,6 +1169,10 @@ pub struct WeatherInfo {
     pub installed: bool,
 }
 
+pub use omsi_content::weather_choice::metar_airports;
+mod airports;
+pub use airports::nearest_airport;
+
 pub fn list_weather() -> Result<Vec<WeatherInfo>> {
     root()?;
     let mut out = Vec::new();
@@ -1098,18 +1184,38 @@ pub fn list_weather() -> Result<Vec<WeatherInfo>> {
         // the description in the settings' language lives in `<name>_ENG.dsc`
         let mut stamped = vec![f.clone()];
         stamped.extend(dsc_candidates(&f, lang));
-        let key = format!("wx|{lang}|{}", f.display());
+        let key = format!("wx2|{lang}|{}", f.display());
         keys.push(key.clone());
         let info: Option<WeatherInfo> = index::cached(&key, index::files_stamp(&stamped), || (read_weather(&f, lang), Vec::new()));
         out.extend(info);
     }
-    index::save("wx|", Some(&keys));
+    index::save("wx2|", Some(&keys));
     Ok(out)
+}
+
+/// A weather's name as the player reads it: the `[name]` of its description in the
+/// interface's language - the English one where OMSI has none in that language (the
+/// interface's tables translate it further) - else its file's name. OMSI's own angle brackets
+/// ("<Best Weather>", which sort it first in its list) are left out.
+pub fn weather_name(f: &Path) -> String {
+    weather_name_in(f, content_language())
+}
+
+/// OMSI 2's own weathers by their English names (its `_ENG.dsc`), which the interface's
+/// tables translate for the languages OMSI has no descriptions in; listed here so the
+/// translation check knows them as texts the program shows.
+pub const STOCK_WEATHER_NAMES: [&str; 9] = ["Best Weather", "Ground Fog", "Twilight Fog", "Iciness", "Rainy", "Summerlike", "Heavy Snowfall", "Storm", "Freezing Wetness"];
+
+fn weather_name_in(f: &Path, lang: &str) -> String {
+    let stem = f.file_stem().map(|s| s.to_string_lossy().trim_start_matches('#').to_string()).unwrap_or_default();
+    find_dsc(f, lang)
+        .and_then(|d| d.name.first().map(|n| n.trim().trim_start_matches('<').trim_end_matches('>').trim().to_string()))
+        .filter(|n| !n.is_empty())
+        .unwrap_or(stem)
 }
 
 fn read_weather(f: &Path, lang: &str) -> Option<WeatherInfo> {
     let w = omsi_content::weather::Weather::load(f).ok()?;
-    let stem = f.file_stem().unwrap().to_string_lossy().to_string();
     // (the `[name]` of the file is not part of the description: "Ground Fog Heavy ground fog ...")
     let description = find_dsc(f, lang).map(|x| x.description.replace('\n', " ")).filter(|t| !t.is_empty()).unwrap_or_else(|| w.description.replace('\n', " "));
     let precip = match w.precip.first().copied().unwrap_or(0.0) as i32 {
@@ -1117,7 +1223,7 @@ fn read_weather(f: &Path, lang: &str) -> Option<WeatherInfo> {
         2 => format!("snow {:.0}%", w.precip.get(1).copied().unwrap_or(0.0) / 255.0 * 100.0),
         _ => "dry".into(),
     };
-    Some(WeatherInfo { name: stem.trim_start_matches('#').to_string(), file: format!("Weather/{}", f.file_name().unwrap().to_string_lossy()), description, fog_m: w.fog.0, temp: w.temp.0, clouds: if w.clouds.0.trim().starts_with("-1") { "clear".into() } else { w.clouds.0.trim().to_string() }, precip, snow: w.snow, installed: in_content(f) })
+    Some(WeatherInfo { name: weather_name_in(f, lang), file: format!("Weather/{}", f.file_name().unwrap().to_string_lossy()), description, fog_m: w.fog.0, temp: w.temp.0, clouds: if w.clouds.0.trim().starts_with("-1") { "clear".into() } else { w.clouds.0.trim().to_string() }, precip, snow: w.snow, installed: in_content(f) })
 }
 
 /// The content language of the settings (`language=`, English by default): which
@@ -1239,6 +1345,8 @@ pub struct TourInfo {
 pub struct LineInfo {
     pub name: String,
     pub user_allowed: bool,
+    /// The line's ends: the first and the last stop of its longest trip (the trips' own
+    /// termini where no trip has two stops).
     pub termini: Vec<String>,
     pub tours: Vec<TourInfo>,
 }
@@ -1342,6 +1450,9 @@ fn lines_on(map_dir: &Path, date: &str) -> Result<Vec<LineInfo>> {
     let mut out = Vec::new();
     for l in &data.lines {
         let mut termini: Vec<String> = Vec::new();
+        // the line's two ends: the first and last stop of its longest trip (the termini of
+        // every short working and depot run, listed one after another, read as all its stops)
+        let mut ends: Option<(usize, String, String)> = None;
         let mut tours = Vec::new();
         for t in &l.tours {
             let mask = t.extra.trim().parse::<i32>().unwrap_or(1023);
@@ -1392,6 +1503,9 @@ fn lines_on(map_dir: &Path, date: &str) -> Result<Vec<LineInfo>> {
                     termini.push(trip.terminus.trim().to_string());
                 }
                 let from = stops.first().map(|s| s.name.clone()).unwrap_or_default();
+                if stops.len() >= 2 && ends.as_ref().is_none_or(|e| stops.len() > e.0) {
+                    ends = Some((stops.len(), from.clone(), stops.last().map(|s| s.name.clone()).unwrap_or_default()));
+                }
                 let index = trips.len() + 1;
                 trips.push(TripInfo { name: trip.name.clone(), index, line: trip.line.trim().to_string(), from, terminus: trip.terminus.trim().to_string(), departure, arrival: departure + duration, stops, km: total / 1000.0 });
             }
@@ -1404,6 +1518,9 @@ fn lines_on(map_dir: &Path, date: &str) -> Result<Vec<LineInfo>> {
             tours.push(TourInfo { number: t.number.clone(), ai_group: t.ai_group.clone(), first, last, days: days_of(mask), runs, next_run, trips });
         }
         tours.sort_by(|a, b| a.first.total_cmp(&b.first));
+        if let Some((_, first, last)) = ends {
+            termini = if first == last { vec![first] } else { vec![first, last] };
+        }
         out.push(LineInfo { name: l.name.clone(), user_allowed: l.user_allowed, termini, tours });
     }
     out.sort_by(|a, b| natural_key(&a.name).cmp(&natural_key(&b.name)));
@@ -1721,96 +1838,7 @@ pub fn delete_profile(name: &str) -> Result<()> {
 }
 
 #[cfg(test)]
-mod profile_cleanup_tests {
-    use super::*;
-
-    /// A quality preset keeps the graphics mode and what is not graphics; Vanilla's leave
-    /// out what OMSI 2 does not draw, Enhanced+'s keep its traced shadows, occlusion and
-    /// reflections; High of Vanilla+ is the defaults.
-    #[test]
-    fn quality_presets_keep_the_mode_and_the_rest() {
-        for mode in ["vanilla", "vanilla_plus", "enhanced", "enhanced_plus"] {
-            for (_, preset) in graphics_presets_for(mode) {
-                let mut v = settings_from_text(Some(&format!("graphics={mode}\ngraphics_api=gl\nlanguage=PTB\nai_unsched_factor=25\n")));
-                apply_graphics_profile(&preset, &mut v);
-                let saved = settings_from_text(Some(&settings_to_text(&v, None)));
-                assert_eq!(saved["graphics"], mode);
-                assert_eq!(saved["graphics_api"], "gl");
-                assert_eq!(saved["language"], "PTB");
-                assert_eq!(saved["ai_unsched_factor"], 25);
-                for key in ["ssao", "shadows", "detail_textures", "reflections", "mirror_refresh", "texture_memory"] {
-                    assert_eq!(saved[key], preset[key], "{mode}: {key}");
-                }
-            }
-        }
-        for (_, p) in graphics_presets_for("OMSI 2") {
-            assert!(p["ssao"] == false && p["shadows"] == false && p["detail_textures"] == false);
-        }
-        for (_, p) in graphics_presets_for("Enhanced+") {
-            assert!(p["ssao"] == true && p["shadows"] == true && p["reflections"] == true);
-        }
-        let defaults = settings_from_text(None);
-        let high = &graphics_presets_for("vanilla_plus")[2].1;
-        for (k, x) in high.as_object().unwrap() {
-            assert_eq!(defaults[k.as_str()].to_string().trim_matches('"'), x.to_string().trim_matches('"'), "{k}");
-        }
-    }
-
-    /// The enhanced clouds' quality is saved by the launcher and kept in graphics profiles.
-    #[test]
-    fn cloud_quality_is_saved_and_kept_in_graphics_profiles() {
-        assert_eq!(settings_from_text(None)["cloud_quality"], "high");
-        for q in ["high", "low"] {
-            let v = settings_from_text(Some(&format!("graphics=enhanced\ncloud_quality={q}\n")));
-            assert_eq!(settings_from_text(Some(&settings_to_text(&v, None)))["cloud_quality"], q);
-        }
-        assert_eq!(settings_from_text(Some("cloud_quality=auto"))["cloud_quality"], "high");
-        assert!(GRAPHICS_PROFILE_KEYS.contains(&"cloud_quality"));
-    }
-
-    #[test]
-    fn the_day_before_crosses_months_and_years() {
-        assert_eq!(day_before(20261007), 20261006);
-        assert_eq!(day_before(20261001), 20260930);
-        assert_eq!(day_before(20240301), 20240229);
-        assert_eq!(day_before(20260101), 20251231);
-    }
-
-    #[test]
-    fn deleting_one_driver_keeps_other_and_unowned_runs() {
-        let dir = std::env::temp_dir().join(format!("omsi_profile_cleanup_{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let write = |file: &str, driver: &str| {
-            let session = Session {
-                driver: driver.into(),
-                ..Default::default()
-            };
-            std::fs::write(dir.join(file), serde_json::to_vec(&session).unwrap()).unwrap();
-        };
-        write("mine.json", "Isaac");
-        write("mine-case.json", "ISAAC");
-        write("other.json", "Isaac S.");
-        std::fs::write(dir.join("unknown.json"), "{broken").unwrap();
-        std::fs::create_dir_all(dir.join("folder.json")).unwrap();
-        delete_profile_sessions(&dir, "isaac").unwrap();
-        assert!(!dir.join("mine.json").exists());
-        assert!(!dir.join("mine-case.json").exists());
-        assert!(dir.join("other.json").exists());
-        assert!(dir.join("unknown.json").exists());
-        assert!(dir.join("folder.json").is_dir());
-        // Repeating deletion, and a profile with no history directory, are harmless.
-        delete_profile_sessions(&dir, "Isaac").unwrap();
-        delete_profile_sessions(&dir.join("absent"), "Isaac").unwrap();
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn a_delete_request_needs_a_plain_profile_name() {
-        for name in ["", " ", "../other", "a\\b", "C:other"] {
-            assert!(delete_profile(name).is_err());
-        }
-    }
-}
+mod profile_cleanup_tests;
 
 // ---------------------------------------------------------------------------------------
 // key bindings: the content folder's Inputs/keyboard.cfg once the page has saved one (the
@@ -1919,55 +1947,8 @@ fn setting_key(k: &str) -> String {
     SETTING_ALIASES.iter().find(|(alias, _)| *alias == k).map(|(_, key)| key.to_string()).unwrap_or(k)
 }
 
-/// The interface's languages: the settings' code (OMSI's three-letter style), the name in
-/// the language itself, the interface tables' code, and other spellings a file may use.
-/// OMSI's own texts (key names, `.dsc` descriptions, tutorials) exist in English, German
-/// and French: every other language shows those in English.
-pub const LANGUAGES: &[(&str, &str, &str, &[&str])] = &[
-    ("ENG", "English", "en", &["en", "english"]),
-    ("DEU", "Deutsch", "de", &["de", "ger", "german", "deutsch"]),
-    ("FRA", "Français", "fr", &["fr", "fre", "french", "francais", "français"]),
-    ("RUS", "Русский", "ru", &["ru", "russian", "русский"]),
-    ("UKR", "Українська", "uk", &["uk", "ua", "ukrainian", "українська"]),
-    ("BEL", "Беларуская", "be", &["be", "by", "belarusian", "беларуская"]),
-    ("KAZ", "Қазақша", "kk", &["kk", "kz", "kazakh", "қазақша"]),
-    ("POL", "Polski", "pl", &["pl", "polish", "polski"]),
-    ("CZE", "Čeština", "cs", &["cs", "cz", "czech", "čeština", "ces"]),
-    ("HUN", "Magyar", "hu", &["hu", "hungarian", "magyar"]),
-    ("ESP", "Español", "es", &["es", "spa", "spanish", "español"]),
-    ("CAT", "Català", "ca", &["ca", "cat", "ca-es", "ca-ad", "catalan", "català", "catala"]),
-    ("PTB", "Português (Brasil)", "pt", &["pt", "br", "pt-br", "por", "portuguese", "português"]),
-    ("PTP", "Português (Portugal)", "pt-pt", &["pt-pt", "pt_pt", "pt-portugal", "portuguese-portugal", "português (portugal)", "português de portugal"]),
-    ("ITA", "Italiano", "it", &["it", "italian", "italiano"]),
-    ("NLD", "Nederlands", "nl", &["nl", "dutch", "nederlands"]),
-    ("TUR", "Türkçe", "tr", &["tr", "turkish", "türkçe"]),
-    ("JPN", "日本語", "ja", &["ja", "jp", "japanese", "日本語"]),
-    ("ZHT", "繁體中文", "zh-tw", &["zh-tw", "zh-hant", "zh-hk", "zh-mo", "cht", "traditional chinese", "繁體中文", "繁体中文"]),
-    ("KOR", "한국어", "ko", &["ko", "kr", "korean", "한국어"]),
-    ("THA", "ไทย", "th", &["th", "thai", "ไทย"]),
-    ("VIE", "Tiếng Việt", "vi", &["vi", "vietnamese", "tiếng việt"]),
-    ("IND", "Bahasa Indonesia", "id", &["id", "indonesian", "bahasa indonesia"]),
-    ("MSA", "Bahasa Melayu", "ms", &["ms", "malay", "bahasa melayu"]),
-    ("TGL", "Filipino", "tl", &["tl", "fil", "filipino", "tagalog"]),
-    ("CHS", "中文 (简体)", "zh", &["zh", "zh-cn", "zh-sg", "zh-hans", "zhs", "chs", "cn", "chinese", "simplified chinese", "简体中文", "簡體中文", "中文"]),
-    ("HIN", "हिन्दी", "hi", &["hi", "hindi", "हिन्दी"]),
-];
-
-/// The settings' language code from any spelling the game accepts (English when unknown).
-pub fn language_code(s: &str) -> &'static str {
-    let s = s.trim().to_lowercase();
-    LANGUAGES
-        .iter()
-        .find(|(code, _, _, aliases)| code.eq_ignore_ascii_case(&s) || aliases.iter().any(|a| *a == s))
-        .map(|l| l.0)
-        .unwrap_or("ENG")
-}
-
-/// The interface tables' code of a language (`ru`, `ja` ...; empty for English).
-pub fn language_iso(code: &str) -> &'static str {
-    let c = language_code(code);
-    LANGUAGES.iter().find(|l| l.0 == c).map(|l| if l.2 == "en" { "" } else { l.2 }).unwrap_or("")
-}
+// (the language table lives in omsi-cfg, below the input crate that needs it too)
+pub use omsi_cfg::lang::{language_code, language_iso, LANGUAGES};
 
 /// `vanilla` (as OMSI 2), `vanilla_plus`, `enhanced` or `enhanced_plus`, from the ways a file
 /// may spell them (as the game's `settings::graphics_mode`).
@@ -2044,9 +2025,18 @@ fn mirror_refresh(x: &str) -> &'static str {
     }
 }
 
+pub fn perf_overlay_mode(value: &str) -> &'static str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "compact" | "1" | "true" | "on" => "compact",
+        "detailed" | "2" => "detailed",
+        _ => "off",
+    }
+}
+
 /// The page's view of a `settings.cfg` text (None: no file yet, the game's defaults).
 pub fn settings_from_text(text: Option<&str>) -> Value {
-    let mut v = json!({ "msaa": 4, "anisotropy": 8, "ssao": true, "shadows": true, "shadow_size": 2048, "navigator": true, "ui_opacity": 0.85, "navigator_corner": "bottom-left", "boarding": "auto", "detail_textures": true, "exact_fare": true, "enhanced": false, "graphics": "vanilla_plus", "fullscreen": false, "vsync": true, "volume": 0.6, "drive_keys": "simple", "render_scale": "auto", "view_distance": "auto", "language": "ENG", "texture_memory": 0, "texture_compression": true, "gpu_texture_compression": true, "chat": true, "tooltips": true, "name_tags": true, "show_fps": false, "clouds": true, "cloud_quality": "high", "rain_quality": "high", "pax_density": 1.0, "vol_ai": 1.0, "vol_scenery": 1.0, "mirror_size": 256, "doppler": true, "driver": true, "max_fps": 0, "min_obj_size": 0.013, "max_obj_dist": "auto" });
+    let mut v = json!({ "msaa": 4, "anisotropy": 8, "ssao": true, "shadows": true, "shadow_size": 2048, "navigator": true, "ui_opacity": 0.85, "navigator_corner": "bottom-left", "boarding": "auto", "detail_textures": true, "exact_fare": true, "enhanced": false, "graphics": "vanilla_plus", "fullscreen": false, "vsync": true, "volume": 0.6, "drive_keys": "simple", "render_scale": "auto", "view_distance": "auto", "language": "ENG", "texture_memory": 0, "texture_compression": true, "gpu_texture_compression": true, "chat": true, "tooltips": true, "name_tags": true, "show_fps": false, "clouds": true, "cloud_quality": "high", "rain_quality": "high", "pax_density": 1.0, "vol_ai": 1.0, "vol_scenery": 1.0, "ambient": true, "vol_ambient": 0.8, "mirror_size": 256, "doppler": true, "driver": true, "max_fps": 0, "min_obj_size": 0.013, "max_obj_dist": "auto" });
+    v["touch_door_mode"] = json!("standard");
     v["triple_screen"] = json!(false);
     v["triple_span"] = json!(true);
     v["triple_hud_center"] = json!(true);
@@ -2064,6 +2054,9 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
     v["mirror_refresh"] = json!("full");
     v["vr_desktop_mirror"] = json!(true);
     v["discord_status"] = json!(true);
+    // iPhone, iPad, Mac: the cross-platform launcher (this one, drawn by the game) instead of the
+    // system's own (SwiftUI); elsewhere there is only this one
+    v["cross_platform_launcher"] = json!(false);
     v["discord_app_id"] = json!("");
     // positional voice through GreenTeaSpeak's openOMSI plugin in multiplayer
     v["voice_chat"] = json!(true);
@@ -2073,13 +2066,17 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
     v["resolution"] = json!("auto");
     // the game's information bar along the top, as the last session left it (#1164)
     v["info_bar"] = json!(false);
+    v["perf_overlay"] = json!("off");
+    // Human posing; the original OMSI behavior remains the default.
+    v["passenger_animation"] = json!("original");
     // the trees' foliage bends and sways in the weather's wind
     v["windy_trees"] = json!(true);
+    v["mirror_hud_every_frame"] = json!(false);
     // an early timetable bus waits only at the stops the timetable times (off: at every
     // stop, as in OMSI; #1773)
     v["ai_wait_timed_stops_only"] = json!(false);
     // OMSI's own options
-    for (k, d) in [("maintenance", json!(0)), ("ai_unsched_factor", json!(100)), ("ai_max_scheduled", json!(0)), ("ai_max_parked", json!(0)), ("ai_max_humans", json!(200)), ("use_real_time", json!(false)), ("use_real_date", json!(false)), ("use_real_year", json!(false)), ("collision_vehicles", json!(true)), ("collision_objects", json!(true)), ("collision_pedestrians", json!(true)), ("head_movement", json!(true)), ("driverview_smooth", json!(true)), ("hands_in_cab", json!(false)), ("alt_view", json!(true)), ("precision_zoom", json!(false))] {
+    for (k, d) in [("maintenance", json!(0)), ("ai_unsched_factor", json!(100)), ("standing_chance", json!(5)), ("ai_max_scheduled", json!(0)), ("ai_max_parked", json!(0)), ("ai_max_humans", json!(200)), ("use_real_time", json!(false)), ("use_real_date", json!(false)), ("use_real_year", json!(false)), ("collision_vehicles", json!(true)), ("collision_objects", json!(true)), ("collision_pedestrians", json!(true)), ("head_movement", json!(true)), ("driverview_smooth", json!(true)), ("hands_in_cab", json!(false)), ("alt_view", json!(true)), ("precision_zoom", json!(false))] {
         v[k] = d;
     }
     // openOMSI's own: what passengers say, OMSI's route arrows, getting up from the seat
@@ -2119,7 +2116,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
         match k.as_str() {
             "anisotropy" => v[&k] = json!(val.parse::<i64>().unwrap_or(8).clamp(1, 16)),
             "msaa" | "shadow_size" => v[&k] = json!(val.parse::<i64>().unwrap_or(0)),
-            "ui_opacity" | "volume" | "vol_ai" | "vol_scenery" | "min_obj_size" => v[&k] = json!(val.parse::<f64>().unwrap_or(0.0)),
+            "ui_opacity" | "volume" | "vol_ai" | "vol_scenery" | "vol_ambient" | "min_obj_size" | "radio_speaker" | "radio_hiss" | "radio_dropouts" => v[&k] = json!(val.parse::<f64>().unwrap_or(0.0)),
             "pax_density" => v[&k] = json!(val.trim_end_matches('%').parse::<f64>().map(|x| if x > 5.0 { x / 100.0 } else { x }).unwrap_or(1.0)),
             "triple_fov_deg" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| if x < 20.0 { 0.0 } else { x.min(120.0) }).unwrap_or(0.0)),
             "triple_width_mm" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(200.0, 2000.0)).unwrap_or(600.0)),
@@ -2139,11 +2136,13 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
             "max_fps" => v[&k] = json!(val.parse::<f64>().map(|x| x as i64).unwrap_or(0)),
             "max_obj_dist" => v[&k] = if val.eq_ignore_ascii_case("auto") { json!("auto") } else { json!(val.parse::<f64>().map(|m| (m.round() as i64).to_string()).unwrap_or_else(|_| "auto".into())) },
             "ssao" | "shadows" | "shadow_blobs" | "navigator" | "enhanced" | "triple_screen" | "triple_span" | "triple_hud_center" | "vr" | "vr_desktop_mirror" | "fullscreen" | "vsync" | "exact_fare" | "detail_textures" | "texture_compression" | "chat" | "tooltips" | "name_tags" | "show_fps" | "clouds" | "doppler" | "driver" | "use_real_time" | "use_real_date" | "use_real_year" | "collision_vehicles" | "collision_objects" | "collision_pedestrians" | "head_movement" | "driverview_smooth" | "hands_in_cab" | "alt_view" | "precision_zoom" => v[&k] = json!(b(val)),
-            "maintenance" | "ai_unsched_factor" | "ai_max_scheduled" => v[&k] = json!(val.trim_end_matches('%').parse::<f64>().map(|x| x.max(0.0) as i64).unwrap_or(0)),
+            "maintenance" | "ai_unsched_factor" | "ai_max_scheduled" | "standing_chance" => v[&k] = json!(val.trim_end_matches('%').parse::<f64>().map(|x| x.max(0.0) as i64).unwrap_or(0)),
             // (-1: no parked cars at all, #864)
             "ai_max_parked" => v[&k] = json!(val.parse::<f64>().map(|x| x.max(-1.0) as i64).unwrap_or(0)),
             "ai_max_humans" => v[&k] = json!(val.parse::<f64>().map(|x| x.max(1.0) as i64).unwrap_or(200)),
             "drive_keys" | "navigator_corner" | "boarding" | "render_scale" | "pax_voices" => v[&k] = json!(val),
+            "touch_door_mode" => v[&k] = json!(if val.eq_ignore_ascii_case("direct") { "direct" } else { "standard" }),
+            "passenger_animation" => v[&k] = json!(if val.eq_ignore_ascii_case("enhanced") { "enhanced" } else { "original" }),
             "ctrl_off" => v[&k] = json!(val),
             "metar_station" => v[&k] = json!(val.chars().filter(|c| c.is_ascii_alphabetic()).take(4).collect::<String>().to_ascii_uppercase()),
             "discord_app_id" => v[&k] = json!(val),
@@ -2169,7 +2168,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
             "pad_steer_speed" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.8, 5.0)).unwrap_or(2.0)),
             "pad_deadzone" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.0, 0.4)).unwrap_or(0.08)),
             "pad_type" => v[&k] = json!(match val.trim().to_ascii_lowercase().as_str() { "xbox" => "xbox", "ps4" => "ps4", "ps5" => "ps5", _ => "auto" }),
-            "camera_collision" | "right_stick_look" | "pad_steer_linear" | "pad_buttons" | "arrows_switch_cams" | "steer_look" | "head_tracking" | "head_tracking_invert_yaw" | "head_tracking_invert_pitch" | "head_tracking_invert_roll" | "head_tracking_invert_x" | "head_tracking_invert_y" | "head_tracking_invert_z" | "discord_status" | "voice_chat" | "launcher_rest" => v[&k] = json!(b(val)),
+            "camera_collision" | "right_stick_look" | "pad_steer_linear" | "pad_buttons" | "arrows_switch_cams" | "steer_look" | "head_tracking" | "head_tracking_invert_yaw" | "head_tracking_invert_pitch" | "head_tracking_invert_roll" | "head_tracking_invert_x" | "head_tracking_invert_y" | "head_tracking_invert_z" | "discord_status" | "voice_chat" | "launcher_rest" | "cross_platform_launcher" => v[&k] = json!(b(val)),
             // (how much of the mip chain an LED panel is held at, 0..4; a file from before
             // it was a number says 1 or 0)
             "led_mips" => v[&k] = json!(val.trim().parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.0, 4.0)).unwrap_or(1.3)),
@@ -2190,7 +2189,8 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
             "head_tracking_yaw_sens" | "head_tracking_pitch_sens" | "head_tracking_roll_sens" | "head_tracking_x_sens" | "head_tracking_y_sens" | "head_tracking_z_sens" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.0, 100.0)).unwrap_or(100.0)),
             "nav_arrows" | "nav_ai" | "get_up" | "time_sync" | "metar_sync" | "ui_scale_window" | "notes" | "machine_translation" | "update_check" | "update_auto" | "update_notify" | "presence" | "reflections" | "steering_linear" | "old_steering" | "red_steer_spd" | "ff_invert" | "ff_enabled" | "brake_hold" | "auto_clutch" | "momentary_gears" | "auto_shift" | "mouse_steering" | "mouse_right_off" | "mouse_smooth" | "mouse_hold" | "blinker_cancel" => v[&k] = json!(b(val)),
             "info_bar" => v[&k] = json!(b(val)),
-            "windy_trees" | "ai_wait_timed_stops_only" => v[&k] = json!(b(val)),
+            "perf_overlay" => v[&k] = json!(perf_overlay_mode(val)),
+            "windy_trees" | "mirror_hud_every_frame" | "ai_wait_timed_stops_only" | "ambient" => v[&k] = json!(b(val)),
             "time_speed" => v[&k] = json!(val.trim_start_matches(['x', 'X']).parse::<f64>().map(|x| x.clamp(1.0, 30.0)).map(|x| if x.fract() == 0.0 { format!("{}", x as i64) } else { x.to_string() }).unwrap_or_else(|_| "1".into())),
             "language" => v[&k] = json!(language_code(val)),
             "graphics" | "renderer" => graphics = Some(graphics_mode(val)),
@@ -2274,7 +2274,7 @@ pub fn decode_html_entities(input: &str) -> String {
             "lt" => Some('<'), "gt" => Some('>'), "nbsp" => Some(' '),
             "auml" => Some('ä'), "ouml" => Some('ö'), "uuml" => Some('ü'),
             "Auml" => Some('Ä'), "Ouml" => Some('Ö'), "Uuml" => Some('Ü'),
-            "szlig" => Some('ß'), "ndash" => Some('–'), "mdash" => Some('—'),
+            "szlig" => Some('ß'), "ndash" | "mdash" | "minus" => Some('-'),
             "bull" => Some('•'), "deg" => Some('°'),
             _ => entity.strip_prefix("#x").or_else(|| entity.strip_prefix("#X"))
                 .and_then(|n| u32::from_str_radix(n, 16).ok())
@@ -2306,7 +2306,7 @@ pub fn option_presets() -> Vec<(String, Value)> {
         let Ok(o) = omsi_content::options::Options::load(&f) else { continue };
         let name = f.file_stem().unwrap_or_default().to_string_lossy().to_string();
         let mut v = json!({});
-        if !cfg!(target_os = "android") {
+        if !cfg!(any(target_os = "android", target_os = "ios")) {
             v["max_fps"] = json!(o.i32("maxfps", 0).max(0));
         }
         v["min_obj_size"] = json!(o.f32("performance_minobjsize", 0.013) as f64);
@@ -2350,9 +2350,9 @@ pub fn save_settings(v: &Value) -> Result<()> {
 
 /// The settings a graphics profile holds: what the Graphics tab shows, except the machine's
 /// own (fullscreen, graphics API).
-pub const GRAPHICS_PROFILE_KEYS: [&str; 25] = [
+pub const GRAPHICS_PROFILE_KEYS: [&str; 26] = [
     "graphics", "msaa", "render_scale", "anisotropy", "shadow_size", "ssao", "shadows", "shadow_casters", "detail_textures", "led_glow", "led_mips", "reflections", "clouds", "cloud_quality", "rain_quality", "windy_trees",
-    "vsync", "max_fps", "view_distance", "max_obj_dist", "min_obj_size", "mirror_size", "mirror_refresh", "texture_memory", "texture_compression",
+    "vsync", "max_fps", "view_distance", "max_obj_dist", "min_obj_size", "mirror_size", "mirror_refresh", "mirror_hud_every_frame", "texture_memory", "texture_compression",
 ];
 
 fn graphics_profiles_path() -> PathBuf {
@@ -2567,7 +2567,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     let vr_scale = v.get("vr_scale").and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|s| s.parse().ok()))).filter(|x| x.is_finite()).unwrap_or(0.65).clamp(0.5, 1.0);
     let vr_head_smoothing_ms = v.get("vr_head_smoothing_ms").and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|s| s.parse().ok()))).filter(|x| x.is_finite()).unwrap_or(0.0).clamp(0.0, 30.0);
     let vr_mirror_rate = v.get("vr_mirror_rate").and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|s| s.parse().ok()))).filter(|x| x.is_finite()).unwrap_or(16.0).clamp(-1.0, 360.0);
-    let text = format!("{text}vr={}\nvr_scale={vr_scale}\nvr_head_smoothing_ms={vr_head_smoothing_ms}\nvr_mirror_rate={vr_mirror_rate}\nvr_desktop_mirror={}\ndiscord_status={}\nvoice_chat={}\nlauncher_rest={}\n", b("vr", false), b("vr_desktop_mirror", true), b("discord_status", true), b("voice_chat", true), b("launcher_rest", true));
+    let text = format!("{text}vr={}\nvr_scale={vr_scale}\nvr_head_smoothing_ms={vr_head_smoothing_ms}\nvr_mirror_rate={vr_mirror_rate}\nvr_desktop_mirror={}\ndiscord_status={}\nvoice_chat={}\nlauncher_rest={}\ncross_platform_launcher={}\n", b("vr", false), b("vr_desktop_mirror", true), b("discord_status", true), b("voice_chat", true), b("launcher_rest", true), b("cross_platform_launcher", false));
     // what the page does not manage (keys of newer games, hand-written ones) stays as it
     // was in the file; other spellings of the keys just written go
     let mut text = text;
@@ -2575,6 +2575,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("pad_steer_linear={}\n", b("pad_steer_linear", false)));
     text.push_str(&format!("pad_steer_speed={}\npad_deadzone={}\npad_buttons={}\n", f("pad_steer_speed", 2.0).clamp(0.8, 5.0), f("pad_deadzone", 0.08).clamp(0.0, 0.4), b("pad_buttons", true)));
     text.push_str(&format!("pad_type={}\n", match v.get("pad_type").and_then(|x| x.as_str()).unwrap_or("auto") { t @ ("xbox" | "ps4" | "ps5") => t, _ => "auto" }));
+    text.push_str(&format!("touch_door_mode={}\n", if v.get("touch_door_mode").and_then(|x| x.as_str()) == Some("direct") { "direct" } else { "standard" }));
     text.push_str(&format!("arrows_switch_cams={}\n", b("arrows_switch_cams", false)));
     text.push_str(&format!("resolution={}\n", resolution_text(v.get("resolution").and_then(|x| x.as_str()).unwrap_or("auto"))));
     text.push_str(&format!("gpu_texture_compression={}\n", b("gpu_texture_compression", true)));
@@ -2587,10 +2588,15 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("triple_hud_center={}\ntriple_fov_deg={}\n", b("triple_hud_center", true), if triple_fov < 20.0 { 0.0 } else { triple_fov.min(120.0) }));
     text.push_str(&format!("triple_screen={}\ntriple_span={}\n", b("triple_screen", false), b("triple_span", true)));
     text.push_str(&format!("triple_width_mm={}\ntriple_distance_mm={}\ntriple_bezel_mm={}\n", f("triple_width_mm", 600.0).clamp(200.0, 2000.0), f("triple_distance_mm", 650.0).clamp(200.0, 3000.0), f("triple_bezel_mm", 0.0).clamp(0.0, 100.0)));
-    text.push_str(&format!("info_bar={}\n", b("info_bar", false)));
+    text.push_str(&format!("info_bar={}\nperf_overlay={}\n", b("info_bar", false), perf_overlay_mode(&v.get("perf_overlay").map(|x| x.as_str().map_or_else(|| x.to_string(), str::to_string)).unwrap_or_default())));
     text.push_str(&format!("windy_trees={}\n", b("windy_trees", true)));
+    text.push_str(&format!("mirror_hud_every_frame={}\n", b("mirror_hud_every_frame", false)));
+    text.push_str(&format!("standing_chance={}\n", n("standing_chance", 5).clamp(0, 100)));
+    text.push_str(&format!("ambient={}\nvol_ambient={}\n", b("ambient", true), f("vol_ambient", 0.8).clamp(0.0, 1.0)));
+    text.push_str(&format!("radio_speaker={}\nradio_hiss={}\nradio_dropouts={}\n", f("radio_speaker", 0.0).clamp(0.0, 1.0), f("radio_hiss", 0.0).clamp(0.0, 1.0), f("radio_dropouts", 0.0).clamp(0.0, 1.0)));
     text.push_str(&format!("ai_wait_timed_stops_only={}\n", b("ai_wait_timed_stops_only", false)));
     text.push_str(&format!("triple_left_angle_deg={}\ntriple_right_angle_deg={}\ntriple_eye_height_mm={}\n", f("triple_left_angle_deg", 45.0).clamp(0.0, 90.0), f("triple_right_angle_deg", 45.0).clamp(0.0, 90.0), f("triple_eye_height_mm", 0.0).clamp(-500.0, 500.0)));
+    text.push_str(&format!("passenger_animation={}\n", if v.get("passenger_animation").and_then(|x| x.as_str()) == Some("enhanced") { "enhanced" } else { "original" }));
     let written: Vec<String> = text.lines().filter_map(|l| l.split_once('=')).map(|(k, _)| k.trim().to_ascii_lowercase()).collect();
     for line in old.unwrap_or("").lines() {
         let t = line.trim();
@@ -2700,7 +2706,7 @@ pub fn last_situation(map: &str) -> Option<PathBuf> {
 
 /// A situation saved on a map to continue from: the file, its `[name]`, when it was written
 /// (seconds since 1970).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SavedSituation {
     pub file: PathBuf,
     pub name: String,
@@ -2708,23 +2714,52 @@ pub struct SavedSituation {
 }
 
 /// What can be continued on `map` (#341): the last situation, then the save slots the game
-/// writes into `Saves` of the map's folder in the content folder, the newest first.
+/// writes into `Saves` of the map's folder in the content folder and the quicksave made on
+/// that map, the newest first.
 pub fn saved_situations(map: &str) -> Vec<SavedSituation> {
     let mut out: Vec<SavedSituation> = last_situation(map).map(|f| SavedSituation { saved: modified_secs(&f), file: f, name: "Last situation".into() }).into_iter().collect();
     if let Some(dir) = Path::new(&map.replace('\\', "/")).parent() {
         let c = content_dir();
-        if let Some(c) = &c {
-            out.extend(save_slots(&c.join(dir).join("Saves")));
-        }
         // (and where the game saves when the content folder takes no file, #1673)
         let fallback = data_dir().join("content");
-        if c.as_deref() != Some(fallback.as_path()) {
-            out.extend(save_slots(&fallback.join(dir).join("Saves")));
-            let last = usize::from(out.first().is_some_and(|f| f.name == "Last situation"));
-            out[last..].sort_by(|a, b| b.saved.cmp(&a.saved));
+        let bases: Vec<PathBuf> = c.iter().cloned().chain((c.as_deref() != Some(fallback.as_path())).then_some(fallback)).collect();
+        for base in &bases {
+            out.extend(save_slots(&base.join(dir).join("Saves")));
         }
+        // "Save the situation" (Ctrl+S) writes the game's one quicksave, for every map: it
+        // is offered on the map it was made on. Left out, it was saved where nothing
+        // offered it again and only a slot seemed to save (#1746).
+        for base in &bases {
+            let f = base.join("Situations").join("quicksave.osn");
+            if f.is_file() && situation_map(&f).is_some_and(|m| same_map(&m, map)) {
+                out.push(SavedSituation { saved: modified_secs(&f), file: f, name: "Quicksave".into() });
+            }
+        }
+        let last = usize::from(out.first().is_some_and(|f| f.name == "Last situation"));
+        out[last..].sort_by(|a, b| b.saved.cmp(&a.saved));
     }
     out
+}
+
+/// The `[map]` a situation file was saved on (its head alone is read).
+fn situation_map(f: &Path) -> Option<String> {
+    let text = std::fs::read(f).map(|b| omsi_cfg::decode_text(&b[..b.len().min(8192) & !1])).ok()?;
+    let mut lines = text.lines().map(str::trim);
+    lines.by_ref().find(|l| l.eq_ignore_ascii_case("[map]"))?;
+    lines.next().map(str::to_string).filter(|m| !m.is_empty())
+}
+
+/// Whether two map paths name the same `global.cfg`: from their `maps/` on (a map from the
+/// content folder is saved with its whole path), slashes and case aside.
+fn same_map(a: &str, b: &str) -> bool {
+    let norm = |s: &str| {
+        let s = s.trim().replace('\\', "/").to_ascii_lowercase();
+        match s.rfind("maps/") {
+            Some(i) => s[i..].to_string(),
+            None => s,
+        }
+    };
+    norm(a) == norm(b)
 }
 
 fn modified_secs(p: &Path) -> u64 {
@@ -2756,6 +2791,20 @@ fn save_slots(dir: &Path) -> Vec<SavedSituation> {
 #[cfg(test)]
 mod save_slot_tests {
     use super::*;
+
+    #[test]
+    fn a_quicksave_belongs_to_the_map_it_names() {
+        assert!(same_map("maps\\Grundorf\\global.cfg", "maps/Grundorf/global.cfg"));
+        assert!(same_map("C:\\Users\\x\\openOMSI\\content\\maps\\Grundorf\\global.cfg", "maps/grundorf/global.cfg"));
+        assert!(!same_map("maps\\Berlin-Spandau\\global.cfg", "maps/Grundorf/global.cfg"));
+        let dir = std::env::temp_dir().join(format!("omsi_quicksave_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("quicksave.osn");
+        let utf16 = |s: &str| -> Vec<u8> { [0xFF, 0xFE].into_iter().chain(s.encode_utf16().flat_map(|u| u.to_le_bytes())).collect() };
+        std::fs::write(&f, utf16("[name]\r\nQuicksave\r\n\r\n[map]\r\nmaps\\Grundorf\\global.cfg\r\n")).unwrap();
+        assert_eq!(situation_map(&f).as_deref(), Some("maps\\Grundorf\\global.cfg"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn the_slots_of_a_map_are_listed_by_their_names() {
@@ -2963,9 +3012,10 @@ pub fn cleanup() {
 }
 
 /// Native folder / file picker (Finder, Explorer, the GTK dialog) for a mod. Must run on
-/// the main thread. (None on a phone: the launcher browses the storage itself there.)
+/// the main thread. (None on a phone: the launcher browses the storage itself there, and on an iPhone or an iPad
+/// the system's document picker of the Swift launcher hands the path over.)
 pub fn pick_mod(zip: bool) -> Option<PathBuf> {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         if zip {
             rfd::FileDialog::new().set_title("Choose a mod archive").add_filter("Mod archive", &["zip", "7z", "rar"]).pick_file()
@@ -2973,7 +3023,7 @@ pub fn pick_mod(zip: bool) -> Option<PathBuf> {
             rfd::FileDialog::new().set_title("Choose the mod folder").pick_folder()
         }
     }
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = zip;
         None
@@ -2982,11 +3032,11 @@ pub fn pick_mod(zip: bool) -> Option<PathBuf> {
 
 /// Folder picker (Setup: the OMSI 2 folder).
 pub fn pick_folder(title: &str) -> Option<PathBuf> {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         rfd::FileDialog::new().set_title(title).pick_folder()
     }
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = title;
         None
@@ -2995,11 +3045,11 @@ pub fn pick_folder(title: &str) -> Option<PathBuf> {
 
 /// File picker (Setup: the game program).
 pub fn pick_file(title: &str) -> Option<PathBuf> {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         rfd::FileDialog::new().set_title(title).pick_file()
     }
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         let _ = title;
         None
@@ -3026,8 +3076,9 @@ pub fn take_in_process_launch() -> Option<Vec<String>> {
     IN_PROCESS.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
 
-/// Whether games run inside the launcher's own process (a phone).
-pub const IN_PROCESS_GAMES: bool = cfg!(target_os = "android");
+/// Whether games run inside the launcher's own process (a phone, an iPhone, an iPad: an app
+/// there may not start programs).
+pub const IN_PROCESS_GAMES: bool = cfg!(any(target_os = "android", target_os = "ios"));
 
 pub use instances::{list as list_instances, log_tail, stop as stop_instance, Instance};
 
@@ -3143,6 +3194,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(packs, vec!["Other".to_string()]);
     }
+
+    include!("passenger_animation_tests.rs");
 
     #[test]
     fn the_games_options_survive_a_save() {
@@ -3260,6 +3313,17 @@ mod tests {
             assert_eq!(v["mirror_refresh"], mode);
             let text = settings_to_text(&v, None);
             assert!(text.lines().any(|l| l == format!("mirror_refresh={mode}")), "{text}");
+        }
+    }
+
+    #[test]
+    fn mirror_hud_every_frame_survives_the_launcher() {
+        assert_eq!(settings_from_text(None)["mirror_hud_every_frame"], false);
+        for (word, on) in [("1", true), ("0", false)] {
+            let v = settings_from_text(Some(&format!("mirror_hud_every_frame={word}\n")));
+            assert_eq!(v["mirror_hud_every_frame"], on, "{word}");
+            let text = settings_to_text(&v, None);
+            assert!(text.lines().any(|l| l == format!("mirror_hud_every_frame={}", on as u8)), "{text}");
         }
     }
 
@@ -3389,6 +3453,8 @@ mod tests {
         let on = settings_from_text(Some("info_bar=1\n"));
         assert_eq!(on["info_bar"], json!(true));
         assert!(settings_to_text(&on, None).lines().any(|l| l == "info_bar=1"));
+        assert_eq!(settings_from_text(None)["perf_overlay"], json!("off"));
+        assert!(settings_to_text(&settings_from_text(Some("perf_overlay=detailed\n")), None).lines().any(|l| l == "perf_overlay=detailed"));
     }
 
     /// The opacity is the whole interface's now: a file of an older build, where it was the
@@ -3526,47 +3592,7 @@ pub fn local_now() -> Option<(i32, i32, i32, i32, i32)> {
 }
 
 #[cfg(test)]
-mod omsi_options_tests {
-    include!("../../../tools/test-support/original_root.rs");
-
-    #[test]
-    #[ignore = "needs the original OMSI 2 install (OMSI_ROOT)"]
-    fn the_originals_options_are_read() {
-        let root = &original_root();
-        let o = super::omsi_options(root).expect("options.cfg of the original install");
-        assert_eq!(o.last_map.as_deref(), Some("maps/Berlin-Spandau/global.cfg"));
-        assert_eq!(o.last_driver.as_deref(), Some("OMSI-Fan"));
-        assert_eq!(o.settings["max_fps"], 30);
-        assert_eq!(o.settings["mirror_size"], 512);
-        assert_eq!(o.settings["language"], "ENG");
-        assert_eq!(o.settings["head_movement"], true);
-        assert_eq!(o.settings["collision_vehicles"], false);
-    }
-
-    #[test]
-    fn the_real_time_reflections_are_read_as_omsi_writes_them() {
-        let root = std::env::temp_dir().join(format!("omsi-realrefl-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        for (word, mode) in [("none", "off"), ("economy", "eco"), ("full", "full")] {
-            std::fs::write(root.join("options.cfg"), format!("[performance_realreflexions]\r\n{word}\r\n\r\n[performance_reflTexSize]\r\n9\r\n")).unwrap();
-            let o = super::omsi_options(&root).unwrap();
-            assert_eq!(o.settings["mirror_refresh"], mode, "{word}");
-        }
-        let _ = std::fs::remove_dir_all(&root);
-    }
-}
+mod omsi_options_tests;
 
 #[cfg(test)]
-mod right_stick_look_tests {
-    #[test]
-    fn launcher_saves_the_switch_as_a_boolean_without_duplicate_keys() {
-        assert_eq!(super::settings_from_text(None)["right_stick_look"], serde_json::json!(true));
-        for enabled in [false, true] {
-            let mut settings = super::settings_from_text(None);
-            settings["right_stick_look"] = serde_json::json!(enabled);
-            let saved = super::settings_to_text(&settings, Some("right_stick_look=1\n"));
-            assert_eq!(saved.lines().filter(|line| line.starts_with("right_stick_look=")).count(), 1);
-            assert_eq!(super::settings_from_text(Some(&saved))["right_stick_look"], serde_json::json!(enabled));
-        }
-    }
-}
+mod right_stick_look_tests;

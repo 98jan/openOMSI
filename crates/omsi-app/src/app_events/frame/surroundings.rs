@@ -48,7 +48,6 @@ impl App {
     /// The lights (the lamps' cones, the light maps, every light that shines), the rain and
     /// the snow, the cabin air, the tyres' spray and the sounds of the street.
     pub(super) fn frame_lights(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
-        let __t = Instant::now();
         // the lamps' cones in fog and falling rain or snow, and new light pictures
         if let Some(wt) = &self.session.weather {
             lights::set_cone_strength(wt.fog.0, precip_of(wt).1, daylight.night);
@@ -137,30 +136,69 @@ impl App {
                         .as_mut()
                         .map(|h| h.take_footfalls())
                         .unwrap_or_default();
-                    // what the passengers say, where they stand
-                    for line in self.session.humans.as_mut().map(|h| h.take_voice_lines()).unwrap_or_default() {
-                        if let Some(clip) = a.load_clip(&line.path) {
-                            a.play(
-                                clip,
-                                omsi_audio::mixer::VoiceParams {
-                                    gain: 1.0,
-                                    pitch: 1.0,
-                                    looping: false,
-                                    position: Some(line.position.as_vec3()),
-                                    doppler: true,
-                                    range: 3.0,
-                                    lowpass_hz: 0.0,
-                                    important: false,
-                                },
-                            );
-                        }
+                    // what the passengers say, where they stand. A clip heard for the first
+                    // time is read in the background and the line spoken as soon as it is
+                    // there (read here, in the frame, it stalled the picture); one still not
+                    // read after two seconds is let go.
+                    let said = self.session.humans.as_mut().map(|h| h.take_voice_lines()).unwrap_or_default();
+                    {
+                        let waiting = &mut self.sound.voices_waiting;
+                        waiting.extend(said.into_iter().map(|line| (line, Instant::now())));
+                        waiting.retain(|(line, since)| {
+                            if !a.clips_ready(std::slice::from_ref(&line.path)) {
+                                return since.elapsed() < std::time::Duration::from_secs(2);
+                            }
+                            if let Some(clip) = a.load_clip(&line.path) {
+                                a.play(
+                                    clip,
+                                    omsi_audio::mixer::VoiceParams {
+                                        gain: 1.0,
+                                        pitch: 1.0,
+                                        looping: false,
+                                        position: Some(line.position.as_vec3()),
+                                        doppler: true,
+                                        range: 3.0,
+                                        lowpass_hz: 0.0,
+                                        important: false,
+                                    },
+                                );
+                            }
+                            false
+                        });
                     }
                     let inside = self.cam.in_cab;
                     let __tm = Instant::now();
+                    // openOMSI's ambience; with its recordings the street's rain is its own
+                    let ours = if let Some(s) = self.sound.soundscape.as_mut() {
+                        s.enabled = self.settings.ambient;
+                        s.volume = self.settings.vol_ambient;
+                        let people = self.session.humans.as_ref().map(|h| h.people.iter().filter(|p| (p.position - cam.position).length() < 40.0).count() as u32).unwrap_or(0);
+                        let open = self.player.as_ref().and_then(|p| p.vehicle.var("Snd_OutsideVol")).unwrap_or(0.0);
+                        s.update(
+                            a,
+                            crate::soundscape::Moment {
+                                world: self.world.as_deref(),
+                                weather: Some(wt),
+                                clock: &self.clock,
+                                sun: daylight.altitude_deg,
+                                wetness,
+                                ear: cam.position,
+                                inside,
+                                open,
+                                people,
+                                paused: self.paused,
+                                dt,
+                            },
+                        );
+                        s.active()
+                    } else {
+                        false
+                    };
+                    *self.perf.profile.entry("lights.soundscape").or_default() += __tm.elapsed().as_secs_f64();
                     amb.update(
                         a,
                         dt,
-                        (kind, rate),
+                        if ours { (0, 0.0) } else { (kind, rate) },
                         inside,
                         street_condition(wt, self.session.wetness),
                         cam.position,
@@ -174,17 +212,19 @@ impl App {
                         if LAST.swap(bucket, std::sync::atomic::Ordering::Relaxed) != bucket
                         {
                             log::info!("sound: environment - {} (precip {kind} {rate:.2}, StreetCond {:.2}, {} voices)", amb.last, street_condition(wt, self.session.wetness), a.voice_count());
+                            if let Some(sc) = self.sound.soundscape.as_mut() {
+                                let heard = sc.take_heard();
+                                log::info!("sound: ambience - {}; heard {heard}", sc.last);
+                            }
                         }
                     }
                 }
             }
         }
-        *self.perf.profile.entry("lights+rain").or_default() += __t.elapsed().as_secs_f64();
     }
 
     /// The departure boards, the map's route arrows and the scenery's scripts.
     pub(super) fn frame_scripted(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
-        let __t = Instant::now();
         if let (Some(w), Some(r), Some(scene), Some(cam)) = (
             self.world.as_ref(),
             self.renderer.as_ref(),
@@ -204,14 +244,12 @@ impl App {
                 w,
                 traffic,
                 self.session.duty.as_ref(),
-                self.player
-                    .as_ref()
-                    .and_then(|p| p.vehicle.host.hof.as_deref()),
                 &self.clock,
             );
             *self.perf.profile.entry("scripted.boards").or_default() += __tb.elapsed().as_secs_f64();
             // the map's own route arrows, with OMSI 2's route arrows
             w.show_help_arrows(r, scene, self.settings.nav_arrows);
+            let mut times = omsi_scene::ScriptedTimes::default();
             w.update_scripted(
                 r,
                 scene,
@@ -221,8 +259,20 @@ impl App {
                 &phase,
                 self.sound.audio.as_ref(),
                 self.cam.in_cab,
+                &mut times,
             );
+            if omsi_cfg::flags::OMSI_PROFILE.is_set() {
+                for (k, v) in [
+                    ("scripted.lock", times.lock),
+                    ("scripted.inputs", times.inputs),
+                    ("scripted.scripts", times.scripts),
+                    ("scripted.apply", times.apply),
+                    ("scripted.textures", times.textures),
+                    ("scripted.lamps", times.lamps),
+                ] {
+                    *self.perf.profile.entry(k).or_default() += v;
+                }
+            }
         }
-        *self.perf.profile.entry("scripted").or_default() += __t.elapsed().as_secs_f64();
     }
 }

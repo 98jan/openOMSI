@@ -9,8 +9,16 @@ pub(crate) struct SoundState {
     pub(crate) audio: Option<omsi_audio::AudioEngine>,
     /// Sounds of the world around the camera (rain, footsteps).
     pub(crate) ambience: Option<ambience::Ambience>,
+    /// openOMSI's ambience from recordings (settings `ambient`, `vol_ambient`).
+    pub(crate) soundscape: Option<crate::soundscape::Soundscape>,
     /// Positional voice through GreenTeaSpeak in a session (`voice`).
     pub(crate) voice: Option<crate::voice::Voice>,
+    /// How far the walker's eyes are inside the player's bus, as the sound follows them
+    /// (see `App::foot_sound_amount`); None when nobody walks about it.
+    pub(crate) foot_in: Option<f32>,
+    /// Passengers' lines whose clip is still being read, with when they were said (see the
+    /// surroundings stage: spoken once read, let go after two seconds).
+    pub(crate) voices_waiting: Vec<(omsi_sim::people::VoiceLine, Instant)>,
 }
 
 /// The VR headset: its session (Windows), the navigator shown in it, the cockpit pointer
@@ -118,10 +126,11 @@ pub(crate) struct PerfState {
     pub(crate) thread_cpu_mark: Option<f64>,
     /// OMSI_PROFILE: the process's retired instructions then (macOS).
     pub(crate) instructions_mark: Option<u64>,
-    /// OMSI_PROFILE: the stages when `cpu_mark` was taken, and every frame's time since
-    /// then (s), for the exit summary's percentiles (see `perf_report`).
+    /// OMSI_PROFILE: the stages when the warm-up ended (15 s of play), and every frame's time
+    /// since then (s), for the exit summary's percentiles (see `perf_report`).
     pub(crate) profile_mark: Option<crate::perf_report::ProfileMark>,
     pub(crate) frame_times: Vec<f32>,
+    pub(crate) overlay: crate::perf_overlay::PerfOverlay,
 }
 
 /// The drawing around the renderer: the wgpu instance and surface, the tile streaming, the
@@ -136,8 +145,12 @@ pub(crate) struct GfxState {
     pub(crate) spanned: bool,
     /// Mirror pictures due (see `MIRROR_RATE`), and which mirror is next.
     pub(crate) mirror_budget: f32,
+    /// The frame time the mirrors' count a frame follows (see `mirror_updates`).
+    pub(crate) mirror_dt: f32,
     pub(crate) mirrors_seen: usize,
     pub(crate) mirror_turn: usize,
+    /// The mirrors the panels show, drawn every frame (kept for its room).
+    pub(crate) mirror_panel_cams: Vec<usize>,
     /// With no real-time reflections: the bus whose mirrors are frozen (see
     /// `MIRROR_FREEZE_REDRAW`).
     pub(crate) frozen_mirrors: Option<FrozenMirrors>,
@@ -154,6 +167,8 @@ pub(crate) struct GfxState {
     /// What the renderer shows of the AI traffic and the people (`view_sync`): their
     /// renders, kept apart from `session.traffic` and `session.humans`.
     pub(crate) sim_view: crate::view_sync::SimView,
+    /// The window's start while its renderer is still being built (see `WindowStart`).
+    pub(crate) starting: Option<super::WindowStart>,
 }
 
 /// The camera's state besides the camera itself: the head turned and zoomed per view, the
@@ -189,11 +204,18 @@ pub(crate) struct ViewState {
     /// The zoom of the views inside the bus (driver, passenger): their field of view is
     /// the camera's times this (the mouse wheel, + and -, a pinch), per view.
     pub(crate) view_zoom: std::collections::HashMap<String, f32>,
+    /// The zoom each camera of a view was left with (by `App::look_key`), put back when it
+    /// is taken again: each of Omsi.exe's cameras keeps its own (#2183).
+    pub(crate) cam_zooms: std::collections::HashMap<String, f32>,
     /// Eased Space return in flight (F1 only): ((look from), (zoom from), seconds in,
     /// look key it started from). A hand on the view cancels it; other views reset
     /// instantly. If the camera changes mid-glide, the originating camera is
     /// finalized straight ahead instead of keeping a partial angle.
     pub(crate) f1_reset: Option<((f32, f32), f32, f32, String)>,
+    /// The driver's view of this bus turned by the view editor (degrees, on top of the
+    /// look), and its field of view there (None: the camera's own or the setting's).
+    pub(crate) view_yaw: f32,
+    pub(crate) view_fov: Option<f32>,
     pub(crate) orbit: f32,
 }
 
@@ -257,6 +279,13 @@ pub(crate) struct InputState {
     /// time (a game started with the mouse steering on: wherever the cursor was, the wheel
     /// turned and the bus drove off on full throttle).
     pub(crate) center_cursor: bool,
+    /// `OMSI_INPUT`'s `cruise <km/h>`: the player's bus held at this speed (m/s) along its
+    /// heading until its next crash (the count of crashes when it began), for collision tests.
+    pub(crate) cruise: Option<(f32, u32)>,
+    /// Looking round with a mouse button: the cursor locked and hidden where it stands and
+    /// the view turned by the mouse's own movement (`App::sync_look_hold`); `true`: the look
+    /// locked it itself, `false`: it was the mouse steering's locked cursor already.
+    pub(crate) look_lock: Option<bool>,
     /// The cursor hidden while a controller drives: where it stood.
     pub(crate) cursor_hidden: Option<(f32, f32)>,
     /// The wheel's place when it last counted as moved.
@@ -307,6 +336,12 @@ pub(crate) struct MenuState {
     pub(crate) vehicle_list: Vec<(String, String)>,
     /// The drop-down open over a row of the settings window, if one is.
     pub(crate) dropdown: Option<crate::game_lists::Dropdown>,
+    /// A value of the open settings window really changed (set by `option_do` and the
+    /// like): its list is out of date (see `App::list_adjust`).
+    pub(crate) list_dirty: bool,
+    /// The open settings window's page titles, kept for a moment (asked every frame, see
+    /// `game_lists::page_titles`).
+    pub(crate) page_titles: std::cell::RefCell<crate::game_lists::TitlesCache>,
     /// (manufacturer, type) of each vehicle of `vehicle_list`, by its path.
     pub(crate) vehicle_meta: std::collections::HashMap<String, (String, String)>,
     pub(crate) hud: Option<hud::Hud>,
@@ -354,6 +389,9 @@ pub(crate) struct MenuState {
     pub(crate) menu_kbd: bool,
     /// The next click on the city map puts the bus there (Esc → Move the bus on the map).
     pub(crate) teleport_pick: bool,
+    /// The game's own panels: the quick menu, the trip summary, the destination form, the
+    /// view editor (`game_panels`).
+    pub(crate) game_panels: crate::game_panels::GamePanels,
     /// The tutorial being run (`--tutorial`), loaded on the first frame.
     pub(crate) tutorial: Option<crate::tutorial::Tutorial>,
     /// The mouse wheel over the menu, notches not yet turned into lines.
@@ -380,8 +418,13 @@ pub(crate) struct MenuState {
     pub(crate) info_bar: bool,
     /// OMSI's timetable window (`view_set_schedule`, Insert).
     pub(crate) timetable: bool,
-    /// The server's notifications on the screen (`notify`), oldest first.
+    /// The notifications on the screen (the server's `notify`, the plugins', the update
+    /// check's and the game's own), oldest first.
     pub(crate) notices: Vec<crate::ui::Notice>,
+    /// What the game tells the driver to do, turned into notifications when it starts.
+    pub(crate) note_watch: crate::ui::NoteWatch,
+    /// The loading screen at the session's start, and its fade over the first pictures.
+    pub(crate) loading: crate::ui::Loading,
 }
 
 /// The simulated session besides the map, the player's bus and the clock: the other
@@ -395,6 +438,10 @@ pub(crate) struct SessionState {
     pub(crate) world_day: Option<(i32, Option<String>)>,
     pub(crate) traffic: Option<traffic::Traffic>,
     pub(crate) schedule: Option<schedule::Schedule>,
+    /// The map's timetable read for the menu while it does not run (timetable traffic off):
+    /// its lines and tours can be looked at and picked, as in OMSI 2. Picking a duty makes
+    /// it `schedule`, without timetable buses (`timetable_for_duty`).
+    pub(crate) timetable_book: Option<schedule::Schedule>,
     pub(crate) humans: Option<humans::Humans>,
     pub(crate) duty: Option<schedule::PlayerDuty>,
     /// The duty was told the places of the stops beyond the loaded tiles.
@@ -407,6 +454,10 @@ pub(crate) struct SessionState {
     pub(crate) lamps_on: Option<bool>,
     pub(crate) populate_t: f32,
     pub(crate) humans_populate_t: f32,
+    /// The traffic put out vehicles or departures this frame (`populate_seen` /
+    /// `schedule_tick`, or a slice of them): the people's own filling of the map waits a
+    /// frame, so that the two never land in the same frame.
+    pub(crate) traffic_heavy_frame: bool,
     pub(crate) first_populate: bool,
     pub(crate) envir: Option<omsi_content::Envir>,
     pub(crate) weather: Option<omsi_content::weather::Weather>,
@@ -436,7 +487,7 @@ pub(crate) struct SessionState {
     pub(crate) wetness: f32,
     /// How far the cloud cover has drifted with the wind (fractions of its tiling), summed
     /// up frame by frame so that a change of wind does not throw the sky around.
-    pub(crate) cloud_drift: [f32; 4],
+    pub(crate) cloud_drift: [f64; 4],
     /// A change of weather coming in (see `weather_cycle`).
     pub(crate) weather_blend: Option<crate::weather_cycle::Blend>,
     /// The weather cycle, when the weather chosen is `cycle`.
@@ -446,6 +497,8 @@ pub(crate) struct SessionState {
     /// The current METAR receiver is a single manual fetch rather than the continuous sync.
     pub(crate) metar_once: bool,
     pub(crate) metar_next: f64,
+    /// The sky's cloud type and the physical weather model (see `weather_setup::SkyState`).
+    pub(crate) sky: crate::weather_setup::SkyState,
 }
 
 /// The fuel pump or the bus wash running (`SessionState::pumping`).

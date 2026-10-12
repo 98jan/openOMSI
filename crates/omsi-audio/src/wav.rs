@@ -90,6 +90,11 @@ mod tests {
 
 /// An Ogg Vorbis or FLAC file decoded whole (the ambience's recordings ship as FLAC: half
 /// the size of the WAV, nothing lost).
+/// An MP3 file: an ID3 tag first, or an MPEG audio frame's sync word (11 bits set).
+pub fn is_mp3(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"ID3") || (bytes.len() > 2 && bytes[0] == 0xFF && bytes[1] & 0xE0 == 0xE0 && bytes[1] & 0x06 != 0)
+}
+
 pub fn parse_compressed(bytes: &[u8]) -> Result<WavData> {
     use symphonia::core::audio::SampleBuffer;
     use symphonia::core::codecs::DecoderOptions;
@@ -99,7 +104,7 @@ pub fn parse_compressed(bytes: &[u8]) -> Result<WavData> {
     use symphonia::core::probe::Hint;
     let mss = MediaSourceStream::new(Box::new(std::io::Cursor::new(bytes.to_vec())), Default::default());
     let mut hint = Hint::new();
-    hint.with_extension(if bytes.starts_with(b"fLaC") { "flac" } else { "ogg" });
+    hint.with_extension(if bytes.starts_with(b"fLaC") { "flac" } else if is_mp3(bytes) { "mp3" } else { "ogg" });
     let mut format = symphonia::default::get_probe().format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())?.format;
     let track = format.default_track().ok_or_else(|| anyhow!("no audio track"))?.clone();
     let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())?;

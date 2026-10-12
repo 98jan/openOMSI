@@ -9,6 +9,14 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    # (a release of one platform alone: a fix only that platform needs, out sooner; a
+    # published release keeps its files, so the others never join it)
+    inputs:
+      only:
+        description: Platform to build and release alone
+        type: choice
+        default: all
+        options: [all, windows, macos, linux, android]
 
 concurrency:
   group: release-${{ github.ref }}
@@ -41,6 +49,7 @@ jobs:
 
   windows:
     needs: version
+    if: ${{ !inputs.only || inputs.only == 'all' || inputs.only == 'windows' }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -61,6 +70,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          workspaces: |
+            . -> target
+            launcher/src-tauri -> target
       - name: Workspace regression tests
         if: matrix.arch == 'x64'
         run: cargo test --locked --workspace --no-fail-fast
@@ -108,6 +120,14 @@ jobs:
           }
           Copy-Item (Join-Path $dir.FullName "libEGL.dll"), (Join-Path $dir.FullName "libGLESv2.dll"), (Join-Path $dir.FullName "LICENSE-ANGLE.txt") dist/windows/
           Get-ChildItem dist/windows
+      - name: ANGLE DirectX 11 startup regression (WARP)
+        if: matrix.arch == 'x64' && github.event_name == 'pull_request'
+        timeout-minutes: 10
+        shell: pwsh
+        env:
+          ANGLE_TEST_LIBRARY_DIRECTORY: ${{ github.workspace }}/dist/windows
+        run: |
+          cargo test --locked --release --target x86_64-pc-windows-msvc -p omsi-render --test angle_startup -- --ignored --nocapture
       # The Visual C++ runtime beside the program (Microsoft allows it to be shipped
       # app-locally): without it a PC lacking the Redistributable refused to start the game
       # ("VCRUNTIME140_1.dll was not found"). It cannot be linked in instead - the OpenXR
@@ -147,6 +167,7 @@ jobs:
 
   macos:
     needs: version
+    if: ${{ !inputs.only || inputs.only == 'all' || inputs.only == 'macos' }}
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -169,6 +190,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+          workspaces: |
+            . -> target
+            launcher/src-tauri -> target
       - name: Build
         run: scripts/build-macos.sh
       - name: Package
@@ -185,6 +209,7 @@ jobs:
 
   linux:
     needs: version
+    if: ${{ !inputs.only || inputs.only == 'all' || inputs.only == 'linux' }}
     strategy:
       fail-fast: false
       matrix:
@@ -210,11 +235,15 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            launcher/src-tauri -> target
       - name: System libraries
         run: |
           for i in 1 2 3; do
             sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev \
-              libudev-dev libgtk-3-dev libxkbcommon-dev libwayland-dev libssl-dev zip clang lld && break
+              libudev-dev libgtk-3-dev libxkbcommon-dev libwayland-dev libssl-dev libwebkit2gtk-4.1-dev zip clang lld && break
             sleep 20
           done
       - name: Workspace regression tests
@@ -255,6 +284,7 @@ jobs:
 
   android:
     needs: version
+    if: ${{ !inputs.only || inputs.only == 'all' || inputs.only == 'android' }}
     runs-on: ubuntu-latest
     env:
       OPENOMSI_VERSION: ${{ needs.version.outputs.version }}
@@ -298,7 +328,8 @@ jobs:
           path: out/*.apk
 
   release:
-    if: github.event_name != 'pull_request'
+    # (the platforms not built again are skipped, not failed)
+    if: ${{ !cancelled() && !failure() && github.event_name != 'pull_request' }}
     needs: [version, windows, macos, linux, android]
     runs-on: ubuntu-latest
     permissions:
@@ -358,10 +389,10 @@ jobs:
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             # the same version built again (main was rewritten and pushed once more): the
             # release stays, with this build's files and notes
-            gh release upload "v$VERSION" out/*.zip out/*.apk --clobber
+            gh release upload "v$VERSION" $(ls out/*.zip out/*.apk 2>/dev/null) --clobber
             gh release edit "v$VERSION" --title "openOMSI $VERSION" --notes-file notes.md
           else
-            gh release create "v$VERSION" out/*.zip out/*.apk \
+            gh release create "v$VERSION" $(ls out/*.zip out/*.apk 2>/dev/null) \
               --verify-tag \
               --title "openOMSI $VERSION" \
               --notes-file notes.md

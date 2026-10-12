@@ -180,6 +180,16 @@ pub fn list(content: &Path) -> Vec<Mod> {
             found.push((name, rel));
         }
     }
+    // (files lying loose in a folder all mods share - fonts, textures - one entry per folder:
+    // listed by folders alone they were not in the list at all)
+    for folder in omsi_cfg::CONTENT_FOLDERS {
+        let files = loose_files(content, folder, &is_claimed);
+        if !files.is_empty() {
+            let paths: Vec<String> = files.iter().map(|f| format!("{folder}/{f}")).collect();
+            let bytes = paths.iter().map(|p| size_of(&content.join(p))).sum();
+            out.push(Mod { id: format!("{LOOSE}{folder}"), name: format!("{folder} (loose files)"), kind: kind_of(&paths), paths, bytes, enabled: true, installed: 0, noted: false });
+        }
+    }
     if let Ok(rd) = std::fs::read_dir(content.join(ARCHIVES)) {
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_string();
@@ -193,6 +203,22 @@ pub fn list(content: &Path) -> Vec<Mod> {
         let paths = vec![rel.clone()];
         out.push(Mod { id: format!("found:{rel}"), name, bytes: size_of(&content.join(&rel)), kind: kind_of(&paths), paths, enabled: true, installed: 0, noted: false });
     }
+    out
+}
+
+/// The id of the entry that stands for a folder's loose files (`list`).
+const LOOSE: &str = "found-loose:";
+
+/// The files of `folder` (not its subfolders) no note claims.
+fn loose_files(content: &Path, folder: &str, is_claimed: &dyn Fn(&str) -> bool) -> Vec<String> {
+    let Ok(rd) = std::fs::read_dir(content.join(folder)) else { return Vec::new() };
+    let mut out: Vec<String> = rd
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| !n.starts_with('.') && !is_claimed(&format!("{folder}/{n}")))
+        .collect();
+    out.sort_by_key(|n| n.to_ascii_lowercase());
     out
 }
 
@@ -224,6 +250,18 @@ fn import_records(content: &Path, r: &mut Registry) {
 fn take(content: &Path, r: &mut Registry, id: &str) -> anyhow::Result<usize> {
     if let Some(k) = r.mods.iter().position(|m| m.id == id) {
         return Ok(k);
+    }
+    if let Some(folder) = id.strip_prefix(LOOSE) {
+        // (a folder's loose files: noted together, as the list shows them)
+        let claimed: Vec<String> = r.mods.iter().flat_map(|m| m.paths.iter().map(|p| p.to_ascii_lowercase())).collect();
+        let is_claimed = |rel: &str| claimed.iter().any(|c| c.eq_ignore_ascii_case(rel));
+        let paths: Vec<String> = loose_files(content, folder, &is_claimed).into_iter().map(|f| format!("{folder}/{f}")).collect();
+        if paths.is_empty() || !omsi_cfg::CONTENT_FOLDERS.iter().any(|f| f.eq_ignore_ascii_case(folder)) {
+            anyhow::bail!("no loose files in {folder}");
+        }
+        let new = new_id(r, &format!("{folder} (loose files)"));
+        r.mods.push(Mod { id: new, name: format!("{folder} (loose files)"), paths, enabled: true, installed: 0, bytes: 0, kind: Kind::Other, noted: true });
+        return Ok(r.mods.len() - 1);
     }
     let rel = id.strip_prefix("found:").ok_or_else(|| anyhow::anyhow!("no mod {id}"))?;
     if install::check_rel_pub(rel).is_err() || !content.join(rel).exists() {
@@ -348,6 +386,27 @@ mod tests {
         std::fs::write(d.join("maps/Hill Town/global.cfg"), b"x").unwrap();
         std::fs::create_dir_all(d.join("Vehicles/Hand Made")).unwrap();
         d
+    }
+
+    /// Fonts lying loose in Fonts (a mod's, put there by hand) are one entry, switched off
+    /// and on together; a noted mod's own font is not among them.
+    #[test]
+    fn loose_fonts_are_listed_and_switched_together() {
+        let c = content();
+        std::fs::create_dir_all(c.join("Fonts")).unwrap();
+        std::fs::write(c.join("Fonts/a.oft"), b"x").unwrap();
+        std::fs::write(c.join("Fonts/b.bmp"), b"x").unwrap();
+        std::fs::write(c.join("Fonts/mine.oft"), b"x").unwrap();
+        record(&c, "Bus with font", &["Vehicles/Big Bus".into(), "Fonts/mine.oft".into()]);
+        let l = list(&c);
+        let loose = l.iter().find(|m| m.id == "found-loose:Fonts").expect("the loose fonts");
+        assert_eq!(loose.paths, ["Fonts/a.oft", "Fonts/b.bmp"]);
+        set_enabled(&c, "found-loose:Fonts", false).unwrap();
+        assert!(!c.join("Fonts/a.oft").exists() && !c.join("Fonts/b.bmp").exists() && c.join("Fonts/mine.oft").exists());
+        let off = list(&c).into_iter().find(|m| m.name == "Fonts (loose files)").unwrap();
+        set_enabled(&c, &off.id, true).unwrap();
+        assert!(c.join("Fonts/a.oft").exists());
+        std::fs::remove_dir_all(c).unwrap();
     }
 
     #[test]

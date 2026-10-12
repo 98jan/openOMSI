@@ -9,6 +9,9 @@ impl App {
     pub(super) fn frame_player(&mut self, dt: f32) {
         // the on-screen wheel and pedals (a phone)
         self.touch_frame(dt);
+        // a walker stepping into or out of the bus hears its cab by degrees
+        let walker = self.foot_sound_amount(dt);
+        omsi_audio::soundset::set_cab_amount(walker);
         if self.player.is_none() || self.renderer.is_none() || self.scene.is_none() {
             return;
         }
@@ -47,18 +50,25 @@ impl App {
         // terrain alone: the terrain comes first while the tile is placed, and a
         // parked bus taken over after a restart fell through its yard onto the
         // ground below before the surfaces came, as Omsi.exe holds it, #1279)
-        let ground_here = self.world.as_ref().is_none_or(|w| {
-            let at = p.vehicle.position;
-            let k = ((at.x / omsi_map::tile_size()).floor() as i32, (at.y / omsi_map::tile_size()).floor() as i32);
-            w.surfaces.read().contains_key(&k)
-        });
+        let ground_here = self.world.as_ref().is_none_or(|w| ground_under(w, p.vehicle.position));
+        if let Some((v, crashes)) = self.input.cruise {
+            if p.vehicle.crashes != crashes {
+                log::info!("cruise: crashed at {:.1}, {:.1}, {:.1} - let go", p.vehicle.position.x, p.vehicle.position.y, p.vehicle.position.z);
+                self.input.cruise = None;
+            } else {
+                p.vehicle.set_speed(v);
+            }
+        }
         if !self.paused && ground_here {
+            // (the developer tools' held variables: before the scripts and after them)
+            crate::devtools::apply_holds(self.devtools.as_deref(), &mut p.vehicle);
             p.tick(
                 dt,
                 self.sound.audio.as_ref(),
                 self.cam.in_cab,
                 !matches!(self.view.as_str(), "free" | "foot"),
             );
+            crate::devtools::apply_holds(self.devtools.as_deref(), &mut p.vehicle);
             crate::plugins::plugin_impacts(&p.vehicle, &mut self.integrations);
             steps::deliver_player_impacts(p, self.session.traffic.as_mut());
             // After scripts: zero-movement `_drag` for a held switch. Running this
@@ -122,7 +132,13 @@ impl App {
         // player's bus meets them
         let mut placed_boxes = Vec::new();
         for q in self.session.placed.iter_mut() {
-            if !self.paused {
+            // (held where it stands while its tile is not loaded, as the driven bus is:
+            // with the player far off the tile goes, and the bus fell through the world
+            // and was saved there, #2132)
+            if !self.paused && self.world.as_ref().is_none_or(|w| ground_under(w, q.vehicle.position)) {
+                if let Some(w) = self.world.as_ref() {
+                    reground(w, &mut q.vehicle);
+                }
                 q.vehicle.update(dt);
             }
             q.sync_transforms(r, scene, false);
@@ -203,7 +219,10 @@ impl App {
         // their scripts and are drawn where they are (the player's frame did it)
         if let (None, Some(r), Some(scene)) = (self.player.as_ref(), self.renderer.as_ref(), self.scene.as_mut()) {
             for q in self.session.placed.iter_mut() {
-                if !self.paused {
+                if !self.paused && self.world.as_ref().is_none_or(|w| ground_under(w, q.vehicle.position)) {
+                    if let Some(w) = self.world.as_ref() {
+                        reground(w, &mut q.vehicle);
+                    }
                     q.vehicle.update(dt);
                 }
                 q.sync_transforms(r, scene, false);
@@ -214,15 +233,47 @@ impl App {
                 Some(p) => {
                     let inside = self.cam.in_cab;
                     self.sound.radio.set_map(&self.args.root, &self.args.map);
+                    self.sound.radio.fx = self.settings.radio_fx;
                     if let Some(m) = self.sound.radio.update(a, &p.vehicle, inside) {
                         self.service_msg = Some((m, 6.0));
                     }
                     // (a radio whose display is a text of its script shows the station)
                     p.vehicle.radio_text = self.sound.radio.display_text();
                     p.vehicle.radio_frequency = self.sound.radio.frequency(p.vehicle.position.x, p.vehicle.position.y);
+                    (p.vehicle.host.radio_name, p.vehicle.host.radio_song) = self.sound.radio.now_playing();
                 }
                 None => self.sound.radio.stop(a),
             }
         }
+    }
+}
+
+/// Whether the wheel surfaces of the tile under `at` are loaded (roads, bridges, yards - not
+/// the terrain alone): a vehicle there has ground to stand on.
+fn ground_under(w: &crate::scene::World, at: glam::DVec3) -> bool {
+    let k = ((at.x / omsi_map::tile_size()).floor() as i32, (at.y / omsi_map::tile_size()).floor() as i32);
+    w.surfaces.read().contains_key(&k)
+}
+
+/// A placed vehicle found under the ground (one saved after it had fallen through a tile that
+/// was not loaded, #2132) is put back on the highest ground there, as `admin::guard_fall`
+/// does for the driven bus.
+fn reground(w: &crate::scene::World, v: &mut omsi_sim::VehicleInstance) {
+    let at = v.position;
+    if crate::scene::drive_probe(&w.terrains, &w.surfaces, at.x, at.y, at.z + 1.5).below.is_some() {
+        return;
+    }
+    let Some(g) = w.walk_height(at.x, at.y) else { return };
+    if at.z >= g - 8.0 {
+        return;
+    }
+    log::warn!("a placed vehicle lay under the ground at ({:.1}, {:.1}, {:.1}): put back on it at {g:.1}", at.x, at.y, at.z);
+    let origin = glam::DVec3::new(at.x, at.y, g);
+    v.position = origin;
+    if let Some(rb) = v.rigid.as_mut() {
+        rb.place(origin, v.heading);
+    }
+    for t in v.trailers.iter_mut() {
+        t.realign();
     }
 }

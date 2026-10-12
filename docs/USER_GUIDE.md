@@ -53,6 +53,14 @@ Everything can also be given on the command line, which then skips both:
 | `--enhanced-plus` | Enhanced+: the physically based renderer with ray-traced shadows, ambient occlusion and reflections |
 | `--launcher` / `--menu` / `--no-menu` | open the launcher (the default without arguments), the in-game menu, or neither |
 
+**Experimental passenger animation A/B test.** In the launcher open **Settings → Gameplay →
+Passengers → Passenger animations** and choose **Procedural (experimental)** to test the
+earlier foot-planted/IK poses. **Original OMSI** is the default and remains compatible.
+For temporary A/B tests without changing the saved setting, set `OMSI_PAX_ANIMATION=enhanced`
+before starting openOMSI (or `OMSI_PAX_ANIMATION=original` to force the classic mode).
+This is a visual experiment: check boarding, seats, door steps, CPU time and mirrors before
+making it the default. The setting does not change passenger routing or tickets.
+
 Keys in the window: **W** throttle, **S** brake, **A**/**D** steering - the arrow keys do the
 same - and every vehicle key of `Inputs/keyboard.cfg` works as it does in OMSI: throttle
 Shift+Num 8, brake Shift+Num 2, steering Shift+Num 4/6, **E** battery and ignition, **M**
@@ -88,6 +96,28 @@ runs. "Tell me about a new version during a session" switches the cards off (the
 goes on). `OMSI_NO_UPDATE=1` switches the checks off; `OMSI_UPDATE_URL` points them at another
 release description (GitHub's format; `file://` works, for testing - the game then looks after
 3 s).
+
+**When a version does not start.** openOMSI heals a start that breaks on its own, before
+anything that could break has run: when it is started (a double click, the launcher) it first
+starts a small watcher without a window. If the launcher crashes, ends on an error or has not
+drawn its first frames after two minutes (it is then ended), the watcher steps in - when that
+version never started on this computer, or failed twice in a row:
+
+1. a newer release, when there is one, is downloaded and installed (its program must start
+   before it replaces anything) and openOMSI starts again;
+2. else the version the last update replaced - kept beside it until the new version has
+   started well once - is put back, and openOMSI starts again;
+3. else openOMSI starts once more in **safe mode** (the basic render pipelines, no plugins);
+4. else a message says what to do (download the latest release, where the log is).
+
+Each step is told in a message box. A version that failed is never installed again on this
+computer, only a newer one. The project can also list a released version as broken
+(`release/health.json`); such a version goes back to the one before, or on to a fixed one, at
+the next start even when it starts well. A crash in the middle of a drive is not a broken
+start: nothing is changed then. The guard keeps its own record in `~/.openomsi/guard/`
+(`guard.log`, `starts.json`, `bad-versions`). `OMSI_NO_GUARD=1` switches it off. On Android
+the next start after one that never reached the launcher looks for an update at once (the
+system's installer asks); going back is the system's business there.
 
 **Playing now.** While a session runs the game tells the project's counter (a Cloudflare
 Worker, `services/presence/`) every ten minutes that it is being played, and says goodbye
@@ -150,15 +180,47 @@ LAN session. Esc opens the game menu: drive the next placed vehicle, place any v
 the installation in front of the camera (or beside the bus), couple what stands close behind
 the bus and uncouple it again, save the situation or load the quicksave, the next weather, the clock an hour on or back, refuel and wash (only at a
 petrol station, as in OMSI), repair (the team needs the map's travel time when the bus stands
-in no depot yard), screenshot, timetable, skip the duty's next stop (also **Ctrl+Shift+H**: for a
-stop the bus cannot reach or never registers at), the object editor (below), quit. Its *Options* hold
-one line a setting under the launcher's headings (Simulation, Display & sound, Driving,
-Camera): **Left** and **Right** (or a click on the arrows round the value) step it down and
-up, Enter as before; they are kept for the next game. Home is the ticket desk camera and Insert the timetable view (as OMSI's keyboard.cfg binds them), and the
+in no depot yard), the photo mode (below), timetable, skip the duty's next stop (also **Ctrl+Shift+H**: for a
+stop the bus cannot reach or never registers at), the object editor (below), quit. The menu is a
+page of the launcher: its rail on the left (the menu's lines as its pages, the picture of the
+game beside it with a card of what is being driven and **Resume**), and *Options*, *Controls*,
+*Vehicle options*, *World options* and the lists open as launcher pages right of the rail - the
+tabs as the launcher's bar, the settings in two columns with its fields, switches, sliders and
+drop-downs. **Up**/**Down** and **Enter** work them as before, **Left** and **Right** step a
+value; the settings are kept for the next game. Home is the ticket desk camera and Insert the timetable view (as OMSI's keyboard.cfg binds them), and the
 change keys of keyboard.cfg hand out or take back the change. The HUD
 shows time, speed, line, next stop, delay and what the workshop just did (and why the bus
 stands: the parking brake, low air pressure, a line the date's chrono takes off), and the
 controls for the first seconds.
+
+### Photo mode
+
+*Photo mode* in the game menu (or **Ctrl+F12**, the `photo_mode` key) stops the game and hands
+over a camera of its own, as the racing games' photo modes do. **WASD** fly it (level over the
+ground whichever way it looks), **Q**/**E** (or Space) go down and up, the right mouse button
+held - or the left one over the picture - looks round (the arrows too), the wheel and **+**/**-**
+zoom the lens, **Z**/**X** roll it and **R** levels it again, **Shift** is faster and **Alt**
+slower, **Tab** steps through the panel's pages, **H** hides the panel, **Enter** (or F12) takes
+the photo and **Esc** leaves. A gamepad: the left stick moves, the right one looks, the triggers
+go down and up, the shoulder buttons roll, the d-pad zooms, A takes the photo, Y hides the
+panel, X levels, B leaves. The camera stays within a distance of the bus (25 m to unlimited)
+and above the ground; *Orbit* turns it round the bus instead.
+
+The panel has five pages. *Camera*: free or orbit, the focal length (10-400 mm, a full-frame
+camera's), the roll, the speed, the distance allowed, the frame (the window's or 16:9, 21:9,
+3:2, 4:3, 1:1, 4:5, 9:16 - the photo is cut to it) and the guides (thirds, golden ratio,
+centre). *Lens*: depth of field with the aperture (f/1.2-f/22), the focus on the bus or at a
+distance set by hand and the bokeh's shape (round, 5, 6 or 8 blades); motion blur for a
+rolling shot with the shutter speed (the bus stays sharp, the street passes - it needs the
+bus moving when the game was stopped); how many samples a photo is made of. *Colour*:
+exposure, contrast, highlights, shadows, saturation, vibrance, temperature, tint. *Effects*:
+a film look (vivid, warm, cool, vintage, sepia, black and white, noir, bleach bypass, teal and
+orange, faded film) and its strength, film grain, vignette, colour fringes, sharpening.
+*Scene*: the clock an hour or a quarter on or back, and the photo's size (the window's or
+double). Depth of field and motion blur are real: the photo is the average of many pictures,
+each taken through another point of the aperture and at another moment of the shutter, so
+what is shown sharpens over a second or two once the camera stands still (the panel shows
+how far). What is shown is the photo as it is saved - a PNG in the `Screenshots` folder.
 
 On a duty the game keeps a **journey log** in the content folder's `Journeys` (one text file
 a duty, named by the real date and time it began and the line and tour): each trip driven
@@ -173,7 +235,7 @@ The launcher is the game's own window (`crates/omsi-app/src/launcher`): `omsi` s
 without arguments (or with `--launcher`) opens it. It is drawn with wgpu - no web engine -
 flat and dark (neutral greys, one amber accent), every control custom (sliders, switches,
 dropdowns, a calendar, a time picker, text fields, segmented buttons), Material Symbols
-icons and Roboto (`crates/omsi-ui`). The Drive page shows the chosen bus in a card, as a
+icons and Inter (`crates/omsi-ui`). The Drive page shows the chosen bus in a card, as a
 picture **drawn by the game's renderer** - its model, paint, materials, reflections and
 shadows exactly as in the game, under the light of the chosen time and weather - drawn
 again only when something changes; drag on it to turn the bus, scroll to zoom. Its pages:
@@ -211,7 +273,9 @@ again only when something changes; drag on it to turn the bus, scroll to zoom. I
   yet has **Set up**, and **Set up step by step** finds its axes (turn the wheel left, press
   each pedal); every button of the device is listed (press one to jump to it). On Windows the
   devices are read through DirectInput, as OMSI does, so wheels Windows lists can be
-  configured for steering. Force feedback needs a driver that supports constant force:
+  configured for steering. Logitech wheels push the other way from DirectInput's force, so the game
+  turns their force round by itself (leave *Invert force feedback* off unless one still feels wrong).
+  Force feedback needs a driver that supports constant force:
   parking resistance eases as the bus rolls, with centring and
   feedback from the bus's sideways acceleration, short bumps when the front wheels cross
   an edge, plus the scripts' shaking, `FF_Vib_Amp`. Over the top of that the wheel keeps up
@@ -630,6 +694,20 @@ running through its line where they do not fit (ten characters on Dmitrij's "Mag
 P3ta's SOR buses and its kin, whose first line then shows the map's frequency for the
 place, e.g. `94.6 MHz`). Without stations, or with the radio off, a display shows its own texts.
 
+**Where it is heard.** In the cab the radio sounds from the driver's corner, a little ahead
+of the driver's eyes - from half as far as it really is, since a bus's speakers are spread
+along it: towards the back it is heard from the front but does not fade away. Changing the
+view, the sound glides to its new side in a quarter of a second. From outside it is the bus
+playing through its windows.
+
+**The radio's own sound.** Settings → Sound (in the game: Options → Sound) has three sliders,
+all off at first: *Radio: small speaker* plays it through a small dashboard speaker (no deep
+bass, no bright treble, nearly mono and a little pushed on the loud parts), *Radio: FM hiss*
+adds the hiss and crackle of a weak signal, *Radio: signal dropouts* loses the signal now
+and then for a moment (a bridge, a tall building). With all three at 0 the stream is played
+untouched. They are `radio_speaker`, `radio_hiss` and `radio_dropouts` (0..1) in
+`settings.cfg`.
+
 **When nothing plays.** `~/.openomsi/game.log` says what happened:
 `radio: 23 stations` (the list), `radio: station 1 Radiozurnal (https://…)` (a button
 pressed), then `Radio 1: Radiozurnal - buffering …` and the song, or `no signal (…)` with
@@ -667,6 +745,34 @@ original map is never written; delete the copy to have the original back. Only a
 `[object]` records can be edited: splines, the ground, spline rows, new objects and the
 timetable are not part of it.
 
+## Developer tools
+
+For those who build vehicles: **Ctrl+Shift+D** opens a panel at the right of the picture
+over the running game (again: closes it; closed it costs nothing). The game goes on under it;
+the mouse works the panel where it is over it and the cab everywhere else. Four pages:
+
+* **Variables**: the search lists the bus's script variables (`$` before the text: its string
+  variables) with their values; a click puts one on the watch list at the top, which is kept
+  per bus in `~/.openomsi/devtools/<bus file>.watch`. A watched variable chosen can be **Set**
+  to a value once, or **Held** at it - written into the bus before its scripts run and after
+  them, every frame, until *Let go* or until the panel closes.
+* **Overlays** over the picture: the paths and their points (with the entries and exits), the
+  seats and standing places (and the way they face), the bounding boxes, the axles and
+  wheels, the interior lights with their variables and values, the ticket and stamper
+  points, the mirrors, the centre of gravity and the views - of every part of an articulated
+  bus in its own place.
+* **Mirrors**: each mirror moved, turned and widened while you look at it, and *Copy the
+  block* puts it on the clipboard as the `[add_camera_reflexion_2]` block it has become, to
+  paste into the `.bus` (the block is shown under the buttons, and written to the log too).
+* **Files**: what changes in the bus's files is read again within a second while the panel
+  is open (or on its button): paths.cfg and `[passengercabin]` (not while people are aboard
+  and places, doors or points would go), sound.cfg, the `.bus` (physics, cameras, mirrors,
+  bounding box; not when its axles change), model.cfg (animations, visibility and lights, as
+  long as it names the same meshes) and the constfiles (as long as the scripts and their
+  variables stay). A changed script needs the bus placed anew. *Open the log* opens the
+  game's log. Change a copy of a bus in your content folder, never the installation's own
+  files.
+
 ## Mirror panels
 
 Copies of the bus's mirrors can be laid over the picture, so that the street behind is in
@@ -693,7 +799,11 @@ A new panel has the shape of the mirror's glass in the model. The layout is kept
 `~/.openomsi/mirror_hud.cfg`. The setting `mirror_hud` (0 off, 1 the right mirror, 2 the left,
 3 both) gives a bus with no layout of its own its first panels. The panels need the mirrors
 themselves to be drawn (`mirror_size` not 0); they are redrawn at the rate `mirror_refresh`
-sets, also when the glass is not in the view.
+sets, also when the glass is not in the view. With **Mirror panels every frame** (Settings →
+Graphics, `mirror_hud_every_frame=1`) the mirrors the panels show are drawn every frame instead,
+as ETS2 draws its screen mirrors, whatever `mirror_refresh` says (even with no real-time
+reflections); the other mirrors take their turns without them. It costs one mirror picture a
+frame for each mirror on the panels (none in VR, where the panels are not drawn).
 
 ## Debug and test switches
 

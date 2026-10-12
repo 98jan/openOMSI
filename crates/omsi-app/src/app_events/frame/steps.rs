@@ -11,7 +11,9 @@ use crate::view_sync::traffic::TrafficView;
 /// The vehicles the AI traffic must see besides its own: the other LAN players' buses, the
 /// player's own and the ones the player placed - and, unless the game is paused, the
 /// traffic's step itself with the player's priority, blinker, switches and signals.
-/// `player_rail`: the player's place on a rail line for the signals.
+/// `player_rail`: the player's place on a rail line for the signals. Returns the seconds
+/// spent handing the points and signals to the world (OMSI_PROFILE: they wait for the
+/// scenery objects' lock).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn traffic_tick(
     t: &mut traffic::Traffic,
@@ -23,17 +25,23 @@ pub(crate) fn traffic_tick(
     remotes: &lan::LanGame,
     placed: &[Player],
     player_rail: Option<(usize, bool)>,
-) {
+) -> f64 {
     t.others = lan_outlines(remotes);
     t.others.extend(own_outlines(player, placed));
     t.other_blinkers = outline_indicators(remotes, player, placed);
     if !paused {
         t.player_priority = player.and_then(|p| p.vehicle.var("TrafficPriority")).is_some_and(|v| v > 0.5);
+        // (a LAN player's emergency vehicle: its scripts' variables come over the network,
+        // `omsi_net::vars`, for a copy of the same vehicle files)
+        t.other_priority = remotes.remotes.iter().filter(|(_, r)| r.vehicle().var("TrafficPriority").is_some_and(|v| v > 0.5)).map(|(id, _)| *id).collect();
         t.player_blinker = player.map(|p| lan::indicator(&p.vehicle)).unwrap_or(0);
         t.tick(view, dt, player.map(|p| player_outline(p)));
+        let t0 = Instant::now();
         world.set_switches(&t.switch_requests());
         world.set_signals(&t.signal_aspects(&world.signal_routes, player_rail));
+        return t0.elapsed().as_secs_f64();
     }
+    0.0
 }
 
 /// The AI vehicles round the player's bus that it collides with (none with `collide` off:
@@ -57,7 +65,7 @@ pub(crate) fn deliver_player_impacts(p: &mut Player, traffic: Option<&mut traffi
 pub(crate) fn gloomy_weather(weather: Option<&omsi_content::weather::Weather>) -> bool {
     weather.map(|w| {
         let (kind, rate) = precip_of(w);
-        w.fog.0 < 600.0 || (kind != 0 && rate > 0.05) || w.clouds.0.trim().to_ascii_lowercase().starts_with("overcast")
+        w.fog.0 < 600.0 || (kind != 0 && rate > 0.05) || w.clouds.0.trim().as_bytes().get(..8).is_some_and(|p| p.eq_ignore_ascii_case(b"overcast"))
     }).unwrap_or(false)
 }
 
@@ -308,19 +316,24 @@ pub(crate) fn duty_step(
     {
         let clock = game_clock.unwrap_or(&p.vehicle.host.clock);
         let career = &*career;
-        crate::journey::note(journey, d, due, served, root, || crate::journey::head(career, &world.global.name, &p.vehicle, clock));
+        crate::journey::note(journey, d, due, served, p.vehicle.odometer_km(), root, || crate::journey::head(career, &world.global.name, &p.vehicle, clock));
+    }
+    // the trip over, rated before the next one starts its ratings afresh (none for a
+    // trip the bus was never driven on: a duty taken at its last stop)
+    let rated = ended.as_ref().and_then(|f| career.trip_ended(f.run));
+    // (the trip's summary, for the game to show)
+    if let (Some(f), Some(j)) = (ended.as_ref(), journey.as_mut()) {
+        let (passengers, tickets_asked) = career.trip_people(f.run).unwrap_or_default();
+        let rating = rated.map(|[driving, comfort, tickets]| crate::journey::TripRating { driving, comfort, tickets, passengers, tickets_asked });
+        j.trip_ended(f.index, rating);
     }
     if let Some(events) = plugin_events {
         use omsi_plugin::InfoValue::{Num, Text};
         if let Some((count, due_at, at)) = d.take_skipped() {
             crate::plugins::queue_event(events, "stops_skipped", vec![Num(count as f64), Num(due_at as f64), Num(at as f64)]);
         }
-        // the trip over, rated before the next one starts its ratings afresh (none for a
-        // trip the bus was never driven on: a duty taken at its last stop)
-        if let Some(f) = ended {
-            if let Some([driving, comfort, tickets]) = career.trip_ended(f.run) {
-                crate::plugins::queue_event(events, "trip_done", vec![Num(f.index as f64 + 1.0), Text(f.how.as_str().into()), Num(driving), Num(comfort), Num(tickets)]);
-            }
+        if let (Some(f), Some([driving, comfort, tickets])) = (ended, rated) {
+            crate::plugins::queue_event(events, "trip_done", vec![Num(f.index as f64 + 1.0), Text(f.how.as_str().into()), Num(driving), Num(comfort), Num(tickets)]);
         }
     }
     career.trip_driven(d.trip_run());
@@ -394,7 +407,7 @@ pub(crate) fn light_vehicles<'a>(
 pub(crate) fn picture_lighting(
     daylight: &omsi_sim::Daylight,
     weather: Option<&omsi_content::weather::Weather>,
-    cloud_drift: [f32; 4],
+    cloud_drift: [f64; 4],
     wetness: f32,
     world: Option<&World>,
     inside: Option<&omsi_sim::VehicleInstance>,
@@ -402,9 +415,10 @@ pub(crate) fn picture_lighting(
     condensation: [f32; 4],
     settings: &crate::settings::Settings,
     animation_time: f32,
+    sky: &crate::weather_setup::SkyState,
 ) -> omsi_render::Lighting {
     let mut lighting = match weather {
-        Some(w) => weather_lighting(daylight, w, cloud_drift, wetness, settings.shadows),
+        Some(w) => weather_lighting(daylight, w, cloud_drift, wetness, settings.shadows, sky),
         None => lights::lighting_from(daylight, 50000.0),
     };
     lighting.wetness = omsi_cfg::flags::OMSI_WETNESS.parse()
@@ -450,19 +464,18 @@ pub(crate) fn departure_boards(
     world: &World,
     traffic: Option<&traffic::Traffic>,
     duty: Option<&schedule::PlayerDuty>,
-    player_hof: Option<&omsi_vehicle::Hof>,
     clock: &omsi_sim::SimClock,
 ) {
     match schedule {
-        Some(s) => s.update_boards(world, traffic, duty, player_hof, clock),
+        Some(s) => s.update_boards(world, traffic, duty, clock),
         None => world.timetable_boards.lock().clock = Some(clock.clone()),
     }
 }
 
 /// The mirror panels follow the bus's mirrors (their aspects and glass from the world).
 pub(crate) fn mirror_hud_sync(hud: &mut crate::mirror_hud::MirrorHud, world: &World, p: &Player, mode: u8) {
-    hud.set_aspects(world.mirror_aspect.lock().clone());
-    hud.set_glass(world.mirror_glass.lock().clone());
+    hud.set_aspects(&world.mirror_aspect.lock());
+    hud.set_glass(&world.mirror_glass.lock());
     hud.sync(p, mode);
 }
 

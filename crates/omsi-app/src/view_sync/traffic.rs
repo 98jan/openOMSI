@@ -216,34 +216,28 @@ impl Traffic {
     }
 
     pub(super) fn sync(&mut self, view: &mut TrafficView, world: &World, renderer: &Renderer, scene: &mut Scene) {
-        // cars that have parked: the parked object stands in their place from now on
-        let mut i = 0;
-        while i < self.sim.cars.len() {
-            match self.sim.cars[i].park {
-                Some(p) if p.done => {
-                    let c = self.sim.cars.swap_remove(i);
-                    if world.return_parked(renderer, scene, p.key) {
-                        if let Some(list) = self.sim.parked.get_mut(&p.lane) {
-                            list.push((p.s, p.lat));
-                        } else {
-                            self.sim.parked.insert(p.lane, vec![(p.s, p.lat)]);
-                        }
-                    }
-                    if omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set() {
-                        log::info!("car {} has parked (space {})", c.id, p.key);
-                    }
-                    self.drop_sounds(c.id);
-                    view.retire(c.id);
-                }
-                _ => i += 1,
+        // cars that have parked (the simulation takes them off): the parked object stands
+        // in their place from now on
+        while let Some((c, p)) = self.sim.take_parked() {
+            if world.return_parked(renderer, scene, p.key) {
+                self.sim.space_taken_back(&p);
             }
+            if omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set() {
+                log::info!("car {} has parked (space {})", c.id, p.key);
+            }
+            self.drop_sounds(c.id);
+            view.retire(c.id);
         }
         for r in std::mem::take(&mut view.released) {
             world.release_vehicle(renderer, scene, r);
         }
+        // (drawn between the traffic's last two steps, where this frame falls: see
+        // `TrafficSim::advance`; back where they stand once drawn)
+        self.sim.show_between();
         self.sync_drivers(view, world, renderer, scene);
         self.sync_lamps(world, renderer, scene);
         self.sync_cars(view, world, renderer, scene);
+        self.sim.show_actual();
     }
 
     /// The traffic light lamps (see `sync`).
@@ -252,18 +246,33 @@ impl Traffic {
         // light into the `[visible] red|yellow|green 1` meshes and the coronas, and moves
         // what it animates (a barrier arm); it runs on the time since the last sync (an
         // offscreen run syncs only for its pictures)
-        let dt = std::mem::take(&mut self.sim.lamp_dt);
+        let frame_dt = std::mem::take(&mut self.sim.lamp_dt);
         let near = self.sim.viewer.map(|v| v.pos);
         let debug_lamps = omsi_cfg::flags::OMSI_DEBUG_LAMPS.is_set();
+        // Far lamps take turns: each one every `LAMP_TURNS`th frame, its script run on the
+        // time it was owed. All of them in 1.2 km, every frame, one after the other on the
+        // frame's thread, were a good part of the traffic's frame; a lamp 300 m off that
+        // changes a frame or three late shows nobody anything (a moving barrier always runs).
+        self.lamp_turn = self.lamp_turn.wrapping_add(1);
+        if self.lamp_owed.len() > 8192 {
+            self.lamp_owed.clear();
+        }
         for lamp in world.light_objects.lock().iter_mut() {
             if debug_lamps && lamp.animated {
                 log::info!("moving lamp at ({:.1}, {:.1}), {:.0} m from the viewer", lamp.pos.x, lamp.pos.y, near.map(|p| (lamp.pos - p).length()).unwrap_or(0.0));
             }
-            if let Some(p) = near {
-                if (lamp.pos - p).length() > 1200.0 {
-                    continue;
-                }
+            let dist = near.map(|p| (lamp.pos - p).length()).unwrap_or(0.0);
+            if dist > 1200.0 {
+                continue;
             }
+            let key = lamp.script.as_ref().map(|s| Arc::as_ptr(s) as usize).unwrap_or(lamp.parent as usize ^ lamp.index);
+            if dist > LAMP_NEAR && !lamp.animated && !lamp_turn_now(key, self.lamp_turn) {
+                if lamp.script.is_some() {
+                    *self.lamp_owed.entry(key).or_default() += frame_dt;
+                }
+                continue;
+            }
+            let dt = frame_dt + self.lamp_owed.remove(&key).unwrap_or(0.0);
             let (state, request) = match self
                 .controller_of_object
                 .get(&lamp.parent)
@@ -292,7 +301,7 @@ impl Traffic {
                 None => (omsi_sim::traffic::UNLINKED_PHASE, false),
             };
             let (r, y, g) = TrafficLightController::lamps(state);
-            let value = |lamp: &crate::scene::LightObject, var: &str| -> f32 {
+            let raw_value = |lamp: &crate::scene::LightObject, var: &str| -> f32 {
                 // Custom signals can shift phases or blink the standard channels (Numazu
                 // pedestrian lamps). Use their script outputs whenever they are available.
                 let scripted = lamp.script.as_ref().and_then(|script| {
@@ -348,6 +357,14 @@ impl Traffic {
                     }
                 }
             }
+            // A scripted lamp can leave both standard channels on at once. A road signal
+            // must never show green together with red; keep the stop aspect in that case.
+            let red_on = raw_value(lamp, "red") >= 0.5;
+            let value = |lamp: &crate::scene::LightObject, var: &str| -> f32 {
+                let green = matches!(var.trim().to_ascii_lowercase().as_str(), "green" | "gruen" | "grün");
+                let v = raw_value(lamp, var);
+                if green && red_on { 0.0 } else { v }
+            };
             if !lamp.texts.is_empty() {
                 if let Some(script) = lamp.script.as_ref() {
                     let mut s = script.lock();
@@ -410,9 +427,11 @@ impl Traffic {
                                 let s = script.lock();
                                 if s.program.frame.is_empty() { None } else { s.var(v) }
                             });
-                            scripted
+                            let raw = scripted
                                 .or_else(|| v.trim().parse::<f32>().ok())
-                                .or_else(|| crate::scene::standard_traffic_lamp(v, r, y, g, request))
+                                .or_else(|| crate::scene::standard_traffic_lamp(v, r, y, g, request));
+                            let green = matches!(v.trim().to_ascii_lowercase().as_str(), "green" | "gruen" | "grün");
+                            raw.map(|value| if green && red_on { 0.0 } else { value })
                         };
                         let (alpha, light) = slots.values(&known);
                         renderer.set_params(scene, *inst, &alpha, visible, &[]);
@@ -443,6 +462,9 @@ impl Traffic {
                 c.vehicle.set_var("Envir_Brightness", b);
             }
         }
+        // one buffer for the per-mesh alpha of every car: a fresh copy for each mesh of each
+        // car was thousands of small allocations a frame in a busy street
+        let mut alpha: Vec<f32> = Vec::new();
         for c in &mut self.sim.cars {
             let Some(r) = view.cars.get_mut(&c.id) else { continue };
             let (render, trailer_renders) = (&mut r.body, &mut r.trailers);
@@ -522,7 +544,8 @@ impl Traffic {
                 // translucent and reveals the interior through its panels.  Opaque slots
                 // are never allowed to be faded by a dynamic alpha value; windows and
                 // explicitly alpha-tested/blended slots retain their authored behavior.
-                let mut alpha = p.slot_alpha.clone();
+                alpha.clear();
+                alpha.extend_from_slice(&p.slot_alpha);
                 for (slot, mat) in scene.instances[*inst].materials.iter().enumerate() {
                     if scene
                         .materials
@@ -546,7 +569,8 @@ impl Traffic {
                     let def = &t.ty.model.meshes[t.ty.meshes[i].def_index];
                     let vp = def.viewpoint;
                     let vp_ok = vp == 0 || vp & 4 != 0;
-                    let mut alpha = p.slot_alpha.clone();
+                    alpha.clear();
+                    alpha.extend_from_slice(&p.slot_alpha);
                     for (slot, mat) in scene.instances[*inst].materials.iter().enumerate() {
                         if scene
                             .materials
@@ -565,5 +589,35 @@ impl Traffic {
                 }
             }
         }
+    }
+}
+
+/// Lamps further than this from the viewer (m) are updated in turns (see `sync_lamps`).
+const LAMP_NEAR: f64 = 300.0;
+/// A far lamp is updated every this many frames.
+const LAMP_TURNS: u32 = 4;
+
+/// Is it the turn of the far lamp `key` in frame `turn`? (Spread by the key, so that every
+/// frame updates about the same share of them.)
+fn lamp_turn_now(key: usize, turn: u32) -> bool {
+    let spread = (key as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 60;
+    (turn.wrapping_add(spread as u32)) % LAMP_TURNS == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A far lamp gets its turn once in every `LAMP_TURNS` frames, and the lamps' turns are
+    /// spread over those frames.
+    #[test]
+    fn far_lamps_take_turns() {
+        let mut per_frame = [0usize; LAMP_TURNS as usize];
+        for key in (0..4000usize).map(|k| 0x1000_0000 + k * 48) {
+            let due: Vec<u32> = (0..LAMP_TURNS).filter(|&t| lamp_turn_now(key, t)).collect();
+            assert_eq!(due.len(), 1, "{key:#x}");
+            per_frame[due[0] as usize] += 1;
+        }
+        assert!(per_frame.iter().all(|&n| n > 700), "{per_frame:?}");
     }
 }

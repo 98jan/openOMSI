@@ -3,7 +3,19 @@
 //! omsi-sim and know nothing of the GPU; what they look like is here:
 //!
 //! * `traffic`: the AI vehicles' renders, their drivers and the traffic light lamps;
-//! * `people`: the people's meshes, posing and skinning, the coins and the ticket blocks.
+//! * `traffic_audio`: the AI vehicles' sounds;
+//! * `people`: the people's meshes, posing and skinning, the coins and the ticket blocks;
+//! * `vehicle`, `vehicle_damage`: what any vehicle's simulation changed this frame (the
+//!   player's, an AI car's, their coupled parts'): skinned meshes, switched materials, free
+//!   textures, interior lamps, text and script texture uploads, glass cracks and dents.
+//!
+//! What the simulation hands over is data, never pixels it sends or sounds it plays: the
+//! cars it took off the road (`TrafficSim::retired`, `TrafficSim::take_parked`), the
+//! pictures its scripts and pages drew (`ScriptTexture::take_upload`,
+//! `TextTextureState::pending`), the sounds its scripts triggered (`VehicleHost::fired_*`)
+//! and the posts it knocked over (`VehicleInstance::knocked_now`). The pictures it reads
+//! itself (fonts, `STLoadTex`) come through the decoder registered here
+//! ([`install_sim_decoder`]).
 //!
 //! [`sync`] is the frame's view sync. The window runs it twice a frame, each time where the
 //! part it brings up to date used to be synced: the traffic at the end of its step (before
@@ -22,6 +34,9 @@
 
 pub(crate) mod people;
 pub(crate) mod traffic;
+pub(crate) mod traffic_audio;
+pub(crate) mod vehicle;
+pub(crate) mod vehicle_damage;
 
 use crate::humans::Humans;
 use crate::scene::World;
@@ -31,6 +46,9 @@ use omsi_render::{Renderer, Scene};
 use omsi_sim::VehicleInstance;
 use people::PeopleView;
 use traffic::TrafficView;
+
+// (registered by the scene, whose worlds read pictures as they open)
+pub(crate) use crate::scene::host::install_sim_decoder;
 
 /// What the renderer shows of the simulation, kept for the next view sync: the AI traffic's
 /// renders and drivers, and the people's meshes, posing and ticket blocks. Each part starts
@@ -84,6 +102,6 @@ pub(crate) fn sync(what: ViewSync<'_>, view: &mut SimView, world: &World, render
         if let Some(bus) = bus {
             humans.sync_money(&mut view.people, world, renderer, scene, bus);
         }
-        humans.sync(&mut view.people, renderer, scene, camera);
+        humans.sync(&mut view.people, world, renderer, scene, camera);
     }
 }
