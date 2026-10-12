@@ -42,9 +42,10 @@ impl App {
         let tick_dt = ft.step.dt();
         let ticks = ft.step.advance(frame_dt);
         for k in 0..ticks.n {
-            if k + 1 == ticks.n {
-                let app = frame.app();
-                if let Some(ft) = app.fixed_tick.as_mut() {
+            let app = frame.app();
+            if let Some(ft) = app.fixed_tick.as_mut() {
+                ft.enter_tick(k, ticks.n);
+                if k + 1 == ticks.n {
                     ft.remember(app.player.as_ref().map(|p| &p.vehicle));
                 }
             }

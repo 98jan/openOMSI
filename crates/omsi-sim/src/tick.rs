@@ -159,6 +159,8 @@ pub fn put(v: &mut crate::VehicleInstance, poses: &[BodyPose]) {
 /// every ten seconds of the wall clock.
 pub struct SimTicks {
     pub step: FixedStep,
+    /// The tick being run (its end), or the last one run between the frame's ticks.
+    now: u64,
     prev: Vec<BodyPose>,
     alpha: f32,
     daylight: Option<crate::Daylight>,
@@ -169,14 +171,24 @@ pub struct SimTicks {
 impl SimTicks {
     /// The fixed step when the switch asks for one (`OMSI_FIXED_STEP`), else none.
     pub fn from_flag() -> Option<Self> {
-        let step = FixedStep::from_flag()?;
-        log::info!("fixed step: the simulation runs at {:.0} ticks a second (OMSI_FIXED_STEP)", step.rate());
-        Some(SimTicks { step, prev: Vec::new(), alpha: 1.0, daylight: None, frames: 0, since: None })
+        let rate = rate_from_flag()?;
+        log::info!("fixed step: the simulation runs at {rate:.0} ticks a second (OMSI_FIXED_STEP)");
+        Some(Self::new(rate))
     }
 
-    /// The simulation's time (s) and its ticks since the start.
+    pub fn new(rate_hz: f64) -> Self {
+        SimTicks { step: FixedStep::new(rate_hz), now: 0, prev: Vec::new(), alpha: 1.0, daylight: None, frames: 0, since: None }
+    }
+
+    /// The simulation's time (s) and its ticks since the start: at the end of the tick being
+    /// run (the same at any frame rate), between ticks at the end of the last one.
     pub fn sim_time(&self) -> (f64, u64) {
-        (self.step.sim_time(), self.step.ticks())
+        (self.now as f64 * self.step.dt() as f64, self.now)
+    }
+
+    /// The frame runs the `k`-th of its `n` ticks now (`n` as `FixedStep::advance` gave them).
+    pub fn enter_tick(&mut self, k: u32, n: u32) {
+        self.now = self.step.ticks() - n as u64 + k as u64 + 1;
     }
 
     /// The vehicle as it stands before the frame's last tick.
@@ -271,6 +283,26 @@ mod tests {
         assert_eq!(t.n, 13);
         // (and nothing of it is owed afterwards)
         assert!(f.advance(1.0 / 120.0).n <= 2);
+    }
+
+    #[test]
+    fn a_tick_s_time_is_its_own_whatever_frame_it_runs_in() {
+        // the times the ticks run at, at 30 and at 144 frames a second: the same sequence
+        let times = |fps: f32| {
+            let mut s = SimTicks::new(120.0);
+            let mut out = Vec::new();
+            while out.len() < 600 {
+                let t = s.step.advance(1.0 / fps);
+                for k in 0..t.n {
+                    s.enter_tick(k, t.n);
+                    out.push(s.sim_time().1);
+                }
+            }
+            out.truncate(600);
+            out
+        };
+        assert_eq!(times(30.0), times(144.0));
+        assert_eq!(times(30.0), (1..=600).collect::<Vec<u64>>());
     }
 
     #[test]
