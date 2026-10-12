@@ -253,6 +253,20 @@ function TimeCard() {
   const cur = w.find((x) => x.file === c.weather);
   const rt = realTime();
   const rd = realDate();
+  const [airport, setAirport] = useState('');
+  useEffect(() => {
+    setAirport('');
+    if (c.map) call('nearest_airport', { map: c.map }).then(setAirport).catch(() => {});
+  }, [c.map]);
+  const metar = c.weather?.startsWith('metar:') ? c.weather.slice(6) || airport : airport;
+  const [airports, setAirports] = useState([]);
+  useEffect(() => {
+    if (c.weather?.startsWith('metar:') && !airports.length) call('metar_airports').then(setAirports).catch(() => {});
+  }, [c.weather]);
+  const weatherHelp = cur ? cur.description
+    : c.weather?.startsWith('metar:') ? t('METAR of {} (fetched at the start)', [metar])
+    : c.weather === 'cycle' ? 'Changes every 25-60 minutes, as the month allows'
+    : c.weather ? null : 'Develops by itself through the day and the season';
   return html`<${Card} title="Time and weather">
     <div class="stack">
       <div class="grid-2">
@@ -267,9 +281,12 @@ function TimeCard() {
         <${Select} value=${c.season} options=${SEASONS} onChange=${(v) => setSeason(v, c.phase)} />
       </${Field}>
       ${c.season !== 'auto' && html`<${Segmented} full value=${c.phase} options=${PHASES} onChange=${(p) => setSeason(c.season, p)} />`}
-      <${Field} label="Weather" help=${cur ? cur.description : c.weather ? null : 'Develops by itself through the day and the season'}>
-        <${Select} raw value=${c.weather} options=${[['', t('Natural weather')], ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => choose({ weather })} />
+      <${Field} label="Weather" help=${weatherHelp}>
+        <${Select} raw value=${c.weather} options=${[['', t('Natural weather')], ...(metar ? [[`metar:${metar}`, t('Current weather')]] : []), ['cycle', t('Weather cycle')], ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => choose({ weather })} />
       </${Field}>
+      ${c.weather?.startsWith('metar:') && airports.length > 0 && html`<${Field} label="Airport">
+        <${Select} raw value=${metar} options=${airports} onChange=${(code) => choose({ weather: `metar:${code}` })} />
+      </${Field}>`}
     </div>
   </${Card}>`;
 }

@@ -107,6 +107,18 @@ fn weather() -> Answer {
     to_json(core::list_weather().map_err(err)?)
 }
 
+/// The airport whose METAR report is the map's current weather.
+fn nearest_airport(map: String) -> Answer {
+    let root = core::root_dir().map_err(err)?;
+    Ok(json!(core::nearest_airport(&root.to_string_lossy(), &map)))
+}
+
+/// The airports whose METAR the current weather can take (OMSI's `Weather/ICAO.txt`).
+fn metar_airports() -> Answer {
+    let root = core::root_dir().map_err(err)?;
+    Ok(json!(core::metar_airports(&root)))
+}
+
 fn lines(map: String, date: String) -> Answer {
     to_json(core::list_lines(&map, &date).map_err(err)?)
 }
@@ -437,6 +449,8 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "maps" => maps(),
         "vehicles" => vehicles(p),
         "weather" => weather(),
+        "nearest_airport" => nearest_airport(arg::<String>(args, "map")?),
+        "metar_airports" => metar_airports(),
         "lines" => lines(arg::<String>(args, "map")?, arg::<String>(args, "date")?),
         "ibis" => ibis(arg::<String>(args, "bus")?, arg::<String>(args, "hof")?, arg::<String>(args, "line")?),
         "default_hof" => default_hof(arg::<Value>(args, "map")?, arg::<Value>(args, "bus")?, arg::<String>(args, "date")?, arg::<Option<String>>(args, "line")?),
