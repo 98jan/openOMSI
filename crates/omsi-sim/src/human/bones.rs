@@ -419,6 +419,33 @@ impl Pose {
         let sit_w = smoothstep(0.35, 1.0, sit);
         let mut target = hang_wrist.lerp(lap, sit_w);
         let mut pole = hang_pole.normalize_or(-Vec3::Y).lerp(lap_pole, sit_w);
+        // standing still: the person's way of standing (see `Idle`), round the turned hips
+        let still = (1.0 - smoothstep(0.05, 0.4, self.walk)) * (1.0 - sit_w);
+        if still > 0.0 {
+            let mid = (posed.hip[0] + posed.hip[1]) * 0.5;
+            let up = rig.shoulder[side].z - rig.hip[side].z;
+            let way = |w: Idle| -> Option<(Vec3, Vec3)> {
+                let sc = rig.scale;
+                let (at, pole) = match w {
+                    Idle::Hang => return None,
+                    Idle::Clasped => (Vec3::new(s * 0.035, 0.17, -0.07) * sc, Vec3::new(s, -0.3, -0.6)),
+                    Idle::Behind => (Vec3::new(s * 0.04, -0.17, -0.02) * sc, Vec3::new(s, 0.3, -0.5)),
+                    Idle::Crossed => (Vec3::new(-s * 0.11 * sc, 0.21 * sc, up - 0.24 * sc + if side == 1 { 0.035 } else { 0.0 }), Vec3::new(s, -0.25, -0.35)),
+                    Idle::HandOnHip if (side == 1) == (self.style[2] > 0.0) => (Vec3::new(s * (rig.hip[1].x.abs() + 0.13 * sc), -0.02 * sc, 0.07 * sc), Vec3::new(s, -0.6, 0.1)),
+                    Idle::HandOnHip => return None,
+                    Idle::Phone if side == 1 => (Vec3::new(0.06 * sc, 0.27 * sc, up - 0.31 * sc), Vec3::new(s, -0.5, -1.0)),
+                    Idle::Phone => (Vec3::new(0.0, 0.25 * sc, up - 0.36 * sc), Vec3::new(s, -0.5, -1.0)),
+                };
+                Some((mid + pelvis_q * at, pelvis_q * pole))
+            };
+            let blend = |w: Idle| way(w).unwrap_or((target, pole));
+            let (fa, fp) = blend(self.idle_from);
+            let (ta, tp) = blend(self.idle_to);
+            let m = smoothstep(0.0, 1.0, self.idle_mix);
+            let (it, ip) = (fa.lerp(ta, m), fp.lerp(tp, m));
+            target = target.lerp(it, still);
+            pole = pole.lerp(ip, still);
+        }
         if side == 1 && self.reach > 0.0 {
             let r = smoothstep(0.0, 1.0, self.reach);
             let reach_to = self.reach_at;

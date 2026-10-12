@@ -291,12 +291,50 @@ pub struct Pose {
     body_floor: f32,
     /// Per-person style: arm hang, head tilt, stance width.
     style: [f32; 4],
+    /// How the person stands, waiting (see `Idle`): the way before and the way now, how far
+    /// the change between them has come (0 … 1) and how long the way now is kept.
+    idle_from: Idle,
+    idle_to: Idle,
+    idle_mix: f32,
+    idle_t: f32,
     /// Steps taken to catch up with a foot left behind, and frames a foot had to be pulled
     /// in (for the tests).
     catch_ups: u32,
     shuffles: u32,
     /// A foot was put down in the last [`Pose::advance`] - one footstep sound.
     landed: bool,
+}
+
+/// Ways of standing while waiting, one a person keeps for a while and then changes: no two
+/// people at a stop stand alike, and nobody stands the same way all the time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Idle {
+    /// The arms hanging.
+    Hang,
+    /// The hands clasped in front.
+    Clasped,
+    /// The hands behind the back.
+    Behind,
+    /// The arms crossed over the chest.
+    Crossed,
+    /// One hand on the hip.
+    HandOnHip,
+    /// Looking at a phone held in the right hand.
+    Phone,
+}
+
+impl Idle {
+    /// A way of standing for the random number `r` (0 … 1), as often as people stand so.
+    fn pick(r: f32) -> Idle {
+        match r {
+            r if r < 0.28 => Idle::Hang,
+            r if r < 0.44 => Idle::Clasped,
+            r if r < 0.54 => Idle::Behind,
+            r if r < 0.68 => Idle::Crossed,
+            r if r < 0.78 => Idle::HandOnHip,
+            _ => Idle::Phone,
+        }
+    }
 }
 
 /// Bone transforms and the joint positions they put the limbs at (model frame).

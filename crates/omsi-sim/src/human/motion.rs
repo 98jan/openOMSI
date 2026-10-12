@@ -43,6 +43,10 @@ impl Pose {
             drop: 0.0,
             body_floor: 0.0,
             style: [0.0; 4],
+            idle_from: Idle::Hang,
+            idle_to: Idle::Hang,
+            idle_mix: 1.0,
+            idle_t: 0.0,
             catch_ups: 0,
             shuffles: 0,
             landed: false,
@@ -53,6 +57,9 @@ impl Pose {
         p.breath = p.rand() * TAU;
         p.glance_t = p.rand() * 3.0;
         p.shift_t = p.rand() * 5.0;
+        p.idle_to = Idle::pick(p.rand());
+        p.idle_from = p.idle_to;
+        p.idle_t = 12.0 + p.rand() * 28.0;
         p.fidget_t = 8.0 + p.rand() * 10.0;
         p
     }
@@ -500,6 +507,21 @@ impl Pose {
         self.lean_v += acc * dt;
         self.lean += self.lean_v * dt;
 
+        // the way of standing: kept a while, then another, changed over a second (only while
+        // standing: walking, the arms swing)
+        self.idle_mix = approach(self.idle_mix, 1.0, dt / 1.1);
+        if self.walk < 0.2 && self.sit <= 0.0 {
+            self.idle_t -= dt;
+            if self.idle_t <= 0.0 && self.idle_mix >= 1.0 {
+                self.idle_t = 12.0 + self.rand() * 28.0;
+                let next = Idle::pick(self.rand());
+                if next != self.idle_to {
+                    self.idle_from = self.idle_to;
+                    self.idle_to = next;
+                    self.idle_mix = 0.0;
+                }
+            }
+        }
         // breathing, weight shifts, fidgeting, glances
         self.breath = (self.breath + dt * TAU / (3.6 + 0.6 * self.style[0])) % (TAU * 64.0);
         self.shift_t -= dt;
@@ -543,6 +565,8 @@ impl Pose {
                     Vec2::new(yaw.clamp(-80.0, 80.0), pitch.clamp(-38.0, 28.0))
                 }
             }
+            // (on the phone: looking down at it, glancing up now and then)
+            None if self.idle_to == Idle::Phone && self.walk < 0.2 && self.sit <= 0.0 && self.glance.x.abs() < 40.0 => Vec2::new(self.glance.x * 0.15, -32.0),
             None => self.glance,
         };
         let step = 220.0 * dt;
