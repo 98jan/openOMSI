@@ -218,14 +218,35 @@ pub(crate) fn tick_humans(
     view: &mut PeopleView,
     dt: f32,
     world: &World,
-    mut player: Option<&mut Player>,
+    player: Option<&mut Player>,
     traffic: Option<&mut traffic::Traffic>,
     r: &Renderer,
     scene: &mut Scene,
 ) -> bool {
-    let mut traffic = traffic;
     let started = Instant::now();
-    let took = h.tick(dt, world, player.as_deref().map(|p| &p.vehicle), traffic.as_deref());
+    // (what the step reads of the player's bus, read off it now: see `PlayerBusView`)
+    let bus = player.as_deref().map(|p| h.player_bus_view(&p.vehicle));
+    let took = h.tick(dt, world, bus.as_ref(), traffic.as_deref());
+    humans_after_step(h, view, dt, world, player, traffic, r, scene, started);
+    took
+}
+
+/// What follows the people's step `started` then (here, or on the sim thread with
+/// `OMSI_SIM_THREAD`): the people who came and went drawn, the step closed, the validators'
+/// sound in the buses, and what the people want of the traffic (stops, boarding, doors).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn humans_after_step(
+    h: &mut humans::Humans,
+    view: &mut PeopleView,
+    dt: f32,
+    world: &World,
+    mut player: Option<&mut Player>,
+    traffic: Option<&mut traffic::Traffic>,
+    r: &Renderer,
+    scene: &mut Scene,
+    started: Instant,
+) {
+    let mut traffic = traffic;
     // what the step did, drawn (people who came and went, coins on the desk)
     let mark = Instant::now();
     crate::view_sync::apply_people(h, view, world, r, scene);
@@ -256,7 +277,6 @@ pub(crate) fn tick_humans(
             t.set_pax_requests(id, &doors);
         }
     }
-    took
 }
 
 /// The people's counts in the personnel file.

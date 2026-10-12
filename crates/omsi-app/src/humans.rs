@@ -73,12 +73,12 @@ impl Humans {
         Humans { sim }
     }
 
-    /// Advance everybody (see `PeopleSim::tick_inner`). `bus`: the player's vehicle;
+    /// Advance everybody (see `PeopleSim::tick_inner`). `bus`: the player's bus as read this frame;
     /// `traffic`: the timetable buses, the traffic lights and the cars pedestrians wait for.
     /// Returns true when a passenger took the printed ticket (the caller resets
     /// `GivenTicket`). What the step did is shown and the step closed by
     /// `steps::tick_humans` (`view_sync::apply_people`, then [`Humans::tick_done`]).
-    pub fn tick(&mut self, dt: f32, world: &World, bus: Option<&VehicleInstance>, traffic: Option<&Traffic>) -> bool {
+    pub fn tick(&mut self, dt: f32, world: &World, bus: Option<&omsi_sim::people::PlayerBusView>, traffic: Option<&Traffic>) -> bool {
         self.sim.tick_stages.clear();
         self.sim.tick_inner(dt, &*world.data(), bus, traffic.map(|t| &t.sim))
     }

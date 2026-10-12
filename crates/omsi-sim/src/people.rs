@@ -59,6 +59,8 @@ pub mod pednet;
 pub mod spawn;
 pub mod populate;
 pub mod buses;
+pub mod bus_view;
+pub use bus_view::{CabinView, PlayerBusView};
 pub mod tick;
 pub mod walk;
 pub mod report;
