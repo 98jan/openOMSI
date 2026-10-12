@@ -21,7 +21,8 @@ fn headlamp(t: vec3<f32>, dir: vec3<f32>, low: bool) -> f32 {
     // cut-off (ECE R112's 50L/50R at 0.86 deg down), and aside it is aimed nearer (25L/25R,
     // 2 deg down 9 deg out) - so the lit road ends in a rounded tip ahead, not along a
     // circle round the lamp, which is a straight line across the road from the cab
-    let knee = mix(0.045, 0.085, smoothstep(0.0, 0.4, across));
+    // (as the square of the angle out: the lit road's far edge an arc, not a peak)
+    let knee = 0.045 + 0.04 * min(1.0, (across / 0.4) * (across / 0.4));
     var up = min(1.0, pow(knee / max(abs(drop), 1e-4), 3.4));
     if (low) {
         up = up * smoothstep(-0.012, 0.025, drop);

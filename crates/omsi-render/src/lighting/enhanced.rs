@@ -328,7 +328,7 @@ pub(crate) fn headlamp_profile(t: Vec3, dir: Vec3, low: bool) -> f32 {
     let across = (t.x * fwd.y - t.y * fwd.x).abs() / ahead;
     let wide = 0.12 * atmosphere::smoothstep(1.0, 0.45, across) + 0.88 * (-across * across / 0.06).exp();
     let drop = -t.z / t.truncate().length().max(1e-3);
-    let knee = 0.045 + (0.085 - 0.045) * atmosphere::smoothstep(0.0, 0.4, across);
+    let knee = 0.045 + 0.04 * (across / 0.4).powi(2).min(1.0);
     let mut up = (knee / drop.abs().max(1e-4)).powf(3.4).min(1.0);
     if low {
         up *= atmosphere::smoothstep(-0.012, 0.025, drop);
