@@ -111,7 +111,7 @@ export function BusPreview({ look, class: cls = '' }) {
         r.current.zoom *= e.deltaY > 0 ? 1.08 : 1 / 1.08;
         wake();
       }}>
-    <canvas ref=${canvas}></canvas>
+    <canvas ref=${canvas} style=${{ visibility: state === 'failed' || state === 'loading' ? 'hidden' : 'visible' }}></canvas>
     ${state === 'loading' && html`<div class="state"><${Spinner} /> ${t('Preparing the preview…')}</div>`}
     ${state === 'switching' && html`<div class="state corner"><${Spinner} /></div>`}
     ${state === 'failed' && html`<div class="state"><${Icon} name="bus" size=${28} /> ${t('No preview of this bus')}</div>`}

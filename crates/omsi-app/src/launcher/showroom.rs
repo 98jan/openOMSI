@@ -156,7 +156,19 @@ impl Showroom {
     pub fn want(&mut self, look: Look) {
         if self.wanted.as_ref() != Some(&look) {
             self.wanted = Some(look);
+            self.failed = None;
+            self.error = None;
         }
+    }
+
+    fn fail(&mut self, look: Look, error: String) {
+        self.error = Some(error);
+        self.failed = Some(look);
+        // A failed selection must not expose the previous bus through any preview API.
+        self.shown = None;
+        self.target = None;
+        self.loading = None;
+        self.opening = None;
     }
 
     /// `want` the launcher's choice: compared first, the look is made only when it changed
@@ -210,18 +222,12 @@ impl Showroom {
                 Ok(Err(e)) => {
                     let _ = std::fs::remove_file(placing_mark());
                     log::warn!("showroom {}: {e}", look.bus);
-                    self.error = Some(e);
-                    // (the bus before stayed in the picture as if it were the one chosen, and
-                    // the failed one was read again every frame)
-                    self.failed = Some(look.clone());
-                    self.shown = None;
-                    self.loading = None;
+                    self.fail(look.clone(), e);
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
                 Err(_) => {
                     let _ = std::fs::remove_file(placing_mark());
-                    self.failed = Some(look.clone());
-                    self.loading = None;
+                    self.fail(look.clone(), "The preview loader stopped before the bus was ready".into());
                 }
             }
         }
@@ -271,6 +277,7 @@ impl Showroom {
     }
 
     fn start_loading(&mut self, look: Look) {
+        self.error = None;
         // A preview that never came (the launcher hung while placing it, and had to be
         // ended) is not tried again for that bus: the bus is remembered and the launcher hung
         // at every start, whatever version (#1478, #1635).
@@ -285,8 +292,7 @@ impl Showroom {
             let _ = std::fs::write(&skip, list);
         }
         if std::fs::read_to_string(&skip).is_ok_and(|t| t.lines().any(|b| b.trim() == look.bus.trim())) {
-            self.error = Some("The 3D preview of this bus stopped the launcher once, so it is left out".into());
-            self.failed = Some(look);
+            self.fail(look, "The 3D preview of this bus stopped the launcher once, so it is left out".into());
             return;
         }
         let _ = std::fs::write(placing_mark(), &look.bus);
@@ -495,6 +501,59 @@ impl Showroom {
         self.shown.as_ref().map(|s| s.vehicle.is_some()).unwrap_or(false) && self.target.is_some()
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::mem::ManuallyDrop;
+
+    fn look(bus: &str) -> Look {
+        Look { bus: bus.into(), ..Look::default() }
+    }
+
+    #[test]
+    fn failure_ends_loading_and_hides_the_picture() {
+        // Avoid Drop's installation-wide placing marker in these self-contained tests.
+        let mut showroom = ManuallyDrop::new(Showroom::new());
+        let selected = look("unavailable.bus");
+        showroom.want(selected.clone());
+        let (_tx, rx) = channel();
+        showroom.loading = Some((selected.clone(), rx));
+        let (_world_tx, world_rx) = channel();
+        let (prefetch_tx, _prefetch_rx) = channel();
+        showroom.opening = Some((world_rx, prefetch_tx));
+
+        showroom.fail(selected.clone(), "Cannot load the bus".into());
+
+        assert_eq!(showroom.failed.as_ref(), Some(&selected));
+        assert_eq!(showroom.error.as_deref(), Some("Cannot load the bus"));
+        assert!(showroom.loading.is_none());
+        assert!(showroom.opening.is_none());
+        assert!(!showroom.has_picture());
+        assert!(showroom.picture().is_none());
+    }
+
+    #[test]
+    fn changed_selection_clears_failure_but_unchanged_selection_does_not_retry() {
+        let mut showroom = ManuallyDrop::new(Showroom::new());
+        let failed = look("unavailable.bus");
+        showroom.want(failed.clone());
+        showroom.fail(failed.clone(), "Cannot load the bus".into());
+
+        showroom.want(failed.clone());
+        assert_eq!(showroom.failed.as_ref(), Some(&failed));
+        assert!(showroom.error.is_some());
+
+        showroom.want(look("available.bus"));
+        assert!(showroom.failed.is_none());
+        assert!(showroom.error.is_none());
+
+        showroom.want(failed.clone());
+        assert_eq!(showroom.wanted.as_ref(), Some(&failed));
+        assert!(showroom.failed.is_none());
+        assert!(showroom.error.is_none());
+    }
 }
 
 /// The light of the look's time and weather, with the sun's shadow under the bus. Always
