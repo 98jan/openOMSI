@@ -66,6 +66,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "arc-swap"
+version = "1.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c049c0be4daef0b145cb3555416b3b8ef5b7888a38aea1a3a155801fe7b0810b"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.7.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2856,6 +2865,7 @@ name = "omsi-sim"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "glam",
  "hashbrown 0.17.1",
  "log",
@@ -2869,6 +2879,7 @@ dependencies = [
  "omsi-script",
  "omsi-timetable",
  "omsi-vehicle",
+ "omsi-world",
  "parking_lot",
  "rayon",
 ]
@@ -2913,6 +2924,21 @@ dependencies = [
  "omsi-map",
  "omsi-sim",
  "omsi-texture",
+]
+
+[[package]]
+name = "omsi-world"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
+ "omsi-geometry",
+ "omsi-map",
+ "omsi-scenery",
+ "parking_lot",
+ "rayon",
 ]
 
 [[package]]

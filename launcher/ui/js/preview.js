@@ -1,5 +1,5 @@
 // The bus preview: drawn by the game's own renderer (the launcher's helper, `openomsi
-// --launcher-service`), exactly as the game's launcher window drew it - the bus with its
+// --launcher-service`), with the game's own showroom - the bus with its
 // textures and every part, under the chosen time and weather.
 //
 // One request a picture, and the drag and the wheel ride along with it, so a turn costs one

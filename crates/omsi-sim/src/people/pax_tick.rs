@@ -25,7 +25,7 @@ impl PeopleSim {
         buses: &[BusNow],
         bus_ix: &HashMap<BusId, usize>,
         at_stops: &HashMap<BusId, BusAtStops>,
-        player_bus: Option<&VehicleInstance>,
+        player_bus: Option<&PlayerBusView>,
         taken_ticket: &mut bool,
         remove: &mut Vec<usize>,
     ) {
@@ -160,7 +160,7 @@ impl PeopleSim {
         buses: &[BusNow],
         bus_ix: &HashMap<BusId, usize>,
         at_stops: &HashMap<BusId, BusAtStops>,
-        player_bus: Option<&VehicleInstance>,
+        player_bus: Option<&PlayerBusView>,
         taken_ticket: &mut bool,
         remove: &mut Vec<usize>,
     ) {

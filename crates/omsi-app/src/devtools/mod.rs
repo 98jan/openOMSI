@@ -27,7 +27,7 @@ use std::time::Instant;
 use glam::Vec2;
 use winit::keyboard::KeyCode;
 
-use crate::launcher::ui::Key;
+use omsi_ui::kit::Key;
 use crate::App;
 
 pub(crate) use reload::Kind;

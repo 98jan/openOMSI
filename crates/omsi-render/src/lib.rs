@@ -29,6 +29,7 @@ pub mod pipeline_cache;
 mod pipelines;
 mod puddles;
 mod rt;
+mod rt_tex;
 mod shaders;
 mod srgb_encode;
 mod triple;

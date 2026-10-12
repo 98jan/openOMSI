@@ -33,16 +33,23 @@ struct Record {
     tex: u32,
     trans: u32,
     // bit 0: alpha-tested (stochastic), bit 1: unlit (shows its own colour), bit 2: the
-    // coverage is the transmap's alpha
+    // coverage is the transmap's alpha, bits 3-4 how its textures are addressed (rt_tex.rs
+    // `address_mode`), bit 5: opaque all the same (a transmap whose alpha is not taken)
     flags: u32,
-    pad: u32,
+    // its first triangle's texture coordinates (rt_tex.rs; 0xffffffff: none yet)
+    uvs: u32,
     color: vec4<f32>,
+    // the diffuse texture's coordinates: (uv + yz) * x (a texcoordtrans offset, the ground's
+    // repeat)
+    uvt: vec4<f32>,
 };
 
-// One texture's mean colour, 256 bytes apart (written with a dynamic offset, see rt.rs).
+// One texture's mean colour and its tile in the reflections' atlas (xy its corner, z 1 when
+// it is there), 256 bytes apart (written with a dynamic offset, see rt.rs).
 struct TexAvg {
     c: vec4<f32>,
-    pad: array<vec4<f32>, 15>,
+    tile: vec4<f32>,
+    pad: array<vec4<f32>, 14>,
 };
 
 @group(0) @binding(0) var<uniform> p: RtParams;

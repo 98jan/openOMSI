@@ -54,7 +54,6 @@ fn write(out: &Out, id: &Value, mut head: Value, body: &[u8]) {
 /// `openomsi --launcher-service`: requests on stdin, answers on stdout.
 pub fn run() -> anyhow::Result<()> {
     super::install();
-    crate::launcher_statics();
     let out: Out = Arc::new(Mutex::new(answers()));
     let reply: Reply = Arc::new(move |id, head, body| write(&out, id, head, body));
     let (tx, rx) = std::sync::mpsc::channel::<Value>();
@@ -192,11 +191,15 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
                 let (map, date, trip) = (s("map"), s("date"), s("trip"));
                 std::thread::spawn(move || {
                     let global = omsi_cfg::find_in_roots(&map).map(|(_, p)| p).or_else(|| omsi_launcher_lib::content_path(&map).ok()).unwrap_or_else(|| PathBuf::from(&map));
-                    let v = omsi_launcher_ui::mapview::export(&map, &global, &date, &trip, 0.6);
+                    let v = omsi_launcher_model::mapview::export(&map, &global, &date, &trip, 0.6);
                     out(&id, json!({ "ok": true }), v.to_string().as_bytes());
                 });
             }
             "pads" => pads.ask(req, reply.clone()),
+            "key_actions" => {
+                let out = reply.clone();
+                std::thread::spawn(move || out(&id, json!({ "ok": true }), super::key_actions::key_actions(&req).to_string().as_bytes()));
+            }
             "quit" => break,
             other => send(&id, json!({ "ok": false, "error": format!("unknown command {other}") }), &[]),
         }

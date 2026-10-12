@@ -3340,7 +3340,7 @@ dependencies = [
  "omsi-lan",
  "omsi-launcher-api",
  "omsi-launcher-core",
- "omsi-launcher-ui",
+ "omsi-launcher-model",
  "omsi-map",
  "omsi-model",
  "omsi-net",
@@ -3355,6 +3355,7 @@ dependencies = [
  "omsi-script",
  "omsi-sim",
  "omsi-soundscape",
+ "omsi-srcscan",
  "omsi-texture",
  "omsi-timetable",
  "omsi-ui",
@@ -3537,6 +3538,7 @@ dependencies = [
  "omsi-vehicle",
  "rayon",
  "ring",
+ "rustrict",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -3581,35 +3583,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "omsi-launcher-ui"
+name = "omsi-launcher-model"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "arboard",
  "glam",
  "hashbrown 0.17.1",
- "image",
- "libc",
  "log",
  "omsi-cfg",
- "omsi-content",
- "omsi-guard",
- "omsi-input",
  "omsi-lan",
  "omsi-launcher-core",
  "omsi-map",
  "omsi-net",
- "omsi-platform",
- "omsi-render",
  "omsi-sim",
- "omsi-timetable",
- "omsi-ui",
- "omsi-vehicle",
  "omsi-weather",
  "serde",
  "serde_json",
- "wgpu",
- "winit",
 ]
 
 [[package]]
@@ -3787,6 +3776,7 @@ name = "omsi-sim"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arc-swap",
  "glam",
  "hashbrown 0.17.1",
  "log",
@@ -3802,6 +3792,7 @@ dependencies = [
  "omsi-texture",
  "omsi-timetable",
  "omsi-vehicle",
+ "omsi-world",
  "parking_lot",
  "rayon",
 ]
@@ -3825,6 +3816,10 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
 ]
+
+[[package]]
+name = "omsi-srcscan"
+version = "0.1.0"
 
 [[package]]
 name = "omsi-texture"
@@ -3861,6 +3856,7 @@ dependencies = [
  "pollster",
  "resvg",
  "wgpu",
+ "winit",
 ]
 
 [[package]]

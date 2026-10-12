@@ -1,6 +1,6 @@
 // What the Settings page shows: per tab its two columns, per column its rows, in the order
-// the game's own launcher had them. The English labels are the translation keys, so they
-// stay word for word as they were.
+// the game's own launcher window had them (it is gone). The English labels are the
+// translation keys, so they stay word for word as they were.
 //
 // A row is one of:
 //   { type: 'select', key, label, options, raw?, help? }   options: [value, label] pairs, or (s, boot) => pairs

@@ -50,6 +50,8 @@ pub(crate) struct NetState {
     /// chat line.
     pub(crate) lan: Option<omsi_net::LanSession>,
     pub(crate) remotes: lan::LanGame,
+    /// The shared world: the host's traffic and people, sent (host) or mirrored (client).
+    pub(crate) lan_world: crate::lan_world::LanWorld,
 }
 
 /// What the game talks to besides itself: the OMSI and Lua plugins, Discord, Steam, the
@@ -92,9 +94,9 @@ pub(crate) struct Integrations {
 pub(crate) struct PerfState {
     pub(crate) fps: f32,
     /// Per-stage frame time accumulators (OMSI_PROFILE), seconds.
-    pub(crate) profile: std::collections::BTreeMap<&'static str, f64>,
+    pub(crate) profile: crate::profile_keys::ProfileTimes,
     /// `profile` as it was at the start of the last frame: what a slow frame spent where.
-    pub(crate) profile_prev: std::collections::BTreeMap<&'static str, f64>,
+    pub(crate) profile_prev: crate::profile_keys::ProfileTimes,
     pub(crate) total_frames: u32,
     /// `OMSI_INPUT` script: (seconds after start, command), in order.
     pub(crate) input_script: Vec<(f32, String)>,
@@ -437,6 +439,9 @@ pub(crate) struct SessionState {
     /// `follow_date`).
     pub(crate) world_day: Option<(i32, Option<String>)>,
     pub(crate) traffic: Option<traffic::Traffic>,
+    /// The scripts and variables of the map's scripted scenery objects (the world's tile
+    /// loader hands them over, see `World::scenery_sync`).
+    pub(crate) scenery: omsi_sim::scenery::SceneryState,
     pub(crate) schedule: Option<schedule::Schedule>,
     /// The map's timetable read for the menu while it does not run (timetable traffic off):
     /// its lines and tours can be looked at and picked, as in OMSI 2. Picking a duty makes

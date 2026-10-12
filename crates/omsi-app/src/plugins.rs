@@ -823,7 +823,8 @@ impl PluginIo for Io<'_> {
     }
     fn season(&self) -> Option<(Option<String>, bool)> {
         self.app()?;
-        Some((omsi_texture::season_folder(), crate::scene::SNOW_WEATHER.load(std::sync::atomic::Ordering::Relaxed)))
+        let app = self.app()?;
+        Some((omsi_texture::season_folder(), app.world.as_ref().is_some_and(|w| w.settings.snow())))
     }
     fn weather(&self) -> Option<op::Weather> {
         pworld::weather(self.app()?)

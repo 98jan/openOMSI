@@ -72,7 +72,7 @@ impl App {
         self.frame_loading_fade();
         // the pause menu, drawn with the launcher's toolkit over all of it
         self.frame_shell(dt);
-        *self.perf.profile.entry("hud").or_default() += __t.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::Hud, __t.elapsed().as_secs_f64());
         vr_nav_display
     }
 
@@ -127,7 +127,7 @@ impl App {
         }
         self.service_msg = self.service_msg.take().filter(|(_, l)| *l > 0.0);
         if let Some(lan) = self.net.lan.as_ref() {
-            for t in lan::hud_lines(lan, &self.net.remotes, self.player.as_ref()).into_iter().chain(self.sound.voice.as_ref().and_then(|v| v.hud_line())) {
+            for t in lan::hud_lines(lan).into_iter().chain(self.sound.voice.as_ref().and_then(|v| v.hud_line())) {
                 say(t.clone(), t, NoticeKind::Info);
             }
         }
@@ -293,11 +293,11 @@ impl App {
             nav.frame_at(r, scene, &frame, hud[0]);
             nav.enabled = old_enabled;
             nav.opacity = old_opacity;
-            *self.perf.profile.entry("hud.navigator").or_default() += __tn.elapsed().as_secs_f64();
+            self.perf.profile.add(crate::profile_keys::ProfKey::HudNavigator, __tn.elapsed().as_secs_f64());
             // OMSI 2's dynamic route arrows over the junctions ahead
             if nav.arrows {
                 if let Some(w) = self.world.as_ref() {
-                    let spots = nav.arrow_spots(self.session.traffic.as_ref().map(|t| &t.net), 350.0, &|id| w.object_positions.lock().get(&id).map(|p| (p.0, p.1[0])));
+                    let spots = nav.arrow_spots(self.session.traffic.as_ref().map(|t| &t.net), 350.0, &|id| w.data.peek().objects.get(&id).map(|p| (p.0, p.1[0])));
                     self.gfx.route_arrows.tick(dt, w, r, scene, &spots);
                 }
             } else if self.gfx.route_arrows.any() {

@@ -5,12 +5,13 @@
 //!
 //! The game program finds this launcher beside itself and opens it on a plain start; when
 //! the webview cannot start here (no WebView2 runtime on an old Windows, no WebKitGTK), the
-//! game's own launcher window opens instead (`classic_launcher`).
+//! program ends with an error, which the game tells the player about.
 
 // a window, not a console program, on Windows
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod commands;
+mod discord;
 mod protocol;
 mod service;
 
@@ -74,9 +75,17 @@ fn main() {
                 let _ = window.set_icon(icon);
             }
             commands::start_watch(app.handle().clone());
+            if !selftest() {
+                discord::start();
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if omsi_launcher_api::installing() {
+                    api.prevent_close();
+                }
+            }
             // the window closed while it rests behind a game: the program ends with it
             if let tauri::WindowEvent::Destroyed = event {
                 if window.app_handle().webview_windows().is_empty() {
@@ -85,21 +94,17 @@ fn main() {
             }
         })
         .build(tauri::generate_context!())
-        .map(|app| app.run(|_, e| if let tauri::RunEvent::Exit = e { service::stop() }));
+        .map(|app| {
+            app.run(|_, e| match e {
+                tauri::RunEvent::ExitRequested { api, .. } if omsi_launcher_api::installing() => api.prevent_exit(),
+                tauri::RunEvent::Exit => service::stop(),
+                _ => {}
+            })
+        });
 
     if let Err(e) = result {
         omsi_launcher_lib::log_to_file(&format!("the launcher's window could not open: {e}"));
         eprintln!("the launcher's window could not open: {e}");
-        if !classic_launcher() {
-            std::process::exit(1);
-        }
+        std::process::exit(1);
     }
-}
-
-/// The game's own launcher window (`openomsi --launcher`), for a system without a webview.
-fn classic_launcher() -> bool {
-    let Some(game) = omsi_launcher_lib::game_binary() else { return false };
-    omsi_launcher_lib::log_to_file(&format!("opening the game's own launcher: {}", game.display()));
-    // (on Windows it offers to install WebView2, which is what is missing there)
-    std::process::Command::new(game).arg("--launcher").env("OPENOMSI_NO_WEBVIEW", "1").spawn().is_ok()
 }

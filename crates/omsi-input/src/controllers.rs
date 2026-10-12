@@ -85,6 +85,12 @@ pub struct DeviceCfg {
     pub latching: Vec<usize>,
 }
 
+impl DeviceCfg {
+    pub fn steers(&self) -> bool {
+        self.axes.iter().flatten().any(|(f, _)| *f == Func::Steering)
+    }
+}
+
 /// The `gamectrler.cfg` in use: the content folder's (written by the launcher) before
 /// OMSI 2's own.
 pub fn cfg_path(root: &Path) -> std::path::PathBuf {
@@ -1080,6 +1086,14 @@ fn rumble_scale(cfg: &[DeviceCfg], name: &str) -> f32 {
     find_device_cfg(cfg, name).and_then(|d| d.ff_scale).map(|s| s.1).unwrap_or(1.0).clamp(0.0, 2.0)
 }
 
+pub fn wheel_set_up(cfg: &[DeviceCfg], connected: &[Connected]) -> bool {
+    connected.iter().any(|c| !c.gamepad && c.ff_capable && find_device_cfg(cfg, &c.name).is_some_and(DeviceCfg::steers))
+}
+
+fn takes_feedback(steer: &Option<(String, f32, bool)>, ff: bool) -> bool {
+    steer.as_ref().is_none_or(|s| ff && !s.2)
+}
+
 /// A button-only gamepad configuration keeps the automatic analog layout. Once axes
 /// are assigned, the explicit layout takes complete ownership of them.
 /// Keep the steering's device kind with the value that actually won arbitration.
@@ -1158,6 +1172,7 @@ pub struct Controllers {
     rests: crate::auto_setup::Rests,
     /// The set-up after a device was set up by itself (`auto_setup`), for the game to save.
     pub auto_saved: Option<Vec<DeviceCfg>>,
+    cfg_unread: bool,
     /// The steering device: its name, physical position (-1..1, before dead zone
     /// and steering gain) now and previously, and whether it pushes back.
     steer: Option<(String, f32, f32, bool)>,
@@ -1192,6 +1207,7 @@ impl Controllers {
     pub fn install_cfg(&mut self, cfg: Vec<DeviceCfg>) {
         self.held.release(&mut self.actions);
         self.cfg = cfg;
+        self.cfg_unread = false;
         self.notice = None;
     }
 
@@ -1220,19 +1236,30 @@ impl Controllers {
 
     pub fn new(root: &Path, hwnd: Option<isize>) -> Controllers {
         let devices = Devices::new(hwnd, true);
-        let cfg = read_cfg(root);
+        let (cfg, unread) = match read_cfg_checked(root) {
+            Ok(cfg) => (cfg, false),
+            Err(e) => {
+                let unread = cfg_path(root).exists();
+                if unread {
+                    log::warn!("gamectrler.cfg could not be read, nothing set up by itself is saved over it: {e}");
+                }
+                (Vec::new(), unread)
+            }
+        };
         for c in devices.connected() {
             log::info!("game controller: {} ({})", c.name, if cfg.iter().any(|d| names_match(&d.name, &c.name)) { "set up in gamectrler.cfg" } else if c.gamepad { "as a gamepad" } else { "not set up: its X axis steers" });
         }
-        Self::with_devices(devices, cfg)
+        let mut c = Self::with_devices(devices, cfg);
+        c.cfg_unread = unread;
+        c
     }
 
     fn with_devices(devices: Devices, cfg: Vec<DeviceCfg>) -> Controllers {
-        Controllers { settled: Vec::new(), devices, focused: true, cfg, held: HeldButtons::default(), editing: false, raw_buttons: Vec::new(), deadzone: 0.0, right_stick_look: true, pad_deadzone: 0.08, pad_presets: true, pedal_throttle: 1.0, pedal_brake: 1.0, disabled: Vec::new(), ff_invert: false, ff_enabled: true, ff_road: 1.0, ff_engine: 1.0, ff_fade: FF_FADE, steer_gain: 1.0, enabled: true, actions: Vec::new(), announced: Vec::new(), moved: Vec::new(), notice: None, rests: Default::default(), auto_saved: None, steer: None, ff_t: 0.0, ff_lateral: 0.0, ff_bump: 0.0, ff_bump_age: 0.0, ff_micro: Micro::default(), ff_vib: ScriptVib::default(), ff_rumble: 0.0, ff_source_logged: None, rumble: Vec::new(), #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel: None, #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel_tried: None }
+        Controllers { settled: Vec::new(), devices, focused: true, cfg, held: HeldButtons::default(), editing: false, raw_buttons: Vec::new(), deadzone: 0.0, right_stick_look: true, pad_deadzone: 0.08, pad_presets: true, pedal_throttle: 1.0, pedal_brake: 1.0, disabled: Vec::new(), ff_invert: false, ff_enabled: true, ff_road: 1.0, ff_engine: 1.0, ff_fade: FF_FADE, steer_gain: 1.0, enabled: true, actions: Vec::new(), announced: Vec::new(), moved: Vec::new(), notice: None, rests: Default::default(), auto_saved: None, cfg_unread: false, steer: None, ff_t: 0.0, ff_lateral: 0.0, ff_bump: 0.0, ff_bump_age: 0.0, ff_micro: Micro::default(), ff_vib: ScriptVib::default(), ff_rumble: 0.0, ff_source_logged: None, rumble: Vec::new(), #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel: None, #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel_tried: None }
     }
 
     /// Whether this device steers the bus (set up so, or steering now): the photo mode's camera takes none for its gamepad (a wheel turned it).
-    pub fn steers(&self, name: &str) -> bool { self.steer.as_ref().is_some_and(|s| names_match(&s.0, name)) || find_device_cfg(&self.cfg, name).is_some_and(|d| d.axes.iter().flatten().any(|(f, _)| matches!(f, Func::Steering))) }
+    pub fn steers(&self, name: &str) -> bool { self.steer.as_ref().is_some_and(|s| names_match(&s.0, name)) || find_device_cfg(&self.cfg, name).is_some_and(|d| d.steers()) }
     /// A wheel or joystick steers the bus (then the arrow keys look around, as in OMSI:
     /// a G29's buttons set to the arrow keys turned the view there).
     pub fn wheel_steering(&self) -> bool {
@@ -1295,7 +1322,7 @@ impl Controllers {
         // at its own centre, whichever the system listed first
         let off = self.disabled.clone();
         let mut pads: Vec<(Option<&DeviceCfg>, Connected)> = self.devices.connected().into_iter().filter(|c| !off.iter().any(|d| names_match(d, &c.name))).map(|c| (find_device_cfg(&self.cfg, &c.name), c)).collect();
-        pads.sort_by_key(|(cfg, _)| cfg.is_none());
+        pads.sort_by_key(|(cfg, c)| (cfg.is_none(), cfg.is_none() && !c.ff_capable));
         // (the PlayStation pads nobody set up: read below, with the gamepads)
         #[cfg(windows)]
         let sony: Vec<Connected> = pads.iter().filter(|(cfg, c)| cfg.is_none() && c.gamepad && sony_pad(&c.name, c.hardware_id)).map(|(_, c)| c.clone()).collect();
@@ -1304,6 +1331,7 @@ impl Controllers {
         let mut steering_set_up = false;
         let dz = self.deadzone.clamp(0.0, 0.3);
         let mut set_up = Vec::new();
+        let mut steering_taken = pads.iter().any(|(cfg, c)| !c.gamepad && c.ff_capable && cfg.is_some_and(DeviceCfg::steers));
         for (cfg, c) in pads {
             if let Some((k, v)) = c.axes.iter().find(|(_, v)| v.abs() > 0.5) {
                 let key = format!("axis:{}", c.name);
@@ -1320,7 +1348,7 @@ impl Controllers {
                             steering_set_up = true;
                             let (steering, position) = wheel_steering(v, inverted, d.axis_flags[k], dz, self.steer_gain);
                             set_steering(&mut out, steering, c.gamepad);
-                            if steer.is_none() && !c.gamepad {
+                            if !c.gamepad && takes_feedback(&steer, c.ff) {
                                 steer = Some((c.name.clone(), position, c.ff));
                             }
                             continue;
@@ -1361,7 +1389,8 @@ impl Controllers {
                     // a wheel, pedals or a joystick nobody has set up yet: set up by itself
                     // from its axes at rest (`auto_setup`) once it is used - a force-feedback
                     // wheel at once - and saved; until then its X axis steers
-                    if let Some(d) = (!self.editing).then(|| crate::auto_setup::when_used(&mut self.rests, &c)).flatten() {
+                    if let Some(d) = (!self.editing).then(|| crate::auto_setup::when_used(&mut self.rests, &c, steering_taken)).flatten() {
+                        steering_taken |= c.ff_capable && d.steers();
                         self.notice = Some(crate::auto_setup::notice(&d));
                         self.announced.push(c.name.clone());
                         set_up.push(d);
@@ -1382,7 +1411,7 @@ impl Controllers {
                         let dz_free = if c.ff_capable { dz } else { dz.max(0.02) };
                         let (steering, position) = wheel_steering(*v, false, 0, dz_free, self.steer_gain);
                         out.steering.get_or_insert(steering);
-                        if steer.is_none() {
+                        if takes_feedback(&steer, c.ff) {
                             steer = Some((c.name.clone(), position, c.ff));
                         }
                     }
@@ -1391,7 +1420,9 @@ impl Controllers {
         }
         if !set_up.is_empty() {
             self.cfg.extend(set_up);
-            self.auto_saved = Some(self.cfg.clone());
+            if !self.cfg_unread {
+                self.auto_saved = Some(self.cfg.clone());
+            }
         }
         // gamepads: the left stick steers, the triggers are the pedals
         let di = self.devices.direct_input();

@@ -80,12 +80,12 @@ pub(super) fn scenery_texture_key(name: &str) -> String {
 
 pub(super) fn scenery_texture_selection(
     ot: &ObjectType,
-    inst: &omsi_sim::scenery::SceneryInstance,
+    var: &dyn Fn(&str) -> Option<f32>,
 ) -> Vec<usize> {
     ot.dynamic_textures
         .iter()
         .map(|group| {
-            let Some(value) = inst.var(&group.variable) else {
+            let Some(value) = var(&group.variable) else {
                 return usize::MAX;
             };
             if !value.is_finite() || value < 0.0 {

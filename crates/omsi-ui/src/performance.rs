@@ -1,5 +1,7 @@
 //! Performance history and readouts shared by interface views.
-use std::collections::{BTreeMap, VecDeque};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::VecDeque;
 use std::time::Instant;
 
 pub const HISTORY: usize = 240;
@@ -73,16 +75,6 @@ pub fn part_of(key: &str) -> Option<Part> {
         "limiter" => Part::Limit,
         _ => Part::Simulation,
     })
-}
-
-fn part_totals(profile: &BTreeMap<&'static str, f64>) -> [f64; 8] {
-    let mut out = [0.0; 8];
-    for (k, v) in profile {
-        if let Some(p) = part_of(k) {
-            out[p as usize] += v;
-        }
-    }
-    out
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -208,11 +200,16 @@ impl PerfOverlay {
     pub fn sample(
         &mut self,
         raw_dt: f32,
-        profile: &BTreeMap<&'static str, f64>,
+        profile: impl IntoIterator<Item = (&'static str, f64)>,
         draws: (usize, usize),
     ) {
         self.draws = draws;
-        let now = part_totals(profile);
+        let mut now = [0.0; 8];
+        for (key, value) in profile {
+            if let Some(part) = part_of(key) {
+                now[part as usize] += value;
+            }
+        }
         let Some(prev) = self.prev.replace(now) else {
             return;
         };
@@ -462,13 +459,13 @@ mod tests {
         let mut o = PerfOverlay::default();
         o.sample(
             0.016,
-            &profile(&[("traffic", 1.0), ("present", 2.0)]),
+            profile(&[("traffic", 1.0), ("present", 2.0)]).into_iter(),
             (0, 0),
         );
         assert!(o.frames.is_empty());
         o.sample(
             0.020,
-            &profile(&[
+            profile(&[
                 ("traffic", 1.004),
                 ("traffic.tick", 1.5),
                 ("present", 2.010),
@@ -486,11 +483,11 @@ mod tests {
         let mut o = PerfOverlay::default();
         let mut t = 0.0;
         for _ in 0..100 {
-            o.sample(0.016, &profile(&[("streaming", t)]), (0, 0));
+            o.sample(0.016, profile(&[("streaming", t)]).into_iter(), (0, 0));
         }
         assert_eq!(o.stutters, 0);
         t += 0.12;
-        o.sample(0.13, &profile(&[("streaming", t)]), (0, 0));
+        o.sample(0.13, profile(&[("streaming", t)]).into_iter(), (0, 0));
         assert_eq!(o.stutters, 1);
         assert_eq!(o.last_stutter.map(|s| s.part), Some(Part::Loading));
         assert_eq!(o.frames.len(), 100);
@@ -500,14 +497,14 @@ mod tests {
     fn a_frame_rate_that_stays_low_stops_counting_as_stutters() {
         let mut o = PerfOverlay::default();
         for _ in 0..100 {
-            o.sample(0.016, &BTreeMap::new(), (0, 0));
+            o.sample(0.016, BTreeMap::new().into_iter(), (0, 0));
         }
         for _ in 0..600 {
-            o.sample(0.08, &BTreeMap::new(), (0, 0));
+            o.sample(0.08, BTreeMap::new().into_iter(), (0, 0));
         }
         let after = o.stutters;
         for _ in 0..100 {
-            o.sample(0.08, &BTreeMap::new(), (0, 0));
+            o.sample(0.08, BTreeMap::new().into_iter(), (0, 0));
         }
         assert!(after > 0);
         assert_eq!(o.stutters, after);
@@ -517,7 +514,7 @@ mod tests {
     fn the_history_keeps_its_length() {
         let mut o = PerfOverlay::default();
         for _ in 0..HISTORY + 50 {
-            o.sample(0.01, &BTreeMap::new(), (0, 0));
+            o.sample(0.01, BTreeMap::new().into_iter(), (0, 0));
         }
         assert_eq!(o.frames.len(), HISTORY);
     }

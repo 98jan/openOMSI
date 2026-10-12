@@ -37,11 +37,17 @@ impl World {
     /// Parked car `key` drives off: it is hidden, its box leaves the obstacles, and its space
     /// stays empty for the rest of the run. What it was, for the car that takes its place.
     pub fn depart_parked(&self, renderer: &Renderer, scene: &mut Scene, key: i64) -> Option<ParkedObject> {
+        let p = self.take_departing_parked(key)?;
+        show_parked_instances(renderer, scene, &p.instances, false);
+        Some(p)
+    }
+
+    /// The world's side of [`World::depart_parked`] (its box and space), without the
+    /// renderer: the simulation's, which hands the hiding of `instances` on to the view
+    /// (`show_parked_instances`).
+    pub fn take_departing_parked(&self, key: i64) -> Option<ParkedObject> {
         let p = self.parked_objects.lock().remove(&key)?;
         self.departed.lock().insert(key);
-        for inst in &p.instances {
-            hide_instance(renderer, scene, *inst);
-        }
         let (mut obst, mut boxes) = (Vec::new(), Vec::new());
         if let Some(st) = self.tile_state.lock().get_mut(&p.tile) {
             obst = st.obstacles.iter().filter(|b| b.id == key).cloned().collect();
@@ -189,22 +195,30 @@ impl World {
     /// An AI car has parked in the space of departed parked car `key`: the parked object is
     /// there again (shown, an obstacle, a parked car the traffic keeps clear of).
     pub fn return_parked(&self, renderer: &Renderer, scene: &mut Scene, key: i64) -> bool {
-        let Some((p, obst, boxes)) = self.departed_objects.lock().remove(&key) else { return false };
+        match self.take_returning_parked(key) {
+            Some(instances) => {
+                show_parked_instances(renderer, scene, &instances, true);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The world's side of [`World::return_parked`] (the box and the space back), without
+    /// the renderer: the instances to show again (`show_parked_instances`), None when the
+    /// object is not there to come back.
+    pub fn take_returning_parked(&self, key: i64) -> Option<Vec<usize>> {
+        let (p, obst, boxes) = self.departed_objects.lock().remove(&key)?;
         let mut states = self.tile_state.lock();
-        let Some(st) = states.get_mut(&p.tile) else { return false };
+        let st = states.get_mut(&p.tile)?;
         st.obstacles.extend(obst);
         st.parked_boxes.extend(boxes);
         drop(states);
-        for &inst in &p.instances {
-            if let Some(i) = scene.instances.get(inst) {
-                let (alpha, uv) = (i.slot_alpha.clone(), i.slot_uv.clone());
-                renderer.set_params(scene, inst, &alpha, true, &uv);
-            }
-        }
+        let instances = p.instances.clone();
         self.departed.lock().remove(&key);
         self.parked_objects.lock().insert(key, p);
         self.refresh_tile_lists();
-        true
+        Some(instances)
     }
 
     /// The object editor changed map object `id` (the whole edit so far, from where the
@@ -282,8 +296,11 @@ impl World {
         }
         let freed = self.gpu.lock().release_tile(renderer, scene, state.gpu);
         self.drop_scripted(key, audio);
-        self.terrains.write().remove(&key);
-        self.surfaces.write().remove(&key);
+        self.data.update(|d| {
+            let g = Arc::make_mut(&mut d.ground);
+            g.terrains.remove(&key);
+            g.surfaces.remove(&key);
+        });
         freed > 0
     }
 
@@ -355,21 +372,7 @@ impl World {
         if self.light_maps.lock().remove(&key).is_some() {
             self.light_maps_generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        let mut scripted = self.scripted.lock();
-        if !scripted.iter().any(|o| o.tile == key) {
-            return;
-        }
-        let mut kept = Vec::with_capacity(scripted.len());
-        for mut o in scripted.drain(..) {
-            if o.tile == key {
-                if let (Some(a), Some(mut ss)) = (audio, o.sounds.take()) {
-                    ss.stop_all(a);
-                }
-            } else {
-                kept.push(o);
-            }
-        }
-        *scripted = kept;
+        self.scripted.lock().drop_tile(key, audio);
     }
 
     /// Object types no loaded tile uses any more leave the type cache (with their meshes on
@@ -460,19 +463,24 @@ impl World {
             night.extend(s.night_slots.iter().cloned());
             modes.extend(s.night_modes.iter().cloned());
         }
-        *self.bus_stops.lock() = stops;
-        *self.waiting_places.lock() = waiting;
-        *self.collision.lock() = Arc::new(collision);
-        *self.parked_boxes.lock() = Arc::new(parked);
+        let generation = self.tiles_generation.load(std::sync::atomic::Ordering::Relaxed) + 1;
+        self.data.update(|d| {
+            d.lists = Arc::new(omsi_sim::world_data::TileLists {
+                generation,
+                bus_stops: stops,
+                waiting_places: waiting,
+                collision: Arc::new(collision),
+                parked_boxes: Arc::new(parked),
+                petrol_stations: petrol,
+                reverb_zones: reverb,
+            })
+        });
         *self.static_coronas.lock() = coronas;
         *self.static_lights.lock() = lights;
         *self.light_objects.lock() = lamps;
         *self.night_slots.lock() = night;
         *self.night_modes.lock() = modes;
-        *self.petrol_stations.lock() = petrol;
-        *self.reverb_zones.lock() = reverb;
-        self.tiles_generation
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.tiles_generation.store(generation, std::sync::atomic::Ordering::Relaxed);
         if omsi_cfg::flags::OMSI_PROFILE.is_set() {
             log::info!("tile lists: {} tiles in {:.1} ms", states.len(), t0.elapsed().as_secs_f64() * 1000.0);
         }
@@ -500,7 +508,7 @@ impl World {
             (x / tile_size()).floor() as i32,
             (y / tile_size()).floor() as i32,
         );
-        self.terrains.read().contains_key(&key)
+        self.data.peek().ground.terrains.contains_key(&key)
     }
 
     /// What the loaded tiles hold, for the streaming statistics.
@@ -678,16 +686,17 @@ impl World {
             }
         }
         let (mut rasters, mut drive, mut tris) = (0usize, 0usize, 0usize);
-        let surfaces = self.surfaces.read();
+        let data = self.data.peek();
+        let surfaces = &data.ground.surfaces;
         for sf in surfaces.values() {
             let (r, d) = sf.heap_bytes();
             rasters += r;
             drive += d;
             tris += sf.drive.tris.len();
         }
-        let terrains: usize = self
+        let terrains: usize = data
+            .ground
             .terrains
-            .read()
             .values()
             .map(|t| t.heights.capacity() * 4)
             .sum();
@@ -1193,6 +1202,17 @@ pub(super) fn show_edit(renderer: &Renderer, scene: &mut Scene, eo: &EditObject,
     let at = eo.pos + e.moved - if e.deleted { DVec3::Z * 10_000.0 } else { DVec3::ZERO };
     for inst in &eo.instances {
         renderer.set_transform(scene, *inst, at, rot);
+    }
+}
+
+/// The renderer's side of a parked car driving off (`visible` false) or coming back (true):
+/// its object's instances hidden or shown, their other parameters kept.
+pub fn show_parked_instances(renderer: &Renderer, scene: &mut Scene, instances: &[usize], visible: bool) {
+    for &inst in instances {
+        if let Some(i) = scene.instances.get(inst) {
+            let (alpha, uv) = (i.slot_alpha.clone(), i.slot_uv.clone());
+            renderer.set_params(scene, inst, &alpha, visible, &uv);
+        }
     }
 }
 

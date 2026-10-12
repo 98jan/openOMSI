@@ -460,7 +460,7 @@ impl PeopleSim {
         let age = ty.def.age.map(|a| a as f32).unwrap_or(40.0);
         let id = self.next_id;
         self.next_id += 1;
-        // (the meshes and instances come when the view catches up: `show_bodies`)
+        // (the meshes and instances come when the view catches up: `view_sync::apply_people`)
         self.bodies.ops.push(BodyOp::Spawn { id, ty: ty.clone(), variant, position });
         if debug_pax() {
             log::info!(
@@ -481,7 +481,6 @@ impl PeopleSim {
             id,
             ty,
             variant,
-            meshes: Vec::new(),
             position,
             heading,
             lheading: 0.0,
@@ -490,14 +489,9 @@ impl PeopleSim {
             pace,
             activity: Activity::Stand,
             anim: OmsiAnim::default(),
-            procedural: None,
             state,
             t_state: 0.0,
-            skins: Vec::new(),
-            skin_bones: None,
-            pose_changed: false,
             interior: 0.0,
-            lit: 0.0,
             tilt: Mat4::IDENTITY,
 
             age,
@@ -507,10 +501,6 @@ impl PeopleSim {
             detour: 0.0,
             detour_side: 0.0,
             why: "",
-            skinned: false,
-            since_posed: 0,
-            posed_at: (position, heading),
-            ankles: [Vec3::ZERO; 2],
             puppet: None,
             remote: false,
         });

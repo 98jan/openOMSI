@@ -134,7 +134,10 @@ fn args_for(look: &Look) -> Args {
     if !look.date.is_empty() {
         v.extend(["--date".into(), look.date.clone()]);
     }
-    Args::try_parse_from(v).unwrap_or_else(|_| Args::parse_from(["omsi"]))
+    let mut args = Args::try_parse_from(v).unwrap_or_else(|_| Args::parse_from(["omsi"]));
+    // (drawn the way the game will be)
+    args.session_settings = crate::startup::SessionSettings::for_showroom(&crate::settings::Settings::load());
+    args
 }
 
 // (a launcher closed while a preview loads did not hang: the mark goes with it)
@@ -188,17 +191,6 @@ impl Showroom {
         self.target = None;
         self.loading = None;
         self.opening = None;
-    }
-
-    /// `want` the launcher's choice: compared first, the look is made only when it changed
-    /// (it was made, five strings cloned, every frame).
-    pub fn want_choice(&mut self, root: &str, c: &super::state::Choice) {
-        let same = self.wanted.as_ref().is_some_and(|w| {
-            w.map == c.map && w.bus == c.bus && w.paint == c.paint && w.weather == c.weather && w.time == c.time && w.date == c.date && w.root.as_os_str() == root
-        });
-        if !same {
-            self.want(Look { root: PathBuf::from(root), map: c.map.clone(), bus: c.bus.clone(), paint: c.paint.clone(), weather: c.weather.clone(), time: c.time, date: c.date.clone() });
-        }
     }
 
     /// The mouse dragged over the empty part of the window (degrees), or turned the wheel.
@@ -357,10 +349,12 @@ impl Showroom {
         let args = args_for(&r.look);
         let (weather, model) = crate::weather_setup::load_weather_run(&args);
         let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
-        let mut sky = crate::weather_setup::SkyState { clouds: None, model };
+        let mut sky = crate::weather_setup::SkyState { clouds: None, model, look: args.session_settings };
         setup_sky(&args, renderer, &mut scene, envir.as_ref(), Some(&weather), &mut sky.clouds);
         add_floor(renderer, &mut scene);
         let world = r.world;
+        // (the panes wear this weather's snow as the bus goes onto the GPU)
+        world.settings.set_snow(weather.snow);
         let mut vehicle = r.vehicle;
         vehicle.position = DVec3::ZERO;
         vehicle.heading = 0.0;

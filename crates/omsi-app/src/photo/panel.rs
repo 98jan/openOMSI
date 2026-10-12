@@ -9,8 +9,8 @@ use omsi_ui::{Color, Rect, Weight};
 
 use super::develop::Filter;
 use super::{lens, Photo, Request, ASPECTS, BLADES, FSTOPS, GRIDS, QUALITY, RANGES, SHUTTERS, SIZES};
-use crate::launcher::theme::*;
-use crate::launcher::ui::{ButtonKind, Ui};
+use omsi_ui::theme::*;
+use omsi_ui::kit::{ButtonKind, Ui};
 use crate::shell::{Action, Shell};
 
 pub(crate) const TABS: [&str; 5] = ["Camera", "Lens", "Colour", "Effects", "Scene"];
@@ -247,7 +247,7 @@ pub(crate) fn draw(sh: &mut Shell, ph: &mut Photo, info: &Info) {
         }
         let w = w.min(size.x - 40.0);
         let r = Rect::new(size.x - w - 20.0, 20.0, w, if place.is_some() { 58.0 } else { 40.0 });
-        let (hover, _, clicked) = if path.is_some() { ui.interact(crate::launcher::ui::id_of("ph-saved"), r) } else { (false, false, false) };
+        let (hover, _, clicked) = if path.is_some() { ui.interact(omsi_ui::kit::id_of("ph-saved"), r) } else { (false, false, false) };
         ui.solid(r);
         // (it stays while the mouse is on it)
         let left = if hover { left.max(1.0) } else { left };
@@ -318,24 +318,22 @@ pub(crate) fn draw(sh: &mut Shell, ph: &mut Photo, info: &Info) {
     sh.actions.extend(acts.into_iter().map(Action::Photo));
 }
 
-impl crate::App {
-    /// The photo mode's panel for this frame.
-    pub(crate) fn frame_photo_panel(&mut self, dt: f32) {
-        let Some(s) = self.gfx.surface.as_ref() else { return };
-        let (w, h) = (s.config.width as f32, s.config.height as f32);
-        let dpi = self.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
-        let scale = dpi * crate::ui::size_factor(h, dpi, self.settings.ui_scale, self.settings.ui_scale_window);
-        let t = self.clock.time;
-        let info = Info {
-            time: format!("{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64),
-            bus_moving: self.photo.as_ref().is_some_and(|p| p.bus_velocity.length() > 0.2),
-        };
-        let Some(ph) = self.photo.as_mut() else { return };
-        self.shell.opaque = ph.render.showing_photo() && self.shell.picture_tex.is_some();
-        self.shell.begin(w, h, scale, dt);
-        draw(&mut self.shell, ph, &info);
-        self.shell.finish();
-    }
+/// The photo mode's panel for this frame.
+pub(super) fn photo_panel(cx: &mut super::PhotoCx, dt: f32) {
+    let Some(s) = cx.gfx.gfx.surface.as_ref() else { return };
+    let (w, h) = (s.config.width as f32, s.config.height as f32);
+    let dpi = cx.gfx.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
+    let scale = dpi * crate::ui::size_factor(h, dpi, cx.common.settings.ui_scale, cx.common.settings.ui_scale_window);
+    let t = cx.clock.clock.time;
+    let info = Info {
+        time: format!("{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64),
+        bus_moving: cx.ui.photo.as_ref().is_some_and(|p| p.bus_velocity.length() > 0.2),
+    };
+    let Some(ph) = cx.ui.photo.as_mut() else { return };
+    cx.menus.shell.opaque = ph.render.showing_photo() && cx.menus.shell.picture_tex.is_some();
+    cx.menus.shell.begin(w, h, scale, dt);
+    draw(&mut *cx.menus.shell, ph, &info);
+    cx.menus.shell.finish();
 }
 
 /// A saved file's place as the panel shows it: the home folder as `~`.

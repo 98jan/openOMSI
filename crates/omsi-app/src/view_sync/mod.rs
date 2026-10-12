@@ -25,13 +25,18 @@
 //!
 //! The view's state is [`SimView`], kept apart from the simulation wrappers (`Traffic`,
 //! `Humans` hold only the simulation's side): the window has it in `GfxState::sim_view`, the
-//! offscreen run in its own struct. Two kinds of renderer change still happen inside the
-//! wrappers' calls, at the moment the simulation makes them, so that the renderer sees the
-//! same calls in the same order: a car's renders are made or let go as the traffic puts it
-//! on the road or takes it off, and the people who appeared or went are shown at the end of
-//! every `Humans` call that made them (`Humans::show_bodies`). Those calls take the part of
-//! the `SimView` they change (`&mut TrafficView`, `&mut PeopleView`) as a parameter.
+//! offscreen run in its own struct. The simulation's calls never touch the renderer: what
+//! they did that the renders have to follow - a car put on the road or taken off, its
+//! coupled parts, a parked car driving off or one parking, somebody appearing or going,
+//! coins on the desk - they write down as events (`omsi_sim::view_events::TrafficEvent` in
+//! `Traffic::events`, `omsi_sim::people::BodyOp` in `PeopleSim::bodies`), owned data that
+//! could cross threads. [`apply_traffic`] and [`apply_people`] replay them in order; the
+//! callers run them right after each call that can make such events, where those calls used
+//! to make the renderer calls themselves, so that the renderer sees the same calls in the
+//! same order.
 
+pub(crate) mod digest;
+pub(crate) mod lan;
 pub(crate) mod people;
 pub(crate) mod traffic;
 pub(crate) mod traffic_audio;
@@ -49,6 +54,9 @@ use traffic::TrafficView;
 
 // (registered by the scene, whose worlds read pictures as they open)
 pub(crate) use crate::scene::host::install_sim_decoder;
+pub(crate) use people::apply_people;
+pub(crate) use traffic::apply_traffic;
+pub(crate) use lan::apply_lan;
 
 /// What the renderer shows of the simulation, kept for the next view sync: the AI traffic's
 /// renders and drivers, and the people's meshes, posing and ticket blocks. Each part starts
@@ -57,6 +65,8 @@ pub(crate) use crate::scene::host::install_sim_decoder;
 pub(crate) struct SimView {
     pub(crate) traffic: TrafficView,
     pub(crate) people: PeopleView,
+    /// The other LAN players' vehicles as drawn and heard (`lan::apply_lan`).
+    pub(crate) lan: lan::LanView,
 }
 
 /// The people to bring up to date in a view sync.
@@ -73,14 +83,15 @@ pub(crate) struct People<'a> {
 /// What a view sync brings up to date: the traffic, the people, or both (in that order).
 #[derive(Default)]
 pub(crate) struct ViewSync<'a> {
-    pub(crate) traffic: Option<&'a mut Traffic>,
+    /// The traffic, with the scenery state that holds its lamps' scripts.
+    pub(crate) traffic: Option<(&'a mut Traffic, &'a mut omsi_sim::scenery::SceneryState)>,
     pub(crate) people: Option<People<'a>>,
 }
 
 impl<'a> ViewSync<'a> {
     /// The traffic alone.
-    pub(crate) fn traffic(traffic: &'a mut Traffic) -> ViewSync<'a> {
-        ViewSync { traffic: Some(traffic), people: None }
+    pub(crate) fn traffic(traffic: &'a mut Traffic, scenery: &'a mut omsi_sim::scenery::SceneryState) -> ViewSync<'a> {
+        ViewSync { traffic: Some((traffic, scenery)), people: None }
     }
 
     /// The people alone (see [`People`]).
@@ -95,8 +106,8 @@ impl<'a> ViewSync<'a> {
 /// (the coins and ticket blocks of the player's bus, those who went since, the posing and
 /// skinning and their transforms).
 pub(crate) fn sync(what: ViewSync<'_>, view: &mut SimView, world: &World, renderer: &Renderer, scene: &mut Scene) {
-    if let Some(t) = what.traffic {
-        t.sync(&mut view.traffic, world, renderer, scene);
+    if let Some((t, scenery)) = what.traffic {
+        t.sync(&mut view.traffic, world, scenery, renderer, scene);
     }
     if let Some(People { humans, bus, camera }) = what.people {
         if let Some(bus) = bus {

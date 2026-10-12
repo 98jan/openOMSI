@@ -1,4 +1,5 @@
-use super::{ai_context, apply_ai_context, relative_to_roots};
+use super::{ai_context, apply_ai_context};
+use omsi_lan::mirror::relative_to_roots;
     use std::path::{Path, PathBuf};
 
     #[test]

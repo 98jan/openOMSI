@@ -14,6 +14,7 @@ use std::collections::HashSet;
 use glam::{DVec3, Vec3};
 use omsi_render::Camera;
 use winit::keyboard::KeyCode;
+use crate::app_impl::ShiftClockCx;
 
 mod pad;
 mod panel;
@@ -373,65 +374,8 @@ impl crate::App {
         log::info!("photo mode on at {:.1},{:.1},{:.1}, the bus at {:.1} km/h", cam.position.x, cam.position.y, cam.position.z, velocity.length() * 3.6);
     }
 
-    /// Out of the photo mode: the game as it was.
-    pub(crate) fn exit_photo(&mut self) {
-        let Some(ph) = self.photo.take() else { return };
-        self.photo_settings = Some(ph.settings.clone());
-        self.paused = ph.prev_paused;
-        if ph.clock_shift != 0.0 {
-            self.shift_clock(-ph.clock_shift);
-        }
-        if let Some(c) = ph.prev_camera {
-            self.camera = Some(c);
-        }
-        self.shell.drop_picture();
-        self.shell.opaque = false;
-        self.shell.clear();
-        log::info!("photo mode off");
-    }
-
     pub(crate) fn photo_request(&mut self, r: Request) {
-        match r {
-            Request::Exit => self.exit_photo(),
-            Request::Take => {
-                if let Some(ph) = self.photo.as_mut() {
-                    ph.render.capture = true;
-                }
-            }
-            Request::Reset => {
-                if let Some(ph) = self.photo.as_mut() {
-                    ph.settings = Settings { fov: ph.settings.fov, orbit: ph.settings.orbit, ..Settings::default() };
-                    ph.fov_target = ph.settings.fov;
-                }
-            }
-            Request::Level => {
-                if let Some(ph) = self.photo.as_mut() {
-                    ph.settings.roll = 0.0;
-                }
-            }
-            Request::HideUi => {
-                if let Some(ph) = self.photo.as_mut() {
-                    ph.hide_ui = !ph.hide_ui;
-                }
-            }
-            Request::Reveal(path) => crate::platform::reveal(&path),
-            Request::Clock(secs) => {
-                if self.net.lan.as_ref().is_some_and(|l| l.role == omsi_net::Role::Client) {
-                    if let Some(ph) = self.photo.as_mut() {
-                        ph.note = Some((omsi_ui::tr("In a LAN session the host sets the clock").into_owned(), 3.0));
-                    }
-                } else {
-                    let moved = !self.real_time_locked();
-                    self.shift_clock(secs);
-                    if let Some(ph) = self.photo.as_mut() {
-                        if moved {
-                            ph.clock_shift += secs;
-                        }
-                        ph.render.reset();
-                    }
-                }
-            }
-        }
+        photo_request(&mut PhotoCx::of(&mut self.parts()), r);
     }
 
     /// A key while the photo mode is on: all of them are its own.
@@ -444,35 +388,102 @@ impl crate::App {
             self.photo_request(r);
         }
     }
+}
 
-    /// The photo mode's frame before the picture: the pad, the camera flown, the view the
-    /// game streams the world round, and the panel.
-    pub(crate) fn frame_photo(&mut self, dt: f32) {
-        if self.photo.is_none() {
-            return;
-        }
-        let requests = match (self.photo.as_mut(), self.input.controllers.as_ref()) {
-            (Some(ph), Some(ctl)) => ph.pad.read(ctl),
-            (Some(ph), None) => {
-                ph.pad = pad::PadState::default();
-                Vec::new()
-            }
-            _ => Vec::new(),
-        };
-        for r in requests {
-            self.photo_request(r);
-        }
-        let world = self.world.clone();
-        let Some(ph) = self.photo.as_mut() else { return };
-        ph.fly(dt.min(0.1), |x, y| world.as_ref().and_then(|w| w.ground_height(x, y)));
-        if let Some(n) = ph.note.as_mut() {
-            n.1 -= dt;
-        }
-        if ph.note.as_ref().is_some_and(|n| n.1 <= 0.0) {
-            ph.note = None;
-            ph.saved = None;
-        }
-        self.camera = Some(ph.cam);
-        self.frame_photo_panel(dt);
+crate::app::stage_ctx!(
+    /// The photo mode's part of the game (the clock it may move included).
+    PhotoCx { reads: [input, net, world], writes: [ui, clock, view, menus, traffic, player, gfx] }
+);
+
+/// Out of the photo mode: the game as it was.
+fn exit_photo(cx: &mut PhotoCx) {
+    let Some(ph) = cx.ui.photo.take() else { return };
+    *cx.ui.photo_settings = Some(ph.settings.clone());
+    *cx.clock.paused = ph.prev_paused;
+    if ph.clock_shift != 0.0 {
+        crate::app_impl::shift_clock(crate::app::narrow!(cx => ShiftClockCx { reads: [net, input, world], writes: [clock, traffic, player, ui, gfx] }), -ph.clock_shift);
     }
+    if let Some(c) = ph.prev_camera {
+        *cx.view.camera = Some(c);
+    }
+    cx.menus.shell.drop_picture();
+    cx.menus.shell.opaque = false;
+    cx.menus.shell.clear();
+    log::info!("photo mode off");
+}
+
+/// What the photo mode's keys, pad and panel ask for (`Request`).
+pub(crate) fn photo_request(cx: &mut PhotoCx, r: Request) {
+    match r {
+        Request::Exit => exit_photo(cx),
+        Request::Take => {
+            if let Some(ph) = cx.ui.photo.as_mut() {
+                ph.render.capture = true;
+            }
+        }
+        Request::Reset => {
+            if let Some(ph) = cx.ui.photo.as_mut() {
+                ph.settings = Settings { fov: ph.settings.fov, orbit: ph.settings.orbit, ..Settings::default() };
+                ph.fov_target = ph.settings.fov;
+            }
+        }
+        Request::Level => {
+            if let Some(ph) = cx.ui.photo.as_mut() {
+                ph.settings.roll = 0.0;
+            }
+        }
+        Request::HideUi => {
+            if let Some(ph) = cx.ui.photo.as_mut() {
+                ph.hide_ui = !ph.hide_ui;
+            }
+        }
+        Request::Reveal(path) => crate::platform::reveal(&path),
+        Request::Clock(secs) => {
+            if cx.net.lan.as_ref().is_some_and(|l| l.role == omsi_net::Role::Client) {
+                if let Some(ph) = cx.ui.photo.as_mut() {
+                    ph.note = Some((omsi_ui::tr("In a LAN session the host sets the clock").into_owned(), 3.0));
+                }
+            } else {
+                let moved = !crate::app_impl::real_time_locked(cx.common.settings, cx.net);
+                crate::app_impl::shift_clock(crate::app::narrow!(cx => ShiftClockCx { reads: [net, input, world], writes: [clock, traffic, player, ui, gfx] }), secs);
+                if let Some(ph) = cx.ui.photo.as_mut() {
+                    if moved {
+                        ph.clock_shift += secs;
+                    }
+                    ph.render.reset();
+                }
+            }
+        }
+    }
+}
+
+/// The photo mode's frame before the picture: the pad, the camera flown, the view the
+/// game streams the world round, and the panel.
+pub(crate) fn photo(mut cx: PhotoCx, dt: f32) {
+    if cx.ui.photo.is_none() {
+        return;
+    }
+    let requests = match (cx.ui.photo.as_mut(), cx.input.controllers.as_ref()) {
+        (Some(ph), Some(ctl)) => ph.pad.read(ctl),
+        (Some(ph), None) => {
+            ph.pad = pad::PadState::default();
+            Vec::new()
+        }
+        _ => Vec::new(),
+    };
+    for r in requests {
+        photo_request(&mut cx, r);
+    }
+    let world = cx.world.world.clone();
+    let Some(ph) = cx.ui.photo.as_mut() else { return };
+    ph.fly(dt.min(0.1), |x, y| world.as_ref().and_then(|w| w.ground_height(x, y)));
+    if let Some(n) = ph.note.as_mut() {
+        n.1 -= dt;
+    }
+    if ph.note.as_ref().is_some_and(|n| n.1 <= 0.0) {
+        ph.note = None;
+        ph.saved = None;
+    }
+    *cx.view.camera = Some(ph.cam);
+    panel::photo_panel(&mut cx, dt);
 }

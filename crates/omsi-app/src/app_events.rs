@@ -80,7 +80,7 @@ mod frame;
 pub(crate) use frame::steps;
 pub(crate) use frame::stages::WINDOW_FRAME;
 #[cfg(test)]
-pub(crate) use frame::stages::WindowStage;
+pub(crate) use frame::stages::{WindowStage, FRAME_AFTER, FRAME_BEFORE, FRAME_TICK};
 
 /// How fast a stick turns the head, fully pushed (degrees a second, see `Analog::look`).
 const LOOK_STICK_DEG_S: f32 = 120.0;
@@ -174,7 +174,7 @@ impl ApplicationHandler for App {
                 // releases go on, so that nothing held stays held)
                 if event.state == ElementState::Pressed {
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        if self.plugin_typing_key(code, event.text.as_deref()) || self.devtools_typing(code, event.text.as_deref()) {
+                        if self.integrations.plugin_typing_key(code, event.text.as_deref()) || self.devtools_typing(code, event.text.as_deref()) {
                             return;
                         }
                         // the game's panels: the field typed into, Esc closing the one on top
@@ -215,7 +215,7 @@ impl ApplicationHandler for App {
                 {
                     self.net.remotes.chat.open();
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        lan::chat_swallow(&mut self.net.remotes, code);
+                        lan::chat_swallow(&mut self.net.remotes, crate::app_impl::lan_tick::chat_key_of(code));
                     }
                     return;
                 }
@@ -333,7 +333,7 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 // while the plugins' panels have the mouse its clicks are theirs, none the bus's
-                if self.plugin_focus() {
+                if self.integrations.plugin_focus() {
                     self.plugin_click(state == ElementState::Pressed);
                     return;
                 }
@@ -487,10 +487,7 @@ impl ApplicationHandler for App {
 impl App {
     /// The window's size in pixels, while the mirror panels can be worked (in the cab, no menu).
     pub(crate) fn mirror_hud_size(&self) -> Option<(f32, f32)> {
-        if !self.cam.in_cab || self.menus.game_menu.is_some() || !self.gfx.mirror_hud.editing() {
-            return None;
-        }
-        Some(self.hud_size())
+        mirror_hud_size(&self.settings, &self.cam, &self.menus, &self.gfx)
     }
 
     /// The mouse wheel (or a pinch of two fingers): `amount` notches, up positive.
@@ -575,7 +572,7 @@ impl App {
             if let (Some(w), Some((o, d, spread))) = (self.world.as_ref(), self.cursor_ray_now()) {
                 let blocked = self.player.as_ref().and_then(|p| p.opaque_body_hit(o, d));
                 if let Some(hit) = w.scenery_object_hit(o, d, crate::input_script::SCENERY_OBJECT_REACH, spread).filter(|h| blocked.map_or(true, |t| t >= h.t)) {
-                    w.scenery_object_wheel(hit.map_id, &hit.event, -amount * 40.0);
+                    w.scenery_object_wheel(&mut self.session.scenery, hit.map_id, &hit.event, -amount * 40.0);
                     return;
                 }
             }
@@ -1036,4 +1033,12 @@ mod vr_mirror_tests {
 /// `OMSI_INPUT`): its mouse is the script's alone.
 fn scripted_window() -> bool {
     omsi_cfg::flags::OMSI_BACKGROUND.is_set() && omsi_cfg::flags::OMSI_INPUT.var().is_some()
+}
+
+/// [`App::mirror_hud_size`] on the parts it reads.
+pub(crate) fn mirror_hud_size(settings: &settings::Settings, cam: &ViewState, menus: &MenuState, gfx: &GfxState) -> Option<(f32, f32)> {
+    if !cam.in_cab || menus.game_menu.is_some() || !gfx.mirror_hud.editing() {
+        return None;
+    }
+    Some(crate::app_impl::hud_size(settings, gfx))
 }

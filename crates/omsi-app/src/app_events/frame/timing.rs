@@ -70,7 +70,7 @@ impl App {
         self.log_frame(raw_dt);
         let draws = self.renderer.as_mut().map_or((0, 0), |r| std::mem::take(&mut r.frame_draws));
         if self.settings.perf_overlay_on() {
-            self.perf.overlay.sample(raw_dt, &self.perf.profile, draws);
+            self.perf.overlay.sample(raw_dt, self.perf.profile.iter().map(|(key, value)| (key.name(), value)), draws);
         } else if self.perf.overlay.started() {
             self.perf.overlay.reset();
         }
@@ -78,8 +78,8 @@ impl App {
         if profiling && self.perf.profile_mark.is_some() && self.perf.frame_times.len() < crate::perf_report::MAX_FRAMES {
             self.perf.frame_times.push(raw_dt);
         }
-        let waited: f64 = ["acquire", "present", "gpu"].iter()
-            .map(|&k| self.perf.profile.get(k).copied().unwrap_or(0.0))
+        let waited: f64 = [crate::profile_keys::ProfKey::Acquire, crate::profile_keys::ProfKey::Present, crate::profile_keys::ProfKey::Gpu].iter()
+            .map(|&k| self.perf.profile.get(k))
             .sum();
         let wait_this_frame = (waited - self.perf.governor_wait_prev).max(0.0) as f32;
         self.perf.governor_wait_prev = waited;
@@ -94,7 +94,7 @@ impl App {
                         .perf.profile
                         .iter()
                         .map(|(k, v)| {
-                            (*k, v - self.perf.profile_prev.get(k).copied().unwrap_or(0.0))
+                            (k.name(), v - self.perf.profile_prev.get(k))
                         })
                         .collect();
                     let staged: f64 = parts
