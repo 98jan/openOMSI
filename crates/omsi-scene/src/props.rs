@@ -355,21 +355,7 @@ impl World {
         if self.light_maps.lock().remove(&key).is_some() {
             self.light_maps_generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        let mut scripted = self.scripted.lock();
-        if !scripted.iter().any(|o| o.tile == key) {
-            return;
-        }
-        let mut kept = Vec::with_capacity(scripted.len());
-        for mut o in scripted.drain(..) {
-            if o.tile == key {
-                if let (Some(a), Some(mut ss)) = (audio, o.sounds.take()) {
-                    ss.stop_all(a);
-                }
-            } else {
-                kept.push(o);
-            }
-        }
-        *scripted = kept;
+        self.scripted.lock().drop_tile(key, audio);
     }
 
     /// Object types no loaded tile uses any more leave the type cache (with their meshes on

@@ -131,7 +131,7 @@ impl World {
             traffic_lights: Mutex::new(Vec::new()),
             controller_of_object: Mutex::new(HashMap::new()),
             light_objects: Mutex::new(Vec::new()),
-            scripted: Mutex::new(Vec::new()),
+            scripted: Mutex::new(ScriptedSet::default()),
             collision: Mutex::new(Default::default()),
             poles: Mutex::new(HashMap::new()),
             fallen_poles: Mutex::new(HashMap::new()),

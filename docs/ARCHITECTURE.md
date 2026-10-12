@@ -84,7 +84,15 @@ Bottom up:
   keeps its own list of the voices playing and never waits for a block being mixed. The
   cpal stream lives on the "audio device" thread, which also follows the default output.
   The internet radio's frames come through a ring as well (`stream::StreamBuf`).
-* Planned: scenery object scripts in parallel, physics on its own step loop.
+* Scenery object scripts (`omsi_sim::scenery::SceneryState`): the scripts and variables of
+  the loaded tiles' scripted objects are one owned list in the simulation, the view's half
+  (render instances, materials, texts, sounds) beside it at the same index
+  (`omsi_scene::ScriptedSet`). Only the objects within reach of the camera's 50 m cell are
+  looked at (a candidate set made anew when the camera changes cell or a tile goes); the
+  exact 800 m cut picks among them. Their scripts run side by side (`frame_each`) on inputs
+  gathered before (light phases, boards, clock), and the step ends in commands in object
+  order (`SceneryCmd`) that the view applies as it did when it walked the list.
+* Planned: physics on its own step loop.
 
 ## Memory
 

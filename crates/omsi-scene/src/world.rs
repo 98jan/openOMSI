@@ -67,7 +67,7 @@ pub struct World {
     /// Placed traffic light lamps.
     pub light_objects: Mutex<Vec<LightObject>>,
     /// Placed objects with scripts / animations.
-    pub scripted: Mutex<Vec<ScriptedObject>>,
+    pub scripted: Mutex<ScriptedSet>,
     /// The clock and the departure boards the scenery scripts read.
     pub timetable_boards: Mutex<StopBoards>,
     /// The map's `Holidays.txt`, read when first asked.

@@ -10,29 +10,12 @@ pub struct NightMode {
     pub slots: usize,
 }
 
-/// When a building with a `[NightMapMode]` is in use and when its windows are lit, as
-/// OMSI decides once per object and every frame: in use
-/// between `on` and `off` (seconds of the day; mode 2 homes 5.5-9.5 h until 22-24 h, mode 3
-/// offices 6-8 h until 17-19 h on working days that are no holiday, mode 4 schools 6-8 h until
-/// 14-16 h on school days, any other mode all day); lit while in use and the daylight under
-/// `threshold` (0.6 for mode 0, else 0.3-0.75).
-#[derive(Clone, Copy, Debug)]
-pub struct InUse {
-    pub mode: i32,
-    pub on: f64,
-    pub off: f64,
-    pub threshold: f32,
-}
-
+pub use omsi_sim::scenery::InUse;
 pub use omsi_map::calendar::DayKind;
 
 /// A scripted object's dynamic texture change: its type, the variants chosen, its mesh
 /// instances and the slots' switches.
 type TextureUpdate = (Arc<ObjectType>, Vec<usize>, Vec<usize>, Vec<((usize, usize), bool)>);
-
-/// What the scenery scripts took last frame (f64 bits), to give the next frame's loop as many
-/// helpers as that work is worth.
-static SCRIPTS_LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Where a frame's scenery scripts went (seconds), for OMSI_PROFILE: waiting for the script
 /// list (the tile loader places objects under the same lock), gathering what the scripts are
@@ -48,35 +31,105 @@ pub struct ScriptedTimes {
     pub lamps: f64,
 }
 
-impl InUse {
-    /// The window of object `seed` (its map id: the same building keeps its hours).
-    pub fn new(mode: i32, seed: u64) -> InUse {
-        let r = |k: u64| {
-            let h = (seed ^ k.wrapping_mul(0x9E37_79B9_7F4A_7C15)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-            ((h >> 11) % 1_000_000) as f64 / 1_000_000.0
-        };
-        let (on, off) = match mode {
-            2 => (5.5 + 4.0 * r(1), 22.0 + 2.0 * r(2)),
-            3 => (6.0 + 2.0 * r(1), 17.0 + 2.0 * r(2)),
-            4 => (6.0 + 2.0 * r(1), 14.0 + 2.0 * r(2)),
-            _ => (0.0, 24.0),
-        };
-        let threshold = if mode == 0 { 0.6 } else { (0.3 + 0.45 * r(3)) as f32 };
-        InUse { mode, on: on * 3600.0, off: off * 3600.0, threshold }
+/// The scripted scenery objects of the loaded tiles: their scripts and variables as the
+/// simulation's own state, and beside each (at the same index) what the view keeps of it.
+#[derive(Default)]
+pub struct ScriptedSet {
+    pub sim: omsi_sim::scenery::SceneryState,
+    pub views: Vec<ScriptedView>,
+}
+
+/// The render side of a scripted scenery object (see [`ScriptedObject`] for the fields).
+pub struct ScriptedView {
+    pub ty: Arc<ObjectType>,
+    pub xf: Mat4,
+    pub instances: Vec<usize>,
+    pub variants: Vec<(usize, usize, MaterialId, MaterialId, String)>,
+    pub sounds: Option<omsi_audio::SoundSet>,
+    pub texts: Vec<(TextureId, omsi_sim::texttex::TextTextureState)>,
+    pub htmls: Vec<(usize, TextureId)>,
+    pub alpha_slots: Vec<LampSlots>,
+    pub alpha_last: Vec<Vec<f32>>,
+}
+
+impl ScriptedSet {
+    /// A placed object: its script goes to the simulation's list, the rest to the view's.
+    pub fn push(&mut self, o: ScriptedObject) {
+        let ScriptedObject {
+            ty,
+            pos,
+            xf,
+            instances,
+            inst,
+            controller,
+            light_index,
+            light_parent,
+            map_id,
+            variants,
+            sounds,
+            tile,
+            var_parent,
+            texts,
+            arrivals,
+            htmls,
+            alpha_slots,
+            alpha_last,
+        } = o;
+        let mut s = omsi_sim::scenery::SceneryObject::new(map_id, pos, tile, inst, ty.sco.night_map_mode);
+        s.controller = controller;
+        s.light_index = light_index;
+        s.light_parent = light_parent;
+        s.var_parent = var_parent;
+        s.arrivals = arrivals;
+        s.has_texts = !texts.is_empty();
+        s.has_pages = !htmls.is_empty();
+        self.sim.push(s);
+        self.views.push(ScriptedView { ty, xf, instances, variants, sounds, texts, htmls, alpha_slots, alpha_last });
     }
 
-    pub fn in_use(&self, time: f64, day: DayKind) -> bool {
-        let t = time.rem_euclid(86_400.0);
-        let hours = t >= self.on && t <= self.off;
-        match self.mode {
-            3 => hours && day.workday && !day.holiday,
-            4 => hours && day.workday && !day.holiday && !day.school_holiday,
-            _ => hours,
+    pub fn len(&self) -> usize {
+        self.views.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.views.is_empty()
+    }
+
+    /// (object, view) in the list's order.
+    pub fn iter(&self) -> impl Iterator<Item = (&omsi_sim::scenery::SceneryObject, &ScriptedView)> {
+        self.sim.objects().iter().zip(&self.views)
+    }
+
+    /// The first object of id `map_id`, and its view.
+    pub fn find_mut(&mut self, map_id: i64) -> Option<(&mut omsi_sim::scenery::SceneryObject, &mut ScriptedView)> {
+        let i = self.sim.find(map_id)? as usize;
+        Some((&mut self.sim.objects_mut()[i], &mut self.views[i]))
+    }
+
+    /// The objects of tile `key` go (their sounds stop).
+    pub fn drop_tile(&mut self, key: (i32, i32), audio: Option<&omsi_audio::AudioEngine>) {
+        if !self.sim.objects().iter().any(|o| o.tile == key) {
+            return;
         }
+        let mut old = std::mem::take(&mut self.views).into_iter();
+        let mut kept = Vec::with_capacity(old.len());
+        self.sim.drop_tile(key, |_, stays| {
+            let Some(mut v) = old.next() else { return };
+            if stays {
+                kept.push(v);
+            } else if let (Some(a), Some(mut ss)) = (audio, v.sounds.take()) {
+                ss.stop_all(a);
+            }
+        });
+        self.views = kept;
     }
+}
 
-    pub fn lit(&self, time: f64, day: DayKind, brightness: f32) -> bool {
-        self.in_use(time, day) && brightness < self.threshold
+impl std::ops::Index<usize> for ScriptedSet {
+    type Output = omsi_sim::scenery::SceneryObject;
+
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.sim.objects()[i]
     }
 }
 
@@ -127,8 +180,9 @@ impl World {
     /// path has no `[switchdir]`).
     pub fn switch_set_to(&self, id: i64, path: u16) -> Option<bool> {
         let scripted = self.scripted.lock();
-        let o = scripted.iter().find(|o| o.map_id == id)?;
-        let d = (*o.ty.sco.path_switch_dir.get(path as usize)?)?;
+        let i = scripted.sim.find(id)? as usize;
+        let (o, v) = (&scripted.sim.objects()[i], &scripted.views[i]);
+        let d = (*v.ty.sco.path_switch_dir.get(path as usize)?)?;
         Some(o.inst.var("Switch").map(|v| (v - d as f32).abs() < 0.5).unwrap_or(false))
     }
 
@@ -155,7 +209,7 @@ impl World {
         // (the signals of the routes, gathered once when the map opened)
         let ids = &self.signal_ids;
         let mut scripted = self.scripted.lock();
-        for o in scripted.iter_mut() {
+        for o in scripted.sim.objects_mut() {
             if !ids.contains(&o.map_id) {
                 continue;
             }
@@ -194,17 +248,17 @@ impl World {
     pub fn html_object_hit(&self, origin: DVec3, dir: glam::Vec3, reach: f32) -> Option<PageHit> {
         let scripted = self.scripted.lock();
         let mut best: Option<(f32, Option<PageHit>)> = None;
-        for o in scripted.iter().filter(|o| !o.htmls.is_empty()) {
+        for (o, v) in scripted.iter().filter(|(_, v)| !v.htmls.is_empty()) {
             if (o.pos - origin).length() > reach as f64 + 60.0 {
                 continue;
             }
             let local = (origin - o.pos).as_vec3();
-            for mi in 0..o.instances.len() {
-                let Some((data, o3d_mats, overrides)) = o.ty.meshes.get(mi) else { continue };
+            for mi in 0..v.instances.len() {
+                let Some((data, o3d_mats, overrides)) = v.ty.meshes.get(mi) else { continue };
                 if !o.inst.mesh_visible.get(mi).copied().unwrap_or(true) {
                     continue;
                 }
-                let xf = o.xf * o.inst.mesh_transforms.get(mi).copied().unwrap_or(Mat4::IDENTITY);
+                let xf = v.xf * o.inst.mesh_transforms.get(mi).copied().unwrap_or(Mat4::IDENTITY);
                 let Some(hit) = omsi_geometry::ray_mesh_hit(local, dir, data, &xf) else { continue };
                 if hit.t > reach || best.as_ref().is_some_and(|b| b.0 <= hit.t) {
                     continue;
@@ -216,7 +270,7 @@ impl World {
                     .filter(|m| !m.item && omsi_sim::vehicle::override_slot(o3d_mats, m) == Some(slot))
                     .find_map(|m| m.use_script_texture)
                     .map(|n| n.max(0) as usize)
-                    .filter(|n| o.htmls.iter().any(|(i, _)| i == n));
+                    .filter(|n| v.htmls.iter().any(|(i, _)| i == n));
                 let page = page.map(|page| PageHit {
                     t: hit.t,
                     map_id: o.map_id,
@@ -234,8 +288,8 @@ impl World {
     /// What the page does (`omsi.setVar`, `omsi.trigger`) reaches the object's script.
     pub fn html_object_pointer(&self, map_id: i64, page: usize, u: f32, v: f32, kind: omsi_sim::htmltex::PointerKind) -> bool {
         let mut scripted = self.scripted.lock();
-        match scripted.iter_mut().find(|o| o.map_id == map_id) {
-            Some(o) => o.inst.html_pointer(page, u, v, kind),
+        match scripted.find_mut(map_id) {
+            Some((o, _)) => o.inst.html_pointer(page, u, v, kind),
             None => false,
         }
     }
@@ -257,19 +311,19 @@ impl World {
         } else {
             vec![dir]
         };
-        for o in scripted.iter().filter(|o| o.ty.has_mouse_events) {
+        for (o, v) in scripted.iter().filter(|(_, v)| v.ty.has_mouse_events) {
             if (o.pos - origin).length() > reach as f64 + 60.0 {
                 continue;
             }
             let local = (origin - o.pos).as_vec3();
-            for mi in 0..o.ty.meshes.len() {
-                let Some((data, _, _)) = o.ty.meshes.get(mi) else { continue };
+            for mi in 0..v.ty.meshes.len() {
+                let Some((data, _, _)) = v.ty.meshes.get(mi) else { continue };
                 if !o.inst.mesh_visible.get(mi).copied().unwrap_or(true) {
                     continue;
                 }
-                let Some(&def_idx) = o.ty.mesh_def_index.get(mi) else { continue };
-                let Some(event) = o.ty.model.meshes.get(def_idx).and_then(|m| m.mouse_event.as_ref()) else { continue };
-                let xf = o.xf * o.inst.mesh_transforms.get(mi).copied().unwrap_or(Mat4::IDENTITY);
+                let Some(&def_idx) = v.ty.mesh_def_index.get(mi) else { continue };
+                let Some(event) = v.ty.model.meshes.get(def_idx).and_then(|m| m.mouse_event.as_ref()) else { continue };
+                let xf = v.xf * o.inst.mesh_transforms.get(mi).copied().unwrap_or(Mat4::IDENTITY);
                 for d in &dirs {
                     if let Some(t) = omsi_geometry::ray_mesh(local, *d, data, &xf) {
                         if t <= reach && best.as_ref().map_or(true, |b| t < b.t) {
@@ -291,7 +345,7 @@ impl World {
     /// Click down on a scenery object's `[mouseevent]` switch or button.
     pub fn scenery_object_click(&self, map_id: i64, event: &str) -> bool {
         let mut scripted = self.scripted.lock();
-        let Some(o) = scripted.iter_mut().find(|o| o.map_id == map_id) else {
+        let Some((o, _)) = scripted.find_mut(map_id) else {
             return false;
         };
         log::info!("scenery mouse event {event} on object {map_id}");
@@ -311,7 +365,7 @@ impl World {
     /// Mouse dragged while holding down a scenery object switch.
     pub fn scenery_object_drag(&self, map_id: i64, event: &str, dx: f32, dy: f32) -> bool {
         let mut scripted = self.scripted.lock();
-        let Some(o) = scripted.iter_mut().find(|o| o.map_id == map_id) else {
+        let Some((o, _)) = scripted.find_mut(map_id) else {
             return false;
         };
         let drag = format!("{event}_drag");
@@ -324,7 +378,7 @@ impl World {
     /// Mouse button released from a scenery object switch (`<event>_off`).
     pub fn scenery_object_release(&self, map_id: i64, event: &str) -> bool {
         let mut scripted = self.scripted.lock();
-        let Some(o) = scripted.iter_mut().find(|o| o.map_id == map_id) else {
+        let Some((o, _)) = scripted.find_mut(map_id) else {
             return false;
         };
         let off = format!("{event}_off");
@@ -334,7 +388,7 @@ impl World {
     /// Mouse wheel notch over a scenery object switch.
     pub fn scenery_object_wheel(&self, map_id: i64, event: &str, amount: f32) -> bool {
         let mut scripted = self.scripted.lock();
-        let Some(o) = scripted.iter_mut().find(|o| o.map_id == map_id) else {
+        let Some((o, _)) = scripted.find_mut(map_id) else {
             return false;
         };
         o.inst.host.mouse = (0.0, amount);
@@ -406,21 +460,14 @@ impl World {
             return;
         }
         let mut scripted = self.scripted.lock();
-        // The objects asked for, found in one pass over the list - the first of each id, as
-        // a search would find it: every train asks for the points of its next five lanes on
-        // every frame, and each of them was a search of all the scripted objects.
-        let mut owners: HashMap<i64, Option<usize>> = requests.iter().map(|&(id, _)| (id, None)).collect();
-        for (i, o) in scripted.iter().enumerate() {
-            if let Some(slot) = owners.get_mut(&o.map_id) {
-                slot.get_or_insert(i);
-            }
-        }
+        // (the first object of each id, as a search would find it: every train asks for the
+        // points of its next five lanes on every frame)
         for &(id, path) in requests {
-            let Some(o) = owners.get(&id).copied().flatten().map(|i| &mut scripted[i]) else { continue };
-            if let Some(Some(d)) = o.ty.sco.path_switch_dir.get(path as usize) {
+            let Some((o, v)) = scripted.find_mut(id) else { continue };
+            if let Some(Some(d)) = v.ty.sco.path_switch_dir.get(path as usize) {
                 let was = o.inst.var("Switch");
                 if o.inst.set_var("Switch", *d as f32) && was != Some(*d as f32) && omsi_cfg::flags::OMSI_DEBUG_SWITCHES.is_set() {
-                    log::info!("switch {} ({}) at ({:.0}, {:.0}) thrown to {d} for a train", id, o.ty.sco.path.display(), o.pos.x, o.pos.y);
+                    log::info!("switch {} ({}) at ({:.0}, {:.0}) thrown to {d} for a train", id, v.ty.sco.path.display(), o.pos.x, o.pos.y);
                 }
             }
         }
@@ -443,29 +490,14 @@ impl World {
                 log::info!("particle object {} at ({:.1}, {:.1}, {:.1}), {d:.0} m: {} particles", po.map_id, po.pos.x, po.pos.y, po.pos.z, po.set.particles().count());
             }
         }
-        // The scripted objects whose variables the emitters read, found in one pass over the
-        // list - the first of each id, as a search would find it: a search of the whole list
-        // for every emitter's object, every frame, was most of the scenery scripts' time on a
-        // city map.
-        let mut owners: HashMap<i64, Option<usize>> = HashMap::new();
-        for po in objs.values().flatten() {
-            if !((po.pos - center).length() > 1500.0) {
-                owners.insert(po.map_id, None);
-            }
-        }
-        if !owners.is_empty() {
-            for (i, s) in scripted.iter().enumerate() {
-                if let Some(slot) = owners.get_mut(&s.map_id) {
-                    slot.get_or_insert(i);
-                }
-            }
-        }
+        // (the scripted object whose variables an emitter reads: the first of its id, as a
+        // search would find it)
         for list in objs.values_mut() {
             for po in list.iter_mut() {
                 if (po.pos - center).length() > 1500.0 {
                     continue;
                 }
-                let inst = owners.get(&po.map_id).copied().flatten().map(|i| &scripted[i].inst);
+                let inst = scripted.sim.find(po.map_id).map(|i| &scripted.sim.get(i).inst);
                 let value = |n: &str| inst.and_then(|i| i.var(n)).unwrap_or(0.0);
                 po.set.update(dt, po.pos, po.rot, &value);
             }
@@ -518,135 +550,52 @@ impl World {
         let mut scripted = self.scripted.lock();
         let mut boards = self.timetable_boards.lock();
         times.lock += t.elapsed().as_secs_f64();
-        let t = std::time::Instant::now();
-        let mut wanted: Vec<i64> = Vec::new();
-        let mut wanted_names: Vec<String> = Vec::new();
         let mut texture_updates: Vec<TextureUpdate> = Vec::new();
-        // First what every object's script is given (in order: the light programs and the
-        // boards are read here), then the scripts themselves, side by side on the worker
-        // threads (a city's hundreds of scripted objects took a core's worth of a frame),
-        // then what they did, in order again.
-        let mut inputs: Vec<Option<omsi_sim::scenery::SceneryVars>> = Vec::with_capacity(scripted.len());
-        let controllers = self.controller_of_object.lock();
-        for o in scripted.iter_mut() {
-            let dist = (o.pos - center).length();
-            if dist > 800.0 {
-                inputs.push(None);
-                if let (Some(a), Some(mut ss)) = (audio, o.sounds.take()) {
-                    ss.stop_all(a);
-                }
-                continue;
-            }
-            // the object's own hours ([NightMapMode]): in use, and lit while in use and the
-            // daylight under its own threshold (0.6, or 0.3-0.75 with a [NightMapMode])
-            let use_ = InUse::new(o.ty.sco.night_map_mode, o.map_id as u64);
-            let in_use = use_.in_use(now.time, day);
-            let light = match (o.controller, o.light_parent) {
-                (Some(c), _) => Some((c, o.light_index)),
-                (None, Some((parent, li))) => controllers.get(&parent).map(|&c| (c, li)),
-                _ => None,
-            };
-            let vars = omsi_sim::scenery::SceneryVars {
-                nightlight: use_.lit(now.time, day, brightness) as i32 as f32,
-                in_use: in_use as i32 as f32,
-                traffic_light_phase: light.map(|(c, li)| phase_of(c, li).0).unwrap_or(omsi_sim::traffic::UNLINKED_PHASE as f32),
-                traffic_light_approach: light.map(|(c, li)| phase_of(c, li).1).unwrap_or(0.0),
-                switch: None,
-            };
-            // the scripts read the simulation's time of day (clocks, the display's blinking)
-            if let Some(c) = &boards.clock {
-                let own = &mut o.inst.host.clock;
-                *own = c.clone();
-                // (the update moves it on by `dt` again)
-                if !own.paused {
-                    own.time -= dt as f64;
-                    own.run_time -= dt as f64;
-                }
-            }
-            // a departure display: the buses due at its stop
-            if let (true, Some(stop)) = (o.arrivals, o.var_parent) {
-                wanted.push(stop);
-                let now = boards.clock.as_ref().map(|c| c.time).unwrap_or(0.0);
-                // The list changes about once a second, the times to go every frame: the
-                // same buses keep their names and only count down (the whole list was made
-                // anew, its names copied, every frame for every board).
-                let arrivals = &mut o.inst.host.arrivals;
-                match boards.by_stop.get(&stop) {
-                    Some(l)
-                        if arrivals.len() == l.len()
-                            && arrivals.iter().zip(l).all(|(a, (line, terminus, _))| a.line == *line && a.terminus == *terminus) =>
-                    {
-                        for (a, (_, _, t)) in arrivals.iter_mut().zip(l) {
-                            a.due = (t - now) as f32;
-                        }
-                    }
-                    Some(l) => {
-                        *arrivals = l
-                            .iter()
-                            .map(|(line, terminus, t)| omsi_sim::host::Arrival {
-                                line: line.clone(),
-                                terminus: terminus.clone(),
-                                due: (t - now) as f32,
-                            })
-                            .collect();
-                    }
-                    None => arrivals.clear(),
-                }
-            }
-            // an HTML page that asks for departures by stop name
-            if !o.htmls.is_empty() && dist < HTML_OBJECT_NEAR && !o.inst.host.html_departure_wants.is_empty() {
-                for k in &o.inst.host.html_departure_wants {
-                    if !wanted_names.contains(k) {
-                        wanted_names.push(k.clone());
-                    }
-                }
-                if o.inst.host.html_departures_gen != boards.departures_gen {
-                    o.inst.host.html_departures = o
-                        .inst
-                        .host
-                        .html_departure_wants
-                        .iter()
-                        .filter_map(|k| boards.departures.get(k).map(|l| (k.clone(), l.clone())))
-                        .collect();
-                    o.inst.host.html_departures_gen = boards.departures_gen;
-                }
-            }
-            inputs.push(Some(vars));
-        }
-        drop(controllers);
-        times.inputs += t.elapsed().as_secs_f64();
-        let t = std::time::Instant::now();
+        // The scripts run in the simulation's list (what each is given gathered in order
+        // first, then the scripts side by side on the worker threads), and what they did
+        // comes back as commands, in object order, applied here.
+        let ScriptedSet { sim, views } = &mut *scripted;
+        let mut step = omsi_sim::scenery::StepTimes::default();
         {
-            // (on this thread, workers joining in as they are free: handed whole to the pool,
-            // the frame waited on a latch for busy or unscheduled workers - 20-70 ms frames
-            // standing still on a city map - for 4 ms of scripts)
-            let mut near: Vec<(&mut ScriptedObject, &omsi_sim::scenery::SceneryVars)> = scripted
-                .iter_mut()
-                .zip(inputs.iter())
-                .filter_map(|(o, vars)| vars.as_ref().map(|v| (o, v)))
-                .collect();
-            let last = f64::from_bits(SCRIPTS_LAST.load(std::sync::atomic::Ordering::Relaxed));
-            omsi_cfg::par::frame_each(&mut near, omsi_cfg::par::helpers_for(last, 0.0005), |(o, vars)| {
-                o.inst.update(dt, vars);
-            });
-        }
-        let spent = t.elapsed().as_secs_f64();
-        SCRIPTS_LAST.store(spent.to_bits(), std::sync::atomic::Ordering::Relaxed);
-        times.scripts += spent;
-        let t = std::time::Instant::now();
-        for (o, vars) in scripted.iter_mut().zip(inputs.iter()) {
-            let Some(nightlight) = vars.as_ref().map(|v| v.nightlight) else {
-                continue;
+            let controllers = self.controller_of_object.lock();
+            let inputs = omsi_sim::scenery::SceneryInputs {
+                clock: boards.clock.as_ref(),
+                time: now.time,
+                day,
+                brightness,
+                center,
+                phase_of,
+                controllers: &controllers,
+                by_stop: &boards.by_stop,
+                departures: &boards.departures,
+                departures_gen: boards.departures_gen,
+                pages_near: HTML_OBJECT_NEAR,
             };
-            let dist = (o.pos - center).length();
+            sim.step(dt, &inputs, &mut step);
+        }
+        times.inputs += step.inputs;
+        times.scripts += step.scripts;
+        let t = std::time::Instant::now();
+        let (out, objects) = sim.outputs();
+        for cmd in out.cmds.iter_mut() {
+            let s = match cmd {
+                omsi_sim::scenery::SceneryCmd::Silence(i) => {
+                    if let (Some(a), Some(mut ss)) = (audio, views[*i as usize].sounds.take()) {
+                        ss.stop_all(a);
+                    }
+                    continue;
+                }
+                omsi_sim::scenery::SceneryCmd::Show(s) => s,
+            };
+            let (o, v) = (&objects[s.index as usize], &mut views[s.index as usize]);
+            let (dist, nightlight) = (s.dist, s.nightlight);
             // text textures from the script's strings whenever they change (`update` leaves
             // an unchanged one alone): read only on `Refresh_Strings`, a board whose string
             // was still empty at its first frame stayed blank for good (#367)
-            if !o.texts.is_empty() {
-                let _ = o.inst.take_refresh_strings();
-                for (tex, st) in o.texts.iter_mut() {
+            if !v.texts.is_empty() {
+                for (tex, st) in v.texts.iter_mut() {
                     // (read in place: a copy each frame was only compared with the last)
-                    let text = o.inst.str_var(st.def.variable.trim());
+                    let text = s.text(o, st.def.variable.trim());
                     if st.update(text) {
                         let (w, h) = (st.def.width.max(1) as u32, st.def.height.max(1) as u32);
                         if let Some(rgba) = st.pending.take() {
@@ -677,21 +626,20 @@ impl World {
                     }
                 }
             }
-            // [htmltexture] pages: only near the listener (a page is a whole browser frame)
-            if !o.htmls.is_empty() && dist < HTML_OBJECT_NEAR {
-                for (index, w, h, rgba) in o.inst.update_html_textures() {
-                    if let Some((_, tex)) = o.htmls.iter().find(|(i, _)| *i == index) {
-                        renderer.update_texture(scene, *tex, &Image { width: w, height: h, rgba, has_alpha: true });
-                    }
+            // [htmltexture] pages: only near the listener (a page is a whole browser frame;
+            // the simulation drove them, here come their pictures)
+            for (index, w, h, rgba) in s.pages.drain(..) {
+                if let Some((_, tex)) = v.htmls.iter().find(|(i, _)| *i == index) {
+                    renderer.update_texture(scene, *tex, &Image { width: w, height: h, rgba, has_alpha: true });
                 }
             }
             // [sound] of scenery objects: crossing bells, ambient loops
-            let fired: Vec<String> = std::mem::take(&mut o.inst.host.fired_triggers);
+            let fired: Vec<String> = std::mem::take(&mut s.fired);
             // (out of earshot with nothing playing: nothing to do - finding the sound file
             // for each of a city's scripted objects every frame took 1.8 ms)
-            let near = dist < 300.0 || o.sounds.is_some();
+            let near = dist < 300.0 || v.sounds.is_some();
             if let (Some(a), true) = (audio, near) {
-                let ty = o.ty.clone();
+                let ty = v.ty.clone();
                 let path = ty.sound_path.get_or_init(|| {
                     let rel = ty.sco.sound.as_ref()?;
                     let dir = ty.sco.path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
@@ -699,10 +647,10 @@ impl World {
                 });
                 if let Some(path) = path {
                     let inst = &o.inst;
-                    self.object_sounds(a, &mut o.sounds, path, dist, muffled, o.pos, o.xf, &|n| inst.var(n), &fired);
+                    self.object_sounds(a, &mut v.sounds, path, dist, muffled, o.pos, v.xf, &|n| inst.var(n), &fired);
                 }
             }
-            for (inst, slot, base, item, var) in &o.variants {
+            for (inst, slot, base, item, var) in &v.variants {
                 let x = if var.trim().eq_ignore_ascii_case("NightlightA") {
                     nightlight
                 } else {
@@ -714,9 +662,9 @@ impl World {
                 };
                 renderer.set_material(scene, *inst, *slot, if change_picks_item(x) { *item } else { *base });
             }
-            if !o.ty.dynamic_textures.is_empty() {
-                let selection = scenery_texture_selection(&o.ty, &o.inst);
-                let switches = o
+            if !v.ty.dynamic_textures.is_empty() {
+                let selection = scenery_texture_selection(&v.ty, &o.inst);
+                let switches = v
                     .variants
                     .iter()
                     .map(|(inst, slot, _, _, var)| {
@@ -732,18 +680,18 @@ impl World {
                         ((*inst, *slot), change_picks_item(value))
                     })
                     .collect();
-                texture_updates.push((o.ty.clone(), selection, o.instances.clone(), switches));
+                texture_updates.push((v.ty.clone(), selection, v.instances.clone(), switches));
             }
-            for (k, ((inst, xf), &visible)) in o.instances.iter().zip(&o.inst.mesh_transforms).zip(&o.inst.mesh_visible).enumerate() {
-                renderer.set_transform(scene, *inst, o.pos, o.xf * *xf);
+            for (k, ((inst, xf), &visible)) in v.instances.iter().zip(&o.inst.mesh_transforms).zip(&o.inst.mesh_visible).enumerate() {
+                renderer.set_transform(scene, *inst, o.pos, v.xf * *xf);
                 // (the slots its `[alphascale]` variables fade, see `ScriptedObject::alpha_slots`)
-                let alpha = o.alpha_slots.get(k).filter(|l| !l.alpha.is_empty()).map(|l| l.values(&|v| v.trim().parse::<f32>().ok().or_else(|| o.inst.var(v))).0);
+                let alpha = v.alpha_slots.get(k).filter(|l| !l.alpha.is_empty()).map(|l| l.values(&|n| n.trim().parse::<f32>().ok().or_else(|| o.inst.var(n))).0);
                 let p = &mut scene.instances[*inst];
                 match alpha {
                     Some(a) => {
-                        if p.visible != visible || o.alpha_last.get(k) != Some(&a) {
+                        if p.visible != visible || v.alpha_last.get(k) != Some(&a) {
                             renderer.set_params(scene, *inst, &a, visible, &[]);
-                            if let Some(last) = o.alpha_last.get_mut(k) {
+                            if let Some(last) = v.alpha_last.get_mut(k) {
                                 *last = a;
                             }
                         }
@@ -757,13 +705,12 @@ impl World {
             }
             updated += 1;
         }
-        wanted.sort_unstable();
-        wanted.dedup();
-        boards.wanted = wanted;
-        boards.wanted_names = wanted_names;
+        // (the boards keep this frame's lists; the old ones are the next step's buffers)
+        std::mem::swap(&mut boards.wanted, &mut out.wanted);
+        std::mem::swap(&mut boards.wanted_names, &mut out.wanted_names);
         drop(scripted);
         drop(boards);
-        times.apply += t.elapsed().as_secs_f64();
+        times.apply += step.post + t.elapsed().as_secs_f64();
         let t = std::time::Instant::now();
         self.apply_texture_updates(renderer, scene, texture_updates);
         times.textures += t.elapsed().as_secs_f64();

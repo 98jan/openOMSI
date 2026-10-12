@@ -359,7 +359,8 @@ impl ObjectType {
     }
 }
 
-/// A placed scenery object with a running script / animations.
+/// A placed scenery object with a running script / animations, as placement hands it over
+/// (`ScriptedSet::push` splits it into the simulation's half and the view's).
 pub struct ScriptedObject {
     pub ty: Arc<ObjectType>,
     pub pos: DVec3,
