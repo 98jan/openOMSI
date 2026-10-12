@@ -48,7 +48,7 @@ impl App {
 
 crate::app::stage_ctx!(
     /// The lights' stage's part of the game: the lamps, the rain and the spray, the sounds of the world around.
-    LightsCx { reads: [player, clock, traffic, world, net, view, menus], writes: [perf, sound, weather, people, gfx] }
+    LightsCx { reads: [player, clock, world, net, view, menus], writes: [perf, sound, weather, people, gfx, traffic] }
 );
 
 /// The lights (the lamps' cones, the light maps, every light that shines), the rain and
@@ -70,9 +70,19 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight) {
         cx.gfx.scene.as_mut(),
         cx.view.camera.as_ref(),
     ) {
+        // (the cars' lamps where their meshes are drawn: between the traffic's last two
+        // steps, as the view sync puts them - at the step's own pose a car's glow ran up to a
+        // step ahead of its body, in and out of it at speed, and the lamps seemed to flicker)
+        if let Some(t) = cx.traffic.traffic.as_mut() {
+            t.sim.show_between();
+        }
         let vehicles = steps::light_vehicles(cx.player.player.as_ref(), cx.traffic.traffic.as_ref(), &cx.net.remotes);
         let __tc = Instant::now();
         lights::collect(w, scene, &daylight, cam.position, &vehicles, cone);
+        drop(vehicles);
+        if let Some(t) = cx.traffic.traffic.as_mut() {
+            t.sim.show_actual();
+        }
         cx.perf.profile.add(crate::profile_keys::ProfKey::LightsCollect, __tc.elapsed().as_secs_f64());
         // the object editor's pick: a magenta glow over it
         if let Some(id) = cx.menus.menus.editor.as_ref().and_then(|e| e.selected) {
