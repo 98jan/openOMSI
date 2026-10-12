@@ -1264,8 +1264,7 @@ struct SlotCx<'s> {
     dirs_ref: &'s [&'s Path],
     /// The paint scheme's `[CTCTexture]` substitution.
     subst: &'s dyn Fn(&str) -> String,
-    /// The world's settings (the snow on the panes, the rain's quality).
-    settings: &'s crate::host::SceneSettings,
+    settings: &'s crate::host::SceneSettings, // (the snow on the panes, the rain's quality)
 }
 
 /// How a vehicle's material slot is blended and whether it writes depth.
@@ -1281,8 +1280,7 @@ struct SlotAlpha {
     repair_body_depth: bool,
 }
 
-/// The alpha mode of a vehicle's material slot: what the model.cfg declares, mended for
-/// dirt films, shadow decals, panes and (on request) bodies.
+/// The alpha mode of a vehicle's material slot: what the model.cfg declares, mended for dirt films, shadow decals, panes and (on request) bodies.
 fn slot_alpha(cx: &SlotCx, ov: &[&MaterialDef], tex: Option<TextureId>, transmap: Option<(TextureId, bool)>) -> SlotAlpha {
     let SlotCx { vt, mesh_index, vm, def, slot, m, dirs_ref, subst, .. } = *cx;
     let base_overrides: Vec<MaterialDef> = ov.iter().map(|o| (*o).clone()).collect();
