@@ -16,8 +16,6 @@ hashbrown.workspace = true
 pollster.workspace = true
 # (the widget kit's key codes and cursor shapes)
 winit.workspace = true
-# (the widget kit's key chords for binding keys)
-omsi-content = { path = "../omsi-content" }
 
 [features]
 # what an app's tests see of the widget kit: every clickable thing's place (`kit::Ui::drawn`)

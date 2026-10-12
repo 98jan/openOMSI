@@ -1,4 +1,5 @@
-//! The launcher's widgets: an immediate-mode toolkit on `omsi-ui`.
+//! The widget kit: an immediate-mode toolkit on `omsi-ui`'s drawing, which draws the game's
+//! pause menu, its settings windows and lists, the photo mode and the developer tools.
 //!
 //! Every frame the pages call the widgets with where they go and what they change; the
 //! toolkit draws them, answers whether they were clicked, and keeps the little state a
@@ -62,28 +63,10 @@ pub struct Input {
     pub shift: bool,
     pub ctrl: bool,
     pub alt: bool,
-    /// A key as it was pressed (for binding keys): winit's code name.
-    pub raw_key: Option<winit::keyboard::KeyCode>,
-    /// Binding modifiers at key press, independent of later releases before redraw.
-    pub raw_chord: i32,
     pub double_click: bool,
     /// The wheel is a finger dragged over the screen: it scrolls, it never turns a slider or
     /// a time field under the finger.
     pub touch: bool,
-}
-
-impl Input {
-    pub fn capture_key(&mut self, code: winit::keyboard::KeyCode) {
-        // A modifier alone is not a binding. Do not let a later modifier event
-        // overwrite a letter already waiting for the controls page.
-        if Modifiers::bit(code).is_some() { return; }
-        self.raw_key = Some(code);
-        self.raw_chord = omsi_content::input::chord(self.shift, self.ctrl, self.alt);
-    }
-
-    pub fn binding_modifiers(&self) -> i32 {
-        self.raw_chord
-    }
 }
 
 /// Shift, Ctrl, Alt and the logo key as the launcher knows them. The window says when they
@@ -1131,8 +1114,6 @@ impl Ui {
         self.input.wheel = Vec2::ZERO;
         self.input.text.clear();
         self.input.keys.clear();
-        self.input.raw_key = None;
-        self.input.raw_chord = 0;
         self.input.double_click = false;
     }
 
@@ -1438,7 +1419,6 @@ mod tests {
         assert!(m.key(K::ShiftLeft, true) && m.key(K::ControlRight, true));
         m.apply(&mut input);
         assert!(input.shift && input.ctrl && !input.alt && m.command());
-        assert_eq!(omsi_content::input::chord(input.shift, input.ctrl, input.alt), omsi_content::input::KEY_SHIFT | omsi_content::input::KEY_CTRL);
         // (both Shift keys down, one let go of: still held)
         m.key(K::ShiftRight, true);
         m.key(K::ShiftLeft, false);
@@ -1455,45 +1435,6 @@ mod tests {
         assert!(!input.shift && input.ctrl && !input.alt);
     }
 
-    #[test]
-    fn binding_keeps_modifiers_when_released_before_redraw() {
-        use winit::keyboard::{KeyCode as K, ModifiersState as M};
-        for held in [M::SHIFT, M::CONTROL, M::ALT, M::SHIFT | M::CONTROL | M::ALT] {
-            let mut m = Modifiers::default();
-            let mut input = Input::default();
-            m.told(held);
-            m.apply(&mut input);
-            // KeyboardInput presses A; ModifiersChanged releases the chord before redraw.
-            input.capture_key(K::KeyA);
-            m.told(M::empty());
-            m.apply(&mut input);
-            assert_eq!(input.raw_key, Some(K::KeyA));
-            assert_eq!(input.binding_modifiers(), omsi_content::input::chord(
-                held.shift_key(), held.control_key(), held.alt_key()));
-        }
-    }
-
-    #[test]
-    fn binding_snapshot_uses_fallback_keys_and_does_not_leak_into_next_binding() {
-        use winit::keyboard::KeyCode as K;
-        let mut m = Modifiers::default();
-        let mut ui = Ui::new();
-        for key in [K::ShiftRight, K::ControlLeft, K::AltRight] { m.key(key, true); }
-        m.apply(&mut ui.input);
-        ui.input.capture_key(K::KeyA);
-        for key in [K::ShiftRight, K::ControlLeft, K::AltRight] { m.key(key, false); }
-        m.apply(&mut ui.input);
-        ui.input.capture_key(K::ShiftLeft);
-        assert_eq!(ui.input.raw_key, Some(K::KeyA));
-        assert_eq!(ui.input.binding_modifiers(), omsi_content::input::KEY_SHIFT |
-            omsi_content::input::KEY_CTRL | omsi_content::input::KEY_ALT);
-        ui.discard_input();
-        assert_eq!(ui.input.binding_modifiers(), 0);
-        ui.input.capture_key(K::KeyB);
-        assert_eq!(ui.input.raw_key, Some(K::KeyB));
-        assert_eq!(ui.input.binding_modifiers(), 0);
-    }
-
     /// What was clicked and typed while the launcher drew nothing (a game ran) is gone:
     /// the first frame drawn afterwards pressed the button under the mouse, Start again.
     #[test]
@@ -1506,12 +1447,11 @@ mod tests {
         ui.input.wheel = Vec2::new(0.0, -3.0);
         ui.input.text.push_str("abc");
         ui.input.keys.push(Key::Enter);
-        ui.input.raw_key = Some(winit::keyboard::KeyCode::Enter);
         ui.discard_input();
         let i = &ui.input;
         assert!(!i.pressed && !i.released && !i.right_pressed && !i.double_click);
         assert_eq!(i.wheel, Vec2::ZERO);
-        assert!(i.text.is_empty() && i.keys.is_empty() && i.raw_key.is_none());
+        assert!(i.text.is_empty() && i.keys.is_empty());
     }
 
     /// A long dropdown (a bus with hundreds of fleet numbers) scrolls by dragging its bar,
