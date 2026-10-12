@@ -275,8 +275,11 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         let metal_ok = (u32(material.params2.w + 0.5) & 4u) != 0u;
         metal = select(0.0, smoothstep(0.3, 0.85, refl), masked || metal_ok);
         // (where the mask says nothing reflects - a tyre or a seal on the body's texture -
-        // it is no coat but the rough rubber or plastic of an unpolished surface)
-        let coat_rough = mix(0.8, 0.05, smoothstep(0.0, 0.5, refl));
+        // it is no coat but the rough rubber or plastic of an unpolished surface. Any share
+        // at all is lacquer: the stock bodies' masks hold a few per cent - the MAN NL's
+        // 15 of 255 - which says how much the paint mirrors, not that it is rough; taken
+        // as roughness up to a share of a half, every such body came out matte, #2067)
+        let coat_rough = mix(0.8, 0.06, smoothstep(0.0, 0.04, refl));
         // Where the model says how much it mirrors - a [matl_envmap_mask], or the texture's
         // alpha under a [matl_transmap] (most mod bodies) - Omsi.exe lays the sphere map
         // over the paint by that share at every angle (shader.wgsl's environment stage):
