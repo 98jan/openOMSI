@@ -87,7 +87,7 @@ struct Offscreen<'a> {
     recorder: Option<record::Recorder>,
     /// What each stage of the steps took in all (s, see `frame_stages`; logged with
     /// OMSI_PROFILE).
-    profile: std::collections::BTreeMap<&'static str, f64>,
+    profile: crate::profile_keys::ProfileTimes,
     /// The worst the bus did on the way, for the drive report.
     drive_extremes: DriveExtremes,
     /// The sky's cloud type and the physical weather model (see `weather_setup::SkyState`).

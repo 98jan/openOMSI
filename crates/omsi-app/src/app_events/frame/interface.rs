@@ -72,7 +72,7 @@ impl App {
         self.frame_loading_fade();
         // the pause menu, drawn with the launcher's toolkit over all of it
         self.frame_shell(dt);
-        *self.perf.profile.entry("hud").or_default() += __t.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::Hud, __t.elapsed().as_secs_f64());
         vr_nav_display
     }
 
@@ -293,7 +293,7 @@ impl App {
             nav.frame_at(r, scene, &frame, hud[0]);
             nav.enabled = old_enabled;
             nav.opacity = old_opacity;
-            *self.perf.profile.entry("hud.navigator").or_default() += __tn.elapsed().as_secs_f64();
+            self.perf.profile.add(crate::profile_keys::ProfKey::HudNavigator, __tn.elapsed().as_secs_f64());
             // OMSI 2's dynamic route arrows over the junctions ahead
             if nav.arrows {
                 if let Some(w) = self.world.as_ref() {

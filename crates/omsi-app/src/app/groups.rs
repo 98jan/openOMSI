@@ -92,9 +92,9 @@ pub(crate) struct Integrations {
 pub(crate) struct PerfState {
     pub(crate) fps: f32,
     /// Per-stage frame time accumulators (OMSI_PROFILE), seconds.
-    pub(crate) profile: std::collections::BTreeMap<&'static str, f64>,
+    pub(crate) profile: crate::profile_keys::ProfileTimes,
     /// `profile` as it was at the start of the last frame: what a slow frame spent where.
-    pub(crate) profile_prev: std::collections::BTreeMap<&'static str, f64>,
+    pub(crate) profile_prev: crate::profile_keys::ProfileTimes,
     pub(crate) total_frames: u32,
     /// `OMSI_INPUT` script: (seconds after start, command), in order.
     pub(crate) input_script: Vec<(f32, String)>,

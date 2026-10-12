@@ -11,8 +11,9 @@
 //! Nothing here is an engine: a stage is a plain method of the window's `App` or of the
 //! offscreen run, and the list is the order they were always called in.
 
-use std::collections::BTreeMap;
 use std::time::Instant;
+
+use crate::profile_keys::{ProfKey, ProfileTimes};
 
 #[cfg(test)]
 mod tests;
@@ -92,7 +93,7 @@ pub(crate) enum Carry {
 pub(crate) enum Profile {
     /// The runner times the whole stage under this key (stages may share one; a key never
     /// has a dot: those are a stage's own parts, `traffic.tick`).
-    Key(&'static str),
+    Key(ProfKey),
     /// The stage times its own parts under keys of its own (the picture: acquire, render,
     /// present, ...).
     Inner,
@@ -147,7 +148,7 @@ pub(crate) trait Stage: Copy + std::fmt::Debug + 'static {
 pub(crate) trait Host<S: Stage> {
     fn run_stage(&mut self, stage: S) -> anyhow::Result<Flow>;
     /// Where the stages' times go (`App::perf.profile`, the offscreen run's own).
-    fn profile(&mut self) -> &mut BTreeMap<&'static str, f64>;
+    fn profile(&mut self) -> &mut ProfileTimes;
 }
 
 /// The runner: `list`'s stages in their order, each timed under its profile key, until one
@@ -157,7 +158,7 @@ pub(crate) fn run<S: Stage, H: Host<S>>(host: &mut H, list: &[S]) -> anyhow::Res
         let t = Instant::now();
         let flow = host.run_stage(stage)?;
         if let Profile::Key(k) = stage.info().profile {
-            *host.profile().entry(k).or_default() += t.elapsed().as_secs_f64();
+            host.profile().add(k, t.elapsed().as_secs_f64());
         }
         if flow == Flow::Stop {
             return Ok(Flow::Stop);
@@ -172,7 +173,7 @@ pub(crate) fn describe<S: Stage>(title: &str, list: &[S]) -> String {
     for (k, s) in list.iter().enumerate() {
         let i = s.info();
         let profile = match i.profile {
-            Profile::Key(k) => k.to_string(),
+            Profile::Key(k) => k.name().to_string(),
             Profile::Inner => "(own parts)".into(),
             Profile::None => "-".into(),
         };

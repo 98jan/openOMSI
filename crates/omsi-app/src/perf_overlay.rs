@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::time::Instant;
 
 pub(crate) const HISTORY: usize = 240;
@@ -74,10 +74,10 @@ pub(crate) fn part_of(key: &str) -> Option<Part> {
     })
 }
 
-fn part_totals(profile: &BTreeMap<&'static str, f64>) -> [f64; 8] {
+fn part_totals(profile: &crate::profile_keys::ProfileTimes) -> [f64; 8] {
     let mut out = [0.0; 8];
-    for (k, v) in profile {
-        if let Some(p) = part_of(k) {
+    for (k, v) in profile.iter() {
+        if let Some(p) = part_of(k.name()) {
             out[p as usize] += v;
         }
     }
@@ -197,7 +197,7 @@ impl PerfOverlay {
     pub(crate) fn sample(
         &mut self,
         raw_dt: f32,
-        profile: &BTreeMap<&'static str, f64>,
+        profile: &crate::profile_keys::ProfileTimes,
         draws: (usize, usize),
     ) {
         self.draws = draws;
@@ -454,8 +454,8 @@ fn process_cpu() -> Option<f64> {
 mod tests {
     use super::*;
 
-    fn profile(entries: &[(&'static str, f64)]) -> BTreeMap<&'static str, f64> {
-        entries.iter().copied().collect()
+    fn profile(entries: &[(&'static str, f64)]) -> crate::profile_keys::ProfileTimes {
+        crate::profile_keys::ProfileTimes::of(entries)
     }
 
     #[test]
@@ -513,14 +513,14 @@ mod tests {
     fn a_frame_rate_that_stays_low_stops_counting_as_stutters() {
         let mut o = PerfOverlay::default();
         for _ in 0..100 {
-            o.sample(0.016, &BTreeMap::new(), (0, 0));
+            o.sample(0.016, &Default::default(), (0, 0));
         }
         for _ in 0..600 {
-            o.sample(0.08, &BTreeMap::new(), (0, 0));
+            o.sample(0.08, &Default::default(), (0, 0));
         }
         let after = o.stutters;
         for _ in 0..100 {
-            o.sample(0.08, &BTreeMap::new(), (0, 0));
+            o.sample(0.08, &Default::default(), (0, 0));
         }
         assert!(after > 0);
         assert_eq!(o.stutters, after);
@@ -530,7 +530,7 @@ mod tests {
     fn the_history_keeps_its_length() {
         let mut o = PerfOverlay::default();
         for _ in 0..HISTORY + 50 {
-            o.sample(0.01, &BTreeMap::new(), (0, 0));
+            o.sample(0.01, &Default::default(), (0, 0));
         }
         assert_eq!(o.frames.len(), HISTORY);
     }

@@ -58,7 +58,7 @@ impl App {
         if let (Some(w), Some(r), Some(cam)) = (self.world.as_ref(), self.renderer.as_ref(), self.camera.as_ref()) {
             w.update_light_map_atlas(r, cam.position);
         }
-        *self.perf.profile.entry("lights.atlas").or_default() += __ta.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::LightsAtlas, __ta.elapsed().as_secs_f64());
         if let (Some(w), Some(scene), Some(cam)) = (
             self.world.as_ref(),
             self.scene.as_mut(),
@@ -67,7 +67,7 @@ impl App {
             let vehicles = steps::light_vehicles(self.player.as_ref(), self.session.traffic.as_ref(), &self.net.remotes);
             let __tc = Instant::now();
             lights::collect(w, scene, &daylight, cam.position, &vehicles, cone);
-            *self.perf.profile.entry("lights.collect").or_default() += __tc.elapsed().as_secs_f64();
+            self.perf.profile.add(crate::profile_keys::ProfKey::LightsCollect, __tc.elapsed().as_secs_f64());
             // the object editor's pick: a magenta glow over it
             if let Some(id) = self.menus.editor.as_ref().and_then(|e| e.selected) {
                 let at = w.edit_objects.lock().get(&id).map(|o| o.pos);
@@ -104,7 +104,7 @@ impl App {
                 if let Some(p) = self.player.as_ref() {
                     steps::cabin_air_step(&mut self.session.cabin_air, if self.paused { 0.0 } else { dt }, p, wt, self.session.humans.as_ref());
                 }
-                *self.perf.profile.entry("lights.rain").or_default() += __tr.elapsed().as_secs_f64();
+                self.perf.profile.add(crate::profile_keys::ProfKey::LightsRain, __tr.elapsed().as_secs_f64());
                 // what every vehicle's tyres throw up from the water on the road: the
                 // puddles and the wet asphalt the renderer draws (the same wetness:
                 // none under snow, OMSI_WETNESS as the picture takes it)
@@ -124,7 +124,7 @@ impl App {
                         crate::rain::quality(),
                     );
                     self.session.spray.sprites(cam.position, &mut scene.smoke);
-                    *self.perf.profile.entry("lights.spray").or_default() += __ts.elapsed().as_secs_f64();
+                    self.perf.profile.add(crate::profile_keys::ProfKey::LightsSpray, __ts.elapsed().as_secs_f64());
                 }
                 // the rain heard in the street and the footsteps on the pavement
                 if let (Some(amb), Some(a)) = (self.sound.ambience.as_mut(), self.sound.audio.as_ref())
@@ -192,7 +192,7 @@ impl App {
                     } else {
                         false
                     };
-                    *self.perf.profile.entry("lights.soundscape").or_default() += __tm.elapsed().as_secs_f64();
+                    self.perf.profile.add(crate::profile_keys::ProfKey::LightsSoundscape, __tm.elapsed().as_secs_f64());
                     amb.update(
                         a,
                         dt,
@@ -202,7 +202,7 @@ impl App {
                         cam.position,
                         &steps,
                     );
-                    *self.perf.profile.entry("lights.ambience").or_default() += __tm.elapsed().as_secs_f64();
+                    self.perf.profile.add(crate::profile_keys::ProfKey::LightsAmbience, __tm.elapsed().as_secs_f64());
                     if let Some(every) = debug_sound_every() {
                         static LAST: std::sync::atomic::AtomicU32 =
                             std::sync::atomic::AtomicU32::new(u32::MAX);
@@ -244,7 +244,7 @@ impl App {
                 self.session.duty.as_ref(),
                 &self.clock,
             );
-            *self.perf.profile.entry("scripted.boards").or_default() += __tb.elapsed().as_secs_f64();
+            self.perf.profile.add(crate::profile_keys::ProfKey::ScriptedBoards, __tb.elapsed().as_secs_f64());
             // the map's own route arrows, with OMSI 2's route arrows
             w.show_help_arrows(r, scene, self.settings.nav_arrows);
             let mut times = omsi_scene::ScriptedTimes::default();
@@ -260,15 +260,16 @@ impl App {
                 &mut times,
             );
             if omsi_cfg::flags::OMSI_PROFILE.is_set() {
+                use crate::profile_keys::ProfKey as K;
                 for (k, v) in [
-                    ("scripted.lock", times.lock),
-                    ("scripted.inputs", times.inputs),
-                    ("scripted.scripts", times.scripts),
-                    ("scripted.apply", times.apply),
-                    ("scripted.textures", times.textures),
-                    ("scripted.lamps", times.lamps),
+                    (K::ScriptedLock, times.lock),
+                    (K::ScriptedInputs, times.inputs),
+                    (K::ScriptedScripts, times.scripts),
+                    (K::ScriptedApply, times.apply),
+                    (K::ScriptedTextures, times.textures),
+                    (K::ScriptedLamps, times.lamps),
                 ] {
-                    *self.perf.profile.entry(k).or_default() += v;
+                    self.perf.profile.add(k, v);
                 }
             }
         }

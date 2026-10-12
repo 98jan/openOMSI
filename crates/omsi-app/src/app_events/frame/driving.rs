@@ -28,8 +28,7 @@ impl App {
             self.menus.hover_key = key;
             self.update_hover();
         }
-        *self.perf.profile.entry("player.hover").or_default() +=
-            __th.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::PlayerHover, __th.elapsed().as_secs_f64());
     }
 
     /// The bus's step (scripts, physics, the head), the situation's other vehicles, and the

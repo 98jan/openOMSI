@@ -99,6 +99,7 @@ mod cli;
 mod diagnostics;
 mod perf_overlay;
 mod perf_report;
+mod profile_keys;
 mod frame_stages;
 mod support_bundle;
 mod duty_start;

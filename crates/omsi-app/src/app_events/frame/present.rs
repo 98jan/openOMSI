@@ -222,7 +222,7 @@ impl App {
             }
             _ => (None, None),
         };
-        *self.perf.profile.entry("acquire").or_default() += __t.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::Acquire, __t.elapsed().as_secs_f64());
         if frame.is_none() {
             self.gfx.hidden_frames += 1;
         }
@@ -334,12 +334,12 @@ impl App {
         self.shell.render(r, &view, s.config.width, s.config.height);
         // the on-screen controls over the picture (a phone)
         self.input.touch.render(r, &view, s.config.width, s.config.height);
-        *self.perf.profile.entry("render").or_default() += __t.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::Render, __t.elapsed().as_secs_f64());
         if omsi_cfg::flags::OMSI_PROFILE_GPU.is_set() {
             // wait for the GPU here, so that its time shows as a stage of its own
             let __t = Instant::now();
             let _ = omsi_render::wait_gpu(&r.device, None);
-            *self.perf.profile.entry("gpu").or_default() += __t.elapsed().as_secs_f64();
+            self.perf.profile.add(crate::profile_keys::ProfKey::Gpu, __t.elapsed().as_secs_f64());
         }
         let __t = Instant::now();
         match frame {
@@ -354,7 +354,7 @@ impl App {
                 let _ = omsi_render::wait_gpu(&r.device, None);
             }
         }
-        *self.perf.profile.entry("present").or_default() += __t.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::Present, __t.elapsed().as_secs_f64());
     }
 
     /// The bus's mirrors redrawn, in turn, within their budget.
@@ -484,7 +484,7 @@ impl App {
             }
         }
         self.gfx.mirror_panel_cams = panel_cams;
-        *self.perf.profile.entry("mirrors").or_default() += __t.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::Mirrors, __t.elapsed().as_secs_f64());
     }
 
     /// Nothing to draw into: what was uploaded let go, the simulation at a display's pace.
@@ -499,7 +499,7 @@ impl App {
         let __t = Instant::now();
         r.queue.submit(std::iter::empty::<wgpu::CommandBuffer>());
         let _ = r.device.poll(wgpu::PollType::Poll);
-        *self.perf.profile.entry("present").or_default() += __t.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::Present, __t.elapsed().as_secs_f64());
         if let Some(rest) =
             std::time::Duration::from_millis(16).checked_sub(now.elapsed())
         {
@@ -555,7 +555,7 @@ impl App {
         if max_fps > 0 && !vr_active && !vsync_paces {
             let __t = Instant::now();
             pace_until(now, std::time::Duration::from_secs_f64(1.0 / max_fps as f64));
-            *self.perf.profile.entry("limiter").or_default() += __t.elapsed().as_secs_f64();
+            self.perf.profile.add(crate::profile_keys::ProfKey::Limiter, __t.elapsed().as_secs_f64());
         }
     }
 

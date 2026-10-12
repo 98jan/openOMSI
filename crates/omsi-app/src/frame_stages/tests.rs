@@ -123,7 +123,7 @@ fn every_stage_says_what_it_works_on_and_how_it_is_timed() {
             assert!(!i.writes.is_empty(), "{} writes nothing", i.name);
             if let Profile::Key(k) = i.profile {
                 // (a dot marks a stage's own parts, which the stutter log leaves out of the sum)
-                assert!(!k.contains('.') && !k.is_empty(), "{}: profile key {k:?}", i.name);
+                assert!(!k.name().contains('.') && !k.name().is_empty(), "{}: profile key {k:?}", i.name);
             }
         }
     }
@@ -164,9 +164,9 @@ impl Stage for Probe {
             Probe::C => "c",
         };
         let profile = match self {
-            Probe::A | Probe::B => Profile::Key("ab"),
+            Probe::A | Probe::B => Profile::Key(ProfKey::Clock),
             Probe::Halt => Profile::None,
-            Probe::C => Profile::Key("c"),
+            Probe::C => Profile::Key(ProfKey::Drive),
         };
         StageInfo { name, phase: Phase::Sim, role: Role::Own, reads: &[], writes: &[Group::Perf], takes: &[], gives: &[], profile }
     }
@@ -175,7 +175,7 @@ impl Stage for Probe {
 #[derive(Default)]
 struct Recorder {
     ran: Vec<Probe>,
-    profile: BTreeMap<&'static str, f64>,
+    profile: ProfileTimes,
 }
 
 impl Host<Probe> for Recorder {
@@ -183,7 +183,7 @@ impl Host<Probe> for Recorder {
         self.ran.push(s);
         Ok(if s == Probe::Halt { Flow::Stop } else { Flow::Go })
     }
-    fn profile(&mut self) -> &mut BTreeMap<&'static str, f64> {
+    fn profile(&mut self) -> &mut ProfileTimes {
         &mut self.profile
     }
 }
@@ -194,11 +194,11 @@ fn the_runner_takes_the_stages_in_order_until_one_ends_the_frame() {
     assert_eq!(run(&mut r, &[Probe::A, Probe::B, Probe::C]).unwrap(), Flow::Go);
     assert_eq!(r.ran, [Probe::A, Probe::B, Probe::C]);
     // two stages under one key add up; an untimed stage leaves no key
-    assert_eq!(r.profile.keys().copied().collect::<Vec<_>>(), ["ab", "c"]);
+    assert_eq!(r.profile.iter().map(|(k, _)| k).collect::<Vec<_>>(), [ProfKey::Clock, ProfKey::Drive]);
     let mut r = Recorder::default();
     assert_eq!(run(&mut r, &[Probe::A, Probe::Halt, Probe::C]).unwrap(), Flow::Stop);
     assert_eq!(r.ran, [Probe::A, Probe::Halt]);
-    assert!(!r.profile.contains_key("c") && !r.profile.contains_key("halt"));
+    assert_eq!(r.profile.iter().map(|(k, _)| k).collect::<Vec<_>>(), [ProfKey::Clock]);
 }
 
 #[test]

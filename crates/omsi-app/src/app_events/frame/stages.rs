@@ -95,6 +95,7 @@ impl frame_stages::Stage for WindowStage {
     fn info(self) -> StageInfo {
         use Group as G;
         use Phase as P;
+        use crate::profile_keys::ProfKey as K;
         use WindowStage::*;
         match self {
             Timing => StageInfo {
@@ -102,30 +103,30 @@ impl frame_stages::Stage for WindowStage {
                 gives: &[Carry::Time],
                 ..stage("timing", P::Housekeeping, Role::Own, &[G::Clock, G::Gfx, G::Perf, G::View, G::Net], &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::World], Profile::None)
             },
-            ShellActions => StageInfo { takes: &[], ..stage("shell_actions", P::Housekeeping, Role::Own, &[G::Menus], &[G::Menus, G::Player, G::World, G::Clock, G::Weather], Profile::Key("shell")) },
-            Placement => StageInfo { takes: &[], ..stage("placement", P::Housekeeping, Role::Own, &[G::Player, G::World], &[G::Player, G::Gfx], Profile::Key("placement")) },
+            ShellActions => StageInfo { takes: &[], ..stage("shell_actions", P::Housekeeping, Role::Own, &[G::Menus], &[G::Menus, G::Player, G::World, G::Clock, G::Weather], Profile::Key(K::Shell)) },
+            Placement => StageInfo { takes: &[], ..stage("placement", P::Housekeeping, Role::Own, &[G::Player, G::World], &[G::Player, G::Gfx], Profile::Key(K::Placement)) },
             Menus => stage("menus", P::Housekeeping, Role::Own, &[G::Menus, G::Input, G::World], &[G::Menus, G::Input, G::Gfx, G::Net, G::World, G::Player], Profile::None),
-            Streaming => StageInfo { takes: &[], ..stage("streaming", P::Sim, Role::Own, &[G::View, G::Player, G::World], &[G::World, G::Traffic, G::Player, G::Gfx], Profile::Key("streaming")) },
-            Traffic => stage("traffic", P::Sim, Role::Traffic, &[G::Traffic, G::Player, G::People, G::World, G::View, G::Clock, G::Net], &[G::Traffic, G::Player, G::Gfx, G::Sound], Profile::Key("traffic")),
-            Controllers => StageInfo { gives: &[Carry::Controls], ..stage("controllers", P::Input, Role::Own, &[G::Input, G::Player], &[G::Input, G::Ui], Profile::Key("player")) },
-            MouseDrive => StageInfo { takes: &[Carry::Time, Carry::Controls], gives: &[Carry::Controls], ..stage("mouse_drive", P::Input, Role::Own, &[G::Input, G::Player, G::View], &[G::Input, G::View], Profile::Key("player")) },
-            PadActions => StageInfo { takes: &[Carry::Controls], ..stage("pad_actions", P::Input, Role::Own, &[G::Input], &[G::Player, G::Menus, G::View], Profile::Key("player")) },
-            Player => stage("player", P::Sim, Role::Player, &[G::Player, G::Input, G::World, G::Traffic], &[G::Player, G::Traffic, G::View, G::Gfx], Profile::Key("player")),
-            Audio => stage("audio", P::Present, Role::Own, &[G::Player, G::View], &[G::Sound, G::View, G::Player], Profile::Key("player")),
-            Lan => stage("lan", P::Sim, Role::Lan, &[G::Net, G::Player, G::Clock, G::Duty], &[G::Net, G::Traffic, G::People, G::Gfx, G::Sound], Profile::Key("lan")),
-            OnFoot => stage("on_foot", P::Sim, Role::Own, &[G::People, G::Input, G::Net, G::World], &[G::People, G::View, G::Gfx], Profile::Key("on_foot")),
-            Humans => stage("humans", P::Sim, Role::People, &[G::People, G::Player, G::Traffic, G::Duty, G::Clock, G::World, G::View], &[G::People, G::Player, G::Traffic, G::Duty, G::Gfx], Profile::Key("humans")),
-            AfterHumans => stage("after_humans", P::Sim, Role::Own, &[G::People, G::Player], &[G::People, G::View, G::Player, G::Integrations], Profile::Key("service")),
-            Duty => stage("duty", P::Sim, Role::Duty, &[G::Duty, G::Player, G::People, G::Clock, G::World, G::Net], &[G::Duty, G::Player, G::Integrations, G::Ui, G::Net], Profile::Key("duty")),
-            Integrations => stage("integrations", P::Sim, Role::Own, &[G::Integrations, G::Player, G::Duty, G::World, G::Net], &[G::Integrations, G::Player, G::Menus, G::Duty], Profile::Key("integrations")),
-            ViewKeys => stage("view_keys", P::Input, Role::Own, &[G::Input, G::View, G::Player], &[G::View, G::Player, G::Clock], Profile::Key("view_keys")),
-            Weather => StageInfo { gives: &[Carry::Daylight], ..stage("weather", P::Sim, Role::Clock, &[G::Clock, G::Weather, G::World], &[G::Clock, G::Weather, G::Traffic, G::Player, G::Gfx], Profile::Key("weather")) },
-            Lights => StageInfo { takes: &[Carry::Time, Carry::Daylight], ..stage("lights", P::Present, Role::Surroundings, &[G::Weather, G::Player, G::Traffic, G::Net, G::View, G::People], &[G::Weather, G::Gfx, G::Sound], Profile::Key("lights+rain")) },
-            Scripted => StageInfo { takes: &[Carry::Time, Carry::Daylight], ..stage("scripted", P::Present, Role::Own, &[G::World, G::Traffic, G::Duty, G::Clock, G::View], &[G::World, G::Gfx, G::Sound], Profile::Key("scripted")) },
-            WheelSurface => StageInfo { takes: &[], ..stage("wheel_surface", P::Sim, Role::Own, &[G::World, G::Player], &[G::Player], Profile::Key("wheel_surface")) },
-            Photo => stage("photo", P::Ui, Role::Own, &[G::Input, G::View], &[G::View, G::Ui], Profile::Key("photo")),
+            Streaming => StageInfo { takes: &[], ..stage("streaming", P::Sim, Role::Own, &[G::View, G::Player, G::World], &[G::World, G::Traffic, G::Player, G::Gfx], Profile::Key(K::Streaming)) },
+            Traffic => stage("traffic", P::Sim, Role::Traffic, &[G::Traffic, G::Player, G::People, G::World, G::View, G::Clock, G::Net], &[G::Traffic, G::Player, G::Gfx, G::Sound], Profile::Key(K::Traffic)),
+            Controllers => StageInfo { gives: &[Carry::Controls], ..stage("controllers", P::Input, Role::Own, &[G::Input, G::Player], &[G::Input, G::Ui], Profile::Key(K::Player)) },
+            MouseDrive => StageInfo { takes: &[Carry::Time, Carry::Controls], gives: &[Carry::Controls], ..stage("mouse_drive", P::Input, Role::Own, &[G::Input, G::Player, G::View], &[G::Input, G::View], Profile::Key(K::Player)) },
+            PadActions => StageInfo { takes: &[Carry::Controls], ..stage("pad_actions", P::Input, Role::Own, &[G::Input], &[G::Player, G::Menus, G::View], Profile::Key(K::Player)) },
+            Player => stage("player", P::Sim, Role::Player, &[G::Player, G::Input, G::World, G::Traffic], &[G::Player, G::Traffic, G::View, G::Gfx], Profile::Key(K::Player)),
+            Audio => stage("audio", P::Present, Role::Own, &[G::Player, G::View], &[G::Sound, G::View, G::Player], Profile::Key(K::Player)),
+            Lan => stage("lan", P::Sim, Role::Lan, &[G::Net, G::Player, G::Clock, G::Duty], &[G::Net, G::Traffic, G::People, G::Gfx, G::Sound], Profile::Key(K::Lan)),
+            OnFoot => stage("on_foot", P::Sim, Role::Own, &[G::People, G::Input, G::Net, G::World], &[G::People, G::View, G::Gfx], Profile::Key(K::OnFoot)),
+            Humans => stage("humans", P::Sim, Role::People, &[G::People, G::Player, G::Traffic, G::Duty, G::Clock, G::World, G::View], &[G::People, G::Player, G::Traffic, G::Duty, G::Gfx], Profile::Key(K::Humans)),
+            AfterHumans => stage("after_humans", P::Sim, Role::Own, &[G::People, G::Player], &[G::People, G::View, G::Player, G::Integrations], Profile::Key(K::Service)),
+            Duty => stage("duty", P::Sim, Role::Duty, &[G::Duty, G::Player, G::People, G::Clock, G::World, G::Net], &[G::Duty, G::Player, G::Integrations, G::Ui, G::Net], Profile::Key(K::Duty)),
+            Integrations => stage("integrations", P::Sim, Role::Own, &[G::Integrations, G::Player, G::Duty, G::World, G::Net], &[G::Integrations, G::Player, G::Menus, G::Duty], Profile::Key(K::Integrations)),
+            ViewKeys => stage("view_keys", P::Input, Role::Own, &[G::Input, G::View, G::Player], &[G::View, G::Player, G::Clock], Profile::Key(K::ViewKeys)),
+            Weather => StageInfo { gives: &[Carry::Daylight], ..stage("weather", P::Sim, Role::Clock, &[G::Clock, G::Weather, G::World], &[G::Clock, G::Weather, G::Traffic, G::Player, G::Gfx], Profile::Key(K::Weather)) },
+            Lights => StageInfo { takes: &[Carry::Time, Carry::Daylight], ..stage("lights", P::Present, Role::Surroundings, &[G::Weather, G::Player, G::Traffic, G::Net, G::View, G::People], &[G::Weather, G::Gfx, G::Sound], Profile::Key(K::LightsAndRain)) },
+            Scripted => StageInfo { takes: &[Carry::Time, Carry::Daylight], ..stage("scripted", P::Present, Role::Own, &[G::World, G::Traffic, G::Duty, G::Clock, G::View], &[G::World, G::Gfx, G::Sound], Profile::Key(K::Scripted)) },
+            WheelSurface => StageInfo { takes: &[], ..stage("wheel_surface", P::Sim, Role::Own, &[G::World, G::Player], &[G::Player], Profile::Key(K::WheelSurface)) },
+            Photo => stage("photo", P::Ui, Role::Own, &[G::Input, G::View], &[G::View, G::Ui], Profile::Key(K::Photo)),
             Ui => StageInfo { gives: &[Carry::VrNavDisplay], ..stage("ui", P::Ui, Role::Own, &[G::Menus, G::Player, G::Duty, G::People, G::Integrations, G::Input, G::World], &[G::Ui, G::Gfx, G::Menus], Profile::Inner) },
-            Lighting => StageInfo { takes: &[Carry::Time, Carry::Daylight], gives: &[Carry::Lighting], ..stage("lighting", P::Output, Role::Own, &[G::Weather, G::World, G::Player, G::View], &[G::Weather], Profile::Key("lighting")) },
+            Lighting => StageInfo { takes: &[Carry::Time, Carry::Daylight], gives: &[Carry::Lighting], ..stage("lighting", P::Output, Role::Own, &[G::Weather, G::World, G::Player, G::View], &[G::Weather], Profile::Key(K::Lighting)) },
             TraceLook => StageInfo { takes: &[], ..stage("trace_look", P::Output, Role::Own, &[G::Input, G::View], &[G::Perf], Profile::None) },
             Render => StageInfo { takes: &[Carry::Time, Carry::Lighting, Carry::VrNavDisplay], ..stage("render", P::Output, Role::Picture, &[G::Gfx, G::View, G::Ui], &[G::Gfx, G::Perf, G::Integrations], Profile::Inner) },
         }
@@ -211,7 +212,7 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
         Ok(Flow::Go)
     }
 
-    fn profile(&mut self) -> &mut std::collections::BTreeMap<&'static str, f64> {
+    fn profile(&mut self) -> &mut crate::profile_keys::ProfileTimes {
         &mut self.app.perf.profile
     }
 }

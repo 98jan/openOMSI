@@ -57,8 +57,7 @@ impl App {
                 let view = self.camera.as_ref().map(|c| c.forward().as_dvec3());
                 t.populate_seen(w, center, view);
                 view_sync::apply_traffic(t, &mut self.gfx.sim_view.traffic, w, r, scene);
-                *self.perf.profile.entry("traffic.populate").or_default() +=
-                    __t5.elapsed().as_secs_f64();
+                self.perf.profile.add(crate::profile_keys::ProfKey::TrafficPopulate, __t5.elapsed().as_secs_f64());
             }
             if let Some(s) = self.session.schedule.as_mut() {
                 s.tick_t -= dt;
@@ -70,8 +69,7 @@ impl App {
                     steps::set_keep_clear(t, self.player.as_ref(), &self.net.remotes);
                     let __t6 = Instant::now();
                     steps::schedule_tick(s, w, t, &mut self.gfx.sim_view.traffic, r, scene, first);
-                    *self.perf.profile.entry("traffic.schedule").or_default() +=
-                        __t6.elapsed().as_secs_f64();
+                    self.perf.profile.add(crate::profile_keys::ProfKey::TrafficSchedule, __t6.elapsed().as_secs_f64());
                 }
             }
             if heavy {
@@ -97,14 +95,13 @@ impl App {
                 dt
             };
             let signals = steps::traffic_tick(t, w, step_dt, self.paused, self.player.as_ref(), &self.net.remotes, &self.session.placed, rail);
-            *self.perf.profile.entry("traffic.tick.signals").or_default() += signals;
-            *self.perf.profile.entry("traffic.tick").or_default() +=
-                __t2.elapsed().as_secs_f64();
-            for (k, v) in ["traffic.tick.lanes", "traffic.tick.plan", "traffic.tick.ai"]
+            self.perf.profile.add(crate::profile_keys::ProfKey::TrafficTickSignals, signals);
+            self.perf.profile.add(crate::profile_keys::ProfKey::TrafficTick, __t2.elapsed().as_secs_f64());
+            for (k, v) in [crate::profile_keys::ProfKey::TrafficTickLanes, crate::profile_keys::ProfKey::TrafficTickPlan, crate::profile_keys::ProfKey::TrafficTickAi]
                 .into_iter()
                 .zip(t.frame_split)
             {
-                *self.perf.profile.entry(k).or_default() += v;
+                self.perf.profile.add(k, v);
             }
             // the options' [no_collision_vehToVeh]: the bus drives through the traffic
             steps::traffic_boxes(t, self.player.as_mut(), self.settings.collision_vehicles);
@@ -127,15 +124,13 @@ impl App {
                 });
                 t.update_audio(a, ear, street, muffled || riding.is_some(), riding, self.settings.vol_ai);
             }
-            *self.perf.profile.entry("traffic.audio").or_default() +=
-                __t3.elapsed().as_secs_f64();
+            self.perf.profile.add(crate::profile_keys::ProfKey::TrafficAudio, __t3.elapsed().as_secs_f64());
             let __t4 = Instant::now();
             t.camera = self.camera.as_ref().map(|c| c.position);
             // the view sync of the traffic: before the player and the people move, as the
             // cars that parked leave the traffic here (see `view_sync`)
             view_sync::sync(ViewSync::traffic(t), &mut self.gfx.sim_view, w, r, scene);
-            *self.perf.profile.entry("traffic.sync").or_default() +=
-                __t4.elapsed().as_secs_f64();
+            self.perf.profile.add(crate::profile_keys::ProfKey::TrafficSync, __t4.elapsed().as_secs_f64());
         }
     }
 }
