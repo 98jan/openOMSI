@@ -151,11 +151,11 @@ fn pipelined_scenery_matches_inline_scenery() {
 /// A bus with a passenger cabin (a front door, an aisle, six seats) and a person type, for
 /// riders to sit in it.
 fn bus_and_people() -> (crate::VehicleInstance, PeopleSim) {
-    // (a folder of its own per call: two tests build this bus at once, and the one that was
-    // done first took the other's files away)
-    static CALL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let n = CALL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("omsi-sim-thread-people-{}-{n}", std::process::id()));
+    // (a folder of its own per test - its thread: two tests build this bus at once, and the one
+    // that was done first took the other's files away; one test's two buses share it, the
+    // people compare their bus by its files)
+    let thread = format!("{:?}", std::thread::current().id()).replace(|c: char| !c.is_ascii_alphanumeric(), "");
+    let dir = std::env::temp_dir().join(format!("omsi-sim-thread-people-{}-{thread}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let write = |name: &str, text: &str| std::fs::write(dir.join(name), text).unwrap();
     write("test.bus", "[model]\nmodel.cfg\n[passengercabin]\ncabin.cfg\n[paths]\npaths.cfg\n[boundingbox]\n2.5\n12\n3\n0\n0\n1.5\n[script]\n1\nmain.osc\n");
