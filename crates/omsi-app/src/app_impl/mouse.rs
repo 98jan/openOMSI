@@ -145,7 +145,7 @@ impl App {
     /// steering's point stands in it.
     pub(super) fn cursor_moved_to(&mut self, x: f32, y: f32) {
         // a plugin's slider or panel being dragged follows the cursor
-        if self.plugin_drag_move(x, y) || self.game_panel_drag(x) {
+        if self.integrations.plugin_drag_move(x, y) || self.game_panel_drag(x) {
             self.input.cursor = (x, y);
             return;
         }

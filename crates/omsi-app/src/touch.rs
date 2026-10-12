@@ -588,7 +588,7 @@ impl App {
             _ => {}
         }
         self.input.touch.fingers.push(Touched { id, start: p, pos: p, role, moved: false, since: Instant::now() });
-        self.touch_pedals(p);
+        self.input.touch_pedals(p);
         // two fingers on the picture: a pinch
         let looks: Vec<Vec2> = self.input.touch.fingers.iter().filter(|f| matches!(f.role, Role::Look | Role::Mouse)).map(|f| f.pos).collect();
         if looks.len() == 2 {
@@ -630,7 +630,7 @@ impl App {
                 }
                 self.input.touch.fingers[k].role = Role::Wheel(a, d.length());
             }
-            Role::Throttle | Role::Brake => self.touch_pedals(p),
+            Role::Throttle | Role::Brake => self.input.touch_pedals(p),
             Role::Stick => {
                 let d = p - self.input.touch.stick_c;
                 self.input.touch.stick_at = Some((self.input.touch.stick_c, d.clamp_length_max(self.input.touch.stick_r)));
@@ -760,23 +760,6 @@ impl App {
                     self.left_button(event_loop, true);
                     self.left_button(event_loop, false);
                 }
-            }
-        }
-    }
-
-    /// The pedals from where the fingers on them are: the higher up the pedal, the harder
-    /// it is pressed (a finger at its foot presses a little).
-    fn touch_pedals(&mut self, _p: Vec2) {
-        let t = &mut self.input.touch;
-        let depth = |r: Rect, y: f32| (0.2 + 0.8 * ((r.bottom() - y) / r.h)).clamp(0.2, 1.0);
-        for f in &t.fingers {
-            match f.role {
-                Role::Throttle => t.throttle = depth(t.throttle_r, f.pos.y),
-                Role::Brake => t.brake = depth(t.brake_r, f.pos.y),
-                // (the clutch pushed in most of the way is in: the gearboxes want it at 1
-                // to take a gear, see `pedal_ends`, and a thumb seldom sits at the top edge)
-                Role::Clutch => t.clutch = if depth(t.clutch_r, f.pos.y) >= 0.75 { 1.0 } else { depth(t.clutch_r, f.pos.y) },
-                _ => {}
             }
         }
     }
@@ -1296,5 +1279,24 @@ mod tests {
         assert_eq!(deg(&Settings { wheel_range: 1800.0, wheel_lock: 0.0, ..Default::default() }), 900.0);
         // a lock set of its own wins
         assert_eq!(deg(&Settings { wheel_range: 900.0, wheel_lock: 540.0, ..Default::default() }), 270.0);
+    }
+}
+
+impl InputState {
+    /// The pedals from where the fingers on them are: the higher up the pedal, the harder
+    /// it is pressed (a finger at its foot presses a little).
+    fn touch_pedals(&mut self, _p: Vec2) {
+        let t = &mut self.touch;
+        let depth = |r: Rect, y: f32| (0.2 + 0.8 * ((r.bottom() - y) / r.h)).clamp(0.2, 1.0);
+        for f in &t.fingers {
+            match f.role {
+                Role::Throttle => t.throttle = depth(t.throttle_r, f.pos.y),
+                Role::Brake => t.brake = depth(t.brake_r, f.pos.y),
+                // (the clutch pushed in most of the way is in: the gearboxes want it at 1
+                // to take a gear, see `pedal_ends`, and a thumb seldom sits at the top edge)
+                Role::Clutch => t.clutch = if depth(t.clutch_r, f.pos.y) >= 0.75 { 1.0 } else { depth(t.clutch_r, f.pos.y) },
+                _ => {}
+            }
+        }
     }
 }

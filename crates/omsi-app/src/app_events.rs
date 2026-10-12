@@ -174,7 +174,7 @@ impl ApplicationHandler for App {
                 // releases go on, so that nothing held stays held)
                 if event.state == ElementState::Pressed {
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        if self.plugin_typing_key(code, event.text.as_deref()) || self.devtools_typing(code, event.text.as_deref()) {
+                        if self.integrations.plugin_typing_key(code, event.text.as_deref()) || self.devtools_typing(code, event.text.as_deref()) {
                             return;
                         }
                         // the game's panels: the field typed into, Esc closing the one on top
@@ -333,7 +333,7 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 // while the plugins' panels have the mouse its clicks are theirs, none the bus's
-                if self.plugin_focus() {
+                if self.integrations.plugin_focus() {
                     self.plugin_click(state == ElementState::Pressed);
                     return;
                 }
