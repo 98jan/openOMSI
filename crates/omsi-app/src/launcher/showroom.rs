@@ -134,7 +134,10 @@ fn args_for(look: &Look) -> Args {
     if !look.date.is_empty() {
         v.extend(["--date".into(), look.date.clone()]);
     }
-    Args::try_parse_from(v).unwrap_or_else(|_| Args::parse_from(["omsi"]))
+    let mut args = Args::try_parse_from(v).unwrap_or_else(|_| Args::parse_from(["omsi"]));
+    // (drawn the way the game will be)
+    args.session_look = crate::startup::SessionLook::for_showroom(&crate::settings::Settings::load());
+    args
 }
 
 // (a launcher closed while a preview loads did not hang: the mark goes with it)
@@ -357,7 +360,7 @@ impl Showroom {
         let args = args_for(&r.look);
         let (weather, model) = crate::weather_setup::load_weather_run(&args);
         let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
-        let mut sky = crate::weather_setup::SkyState { clouds: None, model };
+        let mut sky = crate::weather_setup::SkyState { clouds: None, model, no_clouds: !args.session_look.clouds };
         setup_sky(&args, renderer, &mut scene, envir.as_ref(), Some(&weather), &mut sky.clouds);
         add_floor(renderer, &mut scene);
         let world = r.world;

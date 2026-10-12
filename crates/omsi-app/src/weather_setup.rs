@@ -63,7 +63,7 @@ fn load_chosen_weather(args: &Args) -> omsi_content::weather::Weather {
             // No weather chosen: the clear default (#CAVOK, no cloud at all) gets a few fair-
             // weather cumulus clouds, as long as clouds are wanted - a sky without a single
             // cloud was the first thing that looked wrong.
-            if args.weather.is_none() && CLOUDS.load(std::sync::atomic::Ordering::Relaxed) && w.clouds.0.trim().starts_with("-1") {
+            if args.weather.is_none() && args.session_look.clouds && w.clouds.0.trim().starts_with("-1") {
                 w.clouds = ("Cumulus 1".into(), 100.0);
             }
             // the vehicles ask for it while they go onto the GPU (the snow on the panes)
@@ -155,6 +155,9 @@ pub(crate) type SkyClouds = Option<(String, CloudType)>;
 pub(crate) struct SkyState {
     pub(crate) clouds: SkyClouds,
     pub(crate) model: Option<crate::weather_model::ModelRun>,
+    /// The `clouds` setting off (see `startup::SessionLook::clouds`): a clear sky whatever the
+    /// weather says.
+    pub(crate) no_clouds: bool,
 }
 
 /// The `[cloudtype]` entry named `kind` (`-1` or empty: none), read as Omsi.exe reads it
@@ -374,8 +377,8 @@ fn cloud_texture(root: &Path, kind: &str) -> Option<omsi_texture::Image> {
 
 /// Cloud cover of a weather file: `[clouds] type density`, type -1 = clear, density up to
 /// ~300 (Cumulus 3) - mapped to 0..1; the cover drifts with the wind.
-pub(crate) fn clouds_of(w: &omsi_content::weather::Weather, drift: [f64; 4]) -> (f32, [f32; 2]) {
-    if !CLOUDS.load(std::sync::atomic::Ordering::Relaxed) {
+pub(crate) fn clouds_of(w: &omsi_content::weather::Weather, drift: [f64; 4], clouds: bool) -> (f32, [f32; 2]) {
+    if !clouds {
         return (0.0, [0.0; 2]);
     }
     // the cover decides, not the name (`cover_of`: a hand-set weather's own, else its type's)
@@ -385,7 +388,7 @@ pub(crate) fn clouds_of(w: &omsi_content::weather::Weather, drift: [f64; 4]) -> 
 
 
 /// The classic sky's weather (see `omsi_render::VanillaSky`).
-pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f64; 4], sky_clouds: &SkyClouds) -> omsi_render::VanillaSky {
+pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f64; 4], sky_clouds: &SkyClouds, clouds: bool) -> omsi_render::VanillaSky {
     // the visibility Omsi.exe fogs with (0x753120): the fog range, shortened by rain to
     // 100000 m / its intensity and by snow to 20000 m / its intensity
     let range = w.fog.0.max(1.0);
@@ -398,7 +401,7 @@ pub(crate) fn vanilla_sky(w: &omsi_content::weather::Weather, drift: [f64; 4], s
     let kind = w.clouds.0.trim();
     let ty = sky_clouds
         .as_ref()
-        .filter(|(k, _)| k.eq_ignore_ascii_case(kind) && CLOUDS.load(std::sync::atomic::Ordering::Relaxed))
+        .filter(|(k, _)| k.eq_ignore_ascii_case(kind) && clouds)
         .map(|(_, t)| t.clone());
     omsi_render::VanillaSky {
         cloud_height: w.clouds.1,
@@ -424,10 +427,10 @@ pub(crate) fn weather_lighting(
     let mut lighting = lights::lighting_from(daylight, w.fog.0);
     lighting.enhanced = ENHANCED.load(std::sync::atomic::Ordering::Relaxed);
     lighting.classic = CLASSIC.load(std::sync::atomic::Ordering::Relaxed);
-    let (density, offset) = clouds_of(w, cloud_drift);
+    let (density, offset) = clouds_of(w, cloud_drift, !sky.no_clouds);
     lighting.cloud_density = density;
     lighting.cloud_offset = offset;
-    lighting.vanilla_sky = vanilla_sky(w, cloud_drift, &sky.clouds);
+    lighting.vanilla_sky = vanilla_sky(w, cloud_drift, &sky.clouds, !sky.no_clouds);
     let model_sky = sky.model.as_ref().map(|m| m.sky());
     let (kind, rate) = precip_of(w);
     lights::apply_weather(
@@ -466,7 +469,7 @@ pub(crate) fn weather_lighting(
     // the enhanced atmosphere turns into light (the `.owt` values above stay for the rest)
     if let Some(m) = model_sky.filter(|_| lighting.enhanced) {
         let closed = ((m.deck - 0.85) / 0.15).clamp(0.0, 1.0);
-        if CLOUDS.load(std::sync::atomic::Ordering::Relaxed) {
+        if !sky.no_clouds {
             lighting.cloud_density = m.cumulus.max(m.deck * 0.95);
         }
         lighting.overcast = m.deck;

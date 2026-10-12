@@ -117,7 +117,7 @@ impl App {
                     Some((omsi_sim::people::BusId::Ai(id), _)) => Some(id),
                     _ => None,
                 });
-                t.update_audio(a, ear, street, muffled || riding.is_some(), riding);
+                t.update_audio(a, ear, street, muffled || riding.is_some(), riding, self.settings.vol_ai);
             }
             *self.perf.profile.entry("traffic.audio").or_default() +=
                 __t3.elapsed().as_secs_f64();

@@ -50,6 +50,7 @@ impl Traffic {
     /// a cabin right now, so every AI car's sound is heard through that bodywork and glass -
     /// a passing car's horn does not simply sound like the street outside once the windows
     /// are shut. `riding`: the AI bus the player rides in on foot - heard from inside it.
+    /// `volume`: the traffic's volume (OMSI's `sound_ai`).
     pub fn update_audio(
         &mut self,
         audio: &omsi_audio::AudioEngine,
@@ -57,8 +58,9 @@ impl Traffic {
         street_cond: f32,
         muffled: bool,
         riding: Option<u64>,
+        volume: f32,
     ) {
-        self.update_riding_audio(audio, riding);
+        self.update_riding_audio(audio, riding, volume);
         let freed = audio.trim_clips(std::time::Duration::from_secs(60));
         if freed > 0 && omsi_cfg::flags::OMSI_PROFILE.is_set() {
             log::info!(
@@ -98,7 +100,7 @@ impl Traffic {
                         for (i, part) in &parts {
                             ss.add_part(*i, omsi_audio::SoundSet::new_exterior(audio, &part.cfg.chosen_for(&number), &part.dir));
                         }
-                        ss.master = crate::sound_gain(&crate::SOUND_AI);
+                        ss.master = volume;
                         c.vehicle.host.snapshot_triggers = ss.curve_triggers().into_iter().collect();
                         self.sounds.insert(c.id, ss);
                     }
@@ -130,14 +132,14 @@ impl Traffic {
                 }
             }
         }
-        self.play_horns(audio, listener, muffled);
+        self.play_horns(audio, listener, muffled, volume);
     }
 
     /// The horns of the cars that honked (`TrafficSim::honked`): a car whose own sound set
     /// answers `ev_AI_Horn` was heard by it already; every other one sounds OMSI's own AI
     /// horn (`Sounds/AI_Cars`, the lorry's for the heavy ones) where it stands - the stock
     /// cars have nothing on that trigger, and the AI's honking was never heard.
-    fn play_horns(&mut self, audio: &omsi_audio::AudioEngine, listener: DVec3, muffled: bool) {
+    fn play_horns(&mut self, audio: &omsi_audio::AudioEngine, listener: DVec3, muffled: bool, volume: f32) {
         for (id, heavy) in std::mem::take(&mut self.sim.honked) {
             let Some(c) = self.sim.cars.iter().find(|c| c.id == id) else { continue };
             if (c.vehicle.position - listener).length() > 250.0 {
@@ -155,7 +157,7 @@ impl Traffic {
             audio.play(
                 clip,
                 omsi_audio::mixer::VoiceParams {
-                    gain: crate::sound_gain(&crate::SOUND_AI),
+                    gain: volume,
                     pitch: 1.0,
                     looping: false,
                     position: Some(at.as_vec3()),
@@ -171,7 +173,7 @@ impl Traffic {
     /// The AI bus ridden in on foot: its full `[sound]` set from inside ([viewpoint] 2, the
     /// outside sounds through what it has open - its own `Snd_OutsideVol`), instead of its
     /// `[sound_ai]` heard as from the street (#1286: a passenger heard next to nothing).
-    fn update_riding_audio(&mut self, audio: &omsi_audio::AudioEngine, riding: Option<u64>) {
+    fn update_riding_audio(&mut self, audio: &omsi_audio::AudioEngine, riding: Option<u64>, volume: f32) {
         if self.riding_sounds.as_ref().map(|r| r.0) != riding {
             if let Some((_, mut s)) = self.riding_sounds.take() {
                 s.stop_all(audio);
@@ -204,7 +206,7 @@ impl Traffic {
                 return;
             }
             let mut ss = omsi_audio::SoundSet::new(audio, &cfg.chosen_for(&c.vehicle.number()), &dir);
-            ss.master = crate::sound_gain(&crate::SOUND_AI);
+            ss.master = volume;
             self.riding_sounds = Some((id, ss));
         }
         if let Some((_, ss)) = self.riding_sounds.as_mut() {

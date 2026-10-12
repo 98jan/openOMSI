@@ -291,10 +291,7 @@ fn game_event_loop() -> Result<EventLoop<()>> {
 
 /// The showroom is drawn the way the game will be.
 pub(crate) fn launcher_statics() {
-    let s = settings::Settings::load();
-    ENHANCED.store(s.enhanced || omsi_cfg::flags::OMSI_ENHANCED.is_set(), std::sync::atomic::Ordering::Relaxed);
-    CLASSIC.store(s.classic(), std::sync::atomic::Ordering::Relaxed);
-    CLOUDS.store(s.clouds && !omsi_cfg::flags::OMSI_NO_CLOUDS.is_set(), std::sync::atomic::Ordering::Relaxed);
+    startup::SessionLook::for_showroom(&settings::Settings::load()).publish();
 }
 
 /// Everything before a window: the language, the session's random seed, the original
@@ -436,21 +433,11 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     {
         args.drive_keys = settings.drive_keys.clone();
     }
-    let plus = args.enhanced_plus || omsi_cfg::flags::OMSI_ENHANCED_PLUS.is_set();
-    ENHANCED_PLUS.store(plus, std::sync::atomic::Ordering::Relaxed);
-    ENHANCED.store(
-        settings.enhanced || args.enhanced || plus || omsi_cfg::flags::OMSI_ENHANCED.is_set(),
-        std::sync::atomic::Ordering::Relaxed,
-    );
-    CLOUDS.store(settings.clouds && !omsi_cfg::flags::OMSI_NO_CLOUDS.is_set(), std::sync::atomic::Ordering::Relaxed);
-    SOUND_AI.store(settings.vol_ai.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    args.session_look = startup::SessionLook::for_session(&settings, &args);
+    args.session_look.publish();
     SOUND_SCENERY.store(settings.vol_scenery.to_bits(), std::sync::atomic::Ordering::Relaxed);
     MIRROR_SIZE.store(settings.mirror_size, std::sync::atomic::Ordering::Relaxed);
     omsi_audio::DOPPLER.store(settings.doppler, std::sync::atomic::Ordering::Relaxed);
-    CLASSIC.store(
-        settings.classic() && !ENHANCED.load(std::sync::atomic::Ordering::Relaxed),
-        std::sync::atomic::Ordering::Relaxed,
-    );
     // the LAN session (offscreen too, so that one game's view of another can be rendered);
     // a joining player's world is the host's (taken over again when the window loads it)
     let mut lan = if args.export_glb.is_none() {
@@ -535,6 +522,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
     // (as the last session left it, #1164)
     let info_bar = settings.info_bar;
     let is_server = args.server.is_some();
+    let sky = crate::weather_setup::SkyState { no_clouds: !args.session_look.clouds, ..Default::default() };
     // What loads, starts or reads the clock, made one after the other in a fixed order before
     // the App and its groups are put together (their logs and threads come in this order).
     // Steam must be initialized before the graphics instance and window so its overlay can
@@ -630,7 +618,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             metar_rx: None,
             metar_once: false,
             metar_next: 0.0,
-            sky: Default::default(),
+            sky,
         },
         menus: MenuState {
             list_dirty: false,

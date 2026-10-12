@@ -146,7 +146,7 @@ impl Offscreen<'_> {
         }
         let street = crate::weather_setup::street_condition(&self.weather, self.wetness);
         if let Some(t) = self.traffic.as_mut() {
-            t.update_audio(a, cam.position, street, inside, None);
+            t.update_audio(a, cam.position, street, inside, None, self.settings.vol_ai);
         }
         let daylight = omsi_sim::Daylight::compute(&self.run_clock, self.envir.as_ref());
         let people = self.humans_off.as_ref().map(|h| h.people.iter().filter(|p| (p.position - cam.position).length() < 40.0).count() as u32).unwrap_or(0);

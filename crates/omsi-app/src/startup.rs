@@ -673,25 +673,73 @@ pub(crate) fn window_icon() -> Option<winit::window::Icon> {
     winit::window::Icon::from_rgba(img.into_raw(), w, h).ok()
 }
 
-/// Enhanced+ (ray tracing) asked for by `--enhanced-plus` or OMSI_ENHANCED_PLUS=1 whatever
-/// the settings say (see `Settings::render_options`). These settings statics are set again
-/// by every session start (`make_app`) and read deep in loading and sound code that has no
-/// App to ask.
-pub(crate) static ENHANCED_PLUS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// Volume of the AI vehicles and of the scenery's own sounds (OMSI's `sound_ai` and
-/// `sound_scenery`), as the bits of an f32.
-pub(crate) static SOUND_AI: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000);
+/// The look a session's settings and arguments ask for, worked out once at its start
+/// (`make_app`; the launcher's showroom from the settings alone) and carried in its `Args`
+/// to what draws the sky and opens the renderer. (A field, not statics: a second drive in
+/// the same process starts from its own.)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SessionLook {
+    /// Enhanced+ (ray tracing) asked for by `--enhanced-plus` or OMSI_ENHANCED_PLUS=1
+    /// whatever the settings say (see `Settings::render_options`).
+    pub(crate) enhanced_plus: bool,
+    /// Enhanced graphics, and the Vanilla graphics (see `scene::host::{ENHANCED, CLASSIC}`).
+    pub(crate) enhanced: bool,
+    pub(crate) classic: bool,
+    /// The `clouds` setting: clouds in the sky (off: a clear sky whatever the weather says).
+    pub(crate) clouds: bool,
+}
+
+impl Default for SessionLook {
+    fn default() -> SessionLook {
+        SessionLook { enhanced_plus: false, enhanced: false, classic: false, clouds: true }
+    }
+}
+
+impl SessionLook {
+    /// A game session's: the settings, the arguments and the switches.
+    pub(crate) fn for_session(settings: &crate::settings::Settings, args: &crate::Args) -> SessionLook {
+        let plus = args.enhanced_plus || omsi_cfg::flags::OMSI_ENHANCED_PLUS.is_set();
+        let enhanced = settings.enhanced || args.enhanced || plus || omsi_cfg::flags::OMSI_ENHANCED.is_set();
+        SessionLook { enhanced_plus: plus, enhanced, classic: settings.classic() && !enhanced, clouds: SessionLook::clouds_of(settings) }
+    }
+
+    /// The launcher's showroom: drawn the way the game will be, from the settings.
+    pub(crate) fn for_showroom(settings: &crate::settings::Settings) -> SessionLook {
+        SessionLook {
+            enhanced_plus: false,
+            enhanced: settings.enhanced || omsi_cfg::flags::OMSI_ENHANCED.is_set(),
+            classic: settings.classic(),
+            clouds: SessionLook::clouds_of(settings),
+        }
+    }
+
+    fn clouds_of(settings: &crate::settings::Settings) -> bool {
+        settings.clouds && !omsi_cfg::flags::OMSI_NO_CLOUDS.is_set()
+    }
+
+    /// The renderer's options: the settings', with ray tracing when Enhanced+ is asked for
+    /// whatever they say.
+    pub(crate) fn render_options(&self, settings: &crate::settings::Settings) -> omsi_render::RenderOptions {
+        let o = settings.render_options();
+        omsi_render::RenderOptions { ray_tracing: o.ray_tracing || self.enhanced_plus, ..o }
+    }
+
+    /// The scene's graphics kind for loading code without a session at hand (see
+    /// `scene::host`).
+    pub(crate) fn publish(&self) {
+        ENHANCED.store(self.enhanced, std::sync::atomic::Ordering::Relaxed);
+        CLASSIC.store(self.classic, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 // (the scenery's volume, the graphics' kind and the mirrors' size: the scene's, see `scene::host`)
-pub(crate) use crate::scene::host::{sound_gain, CLASSIC, ENHANCED, MIRROR_SIZE, SOUND_SCENERY};
+pub(crate) use crate::scene::host::{CLASSIC, ENHANCED, MIRROR_SIZE, SOUND_SCENERY};
 
 /// The game's settings a world reads as it opens (see `scene::host::OpenSettings`), from the
 /// settings file at that moment.
 pub(crate) fn install_scene_settings() {
     crate::scene::host::install_open_settings(|| crate::scene::host::OpenSettings { max_parked: crate::settings::Settings::load().ai_max_parked as i64 });
 }
-
-/// The `clouds` setting: clouds in the sky (off: a clear sky whatever the weather says).
-pub(crate) static CLOUDS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 /// macOS's allocator keeps freed large blocks for reuse, and they count as the game's
 /// memory: after loading and unloading tiles it held more than half a gigabyte of them, and
