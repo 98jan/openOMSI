@@ -199,7 +199,7 @@ impl Offscreen<'_> {
             world_lights(renderer, world, scene, weather, daylight, camera.position, &vehicles);
             let (kind, rate) = precip_of(weather);
             let mut rn = rain::Rain::new();
-            rn.set(kind, rate);
+            rn.set(kind, rate, world.settings.rain_quality());
             for _ in 0..30 {
                 scene
                     .coronas

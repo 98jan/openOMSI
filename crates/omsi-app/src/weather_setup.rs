@@ -18,7 +18,6 @@ pub(crate) fn load_weather_run(args: &Args) -> (omsi_content::weather::Weather, 
     // no weather chosen, or `natural`: the physical model (weather_model.rs)
     if crate::weather_model::is_natural(args.weather.as_deref()) {
         let (run, w) = crate::weather_model::ModelRun::start(&crate::situation::start_clock(args));
-        scene::SNOW_WEATHER.store(w.snow, std::sync::atomic::Ordering::Relaxed);
         omsi_sim::host::set_ambient_weather(w.temp.0, w.temp.1);
         crate::weather_setup::publish_page_weather(&w);
         return (w, Some(run));
@@ -35,7 +34,6 @@ fn load_chosen_weather(args: &Args) -> omsi_content::weather::Weather {
         .unwrap_or_else(|| "Weather/#CAVOK.owt".into());
     if let Some(w)=CustomWeather::parse(&rel).map(|c|c.to_weather()){
         log::info!("weather custom: fog range {} m, precip {:?}, temp {:?}",w.fog.0,w.precip,w.temp);
-        scene::SNOW_WEATHER.store(w.snow,std::sync::atomic::Ordering::Relaxed);
         omsi_sim::host::set_ambient_weather(w.temp.0,w.temp.1);
         crate::weather_setup::publish_page_weather(&w);
         return w;
@@ -63,19 +61,16 @@ fn load_chosen_weather(args: &Args) -> omsi_content::weather::Weather {
             // No weather chosen: the clear default (#CAVOK, no cloud at all) gets a few fair-
             // weather cumulus clouds, as long as clouds are wanted - a sky without a single
             // cloud was the first thing that looked wrong.
-            if args.weather.is_none() && args.session_look.clouds && w.clouds.0.trim().starts_with("-1") {
+            if args.weather.is_none() && args.session_settings.clouds && w.clouds.0.trim().starts_with("-1") {
                 w.clouds = ("Cumulus 1".into(), 100.0);
             }
-            // the vehicles ask for it while they go onto the GPU (the snow on the panes)
-            scene::SNOW_WEATHER.store(w.snow, std::sync::atomic::Ordering::Relaxed);
-            // and their {init} reads the temperature
+            // the vehicles' {init} reads the temperature
             omsi_sim::host::set_ambient_weather(w.temp.0, w.temp.1);
             crate::weather_setup::publish_page_weather(&w);
             w
         }
         Err(e) => {
             log::warn!("weather {rel}: {e}");
-            scene::SNOW_WEATHER.store(false, std::sync::atomic::Ordering::Relaxed);
             omsi_content::weather::Weather {
                 fog: (50000.0, 1.0),
                 ..Default::default()
@@ -155,8 +150,8 @@ pub(crate) type SkyClouds = Option<(String, CloudType)>;
 pub(crate) struct SkyState {
     pub(crate) clouds: SkyClouds,
     pub(crate) model: Option<crate::weather_model::ModelRun>,
-    /// The graphics' kind and whether clouds are wanted (see `startup::SessionLook`).
-    pub(crate) look: crate::startup::SessionLook,
+    /// The graphics' kind and whether clouds are wanted (see `startup::SessionSettings`).
+    pub(crate) look: crate::startup::SessionSettings,
 }
 
 /// The `[cloudtype]` entry named `kind` (`-1` or empty: none), read as Omsi.exe reads it

@@ -112,6 +112,7 @@ impl World {
             global,
             map_dir,
             parklist: Mutex::new(HashMap::new()),
+            settings: Default::default(),
             mirror_textures: Mutex::new(Vec::new()),
             mirror_aspect: Mutex::new(Vec::new()),
             mirror_glass: Mutex::new(Vec::new()),

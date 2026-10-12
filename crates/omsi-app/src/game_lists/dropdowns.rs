@@ -333,7 +333,9 @@ pub(super) fn reload_settings(app: &mut App) {
 
 pub(super) fn sync_live(app: &mut App) {
     let s = &app.settings;
-    crate::startup::SOUND_SCENERY.store(s.vol_scenery.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    if let Some(w) = app.world.as_ref() {
+        w.settings.set_sound_scenery(s.vol_scenery);
+    }
     omsi_audio::DOPPLER.store(s.doppler, std::sync::atomic::Ordering::Relaxed);
     if let Some(n) = app.menus.navigator.as_mut() {
         n.arrows = s.nav_arrows;

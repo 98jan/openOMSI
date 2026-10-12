@@ -224,10 +224,10 @@ pub(crate) struct Args {
     /// `duty_start::Preopened`).
     #[arg(skip)]
     pub(crate) preopened: crate::duty_start::Preopened,
-    /// The look the settings and arguments ask for (see `startup::SessionLook`), worked out at the
+    /// The look the settings and arguments ask for (see `startup::SessionSettings`), worked out at the
     /// session's start.
     #[arg(skip)]
-    pub(crate) session_look: crate::startup::SessionLook,
+    pub(crate) session_settings: crate::startup::SessionSettings,
     /// With a duty: start at the entry point nearest to its first stop by road (the
     /// launcher's "Automatic") instead of `--entry`.
     #[arg(long)]

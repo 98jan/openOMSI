@@ -157,7 +157,7 @@ impl App {
                 }
                 q.vehicle.update(dt);
             }
-            q.sync_transforms(r, scene, false);
+            q.sync_transforms(r, scene, false, self.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
             let f = crate::lan::footprint_of(&q.vehicle, [2.5, 11.5, 3.0, 0.0, 0.0, 1.5]);
             placed_boxes.push(omsi_sim::collision::Obb {
                 center: glam::DVec2::new(f.x, f.y),
@@ -210,7 +210,7 @@ impl App {
             return;
         };
         let inside = self.cam.in_cab;
-        p.sync_transforms(r, scene, inside);
+        p.sync_transforms(r, scene, inside, self.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
         crate::scene::sync_vehicle_damage(r, scene, &mut p.vehicle, &mut p.render);
         // from the driver's seat the figure stays in the mirrors
         // (from the driver's seat only the mirrors show him)
@@ -262,7 +262,7 @@ pub(super) fn audio(cx: AudioCx, dt: f32) {
                 }
                 q.vehicle.update(dt);
             }
-            q.sync_transforms(r, scene, false);
+            q.sync_transforms(r, scene, false, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
         }
     }
     if let Some(a) = cx.sound.audio.as_ref() {

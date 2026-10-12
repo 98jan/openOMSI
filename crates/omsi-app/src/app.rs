@@ -230,7 +230,7 @@ impl App {
                 }
             },
         };
-        let start = match crate::startup::RendererStart::begin(&mut self.gfx.instance, &window, self.args.session_look.render_options(&self.settings)) {
+        let start = match crate::startup::RendererStart::begin(&mut self.gfx.instance, &window, self.args.session_settings.render_options(&self.settings)) {
             Ok(s) => s,
             Err(e) => {
                 fatal_message(&format!("The game cannot draw on this computer: {e:#}"));

@@ -457,6 +457,7 @@ pub(crate) fn spawn_player_prepared(
         renderer,
         scene,
         matches!(args.view.as_str(), "driver" | "pax"),
+        world.settings.rain_quality(),
     );
     // The sounds the scripts asked for while the bus was being set up ({init}, the state it
     // is put in - cold, ready, the situation's) are not played: the first frame played them

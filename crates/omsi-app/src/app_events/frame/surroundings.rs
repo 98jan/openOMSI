@@ -84,8 +84,9 @@ impl App {
             }
             if let Some(wt) = &self.session.weather {
                 let (kind, rate) = precip_of(wt);
-                crate::rain::set_quality(&self.settings.rain_quality);
-                self.session.rain.set(kind, rate);
+                let rain_quality = crate::rain::quality_of(&self.settings.rain_quality);
+                w.settings.set_rain_quality(rain_quality);
+                self.session.rain.set(kind, rate, rain_quality);
                 // [wind] direction (deg) speed (m/s)
                 let wind = crate::rain::weather_wind(wt);
                 let spray_wind = steps::spray_wind(wt);
@@ -121,7 +122,7 @@ impl App {
                         spray_wind,
                         w,
                         wetness,
-                        crate::rain::quality(),
+                        rain_quality,
                     );
                     self.session.spray.sprites(cam.position, &mut scene.smoke);
                     self.perf.profile.add(crate::profile_keys::ProfKey::LightsSpray, __ts.elapsed().as_secs_f64());
@@ -249,6 +250,7 @@ impl App {
             w.show_help_arrows(r, scene, self.settings.nav_arrows);
             let mut times = omsi_scene::ScriptedTimes::default();
             w.update_scripted(
+                &mut self.session.scenery,
                 r,
                 scene,
                 dt,

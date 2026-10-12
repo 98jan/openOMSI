@@ -23,13 +23,12 @@ impl<'a> Offscreen<'a> {
             .unwrap_or((1600, 900));
         let view_aspect = w as f32 / h.max(1) as f32;
         let settings = settings::Settings::load();
-        crate::rain::set_quality(&settings.rain_quality);
         let instance = graphics_instance();
         let mut renderer = pollster::block_on(Renderer::new_with(
             &instance,
             None,
             Some(wgpu::TextureFormat::Rgba8UnormSrgb),
-            args.session_look.render_options(&settings),
+            args.session_settings.render_options(&settings),
         ))?;
         log::info!("adapter: {}", renderer.adapter_name);
         crate::lights::load_smoke_texture(&mut renderer, &args.root);
@@ -98,7 +97,7 @@ impl<'a> Offscreen<'a> {
         let player_ref: Option<Player> = None;
         let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
         let (weather, model) = crate::weather_setup::load_weather_run(args);
-        let mut sky = crate::weather_setup::SkyState { clouds: None, model, look: args.session_look };
+        let mut sky = crate::weather_setup::SkyState { clouds: None, model, look: args.session_settings };
         setup_sky(args, &renderer, &mut scene, envir.as_ref(), Some(&weather), &mut sky.clouds);
         if let Some(p) = player.as_mut() {
             apply_weather(&mut p.vehicle, &weather, initial_wetness(&weather));
@@ -238,7 +237,7 @@ impl<'a> Offscreen<'a> {
         }
         // the tyres' spray (see `puddles`), from roads as wet as the weather left them
         let mut spray = puddles::Spray::new();
-        spray.graphics = args.session_look.graphics();
+        spray.graphics = args.session_settings.graphics();
         let wetness = initial_wetness(&weather);
         let cabin_air = crate::condensation::CabinAir::new();
         let real_time = RealTime::default();

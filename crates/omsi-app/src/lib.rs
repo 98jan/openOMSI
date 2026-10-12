@@ -430,9 +430,7 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     {
         args.drive_keys = settings.drive_keys.clone();
     }
-    args.session_look = startup::SessionLook::for_session(&settings, &args);
-    SOUND_SCENERY.store(settings.vol_scenery.to_bits(), std::sync::atomic::Ordering::Relaxed);
-    MIRROR_SIZE.store(settings.mirror_size, std::sync::atomic::Ordering::Relaxed);
+    args.session_settings = startup::SessionSettings::for_session(&settings, &args);
     omsi_audio::DOPPLER.store(settings.doppler, std::sync::atomic::Ordering::Relaxed);
     // the LAN session (offscreen too, so that one game's view of another can be rendered);
     // a joining player's world is the host's (taken over again when the window loads it)
@@ -511,14 +509,13 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
 /// The game's App for `args` and `settings`, every part of it as it starts (the window comes
 /// later).
 fn assemble_app(args: Args, settings: settings::Settings) -> App {
-    rain::set_quality(&settings.rain_quality);
     let view = args.view.clone();
     let args_root_for_keys = args.root.clone();
     let clock_note = args.clock_moved.clone();
     // (as the last session left it, #1164)
     let info_bar = settings.info_bar;
     let is_server = args.server.is_some();
-    let sky = crate::weather_setup::SkyState { look: args.session_look, ..Default::default() };
+    let sky = crate::weather_setup::SkyState { look: args.session_settings, ..Default::default() };
     // What loads, starts or reads the clock, made one after the other in a fixed order before
     // the App and its groups are put together (their logs and threads come in this order).
     // Steam must be initialized before the graphics instance and window so its overlay can
@@ -531,7 +528,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
     let rain = rain::Rain::new();
     let cabin_air = crate::condensation::CabinAir::new();
     let mut spray = puddles::Spray::new();
-    spray.graphics = args.session_look.graphics();
+    spray.graphics = args.session_settings.graphics();
     let radio = radio::Radio::load(&args_root_for_keys);
     let started = Instant::now();
     let last = Instant::now();

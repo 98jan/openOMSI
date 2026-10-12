@@ -198,6 +198,7 @@ fn pose_player(p: &mut Player, renderer: &Renderer, scene: &mut Scene, args: &Ar
         renderer,
         scene,
         matches!(args.view.as_str(), "driver" | "pax"),
+        crate::rain::quality_of(&settings.rain_quality),
     );
     crate::scene::sync_vehicle_damage(renderer, scene, &mut p.vehicle, &mut p.render);
     p.sync_driver(renderer, scene, 1.0 / 30.0, settings.driver, args.view == "driver");

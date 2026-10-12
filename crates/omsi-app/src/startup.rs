@@ -673,12 +673,13 @@ pub(crate) fn window_icon() -> Option<winit::window::Icon> {
     winit::window::Icon::from_rgba(img.into_raw(), w, h).ok()
 }
 
-/// The look a session's settings and arguments ask for, worked out once at its start
-/// (`make_app`; the launcher's showroom from the settings alone) and carried in its `Args`
-/// to what draws the sky and opens the renderer. (A field, not statics: a second drive in
-/// the same process starts from its own.)
+/// What a session's settings and arguments ask for of its look and of the world's loading,
+/// worked out once at its start (`make_app`; the launcher's showroom from the settings
+/// alone) and carried in its `Args` to what draws the sky, opens the renderer and opens the
+/// world (`World::settings`). (A field, not statics: a second drive in the same process
+/// starts from its own.)
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct SessionLook {
+pub(crate) struct SessionSettings {
     /// Enhanced+ (ray tracing) asked for by `--enhanced-plus` or OMSI_ENHANCED_PLUS=1
     /// whatever the settings say (see `Settings::render_options`).
     pub(crate) enhanced_plus: bool,
@@ -687,29 +688,44 @@ pub(crate) struct SessionLook {
     pub(crate) classic: bool,
     /// The `clouds` setting: clouds in the sky (off: a clear sky whatever the weather says).
     pub(crate) clouds: bool,
+    /// The scenery's own sounds' volume, the mirrors' picture size and the rain's quality
+    /// (see `scene::host::SceneSettings`).
+    pub(crate) sound_scenery: f32,
+    pub(crate) mirror_size: u32,
+    pub(crate) rain_quality: u8,
 }
 
-impl Default for SessionLook {
-    fn default() -> SessionLook {
-        SessionLook { enhanced_plus: false, enhanced: false, classic: false, clouds: true }
+impl Default for SessionSettings {
+    fn default() -> SessionSettings {
+        SessionSettings { enhanced_plus: false, enhanced: false, classic: false, clouds: true, sound_scenery: 1.0, mirror_size: 256, rain_quality: 2 }
     }
 }
 
-impl SessionLook {
+impl SessionSettings {
     /// A game session's: the settings, the arguments and the switches.
-    pub(crate) fn for_session(settings: &crate::settings::Settings, args: &crate::Args) -> SessionLook {
+    pub(crate) fn for_session(settings: &crate::settings::Settings, args: &crate::Args) -> SessionSettings {
         let plus = args.enhanced_plus || omsi_cfg::flags::OMSI_ENHANCED_PLUS.is_set();
         let enhanced = settings.enhanced || args.enhanced || plus || omsi_cfg::flags::OMSI_ENHANCED.is_set();
-        SessionLook { enhanced_plus: plus, enhanced, classic: settings.classic() && !enhanced, clouds: SessionLook::clouds_of(settings) }
+        SessionSettings {
+            enhanced_plus: plus,
+            enhanced,
+            classic: settings.classic() && !enhanced,
+            clouds: SessionSettings::clouds_of(settings),
+            sound_scenery: settings.vol_scenery,
+            mirror_size: settings.mirror_size,
+            rain_quality: crate::rain::quality_of(&settings.rain_quality),
+        }
     }
 
     /// The launcher's showroom: drawn the way the game will be, from the settings.
-    pub(crate) fn for_showroom(settings: &crate::settings::Settings) -> SessionLook {
-        SessionLook {
+    pub(crate) fn for_showroom(settings: &crate::settings::Settings) -> SessionSettings {
+        SessionSettings {
             enhanced_plus: false,
             enhanced: settings.enhanced || omsi_cfg::flags::OMSI_ENHANCED.is_set(),
             classic: settings.classic(),
-            clouds: SessionLook::clouds_of(settings),
+            clouds: SessionSettings::clouds_of(settings),
+            // (the world's: as a world opens without the game)
+            ..SessionSettings::default()
         }
     }
 
@@ -722,6 +738,13 @@ impl SessionLook {
     pub(crate) fn render_options(&self, settings: &crate::settings::Settings) -> omsi_render::RenderOptions {
         let o = settings.render_options();
         omsi_render::RenderOptions { ray_tracing: o.ray_tracing || self.enhanced_plus, ..o }
+    }
+
+    /// The world's settings from these (see `scene::host::SceneSettings`).
+    pub(crate) fn apply_to(&self, world: &crate::scene::World) {
+        world.settings.set_sound_scenery(self.sound_scenery);
+        world.settings.set_mirror_size(self.mirror_size);
+        world.settings.set_rain_quality(self.rain_quality);
     }
 
     /// The scene's graphics kind (Vanilla before Enhanced, as the showroom may ask both).
@@ -737,8 +760,6 @@ impl SessionLook {
     }
 }
 
-// (the scenery's volume and the mirrors' size: the scene's, see `scene::host`)
-pub(crate) use crate::scene::host::{MIRROR_SIZE, SOUND_SCENERY};
 
 /// The game's settings a world reads as it opens (see `scene::host::OpenSettings`), from the
 /// settings file at that moment.

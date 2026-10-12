@@ -7,6 +7,9 @@ pub struct World {
     pub map_dir: PathBuf,
     /// Indexed parked car lists of the map, loaded when a parking space uses one.
     pub(super) parklist: Mutex<HashMap<usize, Vec<String>>>,
+    /// The game's settings and the session's weather as this world's loading and sounds
+    /// read them (see `host::SceneSettings`).
+    pub settings: crate::host::SceneSettings,
     /// Render textures of the player's mirrors (`reflexionN.bmp`), by camera index.
     pub mirror_textures: Mutex<Vec<Option<TextureId>>>,
     /// Width / height of the glass of the player bus mirror N (from the mesh that shows its
