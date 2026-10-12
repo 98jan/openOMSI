@@ -32,6 +32,7 @@
 //! every `Humans` call that made them (`Humans::show_bodies`). Those calls take the part of
 //! the `SimView` they change (`&mut TrafficView`, `&mut PeopleView`) as a parameter.
 
+pub(crate) mod digest;
 pub(crate) mod people;
 pub(crate) mod traffic;
 pub(crate) mod traffic_audio;

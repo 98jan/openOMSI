@@ -561,14 +561,13 @@ pub(crate) struct NearLights {
     coronas: Vec<Corona>,
 }
 
-/// Fill the scene's lights for this frame, the lamps' cones in the weather `cone`.
+/// Fill the scene's lights for this frame.
 pub fn collect(
     world: &World,
     scene: &mut Scene,
     daylight: &Daylight,
     camera_pos: DVec3,
     vehicles: &[&VehicleInstance],
-    cone: ConeWeather,
 ) {
     scene.lights.clear();
     scene.coronas.clear();
@@ -667,7 +666,7 @@ pub fn collect(
     // strength ((1 - ambient)^2 + 0.8) 0.6 brightness and the light's size; its colour the
     // light's times 0.3 (the viewing angle and the distance take their share in the shader,
     // which is told the visibility in `beam_width`)
-    let (vis, night) = cone.get();
+    let (vis, night) = cone_weather();
     // The halo round a light in fog is half the cone's radius across either way, at 0.2.
     scene.coronas.retain_mut(|c| {
         if !c.beam && !c.halo {
@@ -915,25 +914,24 @@ pub fn upload_corona_textures(renderer: &mut omsi_render::Renderer) {
     }
 }
 
-/// The weather the lamps' cones are drawn in (see [`collect`]): the fog's visibility (m,
-/// 0 for none known: no cones) and how dark it is (0 day … 1 night). Falling rain or snow
-/// counts only as far as it lowers the visibility.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ConeWeather {
-    pub fog_visibility_m: f32,
-    pub night: f32,
+/// How strongly the lamps' cones show (0..1): fog, falling rain or snow, and the dark.
+static CONE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// How dark it is for the cones (0 day … 1 night). Both are set by every frame's
+/// `set_cone_strength` before the lights are gathered.
+static CONE_NIGHT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The weather the lamps' cones are drawn in: the fog's visibility (m) and how dark it is
+/// (0 day … 1 night). Falling rain or snow counts only as far as it lowers the visibility.
+pub fn set_cone_strength(fog_visibility_m: f32, _precip: f32, night: f32) {
+    CONE.store(fog_visibility_m.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    CONE_NIGHT.store(night.clamp(0.0, 1.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
 }
 
-impl ConeWeather {
-    pub fn new(fog_visibility_m: f32, night: f32) -> ConeWeather {
-        ConeWeather { fog_visibility_m, night: night.clamp(0.0, 1.0) }
-    }
-
-    /// The visibility (no fog: a million metres) and the dark.
-    fn get(self) -> (f32, f32) {
-        let vis = self.fog_visibility_m;
-        (if vis > 0.0 { vis } else { 1.0e6 }, self.night)
-    }
+fn cone_weather() -> (f32, f32) {
+    let vis = f32::from_bits(CONE.load(std::sync::atomic::Ordering::Relaxed));
+    let night = f32::from_bits(CONE_NIGHT.load(std::sync::atomic::Ordering::Relaxed));
+    (if vis > 0.0 { vis } else { 1.0e6 }, night)
 }
 
 pub use omsi_weather::conditions::vehicle_velocity;
