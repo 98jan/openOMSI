@@ -215,7 +215,7 @@ impl ApplicationHandler for App {
                 {
                     self.net.remotes.chat.open();
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        lan::chat_swallow(&mut self.net.remotes, code);
+                        lan::chat_swallow(&mut self.net.remotes, crate::app_impl::lan_tick::chat_key_of(code));
                     }
                     return;
                 }

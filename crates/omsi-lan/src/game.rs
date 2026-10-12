@@ -30,7 +30,6 @@ use omsi_sim::traffic::{Lane, LaneKind, Network};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use winit::keyboard::KeyCode;
 
 /// How long a joining player's game waits for the host's welcome (its world) before the
 /// map is loaded, and for the host's list of what stands at the spawn.
@@ -188,7 +187,7 @@ pub struct Chat {
     /// What was typed when the line lost the focus (a click elsewhere): back when it opens.
     draft: String,
     /// Keys pressed while typing: their release is the chat's too.
-    swallow: hashbrown::HashSet<KeyCode>,
+    swallow: hashbrown::HashSet<u64>,
     /// Why the last line was not sent.
     error: Option<(String, Instant)>,
 }
@@ -2515,7 +2514,7 @@ fn debug_log(lan: &LanSession, game: &mut LanGame, dt: f32) {
 pub fn chat_key(
     lan: &mut LanSession,
     game: &mut LanGame,
-    code: KeyCode,
+    key: ChatKey,
     pressed: bool,
     repeat: bool,
     bound: Option<&str>,
@@ -2533,35 +2532,53 @@ pub fn chat_key(
             } else {
                 chat.open();
             }
-            chat.swallow.insert(code);
+            chat.swallow.insert(key.id);
             return true;
         }
         // the release of the key that opened or sent the line
-        return !pressed && chat.swallow.remove(&code);
+        return !pressed && chat.swallow.remove(&key.id);
     }
     if !pressed {
-        return chat.swallow.remove(&code);
+        return chat.swallow.remove(&key.id);
     }
-    chat.swallow.insert(code);
-    match code {
-        KeyCode::Enter | KeyCode::NumpadEnter => {
+    chat.swallow.insert(key.id);
+    match key.role {
+        ChatRole::Send => {
             let text = chat.typing.take().unwrap_or_default();
             chat_send(lan, game, &text);
         }
-        KeyCode::Escape => chat.typing = None,
-        KeyCode::Backspace => {
+        ChatRole::Cancel => chat.typing = None,
+        ChatRole::Erase => {
             if let Some(t) = chat.typing.as_mut() {
                 t.pop();
             }
         }
-        _ => {}
+        ChatRole::Other => {}
     }
     true
 }
 
+/// A key as the chat line takes it: which physical key it is (its release belongs to the
+/// chat too, `id`: any number the game gives that key alone) and what it does in an open line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChatKey {
+    pub id: u64,
+    pub role: ChatRole,
+}
+
+/// What a key does in an open chat line: Enter sends it, Escape drops it, Backspace takes
+/// the last character off; the others type (their text comes through `chat_type`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatRole {
+    Send,
+    Cancel,
+    Erase,
+    Other,
+}
+
 /// The key that opened the chat: its release is the chat's too.
-pub fn chat_swallow(game: &mut LanGame, code: KeyCode) {
-    game.chat.swallow.insert(code);
+pub fn chat_swallow(game: &mut LanGame, key: ChatKey) {
+    game.chat.swallow.insert(key.id);
 }
 
 /// Characters typed into an open chat line.

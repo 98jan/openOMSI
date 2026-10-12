@@ -9,7 +9,7 @@ mod coupling;
 mod depot;
 mod editor_ops;
 mod hover;
-mod lan_tick;
+pub(crate) mod lan_tick;
 mod menu_lists;
 mod menus;
 mod mouse;

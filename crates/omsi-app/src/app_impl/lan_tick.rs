@@ -141,3 +141,18 @@ impl App {
         }
     }
 }
+
+/// A key as LAN play's chat line takes it (see `lan::ChatKey`).
+pub(crate) fn chat_key_of(code: winit::keyboard::KeyCode) -> lan::ChatKey {
+    use std::hash::{Hash, Hasher};
+    use winit::keyboard::KeyCode;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    code.hash(&mut h);
+    let role = match code {
+        KeyCode::Enter | KeyCode::NumpadEnter => lan::ChatRole::Send,
+        KeyCode::Escape => lan::ChatRole::Cancel,
+        KeyCode::Backspace => lan::ChatRole::Erase,
+        _ => lan::ChatRole::Other,
+    };
+    lan::ChatKey { id: h.finish(), role }
+}

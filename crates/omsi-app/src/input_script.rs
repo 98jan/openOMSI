@@ -278,7 +278,7 @@ impl App {
                     .find(|b| b.scan_code == scan && b.matches(chord) && b.action.to_ascii_lowercase().starts_with("chat_"))
                     .map(|b| b.action.clone()))
             };
-            if lan::chat_key(l, &mut self.net.remotes, code, pressed, repeat, bound.as_deref()) {
+            if lan::chat_key(l, &mut self.net.remotes, crate::app_impl::lan_tick::chat_key_of(code), pressed, repeat, bound.as_deref()) {
                 return true;
             }
         }
