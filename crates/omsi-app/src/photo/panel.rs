@@ -318,24 +318,22 @@ pub(crate) fn draw(sh: &mut Shell, ph: &mut Photo, info: &Info) {
     sh.actions.extend(acts.into_iter().map(Action::Photo));
 }
 
-impl crate::App {
-    /// The photo mode's panel for this frame.
-    pub(crate) fn frame_photo_panel(&mut self, dt: f32) {
-        let Some(s) = self.gfx.surface.as_ref() else { return };
-        let (w, h) = (s.config.width as f32, s.config.height as f32);
-        let dpi = self.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
-        let scale = dpi * crate::ui::size_factor(h, dpi, self.settings.ui_scale, self.settings.ui_scale_window);
-        let t = self.clock.time;
-        let info = Info {
-            time: format!("{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64),
-            bus_moving: self.photo.as_ref().is_some_and(|p| p.bus_velocity.length() > 0.2),
-        };
-        let Some(ph) = self.photo.as_mut() else { return };
-        self.shell.opaque = ph.render.showing_photo() && self.shell.picture_tex.is_some();
-        self.shell.begin(w, h, scale, dt);
-        draw(&mut self.shell, ph, &info);
-        self.shell.finish();
-    }
+/// The photo mode's panel for this frame.
+pub(super) fn photo_panel(cx: &mut super::PhotoCx, dt: f32) {
+    let Some(s) = cx.gfx.gfx.surface.as_ref() else { return };
+    let (w, h) = (s.config.width as f32, s.config.height as f32);
+    let dpi = cx.gfx.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0);
+    let scale = dpi * crate::ui::size_factor(h, dpi, cx.common.settings.ui_scale, cx.common.settings.ui_scale_window);
+    let t = cx.clock.clock.time;
+    let info = Info {
+        time: format!("{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64),
+        bus_moving: cx.ui.photo.as_ref().is_some_and(|p| p.bus_velocity.length() > 0.2),
+    };
+    let Some(ph) = cx.ui.photo.as_mut() else { return };
+    cx.menus.shell.opaque = ph.render.showing_photo() && cx.menus.shell.picture_tex.is_some();
+    cx.menus.shell.begin(w, h, scale, dt);
+    draw(&mut *cx.menus.shell, ph, &info);
+    cx.menus.shell.finish();
 }
 
 /// A saved file's place as the panel shows it: the home folder as `~`.

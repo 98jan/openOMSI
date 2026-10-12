@@ -43,7 +43,7 @@ impl App {
             self.shell.clear();
             return;
         };
-        // (the photo mode draws its own panel, `frame_photo_panel`)
+        // (the photo mode draws its own panel, `photo::panel`)
         if self.photo.is_some() {
             return;
         }
