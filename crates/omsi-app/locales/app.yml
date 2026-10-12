@@ -37924,8 +37924,6 @@ _version: 2
   nl: "openOMSI {version} downloaden"
   tr: "openOMSI {version} indiriliyor"
   ja: "openOMSI {version} をダウンロード中"
-
-  ja: "openOMSI {version} をダウンロードしています"
   zh-tw: "正在下載 openOMSI {version}"
   ko: "openOMSI {version} 다운로드 중"
   th: "กำลังดาวน์โหลด openOMSI {version}"
@@ -37943,8 +37941,6 @@ _version: 2
   ru: "Установка openOMSI {version}"
   uk: "Встановлення openOMSI {version}"
   be: "Усталёўка openOMSI {version}"
-
-  be: "Усталяванне openOMSI {version}"
   kk: "openOMSI {version} орнатылуда"
   pl: "Instalowanie openOMSI {version}"
   cs: "Instalace openOMSI {version}"
@@ -37960,13 +37956,6 @@ _version: 2
   ko: "openOMSI {version} 설치 중"
   th: "กำลังติดตั้ง openOMSI {version}"
   vi: "Đang cài openOMSI {version}"
-
-  tr: "openOMSI {version} kuruluyor"
-  ja: "openOMSI {version} をインストールしています"
-  zh-tw: "正在安裝 openOMSI {version}"
-  ko: "openOMSI {version} 설치 중"
-  th: "กำลังติดตั้ง openOMSI {version}"
-  vi: "Đang cài đặt openOMSI {version}"
   id: "Memasang openOMSI {version}"
   ms: "Memasang openOMSI {version}"
   tl: "Ini-install ang openOMSI {version}"
@@ -38169,8 +38158,6 @@ _version: 2
   zh: "你当前是 {current}。启动器会从 GitHub 下载新版本（{size}），替换当前版本并重新启动。你的模组和设置都会保留。"
   hi: "आपके पास {current} है। लॉन्चर नया संस्करण ({size}) GitHub से डाउनलोड करके इसकी जगह लगाता है और फिर से शुरू होता है। आपके मॉड और सेटिंग्स वैसे ही रहते हैं।"
   ca: "Tens la {current}. El launcher baixa la nova versió ({size}) de GitHub, la posa al lloc d'aquesta i torna a obrir-se. Els teus mods i ajustos es queden com estan."
-
-  ca: "S'està instal|lant openOMSI {version}"
 
 "openOMSI {version} was not installed":
   de: "openOMSI {version} wurde nicht installiert"
