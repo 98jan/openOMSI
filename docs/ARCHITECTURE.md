@@ -314,6 +314,17 @@ checked against it.
   in `World` and locked: the GPU side, the type and file caches of loading, the light
   programs' numbering by owner object, the scripted objects' view halves and the lamps.
 
+* **LAN play** (`omsi-lan`): the session as the game plays it is `omsi_lan::game` and runs
+  on values - a `LanConfig` the game fills from its arguments (and takes back where a
+  joining player adopted the host's map, date, time and weather), a `LanInput` each frame,
+  our bus as a `VehicleInstance` - and asks the rest of the game through `LanHost` (the
+  world as `WorldData`, its lanes, another player's vehicle made as the game makes its
+  vehicles, destination displays). A frame is `tick_send`, the shared world, `tick_receive`,
+  then `view_sync::apply_lan` draws and sounds the others from `LanGame::drawn`. The app's
+  side is `omsi-app/src/lan_play.rs` (name tags, the HUD's line, `AppLanHost`). Still the
+  app's: the shared world's mirror (`omsi-lan/src/game_world.rs`, compiled by omsi-app as
+  `lan_world` through `#[path]`), which drives `Traffic`, `Humans` and their view directly.
+
 * **The view sync phase** (`omsi-app/src/view_sync/`): the code that turns the traffic's
   and the people's state into renderer instances is in one module - `traffic.rs` (the AI
   vehicles' renders, their drivers, the traffic lamps), `people.rs` (the people's meshes,
