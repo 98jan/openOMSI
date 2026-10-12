@@ -1354,6 +1354,11 @@ fn slot_alpha(cx: &SlotCx, ov: &[&MaterialDef], tex: Option<TextureId>, transmap
     if see_through {
         log::debug!("  {} slot {slot} '{}': see-through by its texture's alpha, writes no depth", def.file, m.texture);
     }
+    // an alpha-tested layer whose picture is a tint (a livery's darkened windows) is blended
+    if declared_alpha == AlphaMode::Test && coverage.as_ref().is_some_and(|mask| texture_is_tint(mask)) {
+        alpha = AlphaMode::Blend;
+        log::debug!("  {} slot {slot} '{}': alpha-tested tint, blended", def.file, m.texture);
+    }
     // (the name alone still says what is drawn as glass: the same test finds
     // a gauge's needle film, a blind's net and the shadow under the bus)
     let transparent_layer_hint = named_pane;
