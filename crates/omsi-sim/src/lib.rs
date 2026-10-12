@@ -22,6 +22,7 @@ pub mod scenery;
 pub mod scripttex;
 pub mod startup;
 pub mod texttex;
+pub mod tick;
 pub mod timetable_run;
 pub mod traffic;
 pub mod vehicle;
