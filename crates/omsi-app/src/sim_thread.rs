@@ -15,10 +15,11 @@ impl crate::App {
     /// the end of the render stage, where it is nothing, for the frames drawing nothing).
     pub(crate) fn join_sim_thread(&mut self) {
         if self.pipeline.busy() {
+            use crate::profile_keys::ProfKey;
             let (stepped, waited) = self.pipeline.join(self.session.traffic.as_mut().map(|t| &mut t.sim));
             // (the step's own time, off the frame's thread, and what the frame waited for it)
-            *self.perf.profile.entry("sim_thread.step").or_default() += stepped;
-            *self.perf.profile.entry("sim_thread.wait").or_default() += waited;
+            self.perf.profile.add(ProfKey::SimThreadStep, stepped);
+            self.perf.profile.add(ProfKey::SimThreadWait, waited);
         }
     }
 }
