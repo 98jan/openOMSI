@@ -63,7 +63,7 @@ omsi-scene = { path = "../omsi-scene" }
 omsi-ui = { path = "../omsi-ui" }
 omsi-launcher-core = { path = "../omsi-launcher-core" }
 omsi-launcher-api = { path = "../omsi-launcher-api" }
-omsi-launcher-ui = { path = "../omsi-launcher-ui" }
+omsi-launcher-model = { path = "../omsi-launcher-model" }
 serde.workspace = true
 hashbrown.workspace = true
 parking_lot.workspace = true

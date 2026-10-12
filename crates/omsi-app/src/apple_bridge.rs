@@ -2,7 +2,7 @@
 //!
 //! Apple's systems get a launcher of their own, written in SwiftUI (`apple/Shared`) - but what
 //! it knows and does is not written here twice: it is the launcher's model,
-//! `launcher::state::State` (crate omsi-launcher-ui: the content lists, the duty chosen, the
+//! `launcher::state::State` (crate omsi-launcher-model: the content lists, the duty chosen, the
 //! timetable, profiles, mods, servers ...), read as JSON and changed by actions through two C
 //! functions:
 //!

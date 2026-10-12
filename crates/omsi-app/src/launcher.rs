@@ -15,13 +15,13 @@ pub(crate) use service::run as run_service;
 pub(crate) use service::InProcess;
 
 #[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(unused_imports))]
-pub(crate) use omsi_launcher_ui::mapview;
+pub(crate) use omsi_launcher_model::mapview;
 #[cfg_attr(not(any(target_os = "android", target_os = "ios")), allow(unused_imports))]
-pub(crate) use omsi_launcher_ui::crash_of;
+pub(crate) use omsi_launcher_model::crash_of;
 #[allow(unused_imports)]
-pub(crate) use omsi_launcher_ui::state;
+pub(crate) use omsi_launcher_model::state;
 
-use omsi_launcher_ui::host::{CityMap, Host, MapRoad};
+use omsi_launcher_model::host::{CityMap, Host, MapRoad};
 use std::path::{Path, PathBuf};
 
 /// The program's side of the launcher's model, for every model made from here on. Whatever
@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 /// `mapview` calls this first: the state sets the interface language and machine translation
 /// through it.
 pub(crate) fn install() {
-    omsi_launcher_ui::host::set(Box::new(AppHost));
+    omsi_launcher_model::host::set(Box::new(AppHost));
 }
 
 /// The showroom's renderer: a bus on a floor needs none of the game's costly passes - no

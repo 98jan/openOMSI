@@ -3340,7 +3340,7 @@ dependencies = [
  "omsi-lan",
  "omsi-launcher-api",
  "omsi-launcher-core",
- "omsi-launcher-ui",
+ "omsi-launcher-model",
  "omsi-map",
  "omsi-model",
  "omsi-net",
@@ -3581,7 +3581,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "omsi-launcher-ui"
+name = "omsi-launcher-model"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -1,5 +1,5 @@
 [package]
-name = "omsi-launcher-ui"
+name = "omsi-launcher-model"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
