@@ -1,56 +1,33 @@
-//! The window's frame with the fixed simulation step (`OMSI_FIXED_STEP`, see
-//! `omsi_sim::tick`): the same stages as `WINDOW_FRAME`, in three lists. What the player does
-//! and the frame's housekeeping run once a frame (`TICKED_PRE`); the simulation - the traffic,
-//! the player's bus with its scripts, the people, the duty, the clock and the weather - runs
-//! once per tick, each tick as long as the next (`TICKED_SIM`); then the view of it, the
-//! sounds, the LAN, the interface and the picture once a frame again (`TICKED_POST`), with the
-//! player's bus and the camera drawn between the last two ticks.
-//!
-//! Off (the default) none of this runs: `App::frame` takes `WINDOW_FRAME` as it always did.
+//! The window's frame with the fixed simulation step (`omsi_sim::tick`, 120 ticks a second):
+//! what the player does and the frame's housekeeping run once a frame (`FRAME_BEFORE`); the
+//! simulation - the traffic, the player's bus with its scripts, the people, the duty, the
+//! clock and the weather - runs once per tick, each tick as long as the next (`FRAME_TICK`);
+//! then the view of it, the sounds, the LAN, the interface and the picture once a frame again
+//! (`FRAME_AFTER`), with the player's bus and the camera drawn between the last two ticks.
 
-use super::stages::{WindowFrame, WindowStage};
+use super::stages::{WindowFrame, FRAME_AFTER, FRAME_BEFORE, FRAME_TICK};
 use super::*;
 use crate::frame_stages::Flow;
 
-/// Once a frame, before the ticks.
-pub(crate) const TICKED_PRE: &[WindowStage] = {
-    use WindowStage::*;
-    &[Timing, ShellActions, Placement, Menus, Streaming, Controllers, MouseDrive, PadActions]
-};
-
-/// Once per tick, with the tick's time. (The bus's step before the people: they sit in it.)
-pub(crate) const TICKED_SIM: &[WindowStage] = {
-    use WindowStage::*;
-    &[Traffic, PlayerTick, OnFoot, Humans, AfterHumans, Duty, Weather, WheelSurface]
-};
-
-/// Once a frame, after the ticks, with the frame's time.
-pub(crate) const TICKED_POST: &[WindowStage] = {
-    use WindowStage::*;
-    &[PlayerView, Audio, Lan, Integrations, ViewKeys, Lights, Scripted, Photo, Ui, Lighting, TraceLook, Render]
-};
-
 impl App {
-    /// One frame of the window with the fixed step (see the module's notes).
+    /// One frame of the window (see the module's notes).
     pub(super) fn frame_ticked(&mut self, event_loop: &ActiveEventLoop) -> anyhow::Result<()> {
         let mut frame = WindowFrame::new(self, event_loop);
-        if crate::frame_stages::run(&mut frame, TICKED_PRE)? == Flow::Stop {
+        if crate::frame_stages::run(&mut frame, FRAME_BEFORE)? == Flow::Stop {
             return Ok(());
         }
         let frame_dt = frame.frame_dt();
-        let Some(ft) = frame.app().fixed_tick.as_mut() else { return Ok(()) };
+        let ft = &mut frame.app().fixed_tick;
         let tick_dt = ft.step.dt();
         let ticks = ft.step.advance(frame_dt);
         for k in 0..ticks.n {
             let app = frame.app();
-            if let Some(ft) = app.fixed_tick.as_mut() {
-                ft.enter_tick(k, ticks.n);
-                if k + 1 == ticks.n {
-                    ft.remember(app.player.as_ref().map(|p| &p.vehicle));
-                }
+            app.fixed_tick.enter_tick(k, ticks.n);
+            if k + 1 == ticks.n {
+                app.fixed_tick.remember(app.player.as_ref().map(|p| &p.vehicle));
             }
             frame.set_tick_dt(Some(tick_dt));
-            let flow = crate::frame_stages::run(&mut frame, TICKED_SIM);
+            let flow = crate::frame_stages::run(&mut frame, FRAME_TICK);
             frame.set_tick_dt(None);
             flow?;
         }
@@ -59,26 +36,23 @@ impl App {
             Some(d) => d,
             None => {
                 let app = frame.app();
-                let kept = app.fixed_tick.as_ref().and_then(|ft| ft.daylight());
-                kept.unwrap_or_else(|| omsi_sim::Daylight::compute(&app.clock, app.session.envir.as_ref()))
+                app.fixed_tick.daylight().unwrap_or_else(|| omsi_sim::Daylight::compute(&app.clock, app.session.envir.as_ref()))
             }
         };
         frame.set_daylight(daylight);
-        if let Some(ft) = frame.app().fixed_tick.as_mut() {
-            ft.frame_done(ticks, daylight);
-        }
-        crate::frame_stages::run(&mut frame, TICKED_POST)?;
+        frame.app().fixed_tick.frame_done(ticks, daylight);
+        crate::frame_stages::run(&mut frame, FRAME_AFTER)?;
         Ok(())
     }
 
-    /// The player's bus as the frame shows it (`TICKED_POST`): between its last two ticks,
+    /// The player's bus as the frame shows it (`FRAME_AFTER`): between its last two ticks,
     /// into the scene and under the camera, then back where the simulation has it.
     pub(super) fn frame_player_view(&mut self, dt: f32) {
         if !self.frame_player_input(dt) {
             return;
         }
-        let between = match (self.fixed_tick.as_ref(), self.player.as_ref()) {
-            (Some(ft), Some(p)) if !self.paused => ft.between(&p.vehicle),
+        let between = match self.player.as_ref() {
+            Some(p) if !self.paused => self.fixed_tick.between(&p.vehicle),
             _ => None,
         };
         if let (Some((_, at)), Some(p)) = (between.as_ref(), self.player.as_mut()) {

@@ -16,7 +16,7 @@ run is a fault whatever the means say.
         [--base-env NAME=VALUE] [--new-env NAME=VALUE] ...
 
 --base-env / --new-env set a variable for one side's runs only: one build against itself with
-a switch on (`--base X --new X --new-env OMSI_FIXED_STEP=120`).
+a switch on (`--base X --new X --new-env OMSI_NO_WHEEL_SLIP=1`).
 
 The default scenes are Berlin-Spandau and Grundorf at 08:00 and at 17:00 with the
 timetable. Every run gets a fresh, empty $HOME. Runs already in --out are reused (delete

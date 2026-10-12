@@ -86,16 +86,16 @@ Bottom up:
   The internet radio's frames come through a ring as well (`stream::StreamBuf`).
 * The sim thread (`omsi_sim::sim_thread`, `OMSI_SIM_THREAD`, off unless set): the main
   thread keeps the window, the input and the surface, and with the switch on the AI
-  traffic's fixed step (`TrafficSim::advance`) runs on a thread of its own while the main
-  thread draws and presents the frame's picture; the traffic stage does the rest of the
-  traffic on what the last step left, and the stepped traffic is back before the frame is
-  counted. The cars are one traffic step later than the rest of the frame; the player's
+  traffic's steps (`TrafficSim::advance`, one for each tick of the frame) run on a thread of
+  its own while the main thread draws and presents the frame's picture; the traffic stage
+  does the rest of the traffic on what the last step left, and the stepped traffic is back
+  before the frame is counted. The cars are one frame later than the rest of the frame; the player's
   vehicle and its input stay in their stage (no added input latency). The offscreen run never
   reads the switch. The scenery objects' scripts go in the same job after the traffic's
   step (they read its lights, as the scripted stage did after the traffic stage); the
   scripted stage then shows the commands of the step made during the last picture and owes
   the next one with its inputs owned (`OwnedSceneryInputs`). The people's step goes in the
-  same job between the two (it reads the traffic after its step): the people go out whole and
+  same job, tick by tick after the traffic's step of the tick: the people go out whole and
   read the player's bus, which the picture keeps, from a copy made in the humans stage
   (`omsi_sim::people::PlayerBusView`, the same values the inline step reads); the humans
   stage then applies what the step made during the last picture (`steps::humans_after_step`)
@@ -114,14 +114,15 @@ Bottom up:
   in commands in object order (`SceneryCmd`) that carry values - the meshes' transforms,
   the variables the view reads, changed texts, page pictures, fired triggers - so the view
   (`World::apply_scripted`) applies them without reading the simulation's list.
-* The fixed step (`omsi_sim::tick::FixedStep`, `OMSI_FIXED_STEP`, off unless set): the
-  window's frame runs its stages as three lists (`app_events/frame/ticked.rs`): the
-  housekeeping and the player's input once a frame, the simulation (traffic, the player's bus
-  with its scripts, the people, the duty, the clock and the weather) once per tick of 1/120 s
-  (or the rate the switch names), then the view, the sounds, the LAN, the interface and the
-  picture once a frame, with the player's bus and the camera drawn between the last two
-  ticks. The offscreen run steps in those ticks instead of its 1/30 s. Off, the frame is
-  `WINDOW_FRAME` as before, every stage on the frame's time.
+* The fixed step (`omsi_sim::tick`, `RATE_HZ` = 120 ticks a second, always): the window's
+  frame runs its stages as three lists (`app_events/frame/stages.rs`, run by `ticked.rs`):
+  the housekeeping and the player's input once a frame (`FRAME_BEFORE`), the simulation
+  (traffic, the player's bus with its scripts, the people, the duty, the clock and the
+  weather) once per tick of 1/120 s (`FRAME_TICK`), then the view, the sounds, the LAN, the
+  interface and the picture once a frame (`FRAME_AFTER`), with the player's bus and the
+  camera drawn between the last two ticks. The offscreen run's step is one tick. Still on the
+  frame, not the tick: the tile streaming's handover and the population's camera, so the AI
+  traffic is not yet the same at every frame rate (the player's bus is).
 
 ## Memory
 

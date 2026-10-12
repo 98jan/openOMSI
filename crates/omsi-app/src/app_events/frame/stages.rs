@@ -1,6 +1,8 @@
-//! The window's frame as a list of stages (`WINDOW_FRAME`), and what takes them: the `App`
-//! with the frame's event loop and the values one stage hands to the next (see
-//! `frame_stages`).
+//! The window's frame as lists of stages, and what takes them: the `App` with the frame's
+//! event loop and the values one stage hands to the next (see `frame_stages`). The frame runs
+//! [`FRAME_BEFORE`] once, [`FRAME_TICK`] once per tick of the fixed simulation step
+//! (`omsi_sim::tick`, 120 a second, with the tick's time) and [`FRAME_AFTER`] once (see
+//! `ticked`); [`WINDOW_FRAME`] is the three in that order, as a frame of one tick runs them.
 
 use super::*;
 use crate::frame_stages::{self, Carry, Flow, Group, Phase, Profile, Role, StageInfo};
@@ -17,11 +19,9 @@ pub(crate) enum WindowStage {
     Controllers,
     MouseDrive,
     PadActions,
-    Player,
-    /// The player's bus's step alone, a tick of the fixed step (`ticked::TICKED_SIM`).
+    /// The player's bus's step, once per tick.
     PlayerTick,
-    /// The player's bus drawn between its last two ticks, and the view from it
-    /// (`ticked::TICKED_POST`).
+    /// The player's bus drawn between its last two ticks, and the view from it.
     PlayerView,
     Audio,
     Lan,
@@ -42,47 +42,48 @@ pub(crate) enum WindowStage {
     Render,
 }
 
-/// One frame of the window, stage by stage.
-pub(crate) const WINDOW_FRAME: &[WindowStage] = {
+/// Once a frame, before the ticks: the session's housekeeping, the graphics device and the
+/// frame's time (none: the session ends), what the pause menu's clicks of the last frame
+/// asked for, a vehicle chosen in the menu (read on a worker meanwhile, put down once it is
+/// ready), the start menu and the map's first area still loading (the frame ends there), the
+/// tiles streamed in, and what the player does.
+pub(crate) const FRAME_BEFORE: &[WindowStage] = {
     use WindowStage::*;
-    &[
-        // the session's housekeeping, the graphics device, the frame's time (none: the
-        // session ends)
-        Timing,
-        // what the pause menu's clicks of the last frame asked for
-        ShellActions,
-        // a vehicle chosen in the menu, read on a worker meanwhile, put down once it is ready
-        Placement,
-        // the start menu, and the map's first area still loading (the frame ends there)
-        Menus,
-        Streaming,
-        Traffic,
-        // The player's vehicle moves before the passengers are placed: they sit in
-        // the bus frame, and placing them on the pose of the frame before made everyone
-        // aboard tremble at speed (a quarter of a metre behind the seat, every frame).
-        Controllers,
-        MouseDrive,
-        PadActions,
-        Player,
-        Audio,
-        Lan,
-        OnFoot,
-        Humans,
-        AfterHumans,
-        Duty,
-        Integrations,
-        ViewKeys,
-        Weather,
-        Lights,
-        Scripted,
-        WheelSurface,
-        // the photo mode's camera and panel
-        Photo,
-        Ui,
-        Lighting,
-        TraceLook,
-        Render,
-    ]
+    &[Timing, ShellActions, Placement, Menus, Streaming, Controllers, MouseDrive, PadActions]
+};
+
+/// Once per tick, with the tick's time. The player's vehicle moves before the passengers are
+/// placed: they sit in the bus frame, and placing them on the pose of the tick before made
+/// everyone aboard tremble at speed (a quarter of a metre behind the seat, every frame).
+pub(crate) const FRAME_TICK: &[WindowStage] = {
+    use WindowStage::*;
+    &[Traffic, PlayerTick, OnFoot, Humans, AfterHumans, Duty, Weather, WheelSurface]
+};
+
+/// Once a frame, after the ticks, with the frame's time: the view of the simulation, the
+/// sounds, the LAN, the interface (with the photo mode's camera and panel) and the picture.
+pub(crate) const FRAME_AFTER: &[WindowStage] = {
+    use WindowStage::*;
+    &[PlayerView, Audio, Lan, Integrations, ViewKeys, Lights, Scripted, Photo, Ui, Lighting, TraceLook, Render]
+};
+
+const FRAME_LEN: usize = FRAME_BEFORE.len() + FRAME_TICK.len() + FRAME_AFTER.len();
+
+/// The frame's three lists one after the other (what the order's tests and dump take).
+pub(crate) const WINDOW_FRAME: &[WindowStage] = &{
+    let lists = [FRAME_BEFORE, FRAME_TICK, FRAME_AFTER];
+    let mut out = [WindowStage::Timing; FRAME_LEN];
+    let (mut n, mut l) = (0, 0);
+    while l < lists.len() {
+        let mut k = 0;
+        while k < lists[l].len() {
+            out[n] = lists[l][k];
+            n += 1;
+            k += 1;
+        }
+        l += 1;
+    }
+    out
 };
 
 const fn stage(
@@ -116,8 +117,7 @@ impl frame_stages::Stage for WindowStage {
             Controllers => StageInfo { gives: &[Carry::Controls], ..stage("controllers", P::Input, Role::Own, &[G::Input, G::Player, G::Menus, G::Clock, G::Weather, G::World, G::Traffic, G::People, G::Duty, G::Net, G::Integrations, G::View, G::Gfx], &[G::Input, G::Ui], Profile::Key(K::Player)) },
             MouseDrive => StageInfo { takes: &[Carry::Time, Carry::Controls], gives: &[Carry::Controls], ..stage("mouse_drive", P::Input, Role::Own, &[G::Input, G::Player, G::View, G::Menus, G::Clock, G::World, G::People, G::Duty, G::Net, G::Integrations, G::Ui, G::Gfx], &[G::Input, G::View], Profile::Key(K::Player)) },
             PadActions => StageInfo { takes: &[Carry::Controls], ..stage("pad_actions", P::Input, Role::Own, &[G::Input, G::Clock, G::Weather, G::World, G::Traffic, G::People, G::Duty, G::Net, G::Integrations, G::Ui, G::Gfx, G::Perf], &[G::Player, G::Menus, G::View], Profile::Key(K::Player)) },
-            Player => stage("player", P::Sim, Role::Player, &[G::Player, G::Input, G::World, G::Traffic, G::Clock, G::Menus, G::People, G::Duty, G::Net, G::Integrations, G::Sound, G::Ui, G::Perf], &[G::Player, G::Traffic, G::View, G::Gfx], Profile::Key(K::Player)),
-            PlayerTick => stage("player_tick", P::Sim, Role::Own, super::driving::PlayerStepCx::READS, super::driving::PlayerStepCx::WRITES, Profile::Key(K::Player)),
+            PlayerTick => stage("player_tick", P::Sim, Role::Player, super::driving::PlayerStepCx::READS, super::driving::PlayerStepCx::WRITES, Profile::Key(K::Player)),
             PlayerView => stage("player_view", P::Present, Role::Own, &[G::Player, G::View, G::Clock, G::Input, G::World, G::Menus, G::People, G::Duty, G::Net, G::Sound, G::Ui, G::Perf], &[G::Player, G::View, G::Gfx], Profile::Key(K::Player)),
             Audio => stage("audio", P::Present, Role::Own, super::driving::AudioCx::READS, super::driving::AudioCx::WRITES, Profile::Key(K::Player)),
             Lan => stage("lan", P::Sim, Role::Lan, &[G::Net, G::Player, G::Clock, G::Duty, G::Input, G::Menus, G::Weather, G::World, G::Integrations, G::View, G::Ui], &[G::Net, G::Traffic, G::People, G::Gfx, G::Sound], Profile::Key(K::Lan)),
@@ -152,8 +152,8 @@ pub(crate) struct WindowFrame<'a> {
     daylight: Option<omsi_sim::Daylight>,
     vr_nav_display: Option<crate::vr_navigator::Display>,
     lighting: Option<omsi_render::Lighting>,
-    /// With the fixed step, while the simulation's stages run: the tick's time, which they
-    /// take instead of the frame's (see `ticked`).
+    /// While the simulation's stages run: the tick's time, which they take instead of the
+    /// frame's (see `ticked`).
     tick_dt: Option<f32>,
 }
 
@@ -162,7 +162,7 @@ impl<'a> WindowFrame<'a> {
         WindowFrame { app, event_loop, time: None, controls: None, daylight: None, vr_nav_display: None, lighting: None, tick_dt: None }
     }
 
-    /// The `App` between the lists of the fixed step's frame.
+    /// The `App` between the frame's lists.
     pub(super) fn app(&mut self) -> &mut App {
         self.app
     }
@@ -217,7 +217,6 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
                 let (analog, actions) = self.controls.take().expect("the controllers stage comes first");
                 app.frame_pad_actions(analog, actions);
             }
-            Player => app.frame_player(dt()),
             PlayerTick => super::driving::player_step(super::driving::PlayerStepCx::of(&mut app.parts()), dt()),
             PlayerView => app.frame_player_view(dt()),
             Audio => super::driving::audio(super::driving::AudioCx::of(&mut app.parts()), dt()),

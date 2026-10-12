@@ -83,9 +83,8 @@ fn every_app_field_has_a_group() {
 
 #[test]
 fn window_stages_touch_only_what_they_declare() {
-    use crate::app_events::{WindowStage, WINDOW_FRAME};
-    // (the fixed step's own two, besides the frame's list: `ticked`)
-    let stages = WINDOW_FRAME.iter().chain(&[WindowStage::PlayerTick, WindowStage::PlayerView]);
+    use crate::app_events::WINDOW_FRAME;
+    let stages = WINDOW_FRAME.iter();
     let sources = omsi_srcscan::sources(std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")));
     let code = omsi_srcscan::Code::read(&sources, "App");
     // the contexts the `App`'s methods take of it (`XCx::of(&mut self.parts())`), by name

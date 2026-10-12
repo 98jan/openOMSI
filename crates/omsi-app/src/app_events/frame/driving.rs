@@ -4,17 +4,6 @@
 use super::*;
 
 impl App {
-    /// The player's bus: its step and its pictures, the view from it, the cursor's aim into
-    /// the cab.
-    pub(super) fn frame_player(&mut self, dt: f32) {
-        if !self.frame_player_input(dt) {
-            return;
-        }
-        self.frame_player_physics(dt);
-        self.frame_view_camera(dt);
-        self.frame_player_hover();
-    }
-
     /// The on-screen wheel and pedals, the cab's sound for a walker: false when there is no
     /// bus to drive or nothing to draw it with.
     pub(super) fn frame_player_input(&mut self, dt: f32) -> bool {
@@ -41,13 +30,6 @@ impl App {
         }
         self.perf.profile.add(crate::profile_keys::ProfKey::PlayerHover, __th.elapsed().as_secs_f64());
     }
-
-    /// The bus's step (scripts, physics, the head), the situation's other vehicles, and the
-    /// bus and its driver into the scene.
-    fn frame_player_physics(&mut self, dt: f32) {
-        player_step(PlayerStepCx::of(&mut self.parts()), dt);
-        player_to_scene(PlayerToSceneCx::of(&mut self.parts()), dt);
-    }
 }
 
 crate::app::stage_ctx!(
@@ -55,8 +37,8 @@ crate::app::stage_ctx!(
     PlayerStepCx { reads: [sound, menus], writes: [player, gfx, world, input, clock, ui, view, integrations, traffic] }
 );
 
-/// The bus's step (scripts, physics, the head) and the situation's other vehicles (with the
-/// fixed step, the `player_tick` stage's, once per tick).
+/// The bus's step (scripts, physics, the head) and the situation's other vehicles: the
+/// `player_tick` stage's, once per tick.
 pub(super) fn player_step(cx: PlayerStepCx, dt: f32) {
     let (Some(p), Some(r), Some(scene)) = (
         cx.player.player.as_mut(),
@@ -195,11 +177,8 @@ pub(super) fn player_step(cx: PlayerStepCx, dt: f32) {
     }) {
         static LAST: std::sync::atomic::AtomicU32 =
             std::sync::atomic::AtomicU32::new(u32::MAX);
-        // (with the fixed step the simulation's own time: the same ticks at any frame rate)
-        let t = match cx.clock.fixed_tick.as_ref() {
-            Some(ft) => ft.sim_time().0 as f32,
-            None => cx.common.started.elapsed().as_secs_f32(),
-        };
+        // (the simulation's own time: the same ticks at any frame rate)
+        let t = cx.clock.fixed_tick.sim_time().0 as f32;
         let bucket = (t / every) as u32;
         if LAST.swap(bucket, std::sync::atomic::Ordering::Relaxed) != bucket {
             log_physics(&p.vehicle, t);

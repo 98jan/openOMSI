@@ -40,7 +40,7 @@ pub(crate) struct ClockPart<'p> {
     pub(crate) pending_time: &'p mut Option<f64>,
     pub(crate) autosave_t: &'p mut f64,
     /// The fixed step's accumulator, when it is on (`ticked`).
-    pub(crate) fixed_tick: &'p mut Option<omsi_sim::tick::SimTicks>,
+    pub(crate) fixed_tick: &'p mut omsi_sim::tick::SimTicks,
 }
 
 /// `Group::Weather`: the weather, the daylight's envir, the wet roads, the cabin air, the spray.

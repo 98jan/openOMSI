@@ -57,8 +57,9 @@ fn the_traffic_goes_out_and_comes_back() {
     assert_eq!(sim.time, 0.0);
     p.join(Some(&mut sim), None);
     assert!(!p.busy());
-    // half a second owed: at most 4 fixed steps of 0.02 s in one frame
-    assert!((sim.time - 5.08).abs() < 1e-4, "{}", sim.time);
+    // two steps of a quarter of a second owed, each made on its own: at most 4 fixed steps
+    // of 0.02 s in each
+    assert!((sim.time - 5.16).abs() < 1e-4, "{}", sim.time);
     // the stand-in is kept for the next frame
     assert!(p.stand_in.is_some());
 }
@@ -214,4 +215,72 @@ fn pipelined_people_match_inline_people() {
         assert_eq!(people_digest(piped.as_ref().unwrap()), people_digest(&inline), "frame {k}");
     }
     assert!((inline.people[0].position - sat_at).length() > 10.0, "the riders went along with the bus");
+}
+
+/// A frame's ticks of the fixed step (`tick::FixedStep` at 120 Hz) stepped on the sim thread -
+/// each tick's traffic step, then that tick's people's step from the bus as that tick left it,
+/// then the scenery once with the frame's time - come out where the same ticks leave them
+/// inline, frame by frame, at frame rates that give 0, 1 or several ticks a frame.
+#[test]
+fn pipelined_ticks_match_inline_ticks() {
+    let (mut bus, mut inline) = bus_and_people();
+    let (_, piped) = bus_and_people();
+    let world = std::sync::Arc::new(crate::world_data::WorldData::default());
+    inline.seed_riders(4, &bus, &*world);
+    let mut piped = Some(piped);
+    piped.as_mut().unwrap().seed_riders(4, &bus, &*world);
+    let (mut piped_t, mut inline_t) = (empty_traffic(), empty_traffic());
+    let (mut piped_s, mut inline_s) = (scenery_of(200), scenery_of(200));
+    let unlinked = |_: usize, _: usize| (crate::traffic::UNLINKED_PHASE as f32, 0.0);
+    let mut p = Pipeline::default();
+    let mut clock = crate::tick::FixedStep::new(crate::tick::RATE_HZ);
+    let mut tick = 0u32;
+    let mut counts = std::collections::BTreeSet::new();
+    for k in 0..240 {
+        // 144, 60, 30 and uneven frames a second
+        let frame_dt = [1.0 / 144.0, 1.0 / 60.0, 1.0 / 30.0, 0.0113][k / 60] + (k % 3) as f32 * 0.0007;
+        let ticks = clock.advance(frame_dt);
+        counts.insert(ticks.n);
+        let mut took_inline = false;
+        for _ in 0..ticks.n {
+            // the bus's own step of the tick (on the main thread either way)
+            tick += 1;
+            bus.position += glam::DVec3::new((tick as f64 * 0.01).sin() * 0.2, 0.08, 0.0);
+            bus.heading = tick as f64 * 0.1;
+            let dt = clock.dt();
+            inline_t.advance(dt, None);
+            let view = inline.player_bus_view(&bus);
+            inline.tick_stages.clear();
+            took_inline |= inline.tick_inner(dt, &*world, Some(&view), Some(&inline_t));
+            p.owe_traffic(dt, None);
+            let view = piped.as_ref().unwrap().player_bus_view(&bus);
+            p.owe_people(dt, world.clone(), Some(view));
+        }
+        let center = glam::DVec3::new(-900.0 + k as f64 * 7.0, (k as f64 * 0.1).sin() * 300.0, 2.0);
+        scenery_step(frame_dt, center)(&mut inline_s, &unlinked);
+        if ticks.n == 0 {
+            // (no tick: nothing goes out, the scripts run in the frame - `takes_scenery`)
+            scenery_step(frame_dt, center)(&mut piped_s, &unlinked);
+            assert!(!p.owes_people());
+            piped = p.start(Some(&mut piped_t), Some(&mut piped_s), piped.take());
+            assert!(piped.is_some() && !p.busy(), "nothing owed, nothing goes out");
+            continue;
+        }
+        p.owe_scenery(scenery_step(frame_dt, center));
+        assert!(p.start(Some(&mut piped_t), Some(&mut piped_s), piped.take()).is_none(), "the people went along");
+        let (_, back) = p.join(Some(&mut piped_t), Some(&mut piped_s));
+        piped = back;
+        assert!(p.take_scenery_stepped());
+        let stepped = p.take_people_stepped().expect("stepped");
+        assert_eq!(stepped.took, took_inline, "frame {k}");
+        assert!((stepped.dt - ticks.n as f32 * clock.dt()).abs() < 1e-6, "frame {k}: {} for {} ticks", stepped.dt, ticks.n);
+        assert_eq!(people_digest(piped.as_ref().unwrap()), people_digest(&inline), "frame {k}");
+        assert_eq!(piped_t.time.to_bits(), inline_t.time.to_bits(), "frame {k}");
+        assert_eq!(piped_t.rng, inline_t.rng, "frame {k}");
+        assert_eq!(outputs_of(&mut piped_s), outputs_of(&mut inline_s), "frame {k}");
+    }
+    assert!(counts.contains(&0) && counts.contains(&1) && counts.iter().any(|n| *n >= 4), "ticks a frame: {counts:?}");
+    assert_eq!(piped_t.sim_accum.to_bits(), inline_t.sim_accum.to_bits());
+    assert_eq!(piped_t.day_time.to_bits(), inline_t.day_time.to_bits());
+    assert!((inline.people[0].position - glam::DVec3::ZERO).length() > 5.0, "the riders went along with the bus");
 }

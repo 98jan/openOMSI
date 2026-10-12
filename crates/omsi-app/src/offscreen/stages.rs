@@ -1,5 +1,5 @@
-//! The offscreen run's step as a list of stages (`OFFSCREEN_STEP`, 1/30 s each), taken by
-//! the same runner as the window's frame (see `frame_stages`).
+//! The offscreen run's step as a list of stages (`OFFSCREEN_STEP`, a tick of 1/120 s each),
+//! taken by the same runner as the window's frame (see `frame_stages`).
 
 use super::*;
 use crate::frame_stages::{self, Flow, Group, Phase, Profile, Role, StageInfo};

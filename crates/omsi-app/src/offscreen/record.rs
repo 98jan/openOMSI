@@ -189,7 +189,7 @@ impl Offscreen<'_> {
                 rec.samples.push((x * 32767.0).round().clamp(-32768.0, 32767.0) as i16);
             }
         }
-        if i.is_multiple_of(super::steps_of(30, dt)) {
+        if i.is_multiple_of(super::steps_in(1.0)) {
             log::info!("record: {:.1} s", t_s);
         }
         // the pictures: one each 1/fps second of film

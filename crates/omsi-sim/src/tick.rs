@@ -1,40 +1,21 @@
-//! The simulation's fixed step (`OMSI_FIXED_STEP`, off unless asked for): the traffic, the
-//! player's vehicle with its scripts, the people, the duty and the clock move on in ticks of
-//! one length (1/120 s unless the switch names another rate), however long the frames are.
-//! The frame's time is collected and spent in whole ticks; what is left over says how far the
-//! picture stands between the last two ticks (`Ticks::alpha`), and the player's bus and the
-//! camera are drawn there (`BodyPose::between`).
+//! The simulation's fixed step: the traffic, the player's vehicle with its scripts, the
+//! people, the duty and the clock move on in ticks of one length (1/120 s, [`RATE_HZ`]),
+//! however long the frames are. The frame's time is collected and spent in whole ticks; what
+//! is left over says how far the picture stands between the last two ticks (`Ticks::alpha`),
+//! and the player's bus and the camera are drawn there (`BodyPose::between`).
 //!
-//! With the switch off nothing here runs and every stage takes the frame's own time, as it
-//! always did. With it on, two runs of one session at different frame rates step the same
-//! ticks with the same inputs, which is what makes them comparable at all.
+//! Two runs of one session at different frame rates step the same ticks with the same inputs,
+//! which is what makes them comparable at all (and the bus's physics the same at 30 and at
+//! 144 frames a second).
 
 use crate::ai_traffic::fixed_step::advance_fixed_clock;
 use glam::DVec3;
 
-/// The rate when the switch is only turned on (`OMSI_FIXED_STEP=1`).
-pub const DEFAULT_RATE_HZ: f64 = 120.0;
-/// The rates a switch may name; outside them it is off (a typo should not run the game at 2
-/// ticks a second, nor at 100 000).
-pub const RATES: std::ops::RangeInclusive<f64> = 30.0..=1000.0;
+/// The simulation's ticks a second, in the window and the offscreen run alike.
+pub const RATE_HZ: f64 = 120.0;
 /// The window's frame is at most a tenth of a second (`timing.rs`): at most that much time
 /// is made up in one frame; a longer stall is dropped, as the frame's own time was.
 const MAX_FRAME_S: f64 = 0.1;
-
-/// `OMSI_FIXED_STEP`: unset, empty, `0` or `off` is off; `1` or `on` the default rate; a
-/// number of ticks a second within [`RATES`] that rate.
-pub fn parse_rate(spec: &str) -> Option<f64> {
-    match spec.trim().to_ascii_lowercase().as_str() {
-        "" | "0" | "off" | "false" | "no" => None,
-        "1" | "on" | "true" | "yes" => Some(DEFAULT_RATE_HZ),
-        s => s.parse::<f64>().ok().filter(|r| RATES.contains(r)),
-    }
-}
-
-/// The rate the switch asks for, if it is on.
-pub fn rate_from_flag() -> Option<f64> {
-    omsi_cfg::flags::OMSI_FIXED_STEP.var().and_then(parse_rate)
-}
 
 /// What a frame runs: `n` ticks, and where the picture stands between the last two of them
 /// (0: at the second last, towards 1: at the last).
@@ -55,8 +36,8 @@ pub struct FixedStep {
 }
 
 impl FixedStep {
-    pub fn new(rate_hz: f64) -> Self {
-        let rate = rate_hz.clamp(*RATES.start(), *RATES.end());
+    /// The step at `rate` ticks a second (the game's is [`RATE_HZ`]; the tests take others).
+    pub fn new(rate: f64) -> Self {
         FixedStep {
             rate,
             dt: (1.0 / rate) as f32,
@@ -64,11 +45,6 @@ impl FixedStep {
             ticks: 0,
             max_per_frame: (MAX_FRAME_S * rate).ceil() as u32 + 1,
         }
-    }
-
-    /// The fixed step the switch asks for, or none (off).
-    pub fn from_flag() -> Option<Self> {
-        rate_from_flag().map(Self::new)
     }
 
     /// Ticks a second.
@@ -168,14 +144,14 @@ pub struct SimTicks {
     since: Option<std::time::Instant>,
 }
 
-impl SimTicks {
-    /// The fixed step when the switch asks for one (`OMSI_FIXED_STEP`), else none.
-    pub fn from_flag() -> Option<Self> {
-        let rate = rate_from_flag()?;
-        log::info!("fixed step: the simulation runs at {rate:.0} ticks a second (OMSI_FIXED_STEP)");
-        Some(Self::new(rate))
+impl Default for SimTicks {
+    /// The game's: [`RATE_HZ`] ticks a second.
+    fn default() -> Self {
+        Self::new(RATE_HZ)
     }
+}
 
+impl SimTicks {
     pub fn new(rate_hz: f64) -> Self {
         SimTicks { step: FixedStep::new(rate_hz), now: 0, prev: Vec::new(), alpha: 1.0, daylight: None, frames: 0, since: None }
     }
@@ -220,7 +196,7 @@ impl SimTicks {
         let wall = since.elapsed().as_secs_f32();
         if wall >= 10.0 {
             let (t, n) = self.sim_time();
-            log::info!("fixed step: {n} ticks, {t:.2} s simulated; {} frames in the last {wall:.1} s", self.frames);
+            log::debug!("fixed step: {n} ticks, {t:.2} s simulated; {} frames in the last {wall:.1} s", self.frames);
             self.frames = 0;
             self.since = Some(std::time::Instant::now());
         }
@@ -303,18 +279,6 @@ mod tests {
         };
         assert_eq!(times(30.0), times(144.0));
         assert_eq!(times(30.0), (1..=600).collect::<Vec<u64>>());
-    }
-
-    #[test]
-    fn the_switch() {
-        assert_eq!(parse_rate(""), None);
-        assert_eq!(parse_rate("0"), None);
-        assert_eq!(parse_rate("off"), None);
-        assert_eq!(parse_rate("1"), Some(120.0));
-        assert_eq!(parse_rate("on"), Some(120.0));
-        assert_eq!(parse_rate("60"), Some(60.0));
-        assert_eq!(parse_rate("2"), None);
-        assert_eq!(parse_rate("100000"), None);
     }
 
     #[test]

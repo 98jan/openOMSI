@@ -1,7 +1,8 @@
 //! The simulation's own thread, pipelined with the picture (`OMSI_SIM_THREAD`, off unless set).
 //!
-//! The window's frame runs its stages one after the other on the main thread (`WINDOW_FRAME`),
-//! so a frame costs the simulation plus the picture. The main thread has to keep the window,
+//! The window's frame runs its stages one after the other on the main thread (`WINDOW_FRAME`;
+//! the simulation's once per tick of the fixed step, see `tick`), so a frame costs the
+//! simulation plus the picture. The main thread has to keep the window,
 //! the input and the surface (macOS and iOS want them there); the simulation does not. With
 //! the switch on, a step of the simulation runs on the thread here while the main thread draws
 //! and presents the picture of the frame, and it is back before anything else of the frame
@@ -11,15 +12,19 @@
 //! stage does everything else of the traffic as before (its inputs, the population, the
 //! timetable, the cars taken off, the signals, the sound, the view sync, all on the traffic as
 //! the last step left it) and leaves the step itself, with the frame's time and the player's
-//! box as the stage saw them, to `Pipeline::start_traffic` right before the picture; it comes
-//! back at `Pipeline::join`, right after the picture is presented (before the frame is counted,
-//! a session finished or saved). The cars are one step of the traffic later than the rest of
-//! the frame, the picture shows them as they were synced, and the simulated time is the same
-//! (the same frames' times summed, the same fixed steps). The player's own vehicle and its
+//! box as the stage saw them, to `Pipeline::start` right before the picture, one owed step per
+//! tick of the frame; they come back at `Pipeline::join`, right after the picture is presented
+//! (before the frame is counted, a session finished or saved). The cars are one frame of the
+//! traffic later than the rest of the frame, the picture shows them as they were synced, and
+//! the simulated time is the same (the same ticks, each its own step, in their order). The player's own vehicle and its
 //! input stay on the main thread in their stage: driving has no frame more of latency.
 //!
-//! The scenery objects' scripts (`SceneryState::step`) can go along in the same job, after the
-//! traffic's step (they read its lights, as the scripted stage read them after the traffic
+//! The people's step goes along tick by tick: each tick's traffic step, then that tick's
+//! people's step (they read the traffic as it left it, as the humans stage read it after the
+//! traffic stage), from a view of the player's bus as that tick left it (`PlayerBusView`).
+//!
+//! The scenery objects' scripts (`SceneryState::step`, once a frame) can go along in the same
+//! job, after the ticks (they read its lights, as the scripted stage read them after the traffic
 //! stage): the scripted stage then applies the commands of the step made during the last
 //! picture and owes the next one, its inputs owned (`Pipeline::owe_scenery`). Their
 //! commands are one frame later; the scripts' results are the same.
@@ -124,7 +129,7 @@ impl<T> InFlight<T> {
     }
 }
 
-/// The traffic's step the traffic stage left to be made with the picture.
+/// A tick's traffic step the traffic stage left to be made with the picture.
 #[derive(Clone, Copy, Debug)]
 struct OwedStep {
     dt: f32,
@@ -139,16 +144,17 @@ pub type PhaseOf<'a> = &'a dyn Fn(usize, usize) -> (f32, f32);
 /// inputs (owned, moved in), given the lights' state to read.
 type ScenerySteps = Box<dyn FnOnce(&mut SceneryState, PhaseOf) + Send>;
 
-/// The people's step the humans stage left to be made with the picture: its time, the map
-/// as the step reads it and the player's bus as it stood (`PeopleSim::player_bus_view`).
+/// A tick's people's step the humans stage left to be made with the picture: its time, the
+/// map as the step reads it and the player's bus as it stood (`PeopleSim::player_bus_view`).
 struct OwedPeople {
     dt: f32,
     world: Arc<WorldData>,
     bus: Option<PlayerBusView>,
 }
 
-/// The people back from a step on the sim thread: whether a passenger took the printed
-/// ticket (what `PeopleSim::tick_inner` returns), the step's time and how long it took.
+/// The people back from their ticks on the sim thread: whether a passenger took the printed
+/// ticket in one of them (what `PeopleSim::tick_inner` returns), the ticks' time summed and
+/// how long they took.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PeopleStepped {
     pub took: bool,
@@ -159,8 +165,8 @@ pub struct PeopleStepped {
 /// What one job takes to the sim thread and brings back.
 #[derive(Default)]
 struct SimJob {
-    traffic: Option<(Box<TrafficSim>, OwedStep)>,
-    people: Option<(PeopleSim, OwedPeople, bool)>,
+    traffic: Option<(Box<TrafficSim>, Vec<OwedStep>)>,
+    people: Option<(PeopleSim, Vec<OwedPeople>, bool)>,
     scenery: Option<(SceneryState, ScenerySteps)>,
     /// Seconds of the traffic's step and of the scenery's (each part's own).
     traffic_secs: f64,
@@ -169,24 +175,29 @@ struct SimJob {
 }
 
 impl SimJob {
-    /// The parts in the frame's order: the traffic first, then the people (who read the
-    /// traffic as its step left it, as the humans stage did after the traffic stage), then
-    /// the scenery scripts, which read the lights so too. Without the traffic here there is
-    /// none: the people see no traffic, its lights read unlinked.
+    /// The parts in the frame's order: tick by tick the traffic first, then the people (who
+    /// read the traffic as its step left it, as the humans stage did after the traffic
+    /// stage); after the ticks the scenery scripts, which read the lights so too. Without the
+    /// traffic here there is none: the people see no traffic, its lights read unlinked.
     fn run(&mut self) {
-        let t = Instant::now();
-        if let Some((sim, owed)) = self.traffic.as_mut() {
-            sim.advance(owed.dt, owed.player);
-        }
-        let after_traffic = Instant::now();
-        self.traffic_secs = (after_traffic - t).as_secs_f64();
-        if let Some((people, owed, took)) = self.people.as_mut() {
-            people.tick_stages.clear();
-            let traffic = self.traffic.as_ref().map(|(sim, _)| &**sim);
-            *took = people.tick_inner(owed.dt, &*owed.world, owed.bus.as_ref(), traffic);
+        let ticks = self.traffic.as_ref().map_or(0, |(_, o)| o.len()).max(self.people.as_ref().map_or(0, |(_, o, _)| o.len()));
+        for k in 0..ticks {
+            let t = Instant::now();
+            if let Some(owed) = self.traffic.as_mut().and_then(|(sim, owed)| owed.get(k).map(|o| (sim, o))) {
+                owed.0.advance(owed.1.dt, owed.1.player);
+            }
+            let after_traffic = Instant::now();
+            self.traffic_secs += (after_traffic - t).as_secs_f64();
+            if let Some((people, owed, took)) = self.people.as_mut() {
+                if let Some(owed) = owed.get(k) {
+                    people.tick_stages.clear();
+                    let traffic = self.traffic.as_ref().map(|(sim, _)| &**sim);
+                    *took |= people.tick_inner(owed.dt, &*owed.world, owed.bus.as_ref(), traffic);
+                }
+            }
+            self.people_secs += after_traffic.elapsed().as_secs_f64();
         }
         let mid = Instant::now();
-        self.people_secs = (mid - after_traffic).as_secs_f64();
         if let Some((state, step)) = self.scenery.take() {
             let mut state = state;
             let traffic = self.traffic.as_ref().map(|(sim, _)| &**sim);
@@ -212,12 +223,12 @@ pub struct Joined {
 #[derive(Default)]
 pub struct Pipeline {
     thread: Option<SimThread>,
-    /// The traffic stage's step, while it waits for the picture.
-    owed: Option<OwedStep>,
+    /// The traffic stage's steps (one a tick), while they wait for the picture.
+    owed: Vec<OwedStep>,
     /// The scripted stage's step, while it waits for the picture.
     owed_scenery: Option<ScenerySteps>,
-    /// The humans stage's step, while it waits for the picture.
-    owed_people: Option<OwedPeople>,
+    /// The humans stage's steps (one a tick), while they wait for the picture.
+    owed_people: Vec<OwedPeople>,
     /// The people came back from a step whose results the humans stage has not taken yet.
     people_stepped: Option<PeopleStepped>,
     /// The job out on the sim thread.
@@ -231,12 +242,6 @@ pub struct Pipeline {
 /// `OMSI_SIM_THREAD`: the window's simulation steps go to the sim thread.
 pub fn enabled() -> bool {
     omsi_cfg::flags::OMSI_SIM_THREAD.is_set()
-}
-
-/// The steps go to the sim thread at all: the switch is on and the fixed step
-/// (`OMSI_FIXED_STEP`) is off (its ticks run the stages inline, as they want them).
-fn pipelined() -> bool {
-    enabled() && !omsi_cfg::flags::OMSI_FIXED_STEP.is_set()
 }
 
 /// An empty traffic: nothing on the road, no lanes. It stands in `Traffic::sim` while the real
@@ -256,41 +261,37 @@ fn empty_traffic() -> TrafficSim {
 }
 
 impl Pipeline {
-    /// Whether the traffic stage leaves the step of `sim` to the sim thread this frame: the
+    /// Whether the traffic stage leaves the step of `sim` to the sim thread this tick: the
     /// switch is on and the traffic drives itself (a LAN client's only follows the host's,
-    /// frame by frame, inline). Under the fixed step (`OMSI_FIXED_STEP`) the traffic runs
-    /// once per tick, inline, as the ticks want it.
+    /// frame by frame, inline).
     pub fn takes_traffic(&self, sim: &TrafficSim) -> bool {
-        pipelined() && !sim.mirror
+        enabled() && !sim.mirror
     }
 
-    /// The traffic stage's step, left to be made with the picture (`dt` of this frame, the
-    /// player's box as the stage saw it). Two in one frame (stages run more than once) add up.
+    /// The traffic stage's step of a tick, left to be made with the picture (`dt` of the
+    /// tick, the player's box as the stage saw it). The frame's ticks are made in their order.
     pub fn owe_traffic(&mut self, dt: f32, player: Option<PlayerBox>) {
-        let dt = self.owed.map_or(0.0, |o| o.dt) + dt;
-        self.owed = Some(OwedStep { dt, player });
+        self.owed.push(OwedStep { dt, player });
     }
 
     /// Whether the scripted stage leaves the scenery's step to the sim thread this frame: the
     /// scripts read the lights after the traffic's step, so only with the traffic's step
     /// going there too, or without a traffic (whose lights read unlinked anyway).
     pub fn takes_scenery(&self, traffic: Option<&TrafficSim>) -> bool {
-        pipelined() && traffic.is_none_or(|_| self.owed.is_some())
+        enabled() && traffic.is_none_or(|_| !self.owed.is_empty())
     }
 
     /// Whether the humans stage leaves the people's step to the sim thread this frame: as
     /// the scenery (after the traffic's step, or without a traffic), and not for a LAN
     /// client's people, who follow the host's.
     pub fn takes_people(&self, traffic: Option<&TrafficSim>, people: &PeopleSim) -> bool {
-        pipelined() && !people.mirror && traffic.is_none_or(|_| self.owed.is_some())
+        enabled() && !people.mirror && traffic.is_none_or(|_| !self.owed.is_empty())
     }
 
-    /// The humans stage's step: `dt`, the map as the step reads it, the player's bus as it
-    /// stands now. A step still owed (a frame that ended before its picture) is made one with
-    /// this one, as the traffic's (`owe_traffic`): no time is lost.
+    /// The humans stage's step of a tick: `dt`, the map as the step reads it, the player's
+    /// bus as it stands now. Made after the same tick's traffic step (`owe_traffic`).
     pub fn owe_people(&mut self, dt: f32, world: Arc<WorldData>, bus: Option<PlayerBusView>) {
-        let dt = self.owed_people.as_ref().map_or(0.0, |o| o.dt) + dt;
-        self.owed_people = Some(OwedPeople { dt, world, bus });
+        self.owed_people.push(OwedPeople { dt, world, bus });
     }
 
     /// The people came back from a step on the sim thread whose results (the people who
@@ -302,7 +303,7 @@ impl Pipeline {
 
     /// A people's step is owed (the render stage hands the people over with it).
     pub fn owes_people(&self) -> bool {
-        self.owed_people.is_some()
+        !self.owed_people.is_empty()
     }
 
     /// The scripted stage's step (its inputs moved into `step`), left to be made with the
@@ -326,7 +327,8 @@ impl Pipeline {
             return people;
         }
         let mut job = SimJob::default();
-        if let (Some(owed), Some(sim)) = (self.owed.take(), sim) {
+        let owed = std::mem::take(&mut self.owed);
+        if let (false, Some(sim)) = (owed.is_empty(), sim) {
             let mut out = self.stand_in.take().unwrap_or_else(|| Box::new(empty_traffic()));
             std::mem::swap(sim, &mut *out);
             job.traffic = Some((out, owed));
@@ -335,9 +337,9 @@ impl Pipeline {
             job.scenery = Some((std::mem::take(scenery), step));
         }
         let mut people = people;
-        if let Some(owed) = self.owed_people.take() {
+        if !self.owed_people.is_empty() {
             if let Some(p) = people.take() {
-                job.people = Some((p, owed, false));
+                job.people = Some((p, std::mem::take(&mut self.owed_people), false));
             }
         }
         if job.traffic.is_none() && job.scenery.is_none() && job.people.is_none() {
@@ -384,7 +386,8 @@ impl Pipeline {
             }
         }
         let people = job.people.map(|(p, owed, took)| {
-            self.people_stepped = Some(PeopleStepped { took, dt: owed.dt, secs: job.people_secs });
+            let dt = owed.iter().map(|o| o.dt).sum();
+            self.people_stepped = Some(PeopleStepped { took, dt, secs: job.people_secs });
             p
         });
         (Joined { traffic: job.traffic_secs, people: job.people_secs, scenery: job.scenery_secs, waited }, people)

@@ -1,9 +1,9 @@
 //! The window's side of the sim thread (`omsi_sim::sim_thread`, `OMSI_SIM_THREAD`): the
-//! traffic stage owes its step (`Pipeline::owe_traffic`, in `frame_traffic`), the humans stage
-//! the people's (`Pipeline::owe_people`, in `frame_humans`) and the scripted stage the scenery
-//! scripts' (`Pipeline::owe_scenery`, in `frame_scripted`), the render stage
-//! starts it right before the picture and it is back right after the picture is presented
-//! (`frame_render`), before the frame is counted or a session finished.
+//! traffic stage owes its step of each tick (`Pipeline::owe_traffic`, in `road::traffic`), the
+//! humans stage the people's (`Pipeline::owe_people`, in `people::humans`) and the scripted
+//! stage the scenery scripts' once a frame (`Pipeline::owe_scenery`, in `scripted`), the
+//! render stage starts it right before the picture and it is back right after the picture is
+//! presented (`frame_render`), before the frame is counted or a session finished.
 
 pub(crate) use omsi_sim::sim_thread::Pipeline;
 

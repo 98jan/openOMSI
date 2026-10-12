@@ -1,6 +1,7 @@
-//! The window's frame (`WindowEvent::RedrawRequested`): its stages in order in
-//! `stages::WINDOW_FRAME`, taken by the runner of `frame_stages`, each a method of its own in
-//! the files beside this one. What the offscreen run takes as well is in `steps`.
+//! The window's frame (`WindowEvent::RedrawRequested`): its stages in their lists in `stages`
+//! (once a frame, once per tick of the fixed simulation step, once a frame again: `ticked`),
+//! taken by the runner of `frame_stages`, each a function of its own in the files beside this
+//! one. What the offscreen run takes as well is in `steps`.
 
 use super::*;
 use crate::view_sync::{self, ViewSync};
@@ -29,18 +30,10 @@ pub(super) struct FrameTime {
 }
 
 impl App {
-    /// One frame of the window: its stages (`stages::WINDOW_FRAME`) in their order.
+    /// One frame of the window: its stages in their lists and ticks (see `ticked`).
     pub(super) fn frame(&mut self, event_loop: &ActiveEventLoop) {
-        // (the fixed step, OMSI_FIXED_STEP: the same stages in three lists, see `ticked`)
-        if self.fixed_tick.is_some() {
-            if let Err(e) = self.frame_ticked(event_loop) {
-                log::error!("frame: {e:#}");
-            }
-            return;
-        }
-        let mut frame = stages::WindowFrame::new(self, event_loop);
         // (the window's stages do not fail)
-        if let Err(e) = crate::frame_stages::run(&mut frame, stages::WINDOW_FRAME) {
+        if let Err(e) = self.frame_ticked(event_loop) {
             log::error!("frame: {e:#}");
         }
     }
