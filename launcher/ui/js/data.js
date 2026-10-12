@@ -265,16 +265,20 @@ async function applyLanguage() {
 export async function saveSettings(patch, whole = false) {
   set({ settings: whole ? patch : { ...S.settings, ...patch } });
   const mine = ++settingsSeq;
+  let ok = true;
   settingsSaved = settingsSaved.then(async () => {
     try {
       const saved = await call(whole ? 'settings_save' : 'settings_patch', whole ? { settings: patch } : { patch });
       if (mine === settingsSeq) set({ settings: saved });
     } catch (e) {
+      ok = false;
       toast(t('The settings could not be saved: {e}', { e: e.message }), 'error');
     }
   });
   await settingsSaved;
+  if (!ok) return false;
   if (!whole && 'language' in patch) await applyLanguage();
+  return true;
 }
 
 /** The trip of the tour picked to start with (its place), while the time is still its. */
