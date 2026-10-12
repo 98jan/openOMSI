@@ -891,7 +891,7 @@ fn vehicle_boxes(at: DVec2, r: f64, player: Option<&crate::player::Player>, plac
 
 /// Take the wheel of placed vehicle `k` (the one driven now, if any, stays placed).
 #[allow(clippy::too_many_arguments)]
-fn take_placed(
+pub(crate) fn take_placed(
     k: usize,
     player: &mut crate::app::PlayerPart,
     people: &mut crate::app::PeoplePart,

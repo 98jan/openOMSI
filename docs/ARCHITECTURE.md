@@ -272,7 +272,7 @@ checked against it.
 * **The stages' declarations are checked.** `App::parts` (`omsi-app/src/app/parts.rs`)
   takes `App` apart into one borrow per `Group`, naming every field of `App` and of
   `SessionState` (a new field does not build until it has its group). A stage handed a
-  context made by `stage_ctx!` (streaming, traffic, humans, after_humans, on_foot,
+  context made by `stage_ctx!` (placement, streaming, traffic, humans, after_humans, on_foot,
   player_tick, scripted, lights, wheel_surface, audio, lighting, trace_look) can touch its
   groups only, and its declaration is that context's `READS`/`WRITES`, so the compiler holds
   it to it.

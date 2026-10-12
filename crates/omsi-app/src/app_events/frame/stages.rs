@@ -109,7 +109,7 @@ impl frame_stages::Stage for WindowStage {
                 ..stage("timing", P::Housekeeping, Role::Own, &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::Input, G::Menus, G::Weather, G::Traffic, G::Player, G::People, G::Duty, G::Ui], &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::World], Profile::None)
             },
             ShellActions => StageInfo { takes: &[], ..stage("shell_actions", P::Housekeeping, Role::Own, &[G::Menus, G::Input, G::Traffic, G::People, G::Duty, G::Net, G::Integrations, G::Sound, G::View, G::Ui, G::Gfx, G::Perf], &[G::Menus, G::Player, G::World, G::Clock, G::Weather], Profile::Key(K::Shell)) },
-            Placement => StageInfo { takes: &[], ..stage("placement", P::Housekeeping, Role::Own, &[G::Player, G::World, G::Menus, G::People, G::Sound, G::View, G::Ui], &[G::Player, G::Gfx], Profile::Key(K::Placement)) },
+            Placement => StageInfo { takes: &[], ..stage("placement", P::Housekeeping, Role::Own, crate::app_impl::PlacementCx::READS, crate::app_impl::PlacementCx::WRITES, Profile::Key(K::Placement)) },
             Menus => stage("menus", P::Housekeeping, Role::Own, &[G::Menus, G::Input, G::World, G::Clock, G::Weather, G::Traffic, G::People, G::Duty, G::Integrations, G::Sound, G::View, G::Ui, G::Perf], &[G::Menus, G::Input, G::Gfx, G::Net, G::World, G::Player], Profile::None),
             Streaming => StageInfo { takes: &[], ..stage("streaming", P::Sim, Role::Own, crate::app::StreamingCx::READS, crate::app::StreamingCx::WRITES, Profile::Key(K::Streaming)) },
             Traffic => stage("traffic", P::Sim, Role::Traffic, super::road::TrafficCx::READS, super::road::TrafficCx::WRITES, Profile::Key(K::Traffic)),
@@ -200,7 +200,7 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
                 None => return Ok(Flow::Stop),
             },
             ShellActions => app.apply_shell_actions(el),
-            Placement => app.poll_vehicle_placement(),
+            Placement => crate::app_impl::placement(crate::app_impl::PlacementCx::of(&mut app.parts())),
             Menus => {
                 if !app.frame_menus(el, dt()) {
                     return Ok(Flow::Stop);
