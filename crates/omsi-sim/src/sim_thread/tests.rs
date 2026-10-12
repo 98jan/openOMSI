@@ -62,3 +62,26 @@ fn the_traffic_goes_out_and_comes_back() {
     // the stand-in is kept for the next frame
     assert!(p.stand_in.is_some());
 }
+
+/// Stepped on the sim thread frame after frame, the traffic comes out where the same frames
+/// stepped inline leave it (the handover changes nothing of the computation).
+#[test]
+fn pipelined_frames_match_inline_frames() {
+    let mut p = Pipeline::default();
+    let mut piped = empty_traffic();
+    let mut inline = empty_traffic();
+    let mut x = 12345u32;
+    for _ in 0..200 {
+        x = x.wrapping_mul(1664525).wrapping_add(1013904223);
+        let dt = 0.004 + (x >> 8) as f32 / (1u32 << 24) as f32 * 0.05;
+        inline.advance(dt, None);
+        p.owe_traffic(dt, None);
+        p.start_traffic(Some(&mut piped));
+        p.join(Some(&mut piped));
+    }
+    assert_eq!(piped.time.to_bits(), inline.time.to_bits());
+    assert_eq!(piped.day_time.to_bits(), inline.day_time.to_bits());
+    assert_eq!(piped.sim_accum.to_bits(), inline.sim_accum.to_bits());
+    assert_eq!(piped.frame_alpha.to_bits(), inline.frame_alpha.to_bits());
+    assert_eq!(piped.rng, inline.rng);
+}
