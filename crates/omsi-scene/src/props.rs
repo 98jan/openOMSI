@@ -1205,15 +1205,6 @@ pub(super) fn show_edit(renderer: &Renderer, scene: &mut Scene, eo: &EditObject,
     }
 }
 
-/// Stop drawing an instance, keeping its other parameters.
-pub(super) fn hide_instance(renderer: &Renderer, scene: &mut Scene, inst: usize) {
-    let Some(i) = scene.instances.get(inst) else { return };
-    let (alpha, uv) = (i.slot_alpha.clone(), i.slot_uv.clone());
-    renderer.set_params(scene, inst, &alpha, false, &uv);
-}
-
-pub(super) fn fallen_pole(xf: Mat4, push: DVec3) -> Mat4 {
-    let dir = glam::Vec3::new(push.x as f32, push.y as f32, 0.0).normalize_or(glam::Vec3::Y);
 /// The renderer's side of a parked car driving off (`visible` false) or coming back (true):
 /// its object's instances hidden or shown, their other parameters kept.
 pub fn show_parked_instances(renderer: &Renderer, scene: &mut Scene, instances: &[usize], visible: bool) {
@@ -1225,6 +1216,15 @@ pub fn show_parked_instances(renderer: &Renderer, scene: &mut Scene, instances: 
     }
 }
 
+/// Stop drawing an instance, keeping its other parameters.
+pub(super) fn hide_instance(renderer: &Renderer, scene: &mut Scene, inst: usize) {
+    let Some(i) = scene.instances.get(inst) else { return };
+    let (alpha, uv) = (i.slot_alpha.clone(), i.slot_uv.clone());
+    renderer.set_params(scene, inst, &alpha, false, &uv);
+}
+
+pub(super) fn fallen_pole(xf: Mat4, push: DVec3) -> Mat4 {
+    let dir = glam::Vec3::new(push.x as f32, push.y as f32, 0.0).normalize_or(glam::Vec3::Y);
     let axis = glam::Vec3::Z.cross(dir).normalize_or(glam::Vec3::X);
     Mat4::from_axis_angle(axis, 86f32.to_radians()) * xf
 }
