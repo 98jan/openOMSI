@@ -706,14 +706,12 @@ impl App {
                     }
                 }
                 if let (Some(lan), Some(p)) = (self.net.lan.as_mut(), self.player.as_mut()) {
-                    let figure = p.driver.as_ref().map(|d| d.human_type().def.path.clone());
                     lan::settle_spawn(
                         lan,
                         &mut self.net.remotes,
-                        &mut p.vehicle,
-                        figure.as_deref(),
-                        &self.args.lan_config(),
-                        &lan::AppLanHost { args: &self.args, world: Some(&w) },
+                        p,
+                        &self.args,
+                        &w,
                         self.session.traffic.as_ref().map(|t| &t.net),
                         // (still loading: a moment's wait for the host's list puts the bus
                         // where it is free at once - without it the bus stood inside another

@@ -13,6 +13,23 @@ pub(crate) fn hud_lines(lan: &omsi_net::LanSession) -> Vec<String> {
     omsi_lan::game::hud_lines(lan, &|s| omsi_ui::tr(s).into_owned())
 }
 
+/// [`omsi_lan::game::settle_spawn`] for our player's bus, with its driver figure, the
+/// command line's choices and the world just loaded.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn settle_spawn(
+    lan: &mut omsi_net::LanSession,
+    game: &mut LanGame,
+    p: &mut crate::Player,
+    args: &crate::Args,
+    world: &crate::scene::World,
+    net: Option<&omsi_sim::traffic::Network>,
+    wait: std::time::Duration,
+) {
+    let figure = p.driver.as_ref().map(|d| d.human_type().def.path.clone());
+    let host = AppLanHost { args, world: Some(world) };
+    omsi_lan::game::settle_spawn(lan, game, &mut p.vehicle, figure.as_deref(), &args.lan_config(), &host, net, wait);
+}
+
 /// The buses a joining player may choose, on the gateway's status page (see
 /// `omsi_lan::gateway::publish_vehicles`): `only` when a server's list says, else every bus
 /// installed under `root`.
