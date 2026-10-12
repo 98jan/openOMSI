@@ -14,6 +14,13 @@
 //! Two runs whose renderers saw the same calls in the same order log the same digests: a
 //! change that is meant to leave the renderer's calls as they were (the view sync's events,
 //! for one) is checked with it against the commit before it.
+//!
+//! What moves with the wall clock rather than with the game (an instance placed or faded by
+//! the time a frame took) makes `places` or `params` differ between two runs of one build.
+//! To find it, each digest also writes every instance's own hashes to a file (its path is
+//! logged): one line per instance, `index mesh place materials params owner` (owner: the AI
+//! car or the person whose instance it is, `-` for the rest); the lines that differ between
+//! two runs name the instances to look at.
 
 use super::SimView;
 use omsi_render::Scene;
@@ -68,11 +75,38 @@ pub(crate) fn scene_digest(scene: &Scene, view: Option<&SimView>) -> [u64; 5] {
     [counts.finish(), places.finish(), materials.finish(), pars.finish(), sim.finish()]
 }
 
+/// Every instance's own hashes, one line each (see the module).
+fn instance_lines(scene: &Scene, view: Option<&SimView>) -> String {
+    use std::fmt::Write;
+    let mut owner: std::collections::HashMap<usize, String> = std::collections::HashMap::new();
+    if let Some(v) = view {
+        owner.extend(v.traffic.instances().into_iter().map(|(id, i)| (i, format!("car {id}"))));
+        owner.extend(v.people.instances().into_iter().map(|(id, i)| (i, format!("person {id}"))));
+    }
+    let mut out = String::new();
+    for (k, i) in scene.instances.iter().enumerate() {
+        let (mut p, mut m, mut a) = (DefaultHasher::new(), DefaultHasher::new(), DefaultHasher::new());
+        place(scene, k, &mut p);
+        i.materials.hash(&mut m);
+        params(scene, k, &mut a);
+        let who = owner.get(&k).map_or("-", |s| s.as_str());
+        let _ = writeln!(out, "{k} {} {:016x} {:016x} {:016x} {who}", i.mesh, p.finish(), m.finish(), a.finish());
+    }
+    out
+}
+
 /// Log the digests of `scene` (and of the instances of `view`) under `what` when
-/// `OMSI_SCENE_DIGEST` asks for them.
+/// `OMSI_SCENE_DIGEST` asks for them, and write each instance's (see the module).
 pub(crate) fn log_scene_digest(scene: &Scene, view: Option<&SimView>, what: &str) {
     if omsi_cfg::flags::OMSI_SCENE_DIGEST.is_set() {
         let [c, p, m, a, s] = scene_digest(scene, view);
         log::info!("scene digest {what}: counts {c:016x} places {p:016x} materials {m:016x} params {a:016x} sim {s:016x} ({} instances)", scene.instances.len());
+        static TAKEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = TAKEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("openomsi-scene-digest-{}-{what}-{n}.txt", std::process::id()));
+        match std::fs::write(&path, instance_lines(scene, view)) {
+            Ok(()) => log::info!("scene digest {what}: each instance's hashes in {}", path.display()),
+            Err(e) => log::warn!("scene digest {what}: {}: {e}", path.display()),
+        }
     }
 }
