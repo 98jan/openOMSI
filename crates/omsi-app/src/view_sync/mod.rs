@@ -83,14 +83,15 @@ pub(crate) struct People<'a> {
 /// What a view sync brings up to date: the traffic, the people, or both (in that order).
 #[derive(Default)]
 pub(crate) struct ViewSync<'a> {
-    pub(crate) traffic: Option<&'a mut Traffic>,
+    /// The traffic, with the scenery state that holds its lamps' scripts.
+    pub(crate) traffic: Option<(&'a mut Traffic, &'a mut omsi_sim::scenery::SceneryState)>,
     pub(crate) people: Option<People<'a>>,
 }
 
 impl<'a> ViewSync<'a> {
     /// The traffic alone.
-    pub(crate) fn traffic(traffic: &'a mut Traffic) -> ViewSync<'a> {
-        ViewSync { traffic: Some(traffic), people: None }
+    pub(crate) fn traffic(traffic: &'a mut Traffic, scenery: &'a mut omsi_sim::scenery::SceneryState) -> ViewSync<'a> {
+        ViewSync { traffic: Some((traffic, scenery)), people: None }
     }
 
     /// The people alone (see [`People`]).
@@ -105,8 +106,8 @@ impl<'a> ViewSync<'a> {
 /// (the coins and ticket blocks of the player's bus, those who went since, the posing and
 /// skinning and their transforms).
 pub(crate) fn sync(what: ViewSync<'_>, view: &mut SimView, world: &World, renderer: &Renderer, scene: &mut Scene) {
-    if let Some(t) = what.traffic {
-        t.sync(&mut view.traffic, world, renderer, scene);
+    if let Some((t, scenery)) = what.traffic {
+        t.sync(&mut view.traffic, world, scenery, renderer, scene);
     }
     if let Some(People { humans, bus, camera }) = what.people {
         if let Some(bus) = bus {

@@ -259,6 +259,8 @@ impl App {
                 self.pipeline.owe_scenery(move |s, phase_of| {
                     s.step(dt, &inputs.as_inputs(phase_of), &mut omsi_sim::scenery::StepTimes::default());
                 });
+                // (the lamps' scripts stay here: their sounds every frame, as update_scripted plays them)
+                w.lamp_sounds(&mut self.session.scenery.lamps, cam.position, self.sound.audio.as_ref(), self.cam.in_cab, &mut times);
             } else {
                 w.update_scripted(
                     &mut self.session.scenery,

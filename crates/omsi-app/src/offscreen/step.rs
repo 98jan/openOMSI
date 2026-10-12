@@ -233,13 +233,13 @@ impl Offscreen<'_> {
                 view_sync::apply_traffic(t, &mut sim_view.traffic, world, renderer, scene);
                 // (what the window does every frame: cars that parked become parked objects,
                 // released vehicles go back to the world)
-                view_sync::sync(ViewSync::traffic(t), sim_view, world, renderer, scene);
+                view_sync::sync(ViewSync::traffic(t, scenery), sim_view, world, renderer, scene);
                 // `OMSI_POPULATION_SHOTS=1` (with OMSI_DEBUG_POPULATION): a picture from the
                 // viewer whenever a car was put inside its frustum (behind something), with
                 // where on the picture it stands - to see that it really is hidden
                 let framed = std::mem::take(&mut t.framed_spawns);
                 if !framed.is_empty() && omsi_cfg::flags::OMSI_POPULATION_SHOTS.is_set() {
-                    view_sync::sync(ViewSync::traffic(t), sim_view, world, renderer, scene);
+                    view_sync::sync(ViewSync::traffic(t, scenery), sim_view, world, renderer, scene);
                     if let Some(p) = player.as_mut() {
                         pose_player(p, renderer, scene, args, settings);
                     }

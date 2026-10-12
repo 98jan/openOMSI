@@ -97,7 +97,7 @@ impl Offscreen<'_> {
     /// A picture of this moment (as `--snapshots` takes it) and its camera.
     pub(super) fn picture_now(&mut self) -> Result<(Vec<u8>, Camera)> {
         if let Some(t) = self.traffic.as_mut() {
-            view_sync::sync(ViewSync::traffic(t), &mut self.sim_view, &self.world, &self.renderer, &mut self.scene);
+            view_sync::sync(ViewSync::traffic(t, &mut self.scenery), &mut self.sim_view, &self.world, &self.renderer, &mut self.scene);
         }
         let cam = self.camera_now();
         if let Some(h) = self.humans_off.as_mut() {

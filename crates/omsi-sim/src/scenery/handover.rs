@@ -16,6 +16,8 @@ pub enum SceneryChange {
     DropTile((i32, i32)),
     /// A particle emitter reads the variables of objects of this map id.
     Watch(i64),
+    /// A placed traffic light lamp's script (its key given by [`SceneryInbox::next_key`]).
+    Lamp(super::LampScript),
 }
 
 /// The loader's side of the handover: shared by the world (which writes) and the
@@ -64,8 +66,10 @@ impl SceneryState {
                 }
                 SceneryChange::DropTile(key) => {
                     self.drop_tile(key, |_, _| {});
+                    self.lamps.drop_tile(key);
                 }
                 SceneryChange::Watch(id) => self.watch(id),
+                SceneryChange::Lamp(lamp) => self.lamps.push(lamp),
             }
         }
     }
@@ -238,5 +242,28 @@ mod tests {
         let other = SceneryInbox::default();
         s.take_inbox(&other);
         assert!(s.is_empty());
+    }
+
+    /// A lamp's script is found by its key, whatever order the loader's threads handed the
+    /// lamps over in, and goes with its tile.
+    #[test]
+    fn lamps_by_key_and_tile() {
+        let inbox = SceneryInbox::default();
+        let mut s = SceneryState::default();
+        let lamp = |key: u64, tile: (i32, i32)| {
+            let inst = SceneryInstance::new(Arc::new(omsi_script::Program::default()), &[], crate::SimClock::default(), &[]);
+            SceneryChange::Lamp(crate::scenery::LampScript { key, tile, inst })
+        };
+        let (a, b, c) = (inbox.next_key(), inbox.next_key(), inbox.next_key());
+        inbox.push(lamp(b, (0, 0)));
+        inbox.push(lamp(a, (1, 0)));
+        inbox.push(lamp(c, (0, 0)));
+        s.take_inbox(&inbox);
+        assert_eq!(s.lamps.len(), 3);
+        assert!(s.lamps.get(a).is_some() && s.lamps.get(b).is_some() && s.lamps.get(c).is_some());
+        inbox.push(SceneryChange::DropTile((0, 0)));
+        s.take_inbox(&inbox);
+        assert_eq!(s.lamps.len(), 1);
+        assert!(s.lamps.get(a).is_some() && s.lamps.get(b).is_none());
     }
 }

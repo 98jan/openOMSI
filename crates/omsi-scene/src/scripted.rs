@@ -143,6 +143,8 @@ impl ScriptedSet {
     /// The objects of tile `key` go (their sounds stop now; their scripts at the
     /// simulation's next step).
     pub fn drop_tile(&mut self, key: (i32, i32), audio: Option<&omsi_audio::AudioEngine>) {
+        // (the tile's lamps' scripts go with it too, whether or not it had scripted objects)
+        self.inbox.push(omsi_sim::scenery::SceneryChange::DropTile(key));
         if !self.views.iter().any(|v| v.tile == key) {
             return;
         }
@@ -155,7 +157,6 @@ impl ScriptedSet {
             }
             false
         });
-        self.inbox.push(omsi_sim::scenery::SceneryChange::DropTile(key));
     }
 }
 
@@ -536,7 +537,9 @@ impl World {
         }
         times.inputs += step.inputs;
         times.scripts += step.scripts;
-        self.scenery_apply(scenery.outputs(), renderer, scene, dt, center, audio, muffled, times)
+        let updated = self.scenery_apply(scenery.outputs(), renderer, scene, dt, center, audio, muffled, times);
+        self.lamp_sounds(&mut scenery.lamps, center, audio, muffled, times);
+        updated
     }
 
     /// The scenery scripts' inputs as owned values, for a step on another thread (see
@@ -571,8 +574,8 @@ impl World {
     }
 
     /// What a step of the scenery scripts did, onto the render side and the speakers: the
-    /// particle emitters, the commands, the boards' wanted stops, the dynamic textures and
-    /// the lamps' sounds. Returns how many objects ran.
+    /// particle emitters, the commands, the boards' wanted stops and the dynamic textures
+    /// (then [`Self::lamp_sounds`]). Returns how many objects ran.
     #[allow(clippy::too_many_arguments)]
     pub fn scenery_apply(
         &self,
@@ -599,6 +602,19 @@ impl World {
         let t = std::time::Instant::now();
         self.apply_texture_updates(renderer, scene, texture_updates);
         times.textures += t.elapsed().as_secs_f64();
+        updated
+    }
+
+    /// The traffic lamps' own sounds (a level crossing's bell): their scripts run with the
+    /// light programs (`Traffic::sync`), what they fired is heard here.
+    pub fn lamp_sounds(
+        &self,
+        lamps: &mut omsi_sim::scenery::LampScripts,
+        center: DVec3,
+        audio: Option<&omsi_audio::AudioEngine>,
+        muffled: bool,
+        times: &mut ScriptedTimes,
+    ) {
         let t = std::time::Instant::now();
         // the lamps' own sounds (a level crossing's bell): their scripts run with the light
         // programs (`Traffic::sync`), what they fired is heard here
@@ -606,25 +622,24 @@ impl World {
             // (only the lamps that have a sound, and near enough to hear: a city map has
             // nearly a thousand lamps, and going through all of them took 1.8 ms a frame)
             let Some(path) = lamp.sound.as_ref() else { continue };
-            let Some(script) = lamp.script.as_ref() else { continue };
+            let Some(script) = lamp.script.and_then(|k| lamps.get_mut(k)) else { continue };
             let dist = (lamp.pos - center).length();
             if dist >= 300.0 {
                 if let (Some(a), Some(mut ss)) = (audio, lamp.sounds.lock().take()) {
                     ss.stop_all(a);
                 }
                 // (what it fired out of earshot is not heard later)
-                script.lock().host.fired_triggers.clear();
+                script.host.fired_triggers.clear();
                 continue;
             }
-            let mut inst = script.lock();
-            let fired = std::mem::take(&mut inst.host.fired_triggers);
+            let fired = std::mem::take(&mut script.host.fired_triggers);
+            let inst = &*script;
             if let Some(a) = audio {
                 let mut sounds = lamp.sounds.lock();
                 self.object_sounds(a, &mut sounds, path, dist, muffled, lamp.pos, lamp.xf, &|n| inst.var(n), &fired);
             }
         }
         times.lamps += t.elapsed().as_secs_f64();
-        updated
     }
 
     /// What the scenery scripts did, onto the render side: the commands of a step in their

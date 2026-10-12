@@ -270,6 +270,8 @@ pub struct SceneryState {
     pub(super) signals: (u64, Vec<u32>),
     /// The inbox the list follows (see [`SceneryState::take_inbox`]).
     pub(super) inbox_id: u64,
+    /// The traffic light lamps' scripts (run by the traffic's view sync).
+    pub lamps: super::LampScripts,
 }
 
 /// A vector's allocation for another element type of the same size (the parallel run's

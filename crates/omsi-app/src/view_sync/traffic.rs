@@ -228,7 +228,7 @@ impl Traffic {
         }
     }
 
-    pub(super) fn sync(&mut self, view: &mut TrafficView, world: &World, renderer: &Renderer, scene: &mut Scene) {
+    pub(super) fn sync(&mut self, view: &mut TrafficView, world: &World, scenery: &mut omsi_sim::scenery::SceneryState, renderer: &Renderer, scene: &mut Scene) {
         // cars that have parked (the simulation takes them off): the parked object stands
         // in their place from now on
         self.settle_parked(world);
@@ -242,13 +242,16 @@ impl Traffic {
         // where the cars and their meshes are drawn, as data (`FrameSnapshot`)
         self.sim.snapshot_into(&mut self.snapshot);
         self.sync_drivers(view, world, renderer, scene);
-        self.sync_lamps(world, renderer, scene);
+        self.sync_lamps(world, scenery, renderer, scene);
         self.sync_cars(view, world, renderer, scene);
         self.sim.show_actual();
     }
 
     /// The traffic light lamps (see `sync`).
-    fn sync_lamps(&mut self, world: &World, renderer: &Renderer, scene: &mut Scene) {
+    fn sync_lamps(&mut self, world: &World, scenery: &mut omsi_sim::scenery::SceneryState, renderer: &Renderer, scene: &mut Scene) {
+        // (the lamps' scripts are the simulation's: it takes the lamps placed since first)
+        world.scenery_sync(scenery);
+        let lamps = &mut scenery.lamps;
         // traffic light lamps: the lamp's script (or the stock rules) turns the state of its
         // light into the `[visible] red|yellow|green 1` meshes and the coronas, and moves
         // what it animates (a barrier arm); it runs on the time since the last sync (an
@@ -272,7 +275,7 @@ impl Traffic {
             if dist > 1200.0 {
                 continue;
             }
-            let key = lamp.script.as_ref().map(|s| Arc::as_ptr(s) as usize).unwrap_or(lamp.parent as usize ^ lamp.index);
+            let key = lamp.script.map(|k| k as usize).unwrap_or(lamp.parent as usize ^ lamp.index);
             if dist > LAMP_NEAR && !lamp.animated && !lamp_turn_now(key, self.lamp_turn) {
                 if lamp.script.is_some() {
                     *self.lamp_owed.entry(key).or_default() += frame_dt;
@@ -308,22 +311,7 @@ impl Traffic {
                 None => (omsi_sim::traffic::UNLINKED_PHASE, false),
             };
             let (r, y, g) = TrafficLightController::lamps(state);
-            let raw_value = |lamp: &crate::scene::LightObject, var: &str| -> f32 {
-                // Custom signals can shift phases or blink the standard channels (Numazu
-                // pedestrian lamps). Use their script outputs whenever they are available.
-                let scripted = lamp.script.as_ref().and_then(|script| {
-                    let s = script.lock();
-                    // A failed/missing script can still have a varlist of zeroes. Keep
-                    // stock fallback behaviour if it has no runnable frame block.
-                    if s.program.frame.is_empty() { None } else { s.var(var) }
-                });
-                crate::scene::traffic_lamp_value(
-                    var,
-                    scripted,
-                    crate::scene::standard_traffic_lamp(var, r, y, g, request),
-                )
-            };
-            if let Some(script) = lamp.script.as_ref() {
+            if let Some(s) = lamp.script.and_then(|k| lamps.get_mut(k)) {
                 let vars = omsi_sim::scenery::SceneryVars {
                     nightlight: self.sim.night as i32 as f32,
                     in_use: 1.0,
@@ -331,7 +319,6 @@ impl Traffic {
                     traffic_light_approach: request as i32 as f32,
                     switch: None,
                 };
-                let mut s = script.lock();
                 s.update(dt, &vars);
                 // `OMSI_DEBUG_LAMPS`: where the moving lamps are (barriers) and how far their
                 // meshes are turned, each time the lamps are updated
@@ -364,17 +351,8 @@ impl Traffic {
                     }
                 }
             }
-            // A scripted lamp can leave both standard channels on at once. A road signal
-            // must never show green together with red; keep the stop aspect in that case.
-            let red_on = raw_value(lamp, "red") >= 0.5;
-            let value = |lamp: &crate::scene::LightObject, var: &str| -> f32 {
-                let green = matches!(var.trim().to_ascii_lowercase().as_str(), "green" | "gruen" | "grün");
-                let v = raw_value(lamp, var);
-                if green && red_on { 0.0 } else { v }
-            };
             if !lamp.texts.is_empty() {
-                if let Some(script) = lamp.script.as_ref() {
-                    let mut s = script.lock();
+                if let Some(s) = lamp.script.and_then(|k| lamps.get_mut(k)) {
                     let _ = s.take_refresh_strings();
                     for (tex, st) in lamp.texts.iter_mut() {
                         let text = s.str_var(st.def.variable.trim()).to_string();
@@ -391,12 +369,34 @@ impl Traffic {
                     }
                 }
             }
+            let raw_value = |lamp: &crate::scene::LightObject, var: &str| -> f32 {
+                // Custom signals can shift phases or blink the standard channels (Numazu
+                // pedestrian lamps). Use their script outputs whenever they are available.
+                let scripted = lamp.script.and_then(|k| lamps.get(k)).and_then(|s| {
+                    // A failed/missing script can still have a varlist of zeroes. Keep
+                    // stock fallback behaviour if it has no runnable frame block.
+                    if s.program.frame.is_empty() { None } else { s.var(var) }
+                });
+                crate::scene::traffic_lamp_value(
+                    var,
+                    scripted,
+                    crate::scene::standard_traffic_lamp(var, r, y, g, request),
+                )
+            };
+            // A scripted lamp can leave both standard channels on at once. A road signal
+            // must never show green together with red; keep the stop aspect in that case.
+            let red_on = raw_value(lamp, "red") >= 0.5;
+            let value = |lamp: &crate::scene::LightObject, var: &str| -> f32 {
+                let green = matches!(var.trim().to_ascii_lowercase().as_str(), "green" | "gruen" | "grün");
+                let v = raw_value(lamp, var);
+                if green && red_on { 0.0 } else { v }
+            };
             if !lamp.animated {
                 use std::hash::{Hash, Hasher};
                 let mut h = std::collections::hash_map::DefaultHasher::new();
                 (state, request).hash(&mut h);
-                if let Some(script) = lamp.script.as_ref() {
-                    for v in &script.lock().state.vars {
+                if let Some(s) = lamp.script.and_then(|k| lamps.get(k)) {
+                    for v in &s.state.vars {
                         v.to_bits().hash(&mut h);
                     }
                 }
@@ -430,8 +430,7 @@ impl Traffic {
                 match lamp.slots.get(k).filter(|s| !s.is_empty()) {
                     Some(slots) => {
                         let known = |v: &str| -> Option<f32> {
-                            let scripted = lamp.script.as_ref().and_then(|script| {
-                                let s = script.lock();
+                            let scripted = lamp.script.and_then(|k| lamps.get(k)).and_then(|s| {
                                 if s.program.frame.is_empty() { None } else { s.var(v) }
                             });
                             let raw = scripted

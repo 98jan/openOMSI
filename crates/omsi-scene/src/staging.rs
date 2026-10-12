@@ -524,11 +524,12 @@ pub struct LightObject {
     /// Material switches kept with the lamp, updated alongside its visibility.
     pub variants: Vec<(usize, usize, MaterialId, MaterialId, String)>,
     pub pos: DVec3,
-    /// The lamp's own script (`ampel1.osc` & co): it turns `TrafficLightPhase` into the
-    /// `Red`/`Yellow`/`Green`/`Left`/`Light` variables its meshes and coronas show.
-    /// Shared by the copies of the lamp list (the loaded tiles' lists are copied into
-    /// `World::light_objects` whenever a tile comes or goes), so that it keeps its state.
-    pub script: Option<Arc<Mutex<omsi_sim::scenery::SceneryInstance>>>,
+    /// The key of the lamp's own script (`ampel1.osc` & co) in the simulation's scenery
+    /// state (`omsi_sim::scenery::LampScripts`): it turns `TrafficLightPhase` into the
+    /// `Red`/`Yellow`/`Green`/`Left`/`Light` variables its meshes and coronas show. The
+    /// copies of the lamp list (the loaded tiles' lists are copied into
+    /// `World::light_objects` whenever a tile comes or goes) name the same script.
+    pub script: Option<u64>,
     /// `[light_enh_2]` coronas switched by a lamp variable, and that variable.
     pub coronas: Vec<(omsi_render::Corona, String)>,
     /// Per corona the mesh its light belongs to and the light's place and direction in the

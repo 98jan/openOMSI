@@ -10,6 +10,7 @@ impl Offscreen<'_> {
         let Self {
             ref mut traffic,
             ref world,
+            ref mut scenery,
             ref renderer,
             ref mut scene,
             ref mut sim_view,
@@ -17,7 +18,7 @@ impl Offscreen<'_> {
             ..
         } = *self;
         if let Some(t) = traffic.as_mut() {
-            view_sync::sync(ViewSync::traffic(t), sim_view, world, renderer, scene);
+            view_sync::sync(ViewSync::traffic(t, scenery), sim_view, world, renderer, scene);
             let buses = t
                 .cars
                 .iter()

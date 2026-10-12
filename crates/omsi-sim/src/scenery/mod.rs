@@ -12,8 +12,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 mod handover;
+mod lamps;
 mod state;
 pub use handover::*;
+pub use lamps::*;
 pub use state::*;
 
 pub use omsi_map::calendar::DayKind;

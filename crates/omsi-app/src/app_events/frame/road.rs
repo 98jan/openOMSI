@@ -129,7 +129,7 @@ impl App {
             t.camera = self.camera.as_ref().map(|c| c.position);
             // the view sync of the traffic: before the player and the people move, as the
             // cars that parked leave the traffic here (see `view_sync`)
-            view_sync::sync(ViewSync::traffic(t), &mut self.gfx.sim_view, w, r, scene);
+            view_sync::sync(ViewSync::traffic(t, &mut self.session.scenery), &mut self.gfx.sim_view, w, r, scene);
             self.perf.profile.add(crate::profile_keys::ProfKey::TrafficSync, __t4.elapsed().as_secs_f64());
         }
     }
