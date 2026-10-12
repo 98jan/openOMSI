@@ -30,6 +30,7 @@ import concurrent.futures
 import os
 import random
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -61,12 +62,14 @@ FIGURES = [
 INVARIANTS = ("overlaps", "red runs")
 
 
-def run_one(binary: str, root: str, scene: str, seed: int, secs: int, out: Path, envs: list[str]) -> Path:
+def run_one(side: str, binary: str, root: str, scene: str, seed: int, secs: int, out: Path, envs: list[str]) -> Path:
     name, rest = scene.split("=", 1)
     where, _, extra = rest.partition(",")
     map_cfg, _, time = where.partition("@")
     env_tag = "".join("-" + re.sub(r"[^A-Za-z0-9_.]", "_", e) for e in envs)
-    tag = f"{Path(binary).resolve().parent.parent.name}{env_tag}-{name}-s{seed}"
+    # (the side in the name: two binaries in folders of one name - wt/base-core and wt/head-tick -
+    # wrote the same files, and the comparison was of one build with itself)
+    tag = f"{side}-{Path(binary).resolve().parent.parent.name}{env_tag}-{name}-s{seed}"
     log = out / f"{tag}.log"
     if log.exists() and "traffic stats over" in log.read_text(errors="replace"):
         return log
@@ -81,6 +84,8 @@ def run_one(binary: str, root: str, scene: str, seed: int, secs: int, out: Path,
     cmd += [a for a in extra.split() if a]
     with open(log, "w") as f:
         subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, env=env, check=False)
+    # (the run's home holds the game's caches, hundreds of MB a run)
+    shutil.rmtree(home, ignore_errors=True)
     return log
 
 
@@ -125,7 +130,7 @@ def main() -> int:
     jobs = [(side, s, k) for s in scenes for k in seeds for side in sides]
     logs: dict[tuple[str, str, int], Path] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as pool:
-        futs = {pool.submit(run_one, sides[side][0], a.root, s, k, a.secs, out, sides[side][1]): (side, s, k) for side, s, k in jobs}
+        futs = {pool.submit(run_one, side, sides[side][0], a.root, s, k, a.secs, out, sides[side][1]): (side, s, k) for side, s, k in jobs}
         for done, fut in enumerate(concurrent.futures.as_completed(futs), 1):
             logs[futs[fut]] = fut.result()
             print(f"\r{done}/{len(jobs)} runs", end="", file=sys.stderr, flush=True)
