@@ -85,6 +85,8 @@ pub(crate) struct App {
     pub(crate) photo_settings: Option<crate::photo::Settings>,
     /// The developer tools, while they are open (Ctrl+Shift+D).
     pub(crate) devtools: Option<Box<crate::devtools::DevTools>>,
+    /// The sim thread and the steps out on it while the picture is drawn (`OMSI_SIM_THREAD`).
+    pub(crate) pipeline: crate::sim_thread::Pipeline,
 }
 
 impl App {

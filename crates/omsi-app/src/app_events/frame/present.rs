@@ -69,6 +69,9 @@ impl App {
                 None => self.frame_hidden(time.now),
             }
             self.frame_pace(time.now, shown_nothing, presented);
+            // (what the sim thread stepped meanwhile is back before the frame is counted or
+            // the session finished, see `sim_thread`)
+            self.join_sim_thread();
             finish = self.frame_count(event_loop);
             if let Some(win) = self.window.as_ref() {
                 win.request_redraw();

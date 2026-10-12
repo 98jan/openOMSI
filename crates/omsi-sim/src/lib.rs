@@ -21,6 +21,7 @@ pub mod physics;
 pub mod rigid;
 pub mod scenery;
 pub mod scripttex;
+pub mod sim_thread;
 pub mod startup;
 pub mod texttex;
 pub mod tick;

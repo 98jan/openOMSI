@@ -88,7 +88,15 @@ impl App {
             steps::set_ai_daylight(t, daylight, gloomy);
             let __t2 = Instant::now();
             let rail = self.player.as_ref().and_then(|p| p.rail.as_ref()).map(|r| (r.lane, r.along));
-            let signals = steps::traffic_tick(t, w, dt, self.paused, self.player.as_ref(), &self.net.remotes, &self.session.placed, rail);
+            // (OMSI_SIM_THREAD: the step itself is made on the sim thread while the picture is
+            // drawn, see `sim_thread`; here the rest of it, on the traffic the last one left)
+            let step_dt = if !self.paused && self.pipeline.takes_traffic(t) {
+                self.pipeline.owe_traffic(dt, self.player.as_ref().map(crate::traffic_link::player_outline));
+                0.0
+            } else {
+                dt
+            };
+            let signals = steps::traffic_tick(t, w, step_dt, self.paused, self.player.as_ref(), &self.net.remotes, &self.session.placed, rail);
             *self.perf.profile.entry("traffic.tick.signals").or_default() += signals;
             *self.perf.profile.entry("traffic.tick").or_default() +=
                 __t2.elapsed().as_secs_f64();

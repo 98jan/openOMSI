@@ -119,6 +119,7 @@ use omsi_plugin_ui as plugin_ui;
 mod plugin_panels;
 mod plugins;
 mod services;
+mod sim_thread;
 mod situation;
 mod spawn;
 use omsi_input::stock_keys;
@@ -798,6 +799,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         photo: None,
         photo_settings: None,
         devtools: None,
+        pipeline: Default::default(),
     }
 }
 

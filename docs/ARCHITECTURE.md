@@ -84,6 +84,14 @@ Bottom up:
   keeps its own list of the voices playing and never waits for a block being mixed. The
   cpal stream lives on the "audio device" thread, which also follows the default output.
   The internet radio's frames come through a ring as well (`stream::StreamBuf`).
+* The sim thread (`omsi_sim::sim_thread`, `OMSI_SIM_THREAD`, off unless set): the main
+  thread keeps the window, the input and the surface, and with the switch on the AI
+  traffic's fixed step (`TrafficSim::advance`) runs on a thread of its own while the main
+  thread draws and presents the frame's picture; the traffic stage does the rest of the
+  traffic on what the last step left, and the stepped traffic is back before the frame is
+  counted. The cars are one traffic step later than the rest of the frame; the player's
+  vehicle and its input stay in their stage (no added input latency). The offscreen run never
+  reads the switch. The rest of the sim follows once the view takes `FrameSnapshot`s.
 * Scenery object scripts (`omsi_sim::scenery::SceneryState`): the scripts and variables of
   the loaded tiles' scripted objects are one owned list in the simulation, the view's half
   (render instances, materials, texts, sounds) beside it at the same index

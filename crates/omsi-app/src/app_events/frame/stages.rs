@@ -201,7 +201,11 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
             TraceLook => app.trace_look("frame", app.input.cursor.0, app.input.cursor.1),
             Render => {
                 let lighting = self.lighting.take().expect("the lighting stage comes first");
+                // (OMSI_SIM_THREAD: the steps the stages left run beside the picture, back
+                // before the frame is counted - see `sim_thread`)
+                app.start_sim_thread();
                 app.frame_render(el, self.time.as_ref().expect(NO_TIME), &lighting, self.vr_nav_display.take());
+                app.join_sim_thread();
             }
         }
         Ok(Flow::Go)
