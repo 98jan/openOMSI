@@ -123,7 +123,8 @@ const graphics = {
         { type: 'select', key: 'max_obj_dist', label: 'Object distance', options: [['auto', 'Automatic'], ['500', '500 m'], ['750', '750 m'], ['900', '900 m'], ['1500', '1500 m'], ['3000', '3000 m']] },
         { type: 'select', key: 'min_obj_size', label: 'Small objects', options: [['0.005', 'All'], ['0.013', 'Normal'], ['0.02', 'Fewer (faster)'], ['0.03', 'Few (fastest)']] },
         { type: 'select', key: 'mirror_size', label: 'Mirrors', options: [['0', 'Off'], ['128', 'Low (128)'], ['256', 'Normal (256)'], ['512', 'High (512)'], ['1024', 'Very high (1024)']] },
-        { type: 'select', key: 'mirror_refresh', label: 'Real-time reflections', options: [['off', 'None (frozen picture)'], ['eco', 'Economical'], ['full', 'Full']] },
+        { type: 'select', key: 'mirror_refresh', label: 'Real-time reflections', options: [['off', 'None (frozen picture)'], ['eco', 'Economical'], ['full', 'Full'], ['every', 'Every frame (smoothest)']] },
+        { type: 'select', key: 'mirror_quality', label: 'Mirror quality', options: [['standard', 'Standard'], ['enhanced', 'As the picture (Enhanced)']] },
         { type: 'toggle', key: 'mirror_hud_every_frame', label: 'Mirror panels every frame' },
         { type: 'select', key: 'texture_memory', label: 'Texture memory', options: textureMemory },
         { type: 'toggle', key: 'texture_compression', label: 'Compress textures on loading' },
@@ -413,5 +414,5 @@ export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, genera
 /** The settings a saved graphics profile holds (`GRAPHICS_PROFILE_KEYS`). */
 export const GRAPHICS_PROFILE_KEYS = [
   'graphics', 'msaa', 'render_scale', 'anisotropy', 'shadow_size', 'ssao', 'shadows', 'shadow_casters', 'detail_textures', 'led_glow', 'led_mips', 'reflections', 'clouds', 'cloud_quality', 'rain_quality', 'windy_trees',
-  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_hud_every_frame', 'texture_memory', 'texture_compression',
+  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_quality', 'mirror_hud_every_frame', 'texture_memory', 'texture_compression',
 ];

@@ -384,6 +384,7 @@ impl App {
         if let (Some(p), Some(w)) = (self.player.as_ref(), self.world.as_ref()) {
             steps::mirror_hud_sync(&mut self.gfx.mirror_hud, w, p, self.settings.mirror_hud);
         }
+        r.options.mirror_enhanced = self.settings.mirror_quality == "enhanced";
         #[cfg(windows)]
         let vr_active = self.xr.vr.is_some();
         #[cfg(not(windows))]
@@ -407,6 +408,22 @@ impl App {
         if self.settings.mirror_size == 0 {
             self.gfx.mirror_budget = 0.0;
             self.gfx.mirrors_seen = 0;
+        } else if self.settings.mirror_refresh == "every" && !vr_active {
+            // every mirror in the picture every frame: the street goes by in them as smoothly
+            // as through the windscreen (in turns, each picture was a step behind, and the
+            // steps grew with the speed - the mirrors seemed to shake)
+            self.gfx.mirror_budget = 0.0;
+            let mirror_view = if self.settings.triple.enabled || (self.gfx.mirror_hud.active() && self.cam.in_cab && panel_cams.is_empty()) {
+                None
+            } else {
+                Some((*cam, s.config.width as f32 / s.config.height.max(1) as f32))
+            };
+            let near = self.player.as_ref().is_some_and(|p| (p.vehicle.position - cam.position).length() < 12.0);
+            if let (Some(w), Some(p)) = (self.world.as_ref(), self.player.as_ref()) {
+                if self.cam.in_cab || near {
+                    self.gfx.mirrors_seen = render_mirrors(r, scene, w, p, lighting, MirrorPick::All(&panel_cams), mirror_view);
+                }
+            }
         } else if self.settings.mirror_refresh == "off" {
             self.gfx.mirror_budget = 0.0;
             if let (Some(w), Some(p)) = (self.world.as_ref(), self.player.as_ref()) {
