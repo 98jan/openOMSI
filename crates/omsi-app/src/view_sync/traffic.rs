@@ -182,44 +182,42 @@ impl Traffic {
     }
 
     /// The drivers of the timetable buses near the camera: made when a bus comes within
-    /// `DRIVER_NEAR`, posed every sync, let go when it is twice that far or gone.
+    /// `DRIVER_NEAR`, posed every sync, let go when it is twice that far or gone. They read
+    /// their buses from the snapshot (`TrafficSim::snapshot_drivers`).
     pub(super) fn sync_drivers(&mut self, view: &mut TrafficView, world: &World, renderer: &Renderer, scene: &mut Scene) {
-        let Some(eye) = self.sim.viewer.map(|v| v.pos) else { return };
-        let dt = self.sim.last_dt.max(1.0 / 120.0);
+        self.sim.snapshot_drivers(&mut self.snapshot, DRIVER_NEAR * 2.0);
+        let snap = &self.snapshot;
+        let Some(eye) = snap.drivers_eye() else { return };
+        let dt = snap.drivers_dt().max(1.0 / 120.0);
         let mut keep: Vec<u64> = Vec::new();
-        for c in &self.sim.cars {
-            if !c.is_bus() || c.gone {
-                continue;
-            }
-            let d = (c.vehicle.position - eye).length();
-            if d > DRIVER_NEAR * 2.0 {
-                continue;
-            }
-            keep.push(c.id);
-            if !view.drivers.contains_key(&c.id) {
+        for bus in snap.driver_buses() {
+            let car = crate::driver::SnapshotBus { snap, bus };
+            let d = (bus.position - eye).length();
+            keep.push(bus.id);
+            if !view.drivers.contains_key(&bus.id) {
                 if d > DRIVER_NEAR {
                     continue;
                 }
                 let figure = match view.driver_pool.pop() {
                     Some(mut f) => {
-                        if f.attach(&c.vehicle) {
+                        if f.attach(&car) {
                             Some(f)
                         } else {
                             view.driver_pool.push(f);
                             None
                         }
                     }
-                    None => crate::driver::DriverFigure::new(world, renderer, scene, &c.vehicle, c.id),
+                    None => crate::driver::DriverFigure::new(world, renderer, scene, &car, bus.id),
                 };
                 match figure {
                     Some(f) => {
-                        view.drivers.insert(c.id, f);
+                        view.drivers.insert(bus.id, f);
                     }
                     None => continue,
                 }
             }
-            if let (Some(f), Some(r)) = (view.drivers.get_mut(&c.id), view.cars.get(&c.id)) {
-                f.update(renderer, scene, &c.vehicle, &r.body, dt, true, false);
+            if let (Some(f), Some(r)) = (view.drivers.get_mut(&bus.id), view.cars.get(&bus.id)) {
+                f.update(renderer, scene, &car, &r.body, dt, true, false);
             }
         }
         let gone: Vec<u64> = view.drivers.keys().copied().filter(|id| !keep.contains(id)).collect();

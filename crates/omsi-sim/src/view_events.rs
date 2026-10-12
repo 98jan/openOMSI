@@ -12,7 +12,9 @@
 use crate::VehicleType;
 use std::sync::Arc;
 
+mod drivers;
 mod looks;
+pub use drivers::DriverFrame;
 pub use looks::{CarLooks, LookLimits, LookTracker, ScriptUpload};
 
 /// Something the traffic did that the renderer has to follow, in the order it happened.
@@ -84,6 +86,9 @@ pub struct FrameSnapshot {
     looks: Vec<CarLooks>,
     vars: Vec<f32>,
     lamps: Vec<bool>,
+    /// The timetable buses near the viewer as their drivers read them
+    /// (`TrafficSim::snapshot_drivers`).
+    drivers: drivers::Drivers,
 }
 
 /// One AI car of a [`FrameSnapshot`].
