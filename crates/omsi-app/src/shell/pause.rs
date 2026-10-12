@@ -17,9 +17,11 @@ use omsi_ui::theme::*;
 use omsi_ui::kit::{id_of, ButtonKind, Ui};
 use crate::ui::{DropdownView, MenuKind, Preview};
 
-/// The page's background: the launcher's, see-through so that the paused game stays in view
-/// behind the menu, dimmed (it was the launcher's opaque page, all black around the menu).
-const PAGE: Color = Color([BG.0[0], BG.0[1], BG.0[2], 0.72]);
+/// The page's background behind a list or settings window: the launcher's, solid.
+const PAGE: Color = BG;
+/// ... and on the home page, where nothing but the sidebar is drawn: the paused game stays
+/// in view, dimmed.
+const HOME_VEIL: Color = Color([BG.0[0], BG.0[1], BG.0[2], 0.72]);
 /// A list's row.
 const LIST_ROW: f32 = 40.0;
 
@@ -56,18 +58,10 @@ pub(crate) struct PauseView<'a> {
     pub summary: Summary,
 }
 
-/// The session as the pause menu's home page sums it up, as the launcher's Summary card does
-/// a duty: the map and the time, the bus, the line, tour, terminus and next stop of a duty,
-/// and the driver.
+/// The session as the pause menu's sidebar shows it: the bus and the driver.
 #[derive(Default)]
 pub(crate) struct Summary {
-    pub map: String,
-    pub time: String,
     pub bus: String,
-    pub line: Option<String>,
-    pub terminus: Option<String>,
-    pub tour: Option<String>,
-    pub next_stop: Option<String>,
     pub driver: String,
 }
 
@@ -111,124 +105,18 @@ pub(crate) fn draw(sh: &mut Shell, v: &PauseView) {
     // session's summary, or the list or settings window opened from the sidebar
     let page = Rect::new(RAIL_W, 0.0, (size.x - RAIL_W).max(0.0), size.y);
     sh.ui.solid(page);
-    sh.ui.p().rect(page, PAGE);
     match v.list.as_ref() {
-        Some(list) => list_page(sh, v, list, page),
-        None => home_page(sh, v, page),
+        Some(list) => {
+            sh.ui.p().rect(page, PAGE);
+            list_page(sh, v, list, page);
+        }
+        // (the home page: the game, dimmed - the sidebar holds every action)
+        None => sh.ui.p().rect(page, HOME_VEIL),
     }
     rail(sh, v);
 }
 
-/// The index of the game menu's line `id`, if the menu has it.
-fn rail_index(v: &PauseView, ids: &[&str]) -> Option<usize> {
-    v.rail.iter().position(|(id, _)| ids.contains(id))
-}
 
-/// The pause menu's home page: no card over the game - the actions in one row beside the
-/// page's head (the destination sign first, then Resume, saving, the photo mode and ending
-/// the session), and the session's facts on the line under it beside the map and the time;
-/// the paused game stays in view under the rest of the page.
-fn home_page(sh: &mut Shell, v: &PauseView, page: Rect) {
-    let sm = &v.summary;
-    let x = page.x + 32.0;
-    let right = page.right() - 32.0;
-    let ui = &mut sh.ui;
-    let title = omsi_ui::tr(if v.paused { "Paused" } else { "Menu" }).to_string();
-    let title_w = ui.width(&title, 26.0, Weight::Bold);
-    // (one axis for the head: the title centred on the buttons' row, the row on the sidebar's
-    // brand - its logo is 16..48)
-    let h = 36.0;
-    let head_y = 32.0 - h * 0.5;
-    ui.text_in(&title, Rect::new(x, head_y, title_w + 4.0, h), 26.0, Weight::Bold, INK, Align::Left);
-
-    // the row: the destination sign, then the buttons, each as wide as its label
-    let amber = Color::rgba(255, 176, 46, 1.0);
-    let (sign_main, sign_to) = match (&sm.line, &sm.terminus) {
-        (Some(line), Some(to)) => (line.clone(), Some(to.to_uppercase())),
-        _ => (omsi_ui::tr("Free drive").to_uppercase(), None),
-    };
-    let sign_w = match &sign_to {
-        Some(to) => 12.0 + ui.width(&sign_main, 18.0, Weight::Bold).max(26.0) + 10.0 + ui.width(to, 12.5, Weight::Bold).min(240.0) + 14.0,
-        None => 40.0 + ui.width(&sign_main, 12.5, Weight::Bold) + 14.0,
-    };
-    let mut buttons: Vec<(String, usize, String, &str, ButtonKind)> = Vec::new();
-    if let Some(k) = rail_index(v, &["resume"]) {
-        buttons.push(("home-resume".into(), k, "Resume".into(), "play_arrow", ButtonKind::Primary));
-    }
-    for (ids, icon, kind) in [(&["save"][..], "save", ButtonKind::Normal), (&["photo", "shot"][..], "photo_camera", ButtonKind::Normal), (&["quit"][..], "logout", ButtonKind::Danger)] {
-        if let Some(k) = rail_index(v, ids) {
-            buttons.push((format!("home-act-{k}"), k, plain(v.rail[k].1).0.to_string(), icon, kind));
-        }
-    }
-    let widths: Vec<f32> = buttons
-        .iter()
-        .map(|(_, _, label, _, kind)| {
-            let w = if *kind == ButtonKind::Primary { Weight::Bold } else { Weight::Medium };
-            ui.width(&omsi_ui::tr(label), 13.0, w) + 13.0 * 1.3 + 6.0 + 32.0
-        })
-        .collect();
-    let gap = 8.0;
-    let row_w = sign_w + widths.iter().map(|w| w + gap).sum::<f32>();
-    // beside the head when it fits, else on a line of its own under the facts
-    let beside = x + title_w + 28.0 + row_w <= right;
-    let line_y = head_y + h + 6.0;
-    let (mut bx, by) = if beside { (x + title_w + 24.0, head_y) } else { (x, line_y + 20.0 + 26.0) };
-    let sign = Rect::new(bx, by, sign_w, h);
-    ui.p().rounded(sign, 6.0, Color::rgba(14, 15, 17, 0.92));
-    match &sign_to {
-        Some(to) => {
-            let nw = ui.text_in(&sign_main, Rect::new(sign.x + 12.0, sign.y, 80.0, sign.h), 18.0, Weight::Bold, amber, Align::Left).max(26.0);
-            ui.text_in(to, Rect::new(sign.x + 22.0 + nw, sign.y, sign.w - nw - 34.0, sign.h), 12.5, Weight::Bold, amber, Align::Left);
-        }
-        None => {
-            ui.icon("route", Vec2::new(sign.x + 20.0, sign.center().y), 18.0, amber);
-            ui.text_in(&sign_main, Rect::new(sign.x + 40.0, sign.y, sign.w - 48.0, sign.h), 12.5, Weight::Bold, amber, Align::Left);
-        }
-    }
-    bx += sign_w + gap;
-    let mut acts = Vec::new();
-    for ((id, k, label, icon, kind), w) in buttons.iter().zip(&widths) {
-        if ui.button(id, Rect::new(bx, by, *w, h), label, Some(icon), *kind) {
-            acts.push(Action::Choose(*k));
-        }
-        bx += w + gap;
-    }
-
-    // the line under the head: the map and the time, then the session's facts
-    let sub = [sm.map.as_str(), sm.time.as_str()].iter().filter(|t| !t.is_empty()).copied().collect::<Vec<_>>().join("  -  ");
-    let mut fx = x;
-    fx += ui.text_in(&sub, Rect::new(fx, line_y, (right - fx).max(0.0), 20.0), 13.0, Weight::Regular, INK_MUTED, Align::Left);
-    let facts: Vec<(&str, String)> = [
-        Some(("Bus", sm.bus.clone())),
-        sm.line.clone().map(|l| ("Line", l)),
-        sm.tour.clone().map(|t| ("Tour", t)),
-        sm.next_stop.clone().map(|n| ("Next stop", n)),
-        Some(("Driver", sm.driver.clone())),
-    ]
-    .into_iter()
-    .flatten()
-    .filter(|(_, v)| !v.trim().is_empty())
-    .collect();
-    for (what, value) in &facts {
-        let what = omsi_ui::tr(what).to_string();
-        let ww = ui.width(&what, 13.0, Weight::Regular);
-        let vw = ui.width(value, 13.0, Weight::Medium);
-        if fx + 24.0 + ww + 6.0 + vw > right {
-            break;
-        }
-        fx += 24.0;
-        ui.text_in(&what, Rect::new(fx, line_y, ww + 2.0, 20.0), 13.0, Weight::Regular, INK_MUTED, Align::Left);
-        fx += ww + 6.0;
-        ui.text_in(value, Rect::new(fx, line_y, vw + 2.0, 20.0), 13.0, Weight::Medium, INK, Align::Left);
-        fx += vw;
-    }
-    // the keys, quietly under them
-    if v.keys {
-        let ky = if beside { line_y + 22.0 } else { by + h + 10.0 };
-        ui.text_in(&omsi_ui::tr("Esc resumes  |  P pauses"), Rect::new(x, ky, (right - x).max(0.0), 18.0), 12.0, Weight::Regular, INK_MUTED, Align::Left);
-    }
-    sh.actions.extend(acts);
-}
 
 /// The launcher's sidebar with the game menu's lines as its items: the logo, the name and
 /// the version on top, the items (the open one on the highest grey, its icon in the
@@ -239,7 +127,7 @@ fn rail(sh: &mut Shell, v: &PauseView) {
     let logo = sh.logo_tex;
     let ui = &mut sh.ui;
     ui.solid(r);
-    ui.p().rect(r, SIDEBAR.alpha(0.88));
+    ui.p().rect(r, SIDEBAR);
     // the brand
     if let Some(tex) = logo {
         ui.image(Rect::new(18.0, 16.0, 32.0, 32.0), tex, 7.0);
