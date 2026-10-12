@@ -100,7 +100,14 @@ Bottom up:
   exact 800 m cut picks among them. Their scripts run side by side (`frame_each`) on inputs
   gathered before (light phases, boards, clock), and the step ends in commands in object
   order (`SceneryCmd`) that the view applies as it did when it walked the list.
-* Planned: physics on its own step loop.
+* The fixed step (`omsi_sim::tick::FixedStep`, `OMSI_FIXED_STEP`, off unless set): the
+  window's frame runs its stages as three lists (`app_events/frame/ticked.rs`): the
+  housekeeping and the player's input once a frame, the simulation (traffic, the player's bus
+  with its scripts, the people, the duty, the clock and the weather) once per tick of 1/120 s
+  (or the rate the switch names), then the view, the sounds, the LAN, the interface and the
+  picture once a frame, with the player's bus and the camera drawn between the last two
+  ticks. The offscreen run steps in those ticks instead of its 1/30 s. Off, the frame is
+  `WINDOW_FRAME` as before, every stage on the frame's time.
 
 ## Memory
 

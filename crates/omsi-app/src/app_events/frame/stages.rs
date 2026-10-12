@@ -18,6 +18,11 @@ pub(crate) enum WindowStage {
     MouseDrive,
     PadActions,
     Player,
+    /// The player's bus's step alone, a tick of the fixed step (`ticked::TICKED_SIM`).
+    PlayerTick,
+    /// The player's bus drawn between its last two ticks, and the view from it
+    /// (`ticked::TICKED_POST`).
+    PlayerView,
     Audio,
     Lan,
     OnFoot,
@@ -111,7 +116,9 @@ impl frame_stages::Stage for WindowStage {
             Controllers => StageInfo { gives: &[Carry::Controls], ..stage("controllers", P::Input, Role::Own, &[G::Input, G::Player], &[G::Input, G::Ui], Profile::Key(K::Player)) },
             MouseDrive => StageInfo { takes: &[Carry::Time, Carry::Controls], gives: &[Carry::Controls], ..stage("mouse_drive", P::Input, Role::Own, &[G::Input, G::Player, G::View], &[G::Input, G::View], Profile::Key(K::Player)) },
             PadActions => StageInfo { takes: &[Carry::Controls], ..stage("pad_actions", P::Input, Role::Own, &[G::Input], &[G::Player, G::Menus, G::View], Profile::Key(K::Player)) },
-            Player => stage("player", P::Sim, Role::Player, &[G::Player, G::Input, G::World, G::Traffic], &[G::Player, G::Traffic, G::View, G::Gfx], Profile::Key(K::Player)),
+            Player => stage("player", P::Sim, Role::Player, &[G::Player, G::Input, G::World, G::Traffic, G::Clock], &[G::Player, G::Traffic, G::View, G::Gfx], Profile::Key(K::Player)),
+            PlayerTick => stage("player_tick", P::Sim, Role::Own, &[G::Player, G::Input, G::World, G::Traffic, G::Clock], &[G::Player, G::Traffic, G::Gfx], Profile::Key(K::Player)),
+            PlayerView => stage("player_view", P::Present, Role::Own, &[G::Player, G::View, G::Clock, G::Input, G::World, G::Menus], &[G::Player, G::View, G::Gfx], Profile::Key(K::Player)),
             Audio => stage("audio", P::Present, Role::Own, &[G::Player, G::View], &[G::Sound, G::View, G::Player], Profile::Key(K::Player)),
             Lan => stage("lan", P::Sim, Role::Lan, &[G::Net, G::Player, G::Clock, G::Duty], &[G::Net, G::Traffic, G::People, G::Gfx, G::Sound], Profile::Key(K::Lan)),
             OnFoot => stage("on_foot", P::Sim, Role::Own, &[G::People, G::Input, G::Net, G::World], &[G::People, G::View, G::Gfx], Profile::Key(K::OnFoot)),
@@ -145,11 +152,37 @@ pub(crate) struct WindowFrame<'a> {
     daylight: Option<omsi_sim::Daylight>,
     vr_nav_display: Option<crate::vr_navigator::Display>,
     lighting: Option<omsi_render::Lighting>,
+    /// With the fixed step, while the simulation's stages run: the tick's time, which they
+    /// take instead of the frame's (see `ticked`).
+    tick_dt: Option<f32>,
 }
 
 impl<'a> WindowFrame<'a> {
     pub(crate) fn new(app: &'a mut App, event_loop: &'a ActiveEventLoop) -> Self {
-        WindowFrame { app, event_loop, time: None, controls: None, daylight: None, vr_nav_display: None, lighting: None }
+        WindowFrame { app, event_loop, time: None, controls: None, daylight: None, vr_nav_display: None, lighting: None, tick_dt: None }
+    }
+
+    /// The `App` between the lists of the fixed step's frame.
+    pub(super) fn app(&mut self) -> &mut App {
+        self.app
+    }
+
+    /// The frame's time as the simulation would take it (after the timing stage).
+    pub(super) fn frame_dt(&self) -> f32 {
+        self.time.as_ref().expect(NO_TIME).dt
+    }
+
+    /// The tick's time the simulation's stages take from now on (none: the frame's again).
+    pub(super) fn set_tick_dt(&mut self, dt: Option<f32>) {
+        self.tick_dt = dt;
+    }
+
+    pub(super) fn daylight(&self) -> Option<omsi_sim::Daylight> {
+        self.daylight
+    }
+
+    pub(super) fn set_daylight(&mut self, d: omsi_sim::Daylight) {
+        self.daylight = Some(d);
     }
 }
 
@@ -159,7 +192,8 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
         let app = &mut *self.app;
         let el = self.event_loop;
         let times = self.time.as_ref().map(|t| (t.dt, t.raw_dt));
-        let dt = || times.expect(NO_TIME).0;
+        let tick_dt = self.tick_dt;
+        let dt = || tick_dt.unwrap_or_else(|| times.expect(NO_TIME).0);
         match stage {
             Timing => match app.frame_timing(el) {
                 Some(t) => self.time = Some(t),
@@ -184,6 +218,8 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
                 app.frame_pad_actions(analog, actions);
             }
             Player => app.frame_player(dt()),
+            PlayerTick => app.frame_player_tick(dt()),
+            PlayerView => app.frame_player_view(dt()),
             Audio => app.frame_audio(dt()),
             Lan => app.frame_lan(dt()),
             OnFoot => app.frame_on_foot(dt()),

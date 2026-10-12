@@ -221,6 +221,28 @@ fn world_lights(
     lights::upload_corona_textures(renderer);
 }
 
+/// The run's step: 1/30 s, or the fixed step's tick with OMSI_FIXED_STEP.
+fn run_dt() -> f32 {
+    match omsi_sim::tick::rate_from_flag() {
+        Some(rate) => {
+            log::info!("fixed step: the run steps at {rate:.0} ticks a second (OMSI_FIXED_STEP)");
+            (1.0 / rate) as f32
+        }
+        None => 1.0 / 30.0,
+    }
+}
+
+/// `n` of the run's steps of 1/30 s as steps of `dt` (the fixed step's ticks with
+/// OMSI_FIXED_STEP, so that what happens every second still happens every second; `n` itself
+/// at 1/30 s).
+fn steps_of(n: usize, dt: f32) -> usize {
+    if dt == 1.0 / 30.0 {
+        n
+    } else {
+        ((n as f64 / 30.0) / dt as f64).round().max(1.0) as usize
+    }
+}
+
 /// The offscreen loop's fixed steps kept to the clock when other games take part (a LAN
 /// session, the dedicated server): a step of `dt` every `dt` on the wall, the step's own work
 /// included. A whole step slept after each frame's work made a dedicated server's frames

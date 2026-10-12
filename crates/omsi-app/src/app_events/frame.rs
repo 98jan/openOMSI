@@ -15,6 +15,7 @@ mod road;
 pub(crate) mod stages;
 pub(crate) mod steps;
 mod surroundings;
+mod ticked;
 mod timing;
 mod view_camera;
 mod view_keys;
@@ -30,6 +31,13 @@ pub(super) struct FrameTime {
 impl App {
     /// One frame of the window: its stages (`stages::WINDOW_FRAME`) in their order.
     pub(super) fn frame(&mut self, event_loop: &ActiveEventLoop) {
+        // (the fixed step, OMSI_FIXED_STEP: the same stages in three lists, see `ticked`)
+        if self.fixed_tick.is_some() {
+            if let Err(e) = self.frame_ticked(event_loop) {
+                log::error!("frame: {e:#}");
+            }
+            return;
+        }
         let mut frame = stages::WindowFrame::new(self, event_loop);
         // (the window's stages do not fail)
         if let Err(e) = crate::frame_stages::run(&mut frame, stages::WINDOW_FRAME) {

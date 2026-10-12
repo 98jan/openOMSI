@@ -12,7 +12,11 @@ than chance. The invariants (overlaps, red runs) are summed as well: one of them
 run is a fault whatever the means say.
 
     python3 scripts/traffic-compare.py --base <openomsi> --new <openomsi> --root <OMSI 2> \\
-        --out <dir> [--seeds 8] [--secs 300] [--jobs 4] [--scene NAME=MAP@HH:MM[,ARGS]] ...
+        --out <dir> [--seeds 8] [--secs 300] [--jobs 4] [--scene NAME=MAP@HH:MM[,ARGS]] \\
+        [--base-env NAME=VALUE] [--new-env NAME=VALUE] ...
+
+--base-env / --new-env set a variable for one side's runs only: one build against itself with
+a switch on (`--base X --new X --new-env OMSI_FIXED_STEP=120`).
 
 The default scenes are Berlin-Spandau and Grundorf at 08:00 and at 17:00 with the
 timetable. Every run gets a fresh, empty $HOME. Runs already in --out are reused (delete
@@ -57,11 +61,12 @@ FIGURES = [
 INVARIANTS = ("overlaps", "red runs")
 
 
-def run_one(binary: str, root: str, scene: str, seed: int, secs: int, out: Path) -> Path:
+def run_one(binary: str, root: str, scene: str, seed: int, secs: int, out: Path, envs: list[str]) -> Path:
     name, rest = scene.split("=", 1)
     where, _, extra = rest.partition(",")
     map_cfg, _, time = where.partition("@")
-    tag = f"{Path(binary).resolve().parent.parent.name}-{name}-s{seed}"
+    env_tag = "".join("-" + re.sub(r"[^A-Za-z0-9_.]", "_", e) for e in envs)
+    tag = f"{Path(binary).resolve().parent.parent.name}{env_tag}-{name}-s{seed}"
     log = out / f"{tag}.log"
     if log.exists() and "traffic stats over" in log.read_text(errors="replace"):
         return log
@@ -69,6 +74,7 @@ def run_one(binary: str, root: str, scene: str, seed: int, secs: int, out: Path)
     home.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, HOME=str(home), OMSI_SEED=str(seed), OMSI_NO_UPDATE="1",
                OMSI_TRAFFIC_STATS=str(out / f"{tag}.csv"), RUST_LOG_STYLE="never")
+    env.update(e.split("=", 1) for e in envs)
     cmd = [binary, "--root", root, "--map", map_cfg, "--bus", "Vehicles/MAN_NL_NG/MAN_GN92_main.bus",
            "--time", time or "08:00", "--traffic", "60", "--view", "free", "--cam", "0,0,50,0,-30",
            "--drive", str(secs), "--offscreen", str(out / f"{tag}.png"), "--size", "320x180"]
@@ -108,15 +114,18 @@ def main() -> int:
     ap.add_argument("--secs", type=int, default=300)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--scene", action="append")
+    ap.add_argument("--base-env", action="append", default=[])
+    ap.add_argument("--new-env", action="append", default=[])
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     scenes = a.scene or DEFAULT_SCENES
     seeds = list(range(1, a.seeds + 1))
-    jobs = [(b, s, k) for s in scenes for k in seeds for b in (a.base, a.new)]
+    sides = {"base": (a.base, a.base_env), "new": (a.new, a.new_env)}
+    jobs = [(side, s, k) for s in scenes for k in seeds for side in sides]
     logs: dict[tuple[str, str, int], Path] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as pool:
-        futs = {pool.submit(run_one, b, a.root, s, k, a.secs, out): (b, s, k) for b, s, k in jobs}
+        futs = {pool.submit(run_one, sides[side][0], a.root, s, k, a.secs, out, sides[side][1]): (side, s, k) for side, s, k in jobs}
         for done, fut in enumerate(concurrent.futures.as_completed(futs), 1):
             logs[futs[fut]] = fut.result()
             print(f"\r{done}/{len(jobs)} runs", end="", file=sys.stderr, flush=True)
@@ -127,7 +136,7 @@ def main() -> int:
         print(f"\n== {name}  ({len(seeds)} seeds, {a.secs} s each; base -> new, mean ± sd, difference [95 % interval])")
         rows = []
         for k in seeds:
-            fb, fn = figures(logs[(a.base, s, k)]), figures(logs[(a.new, s, k)])
+            fb, fn = figures(logs[("base", s, k)]), figures(logs[("new", s, k)])
             if fb is None or fn is None:
                 print(f"   seed {k}: a run has no summary (see its log)")
                 continue

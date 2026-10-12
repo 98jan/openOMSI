@@ -7,16 +7,27 @@ impl App {
     /// The player's bus: its step and its pictures, the view from it, the cursor's aim into
     /// the cab.
     pub(super) fn frame_player(&mut self, dt: f32) {
+        if !self.frame_player_input(dt) {
+            return;
+        }
+        self.frame_player_physics(dt);
+        self.frame_view_camera(dt);
+        self.frame_player_hover();
+    }
+
+    /// The on-screen wheel and pedals, the cab's sound for a walker: false when there is no
+    /// bus to drive or nothing to draw it with.
+    pub(super) fn frame_player_input(&mut self, dt: f32) -> bool {
         // the on-screen wheel and pedals (a phone)
         self.touch_frame(dt);
         // a walker stepping into or out of the bus hears its cab by degrees
         let walker = self.foot_sound_amount(dt);
         omsi_audio::soundset::set_cab_amount(walker);
-        if self.player.is_none() || self.renderer.is_none() || self.scene.is_none() {
-            return;
-        }
-        self.frame_player_physics(dt);
-        self.frame_view_camera(dt);
+        !(self.player.is_none() || self.renderer.is_none() || self.scene.is_none())
+    }
+
+    /// The cursor's aim into the cab.
+    pub(super) fn frame_player_hover(&mut self) {
         let __th = Instant::now();
         // (the cursor's aim into the cab: again when the cursor or the view
         // turned, else every few frames for switches that moved under it - a ray
@@ -34,6 +45,12 @@ impl App {
     /// The bus's step (scripts, physics, the head), the situation's other vehicles, and the
     /// bus and its driver into the scene.
     fn frame_player_physics(&mut self, dt: f32) {
+        self.frame_player_step(dt);
+        self.frame_player_to_scene(dt);
+    }
+
+    /// The bus's step (scripts, physics, the head) and the situation's other vehicles.
+    pub(super) fn frame_player_step(&mut self, dt: f32) {
         let (Some(p), Some(r), Some(scene)) = (
             self.player.as_mut(),
             self.renderer.as_ref(),
@@ -171,12 +188,27 @@ impl App {
         }) {
             static LAST: std::sync::atomic::AtomicU32 =
                 std::sync::atomic::AtomicU32::new(u32::MAX);
-            let t = self.started.elapsed().as_secs_f32();
+            // (with the fixed step the simulation's own time: the same ticks at any frame rate)
+            let t = match self.fixed_tick.as_ref() {
+                Some(ft) => ft.sim_time().0 as f32,
+                None => self.started.elapsed().as_secs_f32(),
+            };
             let bucket = (t / every) as u32;
             if LAST.swap(bucket, std::sync::atomic::Ordering::Relaxed) != bucket {
                 log_physics(&p.vehicle, t);
             }
         }
+    }
+
+    /// The bus and its driver into the scene.
+    pub(super) fn frame_player_to_scene(&mut self, dt: f32) {
+        let (Some(p), Some(r), Some(scene)) = (
+            self.player.as_mut(),
+            self.renderer.as_ref(),
+            self.scene.as_mut(),
+        ) else {
+            return;
+        };
         let inside = self.cam.in_cab;
         p.sync_transforms(r, scene, inside);
         crate::scene::sync_vehicle_damage(r, scene, &mut p.vehicle, &mut p.render);

@@ -125,11 +125,11 @@ impl<'a> Offscreen<'a> {
         }
         // one simulation loop for everything: traffic, the player's vehicle (test profile and
         // timed triggers) and the passengers, so that they see each other every frame
-        let dt = 1.0 / 30.0;
+        let dt = super::run_dt();
         let drive_frames = args.drive.map(|s| (s / dt) as usize).unwrap_or(0);
         let wheel_worst: Option<(DVec3, f64)> = None;
         let total_frames = drive_frames
-            .max(if humans_off.is_some() { 30 } else { 0 })
+            .max(if humans_off.is_some() { super::steps_of(30, dt) } else { 0 })
             .max(if traffic.is_some() { 1 } else { 0 });
         // a dedicated server runs until it is told to stop (SIGTERM, Ctrl+C)
         let server = args.server.is_some();

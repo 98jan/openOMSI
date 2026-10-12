@@ -59,7 +59,7 @@ impl Offscreen<'_> {
         } = *self;
         *srv_clock += dt as f64 * lan_off.as_ref().map(|l| l.clock_speed).unwrap_or(1.0);
         // a server on the real time (server.cfg): its clock reads this machine's
-        if i.is_multiple_of(30) && crate::real_time::server_real() {
+        if i.is_multiple_of(super::steps_of(30, dt)) && crate::real_time::server_real() {
             if let Some(n) = crate::real_time::now() {
                 let have = (parse_time(&args.time) + *srv_clock + srv_admin.shift).rem_euclid(86400.0);
                 let off = (n.secs - have + 43_200.0).rem_euclid(86_400.0) - 43_200.0;
@@ -173,7 +173,7 @@ impl Offscreen<'_> {
             log::info!("server: stopping");
             return false;
         }
-        if i.is_multiple_of(30) {
+        if i.is_multiple_of(super::steps_of(30, dt)) {
             if let Some(l) = lan_off.as_mut() {
                 crate::server::enforce_vehicles(l);
                 crate::server::tick_status(l, parse_time(&args.time) + *srv_clock + srv_admin.shift, srv_weather_name.as_str());
@@ -225,7 +225,7 @@ impl Offscreen<'_> {
                 player.as_ref(),
                 &renderer.options,
             );
-            if i.is_multiple_of(60) {
+            if i.is_multiple_of(super::steps_of(60, dt)) {
                 // (following a car, the population goes with the camera)
                 let pc = if args.follow.is_some() { view_cam.position } else { center };
                 t.populate(world, pc);
@@ -276,7 +276,7 @@ impl Offscreen<'_> {
             if let Some(s) = schedule.as_mut() {
                 // at start, pick up trips that left within the last 20 minutes (a few per
                 // frame until they are all out, as the window does)
-                if i.is_multiple_of(60) || s.pending() > 0 {
+                if i.is_multiple_of(super::steps_of(60, dt)) || s.pending() > 0 {
                     // no timetable vehicle is put into the player's bus or a LAN player's
                     steps::set_keep_clear(t, player.as_ref(), remotes_off);
                     steps::schedule_tick(s, world, t, &mut sim_view.traffic, renderer, scene, i == 0);
@@ -553,7 +553,7 @@ impl Offscreen<'_> {
             let at = player.vehicle.position;
             let under = world.data.peek().drive_probe(at.x, at.y, at.z + 1.5).below;
             let lost = under.is_none_or(|g| at.z < g - 0.6);
-            if i.is_multiple_of(15) || lost {
+            if i.is_multiple_of(super::steps_of(15, dt)) || lost {
                 log::info!("autopilot t={t_s:.1} at ({:.1}, {:.1}, {:.2}) heading {:.0} {:.0} km/h, ground under {:?}{}", at.x, at.y, at.z, player.vehicle.heading, player.vehicle.physics.velocity_kmh(), under.map(|g| (g * 100.0).round() / 100.0), if lost { " FELL" } else { "" });
             }
         }
@@ -603,7 +603,7 @@ impl Offscreen<'_> {
         }
         // what the window's HUD would say about a bus that does not move
         // (once per reason: the numbers in a line change all the time)
-        if i.is_multiple_of(30) {
+        if i.is_multiple_of(super::steps_of(30, dt)) {
             let why = standing_reasons(&player.vehicle, &|a| crate::diagnostics::rebound_key(&player.bindings, a));
             let key = |l: &String| l.split('(').next().unwrap_or_default().to_string();
             for line in why
@@ -637,7 +637,7 @@ impl Offscreen<'_> {
         }
         // `OMSI_TRACE_VARS=a,b,$c`: the listed variables every half second of the run
         // (a leading `$` reads a string variable) - how a start-up sequence unfolds
-        if i.is_multiple_of(15) {
+        if i.is_multiple_of(super::steps_of(15, dt)) {
             if let Some(list) = omsi_cfg::flags::OMSI_TRACE_VARS.var() {
                 let vals: Vec<String> = list
                     .split(',')
@@ -691,7 +691,7 @@ impl Offscreen<'_> {
             // player bus on a headless server), so stops on the actual map - which can
             // be thousands of metres away - fall outside the 600 m filter in
             // `populate_with` and are never seeded without this loop.
-            if i.is_multiple_of(60) {
+            if i.is_multiple_of(super::steps_of(60, dt)) {
                 let player_centers: Vec<glam::DVec3> = remotes_off
                     .remotes
                     .values()

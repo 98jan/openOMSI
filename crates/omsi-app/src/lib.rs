@@ -795,6 +795,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         photo: None,
         photo_settings: None,
         devtools: None,
+        fixed_tick: omsi_sim::tick::SimTicks::from_flag(),
         pipeline: Default::default(),
     }
 }
