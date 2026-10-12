@@ -493,7 +493,7 @@ fn draw_tour_trips(ui: &mut Ui, tv: &mut TimetableView, right: Rect, line_name: 
         tour.trips.push(t);
         changed = true;
     }
-    for (k, (label, d)) in [("−1 min", -1.0f32), ("+1 min", 1.0)].iter().enumerate() {
+    for (k, (label, d)) in [("-1 min", -1.0f32), ("+1 min", 1.0)].iter().enumerate() {
         if ui.button(&format!("tt-shift-{k}"), Rect::new(inner.x + bw + GAP + k as f32 * (100.0 + GAP), by, 100.0, ROW), label, None, ButtonKind::Normal) {
             for t in &mut tour.trips {
                 t.departure += d;

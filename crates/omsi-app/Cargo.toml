@@ -7,7 +7,9 @@ description = "The openOMSI application: loads a map and renders it"
 
 # The game is a library with a small `main` around it: the Android build takes the same
 # library as a shared object (`cargo rustc --lib --crate-type cdylib`, see
-# scripts/build-android.sh), which the phone's NativeActivity loads.
+# scripts/build-android.sh), which the phone's NativeActivity loads; the iPhone, iPad and
+# Mac apps link it as a static library (`--crate-type staticlib`, see scripts/build-apple.sh)
+# into the Swift app, whose launcher talks to it through `apple_bridge`.
 [lib]
 name = "openomsi_game"
 path = "src/lib.rs"
@@ -60,6 +62,7 @@ omsi-world = { path = "../omsi-world" }
 omsi-scene = { path = "../omsi-scene" }
 omsi-ui = { path = "../omsi-ui" }
 omsi-launcher-core = { path = "../omsi-launcher-core" }
+omsi-launcher-api = { path = "../omsi-launcher-api" }
 omsi-launcher-ui = { path = "../omsi-launcher-ui" }
 serde.workspace = true
 hashbrown.workspace = true
@@ -76,10 +79,13 @@ rust-i18n = "4"
 # updates: the release archives from GitHub
 zip.workspace = true
 
-# the desktop's clipboard and file dialogs (a phone has neither in this form)
-[target.'cfg(not(target_os = "android"))'.dependencies]
+# the desktop's clipboard and file dialogs (a phone has neither in this form; an iPhone's
+# come from the Swift side, see `apple`)
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 arboard = { version = "3", default-features = false }
 rfd.workspace = true
+# the allocator of the desktop game (see main.rs)
+mimalloc = { version = "0.1.52", default-features = false }
 
 # Steam's rich presence: only where `assets/steam_redist` has the library (the build script
 # sets `cfg(steam)` for the same targets and puts the library beside the binary)
@@ -116,3 +122,8 @@ ndk-context = "0.1"
 [dev-dependencies]
 # the control names from a table (`ControlNames::from_table`) for the key picker's tests
 omsi-input = { path = "../omsi-input", features = ["test-support"] }
+
+# iPhone and iPad: the window the game draws in is put on the app's scene (UIKit's scene life
+# cycle, which the Swift app keeps) through the Objective-C runtime
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = { version = "0.6", default-features = false, features = ["std"] }

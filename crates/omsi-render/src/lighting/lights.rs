@@ -538,7 +538,9 @@ impl Renderer {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         match &scene.smoke_buf {
             Some(b) if b.size() as usize >= bytes.len() => {
-                if scene.corona_sent != bytes {
+                // (compared with what the smoke buffer holds: compared with the coronas'
+                // bytes, which it never equals, it was written again every frame)
+                if scene.smoke_sent != bytes {
                     self.queue.write_buffer(b, 0, bytes);
                 }
             }
@@ -553,6 +555,8 @@ impl Renderer {
                 scene.smoke_buf = Some(b);
             }
         }
+        scene.smoke_sent.clear();
+        scene.smoke_sent.extend_from_slice(bytes);
     }
 
     /// Put a tile's light map into its place of the atlas (`slot`: column from the west, row

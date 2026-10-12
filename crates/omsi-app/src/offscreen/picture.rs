@@ -167,6 +167,7 @@ impl Offscreen<'_> {
                     &phase,
                     None,
                     false,
+                    &mut Default::default(),
                 );
             }
             log::info!(
@@ -352,6 +353,7 @@ impl Offscreen<'_> {
                     follow_window: settings.ui_scale_window,
                     dt: 0.1,
                     info_rect: None,
+                    touch_gap: None,
                 };
                 for _ in 0..30 {
                     nav.frame_at(renderer, scene, &frame, viewport[0]);

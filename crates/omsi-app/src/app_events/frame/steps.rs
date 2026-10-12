@@ -11,7 +11,9 @@ use crate::view_sync::traffic::TrafficView;
 /// The vehicles the AI traffic must see besides its own: the other LAN players' buses, the
 /// player's own and the ones the player placed - and, unless the game is paused, the
 /// traffic's step itself with the player's priority, blinker, switches and signals.
-/// `player_rail`: the player's place on a rail line for the signals.
+/// `player_rail`: the player's place on a rail line for the signals. Returns the seconds
+/// spent handing the points and signals to the world (OMSI_PROFILE: they wait for the
+/// scenery objects' lock).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn traffic_tick(
     t: &mut traffic::Traffic,
@@ -23,7 +25,7 @@ pub(crate) fn traffic_tick(
     remotes: &lan::LanGame,
     placed: &[Player],
     player_rail: Option<(usize, bool)>,
-) {
+) -> f64 {
     t.others = lan_outlines(remotes);
     t.others.extend(own_outlines(player, placed));
     t.other_blinkers = outline_indicators(remotes, player, placed);
@@ -34,9 +36,12 @@ pub(crate) fn traffic_tick(
         t.other_priority = remotes.remotes.iter().filter(|(_, r)| r.vehicle().var("TrafficPriority").is_some_and(|v| v > 0.5)).map(|(id, _)| *id).collect();
         t.player_blinker = player.map(|p| lan::indicator(&p.vehicle)).unwrap_or(0);
         t.tick(view, dt, player.map(|p| player_outline(p)));
+        let t0 = Instant::now();
         world.set_switches(&t.switch_requests());
         world.set_signals(&t.signal_aspects(&world.signal_routes, player_rail));
+        return t0.elapsed().as_secs_f64();
     }
+    0.0
 }
 
 /// The AI vehicles round the player's bus that it collides with (none with `collide` off:

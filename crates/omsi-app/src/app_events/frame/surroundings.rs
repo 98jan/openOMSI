@@ -249,6 +249,7 @@ impl App {
             *self.perf.profile.entry("scripted.boards").or_default() += __tb.elapsed().as_secs_f64();
             // the map's own route arrows, with OMSI 2's route arrows
             w.show_help_arrows(r, scene, self.settings.nav_arrows);
+            let mut times = omsi_scene::ScriptedTimes::default();
             w.update_scripted(
                 r,
                 scene,
@@ -258,7 +259,20 @@ impl App {
                 &phase,
                 self.sound.audio.as_ref(),
                 self.cam.in_cab,
+                &mut times,
             );
+            if omsi_cfg::flags::OMSI_PROFILE.is_set() {
+                for (k, v) in [
+                    ("scripted.lock", times.lock),
+                    ("scripted.inputs", times.inputs),
+                    ("scripted.scripts", times.scripts),
+                    ("scripted.apply", times.apply),
+                    ("scripted.textures", times.textures),
+                    ("scripted.lamps", times.lamps),
+                ] {
+                    *self.perf.profile.entry(k).or_default() += v;
+                }
+            }
         }
     }
 }

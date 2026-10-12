@@ -5,9 +5,15 @@
 //! translation, the bus radio's stations and the support package.
 //! The old paths (`crate::launcher::ui`, `::state`, `::drive` ...) are the crate's.
 
-mod showroom;
+mod service;
+pub(crate) mod showroom;
+pub(crate) use service::run as run_service;
+#[cfg_attr(not(target_os = "android"), allow(unused_imports))]
+pub(crate) use service::InProcess;
 
 pub(crate) use omsi_launcher_ui::{drive, pages, theme, ui, Launcher, RAIL_W};
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(unused_imports))]
+pub(crate) use omsi_launcher_ui::mapview;
 #[cfg_attr(not(target_os = "android"), allow(unused_imports))]
 pub(crate) use omsi_launcher_ui::crash_of;
 #[allow(unused_imports)]
@@ -64,6 +70,10 @@ impl Host for AppHost {
     #[cfg(target_os = "android")]
     fn previous_run_crash(&self) -> Option<(String, String)> {
         crate::android::previous_run_crash()
+    }
+    #[cfg(target_os = "ios")]
+    fn previous_run_crash(&self) -> Option<(String, String)> {
+        crate::ios::previous_run_crash()
     }
     #[cfg(target_os = "android")]
     fn hide_content_from_gallery(&self) {

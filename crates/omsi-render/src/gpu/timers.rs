@@ -142,16 +142,28 @@ pub(crate) fn run_parts<T: Send>(pool: Option<&rayon::ThreadPool>, parts: usize,
             out
         });
     };
-    let mut out: Vec<Option<T>> = (0..parts.max(1)).map(|_| None).collect();
-    pool.in_place_scope(|s| {
-        let f = &f;
-        let (first, rest) = out.split_first_mut().expect("one part at least");
-        for (k, slot) in rest.iter_mut().enumerate() {
-            s.spawn(move |_| *slot = Some(f(k + 1)));
+    // The parts are taken in turn by whoever is free, the calling thread too: a helper the
+    // system has not got round to running yet holds up no part of its own - the caller,
+    // done with one part, takes the next instead of waiting for it.
+    let n = parts.max(1);
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let out: Vec<std::sync::Mutex<Option<T>>> = (0..n).map(|_| std::sync::Mutex::new(None)).collect();
+    let work = || loop {
+        let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if k >= n {
+            break;
         }
-        *first = Some(f(0));
+        let v = f(k);
+        *out[k].lock().unwrap_or_else(|e| e.into_inner()) = Some(v);
+    };
+    pool.in_place_scope(|s| {
+        let work = &work;
+        for _ in 1..n {
+            s.spawn(move |_| work());
+        }
+        work();
     });
-    out.into_iter().map(|o| o.expect("render part")).collect()
+    out.into_iter().map(|o| o.into_inner().unwrap_or_else(|e| e.into_inner()).expect("render part")).collect()
 }
 
 impl GpuTimers {
@@ -253,5 +265,27 @@ impl Renderer {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod run_parts_tests {
+    /// Every part runs once and comes back in its place, however the threads take them -
+    /// with the caller taking them too while a helper is slow to start.
+    #[test]
+    fn every_part_once_in_order() {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
+        let runs = std::sync::atomic::AtomicUsize::new(0);
+        let out = super::run_parts(Some(&pool), 9, |k| {
+            runs.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if k == 1 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            k * 10
+        });
+        assert_eq!(out, (0..9).map(|k| k * 10).collect::<Vec<_>>());
+        assert_eq!(runs.into_inner(), 9);
+        assert_eq!(super::run_parts(None, 3, |k| k), vec![0, 1, 2]);
+        assert_eq!(super::run_parts(Some(&pool), 0, |k| k), vec![0]);
     }
 }

@@ -784,8 +784,25 @@ impl Renderer {
     /// textures are over their memory budget): the coarser levels are copied into a smaller
     /// texture on the GPU, which takes the slot. False when the texture cannot shrink so far
     /// (a block format needs sides that are multiples of four). The materials using it
-    /// need [`Renderer::rebind_textures`] afterwards.
+    /// need [`Renderer::rebind_textures`] afterwards. Several at once: [`LevelDrops`].
     pub fn drop_top_levels(&self, scene: &mut Scene, id: TextureId, n: u32) -> bool {
+        let mut drops = self.begin_level_drops();
+        let done = self.drop_top_levels_in(&mut drops, scene, id, n);
+        self.finish_level_drops(drops);
+        done
+    }
+
+    /// Start shrinking several textures with one command buffer and one submit (see
+    /// [`Renderer::drop_top_levels_in`], [`Renderer::finish_level_drops`]): a submit of
+    /// its own for each of the budget pass's up to 96 textures cost more than the copies.
+    pub fn begin_level_drops(&self) -> LevelDrops {
+        LevelDrops { encoder: None, count: 0 }
+    }
+
+    /// [`Renderer::drop_top_levels`], its copies recorded into `drops` (the slot takes the
+    /// smaller texture at once; the copies run when the drops are finished, before anything
+    /// drawn after them).
+    pub fn drop_top_levels_in(&self, drops: &mut LevelDrops, scene: &mut Scene, id: TextureId, n: u32) -> bool {
         let Some(t) = scene.textures.get(id) else {
             return false;
         };
@@ -817,11 +834,12 @@ impl Renderer {
                 | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("drop levels"),
-            });
+        let encoder = drops.encoder.get_or_insert_with(|| {
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("drop levels"),
+                })
+        });
         for l in 0..new_levels {
             let (lw, lh) = ((nw >> l).max(1), (nh >> l).max(1));
             let size = wgpu::Extent3d {
@@ -845,10 +863,20 @@ impl Renderer {
                 size,
             );
         }
-        self.queue.submit([encoder.finish()]);
+        // (the old texture stays alive in the recorded copies until they ran)
         scene.textures[id] =
             GpuTexture::new(texture, (nw, nh), texture_bytes(format, nw, nh, new_levels));
+        drops.count += 1;
         true
+    }
+
+    /// Submit the copies of [`Renderer::drop_top_levels_in`] (one submit for all of them).
+    /// Returns how many textures were shrunk.
+    pub fn finish_level_drops(&self, drops: LevelDrops) -> usize {
+        if let Some(e) = drops.encoder {
+            self.queue.submit([e.finish()]);
+        }
+        drops.count
     }
 
     /// Rebuild the bind groups of the materials that sample any of `ids` (after
@@ -859,7 +887,14 @@ impl Renderer {
         }
         let textures = &scene.textures;
         let pbr_maps = &scene.pbr_maps;
-        let set: std::collections::HashSet<TextureId> = ids.iter().copied().collect();
+        // (a flag per texture slot: the scan below looks up seven textures of every
+        // material of the map, which a hash set made the larger part of the call)
+        let mut set = vec![false; textures.len()];
+        for &id in ids {
+            if let Some(f) = set.get_mut(id) {
+                *f = true;
+            }
+        }
         let mut n = 0;
         for m in scene.materials.iter_mut() {
             let uses = [
@@ -873,7 +908,7 @@ impl Renderer {
             ]
             .iter()
             .flatten()
-            .any(|t| set.contains(t));
+            .any(|&t| set.get(t).copied().unwrap_or(false));
             if !uses {
                 continue;
             }
@@ -896,4 +931,10 @@ impl Renderer {
         }
         n
     }
+}
+
+/// Textures being shrunk together (see [`Renderer::begin_level_drops`]).
+pub struct LevelDrops {
+    encoder: Option<wgpu::CommandEncoder>,
+    count: usize,
 }

@@ -49,6 +49,8 @@ fn android_main(app: AndroidApp) {
     // the Java activity (OmsiActivity) for the calls into it: ndk_context's context is the
     // Application, which has none of the activity's methods
     ACTIVITY.store(app.activity_as_ptr(), Ordering::Relaxed);
+    // the launcher page (LauncherBridge) is in this APK: the game's own launcher is not made
+    crate::android_launcher::set_web(app.asset_manager().open(c"launcher/ui/index.html").is_some());
     // (the updater's calls into Java, see `omsi_platform::android`)
     omsi_platform::android::install(omsi_platform::android::Hooks { install_apk, install_status, open_url });
     // the app's own folder is the home of settings.cfg, launcher.json, the profiles
@@ -109,7 +111,7 @@ fn android_main(app: AndroidApp) {
             return;
         }
     };
-    let mut shell = Shell { launcher: None, game: None, early: None };
+    let mut shell = Shell { launcher: None, game: None, early: None, spare: None, prepared: false };
     if let Err(e) = event_loop.run_app(&mut shell) {
         log::error!("{e}");
     }
@@ -324,6 +326,10 @@ struct Shell {
     /// The window, its graphics device and surface made for the first picture, before the
     /// launcher is (see `first_picture`).
     early: Option<Early>,
+    /// With the launcher page: the window a session ended in, for the next one, and whether
+    /// the installation and the content roots were looked for yet.
+    spare: Option<Arc<Window>>,
+    prepared: bool,
 }
 
 struct Early {
@@ -356,6 +362,28 @@ fn first_picture(event_loop: &ActiveEventLoop) -> Option<Early> {
 }
 
 impl Shell {
+    /// The launcher page stands in for the game's own launcher (see `android_launcher`).
+    fn web(&self) -> bool {
+        crate::android_launcher::web() && self.launcher.is_none()
+    }
+
+    /// With the launcher page: the installation and the content roots, as a bare start finds
+    /// them (what making the game's own launcher does first).
+    fn prepare_once(&mut self) {
+        if self.prepared {
+            return;
+        }
+        self.prepared = true;
+        if let Err(e) = prepare(Args::parse_from(["openomsi"]), true) {
+            log::error!("{e:#}");
+        }
+        if let Some(content) = crate::startup::content_dir() {
+            std::thread::spawn(move || hide_from_gallery(&content));
+        }
+        launcher_statics();
+        started_ok();
+    }
+
     fn launcher(&mut self) -> &mut launcher::Launcher {
         if self.launcher.is_none() {
             // the original installation and the content roots, as a bare start finds them
@@ -392,6 +420,12 @@ impl Shell {
             drop(game);
             lan_mods::clean_up();
             log::info!("session ended: back to the launcher");
+            // (the launcher page over the window, when the app shows it)
+            crate::android_launcher::session_ended();
+            if self.web() {
+                self.spare = window;
+                return;
+            }
             let l = self.launcher();
             if let Some(w) = window {
                 l.adopt_window(w);
@@ -449,7 +483,7 @@ impl Shell {
                 return;
             }
         };
-        let window = self.launcher().release_window();
+        let window = if self.web() { self.spare.take() } else { self.launcher().release_window() };
         app.create_window(event_loop, window);
         self.game = Some(Box::new(app));
     }
@@ -458,6 +492,11 @@ impl Shell {
 impl ApplicationHandler for Shell {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         log::info!("app in front");
+        if self.game.is_none() && self.web() {
+            self.prepare_once();
+            self.switch(event_loop);
+            return;
+        }
         if self.game.is_none() && self.launcher.is_none() && self.early.is_none() {
             self.early = first_picture(event_loop);
         }
@@ -472,16 +511,20 @@ impl ApplicationHandler for Shell {
         // (the system may end an app in the background without a word: see
         // `previous_run_crash`)
         log::info!("app in the background");
+        let web = self.web();
         match self.game.as_mut() {
             Some(g) => g.suspended(event_loop),
+            None if web => {}
             None => self.launcher().suspended(event_loop),
         }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         let redraw = matches!(event, WindowEvent::RedrawRequested);
+        let web = self.web();
         match self.game.as_mut() {
             Some(g) => g.window_event(event_loop, id, event),
+            None if web => {}
             None => self.launcher().window_event(event_loop, id, event),
         }
         if redraw {
@@ -497,12 +540,24 @@ impl ApplicationHandler for Shell {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let web = self.web();
         match self.game.as_mut() {
             Some(g) => {
                 event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
                 g.about_to_wait(event_loop)
             }
-            None => self.launcher().about_to_wait(event_loop),
+            None if web => {
+                // (the page asks for a duty from Java's threads: looked for now and then)
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(std::time::Instant::now() + std::time::Duration::from_millis(100)));
+                self.prepare_once();
+            }
+            None => {
+                // (the page gave way to the game's own launcher: it is made now)
+                if self.launcher.is_none() {
+                    self.launcher().resumed(event_loop);
+                }
+                self.launcher().about_to_wait(event_loop)
+            }
         }
         self.switch(event_loop);
     }

@@ -1013,7 +1013,7 @@ fn walking_can_find_a_biarticulated_bus_at_its_last_section() {
         served: None,
     };
     let mut people = PeopleSim::new(Path::new("/nonexistent"), 0);
-    people.last_buses.push(bus);
+    Arc::make_mut(&mut people.last_buses).push(bus);
     let at_rear = DVec3::new(9.0, -34.0, 0.0);
     assert!(at_rear.truncate().length() > 25.0);
     assert_eq!(people.bus_ids_near(at_rear, 25.0), [BusId::Ai(42)]);

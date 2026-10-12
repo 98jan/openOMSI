@@ -1,4 +1,4 @@
-//! The game's own interface, drawn over the picture in Roboto with a dark outline (the
+//! The game's own interface, drawn over the picture in Inter with a dark outline (the
 //! HUD's `.oft` fonts are OMSI's and stay for the time and speed): the chat of a LAN
 //! session, the name of what the cursor points at next to the cursor, and the other
 //! players' name tags above their buses.
@@ -24,7 +24,9 @@ use text::*;
 const CHAT_SHOWN: usize = 8;
 pub const CHAT_KEEP: usize = 200;
 
-/// A notification from the server (`notify`): a card over the navigator that goes by itself.
+/// A notification: a card over the navigator that goes by itself - from the server
+/// (`notify`), the plugins, the update check, and what the game tells the driver to do
+/// (`NoteWatch`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Notice {
     pub kind: NoticeKind,
@@ -41,10 +43,45 @@ pub enum NoticeKind {
     Alert,
     /// A new openOMSI version (`update_watch`).
     Update,
+    /// Something the driver has to do (release the parking brake, start the engine, give
+    /// the change): in the accent.
+    Action,
+    /// Something done (the trip's end, a setting saved).
+    Success,
 }
 
-/// How many notifications show at once (the newest; an older one makes room).
-pub const NOTICES_SHOWN: usize = 3;
+impl NoticeKind {
+    /// The kind's colour (the launcher's: neutral for information, the accent for what to
+    /// do, red for an alert, green for done, blue for an update) and its Material icon.
+    pub fn look(self) -> ([u8; 3], &'static str) {
+        match self {
+            NoticeKind::Info => ([184, 184, 184], "info"),
+            NoticeKind::Warn => ([224, 164, 58], "warning"),
+            NoticeKind::Alert => ([229, 83, 75], "error"),
+            NoticeKind::Update => ([96, 160, 232], "system_update"),
+            NoticeKind::Action => ([232, 160, 48], "touch_app"),
+            NoticeKind::Success => ([76, 183, 130], "check_circle"),
+        }
+    }
+
+    /// How long a card of this kind stays when the game shows it on its own (seconds): what
+    /// to do and an alert a little longer, to be read while driving.
+    pub fn secs(self) -> f32 {
+        match self {
+            NoticeKind::Action => 7.0,
+            NoticeKind::Alert => 8.0,
+            NoticeKind::Warn => 6.0,
+            _ => 5.0,
+        }
+    }
+}
+
+/// How many notifications show at once (the newest; an older one fades to make room).
+pub const NOTICES_SHOWN: usize = 4;
+
+/// How long a card takes to come in and to go (seconds).
+const NOTICE_IN: f32 = 0.3;
+const NOTICE_OUT: f32 = 0.4;
 
 impl Notice {
     /// `notify`'s argument: `<id> <seconds> <info|warn|alert> <text>` → the id and the notice
@@ -56,6 +93,8 @@ impl Notice {
         let kind = match it.next()? {
             "warn" => NoticeKind::Warn,
             "alert" => NoticeKind::Alert,
+            "action" => NoticeKind::Action,
+            "success" | "ok" => NoticeKind::Success,
             _ => NoticeKind::Info,
         };
         let text = it.next().map(str::trim).filter(|t| !t.is_empty())?.to_string();
@@ -63,18 +102,80 @@ impl Notice {
         Some((id, Notice { kind, text, left: total, total }))
     }
 
-    /// How opaque it is: fading in for a quarter second, out for its last half second.
+    /// A notice of the game's own: `kind`'s time.
+    pub fn new(kind: NoticeKind, text: impl Into<String>) -> Notice {
+        let total = kind.secs();
+        Notice { kind, text: text.into(), left: total, total }
+    }
+
+    /// How far it is there (0 to 1, eased): coming in over `NOTICE_IN`, going over its last
+    /// `NOTICE_OUT` - its opacity, and how much room it takes in the stack, so that the
+    /// cards round it slide instead of jumping.
     pub fn alpha(&self) -> f32 {
-        (self.left / 0.5).min((self.total - self.left) / 0.25).clamp(0.0, 1.0)
+        let k = (self.left / NOTICE_OUT).min((self.total - self.left) / NOTICE_IN).clamp(0.0, 1.0);
+        k * k * (3.0 - 2.0 * k)
     }
 }
 
-/// A new notice in the list, the oldest going when there are more than `NOTICES_SHOWN`.
+/// A new notice in the list. The same text still on the screen stays its time again instead
+/// of standing twice; with more than `NOTICES_SHOWN` the oldest fades out to make room.
 pub fn push_notice(list: &mut Vec<Notice>, n: Notice) {
+    if let Some(o) = list.iter_mut().find(|o| o.kind == n.kind && o.text == n.text && o.left > NOTICE_OUT) {
+        // (its age kept: it does not fade in once more)
+        o.total = o.total - o.left + n.total;
+        o.left = n.total;
+        return;
+    }
     list.push(n);
-    while list.len() > NOTICES_SHOWN {
+    let mut live = list.iter().filter(|o| o.left > NOTICE_OUT).count();
+    for o in list.iter_mut() {
+        if live <= NOTICES_SHOWN {
+            break;
+        }
+        if o.left > NOTICE_OUT {
+            o.left = NOTICE_OUT;
+            live -= 1;
+        }
+    }
+    while list.len() > NOTICES_SHOWN + 3 {
         list.remove(0);
     }
+}
+
+/// Turns what the game tells the driver every frame (why the bus does not move, the change
+/// due, a message) into notifications: a line becomes a card when it starts to be true, once,
+/// and again only after it was gone for `NoteWatch::REARM` seconds - the throttle let go and
+/// pressed again a moment later is the same reason, not a new one.
+#[derive(Default)]
+pub struct NoteWatch {
+    /// When each line (by its key) was last there.
+    seen: hashbrown::HashMap<String, f32>,
+    now: f32,
+}
+
+impl NoteWatch {
+    pub const REARM: f32 = 3.0;
+
+    /// This frame's lines: (key, text, kind). The key names the condition (its text may
+    /// change with a value in it, a pressure or a sum, without being a new one).
+    pub fn frame(&mut self, dt: f32, lines: &[(String, String, NoticeKind)], list: &mut Vec<Notice>) {
+        self.now += dt.max(0.0);
+        for (key, text, kind) in lines {
+            let fresh = self.seen.get(key).is_none_or(|&t| self.now - t > Self::REARM);
+            self.seen.insert(key.clone(), self.now);
+            if fresh && !text.trim().is_empty() {
+                push_notice(list, Notice::new(*kind, text.clone()));
+            }
+        }
+        let now = self.now;
+        self.seen.retain(|_, t| now - *t <= Self::REARM);
+    }
+}
+
+/// The part of a line of the game that names its condition: up to its first bracket or
+/// colon ("Parking brake is on  (. releases it)", "Air pressure is low (4.1 bar ...)").
+pub fn note_key(text: &str) -> String {
+    text.split(['(', ':']).next().unwrap_or(text).trim().to_string()
 }
 
 /// What the chat widget needs from the session each frame.
@@ -166,6 +267,29 @@ pub struct Preview {
 }
 
 
+/// The timetable window of the trip driven: its line and terminus, the tour and trip, how
+/// late, the stops, and the trip after it.
+pub struct TimetableView {
+    pub line: String,
+    pub terminus: String,
+    /// "Tour 1 · Trip 17/72".
+    pub meta: String,
+    /// Seconds late (early: negative).
+    pub delay: f64,
+    pub rows: Vec<TimetableRow>,
+    /// The next trip: its line and terminus, and when it leaves.
+    pub next: Option<(String, String)>,
+}
+
+/// A stop of the timetable window: its name, arrival and departure ("" where there is none),
+/// and 0 served, 1 next, 2 ahead.
+pub struct TimetableRow {
+    pub name: String,
+    pub arr: String,
+    pub dep: String,
+    pub state: u8,
+}
+
 /// A drop-down open over a row of a settings window: the entries, the one the keyboard is
 /// on, the first one shown and the one in force now.
 pub struct DropdownView<'a> {
@@ -192,6 +316,9 @@ pub struct Frame<'a> {
     /// The mouse steering's cross, while the system cursor is hidden and held (where the
     /// crosshair cursor stood before): drawn here instead.
     pub steer_cross: Option<(f32, f32)>,
+    /// The tooltip goes above the cursor rather than right of it: the cursor is a finger,
+    /// whose hand covers what is below and beside it.
+    pub tooltip_above: bool,
     /// An OpenXR headset is drawing this frame.
     pub vr: bool,
     /// The name of what the cursor points at (a switch, a part), shown next to it.
@@ -214,8 +341,8 @@ pub struct Frame<'a> {
     /// Ids of the game menu's lines that are greyed out and cannot be chosen (the timetable
     /// without an active route).
     pub menu_disabled: &'a [&'a str],
-    /// The timetable window: its title and per stop (name, time, 0 served / 1 next / 2 ahead).
-    pub timetable: Option<(String, Vec<(String, String, u8)>)>,
+    /// The timetable window (Insert).
+    pub timetable: Option<TimetableView>,
     /// The information bar along the top: its parts between [`INFO_SEP`]s.
     pub info: Option<String>,
     /// The room the information bar has along the top: from x to x, from y down (on a
@@ -410,24 +537,30 @@ impl Ui {
         // the top of the windows in the corners: the notes on the left start on the line of
         // the timetable and a tutorial page on the right (14 px down, they stood higher)
         let corner_top = 60.0 * s;
-        // --- notes, top left: white on a dark outline, one line each, on a dim plate (the
-        // outline alone left a note hard to read over a bright sky)
+        // --- the notes, top left: only the editors' keys while one is on (what the driver
+        // has to do comes as a notification): one flat card, the lines in it
         let notes_bottom = {
-            let px = (16.0 * s) as u32;
+            let px = (13.0 * s).round() as u32;
             let x0 = 16.0 * s;
             // (below the on-screen buttons of a phone, which keep their size when the
             // interface is made smaller)
-            let mut y = if crate::platform::touch_controls() { (80.0 * f.scale.max(0.5) * f.ui_scale.max(1.0)).max(corner_top) } else { corner_top };
-            for n in f.notes.iter().filter(|n| !n.trim().is_empty()).take(8) {
-                let text = omsi_ui::tr(n);
-                let text = clip_to(&self.text, &text, px as f32, f.width * 0.6);
-                let l = self.text.label(r, scene, &text, px, [255, 255, 255, 235]);
-                let plate = self.text.plate(r, scene, 7);
-                scene.overlays.push((plate, [x0 - 5.0 * s, y, x0 + l.w as f32 + 5.0 * s, y + l.h as f32]));
-                scene.overlays.push((l.tex, [x0, y, x0 + l.w as f32, y + l.h as f32]));
-                y += l.h as f32 + 2.0 * s;
+            let y0 = if crate::platform::touch_controls() { (80.0 * f.scale.max(0.5) * f.ui_scale.max(1.0)).max(corner_top) } else { corner_top };
+            let lines: Vec<String> = f.notes.iter().filter(|n| !n.trim().is_empty()).take(8).map(|n| clip_to(&self.text, &omsi_ui::tr(n), px as f32, f.width * 0.6)).collect();
+            if lines.is_empty() {
+                y0
+            } else {
+                let lh = (px as f32 * 1.5).round();
+                let (pad_x, pad_y) = (12.0 * s, 8.0 * s);
+                let w = lines.iter().map(|t| self.text.width_raw(t, px as f32)).fold(0.0f32, f32::max) + pad_x * 2.0;
+                let h = pad_y * 2.0 + lh * lines.len() as f32;
+                self.text.rounded(r, scene, [x0, y0, x0 + w, y0 + h], 8.0 * s, [28, 28, 28, (235.0 * self.text.backdrop.min(1.0)) as u8]);
+                for (i, t) in lines.iter().enumerate() {
+                    let l = self.text.label_op(r, scene, t, px, [184, 184, 184, 0], 1.0);
+                    let ly = (y0 + pad_y + lh * (i as f32 + 0.5) - l.h as f32 * 0.5).round();
+                    scene.overlays.push((l.tex, [x0 + pad_x, ly, x0 + pad_x + l.w as f32, ly + l.h as f32]));
+                }
+                y0 + h
             }
-            y
         };
         // --- the chat, top left under the notes, as Roblox has it (from the fourth note
         // on they ran into it)
@@ -504,82 +637,16 @@ impl Ui {
             self.chat.hovered = false;
             self.chat.rect = [0.0; 4];
         }
-        // --- the server's notifications: cards over the navigator (under it when it is in a
-        // top corner; at the top middle without it), the newest nearest to it
-        if !f.notices.is_empty() {
-            let pad = 10.0 * s;
-            let stripe = 4.0 * s;
-            let gap = 6.0 * s;
-            let (x0, w, mut y, up) = match f.notice_anchor {
-                Some(a) => {
-                    let w = (a[2] - a[0]).max(300.0 * s).min(f.width - 16.0 * s);
-                    let x0 = if a[0] + w > f.width { f.width - w - 8.0 * s } else { a[0] }.max(8.0 * s);
-                    if a[1] > f.height * 0.5 { (x0, w, a[1] - gap, true) } else { (x0, w, a[3] + gap, false) }
-                }
-                None => {
-                    let w = (420.0 * s).min(f.width - 32.0 * s);
-                    ((f.width - w) * 0.5, w, 70.0 * s, false)
-                }
-            };
-            let title_px = (13.0 * s) as u32;
-            let px = (16.0 * s) as u32;
-            let lh = px as f32 * 1.3;
-            for n in f.notices.iter().rev() {
-                // (the text steps in quarters as it fades: a label is made for each colour)
-                let a = (n.alpha() * 4.0).ceil() / 4.0;
-                if a <= 0.0 {
-                    continue;
-                }
-                let (accent, title) = match n.kind {
-                    NoticeKind::Info => ([90, 160, 255], "Server"),
-                    NoticeKind::Warn => ([240, 170, 50], "Warning"),
-                    NoticeKind::Alert => ([235, 80, 70], "Alert"),
-                    NoticeKind::Update => ([46, 160, 67], "Update"),
-                };
-                let rows = {
-                    let tc = &self.text;
-                    wrap_rows(&n.text, w - stripe - pad * 2.0, 0.0, &|t: &str| tc.width_raw(t, px as f32))
-                };
-                // (five rows at the most; a longer text says it goes on)
-                let mut rows: Vec<String> = rows.iter().map(|r| r.to_string()).collect();
-                if rows.len() > 5 {
-                    rows.truncate(5);
-                    rows[4].push('…');
-                }
-                let th = title_px as f32 * 1.35;
-                let h = pad + th + lh * rows.len() as f32 + pad * 0.7;
-                let top = if up { y - h } else { y };
-                // (a stack that would leave the window ends there)
-                if top < 0.0 || top + h > f.height {
-                    break;
-                }
-                let bg = self.text.solid(r, scene, [14, 16, 20, (225.0 * a * self.text.backdrop) as u8]);
-                scene.overlays.push((bg, [x0, top, x0 + w, top + h]));
-                let bar = self.text.solid(r, scene, [accent[0], accent[1], accent[2], (255.0 * a) as u8]);
-                scene.overlays.push((bar, [x0, top, x0 + stripe, top + h]));
-                // what is left of its time: a thin line along the bottom
-                let left = (n.left / n.total).clamp(0.0, 1.0);
-                let line = self.text.solid(r, scene, [accent[0], accent[1], accent[2], (150.0 * a) as u8]);
-                scene.overlays.push((line, [x0 + stripe, top + h - 2.0 * s, x0 + stripe + (w - stripe) * left, top + h]));
-                let tx = x0 + stripe + pad;
-                let t = self.text.label(r, scene, title, title_px, [accent[0], accent[1], accent[2], (255.0 * a) as u8]);
-                scene.overlays.push((t.tex, [tx, top + pad * 0.6, tx + t.w as f32, top + pad * 0.6 + t.h as f32]));
-                let mut ry = top + pad * 0.6 + th;
-                for row in &rows {
-                    let l = self.text.label(r, scene, row, px, [255, 255, 255, (240.0 * a) as u8]);
-                    scene.overlays.push((l.tex, [tx, ry, tx + l.w as f32, ry + l.h as f32]));
-                    ry += lh;
-                }
-                y = if up { top - gap } else { top + h + gap };
-            }
-        }
+        // --- the notifications: cards over the navigator (under it when it is in a top
+        // corner; at the top middle without it)
+        self.draw_notices(r, scene, f, s);
         if let Some(fps) = f.fps {
-            let l = self.text.label(r, scene, &format!("{fps:.0} fps"), (13.0 * s) as u32, [255, 255, 255, 200]);
-            let x = f.width - l.w as f32 - 12.0 * s;
-            // (on a plate, as the notes are: over a bright sky the outline alone was not enough)
-            let plate = self.text.plate(r, scene, 7);
-            scene.overlays.push((plate, [x - 5.0 * s, 10.0 * s, x + l.w as f32 + 5.0 * s, 10.0 * s + l.h as f32]));
-            scene.overlays.push((l.tex, [x, 10.0 * s, x + l.w as f32, 10.0 * s + l.h as f32]));
+            // (on a small flat card, as the other plates: over a bright sky bare text was hard to read)
+            let l = self.text.label_op(r, scene, &format!("{fps:.0} fps"), (12.0 * s).round() as u32, [184, 184, 184, 0], 1.0);
+            let x = (f.width - l.w as f32 - 14.0 * s).round();
+            let y = (10.0 * s).round();
+            self.text.rounded(r, scene, [x - 6.0 * s, y, x + l.w as f32 + 6.0 * s, y + l.h as f32], 6.0 * s, [28, 28, 28, (220.0 * self.text.backdrop.min(1.0)) as u8]);
+            scene.overlays.push((l.tex, [x, y, x + l.w as f32, y + l.h as f32]));
         }
         // --- the information bar, along the top in the middle: in as many rows as the room
         // it has needs
@@ -591,13 +658,12 @@ impl Ui {
             let pad = 10.0 * s;
             let [x0, x1, y] = f.info_room.unwrap_or([12.0 * s, f.width - 12.0 * s, 8.0 * s]);
             let rows = info_rows(info, (x1 - x0 - pad * 2.0).max(1.0), |t| self.text.width(t, px as f32));
-            let labels: Vec<Label> = rows.iter().map(|t| self.text.label(r, scene, t, px, [255, 255, 255, 0])).collect();
+            let labels: Vec<Label> = rows.iter().map(|t| self.text.label_op(r, scene, &omsi_ui::tr(t), px, [237, 237, 237, 0], 1.0)).collect();
             let lw = labels.iter().map(|l| l.w).max().unwrap_or(0) as f32;
             let lh = labels.iter().map(|l| l.h).max().unwrap_or(0) as f32;
             let (w, h) = (lw + pad * 2.0, lh * labels.len() as f32 + pad * 0.8);
             let x = (x0 + x1 - w) * 0.5;
-            let plate = self.text.plate(r, scene, 3);
-            scene.overlays.push((plate, [x, y, x + w, y + h]));
+            self.text.rounded(r, scene, [x, y, x + w, y + h], 8.0 * s, [28, 28, 28, (255.0 * self.text.backdrop.min(1.0)) as u8]);
             for (k, l) in labels.iter().enumerate() {
                 let (lx, ly) = (x + (w - l.w as f32) * 0.5, y + pad * 0.4 + k as f32 * lh);
                 scene.overlays.push((l.tex, [lx, ly, lx + l.w as f32, ly + l.h as f32]));
@@ -605,43 +671,11 @@ impl Ui {
             self.info_rect = Some([x, y, x + w, y + h]);
         }
         let tutorial_w = (420.0 * s).min(f.width * 0.42);
-        // --- the timetable window, on the right
-        if let Some((title, rows)) = f.timetable.as_ref() {
-            let px = (14.0 * s) as u32;
-            let lh = px as f32 * 1.55;
-            let w = (340.0 * s).min(f.width * 0.4);
-            let shown = rows.len().min(((f.height * 0.7) / lh) as usize).max(1);
-            // (from the stop before the next one on)
-            let next = rows.iter().position(|r| r.2 == 1).unwrap_or(0);
-            let first = next.saturating_sub(1).min(rows.len().saturating_sub(shown));
-            let h = lh * (shown as f32 + 1.6);
-            // (left of a tutorial page, which has the same corner)
+        // --- the timetable window, on the right (left of a tutorial page, which has the
+        // same corner)
+        if let Some(t) = f.timetable.as_ref() {
             let beside = if f.tutorial.is_some() { tutorial_w + 12.0 * s } else { 0.0 };
-            let x = (f.width - w - 16.0 * s - beside).max(16.0 * s);
-            let y = corner_top;
-            let plate = self.text.plate(r, scene, 3);
-            scene.overlays.push((plate, [x, y, x + w, y + h]));
-            let t = self.text.label(r, scene, &clip_to(&self.text, title, px as f32 * 1.1, w - 20.0 * s), (px as f32 * 1.1) as u32, [255, 255, 255, 0]);
-            scene.overlays.push((t.tex, [x + 10.0 * s, y + 6.0 * s, x + 10.0 * s + t.w as f32, y + 6.0 * s + t.h as f32]));
-            // (the names start after the widest time: "12:03-05" of a stop with a wait)
-            let time_w = rows.iter().map(|r| self.text.width(&r.1, px as f32)).fold(0.0f32, f32::max).max(40.0 * s);
-            let name_x = x + 10.0 * s + time_w + 12.0 * s;
-            for (k, (name, time, state)) in rows.iter().skip(first).take(shown).enumerate() {
-                let ry = y + lh * (k as f32 + 1.3);
-                if *state == 1 {
-                    let hl = self.text.plate(r, scene, 5);
-                    scene.overlays.push((hl, [x + 4.0 * s, ry - 2.0 * s, x + w - 4.0 * s, ry + lh - 4.0 * s]));
-                }
-                let color = match state {
-                    0 => [140, 140, 140, 0],
-                    1 => [255, 200, 110, 0],
-                    _ => [235, 235, 235, 0],
-                };
-                let tl = self.text.label(r, scene, time, px, color);
-                scene.overlays.push((tl.tex, [x + 10.0 * s, ry, x + 10.0 * s + tl.w as f32, ry + tl.h as f32]));
-                let nl = self.text.label(r, scene, &clip_to(&self.text, name, px as f32, x + w - name_x - 10.0 * s), px, color);
-                scene.overlays.push((nl.tex, [name_x, ry, name_x + nl.w as f32, ry + nl.h as f32]));
-            }
+            self.draw_timetable(r, scene, f, t, corner_top, beside, s);
         }
         // --- a tutorial page, on the right
         if let Some((title, text, image, at, count)) = f.tutorial {
@@ -706,10 +740,13 @@ impl Ui {
         // --- the mouse-over name, right of the cursor
         self.vr_tooltip_overlay = None;
         if let Some(t) = f.tooltip.as_ref().filter(|t| !t.is_empty()) {
-            let l = self.text.label(r, scene, t, (14.0 * s) as u32, [255, 255, 255, 235]);
+            let l = self.text.label_op(r, scene, &omsi_ui::tr(t), (13.0 * s).round() as u32, [237, 237, 237, 0], 1.0);
             let mut x = f.cursor.0.clamp(0.0, f.width) + 16.0 * s;
             let mut y = f.cursor.1 + 2.0 * s;
-            if x + l.w as f32 > f.width {
+            if f.tooltip_above {
+                x = (f.cursor.0 - l.w as f32 * 0.5).clamp(5.0 * s, (f.width - l.w as f32 - 5.0 * s).max(5.0 * s));
+                y = (f.cursor.1 - 56.0 * s - l.h as f32).max(0.0);
+            } else if x + l.w as f32 > f.width {
                 x = (f.cursor.0.clamp(0.0, f.width) - 8.0 * s - l.w as f32).max(5.0 * s);
             }
             if y + l.h as f32 > f.height {
@@ -719,8 +756,7 @@ impl Ui {
                 self.vr_tooltip_overlay = Some(scene.overlays.len());
             } else {
                 // (in a headset the text alone is placed in front of the eye)
-                let plate = self.text.plate(r, scene, 7);
-                scene.overlays.push((plate, [x - 5.0 * s, y, x + l.w as f32 + 5.0 * s, y + l.h as f32]));
+                self.text.rounded(r, scene, [x - 7.0 * s, y, x + l.w as f32 + 7.0 * s, y + l.h as f32], 6.0 * s, [28, 28, 28, 230]);
             }
             scene.overlays.push((l.tex, [x, y, x + l.w as f32, y + l.h as f32]));
         }
@@ -768,36 +804,516 @@ fn steer_cross_pixels(n: usize) -> Vec<u8> {
 }
 
 impl Ui {
-    /// The loading screen over a plain dark picture: the map's name in the middle, a thin
-    /// bar of how far the start area got under it, and one quiet line (what is being done).
-    pub fn loading(&mut self, r: &Renderer, scene: &mut Scene, width: f32, height: f32, scale: f32, title: &str, caption: &str, progress: f32) {
-        let s = scale.max(0.5);
-        let t = self.text.label(r, scene, title, (30.0 * s) as u32, [255, 255, 255, 0]);
-        let cy = height * 0.5;
-        let tx = (width - t.w as f32) * 0.5;
-        let ty = cy - t.h as f32 - 14.0 * s;
-        scene.overlays.push((t.tex, [tx, ty, tx + t.w as f32, ty + t.h as f32]));
-        let bw = (320.0 * s).min(width * 0.6);
-        let bh = (3.0 * s).max(2.0);
-        let bx = (width - bw) * 0.5;
-        let by = cy + 4.0 * s;
-        let track = self.text.plate(r, scene, 1);
-        scene.overlays.push((track, [bx, by, bx + bw, by + bh]));
-        let fill = self.text.plate(r, scene, 2);
-        let p = progress.clamp(0.0, 1.0);
-        if p > 0.0 {
-            scene.overlays.push((fill, [bx, by, bx + bw * p, by + bh]));
+    /// The timetable window as the launcher's card: a header with the line on an amber sign,
+    /// the terminus and how late, the tour and trip under it; then the stops as the
+    /// launcher's trips table (arrives, stop, departs), the stops passed muted, the next one
+    /// on a soft amber band with an amber bar at its left; the next trip at the end.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_timetable(&mut self, r: &Renderer, scene: &mut Scene, f: &Frame, t: &TimetableView, top: f32, beside: f32, s: f32) {
+        const INK: [u8; 4] = [237, 237, 237, 0];
+        const INK_2: [u8; 4] = [184, 184, 184, 0];
+        const MUTED: [u8; 4] = [138, 138, 138, 0];
+        let w = (400.0 * s).min(f.width * 0.42).round();
+        let x = (f.width - w - 16.0 * s - beside).max(16.0 * s).round();
+        let pad = (16.0 * s).round();
+        let px = (13.0 * s).round() as u32;
+        let lh = (30.0 * s).round();
+        let head_h = 64.0 * s;
+        let th_h = 26.0 * s;
+        let max_rows = (((f.height * 0.72 - head_h - th_h) / lh).floor() as usize).max(3);
+        let n = t.rows.len() + t.next.is_some() as usize;
+        let shown = n.min(max_rows);
+        // (from the stop before the next one on)
+        let next = t.rows.iter().position(|r| r.state == 1).unwrap_or(0);
+        let first = next.saturating_sub(1).min(n.saturating_sub(shown));
+        let h = (head_h + th_h + lh * shown as f32 + pad * 0.6).round();
+        let a = (255.0 * self.text.backdrop.min(1.0)) as u8;
+        self.text.shadow(r, scene, [x, top, x + w, top + h], 8.0 * s, 18.0 * s, 4.0 * s, 60);
+        self.text.rounded(r, scene, [x, top, x + w, top + h], 8.0 * s, [28, 28, 28, a]);
+        // the header: the line's sign, the terminus, how late
+        let cy = top + pad + 11.0 * s;
+        let sign = self.text.label_op(r, scene, &t.line, (13.0 * s).round() as u32 | BOLD, [26, 18, 6, 0], 1.0);
+        let sw = (sign.w as f32 + 10.0 * s).max(30.0 * s).round();
+        let sh = (22.0 * s).round();
+        self.text.rounded(r, scene, [x + pad, cy - sh * 0.5, x + pad + sw, cy + sh * 0.5], 4.0 * s, [232, 160, 48, 255]);
+        let (sx, sy) = ((x + pad + (sw - sign.w as f32) * 0.5).round(), (cy - sign.h as f32 * 0.5).round());
+        scene.overlays.push((sign.tex, [sx, sy, sx + sign.w as f32, sy + sign.h as f32]));
+        let d = t.delay;
+        let (dtext, dcol) = {
+            let m = (d.abs() / 60.0) as i64;
+            let sec = (d.abs() % 60.0) as i64;
+            let sign = if d < 0.0 { "-" } else { "+" };
+            let col = if d > 59.0 { [229, 83, 75, 0] } else if d < -59.0 { [96, 160, 232, 0] } else { [76, 183, 130, 0] };
+            (format!("{sign}{m}:{sec:02}"), col)
+        };
+        let dl = self.text.label_op(r, scene, &dtext, (13.0 * s).round() as u32 | BOLD, dcol, 1.0);
+        let dx = (x + w - pad - dl.w as f32).round();
+        scene.overlays.push((dl.tex, [dx, (cy - dl.h as f32 * 0.5).round(), dx + dl.w as f32, (cy - dl.h as f32 * 0.5).round() + dl.h as f32]));
+        let tx = x + pad + sw + 10.0 * s;
+        let term = clip_to(&self.text, &t.terminus, 15.0 * s, dx - 10.0 * s - tx);
+        let tl = self.text.label_op(r, scene, &term, (15.0 * s).round() as u32 | BOLD, INK, 1.0);
+        scene.overlays.push((tl.tex, [tx.round(), (cy - tl.h as f32 * 0.5).round(), tx.round() + tl.w as f32, (cy - tl.h as f32 * 0.5).round() + tl.h as f32]));
+        let my = top + pad + 34.0 * s;
+        let icon_px = (14.0 * s).round() as u32;
+        if let Some(ic) = self.text.icon(r, scene, "departure_board", icon_px, [138, 138, 138, 255]) {
+            let iy = (my - icon_px as f32 * 0.5).round();
+            scene.overlays.push((ic, [x + pad, iy, x + pad + icon_px as f32, iy + icon_px as f32]));
         }
-        if !caption.is_empty() {
-            let c = self.text.label(r, scene, caption, (13.0 * s) as u32, [200, 204, 210, 0]);
-            let cx = (width - c.w as f32) * 0.5;
-            let cy2 = by + bh + 14.0 * s;
-            scene.overlays.push((c.tex, [cx, cy2, cx + c.w as f32, cy2 + c.h as f32]));
+        let ml = self.text.label_op(r, scene, &t.meta, (12.0 * s).round() as u32, MUTED, 1.0);
+        let mx = (x + pad + icon_px as f32 + 6.0 * s).round();
+        scene.overlays.push((ml.tex, [mx, (my - ml.h as f32 * 0.5).round(), mx + ml.w as f32, (my - ml.h as f32 * 0.5).round() + ml.h as f32]));
+        // the table's head
+        let col_arr = x + pad;
+        let col_stop = x + pad + 58.0 * s;
+        let col_dep = x + w - pad;
+        let hy = top + head_h + th_h * 0.5;
+        let hpx = (11.5 * s).round() as u32 | BOLD;
+        for (txt, at, right) in [(omsi_ui::tr("Arrives"), col_arr, false), (omsi_ui::tr("Stop"), col_stop, false), (omsi_ui::tr("Departs"), col_dep, true)] {
+            let l = self.text.label_op(r, scene, &txt, hpx, MUTED, 1.0);
+            let lx = if right { at - l.w as f32 } else { at };
+            let ly = (hy - l.h as f32 * 0.5).round();
+            scene.overlays.push((l.tex, [lx.round(), ly, lx.round() + l.w as f32, ly + l.h as f32]));
         }
-        self.text.end_frame(r, scene);
+        // the rows
+        let time_w = 44.0 * s;
+        for k in first..first + shown {
+            let ry = top + head_h + th_h + lh * (k - first) as f32;
+            let band = [x + 6.0 * s, ry, x + w - 6.0 * s, ry + lh - 2.0 * s];
+            let (name, arr, dep, state) = match t.rows.get(k) {
+                Some(row) => (row.name.clone(), row.arr.clone(), row.dep.clone(), row.state),
+                None => match t.next.as_ref() {
+                    Some((what, when)) => (format!("› {what}"), String::new(), when.clone(), 3),
+                    None => continue,
+                },
+            };
+            if state == 1 {
+                self.text.rounded(r, scene, band, 4.0 * s, [232, 160, 48, 26]);
+                self.text.rounded(r, scene, [band[0], band[1], band[0] + 3.0 * s, band[3]], 1.5 * s, [232, 160, 48, 255]);
+            } else if (k - first) % 2 == 1 {
+                self.text.rounded(r, scene, band, 4.0 * s, [33, 33, 33, a]);
+            }
+            let (ink, time_ink) = match state {
+                0 | 3 => (MUTED, MUTED),
+                1 => (INK, [255, 200, 110, 0]),
+                _ => (INK_2, INK),
+            };
+            let size = if state == 1 { px | BOLD } else { px };
+            let cy = ry + (lh - 2.0 * s) * 0.5;
+            for (txt, at, right) in [(&arr, col_arr, false), (&dep, col_dep, true)] {
+                if txt.is_empty() {
+                    continue;
+                }
+                let l = self.text.label_op(r, scene, txt, size, time_ink, 1.0);
+                let lx = if right { at - l.w as f32 } else { at };
+                let ly = (cy - l.h as f32 * 0.5).round();
+                scene.overlays.push((l.tex, [lx.round(), ly, lx.round() + l.w as f32, ly + l.h as f32]));
+            }
+            let name = clip_to(&self.text, &name, px as f32, col_dep - time_w - 8.0 * s - col_stop);
+            let l = self.text.label_op(r, scene, &name, size, ink, 1.0);
+            let ly = (cy - l.h as f32 * 0.5).round();
+            scene.overlays.push((l.tex, [col_stop.round(), ly, col_stop.round() + l.w as f32, ly + l.h as f32]));
+        }
+    }
+
+    /// The notifications as the launcher's cards: flat graphite, no edge, the kind's icon in
+    /// its colour, the text wrapped to as many rows as it needs. A card comes in rising a
+    /// little and fading, and goes fading while the room it took closes; the newest stands
+    /// on top of the stack.
+    fn draw_notices(&mut self, r: &Renderer, scene: &mut Scene, f: &Frame, s: f32) {
+        if f.notices.is_empty() {
+            return;
+        }
+        let gap = 8.0 * s;
+        let px = (14.0 * s).round() as u32;
+        let lh = (px as f32 * 1.45).round();
+        let pad_y = 11.0 * s;
+        let pad_l = 14.0 * s;
+        let icon_px = (18.0 * s).round() as u32;
+        let text_x = pad_l + icon_px as f32 + 10.0 * s;
+        let pad_r = 16.0 * s;
+        let max_text = (340.0 * s).min(f.width - 32.0 * s - text_x - pad_r).max(80.0 * s);
+        // where the stack stands: over a navigator in the lower half (growing up), under one
+        // in the upper half, or at the top middle; on the navigator's side of the window
+        let (up, mut y, place) = match f.notice_anchor {
+            Some(a) => {
+                let left = (a[0] + a[2]) * 0.5 < f.width * 0.5;
+                let place = if left { (a[0].max(8.0 * s), 0) } else { (a[2].min(f.width - 8.0 * s), 2) };
+                if a[1] > f.height * 0.5 { (true, a[1] - gap, place) } else { (false, a[3] + gap, place) }
+            }
+            None => (false, 70.0 * s, (f.width * 0.5, 1)),
+        };
+        // (growing up, the oldest stands by the navigator and the newest on top; growing
+        // down, the newest first)
+        let order: Vec<Notice> = if up { f.notices.to_vec() } else { f.notices.iter().rev().cloned().collect() };
+        for n in &order {
+            let p = n.alpha();
+            if p <= 0.0 {
+                continue;
+            }
+            let text = omsi_ui::tr(&n.text).into_owned();
+            let mut rows = {
+                let tc = &self.text;
+                wrap_rows(&text, max_text, 0.0, &|t: &str| tc.width_raw(t, px as f32))
+            };
+            // (six rows at the most; a longer text says it goes on)
+            if rows.len() > 6 {
+                rows.truncate(6);
+                rows[5].push('…');
+            }
+            let tw = rows.iter().map(|t| self.text.width_raw(t, px as f32)).fold(0.0f32, f32::max);
+            let w = (text_x + tw + pad_r).max(220.0 * s).min(f.width - 16.0 * s).round();
+            let h = (pad_y * 2.0 + lh * rows.len() as f32).round();
+            let top = if up { y - h } else { y };
+            if top < 0.0 || top + h > f.height {
+                break;
+            }
+            let x0 = match place.1 {
+                0 => place.0,
+                2 => place.0 - w,
+                _ => place.0 - w * 0.5,
+            }
+            .clamp(8.0 * s, (f.width - w - 8.0 * s).max(8.0 * s))
+            .round();
+            // (it rises into its place as it comes, sinks as it goes)
+            let ty = top + (1.0 - p) * 10.0 * s;
+            let k = (p * 16.0).round() / 16.0;
+            let (rgb, icon) = n.kind.look();
+            self.text.shadow(r, scene, [x0, ty, x0 + w, ty + h], 8.0 * s, 18.0 * s, 4.0 * s, (70.0 * k) as u8);
+            self.text.rounded(r, scene, [x0, ty, x0 + w, ty + h], 8.0 * s, [28, 28, 28, (246.0 * k) as u8]);
+            if let Some(t) = self.text.icon(r, scene, icon, icon_px, [rgb[0], rgb[1], rgb[2], (255.0 * k) as u8]) {
+                let iy = (ty + pad_y + lh * 0.5 - icon_px as f32 * 0.5).round();
+                let ix = (x0 + pad_l).round();
+                scene.overlays.push((t, [ix, iy, ix + icon_px as f32, iy + icon_px as f32]));
+            }
+            for (i, row) in rows.iter().enumerate() {
+                let l = self.text.label_op(r, scene, row, px, [237, 237, 237, 0], k);
+                let cy = ty + pad_y + lh * (i as f32 + 0.5);
+                let ly = (cy - l.h as f32 * 0.5).round();
+                let lx = (x0 + text_x).round();
+                scene.overlays.push((l.tex, [lx, ly, lx + l.w as f32, ly + l.h as f32]));
+            }
+            let slot = (h + gap) * p;
+            y = if up { y - slot } else { y + slot };
+        }
     }
 }
 
+/// How long the loading screen stands full once its bar is at the end, and how long it then
+/// takes to fade over the first pictures of the session (seconds).
+const LOADING_HOLD: f32 = 0.12;
+const LOADING_FADE: f32 = 0.5;
+
+/// The loading screen's own state. The start area's tiles are counted only as each is done,
+/// and most of a load the count stands at none, so the bar is driven by the time the load is
+/// expected to take (`LoadTimes`): it goes along that time to `LOADING_EXPECTED_AT` and on,
+/// slower, towards `LOADING_CREEP` if the load takes longer - never standing still, never going
+/// back - and takes the real count whenever that is ahead. Once the world is there it runs to
+/// its end in `LOADING_RUN` seconds, stands a moment, and the screen fades over the session's
+/// first pictures instead of being cut away.
+#[derive(Default)]
+pub struct Loading {
+    /// The map's name.
+    pub title: String,
+    /// How long this load is expected to take (seconds; 0: not known yet).
+    pub expected: f32,
+    /// The bar as shown (0 to 1).
+    shown: f32,
+    /// Seconds the loading screen has stood.
+    elapsed: f32,
+    /// Seconds the screen has been shown, the run and the fade too (the stripes, the tips).
+    clock: f32,
+    /// The tip shown first (a different one each start).
+    tip0: usize,
+    /// The world is there: how fast the bar runs to its end (a share a second).
+    run: Option<f32>,
+    /// The run has not had a frame yet: the time before it (the world being started, no
+    /// frame drawn) is not run through unseen.
+    run_fresh: bool,
+    /// Seconds since the bar came to its end.
+    out: f32,
+    /// The screen was shown at all (a map without streaming starts at once: nothing fades).
+    drawn: bool,
+    last: Option<std::time::Instant>,
+}
+
+/// The tips under the loading screen's "Tips", one at a time.
+pub const LOADING_TIPS: [&str; 8] = [
+    "Shift+U puts the bus into service: the electrics, the engine and the lights in one go",
+    "F1 is the driver's seat, F2 the passengers' view, F3 outside the bus and F4 the free camera",
+    "Esc opens the menu: the options, the line and tour, saving and the photo mode",
+    "Shift+N switches the navigator between the map, the map with the next stops, and off",
+    "Insert shows the timetable of your trip",
+    "Shift+M opens the city map",
+    "P pauses the game; Alt+S saves the situation",
+    "Shift+Y shows the information bar: the time, the speed, the temperatures and the next stop",
+];
+/// How long a tip stands (seconds).
+const TIP_SECS: f32 = 6.0;
+
+/// Where the bar stands when the expected time is up, and how far it creeps on after it.
+const LOADING_EXPECTED_AT: f32 = 0.92;
+const LOADING_CREEP: f32 = 0.98;
+/// How long the bar takes from wherever it is to its end once the world is there (seconds).
+const LOADING_RUN: f32 = 0.35;
+/// The expected time of a map loaded for the first time (seconds).
+pub const LOADING_FIRST_GUESS: f32 = 8.0;
+
+/// The bar for `u` of the expected time gone by: nearly even along the time (a little quicker
+/// at first, a little slower towards the end) to `LOADING_EXPECTED_AT`, then on more and more
+/// slowly towards `LOADING_CREEP`.
+pub fn time_progress(u: f32) -> f32 {
+    let u = u.max(0.0);
+    if u <= 1.0 {
+        LOADING_EXPECTED_AT * u * (1.3 - 0.3 * u)
+    } else {
+        LOADING_EXPECTED_AT + (LOADING_CREEP - LOADING_EXPECTED_AT) * (1.0 - 1.0 / (1.0 + (u - 1.0) * 3.0))
+    }
+}
+
+/// The bar shown after `dt` seconds on its way to `target`: an exponential approach (it
+/// slows as it gets near) held between a floor speed, so that it never stands just short of
+/// where it is going, and a ceiling, so that a sudden jump of the count is spread out (`ready`:
+/// a quicker approach).
+pub fn ease_progress(shown: f32, target: f32, ready: bool, dt: f32) -> f32 {
+    let target = target.clamp(0.0, 1.0);
+    let gap = target - shown;
+    if gap <= 0.0 {
+        return shown;
+    }
+    let (tau, floor, ceil) = if ready { (0.1, 1.0, 3.5) } else { (0.35, 0.12, 1.2) };
+    (shown + (gap / tau).clamp(floor, ceil) * dt.clamp(0.0, 0.1)).min(target)
+}
+
+impl Loading {
+    /// Seconds since the last frame of the loading screen (none before the first).
+    pub fn tick(&mut self) -> f32 {
+        let now = std::time::Instant::now();
+        let dt = self.last.map(|t| (now - t).as_secs_f32()).unwrap_or(0.0);
+        self.last = Some(now);
+        dt
+    }
+
+    /// A frame of the loading screen with the start area `real` of the way loaded.
+    pub fn step(&mut self, real: f32, dt: f32) {
+        if !self.drawn {
+            self.tip0 = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as usize).unwrap_or(0);
+        }
+        self.drawn = true;
+        let dt = dt.clamp(0.0, 1.0);
+        self.clock += dt.min(0.1);
+        match self.run {
+            None => {
+                // (by the clock: the time is what the bar goes along, and what the next load
+                // of the map expects)
+                self.elapsed += dt;
+                let by_time = time_progress(self.elapsed / self.expected_secs());
+                // (the count, when it is ahead, eased: it comes in jumps)
+                let by_count = ease_progress(self.shown, real.clamp(0.0, 1.0) * LOADING_CREEP, false, dt);
+                self.shown = self.shown.max(by_time).max(by_count);
+            }
+            Some(_) if self.run_fresh => self.run_fresh = false,
+            Some(rate) => {
+                self.shown = (self.shown + rate * dt).min(1.0);
+                if self.shown >= 1.0 {
+                    // (a fade of a few steps at the least, however slow the frames are)
+                    self.out += dt.min(0.1);
+                }
+            }
+        }
+    }
+
+    fn expected_secs(&self) -> f32 {
+        if self.expected > 0.5 { self.expected } else { LOADING_FIRST_GUESS }
+    }
+
+    /// The world is there: the rest of the bar in `LOADING_RUN` seconds.
+    pub fn finish(&mut self) {
+        if self.run.is_none() {
+            self.run = Some(((1.0 - self.shown) / LOADING_RUN).max(0.5));
+            self.run_fresh = true;
+        }
+    }
+
+    /// Seconds the loading screen stood (the load's time, for `LoadTimes`).
+    pub fn elapsed(&self) -> f32 {
+        self.elapsed
+    }
+
+    /// The bar shown.
+    pub fn shown(&self) -> f32 {
+        self.shown
+    }
+
+    /// Seconds the screen has been shown (its stripes and tips go by it).
+    pub fn clock(&self) -> f32 {
+        self.clock
+    }
+
+    /// The tip shown now and how far it is faded in: a new one every `TIP_SECS`, fading
+    /// out and the next in.
+    pub fn tip(&self) -> (&'static str, f32) {
+        let n = (self.clock / TIP_SECS) as usize;
+        let t = self.clock - n as f32 * TIP_SECS;
+        let k = (t / 0.4).min((TIP_SECS - t) / 0.4).clamp(0.0, 1.0);
+        (LOADING_TIPS[(self.tip0 + n) % LOADING_TIPS.len()], k)
+    }
+
+    /// The screen still stands over the session's pictures: how opaque it is (none: it is
+    /// gone, or it never showed).
+    pub fn over_session(&self) -> Option<f32> {
+        if !(self.drawn && self.run.is_some()) {
+            return None;
+        }
+        let t = ((self.out - LOADING_HOLD) / LOADING_FADE).clamp(0.0, 1.0);
+        (t < 1.0).then(|| 1.0 - t * t * (3.0 - 2.0 * t))
+    }
+}
+
+/// How long the last loads of each map took (`~/.openomsi/cache/load-times.json`: the map's
+/// file → the last three loads in seconds), so that the loading bar can go along the time the
+/// next one will likely take.
+pub struct LoadTimes;
+
+impl LoadTimes {
+    fn path() -> Option<std::path::PathBuf> {
+        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+        Some(std::path::PathBuf::from(home).join(".openomsi").join("cache").join("load-times.json"))
+    }
+
+    fn read() -> serde_json::Map<String, serde_json::Value> {
+        Self::path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+    }
+
+    /// The expected time of loading `map`: the average of its last loads (none: never loaded).
+    pub fn expected(map: &str) -> Option<f32> {
+        expected_of(Self::read().get(map)?)
+    }
+
+    /// `map` took `secs` to load this time.
+    pub fn record(map: &str, secs: f32) {
+        let Some(p) = Self::path() else { return };
+        let mut all = Self::read();
+        let mut last: Vec<f32> = all.get(map).and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).collect()).unwrap_or_default();
+        last.push(secs);
+        let keep = last.len().saturating_sub(3);
+        last.drain(..keep);
+        let last: Vec<f64> = last.iter().map(|x| (*x as f64 * 100.0).round() / 100.0).collect();
+        all.insert(map.to_string(), serde_json::json!(last));
+        if let Some(dir) = p.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::fs::write(&p, serde_json::Value::Object(all).to_string()) {
+            log::warn!("load times: {} not written: {e}", p.display());
+        }
+    }
+}
+
+/// The average of the loads kept for a map.
+fn expected_of(v: &serde_json::Value) -> Option<f32> {
+    let t: Vec<f32> = v.as_array()?.iter().filter_map(|x| x.as_f64()).map(|x| x as f32).filter(|x| x.is_finite() && *x > 0.0).collect();
+    (!t.is_empty()).then(|| t.iter().sum::<f32>() / t.len() as f32)
+}
+
+/// The openOMSI wordmark (white letters, the orange "OMSI"), for the loading screen.
+const WORDMARK: &str = include_str!("../../../assets/logos/openomsi-wordmark-light.svg");
+
+/// The pixels of a stretch of the loading bar `w` x `h` with its stripes: 45 degree bands of
+/// the accent and a lighter one, `period` pixels apart along the bar, moved `phase` pixels on.
+fn stripe_pixels(w: u32, h: u32, period: u32, phase: u32, alpha: u8) -> Vec<u8> {
+    let mut px = Vec::with_capacity((w * h * 4) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let light = (x + period * 4 + phase - y % period) % period < period / 2;
+            let c = if light { [244, 182, 82] } else { [232, 160, 48] };
+            px.extend_from_slice(&[c[0], c[1], c[2], alpha]);
+        }
+    }
+    px
+}
+
+impl Ui {
+    /// The loading screen: the openOMSI wordmark large in the middle and the map's name under
+    /// it; along the bottom a square amber bar whose stripes slide on (it is working), over
+    /// it a rotating tip on the left and how far on the right. All of it `opacity` (fading
+    /// over the first pictures of the session); `clock` moves the stripes and the tips.
+    #[allow(clippy::too_many_arguments)]
+    pub fn loading_screen(&mut self, r: &Renderer, scene: &mut Scene, width: f32, height: f32, scale: f32, title: &str, progress: f32, opacity: f32, clock: f32, tip: (&str, f32)) {
+        let s = scale.max(0.5);
+        let k = (opacity.clamp(0.0, 1.0) * 16.0).round() / 16.0;
+        if k <= 0.0 {
+            return;
+        }
+        let a = |v: f32| (v * k).round().clamp(0.0, 255.0) as u8;
+        let bg = self.text.solid(r, scene, [18, 18, 18, a(255.0)]);
+        scene.overlays.push((bg, [0.0, 0.0, width, height]));
+        // the wordmark, large, a little above the middle
+        let lw = (560.0 * s).min(width * 0.6).round() as u32;
+        let lh = (lw as f32 * 303.0 / 1142.0).round() as u32;
+        let ka = a(255.0);
+        let logo = self.text.cached(r, scene, ("\u{0}wordmark".to_string(), lw, [255, 255, 255, ka]), (lw, lh), || {
+            let mut px = omsi_ui::icons::rasterize_rgba(WORDMARK, lw, lh).unwrap_or_else(|| vec![0; (lw * lh * 4) as usize]);
+            for p in px.chunks_mut(4) {
+                p[3] = (p[3] as u32 * ka as u32 / 255) as u8;
+            }
+            px
+        });
+        let lx = ((width - lw as f32) * 0.5).round();
+        let ly = (height * 0.42 - lh as f32 * 0.5).round();
+        scene.overlays.push((logo, [lx, ly, lx + lw as f32, ly + lh as f32]));
+        // the map's name under it
+        let tpx = (24.0 * s).round() as u32;
+        let title = clip_to(&self.text, title, tpx as f32, width - 64.0 * s);
+        let t = self.text.label_op(r, scene, &title, tpx, [184, 184, 184, 0], k);
+        let tx = ((width - t.w as f32) * 0.5).round();
+        let ty = (ly + lh as f32 + 18.0 * s).round();
+        scene.overlays.push((t.tex, [tx, ty, tx + t.w as f32, ty + t.h as f32]));
+        // the bar along the bottom: square, the track and the striped fill
+        let margin = (48.0 * s).round();
+        let bw = (width - margin * 2.0).min(1100.0 * s).round();
+        let bx = ((width - bw) * 0.5).round();
+        let bh = (14.0 * s).round().max(6.0);
+        let by = (height - margin - bh).round();
+        let track = self.text.solid(r, scene, [42, 42, 42, a(255.0)]);
+        scene.overlays.push((track, [bx, by, bx + bw, by + bh]));
+        let p = progress.clamp(0.0, 1.0);
+        let fill_w = (bw * p).round() as u32;
+        if fill_w > 0 {
+            // (tiles of one period with the stripes moved on, a cut one at the end: the
+            // overlays cannot move a texture's pixels, so the moving is in which tile is drawn)
+            let period = (bh as u32 * 2).max(8);
+            let phase = ((clock * 40.0 * s) as u32) % period;
+            let (h, fa) = (bh as u32, a(255.0));
+            let mut x = 0u32;
+            while x < fill_w {
+                let w = period.min(fill_w - x);
+                let key = (format!("\u{0}stripes{period}x{h}p{phase}"), w, [232, 160, 48, fa]);
+                let tex = self.text.cached(r, scene, key, (w, h), || stripe_pixels(w, h, period, phase, fa));
+                scene.overlays.push((tex, [bx + x as f32, by, bx + (x + w) as f32, by + bh]));
+                x += w;
+            }
+        }
+        // over the bar: a tip on the left, how far on the right
+        let small = (11.0 * s).round() as u32 | BOLD;
+        let tip_px = (14.0 * s).round() as u32;
+        let pct = self.text.label_op(r, scene, &format!("{:.0} %", p * 100.0), (15.0 * s).round() as u32 | BOLD, [237, 237, 237, 0], k);
+        let row_y = by - 12.0 * s;
+        scene.overlays.push((pct.tex, [bx + bw - pct.w as f32, row_y - pct.h as f32, bx + bw, row_y]));
+        let (tip, tk) = tip;
+        let tip = clip_to(&self.text, &omsi_ui::tr(tip), tip_px as f32, bw - pct.w as f32 - 40.0 * s);
+        let tl = self.text.label_op(r, scene, &tip, tip_px, [184, 184, 184, 0], k * tk);
+        scene.overlays.push((tl.tex, [bx, row_y - tl.h as f32, bx + tl.w as f32, row_y]));
+        let head = self.text.label_op(r, scene, &omsi_ui::tr("Tips").to_uppercase(), small, [232, 160, 48, 0], k);
+        let hy = row_y - tl.h as f32 - head.h as f32 + 2.0 * s;
+        scene.overlays.push((head.tex, [bx, hy, bx + head.w as f32, hy + head.h as f32]));
+    }
+
+    /// The loading screen alone, before the session's first picture.
+    #[allow(clippy::too_many_arguments)]
+    pub fn loading(&mut self, r: &Renderer, scene: &mut Scene, width: f32, height: f32, scale: f32, title: &str, progress: f32, clock: f32, tip: (&str, f32)) {
+        self.loading_screen(r, scene, width, height, scale, title, progress, 1.0, clock, tip);
+        self.text.end_frame(r, scene);
+    }
+}
 
 /// `text` broken into lines of at most `width` pixels, between words.
 fn wrap(tc: &TextCache, text: &str, px: f32, width: f32) -> Vec<String> {
@@ -921,14 +1437,14 @@ mod tests {
     /// (#1164).
     #[test]
     fn the_information_bar_breaks_into_rows_that_fit() {
-        let line = ["09:00:07", "0 km/h", "EXT 15 °C / INT 15 °C", "tank 80 %", "0 Passengers", "76 › Krankenhaus", "next: Bauernhof", "−6:52"].join(INFO_SEP);
+        let line = ["09:00:07", "0 km/h", "EXT 15 °C / INT 15 °C", "tank 80 %", "0 Passengers", "76 › Krankenhaus", "next: Bauernhof", "-6:52"].join(INFO_SEP);
         let w = |t: &str| t.chars().count() as f32 * 10.0;
         assert_eq!(info_rows(&line, 5000.0, w), vec![line.clone()]);
         let rows = info_rows(&line, 500.0, w);
         assert_eq!(rows, vec![
             format!("09:00:07{INFO_SEP}0 km/h{INFO_SEP}EXT 15 °C / INT 15 °C"),
             format!("tank 80 %{INFO_SEP}0 Passengers"),
-            format!("76 › Krankenhaus{INFO_SEP}next: Bauernhof{INFO_SEP}−6:52"),
+            format!("76 › Krankenhaus{INFO_SEP}next: Bauernhof{INFO_SEP}-6:52"),
         ]);
         assert!(rows.iter().all(|r| w(r) <= 500.0));
         assert_eq!(rows.join(INFO_SEP), line);
@@ -947,19 +1463,102 @@ mod tests {
         for bad in ["", "x", "x 5", "x 5 info", "x 5 info   ", "x five info hi", "x NaN info hi"] {
             assert!(Notice::parse(bad).is_none(), "{bad}");
         }
-        // fades in, stays, fades out
+        // fades in, stays, fades out (eased)
         let mut n = Notice::parse("x 5 alert hi").unwrap().1;
         assert_eq!(n.alpha(), 0.0);
         n.left = 4.0;
         assert_eq!(n.alpha(), 1.0);
-        n.left = 0.25;
+        n.left = 0.2;
         assert!((n.alpha() - 0.5).abs() < 1e-6);
-        // three at most: the oldest goes
+        assert_eq!(Notice::parse("x 5 action hi").unwrap().1.kind, NoticeKind::Action);
+        // four at most: the oldest fade out to make room
         let mut list = Vec::new();
-        for k in 0..5 {
+        for k in 0..6 {
             push_notice(&mut list, Notice::parse(&format!("{k} 5 info n{k}")).unwrap().1);
         }
-        assert_eq!(list.iter().map(|n| n.text.as_str()).collect::<Vec<_>>(), ["n2", "n3", "n4"]);
+        let live: Vec<&str> = list.iter().filter(|n| n.left > NOTICE_OUT).map(|n| n.text.as_str()).collect();
+        assert_eq!(live, ["n2", "n3", "n4", "n5"]);
+        // the same text again stands once, for its time again, without fading in anew
+        let mut list = vec![Notice::new(NoticeKind::Action, "Doors are open")];
+        list[0].left = 2.0;
+        push_notice(&mut list, Notice::new(NoticeKind::Action, "Doors are open"));
+        assert_eq!(list.len(), 1);
+        assert_eq!((list[0].left, list[0].alpha()), (7.0, 1.0));
+    }
+
+    /// What the game tells the driver becomes a card when it starts, not every frame, and
+    /// again once it was gone for a while.
+    #[test]
+    fn a_note_becomes_a_notification_once_when_it_starts() {
+        let mut w = NoteWatch::default();
+        let mut list = Vec::new();
+        let brake = |v: f32| vec![(note_key(&format!("Air pressure is low ({v:.1} bar)")), format!("Air pressure is low ({v:.1} bar)"), NoticeKind::Action)];
+        assert_eq!(note_key("Parking brake is on  (. releases it)"), "Parking brake is on");
+        for k in 0..100 {
+            // (the pressure in the text changes, the condition is the same)
+            w.frame(0.016, &brake(4.0 + k as f32 * 0.01), &mut list);
+        }
+        assert_eq!(list.len(), 1);
+        // gone a moment (the throttle let go) and back: the same reason
+        w.frame(1.0, &[], &mut list);
+        w.frame(0.016, &brake(5.0), &mut list);
+        assert_eq!(list.len(), 1);
+        // gone for longer, and back: shown again
+        w.frame(NoteWatch::REARM + 0.5, &[], &mut list);
+        list.clear();
+        w.frame(0.016, &brake(5.0), &mut list);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].kind, NoticeKind::Action);
+    }
+
+    /// The loading bar goes along the expected time evenly, never stands still or goes back,
+    /// takes the real count when that is ahead, runs to its end in about a third of a second
+    /// once the world is there, and then fades.
+    #[test]
+    fn the_loading_bar_follows_the_expected_time_and_fades() {
+        assert_eq!(time_progress(0.0), 0.0);
+        assert!((time_progress(1.0) - 0.92).abs() < 1e-6);
+        let mut prev = 0.0;
+        for k in 1..=60 {
+            let p = time_progress(k as f32 * 0.05);
+            assert!(p > prev && p < 0.98, "{k}: {p}");
+            prev = p;
+        }
+        // half the time: about half the bar
+        assert!((time_progress(0.5) - 0.53).abs() < 0.03);
+        // a load of 4 s expected, the count standing at none: the bar goes on evenly
+        let mut l = Loading { expected: 4.0, ..Default::default() };
+        let mut shown = Vec::new();
+        for _ in 0..240 {
+            l.step(0.0, 1.0 / 60.0);
+            shown.push(l.shown());
+        }
+        assert!(shown.windows(2).all(|w| w[1] >= w[0]));
+        assert!(shown[119] > 0.4 && shown[119] < 0.65, "{}", shown[119]);
+        assert!(shown[239] > 0.8 && shown[239] <= 0.92, "{}", shown[239]);
+        // the count ahead of the time: the bar follows the count
+        l.step(0.97, 1.0);
+        assert!(l.shown() > 0.92);
+        // the world is there: the rest in about 0.35 s, then a moment, then the fade
+        l.finish();
+        let mut t = 0.0;
+        while l.shown() < 1.0 {
+            l.step(1.0, 1.0 / 60.0);
+            t += 1.0 / 60.0;
+        }
+        assert!(t < 0.4 + 1.0 / 60.0, "{t}");
+        assert_eq!(l.over_session(), Some(1.0));
+        for _ in 0..60 {
+            l.step(1.0, 1.0 / 60.0);
+        }
+        assert_eq!(l.over_session(), None);
+        // a map that needed no loading screen: nothing fades
+        let mut quiet = Loading::default();
+        quiet.finish();
+        assert_eq!(quiet.over_session(), None);
+        // the last three loads, averaged
+        assert_eq!(expected_of(&serde_json::json!([2.0, 4.0, 6.0])), Some(4.0));
+        assert_eq!(expected_of(&serde_json::json!([])), None);
     }
 
     #[test]
@@ -1030,7 +1629,7 @@ mod tests {
 
     #[test]
     fn text_renders_with_an_outline() {
-        let f = FontVec::try_from_vec(ROBOTO.to_vec()).unwrap();
+        let f = FontVec::try_from_vec(INTER.to_vec()).unwrap();
         let img = render_text(&f, "Savva: hi", 20.0, [255, 255, 255, 220]);
         assert!(img.width > 40 && img.height > 14);
         // white text and dark outline pixels are both there
@@ -1041,8 +1640,8 @@ mod tests {
 
     /// The Esc menu in Chinese, Korean and Thai: the system's fonts, not boxes.
     #[test]
-    fn scripts_roboto_lacks_come_from_the_system() {
-        let f = FontVec::try_from_vec(ROBOTO.to_vec()).unwrap();
+    fn scripts_inter_lacks_come_from_the_system() {
+        let f = FontVec::try_from_vec(INTER.to_vec()).unwrap();
         for t in ["继续", "繼續", "계속", "ดำเนินการต่อ"] {
             if t.chars().next().and_then(omsi_ui::text::fallback_font).is_none() {
                 continue;

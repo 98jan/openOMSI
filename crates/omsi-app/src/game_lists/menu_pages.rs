@@ -240,7 +240,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         switch_row(app, "ui_scale_window", "Interface grows with the window", "On a window taller than 1080p the interface grows with it"),
         slider_row(app, "ui_opacity", "Interface opacity", "How much of the interface's backgrounds shows", &pct),
         switch_row(app, "tooltips", "Name of the button under the mouse", "Shows the name of what the cursor points at"),
-        switch_row(app, "notes", "Notes in the top-left corner", "Why the vehicle does not move, the change due, what a service did"),
+        switch_row(app, "notes", "Driving hints", "Why the vehicle does not move, the change due, what a service did: as short notifications"),
         switch_row(app, "chat", "Chat in online games", "Shows the chat of a LAN session"),
         slider_row(app, "chat_size", "Chat size", "The chat's texts on top of the interface size (also Ctrl + the mouse wheel over the chat)", &pct),
         switch_row(app, "name_tags", "Other players' names above their buses", "Shows the names of the other players"),
@@ -352,7 +352,7 @@ pub(super) fn world_pages(app: &App) -> Vec<Page> {
             if let (Some(_), Some(p)) = (app.session.duty.as_ref(), app.player.as_ref()) {
                 let d = p.vehicle.host.tt_delay as f64;
                 if d.abs() >= 1.0 {
-                    let text = format!("{}{}:{:02}", if d < 0.0 { "−" } else { "+" }, (d.abs() / 60.0) as i64, d.abs() as i64 % 60);
+                    let text = format!("{}{}:{:02}", if d < 0.0 { "-" } else { "+" }, (d.abs() / 60.0) as i64, d.abs() as i64 % 60);
                     time.push(button("On time with the timetable", &text, "Move the clock so that the vehicle is on time", "clock_ontime"));
                 }
             }
@@ -372,7 +372,7 @@ pub(super) fn world_pages(app: &App) -> Vec<Page> {
         } else {
             weather.push(button("METAR report", "Load once", "Load the selected station once without enabling continuous METAR sync.", "metar_once"));
         }
-        weather.push((row("Preset", 'o', &weather_name(app), "A ready-made weather", None), "weather".to_string()));
+        weather.push((row("Preset", 'o', &weather_shown(app), "A ready-made weather", None), "weather".to_string()));
         if !app.metar_locked() {
             weather.push(button("Custom weather", "Edit current", "Freeze the weather currently in force and edit it as a custom weather.", "weather_custom"));
         }

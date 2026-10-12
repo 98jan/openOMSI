@@ -273,7 +273,8 @@ fn angle_available() -> bool {
     })
 }
 
-/// The graphics interfaces in the order they are tried: Metal on a Mac; on Windows DirectX
+/// The graphics interfaces in the order they are tried: Metal on a Mac, an iPhone and an
+/// iPad; on Windows DirectX
 /// 12 first (the Windows drivers' best-kept path: on Vulkan they reset the device -
 /// "the graphics device was lost" - far more often), then Vulkan, then OpenGL for a card
 /// without either (a GeForce GT 530), then OpenGL ES on ANGLE over DirectX 11 when its DLLs
@@ -281,7 +282,7 @@ fn angle_available() -> bool {
 /// OMSI_BACKEND=vulkan|dx12|gl|angle puts one first: a driver whose Vulkan misbehaves is
 /// got round.
 pub(crate) fn backend_order() -> Vec<GraphicsApi> {
-    if cfg!(target_os = "macos") {
+    if cfg!(any(target_os = "macos", target_os = "ios")) {
         return vec![GraphicsApi::Native(wgpu::Backends::METAL)];
     }
     let settings = crate::settings::Settings::load();

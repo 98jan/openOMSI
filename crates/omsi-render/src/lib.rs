@@ -122,11 +122,10 @@ pub struct Renderer {
     /// Plain opaque, alpha-tested, and the opaque portions of blended transmap materials;
     /// each has a two-sided and a culled variant.
     prepass_pipelines: [wgpu::RenderPipeline; 6],
-    /// The same, multisampled: the enhanced main pass's own depth laid first (see
-    /// `render_inner`), so that its costly shading runs once per visible surface.
+    /// The same, multisampled, drawn inside the enhanced main pass (colour writes off):
+    /// its own depth laid first (see `encode_prefill`), so that its costly shading runs
+    /// once per visible surface.
     prepass_msaa_pipelines: Option<[wgpu::RenderPipeline; 6]>,
-    /// Depth-only pipelines compatible with the existing HDR colour pass.
-    presurface_msaa_pipelines: Option<[wgpu::RenderPipeline; 4]>,
     /// Ambient occlusion and its blur; none on OpenGL (GLES), whose shading language cannot
     /// read a depth texture texel by texel - the pipelines failed there, AO off or not (#422).
     ssao_pipeline: Option<wgpu::RenderPipeline>,
@@ -307,7 +306,7 @@ impl Default for RenderOptions {
 /// million pixels, a 4K screen showed a picture of 58 % its size, and the enhanced
 /// graphics looked like textures of low quality; the frame-rate governor still steps down
 /// on a card that cannot keep up.
-pub const AUTO_SCALE_PIXELS: f32 = if cfg!(target_os = "macos") || cfg!(target_os = "android") { 2_800_000.0 } else { 8_400_000.0 };
+pub const AUTO_SCALE_PIXELS: f32 = if cfg!(any(target_os = "macos", target_os = "android", target_os = "ios")) { 2_800_000.0 } else { 8_400_000.0 };
 
 /// Interior lamps one mesh may be lit by (OMSI: four; a model may list more in its
 /// `[illumination_interior]`), and the step of the lamp code sent to the shaders (`first *
@@ -437,7 +436,7 @@ fn scene_scale_for(requested: f32, width: u32, height: u32) -> f32 {
     let pixels = width as f32 * height as f32;
     if requested > 0.0 {
         let requested = requested.clamp(0.5, 1.0);
-        if (cfg!(target_os = "macos") || cfg!(target_os = "android")) && pixels > AUTO_SCALE_PIXELS {
+        if cfg!(any(target_os = "macos", target_os = "android", target_os = "ios")) && pixels > AUTO_SCALE_PIXELS {
             return requested.min((AUTO_SCALE_PIXELS / pixels).sqrt().clamp(0.5, 1.0));
         }
         return requested;
@@ -477,6 +476,8 @@ fn snap_rect(r: [f32; 4]) -> [f32; 4] {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod stream_tests;
 
 /// Panics caught on purpose (a driver wgpu cannot use): see `omsi_cfg::panic_guard`.
 pub use omsi_cfg::panic_guard::{catch, catching};

@@ -49,6 +49,8 @@ fn session_id() -> String {
 fn system() -> &'static str {
     if cfg!(target_os = "android") {
         "android"
+    } else if cfg!(target_os = "ios") {
+        "ios"
     } else if cfg!(windows) {
         "windows"
     } else if cfg!(target_os = "macos") {

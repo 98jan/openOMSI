@@ -233,11 +233,11 @@ impl Traffic {
         }
         // (drawn between the traffic's last two steps, where this frame falls: see
         // `TrafficSim::advance`; back where they stand once drawn)
-        let actual = self.sim.show_between();
+        self.sim.show_between();
         self.sync_drivers(view, world, renderer, scene);
         self.sync_lamps(world, renderer, scene);
         self.sync_cars(view, world, renderer, scene);
-        self.sim.show_actual(actual);
+        self.sim.show_actual();
     }
 
     /// The traffic light lamps (see `sync`).
@@ -246,18 +246,33 @@ impl Traffic {
         // light into the `[visible] red|yellow|green 1` meshes and the coronas, and moves
         // what it animates (a barrier arm); it runs on the time since the last sync (an
         // offscreen run syncs only for its pictures)
-        let dt = std::mem::take(&mut self.sim.lamp_dt);
+        let frame_dt = std::mem::take(&mut self.sim.lamp_dt);
         let near = self.sim.viewer.map(|v| v.pos);
         let debug_lamps = omsi_cfg::flags::OMSI_DEBUG_LAMPS.is_set();
+        // Far lamps take turns: each one every `LAMP_TURNS`th frame, its script run on the
+        // time it was owed. All of them in 1.2 km, every frame, one after the other on the
+        // frame's thread, were a good part of the traffic's frame; a lamp 300 m off that
+        // changes a frame or three late shows nobody anything (a moving barrier always runs).
+        self.lamp_turn = self.lamp_turn.wrapping_add(1);
+        if self.lamp_owed.len() > 8192 {
+            self.lamp_owed.clear();
+        }
         for lamp in world.light_objects.lock().iter_mut() {
             if debug_lamps && lamp.animated {
                 log::info!("moving lamp at ({:.1}, {:.1}), {:.0} m from the viewer", lamp.pos.x, lamp.pos.y, near.map(|p| (lamp.pos - p).length()).unwrap_or(0.0));
             }
-            if let Some(p) = near {
-                if (lamp.pos - p).length() > 1200.0 {
-                    continue;
-                }
+            let dist = near.map(|p| (lamp.pos - p).length()).unwrap_or(0.0);
+            if dist > 1200.0 {
+                continue;
             }
+            let key = lamp.script.as_ref().map(|s| Arc::as_ptr(s) as usize).unwrap_or(lamp.parent as usize ^ lamp.index);
+            if dist > LAMP_NEAR && !lamp.animated && !lamp_turn_now(key, self.lamp_turn) {
+                if lamp.script.is_some() {
+                    *self.lamp_owed.entry(key).or_default() += frame_dt;
+                }
+                continue;
+            }
+            let dt = frame_dt + self.lamp_owed.remove(&key).unwrap_or(0.0);
             let (state, request) = match self
                 .controller_of_object
                 .get(&lamp.parent)
@@ -574,5 +589,35 @@ impl Traffic {
                 }
             }
         }
+    }
+}
+
+/// Lamps further than this from the viewer (m) are updated in turns (see `sync_lamps`).
+const LAMP_NEAR: f64 = 300.0;
+/// A far lamp is updated every this many frames.
+const LAMP_TURNS: u32 = 4;
+
+/// Is it the turn of the far lamp `key` in frame `turn`? (Spread by the key, so that every
+/// frame updates about the same share of them.)
+fn lamp_turn_now(key: usize, turn: u32) -> bool {
+    let spread = (key as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 60;
+    (turn.wrapping_add(spread as u32)) % LAMP_TURNS == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A far lamp gets its turn once in every `LAMP_TURNS` frames, and the lamps' turns are
+    /// spread over those frames.
+    #[test]
+    fn far_lamps_take_turns() {
+        let mut per_frame = [0usize; LAMP_TURNS as usize];
+        for key in (0..4000usize).map(|k| 0x1000_0000 + k * 48) {
+            let due: Vec<u32> = (0..LAMP_TURNS).filter(|&t| lamp_turn_now(key, t)).collect();
+            assert_eq!(due.len(), 1, "{key:#x}");
+            per_frame[due[0] as usize] += 1;
+        }
+        assert!(per_frame.iter().all(|&n| n > 700), "{per_frame:?}");
     }
 }

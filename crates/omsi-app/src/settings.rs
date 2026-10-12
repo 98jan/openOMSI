@@ -173,8 +173,9 @@ pub struct Settings {
     pub driver: bool,
     /// The frame rate in the HUD.
     pub show_fps: bool,
-    /// The notes in the top left corner: why the bus does not move, the change due, what a
-    /// service did (off, none are shown).
+    /// The driving hints: why the bus does not move, the change due, what a service did, as
+    /// short notifications when they start (off, the game keeps them to itself; the server's
+    /// and the plugins' notifications still come). The key keeps its old name, `notes`.
     pub notes: bool,
     /// The information bar along the top (Shift+Y, the menu, the touch panel's button): as
     /// it was left, not switched on again every session (#1164).
@@ -598,7 +599,7 @@ impl Settings {
                 "max_fps" | "maxfps" => {
                     s.max_fps = v.parse::<f32>().map(|x| x.max(0.0) as u32).unwrap_or(s.max_fps);
                     // a phone given the PC OMSI's 30 by the settings import: 60
-                    if cfg!(target_os = "android") && s.max_fps == 30 {
+                    if cfg!(any(target_os = "android", target_os = "ios")) && s.max_fps == 30 {
                         s.max_fps = 60;
                     }
                 }

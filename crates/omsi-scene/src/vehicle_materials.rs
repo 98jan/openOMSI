@@ -431,7 +431,7 @@ pub(super) fn scenery_text_image(
 /// (`Fonts/test1.oft`), which has the Latin letters and German umlauts only, so a street
 /// or a stop named in Cyrillic (or Greek, Chinese ...) came out as an empty arrow - at
 /// most a stray `Ä` where a code page variant of `Д` happened to be in the font. Such a
-/// text is drawn with the interface font (Roboto, then the system's fonts for the
+/// text is drawn with the interface font (Inter, then the system's fonts for the
 /// scripts it lacks) in the texture's colour, the height of the `.oft` font's letters,
 /// centred, and narrowed to the texture's width. None when the font draws every letter:
 /// that text keeps OMSI's own look.
@@ -451,7 +451,7 @@ pub(super) fn helper_text_image(tt: &omsi_model::TextTexture, atlas: Option<&oms
     let text = text.trim_end();
     let lines: Vec<&str> = text.split('@').map(str::trim).collect();
     let n = lines.len().max(1) as f32;
-    // (the .oft's line height holds its capitals and the gap below them; Roboto's capitals
+    // (the .oft's line height holds its capitals and the gap below them; Inter's capitals
     // are 0.7 of its size, so nearly the line height gives letters of the same height)
     let line = atlas.map(|a| a.font.height.max(8) as f32).unwrap_or(h as f32 * 0.2);
     // the lines share the texture's height when they would not fit at the font's own

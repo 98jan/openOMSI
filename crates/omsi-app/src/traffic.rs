@@ -57,6 +57,10 @@ pub struct Traffic {
     /// a car waiting for its clips looked them all up on the disk again every frame, and a
     /// car without a usable sound configuration did so as long as it was near.
     pub(crate) sound_plans: HashMap<std::path::PathBuf, Option<Arc<crate::view_sync::traffic_audio::SoundPlan>>>,
+    /// The traffic light lamps updated in turns far off (see `view_sync::traffic`): the
+    /// frames counted, and the seconds each far lamp's script is owed, by script.
+    pub(crate) lamp_turn: u32,
+    pub(crate) lamp_owed: HashMap<usize, f32>,
 }
 
 impl std::ops::Deref for Traffic {
@@ -83,6 +87,8 @@ impl Traffic {
             riding_sounds: None,
             sound_cfgs: HashMap::new(),
             sound_plans: HashMap::new(),
+            lamp_turn: 0,
+            lamp_owed: HashMap::new(),
         }
     }
 

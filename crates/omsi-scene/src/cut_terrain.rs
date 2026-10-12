@@ -341,17 +341,35 @@ impl World {
                 .collect();
             wanted.sort();
             wanted.dedup();
-            let decoded: Vec<(PathBuf, Arc<TextureData>)> = wanted
+            // A texture an earlier batch decoded that is still waiting for its upload is
+            // taken from there, not read and decoded once more (the next batch is prepared
+            // while the last one goes up, and neighbouring tiles share most textures).
+            let in_flight: Vec<(PathBuf, Arc<TextureData>)> = {
+                let mut known = self.decoded_in_flight.lock();
+                known.retain(|_, t| t.strong_count() > 0);
+                known.iter().filter_map(|(p, t)| Some((p.clone(), t.upgrade()?))).collect()
+            };
+            let in_flight: HashMap<PathBuf, Arc<TextureData>> = in_flight.into_iter().collect();
+            let decoded: Vec<(PathBuf, Arc<TextureData>, bool)> = wanted
                 .par_iter()
                 .filter_map(|(name, dirs)| {
                     let dirs_ref: Vec<&Path> = dirs.iter().map(|d| d.as_path()).collect();
                     let path = omsi_texture::find_texture(name, &dirs_ref)?;
+                    if let Some(t) = in_flight.get(&path) {
+                        return Some((path, t.clone(), false));
+                    }
                     let (img, _) = omsi_texture::gpu::load_gpu(&path).ok()?;
-                    Some((path, Arc::new(img)))
+                    Some((path, Arc::new(img), true))
                 })
                 .collect();
+            {
+                let mut known = self.decoded_in_flight.lock();
+                for (p, t, _) in decoded.iter().filter(|d| d.2) {
+                    known.insert(p.clone(), Arc::downgrade(t));
+                }
+            }
             let decoded: Arc<HashMap<PathBuf, Arc<TextureData>>> =
-                Arc::new(decoded.into_iter().collect());
+                Arc::new(decoded.into_iter().map(|(p, t, _)| (p, t)).collect());
             for p in prepared.iter_mut() {
                 p.images = decoded.clone();
             }

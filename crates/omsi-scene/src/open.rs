@@ -121,6 +121,7 @@ impl World {
             vehicle_meshes: Default::default(),
             vehicle_ready: Default::default(),
             upgrades_pending: Default::default(),
+            decoded_in_flight: Default::default(),
             upgrades_done: Default::default(),
             freetex_upgrades: Default::default(),
             texture_limit: Default::default(),
