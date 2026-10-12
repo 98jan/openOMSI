@@ -267,9 +267,6 @@ pub(crate) struct Args {
     /// can trace rays).
     #[arg(long)]
     pub(crate) enhanced_plus: bool,
-    /// Open the launcher (the default when the program is started without arguments).
-    #[arg(long)]
-    pub(crate) launcher: bool,
     /// Skip the launcher and show the in-game start menu instead.
     #[arg(long)]
     pub(crate) menu: bool,

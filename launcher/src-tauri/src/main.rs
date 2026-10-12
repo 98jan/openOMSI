@@ -5,7 +5,7 @@
 //!
 //! The game program finds this launcher beside itself and opens it on a plain start; when
 //! the webview cannot start here (no WebView2 runtime on an old Windows, no WebKitGTK), the
-//! game's own launcher window opens instead (`classic_launcher`).
+//! program ends with an error, which the game tells the player about.
 
 // a window, not a console program, on Windows
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
@@ -90,16 +90,6 @@ fn main() {
     if let Err(e) = result {
         omsi_launcher_lib::log_to_file(&format!("the launcher's window could not open: {e}"));
         eprintln!("the launcher's window could not open: {e}");
-        if !classic_launcher() {
-            std::process::exit(1);
-        }
+        std::process::exit(1);
     }
-}
-
-/// The game's own launcher window (`openomsi --launcher`), for a system without a webview.
-fn classic_launcher() -> bool {
-    let Some(game) = omsi_launcher_lib::game_binary() else { return false };
-    omsi_launcher_lib::log_to_file(&format!("opening the game's own launcher: {}", game.display()));
-    // (on Windows it offers to install WebView2, which is what is missing there)
-    std::process::Command::new(game).arg("--launcher").env("OPENOMSI_NO_WEBVIEW", "1").spawn().is_ok()
 }

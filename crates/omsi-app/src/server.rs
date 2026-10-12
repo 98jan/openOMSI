@@ -56,7 +56,7 @@ pub(crate) fn prepare(args: &mut Args, path: &Path) -> Result<ServerCfg> {
     }
     args.weather = cfg.weather.clone();
     // the METAR sync: the report's weather from the start (the host loop downloads it again)
-    let station = cfg.metar_sync.then(|| if cfg.metar_station.is_empty() { crate::launcher::drive::nearest_airport(&args.root.to_string_lossy(), &args.map) } else { cfg.metar_station.clone() });
+    let station = cfg.metar_sync.then(|| if cfg.metar_station.is_empty() { omsi_launcher_lib::nearest_airport(&args.root.to_string_lossy(), &args.map) } else { cfg.metar_station.clone() });
     if let Some(icao) = station.as_ref() {
         match crate::weather_setup::try_metar(icao).and_then(|w| crate::weather_setup::report_wire(&w)) {
             Some(wire) => args.weather = Some(wire),

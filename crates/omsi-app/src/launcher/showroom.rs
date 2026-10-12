@@ -193,17 +193,6 @@ impl Showroom {
         self.opening = None;
     }
 
-    /// `want` the launcher's choice: compared first, the look is made only when it changed
-    /// (it was made, five strings cloned, every frame).
-    pub fn want_choice(&mut self, root: &str, c: &super::state::Choice) {
-        let same = self.wanted.as_ref().is_some_and(|w| {
-            w.map == c.map && w.bus == c.bus && w.paint == c.paint && w.weather == c.weather && w.time == c.time && w.date == c.date && w.root.as_os_str() == root
-        });
-        if !same {
-            self.want(Look { root: PathBuf::from(root), map: c.map.clone(), bus: c.bus.clone(), paint: c.paint.clone(), weather: c.weather.clone(), time: c.time, date: c.date.clone() });
-        }
-    }
-
     /// The mouse dragged over the empty part of the window (degrees), or turned the wheel.
     pub fn orbit(&mut self, dx: f32, dy: f32) {
         self.yaw_to += dx * 0.35;

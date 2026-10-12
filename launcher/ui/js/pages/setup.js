@@ -62,12 +62,6 @@ export function SetupPage() {
           <${Button} small icon="folder" label="Open the settings folder" onClick=${() => call('open_path', { path: b.data_dir })} />
         </div>
       </${Card}>
-      ${!onPhone && html`<${Card} title="The game's own launcher">
-        <div class="row">
-          <p class="muted grow">${t('The launcher drawn by the game itself, as before: for a computer where this window has trouble.')}</p>
-          <${Button} icon="external" label="Open it" onClick=${() => call('classic_launcher').catch((e) => toast(e.message, 'error'))} />
-        </div>
-      </${Card}>`}
     </div>
   `;
 }

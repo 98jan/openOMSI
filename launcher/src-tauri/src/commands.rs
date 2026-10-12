@@ -21,7 +21,7 @@ async fn work<F: FnOnce() -> Answer + Send + 'static>(f: F) -> Answer {
 }
 
 pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![call, call_bytes, pick_folder, pick_file, pick_mod, open_path, open_url, classic_launcher, selftest_done]
+    tauri::generate_handler![call, call_bytes, pick_folder, pick_file, pick_mod, open_path, open_url, selftest_done]
 }
 
 /// This window, for the commands of `omsi-launcher-api`.
@@ -134,16 +134,6 @@ fn open_with_system(what: &std::ffi::OsStr) -> Answer {
     #[cfg(not(any(target_os = "macos", windows)))]
     let mut c = std::process::Command::new("xdg-open");
     c.arg(what).spawn().map_err(err)?;
-    Ok(json!(true))
-}
-
-/// Switch to the game's own launcher window (and close this one).
-#[tauri::command]
-fn classic_launcher(app: AppHandle) -> Answer {
-    if !crate::classic_launcher() {
-        return Err("the game program was not found".into());
-    }
-    app.exit(0);
     Ok(json!(true))
 }
 

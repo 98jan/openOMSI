@@ -166,7 +166,7 @@ impl App {
         }
         match self.args.weather.as_deref().and_then(|w| w.strip_prefix("metar:")) {
             Some(code) if !code.trim().is_empty() => code.trim().to_ascii_uppercase(),
-            _ => crate::launcher::drive::nearest_airport(&self.args.root.to_string_lossy(), &self.args.map),
+            _ => omsi_launcher_lib::nearest_airport(&self.args.root.to_string_lossy(), &self.args.map),
         }
     }
 

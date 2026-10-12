@@ -173,7 +173,6 @@ flags! {
     OMSI_CHECK_WALLS: Bool, Test, Use, "off", "Check: everybody inside a bus who stands away from its walkways.";
     OMSI_CHECK_WHEELS: Bool, Test, Use, "off", "Map check: probe the ground along every lane's wheel tracks (invisible walls, humps, holes).";
     OMSI_CHURN: Text, Test, Use, "-", "Offscreen: x,y - load the tiles round that point and unload/reload the start area (streaming test).";
-    OMSI_CLASSIC_LAUNCHER: Bool, Switch, Use, "off", "A plain start opens the game's own launcher window even when the desktop launcher (openomsi-launcher-app) is beside the program.";
     OMSI_CLICK_ALL: Bool, Test, Use, "off", "Check: aim at every clickable item of the cab and report which one would actually be operated.";
     OMSI_CLOUDFLARED: Text, Setup, Use, "-", "Path of the cloudflared binary for the LAN tunnel (searched after the game's folder, before the PATH).";
     OMSI_CLOUDFLARED_OWN: Bool, Test, Use, "off", "LAN tunnel: only the game's own downloaded cloudflared, to test the download.";
@@ -316,18 +315,13 @@ flags! {
     OMSI_LAN_JOIN_TIMEOUT: Num, Tuning, Use, "default", "LAN: seconds to wait when joining a game.";
     OMSI_LAN_SAY: Text, Test, Use, "-", "\"30=Hallo;45=Bye\": LAN chat lines said at these seconds of the session.";
     OMSI_LAN_TRACE: Text, Debug, Use, "-", "LAN CSV file: where the host's people are drawn.";
-    OMSI_LAUNCHER: Text, Setup, Use, "-", "Program to open as the launcher instead of the built-in one.";
-    OMSI_LAUNCHER_EXIT: Num, Test, Use, "-", "Launcher: close after this many seconds.";
-    OMSI_LAUNCHER_INPUT: Text, Test, Use, "-", "Scripted launcher input (\"t=2 click 400,300; ...\"). Removed from the game's environment by the updater.";
-    OMSI_LAUNCHER_PAGE: Text, Test, Use, "-", "Launcher: open this page (e.g. mods, drive:N).";
-    OMSI_LAUNCHER_SHOT: Text, Test, Use, "-", "Launcher: secs:file.png - the window's picture into a file.";
-    OMSI_LAUNCHER_SIZE: Text, Test, Use, "-", "Launcher: WxH window size.";
+    OMSI_LAUNCHER: Text, Setup, Use, "-", "Program a plain start opens as the launcher instead of the desktop launcher (openomsi-launcher-app) beside the game.";
     OMSI_LIST_ALIGNED: Bool, Debug, Use, "off", "Log the splines aligned to the terrain.";
     OMSI_MAX_FPS: Num, Tuning, Use, "settings", "Frame rate limit for this run.";
     OMSI_METER: Text, Tuning, Use, "-", "gain,target,dark,bright,bias,night: the exposure metering.";
     OMSI_MIRROR_ENHANCED: Bool, Switch, Frame, "off", "Draw the mirrors with the enhanced shading again.";
     OMSI_MIRROR_HUD: Num, Tuning, Use, "settings", "Mirror HUD mode (number).";
-    OMSI_MOBILE: Bool, Test, Use, "off", "The phone layout on a computer (launcher, screen cut-outs).";
+    OMSI_MOBILE: Bool, Test, Use, "off", "The phone layout on a computer (screen cut-outs).";
     OMSI_MUTE: Bool, Test, Use, "off", "Mix everything as usual but play nothing.";
     OMSI_NAV_MAP: Bool, Test, Use, "off", "Open the navigation map.";
     OMSI_NAV_MAP_MPP: Num, Test, Use, "2.5", "Navigation map zoom in metres per pixel.";

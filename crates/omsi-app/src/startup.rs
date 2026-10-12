@@ -526,14 +526,6 @@ impl RendererStart {
         self.building.as_ref().is_none_or(|h| h.is_finished())
     }
 
-    /// Let go of the renderer being built: waits for its pipelines and drops it (on a thread
-    /// that may wait, see the launcher's rest while a game runs).
-    pub(crate) fn abandon(mut self) {
-        if let Some(h) = self.building.take() {
-            let _ = h.join();
-        }
-    }
-
     /// The renderer, once its pipelines are built. A build that failed is followed by the
     /// next adapter and interface, as before (on this thread: the
     /// window keeps the picture it has meanwhile); its renderer is then on another device
@@ -564,10 +556,6 @@ impl RendererStart {
         }
     }
 }
-
-/// The colour a window shows before it has anything else to show: the launcher's background
-/// and the game's loading screen (linear, as the sRGB window takes it).
-pub(crate) const WINDOW_BACKGROUND: wgpu::Color = wgpu::Color { r: 0.0056, g: 0.0056, b: 0.0056, a: 1.0 };
 
 /// A picture of `color` alone into `surface`, shown (no pipeline needed: a clear). False when
 /// the window gave no picture to draw into (hidden, covered, being resized).

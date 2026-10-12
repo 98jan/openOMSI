@@ -880,11 +880,10 @@ fn remove_any(p: &Path) {
 
 /// Start the new launcher (after `install_archive`): the program file at the same place -
 /// on macOS inside the bundle, which makes it the app with its icon - with this process's
-/// environment. (A script driving this launcher - `OMSI_LAUNCHER_INPUT` - is not handed on:
-/// it was meant for this one.)
+/// environment.
 pub fn relaunch(place: &Place) -> anyhow::Result<()> {
     let mut cmd = std::process::Command::new(&place.exe);
-    cmd.current_dir(&place.dir).env_remove("OMSI_LAUNCHER_INPUT");
+    cmd.current_dir(&place.dir);
     cmd.spawn()?;
     Ok(())
 }

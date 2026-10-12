@@ -50,8 +50,6 @@ public final class LauncherBridge {
 
     static native String call(String cmd, String args);
     static native byte[] bytes(String cmd, String args);
-    /** The page went away for the game's own launcher. */
-    static native void closed();
 
     private LauncherBridge() {}
 
@@ -270,19 +268,6 @@ public final class LauncherBridge {
         switch (cmd) {
             case "open_url": {
                 openUrl(new org.json.JSONObject(args).getString("url"));
-                return "1true";
-            }
-            case "classic_launcher": {
-                // the game's own launcher, drawn in the window, for this run
-                closed();
-                activity.runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (sheet != null) {
-                            sheet.dismiss();
-                        }
-                    }
-                });
                 return "1true";
             }
             case "pick_folder":

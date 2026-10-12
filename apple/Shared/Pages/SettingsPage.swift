@@ -259,7 +259,6 @@ struct SettingsPage: View {
             if !languages.isEmpty {
                 SettingSelect(label: "Language", key: "language", options: languages)
             }
-            LauncherChoice()
             if !phone {
                 SettingToggle(label: "The launcher rests while a game runs", key: "launcher_rest", fallback: true)
                 SettingToggle(label: "Discord Rich Presence", key: "discord_status", fallback: true)
@@ -299,24 +298,6 @@ struct SettingsPage: View {
                 Spacer()
             }
             Text("openOMSI \(store.version) (\(store.build))").font(.inter(12)).foregroundStyle(Theme.muted)
-        }
-    }
-}
-
-/// "Cross-Platform Launcher": the launcher the game draws, as on Windows, Linux and Android,
-/// in place of this one.
-struct LauncherChoice: View {
-    @Environment(LauncherStore.self) private var store
-
-    var body: some View {
-        LabeledRow("Cross-Platform Launcher", detail: String(localized: "The launcher of the other systems, drawn by the game, in place of this one")) {
-            Toggle("", isOn: Binding(get: { store.flag("cross_platform_launcher") }, set: { on in
-                store.set("cross_platform_launcher", on)
-                store.act("save_settings")
-                Platform.setCrossPlatform(on)
-            }))
-            .labelsHidden()
-            .toggleStyle(.launcher)
         }
     }
 }

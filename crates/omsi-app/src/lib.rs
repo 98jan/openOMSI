@@ -249,18 +249,13 @@ pub fn run() -> Result<()> {
     // The launcher itself runs the game with a full command line (--no-menu, --map, ...).
     let bare = std::env::args().len() == 1;
     let Some((args, server_cfg)) = prepare(args, bare)? else { return Ok(()) };
-    if args.launcher || (bare && !args.menu) {
-        // the launcher window (the game started again by it with a full command line);
-        // OMSI_LAUNCHER=<program> still opens another launcher instead, and a plain start
-        // the desktop launcher beside the game
+    if bare && !args.menu {
+        // the launcher, another program (it starts the game again with a full command
+        // line): OMSI_LAUNCHER=<program>, else the desktop launcher beside the game
         if omsi_cfg::flags::OMSI_LAUNCHER.is_set() && open_launcher()? {
             return Ok(());
         }
-        // a plain start (not `--launcher`): the desktop launcher when it is beside the game
-        if !args.launcher && open_app_launcher()? {
-            return Ok(());
-        }
-        return launcher::run(graphics_instance());
+        return open_app_launcher();
     }
     let Some(app) = make_app(args, server_cfg)? else { return Ok(()) };
     // a game session's start goes into the start guard's journal (a version whose sessions
@@ -326,7 +321,7 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
         });
     omsi_script::set_session_seed(seed);
     log::info!("script random seed {seed} (OMSI_SEED={seed} repeats it)");
-    let launcher_mode = args.launcher || (bare && !args.menu);
+    let launcher_mode = bare && !args.menu;
     if !is_omsi_root(&args.root) {
         match find_root() {
             Some(p) => {

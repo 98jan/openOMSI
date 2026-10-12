@@ -136,7 +136,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_APPLE_EXIT_AFTER` | num | - | use | app | iPhone/iPad: the session ends by itself after this many seconds (checks the way back to the Swift launcher without a person). |
 | `OMSI_AUDIT_LINE` | num | - | test | sim | bus_audit example: the line (number and letter code) the IBIS typist enters instead of the bus's own. |
 | `OMSI_AUTOPILOT` | num | - | use | app | Offscreen: the player's bus follows the lanes at this speed in km/h (finds where it falls through or leaves the road). |
-| `OMSI_BACKGROUND` | bool | off | use | app, launcher-ui | A test window that does not take the keyboard focus (OMSI_INPUT drives the handlers directly); with OMSI_INPUT it ignores the real mouse too. |
+| `OMSI_BACKGROUND` | bool | off | use | app | A test window that does not take the keyboard focus (OMSI_INPUT drives the handlers directly); with OMSI_INPUT it ignores the real mouse too. |
 | `OMSI_BATCH` | num | - | use | scene | Offscreen: prepare the map tiles this many at a time, as the window's streaming does. |
 | `OMSI_BENCH` | num | - | use | app | Offscreen: draw the final picture this many more times and log the median CPU and GPU-wait time. |
 | `OMSI_BLEND_AB` | bool | off | use | app | Offscreen: a second picture with the blended draws in the old order, for a before/after of the draw order. |
@@ -184,12 +184,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_LANES_NEAR` | text | - | use | app | x,y,r: log the driving lanes passing there. |
 | `OMSI_LAN_AUDIO` | bool | off | use | app | Offscreen LAN: with the other buses' sounds. |
 | `OMSI_LAN_SAY` | text | - | use | lan | "30=Hallo;45=Bye": LAN chat lines said at these seconds of the session. |
-| `OMSI_LAUNCHER_EXIT` | num | - | use | launcher-ui | Launcher: close after this many seconds. |
-| `OMSI_LAUNCHER_INPUT` | text | - | use | guard, launcher-ui, platform | Scripted launcher input ("t=2 click 400,300; ..."). Removed from the game's environment by the updater. |
-| `OMSI_LAUNCHER_PAGE` | text | - | use | launcher-ui | Launcher: open this page (e.g. mods, drive:N). |
-| `OMSI_LAUNCHER_SHOT` | text | - | use | launcher-ui | Launcher: secs:file.png - the window's picture into a file. |
-| `OMSI_LAUNCHER_SIZE` | text | - | use | launcher-ui | Launcher: WxH window size. |
-| `OMSI_MOBILE` | bool | off | use | app, launcher-ui | The phone layout on a computer (launcher, screen cut-outs). |
+| `OMSI_MOBILE` | bool | off | use | app | The phone layout on a computer (screen cut-outs). |
 | `OMSI_MUTE` | bool | off | use | audio | Mix everything as usual but play nothing. |
 | `OMSI_NAV_MAP` | bool | off | use | app | Open the navigation map. |
 | `OMSI_NAV_MAP_MPP` | num | 2.5 | use | app | Navigation map zoom in metres per pixel. |
@@ -235,7 +230,6 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_AI_MODEL_LOCK` | bool | off | use | sim | AI cars steer no further than their model's own steering lock (no 60 degree allowance for tight turns). |
 | `OMSI_AI_WAY_ONLY` | bool | off | use | app | AI vehicles stand on their way with the plain ground sampler, as before (A/B). |
 | `OMSI_BASIC_PIPELINES` | bool | off | once | guard, render | Use the reduced (basic) render pipelines, as after a driver failed to build the full ones. |
-| `OMSI_CLASSIC_LAUNCHER` | bool | off | use | app | A plain start opens the game's own launcher window even when the desktop launcher (openomsi-launcher-app) is beside the program. |
 | `OMSI_CROSSING_DEFORM` | bool | off | use | scene | Apply the crossings' ground deformation again (A/B; Omsi.exe does not). |
 | `OMSI_CUT_PLAIN` | bool | off | use | scene | Road-cut textures uploaded without GPU-made mipmaps. |
 | `OMSI_FIXED_SCALE` | bool | off | use | app | Keep the render scale fixed (no dynamic resolution). |
@@ -299,7 +293,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_NO_SURF` | bool | off | once | scene | Every road as smooth as before (no surface texture) (A/B). |
 | `OMSI_NO_TEXCOMPRESS` | bool | off | use | render | No runtime texture compression. |
 | `OMSI_NO_TUNNEL` | bool | off | use | lan | LAN: no tunnel. |
-| `OMSI_NO_UPDATE` | bool | off | use | app, launcher-ui | No update check. |
+| `OMSI_NO_UPDATE` | bool | off | use | app | No update check. |
 | `OMSI_NO_VAR_SYNC` | bool | off | use | lan | LAN: no variable sync. |
 | `OMSI_NO_WHEEL_SLIP` | bool | off | use | sim | Every wheel grips, as before wheels turned on their own (A/B). |
 | `OMSI_OLD_WORLD_GRID` | bool | off | use | map | Maps with world coordinates take the one tile size of 371.9 m (comparison). |
@@ -346,7 +340,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | Name | Type | Default | Read | Crates | Description |
 |---|---|---|---|---|---|
 | `OMSI_AMBIENCE_DIR` | text | - | use | soundscape | The folder of the ambience's recordings (its pack.json), instead of `ambience` beside the program or in ~/.openomsi. |
-| `OMSI_BACKEND` | text | settings | use | app, launcher-ui | vulkan, dx12, metal, gl or angle (dx11, d3d11; Windows): the graphics API tried first (overrides the settings). Set at runtime by the launcher and on Android. |
+| `OMSI_BACKEND` | text | settings | use | app | vulkan, dx12, metal, gl or angle (dx11, d3d11; Windows): the graphics API tried first (overrides the settings). Set at runtime by the launcher and on Android. |
 | `OMSI_CLOUDFLARED` | text | - | use | net | Path of the cloudflared binary for the LAN tunnel (searched after the game's folder, before the PATH). |
 | `OMSI_CONTENT` | text | beside the game | use | app, cfg, launcher-core, sim | The content folder (mods, archives, screenshots). Set at runtime on Android and iOS. |
 | `OMSI_CONTENT_ZIP` | text | - | use | cfg | Extra content archives, separated like PATH (as --content-zip). |
@@ -354,7 +348,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_HEALTH_URL` | text | built-in | use | platform | Another list of broken releases (URL or file:///...json) for the start guard instead of release/health.json on GitHub. |
 | `OMSI_INSTANCE` | text | - | use | app, lan, launcher-core | The id of a game instance started by the launcher (set for the child process). |
 | `OMSI_LAN_IP` | text | - | use | net | a.b.c.d[,e.f.g.h]: LAN addresses to offer first (when the detection gets them wrong). |
-| `OMSI_LAUNCHER` | text | - | use | app | Program to open as the launcher instead of the built-in one. |
+| `OMSI_LAUNCHER` | text | - | use | app | Program a plain start opens as the launcher instead of the desktop launcher (openomsi-launcher-app) beside the game. |
 | `OMSI_OFFICIAL_KEY` | text | - | use | lan | File of the official server's signing key. |
 | `OMSI_PLUGIN_HOST32` | text | beside the game | use | plugin | Path of omsi-plugin-host32.exe. |
 | `OMSI_PRESENCE_URL` | text | built-in | use | platform | Base URL of the presence ("playing now") service. |
