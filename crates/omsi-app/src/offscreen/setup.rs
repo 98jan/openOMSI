@@ -197,7 +197,11 @@ impl<'a> Offscreen<'a> {
         // LAN in an offscreen run too, so that one game's view of another can be rendered
         // (`OMSI_LAN_AUDIO=1`: with the other buses' sounds, heard at the camera - for the logs)
         let lan_audio = (lan_off.is_some() && omsi_cfg::flags::OMSI_LAN_AUDIO.is_set())
-            .then(omsi_audio::AudioEngine::new);
+            .then(|| {
+                let a = omsi_audio::AudioEngine::new();
+                a.set_doppler(settings.doppler);
+                a
+            });
         if let (Some(l), Some(p)) = (lan_off.as_mut(), player.as_mut()) {
             lan::settle_spawn(
                 l,
@@ -241,7 +245,7 @@ impl<'a> Offscreen<'a> {
         let wetness = initial_wetness(&weather);
         let cabin_air = crate::condensation::CabinAir::new();
         let real_time = RealTime::default();
-        let recorder = record::Recorder::new(out, player.as_mut(), &args.root);
+        let recorder = record::Recorder::new(out, player.as_mut(), &args.root, settings.doppler);
         Ok(Offscreen {
             args,
             out,

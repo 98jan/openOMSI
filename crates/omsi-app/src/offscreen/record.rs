@@ -31,7 +31,8 @@ pub(super) struct Recorder {
 
 impl Recorder {
     /// A recorder for the run writing to `out`, when `OMSI_RECORD` asks for one.
-    pub(super) fn new(out: &Path, player: Option<&mut Player>, root: &Path) -> Option<Recorder> {
+    /// `doppler`: OMSI's `sound_doppler` setting.
+    pub(super) fn new(out: &Path, player: Option<&mut Player>, root: &Path, doppler: bool) -> Option<Recorder> {
         let fps = omsi_cfg::flags::OMSI_RECORD.parse::<f32>().filter(|f| *f > 0.0 && *f <= 60.0)?;
         let from = omsi_cfg::flags::OMSI_RECORD_FROM.parse::<f32>().unwrap_or(0.0).max(0.0);
         let stem = out.file_stem().and_then(|s| s.to_str()).unwrap_or("film").to_string();
@@ -41,6 +42,7 @@ impl Recorder {
             return None;
         }
         let audio = omsi_audio::AudioEngine::capture(RATE);
+        audio.set_doppler(doppler);
         if let Some(p) = player {
             p.load_sounds(&audio);
         }

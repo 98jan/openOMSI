@@ -4,7 +4,7 @@
 //! back through another: in the callback nothing waits for a lock and nothing is allocated
 //! or freed (a block mixed late is a click, and the allocator may hold a lock).
 
-use super::{distance_gain, pan_gains, Clip, Listener, VoiceId, VoiceParams, DOPPLER, MAX_VOICES};
+use super::{distance_gain, pan_gains, Clip, Listener, VoiceId, VoiceParams, MAX_VOICES};
 use crate::spsc;
 use glam::Vec3;
 use std::cell::UnsafeCell;
@@ -164,6 +164,10 @@ pub(super) struct Shared {
     /// The sequence number of the last parameters the mixer took in: the game's
     /// `voice_state` answers with the parameters a voice plays with, not those on their way.
     pub(super) taken: AtomicU64,
+    /// OMSI's `sound_doppler` and `[sound_stereo]` (see `AudioEngine::set_doppler`,
+    /// `set_stereo`).
+    pub(super) doppler: AtomicBool,
+    pub(super) stereo: AtomicU32,
 }
 
 impl Shared {
@@ -176,6 +180,8 @@ impl Shared {
             epoch: std::time::Instant::now(),
             listener: ListenerCell::new(&Listener::default()),
             taken: AtomicU64::new(0),
+            doppler: AtomicBool::new(true),
+            stereo: AtomicU32::new(10),
         }
     }
 
@@ -286,7 +292,7 @@ impl Mixer {
                 Cmd::Play(v) => self.voices.push(v),
                 Cmd::Params(id, params, at, seq) => {
                     if let Some(k) = find(&self.voices, id) {
-                        apply_params(&mut self.voices[k], params, at, listener);
+                        apply_params(&mut self.voices[k], params, at, listener, self.shared.doppler.load(Ordering::Relaxed));
                     }
                     taken = Some(seq);
                 }
@@ -345,6 +351,7 @@ impl Mixer {
         // `[important]` ones and the non-spatial ones (the driven bus heard from inside, the
         // interface) are never cut. Voices left out still advance in time, so a loop comes
         // back at the right phase.
+        let stereo = self.shared.stereo.load(Ordering::Relaxed) as f32;
         let Mixer { voices, ranked, keep, .. } = self;
         let limited = voices.iter().filter(|v| !v.finished && v.stream.is_none()).count() > MAX_VOICES;
         if limited {
@@ -376,7 +383,7 @@ impl Mixer {
                 skip_clip(v, frames, dev_rate);
                 continue;
             }
-            mix_voice(v, out, ch, frames, rate, &listener);
+            mix_voice(v, out, ch, frames, rate, &listener, stereo);
         }
         if voices.iter().any(|v| v.finished) {
             // (the ended voices go back to the game, which lets go of their clips; while
@@ -422,7 +429,7 @@ impl Mixer {
 }
 
 /// Voice `v` mixed into `out` (`frames` frames of `ch` channels at `rate`).
-fn mix_voice(v: &mut Voice, out: &mut [f32], ch: usize, frames: usize, rate: u32, listener: &Listener) {
+fn mix_voice(v: &mut Voice, out: &mut [f32], ch: usize, frames: usize, rate: u32, listener: &Listener, stereo: f32) {
     let dev_rate = rate as f64;
     // spatialisation
     let (mut left, mut right) = (1.0f32, 1.0f32);
@@ -430,7 +437,7 @@ fn mix_voice(v: &mut Voice, out: &mut [f32], ch: usize, frames: usize, rate: u32
     if let Some(p) = v.params.position {
         let d = p - listener.position;
         spatial_gain = distance_gain(v.params.range, d.length());
-        (left, right) = pan_gains(listener, d);
+        (left, right) = pan_gains(listener, d, stereo);
     }
     let target_gain = (v.params.gain * spatial_gain * listener.master).max(0.0);
     if let Some(sb) = v.stream.clone() {
@@ -551,9 +558,9 @@ fn mix_voice(v: &mut Voice, out: &mut [f32], ch: usize, frames: usize, rate: u32
 
 /// Parameters for voice `v`, given at `now` with the listener at `listener`: the Doppler
 /// shift from how fast the distance to the listener changes (the bus's own sounds move with
-/// the listener and keep their pitch).
-pub(super) fn apply_params(v: &mut Voice, params: VoiceParams, now: std::time::Instant, listener: Vec3) {
-    if let (Some(p), true) = (params.position, params.doppler && DOPPLER.load(Ordering::Relaxed)) {
+/// the listener and keep their pitch), when `doppler` (OMSI's `sound_doppler`) is on.
+pub(super) fn apply_params(v: &mut Voice, params: VoiceParams, now: std::time::Instant, listener: Vec3, doppler: bool) {
+    if let (Some(p), true) = (params.position, params.doppler && doppler) {
         let dist = (p - listener).length();
         let (last, at, factor) = v.doppler;
         let mut f = factor;

@@ -497,6 +497,7 @@ impl App {
                 match spawned {
                     Ok(mut p) => {
                         let audio = omsi_audio::AudioEngine::new();
+                        audio.set_doppler(self.settings.doppler);
                         if let Some(p) = p.as_mut() {
                             p.vehicle.host.auto_clutch = if self.settings.auto_clutch { 1.0 } else { 0.0 };
                             p.load_sounds(&audio);

@@ -18,7 +18,7 @@ use parking_lot::Mutex;
 use render::{Back, Cmd, Mixer, MixerCell, Room, Shared, Voice};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 pub struct Clip {
@@ -72,9 +72,6 @@ impl Default for VoiceParams {
     }
 }
 
-
-/// OMSI's `sound_doppler`: a sound coming closer is higher, one going away lower.
-pub static DOPPLER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 #[derive(Debug, Clone, Copy)]
 pub struct Listener {
@@ -648,6 +645,18 @@ impl AudioEngine {
         g.take_back();
     }
 
+    /// OMSI's `sound_doppler`: a sound coming closer is higher, one going away lower (on
+    /// unless told otherwise).
+    pub fn set_doppler(&self, on: bool) {
+        self.shared.doppler.store(on, Ordering::Relaxed);
+    }
+
+    /// OMSI's `[sound_stereo]` (0 to 20, 10 when options.cfg has none): how far a `[3d]`
+    /// sound is panned (see [`pan_gains`]).
+    pub fn set_stereo(&self, stereo: u32) {
+        self.shared.stereo.store(stereo, Ordering::Relaxed);
+    }
+
     /// The voices playing.
     pub fn voice_count(&self) -> usize {
         let mut g = self.game.lock();
@@ -714,8 +723,8 @@ mod tests {
         for (distance, elapsed) in [(2.0, 0), (2.2, 20)] {
             let at = now + std::time::Duration::from_millis(elapsed);
             let position = Some(Vec3::new(distance, 0.0, 0.0));
-            apply_params(&mut own, VoiceParams { position, doppler: false, ..Default::default() }, at, Vec3::ZERO);
-            apply_params(&mut passing, VoiceParams { position, ..Default::default() }, at, Vec3::ZERO);
+            apply_params(&mut own, VoiceParams { position, doppler: false, ..Default::default() }, at, Vec3::ZERO, true);
+            apply_params(&mut passing, VoiceParams { position, ..Default::default() }, at, Vec3::ZERO, true);
         }
         assert_eq!(own.doppler.2, 1.0);
         assert!(passing.doppler.2 < 1.0);
@@ -865,11 +874,11 @@ mod tests {
     fn a_low_pass_switched_on_starts_from_the_sound() {
         let mut v = voice(Arc::new(Clip { sample_rate: 48_000, channels: 1, samples: vec![0; 4] }), 1.0);
         v.lp = [0.7, -0.7];
-        apply_params(&mut v, VoiceParams { lowpass_hz: 800.0, ..Default::default() }, std::time::Instant::now(), Vec3::ZERO);
+        apply_params(&mut v, VoiceParams { lowpass_hz: 800.0, ..Default::default() }, std::time::Instant::now(), Vec3::ZERO, true);
         assert!(v.lp_fresh);
-        apply_params(&mut v, VoiceParams { lowpass_hz: 0.0, ..Default::default() }, std::time::Instant::now(), Vec3::ZERO);
+        apply_params(&mut v, VoiceParams { lowpass_hz: 0.0, ..Default::default() }, std::time::Instant::now(), Vec3::ZERO, true);
         let mut w = voice(Arc::new(Clip { sample_rate: 48_000, channels: 1, samples: vec![0; 4] }), 1.0);
-        apply_params(&mut w, VoiceParams { lowpass_hz: 0.0, ..Default::default() }, std::time::Instant::now(), Vec3::ZERO);
+        apply_params(&mut w, VoiceParams { lowpass_hz: 0.0, ..Default::default() }, std::time::Instant::now(), Vec3::ZERO, true);
         assert!(!w.lp_fresh);
     }
 
@@ -953,18 +962,14 @@ pub fn distance_gain(range: f32, dist: f32) -> f32 {
     (range.max(0.0) / dist).min(1.0)
 }
 
-/// OMSI's `[sound_stereo]` (0 to 20, 10 when options.cfg has none): how far a `[3d]` sound
-/// is panned.
-pub static STEREO: AtomicU32 = AtomicU32::new(10);
-
 /// The channel gains of a sound in direction `d` from the listener, as Omsi.exe pans a
 /// `[3d]` sound (0x7508ef): `s` is the side component of the horizontal direction (1 =
 /// straight right), the buffer's pan `50 * [sound_stereo] * s^3` hundredths of a dB, and
 /// DirectSound lowers the far channel by that much and leaves the near one alone - at the
 /// default stereo setting a sound straight to the right is 5 dB down on the left. Ours gave
-/// the near channel 1.2 and the far one 0, a centred sound 0.85 on both.
-pub fn pan_gains(listener: &Listener, d: Vec3) -> (f32, f32) {
-    let stereo = STEREO.load(Ordering::Relaxed) as f32;
+/// the near channel 1.2 and the far one 0, a centred sound 0.85 on both. `stereo`: OMSI's
+/// `[sound_stereo]` (see [`AudioEngine::set_stereo`]).
+pub fn pan_gains(listener: &Listener, d: Vec3, stereo: f32) -> (f32, f32) {
     if stereo <= 0.0 {
         return (1.0, 1.0);
     }
@@ -994,11 +999,11 @@ mod distance_tests {
     fn a_sound_to_the_right_is_5_db_down_on_the_left() {
         use glam::Vec3;
         let l = super::Listener { forward: Vec3::Y, right: Vec3::X, ..Default::default() };
-        let (left, right) = super::pan_gains(&l, Vec3::new(3.0, 0.0, 1.0));
+        let (left, right) = super::pan_gains(&l, Vec3::new(3.0, 0.0, 1.0), 10.0);
         assert!((left - 10f32.powf(-0.25)).abs() < 1e-4 && right == 1.0, "{left} {right}");
-        let (left, right) = super::pan_gains(&l, Vec3::new(0.0, 5.0, 0.0));
+        let (left, right) = super::pan_gains(&l, Vec3::new(0.0, 5.0, 0.0), 10.0);
         assert_eq!((left, right), (1.0, 1.0), "ahead: both at full");
-        let (left, right) = super::pan_gains(&l, Vec3::new(-1.0, 1.0, 0.0));
+        let (left, right) = super::pan_gains(&l, Vec3::new(-1.0, 1.0, 0.0), 10.0);
         assert!(left == 1.0 && right < 1.0 && right > 0.8, "{right}");
     }
 }

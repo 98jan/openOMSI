@@ -435,7 +435,6 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
         args.drive_keys = settings.drive_keys.clone();
     }
     args.session_settings = startup::SessionSettings::for_session(&settings, &args);
-    omsi_audio::DOPPLER.store(settings.doppler, std::sync::atomic::Ordering::Relaxed);
     // the LAN session (offscreen too, so that one game's view of another can be rendered);
     // a joining player's world is the host's (taken over again when the window loads it)
     let mut lan = if args.export_glb.is_none() {
