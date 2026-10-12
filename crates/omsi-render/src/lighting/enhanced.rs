@@ -855,8 +855,9 @@ pub(crate) const TONE_CONTRAST_DAY: f32 = 1.22;
 pub(crate) const TONE_CONTRAST_NIGHT: f32 = 0.94;
 /// How far night vision takes the colour out of a dark scene (post.wgsl `night_vision`).
 pub(crate) const NIGHT_VISION: f32 = 0.3;
-/// The sun's angular radius as drawn (a little larger than the real 0.27°).
-pub(crate) const SUN_RADIUS: f32 = 0.0065;
+/// The sun's angular radius: the real 0.2665° (16 minutes of arc). Drawn 40 % larger, with
+/// the glare round it, the sun looked far too big (#2400).
+pub(crate) const SUN_RADIUS: f32 = 0.00465;
 /// The moon's, as drawn (the real one is as large as the sun's; a little more, as the
 /// eye sees it).
 pub(crate) const MOON_RADIUS: f32 = 0.0062;

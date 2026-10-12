@@ -232,6 +232,17 @@ pub fn vehicle_lights(
             }
         }
     }
+    // a vehicle without any spot of its own - every stock AI car: OMSI lights no road in
+    // front of them, their headlamps are glows alone - is given a pair of headlamps from its
+    // lit front lamps, in the Enhanced picture only (the classic one stays OMSI's)
+    if ty.model.spotlights.is_empty() && ty.model.spotlights_2.is_empty() && ty.model.spotlight_cookies.is_empty() {
+        for (at, d, color, share) in headlamps_of_lamps(&ty.model, &v.light_fade, &value_of) {
+            let at = v.position + body.transform_point3(at).as_dvec3();
+            let d = body.transform_vector3(d).normalize_or_zero();
+            let vals = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, color[0], color[1], color[2], 100.0, 30.0, 70.0];
+            push_enhanced_spot(lights, at, d, &vals, share);
+        }
+    }
     // [spotlight_2] (openOMSI): every spot its variable switches on, the leading vehicle's
     // and its sections', where it is declared - a pair mirrored across the vehicle's axis
     // unless its flag keeps the one lamp - and as bright as a [spotlight] of its colour,
@@ -412,6 +423,59 @@ fn push_spot(lights: &mut Vec<PointLight>, at: DVec3, d: Vec3, vals: &[f32; 12],
         mode: LightMode::Vanilla,
         ..Default::default()
     });
+    push_enhanced_spot(lights, at, d, vals, share);
+}
+
+/// The headlamps a model without a `[spotlight]` has (its position, direction, colour 0..255
+/// and share of a pair's light, in the model's frame): its lit `[light_enh_2]` lamps that
+/// face forward from its front, white or nearly (no indicator, no rear or roof lamp), one
+/// beam per side from the middle of that side's lamps.
+fn headlamps_of_lamps(model: &omsi_model::Model, fades: &[f32], value_of: &dyn Fn(&str) -> f32) -> Vec<(Vec3, Vec3, [f32; 3], f32)> {
+    let mut found: Vec<(Vec3, Vec3, [f32; 3])> = Vec::new();
+    let mut li = 0usize;
+    for md in &model.meshes {
+        for l in &md.light_enh_2 {
+            let k = li;
+            li += 1;
+            let lit = match fades.get(k) {
+                Some(f) => *f,
+                None => value_of(&l.variable) * if l.factor > 0.0 { l.factor } else { 1.0 },
+            };
+            let dir = Vec3::from(l.dir).normalize_or_zero();
+            let (hi, lo) = (l.color.iter().copied().fold(0.0, f32::max), l.color.iter().copied().fold(f32::MAX, f32::min));
+            let pos = Vec3::from(l.pos);
+            if l.omni || !(lit >= 0.5) || dir.y < 0.8 || hi < 150.0 || lo < 0.6 * hi || !(0.2..1.6).contains(&pos.z) {
+                continue;
+            }
+            found.push((pos, dir, l.color));
+        }
+    }
+    let Some(front) = found.iter().map(|f| f.0.y).reduce(f32::max) else { return Vec::new() };
+    found.retain(|f| f.0.y >= front - 0.4);
+    let sides: Vec<Vec<&(Vec3, Vec3, [f32; 3])>> = [found.iter().filter(|f| f.0.x < -0.2).collect(), found.iter().filter(|f| f.0.x > 0.2).collect(), found.iter().filter(|f| f.0.x.abs() <= 0.2).collect()]
+        .into_iter()
+        .filter(|s: &Vec<_>| !s.is_empty())
+        .collect();
+    let n = sides.len() as f32;
+    sides
+        .into_iter()
+        .map(|s| {
+            let k = s.len() as f32;
+            let dir = s.iter().map(|f| f.1).sum::<Vec3>().normalize_or(Vec3::Y);
+            // (a lamp's glow sits on its glass: the light leaves just in front of it)
+            let pos = s.iter().map(|f| f.0).sum::<Vec3>() / k + dir * 0.1;
+            let color = [0, 1, 2].map(|c| s.iter().map(|f| f.2[c]).sum::<f32>() / k);
+            (pos, dir, color, 1.0 / n)
+        })
+        .collect()
+}
+
+/// A headlamp's light in the Enhanced picture alone (see `push_spot`).
+fn push_enhanced_spot(lights: &mut Vec<PointLight>, at: DVec3, d: Vec3, vals: &[f32; 12], share: f32) {
+    let color = [vals[6] / 255.0, vals[7] / 255.0, vals[8] / 255.0];
+    let (inner, outer) = (vals[10], vals[11]);
+    let half = |deg: f32| (deg.clamp(1.0, 179.0) * 0.5).to_radians().cos();
+    let cone = [half(inner.min(outer)), half(outer)];
     // enhanced: falling off with the square of the distance from a one-metre core. A lamp
     // declared to reach less far than a low beam is a weaker one: the light that still
     // reaches the low beam's last lit metres at its own range is the square of the ranges
