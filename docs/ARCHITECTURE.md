@@ -368,11 +368,15 @@ checked against it.
   handles and process resources (the signal handler, the tilt sensor, the translation
   worker, thread pools, the LAN gateway and mods root), memos of file contents and
   environment switches, rate limits of log lines and refreshes, the picture-file numbering
-  that is the same for every renderer, and a handful of settings and the session's weather
-  broadcast to loading code without game state at hand (`scene::host`, `SNOW_WEATHER`,
-  `rain::QUALITY`, `startup::{CLOUDS, SOUND_AI, ENHANCED_PLUS}`, the lamps' cone weather),
-  set again at every session start or frame. Those last are the next to go, once the
-  vehicle and world loading take them as arguments.
+  that is the same for every renderer. The settings and the session's weather that were
+  broadcast to loading code through statics are passed down now: the session's look and
+  switches in `Args::session_settings` (`startup::SessionSettings`: Enhanced+, Enhanced,
+  Vanilla, clouds), carried on to the `SkyState`, the tyres' spray (`scene::host::GraphicsKind`)
+  and the renderer's options; what the world's loading and sounds read (the scenery's
+  volume, the mirrors' size, the rain's quality, the weather's snow) in each `World`
+  (`World::settings`, a `scene::host::SceneSettings`); the traffic's volume, the rain's
+  quality and the lamps' cone weather (`lights::ConeWeather`) as arguments of the calls
+  that use them.
 * **Very long functions and files.** `scripts/size-budget.sh` (run on every pull request)
   keeps them from growing; `scripts/size-budget.txt` lists those over the limits
   (1500 lines a file, 300 a function) with their recorded sizes. The baseline only goes down.
