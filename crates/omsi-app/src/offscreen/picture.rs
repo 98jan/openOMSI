@@ -491,6 +491,7 @@ impl Offscreen<'_> {
             ref player_ref,
             ref settings,
             ref camera,
+            ref sim_view,
             ..
         } = *self;
         let t0 = Instant::now();
@@ -511,7 +512,7 @@ impl Offscreen<'_> {
             let viewport = settings.hud_viewport((w, h));
             steps::push_mirror_hud(&panels, scene, world, viewport, (0.0, 0.0));
         }
-        crate::view_sync::digest::log_scene_digest(scene, "picture");
+        crate::view_sync::digest::log_scene_digest(scene, Some(sim_view), "picture");
         let pixels = if settings.triple.enabled && !settings.vr_requested() {
             renderer.render_triple_to_image(scene, w, h, camera, lighting, &settings.triple)?
         } else {

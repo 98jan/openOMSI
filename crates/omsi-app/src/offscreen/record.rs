@@ -113,7 +113,7 @@ impl Offscreen<'_> {
         self.spray.sprites(cam.position, &mut self.scene.smoke);
         let lighting = self.lighting_now(&cam);
         self.world.finish_texture_upgrades(&self.renderer, &mut self.scene);
-        crate::view_sync::digest::log_scene_digest(&self.scene, "snapshot");
+        crate::view_sync::digest::log_scene_digest(&self.scene, Some(&self.sim_view), "snapshot");
         let pixels = self.renderer.render_to_image(&mut self.scene, self.w, self.h, &cam, &lighting)?;
         Ok((pixels, cam))
     }

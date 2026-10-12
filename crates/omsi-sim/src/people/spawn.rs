@@ -459,7 +459,7 @@ impl PeopleSim {
         let age = ty.def.age.map(|a| a as f32).unwrap_or(40.0);
         let id = self.next_id;
         self.next_id += 1;
-        // (the meshes and instances come when the view catches up: `show_bodies`)
+        // (the meshes and instances come when the view catches up: `view_sync::apply_people`)
         self.bodies.ops.push(BodyOp::Spawn { id, ty: ty.clone(), variant, position });
         if debug_pax() {
             log::info!(
@@ -480,7 +480,6 @@ impl PeopleSim {
             id,
             ty,
             variant,
-            meshes: Vec::new(),
             position,
             heading,
             lheading: 0.0,
