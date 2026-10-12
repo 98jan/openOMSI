@@ -47,7 +47,6 @@ pub(crate) fn prepare_once() {
         if let Err(e) = crate::prepare(args, true) {
             log::error!("{e:#}");
         }
-        crate::launcher_statics();
     });
 }
 

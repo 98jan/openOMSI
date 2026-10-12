@@ -257,7 +257,6 @@ pub fn run() -> Result<()> {
         if !args.launcher && open_app_launcher()? {
             return Ok(());
         }
-        launcher_statics();
         return launcher::run(graphics_instance());
     }
     let Some(app) = make_app(args, server_cfg)? else { return Ok(()) };
@@ -291,10 +290,6 @@ fn game_event_loop() -> Result<EventLoop<()>> {
     Ok(EventLoop::new()?)
 }
 
-/// The showroom is drawn the way the game will be.
-pub(crate) fn launcher_statics() {
-    startup::SessionLook::for_showroom(&settings::Settings::load()).publish();
-}
 
 /// Everything before a window: the language, the session's random seed, the original
 /// installation and the content roots (mods, archives). None when the program has
@@ -436,7 +431,6 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
         args.drive_keys = settings.drive_keys.clone();
     }
     args.session_look = startup::SessionLook::for_session(&settings, &args);
-    args.session_look.publish();
     SOUND_SCENERY.store(settings.vol_scenery.to_bits(), std::sync::atomic::Ordering::Relaxed);
     MIRROR_SIZE.store(settings.mirror_size, std::sync::atomic::Ordering::Relaxed);
     omsi_audio::DOPPLER.store(settings.doppler, std::sync::atomic::Ordering::Relaxed);
@@ -524,7 +518,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
     // (as the last session left it, #1164)
     let info_bar = settings.info_bar;
     let is_server = args.server.is_some();
-    let sky = crate::weather_setup::SkyState { no_clouds: !args.session_look.clouds, ..Default::default() };
+    let sky = crate::weather_setup::SkyState { look: args.session_look, ..Default::default() };
     // What loads, starts or reads the clock, made one after the other in a fixed order before
     // the App and its groups are put together (their logs and threads come in this order).
     // Steam must be initialized before the graphics instance and window so its overlay can
@@ -536,7 +530,8 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
     let ui = ui::Ui::new();
     let rain = rain::Rain::new();
     let cabin_air = crate::condensation::CabinAir::new();
-    let spray = puddles::Spray::new();
+    let mut spray = puddles::Spray::new();
+    spray.graphics = args.session_look.graphics();
     let radio = radio::Radio::load(&args_root_for_keys);
     let started = Instant::now();
     let last = Instant::now();

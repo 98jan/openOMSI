@@ -682,7 +682,7 @@ pub(crate) struct SessionLook {
     /// Enhanced+ (ray tracing) asked for by `--enhanced-plus` or OMSI_ENHANCED_PLUS=1
     /// whatever the settings say (see `Settings::render_options`).
     pub(crate) enhanced_plus: bool,
-    /// Enhanced graphics, and the Vanilla graphics (see `scene::host::{ENHANCED, CLASSIC}`).
+    /// Enhanced graphics, and the Vanilla graphics (see `scene::host::GraphicsKind`).
     pub(crate) enhanced: bool,
     pub(crate) classic: bool,
     /// The `clouds` setting: clouds in the sky (off: a clear sky whatever the weather says).
@@ -724,16 +724,21 @@ impl SessionLook {
         omsi_render::RenderOptions { ray_tracing: o.ray_tracing || self.enhanced_plus, ..o }
     }
 
-    /// The scene's graphics kind for loading code without a session at hand (see
-    /// `scene::host`).
-    pub(crate) fn publish(&self) {
-        ENHANCED.store(self.enhanced, std::sync::atomic::Ordering::Relaxed);
-        CLASSIC.store(self.classic, std::sync::atomic::Ordering::Relaxed);
+    /// The scene's graphics kind (Vanilla before Enhanced, as the showroom may ask both).
+    pub(crate) fn graphics(&self) -> crate::scene::host::GraphicsKind {
+        use crate::scene::host::GraphicsKind;
+        if self.classic {
+            GraphicsKind::Classic
+        } else if self.enhanced {
+            GraphicsKind::Enhanced
+        } else {
+            GraphicsKind::VanillaPlus
+        }
     }
 }
 
-// (the scenery's volume, the graphics' kind and the mirrors' size: the scene's, see `scene::host`)
-pub(crate) use crate::scene::host::{CLASSIC, ENHANCED, MIRROR_SIZE, SOUND_SCENERY};
+// (the scenery's volume and the mirrors' size: the scene's, see `scene::host`)
+pub(crate) use crate::scene::host::{MIRROR_SIZE, SOUND_SCENERY};
 
 /// The game's settings a world reads as it opens (see `scene::host::OpenSettings`), from the
 /// settings file at that moment.

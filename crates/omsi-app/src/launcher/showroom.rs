@@ -360,7 +360,7 @@ impl Showroom {
         let args = args_for(&r.look);
         let (weather, model) = crate::weather_setup::load_weather_run(&args);
         let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
-        let mut sky = crate::weather_setup::SkyState { clouds: None, model, no_clouds: !args.session_look.clouds };
+        let mut sky = crate::weather_setup::SkyState { clouds: None, model, look: args.session_look };
         setup_sky(&args, renderer, &mut scene, envir.as_ref(), Some(&weather), &mut sky.clouds);
         add_floor(renderer, &mut scene);
         let world = r.world;

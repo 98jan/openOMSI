@@ -155,9 +155,8 @@ pub(crate) type SkyClouds = Option<(String, CloudType)>;
 pub(crate) struct SkyState {
     pub(crate) clouds: SkyClouds,
     pub(crate) model: Option<crate::weather_model::ModelRun>,
-    /// The `clouds` setting off (see `startup::SessionLook::clouds`): a clear sky whatever the
-    /// weather says.
-    pub(crate) no_clouds: bool,
+    /// The graphics' kind and whether clouds are wanted (see `startup::SessionLook`).
+    pub(crate) look: crate::startup::SessionLook,
 }
 
 /// The `[cloudtype]` entry named `kind` (`-1` or empty: none), read as Omsi.exe reads it
@@ -425,12 +424,12 @@ pub(crate) fn weather_lighting(
     sky: &SkyState,
 ) -> omsi_render::Lighting {
     let mut lighting = lights::lighting_from(daylight, w.fog.0);
-    lighting.enhanced = ENHANCED.load(std::sync::atomic::Ordering::Relaxed);
-    lighting.classic = CLASSIC.load(std::sync::atomic::Ordering::Relaxed);
-    let (density, offset) = clouds_of(w, cloud_drift, !sky.no_clouds);
+    lighting.enhanced = sky.look.enhanced;
+    lighting.classic = sky.look.classic;
+    let (density, offset) = clouds_of(w, cloud_drift, sky.look.clouds);
     lighting.cloud_density = density;
     lighting.cloud_offset = offset;
-    lighting.vanilla_sky = vanilla_sky(w, cloud_drift, &sky.clouds, !sky.no_clouds);
+    lighting.vanilla_sky = vanilla_sky(w, cloud_drift, &sky.clouds, sky.look.clouds);
     let model_sky = sky.model.as_ref().map(|m| m.sky());
     let (kind, rate) = precip_of(w);
     lights::apply_weather(
@@ -469,7 +468,7 @@ pub(crate) fn weather_lighting(
     // the enhanced atmosphere turns into light (the `.owt` values above stay for the rest)
     if let Some(m) = model_sky.filter(|_| lighting.enhanced) {
         let closed = ((m.deck - 0.85) / 0.15).clamp(0.0, 1.0);
-        if !sky.no_clouds {
+        if sky.look.clouds {
             lighting.cloud_density = m.cumulus.max(m.deck * 0.95);
         }
         lighting.overcast = m.deck;

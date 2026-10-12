@@ -380,7 +380,6 @@ impl Shell {
         if let Some(content) = crate::startup::content_dir() {
             std::thread::spawn(move || hide_from_gallery(&content));
         }
-        launcher_statics();
         started_ok();
     }
 
@@ -395,7 +394,6 @@ impl Shell {
             if let Some(content) = crate::startup::content_dir() {
                 std::thread::spawn(move || hide_from_gallery(&content));
             }
-            launcher_statics();
             let early = self.early.take();
             let instance = early.as_ref().map(|e| e.instance.clone()).unwrap_or_else(graphics_instance);
             let mut l = Box::new(launcher::new(instance));

@@ -6,11 +6,18 @@
 // The settings below are set by the game at every session start and read while worlds and
 // vehicles load, where no game state is at hand.
 
-/// Enhanced graphics wanted (from the settings, `--enhanced`, or OMSI_ENHANCED=1).
-pub static ENHANCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-/// Vanilla graphics: the picture as OMSI 2 draws it (no Vanilla+ extras, see
-/// `omsi_render::Lighting::classic`).
-pub static CLASSIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The graphics' kind a scene is drawn in (the game's settings and arguments; a world a test
+/// or a tool opens: Vanilla+).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GraphicsKind {
+    #[default]
+    VanillaPlus,
+    /// Enhanced graphics (from the settings, `--enhanced`, or OMSI_ENHANCED=1).
+    Enhanced,
+    /// Vanilla graphics: the picture as OMSI 2 draws it (no Vanilla+ extras, see
+    /// `omsi_render::Lighting::classic`).
+    Classic,
+}
 /// Volume of the scenery's own sounds (OMSI's `sound_scenery`), as the bits of an f32.
 pub static SOUND_SCENERY: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3f80_0000);
 

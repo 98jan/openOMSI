@@ -54,7 +54,6 @@ fn write(out: &Out, id: &Value, mut head: Value, body: &[u8]) {
 /// `openomsi --launcher-service`: requests on stdin, answers on stdout.
 pub fn run() -> anyhow::Result<()> {
     super::install();
-    crate::launcher_statics();
     let out: Out = Arc::new(Mutex::new(answers()));
     let reply: Reply = Arc::new(move |id, head, body| write(&out, id, head, body));
     let (tx, rx) = std::sync::mpsc::channel::<Value>();

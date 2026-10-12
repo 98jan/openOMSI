@@ -253,7 +253,6 @@ impl Shell {
     fn launcher(&mut self) -> &mut launcher::Launcher {
         if self.launcher.is_none() {
             crate::apple_bridge::prepare_once();
-            launcher_statics();
             self.launcher = Some(Box::new(launcher::Launcher::new(graphics_instance())));
         }
         self.launcher.as_mut().unwrap()
