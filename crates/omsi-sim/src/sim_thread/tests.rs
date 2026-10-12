@@ -120,7 +120,7 @@ fn scenery_step(dt: f32, center: glam::DVec3) -> impl FnOnce(&mut SceneryState, 
 
 fn outputs_of(s: &mut SceneryState) -> String {
     let (o, _) = s.outputs();
-    format!("{:?} {:?} {:?} {:?} {}", o.cmds, o.vars, o.transforms, o.visible, o.ran)
+    format!("{:?} {}", o.cmds, o.ran)
 }
 
 /// The scenery stepped on the sim thread (with the traffic, after it) gives the commands the
