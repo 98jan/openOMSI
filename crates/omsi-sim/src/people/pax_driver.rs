@@ -221,7 +221,7 @@ impl PeopleSim {
                 let coins = if self.exact_fare || auto { m.exact_coins_for(value) } else { m.omsi_coins_for(value) };
                 paid = m.value_of(&coins);
                 if let Some((pos, var, parent)) = point {
-                    // (put there when the view catches up: `view_sync::apply_people`)
+                    // (put there when the view catches up: `show_bodies`)
                     self.bodies.ops.push(BodyOp::Coins { coins, point: pos, var, change: false, parent });
                 }
             }

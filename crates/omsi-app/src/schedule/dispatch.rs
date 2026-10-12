@@ -75,13 +75,12 @@ impl Schedule {
     }
 
     /// Spawn buses whose departure time has come (or passed within `window` seconds), and
-    /// the layover buses of the next quarter of an hour: [`Schedule::tick_due`], the vehicle
-    /// sets read ahead (`fleet`), [`Schedule::tick_spawn`].
+    /// the layover buses of the next quarter of an hour.
+    #[allow(clippy::too_many_arguments)]
     ///
     /// The renders of the buses it puts on the road or takes off follow at once
-    /// (`view_sync::apply_traffic`), before and after the vehicle sets go up, where these
-    /// calls used to make them.
-    #[allow(clippy::too_many_arguments)]
+    /// (`view_sync::apply_traffic`), before and after the vehicle sets read ahead go up
+    /// (`fleet`), where these calls used to make them.
     pub fn tick(
         &mut self,
         world: &World,
@@ -92,35 +91,18 @@ impl Schedule {
         day_time: f64,
         window: f64,
     ) {
-        let Some(loading) = self.tick_due(world, traffic, day_time, window) else {
-            return;
-        };
-        crate::view_sync::apply_traffic(traffic, view, world, renderer, scene);
-        self.fleet(world, traffic, renderer, scene, day_time);
-        self.tick_spawn(world, traffic, day_time, loading);
-        crate::view_sync::apply_traffic(traffic, view, world, renderer, scene);
-    }
-
-    /// The timetable's tick up to the vehicle sets (see [`Schedule::tick`]), without the
-    /// renderer: the buses of the player's tour taken off, the departures due queued.
-    /// Whether the traffic is still loading; None for a LAN client, which draws the host's
-    /// timetable buses.
-    pub fn tick_due(&mut self, world: &World, traffic: &mut Traffic, day_time: f64, window: f64) -> Option<bool> {
+        // (a LAN client draws the host's timetable buses)
         if traffic.is_mirror() {
-            return None;
+            return;
         }
         for id in self.sim.begin_tick(day_time) {
             if traffic.remove_car(id) {
                 log::info!("timetable: bus {id} of the player's tour taken off the road");
             }
         }
-        Some(self.sim.queue_due(&*world.data(), &mut traffic.sim, day_time, window))
-    }
-
-    /// The timetable's tick after the vehicle sets (see [`Schedule::tick`]), without the
-    /// renderer: the tours' buses at the end of a trip take the next on or go, and a few of
-    /// the departures due are put on the road (more while the traffic is `loading`).
-    pub fn tick_spawn(&mut self, world: &World, traffic: &mut Traffic, day_time: f64, loading: bool) {
+        let loading = self.sim.queue_due(&*world.data(), &mut traffic.sim, day_time, window);
+        crate::view_sync::apply_traffic(traffic, view, world, renderer, scene);
+        self.fleet(world, traffic, renderer, scene, day_time);
         self.tour_handover(world, traffic, day_time);
         // a handful per call: spawning a bus builds its meshes, and a whole rush hour at
         // once is a frame that lasts seconds; and only a few tries: a departure that has to
@@ -143,5 +125,6 @@ impl Schedule {
             }
             self.sim.settle(i, &placed, day_time);
         }
+        crate::view_sync::apply_traffic(traffic, view, world, renderer, scene);
     }
 }

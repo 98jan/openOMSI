@@ -94,21 +94,6 @@ impl TrafficView {
         }
     }
 
-    /// The renderer instances of the cars, by car id in its order, each car's body first
-    /// (`OMSI_SCENE_DIGEST`).
-    pub(crate) fn instances(&self) -> Vec<(u64, usize)> {
-        let mut ids: Vec<u64> = self.cars.keys().copied().collect();
-        ids.sort_unstable();
-        let mut out = Vec::new();
-        for id in ids {
-            let r = &self.cars[&id];
-            for part in std::iter::once(&r.body).chain(&r.trailers) {
-                out.extend(part.instances.iter().map(|i| (id, *i)));
-            }
-        }
-        out
-    }
-
     /// Follow one thing the traffic did (see [`TrafficEvent`]).
     pub(crate) fn apply(&mut self, event: TrafficEvent, world: &World, renderer: &Renderer, scene: &mut Scene) {
         match event {

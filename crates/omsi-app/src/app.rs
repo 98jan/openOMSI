@@ -697,7 +697,7 @@ impl App {
                 }
                 if self.session.traffic.is_none() {
                     if let Some(n) = self.menus.navigator.as_mut() {
-                        n.add_lanes(std::mem::take(&mut *w.lanes.lock()));
+                        n.add_lanes(omsi_sim::world_data::TrafficArrivals::gather(w.traffic_inbox.take()).lanes);
                     }
                 }
                 if let (Some(lan), Some(p)) = (self.net.lan.as_mut(), self.player.as_mut()) {
@@ -914,11 +914,11 @@ impl App {
         }
         match self.session.traffic.as_mut() {
             Some(t) => {
-                t.add_tiles(w);
+                t.add_tiles(&w.traffic_inbox);
             }
             None => {
                 // no traffic system: the navigator keeps the roads for its map
-                let lanes = std::mem::take(&mut *w.lanes.lock());
+                let lanes = omsi_sim::world_data::TrafficArrivals::gather(w.traffic_inbox.take()).lanes;
                 if let Some(n) = self.menus.navigator.as_mut() {
                     n.add_lanes(lanes);
                 }

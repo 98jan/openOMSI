@@ -22,6 +22,7 @@ fn the_pool_counts_local_people_and_never_recycles_riders_or_avatars() {
         id,
         ty: ty.clone(),
         variant: 0,
+        meshes: Vec::new(),
         position: DVec3::Y * 1000.0,
         heading: 0.0,
         lheading: 0.0,

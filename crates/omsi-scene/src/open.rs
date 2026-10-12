@@ -101,9 +101,9 @@ impl World {
                 map_dir: map_dir.clone(),
                 raw_tiles: global.raw_tiles.clone(),
                 tiles: global.tiles.iter().map(|t| ((t.x, t.y), t.file.clone())).collect(),
-                ailists: ailists.clone(),
+                ailists,
                 date,
-                chrono_dirs: chrono_dirs.clone(),
+                chrono_dirs,
             }),
             ..Default::default()
         }));
@@ -115,9 +115,6 @@ impl World {
             mirror_textures: Mutex::new(Vec::new()),
             mirror_aspect: Mutex::new(Vec::new()),
             mirror_glass: Mutex::new(Vec::new()),
-            chrono_dirs: parking_lot::RwLock::new(chrono_dirs),
-            ailists,
-            date,
             ticket_pack,
             object_types: Mutex::new(HashMap::new()),
             spline_types: Mutex::new(HashMap::new()),
@@ -135,9 +132,7 @@ impl World {
             freetex_upgrades: Default::default(),
             texture_limit: Default::default(),
             budget_checked: Default::default(),
-            lanes: Mutex::new(Vec::new()),
-            lane_tiles: Mutex::new(Vec::new()),
-            traffic_lights: Mutex::new(Vec::new()),
+            traffic_inbox: Default::default(),
             controller_of_object: Mutex::new(HashMap::new()),
             light_objects: Mutex::new(Vec::new()),
             scripted: Mutex::new(ScriptedSet::default()),
@@ -155,7 +150,6 @@ impl World {
             terrain_edits: Mutex::new(HashMap::new()),
             waiting_cabins: Mutex::new(HashMap::new()),
             tiles_generation: std::sync::atomic::AtomicU64::new(0),
-            parked_cars: Mutex::new(Vec::new()),
             light_maps: Mutex::new(HashMap::new()),
             light_maps_generation: std::sync::atomic::AtomicU64::new(0),
             light_map_atlas: Mutex::new(None),
@@ -539,7 +533,7 @@ impl World {
     /// all their traffic paths on invisible splines).
     pub fn navigation_map(&self) -> NavigationMap {
         let tiles: Vec<(i32, i32, PathBuf)> = self.map_tiles().into_iter().map(|(_, x, y, p)| (x, y, p)).collect();
-        navigation_map_of(&self.root, &tiles, &self.chrono_dirs.read())
+        navigation_map_of(&self.root, &tiles, &self.chrono_dirs())
     }
 }
 

@@ -151,8 +151,7 @@ impl World {
     /// (OMSI gives such a vehicle's `ident` a random line of it at the spawn).
     pub fn free_registration(&self, seed: u64) -> Option<String> {
         let list = self.registrations.get_or_init(|| {
-            self.chrono_dirs
-                .read()
+            self.chrono_dirs()
                 .iter()
                 .rev()
                 .chain(std::iter::once(&self.map_dir))

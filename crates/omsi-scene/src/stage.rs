@@ -129,7 +129,7 @@ impl World {
     /// forgets the map index built with the old ones.
     pub fn set_date(&self, date: i32) -> Vec<(i32, i32)> {
         let new = omsi_map::active_chrono_dirs(&self.map_dir, date);
-        let old = self.chrono_dirs.read().clone();
+        let old = self.chrono_dirs();
         if new == old {
             return Vec::new();
         }
@@ -144,11 +144,10 @@ impl World {
                 }
             }
         }
-        *self.chrono_dirs.write() = new.clone();
+        self.data.update(|d| Arc::make_mut(&mut d.map).chrono_dirs = new);
         // (the index is built again when next asked; the simulation keeps the old one's stops
         // until then)
         *self.index.lock() = None;
-        self.data.update(|d| Arc::make_mut(&mut d.map).chrono_dirs = new);
         let keys: Vec<(i32, i32)> = tiles.into_iter().collect();
         self.forget_staged(&keys);
         keys
@@ -196,7 +195,7 @@ impl World {
         if let Some(ix) = g.as_ref() {
             return ix.clone();
         }
-        let mut built = MapIndex::build(&self.map_tiles(), &self.chrono_dirs.read(), &self.root);
+        let mut built = MapIndex::build(&self.map_tiles(), &self.chrono_dirs(), &self.root);
         // the index's object positions go to `object_positions` (kept once, not twice: 345 000
         // objects on Ahlheim took 30 MB in each)
         let objects = std::mem::take(&mut built.objects);
@@ -537,7 +536,7 @@ impl World {
     pub(super) fn stage_tile(&self, tx: i32, ty: i32, path: &Path, index: &MapIndex) -> StagedTile {
         let origin2 = DVec2::new(tx as f64 * tile_size(), ty as f64 * tile_size());
         let origin = DVec3::new(origin2.x, origin2.y, 0.0);
-        let tile = omsi_world::map_index::read_tile(path, &self.chrono_dirs.read());
+        let tile = omsi_world::map_index::read_tile(path, &self.chrono_dirs());
         // (an active chrono patch may bring the tile's terrain: see `Tile::terrain_from`)
         let terrain_path = match &tile {
             Some(t) => omsi_world::map_index::terrain_file(t, path),

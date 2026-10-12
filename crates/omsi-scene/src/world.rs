@@ -50,15 +50,12 @@ pub struct World {
     /// (0 = no limit), and what the budget's last look found (see `BudgetMemo`).
     pub(super) texture_limit: std::sync::atomic::AtomicU64,
     pub(super) budget_checked: Mutex<super::props::BudgetMemo>,
-    /// Traffic-path lanes collected while building tiles.
-    pub lanes: Mutex<Vec<omsi_sim::traffic::Lane>>,
-    /// The tiles whose lanes and parked cars have been put into `lanes` and `parked_cars`.
-    /// These two and `lanes` are only filled, and should only be taken, while the `lanes`
-    /// lock is held: whoever takes them then has every parked car together with the lanes
-    /// it stands beside, and knows which tiles those came from.
-    pub lane_tiles: Mutex<Vec<(i32, i32)>>,
-    /// Traffic light programs of placed crossings, and which map object owns each.
-    pub traffic_lights: Mutex<Vec<TrafficLightController>>,
+    /// What the placed tiles hand the traffic: their crossings' light programs as they are
+    /// numbered, and their lanes and parked cars when a tile is placed the first time (the
+    /// traffic takes them at its step; see `omsi_sim::world_data::TrafficArrival`).
+    pub traffic_inbox: Arc<omsi_sim::handover::Inbox<omsi_sim::world_data::TrafficArrival>>,
+    /// The number of each crossing's light program, by the map object that owns it: the
+    /// loader numbers the programs as it makes them (the programs go to `traffic_inbox`).
     pub controller_of_object: Mutex<HashMap<i64, usize>>,
     /// Placed traffic light lamps.
     pub light_objects: Mutex<Vec<LightObject>>,
@@ -112,9 +109,6 @@ pub struct World {
     /// keeps what it derived from the stops, the waiting places or the ground looks again
     /// (the simulation reads it as `WorldData::lists.generation`).
     pub tiles_generation: std::sync::atomic::AtomicU64,
-    /// Parked cars placed on `[carpark_p]` spaces: world position and heading (deg), for
-    /// the traffic to steer round (see `lane_tiles`).
-    pub parked_cars: Mutex<Vec<(DVec3, f64)>>,
     /// Placed objects with particle systems (chimney smoke, the fireworks, a memorial's
     /// flame) by tile.
     pub particle_objects: Mutex<HashMap<(i32, i32), Vec<ParticleObject>>>,
@@ -132,11 +126,6 @@ pub struct World {
     pub signal_routes: Vec<omsi_map::ailists::SignalRoute>,
     /// The objects `signal_routes` names as signals or distant signals (`set_signals`).
     pub(super) signal_ids: hashbrown::HashSet<i64>,
-    /// Chrono folders active on the sim date, in order, and the merged AI lists / date.
-    /// The chrono scenarios in force on the sim date (changed at midnight: `set_date`).
-    pub chrono_dirs: parking_lot::RwLock<Vec<PathBuf>>,
-    pub ailists: omsi_map::AiLists,
-    pub date: i32,
     /// Ticket pack (chrono folders may override the map's).
     pub ticket_pack: String,
     /// Fonts for text and script textures, shared by all vehicles.
@@ -499,6 +488,17 @@ impl World {
     /// Terrain height alone at world x, y (no road surfaces).
     pub fn ground_terrain(&self, x: f64, y: f64) -> Option<f64> {
         self.data.peek().ground_terrain(x, y)
+    /// The map's facts: its AI lists (with the chrono patches), its date and the chrono
+    /// folders in force on it (changed at midnight: `set_date`).
+    pub fn map(&self) -> Arc<omsi_sim::world_data::MapFacts> {
+        self.data.peek().map.clone()
+    }
+
+    /// The chrono folders in force on the map's date, in order.
+    pub fn chrono_dirs(&self) -> Vec<PathBuf> {
+        self.data.peek().map.chrono_dirs.clone()
+    }
+
     }
 
     /// The height a vehicle put down at (x, y) stands at (see `WorldData::stand_height`).

@@ -448,11 +448,8 @@ impl World {
         }
         self.data.update(|d| Arc::make_mut(&mut d.objects).place(key, placed_at));
         if first_load {
-            // together, under the lanes lock (see `World::lane_tiles`)
-            let mut all = self.lanes.lock();
-            all.extend(lanes);
-            self.parked_cars.lock().extend(parked_cars);
-            self.lane_tiles.lock().push(key);
+            // (together: see `TrafficArrival::Tile`)
+            self.traffic_inbox.push(omsi_sim::world_data::TrafficArrival::Tile { tile: key, lanes, parked: parked_cars });
         }
         note_place_stats(stats, &st, &res, objects.len());
         self.tile_state.lock().insert(key, state);
@@ -484,14 +481,16 @@ impl World {
         if !traffic_light_program_enabled(&ot.sco, index.traffic_light_parents.contains(&o.id)) {
             None
         } else {
-            let known = self.controller_of_object.lock().get(&o.id).copied();
+            let mut numbers = self.controller_of_object.lock();
+            let known = numbers.get(&o.id).copied();
             Some(known.unwrap_or_else(|| {
                 let program = ot.sco.traffic_lights.iter().map(|l| (l.phases.iter().map(|p| (p.state, p.duration)).collect(), l.approach_dist)).collect();
                 let c = TrafficLightController::from_program(program, ot.sco.traffic_lights_group, &ot.sco.traffic_light_stop, &ot.sco.traffic_light_jump);
-                let mut list = self.traffic_lights.lock();
-                list.push(c);
-                let idx = list.len() - 1;
-                self.controller_of_object.lock().insert(o.id, idx);
+                // (one program per owning object: the next number is the count so far; handed
+                // over under the lock, so the programs arrive in the order of their numbers)
+                let idx = numbers.len();
+                numbers.insert(o.id, idx);
+                self.traffic_inbox.push(omsi_sim::world_data::TrafficArrival::Light { index: idx, object: o.id, controller: c });
                 if omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set() {
                     log::info!("traffic light program {idx}: object {} {} at ({:.1}, {:.1}) cycle {:?} lights {}", o.id, ot.sco.path.display(), pos.x, pos.y, ot.sco.traffic_lights_group, ot.sco.traffic_lights.len());
                 }

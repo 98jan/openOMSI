@@ -10,8 +10,11 @@
 //! a vehicle's step, the people's tick. The game's scene (`omsi-scene::World`) holds the cell
 //! and keeps its GPU side and its load-time caches to itself.
 
+mod arrivals;
 mod ground;
 mod traits;
+
+pub use arrivals::{TrafficArrival, TrafficArrivals};
 
 pub use ground::{probe_tile, surface_flush, tile_key, GroundTiles, LiveGround, BURIED_FACE, PAINT_LAYER, WALL_TOP_STEP};
 

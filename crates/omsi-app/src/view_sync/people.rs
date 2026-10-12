@@ -45,10 +45,6 @@ pub(crate) struct PeopleView {
     /// people who have gone, kept for the next person dressed alike.
     pub(crate) gpu_materials: HashMap<(usize, usize, usize), Vec<MaterialId>>,
     pub(crate) spare: HashMap<(usize, usize, usize), Vec<(MeshId, usize)>>,
-    /// Everybody's meshes and instances, by person id (the simulation's people hold no
-    /// renderer handles: `BodyOp::Spawn` makes them here, `Retire` lets them go, `Renamed`
-    /// follows a new id).
-    pub(crate) meshes: HashMap<u32, Vec<(MeshId, usize)>>,
     pub(crate) sync_frame: u32,
     /// Animation choice for this session, refreshed on Android in-process launches.
     pub(crate) enhanced_poses: bool,
@@ -72,7 +68,6 @@ impl PeopleView {
             gpu_textures: HashMap::new(),
             gpu_materials: HashMap::new(),
             spare: HashMap::new(),
-            meshes: HashMap::new(),
             sync_frame: 0,
             enhanced_poses: animation::enabled(),
             last_sync: 0.0,
@@ -86,14 +81,6 @@ impl PeopleView {
             }),
             ticket_blocks: None,
         }
-    }
-
-    /// The renderer instances of the people, by person id in its order
-    /// (`OMSI_SCENE_DIGEST`).
-    pub(crate) fn instances(&self) -> Vec<(u64, usize)> {
-        let mut ids: Vec<u32> = self.meshes.keys().copied().collect();
-        ids.sort_unstable();
-        ids.iter().flat_map(|id| self.meshes[id].iter().map(|m| (*id as u64, m.1))).collect()
     }
 
     /// `OMSI_TRACE_PAX` is writing a trace.
@@ -127,32 +114,35 @@ impl Humans {
             return;
         }
         let ops = std::mem::take(&mut self.sim.bodies.ops);
+        // the meshes of people who came and went before the view caught up
+        let mut gone: HashMap<u32, Vec<(MeshId, usize)>> = HashMap::new();
         let mut ops = ops.into_iter();
         while let Some(op) = ops.next() {
             let world = match world {
                 Some(w) => w,
                 None if op.needs_world() => {
-                    // (cannot happen: whatever makes such ops shows them right after it)
+                    // (cannot happen: whatever makes such ops shows them before it returns)
                     log::warn!("people: {} body changes left for later", ops.len() + 1);
                     self.sim.bodies.ops = std::iter::once(op).chain(ops).collect();
                     return;
                 }
                 None => {
-                    match op {
-                        BodyOp::Retire { id, tkey, variant } => view.retire_meshes(id, tkey, variant),
-                        BodyOp::Renamed { from, to } => view.rename(from, to),
-                        _ => unreachable!(),
-                    }
+                    let BodyOp::Retire { id, tkey, variant, meshes } = op else { unreachable!() };
+                    view.retire_meshes(id, tkey, variant, meshes, &mut gone);
                     continue;
                 }
             };
             match op {
                 BodyOp::Spawn { id, ty, variant, position } => {
                     let meshes = view.make_meshes(world, renderer, scene, &ty, variant, position);
-                    view.meshes.insert(id, meshes);
+                    match self.sim.people.iter_mut().find(|p| p.id == id) {
+                        Some(p) => p.meshes = meshes,
+                        None => {
+                            gone.insert(id, meshes);
+                        }
+                    }
                 }
-                BodyOp::Retire { id, tkey, variant } => view.retire_meshes(id, tkey, variant),
-                BodyOp::Renamed { from, to } => view.rename(from, to),
+                BodyOp::Retire { id, tkey, variant, meshes } => view.retire_meshes(id, tkey, variant, meshes, &mut gone),
                 BodyOp::Coins { coins, point, var, change, parent } => {
                     if let Some(m) = self.sim.money.as_mut() {
                         crate::money::place(m, world, renderer, scene, &coins, point, var, change, parent.as_deref());
@@ -164,20 +154,11 @@ impl Humans {
 }
 
 impl PeopleView {
-    /// Person `id` has gone: their meshes hidden and kept for the next person of the type
-    /// (`tkey`) dressed alike (`variant`).
-    fn retire_meshes(&mut self, id: u32, tkey: usize, variant: usize) {
-        let meshes = self.meshes.remove(&id).unwrap_or_default();
+    fn retire_meshes(&mut self, id: u32, tkey: usize, variant: usize, meshes: Vec<(MeshId, usize)>, gone: &mut HashMap<u32, Vec<(MeshId, usize)>>) {
+        let meshes = gone.remove(&id).unwrap_or(meshes);
         for (mi, m) in meshes.iter().enumerate() {
             self.hidden.push(m.1);
             self.spare.entry((tkey, variant, mi)).or_default().push(*m);
-        }
-    }
-
-    /// Person `from` is called `to` from now on.
-    fn rename(&mut self, from: u32, to: u32) {
-        if let Some(m) = self.meshes.remove(&from) {
-            self.meshes.insert(to, m);
         }
     }
 
@@ -390,10 +371,9 @@ impl Humans {
         omsi_cfg::par::frame_each(&mut due_people, helpers, |p| pose_one(p));
         let upload = std::time::Instant::now();
         for (p, &go) in self.sim.people.iter_mut().zip(&due) {
-            let meshes = view.meshes.get(&p.id).map(Vec::as_slice).unwrap_or(&[]);
             if go {
                 if p.pose_changed || !p.skinned {
-                    for (k, (id, _)) in meshes.iter().enumerate() {
+                    for (k, (id, _)) in p.meshes.iter().enumerate() {
                         if let Some((pos, nrm)) = p.skins.get(k) {
                             renderer.update_mesh(scene, *id, pos, nrm, &p.ty.meshes[k].data.uvs);
                         }
@@ -415,7 +395,7 @@ impl Humans {
             let xf = tilt * Mat4::from_rotation_z((-heading).to_radians() as f32);
             let lit_to = if matches!(p.place, Place::Bus(..)) { p.interior } else { 0.0 };
             p.lit += (lit_to - p.lit) * (sdt / 0.4).min(1.0);
-            for (_, inst) in meshes {
+            for (_, inst) in &p.meshes {
                 renderer.set_transform(scene, *inst, at, xf);
                 renderer.set_interior(scene, *inst, p.lit * 0.5);
             }
@@ -425,7 +405,7 @@ impl Humans {
             if let Some(hide) = self.sim.avatar_hidden.get_mut(&p.id) {
                 // (the first-person view: the avatar's own body out of the picture; set
                 // every frame, the posing would show it again)
-                for (_, inst) in meshes {
+                for (_, inst) in &p.meshes {
                     renderer.set_params(scene, *inst, &[], !*hide, &[]);
                 }
             }

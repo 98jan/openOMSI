@@ -1471,7 +1471,7 @@ pub fn clear_spawn(
     let (lanes, prev): (&[Lane], &[Vec<usize>]) = match net {
         Some(n) if !n.lanes.is_empty() => (&n.lanes, &n.prev),
         _ => {
-            world_lanes = world.lanes.lock().clone();
+            world_lanes = world.traffic_inbox.peek(omsi_sim::world_data::TrafficArrivals::lanes_of);
             (&world_lanes, &[])
         }
     };
