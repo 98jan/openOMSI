@@ -385,17 +385,7 @@ impl Offscreen<'_> {
         let Some(player) = player.as_mut() else { return omsi_sim::Controls::default() };
         for (name, at) in timed {
             if *at > t_s - dt && *at <= t_s {
-                // (a gate of a manual gearbox comes with the automatic clutch, as
-                // from the keys)
-                player.clutch_for_gate(name);
-                // (the game's door actions, `door_<n>` / `doors_all`, as a button
-                // pressed and let go)
-                if crate::player::door_action(name).is_some() {
-                    player.action(name, true);
-                    player.action(name, false);
-                } else {
-                    player.vehicle.trigger(name);
-                }
+                player.fire_timed(name);
             }
         }
         player.axes.clutch = (player.axes.clutch - 0.7 * dt).max(0.0);

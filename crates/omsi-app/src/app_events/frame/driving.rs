@@ -56,6 +56,18 @@ pub(super) fn player_step(cx: PlayerStepCx, dt: f32) {
     // parked bus taken over after a restart fell through its yard onto the
     // ground below before the surfaces came, as Omsi.exe holds it, #1279)
     let ground_here = cx.world.world.as_ref().is_none_or(|w| ground_under(w, p.vehicle.position));
+    // `--triggers name@secs`: at that time of the simulation, as the offscreen run fires them
+    // (the same tick at any frame rate)
+    if !*cx.clock.paused {
+        static TIMED: std::sync::OnceLock<Vec<(String, f32)>> = std::sync::OnceLock::new();
+        let timed = TIMED.get_or_init(|| crate::cli::parse_triggers(cx.common.args).into_iter().filter(|(_, at)| *at > 0.0).collect());
+        let (now, _) = cx.clock.fixed_tick.sim_time();
+        for (name, at) in timed {
+            if (*at as f64) > now - dt as f64 && (*at as f64) <= now {
+                p.fire_timed(name);
+            }
+        }
+    }
     if let Some((v, crashes)) = cx.input.cruise {
         if p.vehicle.crashes != crashes {
             log::info!("cruise: crashed at {:.1}, {:.1}, {:.1} - let go", p.vehicle.position.x, p.vehicle.position.y, p.vehicle.position.z);

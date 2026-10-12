@@ -484,6 +484,20 @@ impl Player {
         done
     }
 
+    /// A trigger of `--triggers` at its time (the offscreen run's and the window's): a gate of
+    /// a manual gearbox comes with the automatic clutch, as from the keys; the game's door
+    /// actions (`door_<n>` / `doors_all`) as a button pressed and let go; else the script's
+    /// trigger.
+    pub(crate) fn fire_timed(&mut self, name: &str) {
+        self.clutch_for_gate(name);
+        if door_action(name).is_some() {
+            self.action(name, true);
+            self.action(name, false);
+        } else {
+            self.vehicle.trigger(name);
+        }
+    }
+
     /// OMSI's automatic clutch for a gear lever whose scripts only take a gear with the
     /// clutch pedal right down (`(L.L.clutch) 1 =`, the LiAZ and PAZ KPP) and do not read
     /// `AutoClutch` themselves: a gate chosen with a key, a phone's gear button or a
