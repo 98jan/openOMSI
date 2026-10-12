@@ -2070,7 +2070,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
     v["info_bar"] = json!(false);
     v["perf_overlay"] = json!("off");
     // Human posing; the original OMSI behavior remains the default.
-    v["passenger_animation"] = json!("original");
+    v["passenger_animation"] = json!("enhanced");
     // the trees' foliage bends and sways in the weather's wind
     v["windy_trees"] = json!(true);
     v["mirror_hud_every_frame"] = json!(false);
@@ -2224,6 +2224,11 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
     // (passengers then waited at the cash desk for the driver): the game reads that as auto
     if version < 2 && v["boarding"] == "pay" {
         v["boarding"] = json!("auto");
+    }
+    // before version 3 `passenger_animation=original` was everybody's default, not a choice:
+    // the people's own (procedural) poses are the default now
+    if version < 3 && v["passenger_animation"] == "original" {
+        v["passenger_animation"] = json!("enhanced");
     }
     v
 }
@@ -2411,7 +2416,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     let n = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64().or_else(|| x.as_f64().or_else(|| x.as_str().and_then(|s| s.trim().parse::<f64>().ok())).map(|f| f as i64))).unwrap_or(d);
     let f = |k: &str, d: f64| v.get(k).and_then(|x| x.as_f64()).unwrap_or(d);
     let text = format!(
-        "# openOMSI settings (written by the launcher)\nversion=2\nmsaa={}\nanisotropy={}\nssao={}\nshadows={}\nshadow_size={}\nnavigator={}\nui_opacity={}\nnavigator_corner={}\nboarding={}\ndetail_textures={}\nexact_fare={}\nenhanced={}\ngraphics={}\nfullscreen={}\nvsync={}\nvolume={}\ndrive_keys={}\nrender_scale={}\nview_distance={}\nlanguage={}\ntexture_memory={}\ntexture_compression={}\nchat={}\ntooltips={}\nname_tags={}\nshow_fps={}\nclouds={}\npax_density={}\nvol_ai={}\nvol_scenery={}\nmirror_size={}\ndoppler={}\ndriver={}\nmax_fps={}\nmin_obj_size={}\nmax_obj_dist={}\n",
+        "# openOMSI settings (written by the launcher)\nversion=3\nmsaa={}\nanisotropy={}\nssao={}\nshadows={}\nshadow_size={}\nnavigator={}\nui_opacity={}\nnavigator_corner={}\nboarding={}\ndetail_textures={}\nexact_fare={}\nenhanced={}\ngraphics={}\nfullscreen={}\nvsync={}\nvolume={}\ndrive_keys={}\nrender_scale={}\nview_distance={}\nlanguage={}\ntexture_memory={}\ntexture_compression={}\nchat={}\ntooltips={}\nname_tags={}\nshow_fps={}\nclouds={}\npax_density={}\nvol_ai={}\nvol_scenery={}\nmirror_size={}\ndoppler={}\ndriver={}\nmax_fps={}\nmin_obj_size={}\nmax_obj_dist={}\n",
         n("msaa", 4),
         n("anisotropy", 8),
         b("ssao", true),

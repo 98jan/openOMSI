@@ -323,7 +323,7 @@ const gameplay = {
       rows: [
         { type: 'select', key: 'boarding', label: 'Boarding', options: [['auto', 'Pay and take the ticket'], ['pay', 'The driver sells the ticket'], ['walk', 'Just walk in']] },
         { type: 'select', key: 'standing_chance', label: 'Standing passengers', options: [['0', 'Never'], ['5', '5%'], ['10', '10%'], ['25', '25%'], ['50', '50%'], ['100', 'Always']] },
-        { type: 'select', key: 'passenger_animation', label: 'Passenger animations', options: [['original', 'Original OMSI'], ['enhanced', 'Procedural (experimental)']] },
+        { type: 'select', key: 'passenger_animation', label: 'Passenger animations', options: [['enhanced', 'Natural (procedural)'], ['original', 'Original OMSI']] },
         { type: 'toggle', key: 'exact_fare', label: 'Passengers pay the exact fare' },
         { type: 'slider', key: 'pax_density', label: 'How many passengers', min: 0, max: 2, step: 0.1, def: 1, format: pct, store: r2 },
         { type: 'toggle', key: 'get_up', label: 'Ability to get up (Ctrl+Shift+G)' },
