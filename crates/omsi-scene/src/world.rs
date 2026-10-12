@@ -488,6 +488,8 @@ impl World {
     /// Terrain height alone at world x, y (no road surfaces).
     pub fn ground_terrain(&self, x: f64, y: f64) -> Option<f64> {
         self.data.peek().ground_terrain(x, y)
+    }
+
     /// The map's facts: its AI lists (with the chrono patches), its date and the chrono
     /// folders in force on it (changed at midnight: `set_date`).
     pub fn map(&self) -> Arc<omsi_sim::world_data::MapFacts> {
@@ -497,8 +499,6 @@ impl World {
     /// The chrono folders in force on the map's date, in order.
     pub fn chrono_dirs(&self) -> Vec<PathBuf> {
         self.data.peek().map.chrono_dirs.clone()
-    }
-
     }
 
     /// The height a vehicle put down at (x, y) stands at (see `WorldData::stand_height`).
