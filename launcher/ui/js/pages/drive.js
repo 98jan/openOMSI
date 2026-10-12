@@ -7,7 +7,7 @@ import { t, hhmm, longDate, language } from '../i18n.js';
 import { call, contentUrl } from '../api.js';
 import { Icon } from '../icons.js';
 import { Button, Card, Field, Select, Input, Toggle, Segmented, Slider, Picture, Notice, Spinner, PageHead, Tag } from '../ui.js';
-import { choose, curMap, curBus, curLine, curTour, pickedTrip, realTime, realDate, start, loadSituations, duty } from '../data.js';
+import { choose, curMap, curBus, curLine, curTour, pickedTrip, realTime, realDate, start, loadSituations, duty, weatherName, weatherOfItsOwn } from '../data.js';
 import { MapPicker } from './map-picker.js';
 import { BusPicker } from './bus-picker.js';
 import { BusPreview } from '../preview.js';
@@ -298,7 +298,7 @@ function TimeCard() {
       </${Field}>
       ${c.season !== 'auto' && html`<${Segmented} full value=${c.phase} options=${PHASES} onChange=${(p) => setSeason(c.season, p)} />`}
       <${Field} label="Weather" help=${weatherHelp}>
-        <${Select} raw value=${c.weather} options=${[['', t('Natural weather')], ...(metar ? [[`metar:${metar}`, t('Current weather')]] : []), ['cycle', t('Weather cycle')], ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => choose({ weather })} />
+        <${Select} raw value=${c.weather} options=${[['', t('Natural weather')], ...(metar ? [[`metar:${metar}`, t('Current weather')]] : []), ['cycle', t('Weather cycle')], ...(weatherOfItsOwn(c.weather) && c.weather !== `metar:${metar}` && c.weather !== 'cycle' ? [[c.weather, weatherName(c.weather)]] : []), ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => choose({ weather })} />
       </${Field}>
       ${c.weather?.startsWith('metar:') && airports.length > 0 && html`<${Field} label="Airport">
         <${Select} raw value=${metar} options=${airports} onChange=${(code) => choose({ weather: `metar:${code}` })} />
@@ -353,7 +353,7 @@ function Summary() {
           ${!c.free && html`<dt>${t('Line')}</dt><dd>${line ? line.name : '-'}</dd>`}
           ${!c.free && html`<dt>${t('Tour')}</dt><dd>${tour ? tour.number : '-'}</dd>`}
           ${trip && html`<dt>${t('First trip')}</dt><dd class="num">${hms(trip.departure)} ${trip.from}</dd>`}
-          <dt>${t('Weather')}</dt><dd>${s.weather?.find((x) => x.file === c.weather)?.name || t('Natural weather')}</dd>
+          <dt>${t('Weather')}</dt><dd>${weatherName(c.weather, s.weather)}</dd>
           <dt>${t('Driver')}</dt><dd>${s.config?.profile || '-'}</dd>
         </dl>
         ${joined && html`<${Notice} icon="users">
