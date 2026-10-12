@@ -10,6 +10,12 @@
 //!
 //! Nothing here is an engine: a stage is a plain method of the window's `App` or of the
 //! offscreen run, and the list is the order they were always called in.
+//!
+//! What a window stage declares is checked: a stage handed a context of its groups
+//! (`app::stage_ctx!`, taken from `App::parts`) can touch nothing else, and its `reads` and
+//! `writes` are that context's; for a stage that still takes the whole `App`, the access
+//! test (`access_tests`) reads the crate's source and fails when the stage reaches a field
+//! of a group it does not declare.
 
 use std::time::Instant;
 
@@ -17,6 +23,8 @@ use crate::profile_keys::{ProfKey, ProfileTimes};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod access_tests;
 
 /// Where in the frame a stage belongs, roughly in the order of the frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -109,7 +117,10 @@ pub(crate) struct StageInfo {
     /// What the stage does, as the other list knows it too (the same role in the window and
     /// the offscreen run).
     pub(crate) role: Role,
+    /// The groups the stage reads (a stage handed a context: only reads; one that takes the
+    /// whole `App`: everything its code reaches but `writes`).
     pub(crate) reads: &'static [Group],
+    /// The groups the stage changes (and may read).
     pub(crate) writes: &'static [Group],
     pub(crate) takes: &'static [Carry],
     pub(crate) gives: &'static [Carry],

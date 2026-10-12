@@ -125,6 +125,30 @@ impl Transit {
 }
 
 impl OnFoot {
+    /// After the people's tick, aboard a bus: the walker and the eyes where the bus is
+    /// this frame. The walk above placed them on the bus as the people had it a frame
+    /// before, and the camera eased after that: at speed the saloon trembled round the
+    /// eyes and every stop jerked them forwards.
+    pub(crate) fn after_humans(&mut self, humans: Option<&Humans>, camera: Option<&mut omsi_render::Camera>) {
+        let f = self;
+        if f.settle > 0.0 || f.cam != FootCam::First || (f.seat.is_none() && f.inside.is_none()) {
+            return;
+        }
+        let Some(h) = humans else { return };
+        if let Some((bus, l)) = f.inside {
+            if let Some((w, _)) = h.cabin_world(bus, l) {
+                f.pos = w;
+            }
+        }
+        let eye = h.avatar_body(AVATAR_KEY).map(|b| b.2).unwrap_or(f.pos + DVec3::new(0.0, 0.0, 1.62)) + f.eye_drop();
+        let y = (f.eye_yaw as f64).to_radians();
+        let at = eye + DVec3::new(y.sin(), y.cos(), 0.0) * 0.08 + f.lag;
+        f.eye = Some(at);
+        if let Some(cam) = camera {
+            cam.position = at;
+        }
+    }
+
     /// Whether the feet are on the ground.
     fn grounded(&self) -> bool {
         self.lift <= 1e-4 && self.vz <= 0.0
@@ -1113,30 +1137,6 @@ impl App {
             log::info!("foot: inside {:?} eye {:?} pos ({:.2}, {:.2}, {:.2}) heading {:.0} yaw {:.0} vel ({:.2}, {:.2}) lift {:.2} seat {:?} cam {:?} cam_pos {:?} cam_yaw {:.0} body {:?}", f.inside, body.map(|b| b.2), f.pos.x, f.pos.y, f.pos.z, f.heading, f.yaw, f.vel.x, f.vel.y, f.lift, f.seat, f.cam, self.camera.as_ref().map(|c| c.position), self.camera.as_ref().map(|c| c.yaw).unwrap_or(0.0), body);
         }
         self.session.on_foot = Some(f);
-    }
-
-    /// After the people's tick, aboard a bus: the walker and the eyes where the bus is
-    /// this frame. The walk above placed them on the bus as the people had it a frame
-    /// before, and the camera eased after that: at speed the saloon trembled round the
-    /// eyes and every stop jerked them forwards.
-    pub(crate) fn foot_after_humans(&mut self) {
-        let Some(f) = self.session.on_foot.as_mut() else { return };
-        if f.settle > 0.0 || f.cam != FootCam::First || (f.seat.is_none() && f.inside.is_none()) {
-            return;
-        }
-        let Some(h) = self.session.humans.as_ref() else { return };
-        if let Some((bus, l)) = f.inside {
-            if let Some((w, _)) = h.cabin_world(bus, l) {
-                f.pos = w;
-            }
-        }
-        let eye = h.avatar_body(AVATAR_KEY).map(|b| b.2).unwrap_or(f.pos + DVec3::new(0.0, 0.0, 1.62)) + f.eye_drop();
-        let y = (f.eye_yaw as f64).to_radians();
-        let at = eye + DVec3::new(y.sin(), y.cos(), 0.0) * 0.08 + f.lag;
-        f.eye = Some(at);
-        if let Some(cam) = self.camera.as_mut() {
-            cam.position = at;
-        }
     }
 
     /// The bus the player on foot is in (standing or sitting), if any.

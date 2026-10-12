@@ -3,32 +3,37 @@
 
 use super::*;
 
-impl App {
-    /// The lighting the frame is drawn with.
-    pub(super) fn frame_lighting(&mut self, dt: f32, daylight: omsi_sim::Daylight) -> omsi_render::Lighting {
-        if let Some(w) = self.session.weather.as_ref() {
-            self.session.wetness = road_wetness(precip_of(w).1, dt as f64, self.session.wetness);
-        }
-        let inside = match self.net.inside_remote.and_then(|id| self.net.remotes.remotes.get(&id)) {
-            // (in another player's bus: its box is the one the camera is in)
-            Some(rv) => Some(rv.vehicle()),
-            None => self.player.as_ref().map(|p| &p.vehicle),
-        };
-        steps::picture_lighting(
-            &daylight,
-            self.session.weather.as_ref(),
-            self.session.cloud_drift,
-            self.session.wetness,
-            self.world.as_deref(),
-            inside,
-            self.player.as_ref().map(|p| &p.vehicle),
-            self.session.cabin_air.appearance(),
-            &self.settings,
-            self.clock.run_time as f32,
-            &self.session.sky,
-        )
-    }
+crate::app::stage_ctx!(
+    /// The lighting stage's part of the game.
+    LightingCx { reads: [net, player, world, clock], writes: [weather] }
+);
 
+/// The lighting the frame is drawn with.
+pub(super) fn lighting(cx: LightingCx, dt: f32, daylight: omsi_sim::Daylight) -> omsi_render::Lighting {
+    if let Some(w) = cx.weather.weather.as_ref() {
+        *cx.weather.wetness = road_wetness(precip_of(w).1, dt as f64, *cx.weather.wetness);
+    }
+    let inside = match cx.net.inside_remote.and_then(|id| cx.net.remotes.remotes.get(&id)) {
+        // (in another player's bus: its box is the one the camera is in)
+        Some(rv) => Some(rv.vehicle()),
+        None => cx.player.player.as_ref().map(|p| &p.vehicle),
+    };
+    steps::picture_lighting(
+        &daylight,
+        cx.weather.weather.as_ref(),
+        *cx.weather.cloud_drift,
+        *cx.weather.wetness,
+        cx.world.world.as_deref(),
+        inside,
+        cx.player.player.as_ref().map(|p| &p.vehicle),
+        cx.weather.cabin_air.appearance(),
+        cx.common.settings,
+        cx.clock.clock.run_time as f32,
+        &*cx.weather.sky,
+    )
+}
+
+impl App {
     /// The frame drawn and shown (or, with the window hidden, the simulation kept at a
     /// display's pace), the frame rate limited, the session's statistics.
     pub(super) fn frame_render(

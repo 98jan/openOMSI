@@ -217,64 +217,69 @@ impl App {
         // (out of the seat: nobody at the wheel)
         p.sync_driver_hands(r, scene, dt, self.settings.driver && self.session.on_foot.is_none(), self.view == "driver", self.settings.hands_in_cab);
     }
+}
 
-    /// The field of view without a bus, the sound's listener, the placed vehicles without a
-    /// bus of one's own, and the bus radio.
-    pub(super) fn frame_audio(&mut self, dt: f32) {
-        // on foot (or the free camera) without a bus of one's own: the field of view
-        // setting and the wheel's zoom, as with one - only the player's frame applied
-        // them, so after removing the bus the wheel zoomed nothing (#837)
-        if self.player.is_none() && matches!(self.view.as_str(), "free" | "foot") {
-            if let Some(cam) = self.camera.as_mut() {
-                let base = if self.settings.fov >= 20.0 { self.settings.fov.min(120.0) } else { 60.0 };
-                cam.fov_deg = (base * self.cam.view_zoom.get(&self.view).copied().unwrap_or(1.0)).clamp(8.0, 120.0);
-            }
+crate::app::stage_ctx!(
+    /// The audio stage's part of the game.
+    AudioCx { reads: [world, clock], writes: [player, sound, view, gfx, ui] }
+);
+
+/// The field of view without a bus, the sound's listener, the placed vehicles without a
+/// bus of one's own, and the bus radio.
+pub(super) fn audio(cx: AudioCx, dt: f32) {
+    // on foot (or the free camera) without a bus of one's own: the field of view
+    // setting and the wheel's zoom, as with one - only the player's frame applied
+    // them, so after removing the bus the wheel zoomed nothing (#837)
+    if cx.player.player.is_none() && matches!(cx.view.view.as_str(), "free" | "foot") {
+        if let Some(cam) = cx.view.camera.as_mut() {
+            let base = if cx.common.settings.fov >= 20.0 { cx.common.settings.fov.min(120.0) } else { 60.0 };
+            cam.fov_deg = (base * cx.view.cam.view_zoom.get(cx.view.view.as_str()).copied().unwrap_or(1.0)).clamp(8.0, 120.0);
         }
-        if let Some(a) = self.sound.audio.as_ref() {
-            a.follow_device();
-        }
-        if let (Some(a), Some(cam)) = (self.sound.audio.as_ref(), self.camera.as_ref()) {
-            let (reverb_time, reverb_mix) = self.world.as_ref().map(|w| w.reverb_at(cam.position)).unwrap_or((0.0, 0.0));
-            a.set_listener(omsi_audio::Listener {
-                position: cam.position.as_vec3(),
-                forward: cam.forward(),
-                right: cam.right(),
-                // (silent while paused: the engine's loops would go on)
-                // (the settings' volume: it had been 0.6 whatever the slider said)
-                master: if self.paused { 0.0 } else { self.settings.volume.clamp(0.0, 1.0) },
-                reverb_time,
-                reverb_mix,
-            });
-        }
-        // on foot without a bus of one's own: the vehicles one placed still stand, run
-        // their scripts and are drawn where they are (the player's frame did it)
-        if let (None, Some(r), Some(scene)) = (self.player.as_ref(), self.renderer.as_ref(), self.scene.as_mut()) {
-            for q in self.session.placed.iter_mut() {
-                if !self.paused && self.world.as_ref().is_none_or(|w| ground_under(w, q.vehicle.position)) {
-                    if let Some(w) = self.world.as_ref() {
-                        reground(w, &mut q.vehicle);
-                    }
-                    q.vehicle.update(dt);
+    }
+    if let Some(a) = cx.sound.audio.as_ref() {
+        a.follow_device();
+    }
+    if let (Some(a), Some(cam)) = (cx.sound.audio.as_ref(), cx.view.camera.as_ref()) {
+        let (reverb_time, reverb_mix) = cx.world.world.as_ref().map(|w| w.reverb_at(cam.position)).unwrap_or((0.0, 0.0));
+        a.set_listener(omsi_audio::Listener {
+            position: cam.position.as_vec3(),
+            forward: cam.forward(),
+            right: cam.right(),
+            // (silent while paused: the engine's loops would go on)
+            // (the settings' volume: it had been 0.6 whatever the slider said)
+            master: if *cx.clock.paused { 0.0 } else { cx.common.settings.volume.clamp(0.0, 1.0) },
+            reverb_time,
+            reverb_mix,
+        });
+    }
+    // on foot without a bus of one's own: the vehicles one placed still stand, run
+    // their scripts and are drawn where they are (the player's frame did it)
+    if let (None, Some(r), Some(scene)) = (cx.player.player.as_ref(), cx.gfx.renderer.as_ref(), cx.gfx.scene.as_mut()) {
+        for q in cx.player.placed.iter_mut() {
+            if !*cx.clock.paused && cx.world.world.as_ref().is_none_or(|w| ground_under(w, q.vehicle.position)) {
+                if let Some(w) = cx.world.world.as_ref() {
+                    reground(w, &mut q.vehicle);
                 }
-                q.sync_transforms(r, scene, false);
+                q.vehicle.update(dt);
             }
+            q.sync_transforms(r, scene, false);
         }
-        if let Some(a) = self.sound.audio.as_ref() {
-            match self.player.as_mut() {
-                Some(p) => {
-                    let inside = self.cam.in_cab;
-                    self.sound.radio.set_map(&self.args.root, &self.args.map);
-                    self.sound.radio.fx = self.settings.radio_fx;
-                    if let Some(m) = self.sound.radio.update(a, &p.vehicle, inside) {
-                        self.service_msg = Some((m, 6.0));
-                    }
-                    // (a radio whose display is a text of its script shows the station)
-                    p.vehicle.radio_text = self.sound.radio.display_text();
-                    p.vehicle.radio_frequency = self.sound.radio.frequency(p.vehicle.position.x, p.vehicle.position.y);
-                    (p.vehicle.host.radio_name, p.vehicle.host.radio_song) = self.sound.radio.now_playing();
+    }
+    if let Some(a) = cx.sound.audio.as_ref() {
+        match cx.player.player.as_mut() {
+            Some(p) => {
+                let inside = cx.view.cam.in_cab;
+                cx.sound.radio.set_map(&cx.common.args.root, &cx.common.args.map);
+                cx.sound.radio.fx = cx.common.settings.radio_fx;
+                if let Some(m) = cx.sound.radio.update(a, &p.vehicle, inside) {
+                    *cx.ui.service_msg = Some((m, 6.0));
                 }
-                None => self.sound.radio.stop(a),
+                // (a radio whose display is a text of its script shows the station)
+                p.vehicle.radio_text = cx.sound.radio.display_text();
+                p.vehicle.radio_frequency = cx.sound.radio.frequency(p.vehicle.position.x, p.vehicle.position.y);
+                (p.vehicle.host.radio_name, p.vehicle.host.radio_song) = cx.sound.radio.now_playing();
             }
+            None => cx.sound.radio.stop(a),
         }
     }
 }

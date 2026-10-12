@@ -137,15 +137,6 @@ impl App {
         }
     }
 
-    /// After the people: the walker aboard a bus where the bus is this frame, and the fuel
-    /// pump or bus wash running.
-    pub(super) fn frame_after_humans(&mut self, dt: f32) {
-        self.foot_after_humans();
-        if !self.paused {
-            self.tick_service(dt);
-        }
-    }
-
     /// The player's duty, the personnel file's step, the placing of vehicles, the host's map
     /// edits and `--on-foot`.
     pub(super) fn frame_duty(&mut self, dt: f32) {
@@ -214,5 +205,21 @@ impl App {
             }
             self.service_msg = Some(("On foot: Esc menu, Place a vehicle..., then G at its driver's door to drive it".into(), 8.0));
         }
+    }
+}
+
+crate::app::stage_ctx!(
+    /// The stage after the people's part of the game.
+    AfterHumansCx { reads: [clock], writes: [people, view, player, ui, integrations] }
+);
+
+/// After the people: the walker aboard a bus where the bus is this frame, and the fuel pump
+/// or bus wash running.
+pub(super) fn after_humans(cx: AfterHumansCx, dt: f32) {
+    if let Some(f) = cx.people.on_foot.as_mut() {
+        f.after_humans(cx.people.humans.as_ref(), cx.view.camera.as_mut());
+    }
+    if !*cx.clock.paused {
+        cx.player.tick_service(dt, cx.ui.service_msg, &mut cx.integrations.plugin_events);
     }
 }

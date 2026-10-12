@@ -4,6 +4,8 @@ use super::*;
 
 mod groups;
 pub(crate) use groups::*;
+mod parts;
+pub(crate) use parts::*;
 
 const SLOW_UPLOAD_MB_S: f64 = 300.0;
 

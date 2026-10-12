@@ -36,6 +36,7 @@ members = [
     "crates/omsi-scene",
     "crates/omsi-photo",
     "crates/omsi-app",
+    "crates/omsi-srcscan",
     "tools/omsi-check",
 ]
 exclude = ["launcher/src-tauri"]

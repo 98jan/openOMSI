@@ -255,6 +255,20 @@ checked against it.
   `omsi_cfg::flags` (`docs/DEBUG_FLAGS.md`); `App`'s state is grouped by subsystem
   (`omsi-app/src/app/groups.rs`).
 
+* **The stages' declarations are checked.** `App::parts` (`omsi-app/src/app/parts.rs`)
+  takes `App` apart into one borrow per `Group`, naming every field of `App` and of
+  `SessionState` (a new field does not build until it has its group). A stage handed a
+  context made by `stage_ctx!` (wheel_surface, after_humans, audio, lighting, trace_look)
+  can touch its groups only, and its declaration is that context's `READS`/`WRITES`, so the
+  compiler holds it to it. The other window stages still take the whole `App`; for them
+  `frame_stages/access_tests.rs` reads the crate's source (`omsi-srcscan`) and fails when a stage reaches,
+  through `App` methods and the functions handed the `App`, a field of a group it does not
+  declare. What the declarations show: the stages that take the whole `App` reach most of
+  the sixteen groups each, so no two of them are independent, and the converted ones are a
+  fraction of a millisecond: no stage runs in parallel (a stage becomes a candidate once its
+  context is narrow and it costs enough). OMSI_PROFILE's keys are `profile_keys::ProfKey`,
+  a slot of an array each (the names in the logs and in OMSI_PROFILE_JSON are unchanged).
+
 * **The timetable** is `omsi-sim::timetable_run`: the trip times, the IBIS, the player's
   duty, and `ScheduleSim` (`timetable_run/sim/`) - the day's departures and which are due,
   queued, waiting for their tiles or awaiting their tour's bus, the tours' vehicles
