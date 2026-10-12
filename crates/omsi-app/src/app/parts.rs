@@ -273,7 +273,19 @@ macro_rules! stage_ctx {
     };
 }
 
-pub(crate) use {part_group, part_ty, stage_ctx};
+/// A narrower context taken out of a wider one for a helper: the helper's own `stage_ctx!`
+/// struct, its parts reborrowed from `$cx` (a context, or a reference to one). The lists are
+/// the helper context's; a part missing in `$cx`, or written there and only read in `$cx`,
+/// does not build.
+///
+/// `narrow!(cx => JumpCx { reads: [world], writes: [clock, traffic, gfx] })`
+macro_rules! narrow {
+    ($cx:expr => $name:ident { reads: [$($r:ident),* $(,)?], writes: [$($w:ident),* $(,)?] $(,)? }) => {
+        $name { common: &*$cx.common, $($r: &*$cx.$r,)* $($w: &mut *$cx.$w,)* }
+    };
+}
+
+pub(crate) use {narrow, part_group, part_ty, stage_ctx};
 
 /// Every group has its part (a group without one could not be handed to a stage).
 #[cfg(test)]

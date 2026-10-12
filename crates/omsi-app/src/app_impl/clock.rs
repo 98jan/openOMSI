@@ -41,47 +41,7 @@ impl App {
 
     /// Move the clock by `secs` (the traffic's clock with it), as OMSI's time dialog does.
     pub(crate) fn shift_clock(&mut self, secs: f64) {
-        if self.real_time_locked() {
-            self.service_msg = Some(("The time cannot be changed while the real-time sync is on".into(), 3.0));
-            return;
-        }
-        let mut t = self.clock.time + secs;
-        while t < 0.0 {
-            t += 86400.0;
-            self.clock.day_of_year = if self.clock.day_of_year > 1 { self.clock.day_of_year - 1 } else { omsi_sim::clock::days_in_year(self.clock.year - 1) };
-        }
-        while t >= 86400.0 {
-            t -= 86400.0;
-            self.clock.day_of_year = self.clock.day_of_year % omsi_sim::clock::days_in_year(self.clock.year) + 1;
-        }
-        self.clock.time = t;
-        if let Some(tr) = self.session.traffic.as_mut() {
-            tr.day_time += secs;
-        }
-        if let Some(p) = self.player.as_mut() {
-            p.vehicle.host.clock = self.clock.clone();
-        }
-        let h = (t / 3600.0) as u32;
-        self.service_msg = Some((format!("Clock: {h:02}:{:02}", ((t / 60.0) as u32) % 60), 3.0));
-        self.session.clock_jump += secs;
-        // (held Page Up/Down: once they are let go)
-        if self.input.clock_hold == 0.0 {
-            self.timetable_after_clock_jump();
-        }
-    }
-
-    /// After the clock was set by more than two minutes: the timetable's buses put out again
-    /// for the new time (`Schedule::restart`).
-    pub(crate) fn timetable_after_clock_jump(&mut self) {
-        let jump = std::mem::take(&mut self.session.clock_jump);
-        if jump.abs() < 120.0 {
-            return;
-        }
-        if let (Some(s), Some(w), Some(t), Some(r), Some(scene)) = (self.session.schedule.as_mut(), self.world.as_ref(), self.session.traffic.as_mut(), self.renderer.as_ref(), self.scene.as_mut()) {
-            let day_time = t.day_time;
-            s.restart(t, day_time);
-            crate::view_sync::apply_traffic(t, &mut self.gfx.sim_view.traffic, w, r, scene);
-        }
+        shift_clock(ShiftClockCx::of(&mut self.parts()), secs);
     }
 
     /// The world follows the sim date as OMSI's does at the day's change:
@@ -130,4 +90,59 @@ pub(crate) fn time_speed(settings: &settings::Settings, net: &NetState) -> f64 {
 /// The clock follows the real time and cannot be changed (`App::real_time_locked`).
 pub(crate) fn real_time_locked(settings: &settings::Settings, net: &NetState) -> bool {
     settings.time_sync && !net.lan.as_ref().is_some_and(|l| l.role == omsi_net::Role::Client)
+}
+
+crate::app::stage_ctx!(
+    /// Moving the clock: its part of the game.
+    ShiftClockCx { reads: [net, input, world], writes: [clock, traffic, player, ui, gfx] }
+);
+
+crate::app::stage_ctx!(
+    /// The timetable put out again after a jump of the clock: its part of the game.
+    JumpCx { reads: [world], writes: [clock, traffic, gfx] }
+);
+
+/// Move the clock by `secs` (the traffic's clock with it), as OMSI's time dialog does.
+pub(crate) fn shift_clock(cx: ShiftClockCx, secs: f64) {
+    if real_time_locked(cx.common.settings, cx.net) {
+        *cx.ui.service_msg = Some(("The time cannot be changed while the real-time sync is on".into(), 3.0));
+        return;
+    }
+    let mut t = cx.clock.clock.time + secs;
+    while t < 0.0 {
+        t += 86400.0;
+        cx.clock.clock.day_of_year = if cx.clock.clock.day_of_year > 1 { cx.clock.clock.day_of_year - 1 } else { omsi_sim::clock::days_in_year(cx.clock.clock.year - 1) };
+    }
+    while t >= 86400.0 {
+        t -= 86400.0;
+        cx.clock.clock.day_of_year = cx.clock.clock.day_of_year % omsi_sim::clock::days_in_year(cx.clock.clock.year) + 1;
+    }
+    cx.clock.clock.time = t;
+    if let Some(tr) = cx.traffic.traffic.as_mut() {
+        tr.day_time += secs;
+    }
+    if let Some(p) = cx.player.player.as_mut() {
+        p.vehicle.host.clock = cx.clock.clock.clone();
+    }
+    let h = (t / 3600.0) as u32;
+    *cx.ui.service_msg = Some((format!("Clock: {h:02}:{:02}", ((t / 60.0) as u32) % 60), 3.0));
+    *cx.clock.clock_jump += secs;
+    // (held Page Up/Down: once they are let go)
+    if cx.input.clock_hold == 0.0 {
+        timetable_after_clock_jump(crate::app::narrow!(cx => JumpCx { reads: [world], writes: [clock, traffic, gfx] }));
+    }
+}
+
+/// After the clock was set by more than two minutes: the timetable's buses put out again
+/// for the new time (`Schedule::restart`).
+pub(crate) fn timetable_after_clock_jump(cx: JumpCx) {
+    let jump = std::mem::take(&mut *cx.clock.clock_jump);
+    if jump.abs() < 120.0 {
+        return;
+    }
+    if let (Some(s), Some(w), Some(t), Some(r), Some(scene)) = (cx.traffic.schedule.as_mut(), cx.world.world.as_ref(), cx.traffic.traffic.as_mut(), cx.gfx.renderer.as_ref(), cx.gfx.scene.as_mut()) {
+        let day_time = t.day_time;
+        s.restart(t, day_time);
+        crate::view_sync::apply_traffic(t, &mut cx.gfx.gfx.sim_view.traffic, w, r, scene);
+    }
 }

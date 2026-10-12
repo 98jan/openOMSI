@@ -4,27 +4,11 @@ use super::*;
 
 impl App {
     pub(crate) fn hud_size(&self) -> (f32, f32) {
-        let v = self
-            .gfx.surface
-            .as_ref()
-            .map(|s| {
-                self.settings
-                    .hud_viewport((s.config.width, s.config.height))
-            })
-            .unwrap_or([0.0, 0.0, 1.0, 1.0]);
-        (v[2], v[3])
+        hud_size(&self.settings, &self.gfx)
     }
 
     pub(crate) fn hud_cursor(&self) -> (f32, f32) {
-        let x = self
-            .gfx.surface
-            .as_ref()
-            .map(|s| {
-                self.settings
-                    .hud_viewport((s.config.width, s.config.height))[0]
-            })
-            .unwrap_or(0.0);
-        (self.input.cursor.0 - x, self.input.cursor.1)
+        hud_cursor(&self.settings, &self.gfx, &self.input)
     }
 
     pub(crate) fn cockpit_cursor_ray(&self, cam: &Camera, size: (u32, u32)) -> (glam::DVec3, glam::Vec3, f32) {
@@ -215,4 +199,24 @@ pub(crate) fn sight_extent(settings: &settings::Settings, view: &crate::app::Vie
     let rig = triple_rig(settings, view.cam, view.view, size)?;
     let (tx, ty) = rig.view_extent(cam, size.0, size.1);
     Some((tx as f64, ty as f64))
+}
+
+/// The HUD's width and height in the window (`App::hud_size`).
+pub(crate) fn hud_size(settings: &settings::Settings, gfx: &GfxState) -> (f32, f32) {
+    let v = gfx
+        .surface
+        .as_ref()
+        .map(|s| settings.hud_viewport((s.config.width, s.config.height)))
+        .unwrap_or([0.0, 0.0, 1.0, 1.0]);
+    (v[2], v[3])
+}
+
+/// The cursor in the HUD's frame (`App::hud_cursor`).
+pub(crate) fn hud_cursor(settings: &settings::Settings, gfx: &GfxState, input: &InputState) -> (f32, f32) {
+    let x = gfx
+        .surface
+        .as_ref()
+        .map(|s| settings.hud_viewport((s.config.width, s.config.height))[0])
+        .unwrap_or(0.0);
+    (input.cursor.0 - x, input.cursor.1)
 }

@@ -22,10 +22,7 @@ impl App {
 
     /// Zoom the view inside the bus by `notches` of the mouse wheel (in: positive).
     pub(crate) fn zoom_by(&mut self, notches: f32) {
-        // a hand on the zoom cancels an eased Space return.
-        self.cam.f1_reset = None;
-        let z = self.cam.view_zoom.entry(self.view.clone()).or_insert(1.0);
-        *z = (*z * (1.0 - 0.08 * notches.clamp(-5.0, 5.0))).clamp(0.2, 1.6);
+        zoom_view(&mut self.cam, &self.view, notches);
     }
 
     pub(crate) fn look_by(&mut self, dx: f32, dy: f32) {
@@ -158,6 +155,14 @@ pub(crate) fn look_key_is(key: &str, view: &str, cam: Option<(usize, usize)>) ->
         ("pax", Some((_, x))) => numbered("pax", x),
         _ => key == view,
     }
+}
+
+/// [`App::zoom_by`] on the view's state `cam` and the view `view`.
+pub(crate) fn zoom_view(cam: &mut ViewState, view: &str, notches: f32) {
+    // a hand on the zoom cancels an eased Space return.
+    cam.f1_reset = None;
+    let z = cam.view_zoom.entry(view.to_string()).or_insert(1.0);
+    *z = (*z * (1.0 - 0.08 * notches.clamp(-5.0, 5.0))).clamp(0.2, 1.6);
 }
 
 /// [`App::sync_view_look`] on the view's state `cam`, the view `view` and the bus driven.

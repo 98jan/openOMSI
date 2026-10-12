@@ -272,10 +272,12 @@ checked against it.
 * **The stages' declarations are checked.** `App::parts` (`omsi-app/src/app/parts.rs`)
   takes `App` apart into one borrow per `Group`, naming every field of `App` and of
   `SessionState` (a new field does not build until it has its group). A stage handed a
-  context made by `stage_ctx!` (placement, streaming, traffic, humans, after_humans, on_foot,
-  player_tick, scripted, lights, wheel_surface, audio, lighting, trace_look) can touch its
-  groups only, and its declaration is that context's `READS`/`WRITES`, so the compiler holds
-  it to it.
+  context made by `stage_ctx!` (placement, streaming, traffic, view_keys, humans,
+  after_humans, on_foot, player_tick, scripted, lights, wheel_surface, audio, lighting,
+  trace_look) can touch its groups only, and its declaration is that context's
+  `READS`/`WRITES`, so the compiler holds it to it. A helper such a stage shares with the
+  rest of the game takes a narrower context of its own (`shift_clock` a `ShiftClockCx`),
+  which the stage takes out of its own with `narrow!` and an `App` method with `XCx::of`.
   The other window stages still take the whole `App`: they call `App` methods of many groups,
   and several write what `Common` lends read-only (the controllers, duty and weather stages
   the command line's `Args`, the view camera the seat in `Settings`). For them

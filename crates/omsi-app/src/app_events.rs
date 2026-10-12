@@ -487,10 +487,7 @@ impl ApplicationHandler for App {
 impl App {
     /// The window's size in pixels, while the mirror panels can be worked (in the cab, no menu).
     pub(crate) fn mirror_hud_size(&self) -> Option<(f32, f32)> {
-        if !self.cam.in_cab || self.menus.game_menu.is_some() || !self.gfx.mirror_hud.editing() {
-            return None;
-        }
-        Some(self.hud_size())
+        mirror_hud_size(&self.settings, &self.cam, &self.menus, &self.gfx)
     }
 
     /// The mouse wheel (or a pinch of two fingers): `amount` notches, up positive.
@@ -1036,4 +1033,12 @@ mod vr_mirror_tests {
 /// `OMSI_INPUT`): its mouse is the script's alone.
 fn scripted_window() -> bool {
     omsi_cfg::flags::OMSI_BACKGROUND.is_set() && omsi_cfg::flags::OMSI_INPUT.var().is_some()
+}
+
+/// [`App::mirror_hud_size`] on the parts it reads.
+pub(crate) fn mirror_hud_size(settings: &settings::Settings, cam: &ViewState, menus: &MenuState, gfx: &GfxState) -> Option<(f32, f32)> {
+    if !cam.in_cab || menus.game_menu.is_some() || !gfx.mirror_hud.editing() {
+        return None;
+    }
+    Some(crate::app_impl::hud_size(settings, gfx))
 }
