@@ -368,15 +368,22 @@ checked against it.
   (`World::take_departing_parked`, `take_returning_parked`) is apart from their renderer
   side (`show_parked_instances`). The AI cars are drawn from an owned `FrameSnapshot`
   (`omsi_sim::view_events`: every car's parts, their meshes' transforms, visibility and
-  per-slot values in flat buffers kept from frame to frame), taken at the sync.
+  per-slot values in flat buffers kept from frame to frame), taken at the sync, with their
+  looks (`TrafficSim::snapshot_looks`, `CarLooks`: a copy of the variables for the switched
+  materials, the string variables as they change, the interior lamps, the text, script and
+  HTML pictures to upload, cracks, dents and reshaped bellows - the simulation's side of
+  drawing a car is done there) and the timetable buses as their drivers read them
+  (`snapshot_drivers`, `DriverFrame`; the figures read a bus through
+  `omsi_scene::driver::DriverCar`). The AI cars' sounds play from a `SoundFrame`
+  (`TrafficSim::snapshot_sounds`), the people are posed from a `PeopleFrame`
+  (`PeopleSim::snapshot_into`; the pose as drawn is the view's, `PeopleView`).
 
   Still read from the simulation's state while syncing (the sync is therefore a point where
-  the simulation stands still): the traffic's lamps (their scripts run there: the scenery
-  state's `LampScripts`, by key),
-  the timetable buses' drivers, the AI cars' and the player's materials, interior lamps,
-  script, text and HTML textures, skinned bellows, glass cracks and dents
-  (`view_sync/vehicle.rs`, `vehicle_damage.rs`), their sounds (`view_sync/traffic_audio.rs`)
-  and the people's posing and skinning; the sync also hands the AI vehicles
+  the simulation stands still): the snapshots are taken there, not at the end of a step;
+  the traffic's lamps (their scripts run there: the scenery state's `LampScripts`, by key);
+  the player's vehicle (materials, lamps, textures, bellows, damage: `view_sync/vehicle.rs`
+  reads it in place through `LookVars`), the bus the player rides in on foot (its sound);
+  the people's coins and ticket blocks; the sync also hands the AI vehicles
   `Envir_Brightness` and swaps their poses between the traffic's last two steps.
 
 * **Global mutable state.** The introduction's "no global mutable state" is still not
