@@ -6,13 +6,10 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 
 ## 0.2.36 - 2026-10-11
 
-### New
-- **The new launcher on Windows and Linux too**: the Windows and Linux downloads carry the desktop launcher of 0.2.35 beside the game (`openomsi-launcher-app`), and a plain start of openOMSI opens it, as on macOS. It needs WebView2 on Windows (part of Windows 10 and 11) and WebKitGTK 4.1 on Linux (`libwebkit2gtk-4.1-0`); where it cannot start, the game's own launcher opens instead, as before.
-
-## 0.2.35 - 2026-10-11
+(0.2.35 was not released: its changes come with this version.)
 
 ### New
-- **A new desktop launcher** (on macOS; on phones the same page in the app): the duty on one page - the map with its picture, the bus turning in a preview the game itself draws (drag to turn, wheel to zoom, sharp while it moves), paint, fleet number and depot, line, tour and trips with the route and its stops on the city map, time, date, season, weather and traffic - and Multiplayer, the driver's profile and runs, Mods, Settings, Controls, the running games and Setup. Calm graphite surfaces without outlines, one amber accent, Material Symbols icons, English unless another language is chosen. It stays open while a game runs and knows when a game has ended. Built on the organisation's fork of Tauri 2 ([tauri-openomsi](https://github.com/openOMSI-org/tauri-openomsi)). Windows and Linux keep the game's own launcher for now.
+- **A new desktop launcher** (on Windows, macOS and Linux; on phones the same page in the app): the duty on one page - the map with its picture, the bus turning in a preview the game itself draws (drag to turn, wheel to zoom, sharp while it moves), paint, fleet number and depot, line, tour and trips with the route and its stops on the city map, time, date, season, weather and traffic - and Multiplayer, the driver's profile and runs, Mods, Settings, Controls, the running games and Setup. Calm graphite surfaces without outlines, one amber accent, Material Symbols icons, English unless another language is chosen. It stays open while a game runs and knows when a game has ended. Built on the organisation's fork of Tauri 2 ([tauri-openomsi](https://github.com/openOMSI-org/tauri-openomsi)). A plain start of openOMSI opens it; it needs WebView2 on Windows (part of Windows 10 and 11) and WebKitGTK 4.1 on Linux (`libwebkit2gtk-4.1-0`), and where it cannot start the game's own launcher opens instead.
 - **A launcher made for phones**: a rail of icons, the bus with the destination sign and Start, the duty as a list whose rows open full-screen pickers (maps as pictures, buses, lines, tours, trips beside the route map, time and date by steps, weather). On Android the game's own launcher is no longer made under it, so the app starts faster.
 - **openOMSI for iPhone, iPad and Mac** (built from the source with Xcode, see docs/APPLE.md): the game on iOS with touch controls inside the safe area, and a SwiftUI launcher in the same design.
 - **Inter instead of Roboto** everywhere: the game's interface, pause menu, navigator, chat, photo mode, the html pages and the destination signs' fallback text.
