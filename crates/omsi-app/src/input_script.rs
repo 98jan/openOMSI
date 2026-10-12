@@ -951,6 +951,10 @@ impl App {
                     }
                 }
                 // `log pose`: where the bus and the camera are, and whether the bus has ground
+                "log" if arg == "clock" => {
+                    let t = self.clock.time;
+                    log::info!("input script: clock {:02}:{:02}:{:02} (day {}, sync {})", (t / 3600.0) as u32, (t / 60.0) as u32 % 60, t as u32 % 60, self.clock.day_of_year, self.real_time_locked());
+                }
                 "log" if arg == "pose" => {
                     let bus = self.player.as_ref().map(|p| {
                         (

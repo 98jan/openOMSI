@@ -3548,6 +3548,7 @@ dependencies = [
  "omsi-cfg",
  "omsi-launcher-core",
  "omsi-net",
+ "omsi-platform",
  "omsi-weather",
  "serde",
  "serde_json",

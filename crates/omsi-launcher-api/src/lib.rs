@@ -50,7 +50,7 @@ fn bootstrap(p: &dyn Platform) -> Answer {
     let favourites: Vec<String> = std::fs::read_to_string(core::data_dir().join("favourite-buses.txt")).map(|t| t.lines().map(str::trim).filter(|l| !l.is_empty()).map(|l| l.replace('\\', "/").to_lowercase()).collect()).unwrap_or_default();
     let languages: Vec<Value> = core::LANGUAGES.iter().map(|(code, name, iso, _)| json!({ "code": code, "name": name, "iso": iso })).collect();
     Ok(json!({
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": omsi_platform::VERSION,
         "platform": std::env::consts::OS,
         "config": config,
         "root": root.as_ref().ok(),

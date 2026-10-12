@@ -1080,7 +1080,7 @@ impl Launcher {
         // finger meanwhile
         let dialog = self.update_dialog_open();
         let disconnected = !dialog && self.state.disconnected.is_some();
-        let crash = !dialog && !disconnected && self.state.crash.is_some();
+        let crash = !dialog && !disconnected && (self.state.crash.is_some() || self.state.webview.is_some());
         let reset = !dialog && !crash && !disconnected && self.pages.confirm_reset;
         let key_picker = self.browser.is_none()
             && !dialog
@@ -1151,6 +1151,8 @@ impl Launcher {
                 self.draw_update_dialog();
             } else if disconnected {
                 self.draw_disconnect_dialog();
+            } else if crash && self.state.webview.is_some() {
+                self.draw_webview_dialog();
             } else if crash {
                 self.draw_crash_dialog();
             } else if reset {

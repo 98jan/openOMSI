@@ -2745,6 +2745,7 @@ dependencies = [
  "omsi-cfg",
  "omsi-launcher-core",
  "omsi-net",
+ "omsi-platform",
  "omsi-weather",
  "serde",
  "serde_json",
@@ -2814,6 +2815,21 @@ dependencies = [
  "log",
  "omsi-cfg",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "omsi-platform"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "omsi-cfg",
+ "omsi-launcher-core",
+ "serde_json",
+ "sha2 0.10.9",
+ "ureq",
+ "windows",
+ "zip",
 ]
 
 [[package]]
@@ -2913,6 +2929,7 @@ dependencies = [
  "omsi-cfg",
  "omsi-launcher-api",
  "omsi-launcher-core",
+ "omsi-platform",
  "serde",
  "serde_json",
  "tauri",

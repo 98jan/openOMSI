@@ -246,6 +246,10 @@ pub struct State {
     /// A game started from here ended on an error: what it said, and the end of its log
     /// (see `crash_of`), for the dialog that asks to report it.
     pub crash: Option<(String, String)>,
+    /// Windows: the desktop launcher could not open for want of WebView2 and opened this one
+    /// instead (`OPENOMSI_NO_WEBVIEW`): the dialog that offers to install it, with how the
+    /// install goes ("", "busy", "done" or the error).
+    pub webview: Option<std::sync::Arc<std::sync::Mutex<String>>>,
     /// A game started from here was sent away by its server (kicked, banned) or turned away
     /// at the door: the server's message, for the "Disconnected from the server" dialog.
     pub disconnected: Option<String>,
@@ -323,6 +327,7 @@ impl State {
             launch_hold: None,
             launched_pid: None,
             crash: None,
+            webview: (cfg!(windows) && std::env::var_os("OPENOMSI_NO_WEBVIEW").is_some()).then(|| std::sync::Arc::new(std::sync::Mutex::new(String::new()))),
             disconnected: None,
             jobs: Vec::new(),
             mods: None,

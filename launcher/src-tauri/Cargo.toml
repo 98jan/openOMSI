@@ -25,6 +25,7 @@ anyhow = "1"
 omsi-launcher-core = { path = "../../crates/omsi-launcher-core" }
 omsi-launcher-api = { path = "../../crates/omsi-launcher-api" }
 omsi-cfg = { path = "../../crates/omsi-cfg" }
+omsi-platform = { path = "../../crates/omsi-platform" }
 
 [profile.release]
 opt-level = "s"

@@ -33148,3 +33148,38 @@ _version: 2
   de: "W A S D: bewegen, Leertaste: hoch, Strg: runter, Umschalt: schneller, Ziehen oder Pfeile: umsehen"
   ru: "W A S D: движение, Пробел: вверх, Ctrl: вниз, Shift: быстрее, мышь или стрелки: обзор"
   uk: "W A S D: рух, Пробіл: вгору, Ctrl: вниз, Shift: швидше, миша або стрілки: огляд"
+
+"Move the clock.":
+  de: "Die Uhr verstellen."
+  ru: "Перевести часы."
+  uk: "Перевести годинник."
+
+"The new launcher needs Microsoft WebView2":
+  de: "Der neue Launcher braucht Microsoft WebView2"
+  ru: "Новому лаунчеру нужен Microsoft WebView2"
+  uk: "Новому лаунчеру потрібен Microsoft WebView2"
+
+"The new launcher draws its window with Microsoft WebView2, which this Windows does not have. Install it now (a small installer from Microsoft, about a minute), or go on with this launcher.":
+  de: "Der neue Launcher zeichnet sein Fenster mit Microsoft WebView2, das diesem Windows fehlt. Jetzt installieren (ein kleines Installationsprogramm von Microsoft, etwa eine Minute) oder mit diesem Launcher weitermachen."
+  ru: "Новый лаунчер рисует окно с помощью Microsoft WebView2, а в этой Windows его нет. Установите его сейчас (небольшой установщик Microsoft, около минуты) или продолжайте в этом лаунчере."
+  uk: "Новий лаунчер малює вікно за допомогою Microsoft WebView2, а в цій Windows його немає. Встановіть його зараз (невеликий інсталятор Microsoft, близько хвилини) або продовжуйте в цьому лаунчері."
+
+"Microsoft's installer is running: follow its window. The new launcher opens when it has finished.":
+  de: "Das Installationsprogramm von Microsoft läuft: folgen Sie seinem Fenster. Der neue Launcher öffnet sich danach."
+  ru: "Идёт установка от Microsoft: следуйте её окну. Когда она закончится, откроется новый лаунчер."
+  uk: "Триває встановлення від Microsoft: дотримуйтеся його вікна. Коли воно завершиться, відкриється новий лаунчер."
+
+"WebView2 could not be installed. Try again, or install it from Microsoft's website.":
+  de: "WebView2 konnte nicht installiert werden. Erneut versuchen oder von der Website von Microsoft installieren."
+  ru: "Не удалось установить WebView2. Попробуйте ещё раз или установите его с сайта Microsoft."
+  uk: "Не вдалося встановити WebView2. Спробуйте ще раз або встановіть його з сайту Microsoft."
+
+"Install WebView2":
+  de: "WebView2 installieren"
+  ru: "Установить WebView2"
+  uk: "Встановити WebView2"
+
+"Installing...":
+  de: "Wird installiert..."
+  ru: "Установка..."
+  uk: "Встановлення..."

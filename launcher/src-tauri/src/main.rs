@@ -40,7 +40,7 @@ fn main() {
         }
         return;
     }
-    omsi_launcher_lib::log_to_file(&format!("launcher (Tauri) {} starting", env!("CARGO_PKG_VERSION")));
+    omsi_launcher_lib::log_to_file(&format!("launcher (Tauri) {} starting", omsi_platform::VERSION));
     omsi_launcher_lib::cleanup();
 
     let result = tauri::Builder::default()
@@ -100,5 +100,6 @@ fn main() {
 fn classic_launcher() -> bool {
     let Some(game) = omsi_launcher_lib::game_binary() else { return false };
     omsi_launcher_lib::log_to_file(&format!("opening the game's own launcher: {}", game.display()));
-    std::process::Command::new(game).arg("--launcher").spawn().is_ok()
+    // (on Windows it offers to install WebView2, which is what is missing there)
+    std::process::Command::new(game).arg("--launcher").env("OPENOMSI_NO_WEBVIEW", "1").spawn().is_ok()
 }

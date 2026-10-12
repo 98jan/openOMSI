@@ -772,12 +772,22 @@ fn code_and_name(label: &str) -> Option<(&str, &str)> {
 
 /// The lines or a line's tours, with the timetable of the chosen one beside them.
 fn timetable_lists(sh: &mut Shell, v: &PauseView, list: &ListView, body: Rect) {
-    let pane_w = if list.preview.is_some() && body.w >= 760.0 { (body.w * 0.46).min(440.0) } else { 0.0 };
+    // (narrow - a phone: the timetable with its Start under the list instead of beside it;
+    // without it a tour could be marked but not started)
+    if let (Some(p), true) = (list.preview, body.w < 760.0) {
+        let lh = (body.h * 0.38).max(120.0);
+        let top = Rect::new(body.x, body.y, body.w, lh);
+        sh.ui.panel(top);
+        list_rows(sh, v, list, Rect::new(top.x + 10.0, top.y + 10.0, top.w - 20.0, top.h - 20.0), list.kind == MenuKind::Tours);
+        preview(sh, p, list, Rect::new(body.x, top.bottom() + GAP, body.w, body.h - lh - GAP));
+        return;
+    }
+    let pane_w = if list.preview.is_some() { (body.w * 0.46).min(440.0) } else { 0.0 };
     let lw = (body.w - pane_w - if pane_w > 0.0 { GAP * 2.0 } else { 0.0 }).min(620.0);
     let left = Rect::new(body.x, body.y, lw, body.h);
     sh.ui.panel(left);
     list_rows(sh, v, list, Rect::new(left.x + 10.0, left.y + 10.0, left.w - 20.0, left.h - 20.0), list.kind == MenuKind::Tours);
-    if let (Some(p), true) = (list.preview, pane_w > 0.0) {
+    if let Some(p) = list.preview {
         preview(sh, p, list, Rect::new(left.right() + GAP * 2.0, body.y, pane_w, body.h));
     }
 }

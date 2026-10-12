@@ -10,6 +10,7 @@ pub mod discord;
 pub mod presence;
 pub mod recovery;
 pub mod updater;
+pub mod webview2;
 
 /// The commit the build came from, with `+` when the tree had changes, and its date (see
 /// `build.rs`).
