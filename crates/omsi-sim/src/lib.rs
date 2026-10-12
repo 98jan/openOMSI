@@ -7,6 +7,7 @@ pub mod clock;
 pub mod collision;
 pub mod crowd;
 pub mod daylight;
+pub mod door_keys;
 pub mod host;
 pub mod htmltex;
 pub mod ibis;
