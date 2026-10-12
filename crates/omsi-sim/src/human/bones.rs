@@ -38,6 +38,15 @@ impl Pose {
             - d(2.2) * (self.shift / (0.03 * rig.scale)) * still * (1.0 - s_ease);
         // the hip of the leg in front leads (about z, counter-clockwise positive)
         let pelvis_yaw = -d(5.0) * intensity * ph.cos();
+        // The body turns over its feet: the person's heading turns at once (a corner of the
+        // way, the door, the seat), the feet only as they step. Standing, the hips point
+        // between the two feet (a swinging one where it is now), as in a pivot turn, and
+        // come round with the heading as the feet step - turned straight to the new heading
+        // over feet that stayed, the legs ran diagonally and the person seemed to slide.
+        // (The whole body turns with them: the trunk's counter-turn is the gait's alone.)
+        // (half as much while walking, whose steps follow the heading by themselves; none
+        // seated)
+        let body_lag = -d(((foot_yaw[0] + foot_yaw[1]) * 0.5).clamp(-80.0, 80.0)) * (1.0 - 0.5 * walk) * (1.0 - s_ease);
         // reaching for something far: bend at the hips and bring the right shoulder round
         let (reach_lean, reach_twist) = if self.reach > 0.0 {
             let v = self.reach_at - rig.shoulder[1];
@@ -85,7 +94,7 @@ impl Pose {
         // over the feet while getting up or down: the hips go a little lower and further
         pc.z -= 0.05 * bump * rig.scale;
         // the pelvis never higher than the legs can reach
-        let pelvis_q = Quat::from_rotation_z(pelvis_yaw)
+        let pelvis_q = Quat::from_rotation_z(pelvis_yaw + body_lag)
             * Quat::from_rotation_y(pelvis_roll)
             * Quat::from_rotation_x(-pelvis_tilt);
         let reach_max = (rig.thigh + rig.shin) * 0.997;

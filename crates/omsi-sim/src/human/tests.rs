@@ -517,3 +517,28 @@ fn feet_come_off_the_bus_floor() {
         p.describe()
     );
 }
+
+/// A person standing whose heading turns at once by 90 degrees (the sim turns them round to
+/// a door or a seat): the hips stay over the feet while the feet step round - turned at
+/// once over feet that stayed, the legs ran diagonally and the person seemed to slide.
+#[test]
+fn a_sudden_turn_keeps_the_legs_under_the_hips() {
+    let r = rig();
+    let mut p = Pose::new(5);
+    let stand = PoseInput::default();
+    for _ in 0..120 {
+        p.advance(&r, &stand, 1.0 / 60.0);
+    }
+    let turned = PoseInput { heading: 90.0, ..PoseInput::default() };
+    let mut worst = 0.0f32;
+    for _ in 0..90 {
+        p.advance(&r, &turned, 1.0 / 60.0);
+        let posed = p.bones(&r);
+        let hips = posed.bones[HIP].transform_vector3(Vec3::Y).truncate().normalize();
+        for side in 0..2 {
+            let foot = posed.bones[FOOT[side]].transform_vector3(Vec3::Y).truncate().normalize();
+            worst = worst.max(hips.dot(foot).clamp(-1.0, 1.0).acos().to_degrees());
+        }
+    }
+    assert!(worst < 50.0, "a foot {worst:.0} degrees off the hips' way");
+}
