@@ -14,7 +14,9 @@ use std::sync::Arc;
 
 mod drivers;
 mod looks;
+mod sounds;
 pub use drivers::DriverFrame;
+pub use sounds::{CarSound, SoundFrame};
 pub use looks::{CarLooks, LookLimits, LookTracker, ScriptUpload};
 
 /// Something the traffic did that the renderer has to follow, in the order it happened.
