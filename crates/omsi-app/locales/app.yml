@@ -36891,3 +36891,7 @@ _version: 2
   zh: "已保存，但使用的 OMSI 2 文件夹是 {folder}"
   hi: "सहेजा गया, पर इस्तेमाल हो रहा OMSI 2 फ़ोल्डर {folder} है"
   ca: "Desat, però la carpeta d'OMSI 2 que s'usa és {folder}"
+
+"Door release (passengers open), any bus":
+  de: "Türfreigabe (Fahrgäste öffnen), jeder Bus"
+  fr: "Déverrouillage des portes (les voyageurs ouvrent), tous bus"

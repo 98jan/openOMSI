@@ -10,7 +10,7 @@ use omsi_launcher_lib as core;
 /// and the views - both of OMSI's view resets, the one view's (C) and every view's (Space),
 /// which a controller could not bring back to the first camera (#1167) - and the main menu,
 /// which Esc opens and a controller has no Esc for.
-pub(super) const PAD_GAME_ACTIONS: [&str; 27] = ["doors_all", "door_4", "door_3", "door_2", "door_1", "gear_up", "gear_down", "view_look_left", "view_look_right", "view_look_up", "view_look_down", "view_reset_direction", "view_reset_all_directions", "view_interiorcam_plus", "view_interiorcam_minus", "view_toggle_viewpoint", "view_toggle_interior", "view_set_driver", "view_set_passenger", "view_set_outside", "sim_pause", "open_menu", "screenshot", "quicksave", "toggel_mouse_ctrl", "toggel_ctrler", "voice_radio"];
+pub(super) const PAD_GAME_ACTIONS: [&str; 28] = ["doors_release", "doors_all", "door_4", "door_3", "door_2", "door_1", "gear_up", "gear_down", "view_look_left", "view_look_right", "view_look_up", "view_look_down", "view_reset_direction", "view_reset_all_directions", "view_interiorcam_plus", "view_interiorcam_minus", "view_toggle_viewpoint", "view_toggle_interior", "view_set_driver", "view_set_passenger", "view_set_outside", "sim_pause", "open_menu", "screenshot", "quicksave", "toggel_mouse_ctrl", "toggel_ctrler", "voice_radio"];
 
 pub(super) fn action_text(names: &omsi_input::describe::ControlNames, a: &str) -> String {
     known_action(a).unwrap_or_else(|| names.control(a))
@@ -59,6 +59,7 @@ fn known_action(a: &str) -> Option<String> {
         ("door_3", "Door 3, any bus"),
         ("door_4", "Door 4, any bus"),
         ("doors_all", "All doors, any bus"),
+        ("doors_release", "Door release (passengers open), any bus"),
         ("ticket_give", "Sell the requested ticket"),
         ("view_set_driver", "Driver's view"),
         ("view_set_passenger", "Passenger view"),
@@ -1082,7 +1083,8 @@ mod pad_action_tests {
             let handled = held
                 || omsi_input::actions::is_game_action(a)
                 || a.starts_with("gear_")
-                || omsi_input::actions::door_action(a).is_some();
+                || omsi_input::actions::door_action(a).is_some()
+                || omsi_input::actions::is_door_release(a);
             assert!(handled, "{a}");
         }
         // held pad actions are game actions so they never reach the bus script

@@ -385,9 +385,9 @@ impl Offscreen<'_> {
                 // (a gate of a manual gearbox comes with the automatic clutch, as
                 // from the keys)
                 player.clutch_for_gate(name);
-                // (the game's door actions, `door_<n>` / `doors_all`, as a button
-                // pressed and let go)
-                if crate::player::door_action(name).is_some() {
+                // (the game's door actions, `door_<n>` / `doors_all` / `doors_release`, as a
+                // button pressed and let go)
+                if crate::player::door_action(name).is_some() || omsi_input::actions::is_door_release(name) {
                     player.action(name, true);
                     player.action(name, false);
                 } else {
