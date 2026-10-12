@@ -10,6 +10,7 @@ import { Button, Card, Select, Input, Toggle, Tabs, Slider, PageHead, useConfirm
 import { saveSettings, applyTheme } from '../data.js';
 import { UpdateRow } from '../updates.js';
 import { SETTINGS_TABS, GRAPHICS_PROFILE_KEYS } from './settings-schema.js';
+import { VersionsDialog } from './versions.js';
 
 const REPO_URL = 'https://github.com/openOmsi-project/openOMSI';
 
@@ -332,11 +333,14 @@ function CornerRow() {
 
 /** The version, and where the releases are. */
 function VersionRow() {
+  const [open, setOpen] = useState(false);
   return html`<${UpdateRow} /><div class="setting-row full">
     <div class="row wrap">
       <span class="muted small grow">${t('This is openOMSI {version}', { version: S.boot?.version || '' })}</span>
+      ${S.boot?.versions && html`<${Button} small icon="history" label="Choose a version…" onClick=${() => setOpen(true)} />`}
       <${Button} small kind="ghost" icon="external" onClick=${() => call('open_url', { url: REPO_URL }).catch((e) => toast(e.message, 'error'))}>github.com/openOmsi-project/openOMSI</${Button}>
     </div>
+    ${open && html`<${VersionsDialog} onClose=${() => setOpen(false)} />`}
   </div>`;
 }
 

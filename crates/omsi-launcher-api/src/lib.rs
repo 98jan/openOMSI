@@ -7,6 +7,9 @@
 
 pub mod i18n;
 mod updates;
+mod versions;
+
+pub use versions::installing;
 
 use omsi_launcher_lib as core;
 use serde_json::{json, Value};
@@ -29,6 +32,7 @@ pub trait Platform: Send + Sync {
         None
     }
     fn before_update(&self) {}
+    fn quit(&self) {}
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -44,6 +48,9 @@ fn to_json<T: serde::Serialize>(v: T) -> Answer {
 /// Everything the page needs before its first picture: versions, where things are, the
 /// settings, the remembered duty and favourites, the languages.
 fn bootstrap(p: &dyn Platform) -> Answer {
+    if versions::available() {
+        versions::settle();
+    }
     let config = core::load_config();
     let settings = core::get_settings().unwrap_or_else(|_| core::settings_from_text(None));
     let lang = settings.get("language").and_then(|v| v.as_str()).unwrap_or("ENG").to_string();
@@ -66,7 +73,8 @@ fn bootstrap(p: &dyn Platform) -> Answer {
         "choice": choice,
         "favourites": favourites,
         "selftest": p.selftest(),
-        "updated": updates::just_updated(),
+        "versions": versions::available(),
+        "updated": if versions::swapped() { None } else { updates::just_updated() },
         "now": core::local_now().map(|(y, mo, d, h, mi)| json!({ "date": format!("{y:04}-{mo:02}-{d:02}"), "minutes": h * 60 + mi })),
     }))
 }
@@ -567,6 +575,10 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "controllers_ffb_test" => controllers(p, "ffb_test", json!({ "name": arg::<String>(args, "name")?, "axis": arg::<usize>(args, "axis")?, "strength": arg::<Option<f32>>(args, "strength")? }), 20),
         "controllers_release" => controllers(p, "release", json!({}), 5),
         "support_package" => support_package(),
+        "versions" => versions::list(),
+        "version_install" => versions::install(arg::<String>(args, "version")?),
+        "version_status" => versions::status(),
+        "version_restart" => versions::restart(p),
         "prepare_tunnel" => {
             std::thread::spawn(omsi_net::tunnel::ensure_cloudflared);
             Ok(Value::Null)
