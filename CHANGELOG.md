@@ -4,6 +4,11 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.41 - 2026-10-12
+
+### Fixes
+- **On a phone the on-screen pedals and wheel drive the bus again**: since 0.2.39 the accelerator, the brake, the clutch and the steering wheel lit up under the finger, but the bus never felt them - the fixed simulation step took the controllers' axes before the touch controls were added to them. The buttons and the menus were not affected ([#2442](https://github.com/openOMSI-org/openOMSI/pull/2442), by @thibautgnt).
+
 ## 0.2.39 - 2026-10-12
 
 ### New
