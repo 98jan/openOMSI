@@ -149,6 +149,17 @@ export function Controllers() {
   ];
   const entry = list.find((e) => e.name === sel) || list[0];
 
+  // a wheel, pedals or a joystick nobody set up is set up by itself from its axes at rest
+  // (the game does the same when it meets one): the player only changes what is wrong
+  useEffect(() => {
+    if (!pads.cfg || wizard) return;
+    const fresh = pads.live.filter((c) => c.auto && !findDevice(pads.devicesRef.current || [], c.name) && !offs.some((o) => namesMatch(o, c.name)));
+    if (!fresh.length) return;
+    pads.setDevices([...(pads.devicesRef.current || []), ...fresh.map((c) => c.auto.device)]);
+    for (const c of fresh) toast(t('{name} was set up by itself ({what}). Check it below and change what is wrong.', { name: c.name, what: c.auto.what }));
+    setSel(fresh[0].name);
+  }, [pads.cfg, pads.live, wizard]);
+
   useEffect(() => {
     const press = (name, n) => {
       const c = capture.current;

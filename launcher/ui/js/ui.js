@@ -143,10 +143,13 @@ export function Tabs({ value, options, onChange }) {
 /** A slider; `format` turns the value into what is shown beside the label. */
 export function Slider({ label, value, min, max, step, onChange, format }) {
   const v = Number(value ?? min);
-  const fill = ((v - min) / (max - min || 1)) * 100;
+  // (the thumb's centre runs from half its width to the track's end less that: the fill ends
+  // under it there, not at the plain percentage, which left the thumb beside the fill's end)
+  const at = Math.min(1, Math.max(0, (v - min) / (max - min || 1)));
+  const fill = `calc(8px + (100% - 16px) * ${at})`;
   return html`<div class="slider">
     <div class="top"><span>${t(label)}</span><span>${format ? format(v) : v}</span></div>
-    <input type="range" min=${min} max=${max} step=${step} value=${v} style=${`--fill:${fill}%`} onInput=${(e) => onChange(Number(e.currentTarget.value))} />
+    <input type="range" min=${min} max=${max} step=${step} value=${v} style=${`--fill:${fill}`} onInput=${(e) => onChange(Number(e.currentTarget.value))} />
   </div>`;
 }
 

@@ -112,7 +112,7 @@ mod tests {
     fn a_tile_that_opens_a_list_opens_the_game_menu_under_it() {
         let args = <crate::cli::Args as clap::Parser>::parse_from(["openomsi"]);
         let mut app = crate::assemble_app(args, Default::default());
-        for tile in ["time", "weather", "duty", "career"] {
+        for tile in ["world", "duty", "stats"] {
             toggle(&mut app);
             click(&mut app, tile);
             assert!(app.menus.chooser.is_some(), "{tile}: no list");

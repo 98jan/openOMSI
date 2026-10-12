@@ -36778,3 +36778,8 @@ _version: 2
   zh: "适用于所有方向盘"
   hi: "सभी व्हील के लिए"
   ca: "Per a tots els volants"
+
+"{name} was set up by itself ({what}). Check it below and change what is wrong.":
+  ru: "{name} настроено автоматически ({what}). Проверьте ниже и измените, если что-то не так."
+  de: "{name} wurde automatisch eingerichtet ({what}). Unten prüfen und ändern, was nicht stimmt."
+  fr: "{name} a été configuré automatiquement ({what}). Vérifiez ci-dessous et corrigez ce qui ne va pas."

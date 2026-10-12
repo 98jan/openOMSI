@@ -23,7 +23,7 @@ pub(crate) fn info_of(cfg: &ServerCfg) -> omsi_net::ws::ServerInfo {
         map: cfg.map.clone(),
         players: 0,
         max_players: cfg.max_players,
-        version: format!("{} ({})", env!("CARGO_PKG_VERSION"), BUILD),
+        version: format!("{} ({})", omsi_platform::VERSION, BUILD),
         icon: cfg.icon.clone(),
         time: cfg.time.clone(),
         weather: cfg.weather.clone().unwrap_or_default(),

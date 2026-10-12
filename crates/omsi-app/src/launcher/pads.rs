@@ -31,6 +31,7 @@ fn run(rx: Receiver<(Value, Reply)>) {
     let mut window: Option<Option<isize>> = None;
     let mut io: Option<Devices> = None;
     let mut pressed: Vec<(String, usize)> = Vec::new();
+    let mut rests = omsi_input::auto_setup::Rests::default();
     let mut asked = Instant::now();
     loop {
         let wait = match (&io, window) {
@@ -48,17 +49,20 @@ fn run(rx: Receiver<(Value, Reply)>) {
                     "state" => {
                         let d = io.get_or_insert_with(|| Devices::new(hwnd, false));
                         poll(d, &mut pressed);
-                        Ok(state(d, std::mem::take(&mut pressed)))
+                        watch(&mut rests, d);
+                        Ok(state(d, std::mem::take(&mut pressed), &rests))
                     }
                     "save" => save(&req),
                     "ffb_test" => {
                         io = None;
                         pressed.clear();
+                        rests = Default::default();
                         ffb_test(&req, hwnd)
                     }
                     "release" => {
                         io = None;
                         pressed.clear();
+                        rests = Default::default();
                         Ok(json!({}))
                     }
                     other => Err(format!("unknown controllers request {other}")),
@@ -78,9 +82,11 @@ fn run(rx: Receiver<(Value, Reply)>) {
         omsi_input::background::pump();
         if let Some(d) = io.as_mut() {
             poll(d, &mut pressed);
+            watch(&mut rests, d);
             if asked.elapsed() > IDLE {
                 io = None;
                 pressed.clear();
+                rests = Default::default();
             }
         }
     }
@@ -119,13 +125,22 @@ fn load() -> Value {
     })
 }
 
-fn state(d: &Devices, pressed: Vec<(String, usize)>) -> Value {
-    let connected: Vec<Value> = d.connected().iter().map(|c| connected_json(d, c)).collect();
+fn watch(rests: &mut omsi_input::auto_setup::Rests, d: &Devices) {
+    for c in d.connected() {
+        rests.watch(&c);
+    }
+}
+
+fn state(d: &Devices, pressed: Vec<(String, usize)>, rests: &omsi_input::auto_setup::Rests) -> Value {
+    let connected: Vec<Value> = d.connected().iter().map(|c| connected_json(d, c, rests)).collect();
     json!({ "connected": connected, "pressed": pressed })
 }
 
-fn connected_json(d: &Devices, c: &Connected) -> Value {
+fn connected_json(d: &Devices, c: &Connected, rests: &omsi_input::auto_setup::Rests) -> Value {
+    // (a gamepad drives with its own layout; a device of buttons alone has nothing to guess)
+    let auto = (!c.gamepad && !d.buttons_only(&c.name)).then(|| rests.of(&c.name)).flatten().and_then(|rest| omsi_input::auto_setup::guess(&c.name, c.hardware_id, c.ff_capable, rest));
     json!({
+        "auto": auto.as_ref().map(|a| json!({ "device": device_json(a), "what": omsi_input::auto_setup::describe(a) })),
         "name": c.name,
         "axes": c.axes,
         "buttons": c.buttons,

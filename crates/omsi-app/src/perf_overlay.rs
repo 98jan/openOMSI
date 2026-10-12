@@ -232,9 +232,7 @@ impl PerfOverlay {
     }
 
     fn measure_cpu(&mut self) {
-        let due = self
-            .cpu
-            .is_none_or(|m| m.at.elapsed().as_secs_f32() >= CPU_S);
+        let due = self.cpu.is_none_or(|m| m.at.elapsed().as_secs_f32() >= CPU_S);
         if !due {
             return;
         }
@@ -278,11 +276,7 @@ impl PerfOverlay {
         }
         let recent = average(self.frames.iter().rev().take(RECENT));
         let frame_ms = recent.total * 1000.0;
-        let fps = if recent.total > 0.0 {
-            1.0 / recent.total
-        } else {
-            0.0
-        };
+        let fps = if recent.total > 0.0 { 1.0 / recent.total } else { 0.0 };
         let worst = self.frames.iter().map(|s| s.total).fold(0.0f32, f32::max) * 1000.0;
         let mut r = Readout {
             title: omsi_ui::tr("Performance").into_owned(),
@@ -297,66 +291,29 @@ impl PerfOverlay {
                 (p, omsi_ui::tr(p.name()).into_owned(), ms)
             })
             .collect();
-        r.lines.push(format!(
-            "Slowest frame of the graph: {} ms",
-            worst.round() as i32
-        ));
+        r.lines.push(format!("Slowest frame of the graph: {} ms", worst.round() as i32));
         let (by, share) = limiting(&recent, m.vsync_bound);
-        r.lines.push(format!(
-            "Limited by: {} ({}% of the frame)",
-            by,
-            (share * 100.0).round() as i32
-        ));
+        r.lines.push(format!("Limited by: {} ({}% of the frame)", by, (share * 100.0).round() as i32));
         r.lines.push(match self.last_stutter {
-            Some(s) => format!(
-                "Stutters: {}, last {} ms {} s ago ({})",
-                self.stutters,
-                s.ms.round() as i32,
-                s.at.elapsed().as_secs(),
-                s.part.name()
-            ),
+            Some(s) => format!("Stutters: {}, last {} ms {} s ago ({})", self.stutters, s.ms.round() as i32, s.at.elapsed().as_secs(), s.part.name()),
             None => "No stutter yet".to_string(),
         });
         match self.load {
-            Some(Load {
-                main: Some(main),
-                others: Some(others),
-            }) => {
-                r.lines.push(format!(
-                    "Main thread {}% busy, other threads {} of {} cores",
-                    (main * 100.0).round() as i32,
-                    tenths(others),
-                    self.cores
-                ));
+            Some(Load { main: Some(main), others: Some(others) }) => {
+                r.lines.push(format!("Main thread {}% busy, other threads {} of {} cores", (main * 100.0).round() as i32, tenths(others), self.cores));
             }
-            Some(Load {
-                main: Some(main),
-                others: None,
-            }) => r.lines.push(format!(
-                "Main thread {}% busy",
-                (main * 100.0).round() as i32
-            )),
+            Some(Load { main: Some(main), others: None }) => r.lines.push(format!("Main thread {}% busy", (main * 100.0).round() as i32)),
             _ => {}
         }
         if m.window.0 > 0 {
             let pct = (m.scene.0 as f32 / m.window.0 as f32 * 100.0).round() as i32;
-            r.lines.push(format!(
-                "Picture {}×{}, drawn at {} %, MSAA {}×",
-                m.window.0, m.window.1, pct, m.msaa
-            ));
+            r.lines.push(format!("Picture {}×{}, drawn at {} %, MSAA {}×", m.window.0, m.window.1, pct, m.msaa));
         }
         if self.draws.0 > 0 {
-            r.lines.push(format!(
-                "Draw calls {}, objects visible {}",
-                self.draws.0, self.draws.1
-            ));
+            r.lines.push(format!("Draw calls {}, objects visible {}", self.draws.0, self.draws.1));
         }
-        r.lines.push(format!(
-            "Texture memory {} MB, map tiles {}",
-            m.texture_mb, m.tiles
-        ));
-        r.lines
-            .push(format!("AI vehicles {}, people {}", m.ai, m.people));
+        r.lines.push(format!("Texture memory {} MB, map tiles {}", m.texture_mb, m.tiles));
+        r.lines.push(format!("AI vehicles {}, people {}", m.ai, m.people));
         for line in &mut r.lines {
             if let std::borrow::Cow::Owned(t) = omsi_ui::tr(line) {
                 *line = t;
