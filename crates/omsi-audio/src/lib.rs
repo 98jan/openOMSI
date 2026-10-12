@@ -4,6 +4,7 @@ pub mod mixer;
 pub mod radio;
 pub mod radio_fx;
 pub mod soundset;
+pub mod spsc;
 pub mod stream;
 pub mod trace;
 pub mod wav;
