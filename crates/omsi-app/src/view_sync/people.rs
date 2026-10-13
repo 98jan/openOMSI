@@ -324,11 +324,15 @@ impl PeopleView {
                 vehicle_of(b).map(|v| (k, DrawnBus::of(v, &self.frame.buses[k].cabin)))
             });
             let Some((k, d)) = found.as_ref() else { continue };
-            let (at, heading, tilt) = self.frame.buses[*k].follow(d, l, p.position, p.heading, p.tilt);
+            // (where they are drawn: with what is left of a glide onto their seat, see
+            // `animation::bones`)
+            let st = self.people.get(&p.id);
+            let (glide, glide_world) = st.map(|s| (s.glide, s.glide_world)).unwrap_or_default();
+            let (at, heading, tilt) = self.frame.buses[*k].follow(d, l + glide, p.position + glide_world, p.heading, p.tilt);
             if avatar == Some(p.id) {
-                moved = Some(at - p.position);
+                moved = Some(at - p.position - glide_world);
             }
-            let Some(st) = self.people.get(&p.id) else { continue };
+            let Some(st) = st else { continue };
             let xf = tilt * Mat4::from_rotation_z((-heading).to_radians() as f32);
             for (_, inst) in &st.meshes {
                 renderer.set_transform(scene, *inst, at, xf);
