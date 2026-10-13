@@ -475,6 +475,8 @@ impl App {
                 dropdown,
                 menu_kbd: self.menus.menu_kbd,
                 menu_top: self.menus.menu_top,
+                // (a seat or view slider held: the view behind is seen changing, #2359)
+                menu_peek: self.menus.menu_drag.filter(|k| chooser_items.get(*k).is_some_and(|(id, _)| id.starts_with("seat") || *id == "fov")),
                 // (not over the city map, which has the stops and their times: it
                 // covered the map's zoom and close buttons)
                 timetable: (self.menus.timetable && !map_open).then(|| timetable_rows(self.session.duty.as_ref(), self.player.as_ref().map(|p| p.vehicle.host.tt_delay as f64))).flatten(),
