@@ -49,6 +49,13 @@ const NAME_OF = Object.fromEntries(
     return [scan, PUNCT[n] || n];
   }),
 );
+// (OMSI's keys for Shift, Ctrl and Alt on either side, as its keyboard.cfg has them: the
+// stock quick menu is 92, "Alt")
+NAME_OF[90] = 'Shift';
+NAME_OF[91] = 'Ctrl';
+NAME_OF[92] = 'Alt';
+/** A Shift, Ctrl or Alt bound alone: OMSI's code for either side of it (#2003). */
+const BOTH_SIDES = { ShiftLeft: 90, ShiftRight: 90, ControlLeft: 91, ControlRight: 91, AltLeft: 92, AltRight: 92 };
 const MODIFIER_CODES = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'OSLeft', 'OSRight']);
 
 /** The caps of a key and its modifiers ("Shift", "D"); null for none. */
@@ -324,8 +331,8 @@ function CaptureDialog({ label, action, current, list, skip, onKey, onClose }) {
     // a Shift, Ctrl or Alt pressed and let go with no other key between is the key itself
     // (#2003: a lone modifier could not be bound, as OMSI 2 allows)
     let lone = null;
-    const take = (code, chord) => {
-      const scan = SCAN_OF[code];
+    const take = (code, chord, lone) => {
+      const scan = (lone && BOTH_SIDES[code]) || SCAN_OF[code];
       if (!scan) {
         toast(t('{code} has no DirectInput scan code the game understands.', { code }), 'error');
         return;
@@ -364,7 +371,7 @@ function CaptureDialog({ label, action, current, list, skip, onKey, onClose }) {
       lone = null;
       // (the modifiers still held around it are its combination)
       const own = e.code.startsWith('Shift') ? KEY_SHIFT : e.code.startsWith('Control') ? KEY_CTRL : e.code.startsWith('Alt') ? KEY_ALT : 0;
-      take(e.code, chordOfEvent(e) & ~own);
+      take(e.code, chordOfEvent(e) & ~own, true);
     };
     // (before the dialog's own Escape, and before any button the key would press)
     window.addEventListener('keydown', down, true);
