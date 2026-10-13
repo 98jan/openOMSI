@@ -359,6 +359,9 @@ pub struct PeopleSim {
     /// The timetable's name of each stop object (`Schedule::stop_names`), the names the
     /// targets above are made of.
     pub stop_names: Option<HashMap<i64, String>>,
+    /// Per bus stop, the stop objects its trips go on to by timetable name
+    /// (`Schedule::stop_target_objects`): whose exit weight a destination has.
+    pub stop_target_objects: Option<HashMap<i64, HashMap<String, Vec<i64>>>>,
     /// The player's duty (`set_duty`): its trip, the stop of it the duty is due at, and
     /// whether the trip has reached its last stop. None: free drive, and nobody waiting
     /// boards the player's bus.

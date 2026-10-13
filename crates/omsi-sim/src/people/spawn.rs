@@ -139,6 +139,7 @@ impl PeopleSim {
             due_dests: None,
             due_at: f64::NEG_INFINITY,
             stop_names: None,
+            stop_target_objects: None,
             duty: None,
             stamped: Vec::new(),
             pedestrians: 14,

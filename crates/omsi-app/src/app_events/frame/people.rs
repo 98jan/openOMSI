@@ -130,6 +130,7 @@ pub(super) fn humans(cx: HumansCx, dt: f32) {
         if h.stop_targets.is_none() {
             h.stop_targets = cx.traffic.schedule.as_ref().map(|s| s.stop_targets());
             h.stop_names = cx.traffic.schedule.as_ref().map(|s| s.stop_names());
+            h.stop_target_objects = cx.traffic.schedule.as_ref().map(|s| s.stop_target_objects());
             if let Some(t) = &h.stop_targets {
                 log::info!("people: {} bus stops with timetable targets", t.len());
             }
