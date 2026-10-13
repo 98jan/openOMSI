@@ -307,6 +307,7 @@ impl App {
             p.axes.old_steering = self.settings.old_steering;
             p.axes.red_steer_spd = self.settings.red_steer_spd;
             p.axes.pedal_hold = self.settings.brake_hold;
+            p.axes.pedal_speed = self.settings.key_pedal_speed;
             p.analog = analog;
             for (name, down) in actions {
                 if !down || (self.menus.game_menu.is_none() && self.menus.chooser.is_none()) {

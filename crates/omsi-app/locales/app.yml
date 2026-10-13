@@ -80,6 +80,26 @@ _version: 2
   ca: "Data actual"
   sv: "Aktuellt datum"
 
+"Pedal keys speed":
+  fr: "Vitesse des touches de pédales"
+  ca: "Velocitat de les tecles dels pedals"
+  zh-tw: "踏板按鍵速度"
+  pt: "Velocidade das teclas dos pedais"
+  pt-pt: "Velocidade das teclas dos pedais"
+  zh: "踏板按键速度"
+  de: "Tempo der Pedaltasten"
+  nl: "Snelheid van de pedaaltoetsen"
+  sv: "Pedaltangenternas hastighet"
+"How fast the throttle and brake keys press their pedals; slower is finer":
+  fr: "La vitesse à laquelle les touches d'accélérateur et de frein enfoncent leurs pédales ; plus lent est plus fin"
+  ca: "La velocitat amb què les tecles d'accelerador i de fre premen els pedals; més lent és més precís"
+  zh-tw: "油門與煞車按鍵踩下踏板的速度；越慢越精細"
+  pt: "A rapidez com que as teclas de acelerador e freio pressionam os pedais; mais lento é mais preciso"
+  pt-pt: "A rapidez com que as teclas de acelerador e travão carregam nos pedais; mais lento é mais preciso"
+  zh: "油门与刹车按键踩下踏板的速度；越慢越精细"
+  de: "Wie schnell die Gas- und Bremstasten ihre Pedale drücken; langsamer ist feiner"
+  nl: "Hoe snel de gas- en remtoetsen hun pedalen indrukken; langzamer is fijner"
+  sv: "Hur snabbt gas- och bromstangenterna trycker ned pedalerna; långsammare är finare"
 "The mouse works the pedals":
   fr: "La souris actionne les pédales"
   ca: "El ratolí acciona els pedals"
