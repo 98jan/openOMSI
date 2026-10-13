@@ -132,6 +132,11 @@ pub fn both_code(key: KeyCode) -> Option<i32> {
     }
 }
 
+/// The mouse's side buttons, Mouse 4 (back) and Mouse 5 (forward), as keyboard.cfg keys: codes
+/// past DirectInput's 0..255, which OMSI never writes (#2281).
+pub const MOUSE_4: i32 = 1004;
+pub const MOUSE_5: i32 = 1005;
+
 /// "Shift (both)", "Ctrl (both)", "Alt (both)": see [`both_code`].
 pub const SHIFT_BOTH: i32 = 90;
 pub const CTRL_BOTH: i32 = 91;
@@ -155,6 +160,8 @@ pub fn scan_name(scan: i32) -> Option<String> {
         SHIFT_BOTH => return Some("Shift".into()),
         CTRL_BOTH => return Some("Ctrl".into()),
         ALT_BOTH => return Some("Alt".into()),
+        MOUSE_4 => return Some("Mouse 4".into()),
+        MOUSE_5 => return Some("Mouse 5".into()),
         _ => {}
     }
     const ALL: &[KeyCode] = &[

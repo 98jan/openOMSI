@@ -276,6 +276,11 @@ impl ApplicationHandler for App {
                     self.on_right(state == ElementState::Pressed);
                 }
             }
+            // the mouse's side buttons (Mouse 4 and 5): keys of their own for keyboard.cfg (#2281)
+            WindowEvent::MouseInput { state, button: button @ (winit::event::MouseButton::Back | winit::event::MouseButton::Forward), .. } => {
+                let scan = if button == winit::event::MouseButton::Back { crate::keys::MOUSE_4 } else { crate::keys::MOUSE_5 };
+                self.mouse_side_button(scan, state == ElementState::Pressed);
+            }
             // (the middle button - the wheel pressed - turns the view as well: OMSI's pan)
             WindowEvent::MouseInput {
                 state,

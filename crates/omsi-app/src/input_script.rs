@@ -701,6 +701,38 @@ impl App {
         }
     }
 
+    /// A side button of the mouse (`keys::MOUSE_4` / `MOUSE_5`) pressed or let go: what
+    /// keyboard.cfg binds to it, in [game] and for the bus, as a key's (#2281). Not while a
+    /// menu or the photo mode has the mouse.
+    pub(crate) fn mouse_side_button(&mut self, scan: i32, pressed: bool) {
+        let held = |a: KeyCode, b: KeyCode| self.input.keys.contains(&a) || self.input.keys.contains(&b);
+        let m = omsi_content::input::chord(
+            held(KeyCode::ShiftLeft, KeyCode::ShiftRight),
+            held(KeyCode::ControlLeft, KeyCode::ControlRight),
+            held(KeyCode::AltLeft, KeyCode::AltRight),
+        );
+        // (a key being set in the game's controls list takes the button)
+        if self.menus.key_capture.is_some() {
+            if pressed {
+                self.apply_key_capture(Some(scan), m);
+            }
+            return;
+        }
+        if self.menus.game_menu.is_some() || self.menus.chooser.is_some() || self.photo_on() {
+            return;
+        }
+        log::debug!("mouse button {scan} {}", if pressed { "down" } else { "up" });
+        if pressed {
+            let action = self.input.game_keys.iter().find(|b| b.scan_code == scan && b.matches(m)).map(|b| b.action.clone());
+            if let Some(a) = action {
+                self.game_action(&a);
+            }
+        }
+        if let Some(p) = self.player.as_mut() {
+            p.key(scan, m, pressed);
+        }
+    }
+
     /// A key of the input script by name: a letter, a digit, F1..F12, or one of the named keys.
     pub(crate) fn script_key(name: &str) -> Option<KeyCode> {
         use KeyCode::*;
@@ -947,6 +979,11 @@ impl App {
                 "restore" => {
                     self.gfx.window_hidden = false;
                     self.input_back();
+                }
+                // `mouse4 down|up`, `mouse5 down|up`: the mouse's side buttons
+                "mouse4" | "mouse5" => {
+                    let scan = if verb == "mouse4" { keys::MOUSE_4 } else { keys::MOUSE_5 };
+                    self.mouse_side_button(scan, arg == "down");
                 }
                 "key" | "keydown" | "keyup" => {
                     let Some(code) = Self::script_key(arg) else {
