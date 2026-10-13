@@ -275,12 +275,15 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         let masked = (u32(material.params2.w + 0.5) & 1u) != 0u;
         let metal_ok = (u32(material.params2.w + 0.5) & 4u) != 0u;
         metal = select(0.0, smoothstep(0.3, 0.85, refl), masked || metal_ok);
-        // (where the mask says nothing reflects - a tyre or a seal on the body's texture -
-        // it is no coat but the rough rubber or plastic of an unpolished surface. Any share
-        // at all is lacquer: the stock bodies' masks hold a few per cent - the MAN NL's
-        // 15 of 255 - which says how much the paint mirrors, not that it is rough; taken
-        // as roughness up to a share of a half, every such body came out matte, #2067)
-        let coat_rough = mix(0.8, 0.06, smoothstep(0.0, 0.04, refl));
+        // The coat is as smooth as lets it mirror, averaged over the angles, the share
+        // Omsi.exe lays over it: a polished 4 % coat mirrors 8.7 % on average (Fresnel's
+        // rise at grazing), a rough one less (2.5 % at 0.8, its grazing light scattered and
+        // shadowed by its own roughness). So a share of 8.7 % and more is smooth lacquer, the
+        // stock bodies' few per cent - the MAN NL's 15 of 255 - a satin one (taken as rough
+        // up to a share of a half they came out matte, #2067; smooth from 4 %, a body meant
+        // to mirror barely shone like glass against the light, #2474), and where the mask
+        // says nothing reflects - a tyre or a seal - the rough rubber or plastic it is.
+        let coat_rough = clamp(0.06 + (0.087 - refl) * 11.9, 0.06, 0.8);
         // Where the model says how much it mirrors - a [matl_envmap_mask], or the texture's
         // alpha under a [matl_transmap] (most mod bodies) - Omsi.exe lays the sphere map
         // over the paint by that share at every angle (shader.wgsl's environment stage):
