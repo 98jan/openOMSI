@@ -419,9 +419,9 @@ impl App {
         if let Some(n) = self.menus.navigator.as_mut() {
             if n.map_open() {
                 let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
-                if pressed && (ctrl || self.menus.teleport_pick) {
-                    // Ctrl+click (or a click after Esc → Move the bus): the bus to the street
-                    // nearest that point, as OMSI's map window places vehicles
+                if pressed && ctrl {
+                    // Ctrl+click: the bus to the street nearest that point, as OMSI's map
+                    // window places vehicles
                     if let Some(at) = n.map_point(x, y) {
                         if std::mem::take(&mut self.menus.teleport_pick) {
                             n.toggle_map();
@@ -430,8 +430,16 @@ impl App {
                     }
                 } else if pressed {
                     n.map_press(x, y);
-                } else {
-                    n.map_release();
+                } else if n.map_release() && self.menus.teleport_pick {
+                    // after Esc → Move the bus the map is dragged to the place as ever, and
+                    // the click that lets go where it was pressed puts the bus there (the
+                    // press used to put it at once, so only what the map showed could be
+                    // chosen)
+                    if let Some(at) = n.map_point(x, y) {
+                        self.menus.teleport_pick = false;
+                        n.toggle_map();
+                        self.place_bus_at(at);
+                    }
                 }
                 return;
             }
