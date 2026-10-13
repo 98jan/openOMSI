@@ -96,10 +96,20 @@ pub(super) fn view_keys(mut cx: ViewKeysCx, dt: f32) {
                 cx.input.clock_hold = 0.0;
             }
         }
-        // = and - zoom inside the bus (the numpad's are door keys there), unless
-        // the player bound them to something of their own (#701)
-        let zoom_in = cx.input.keys.contains(&KeyCode::Equal) && !cx.input.own_keys.contains(&13);
-        let zoom_out = cx.input.keys.contains(&KeyCode::Minus) && !cx.input.own_keys.contains(&12);
+        // zooming with the keys: the [game] keys `view_zoom_in` / `view_zoom_out` where the
+        // player gave them keys; otherwise = and - (unless the player bound them to something
+        // of their own, #701) and, outside, the numpad's + and - while no key binding uses
+        // them (OMSI's own file has the kickdown and a door on them: the outside camera
+        // zoomed whenever they were pressed, #2469, #2322)
+        let pressed: Vec<i32> = cx.input.keys.iter().filter_map(|k| crate::keys::dik_code(*k)).collect();
+        let chord = omsi_content::input::chord(
+            cx.input.keys.contains(&KeyCode::ShiftLeft) || cx.input.keys.contains(&KeyCode::ShiftRight),
+            cx.input.keys.contains(&KeyCode::ControlLeft) || cx.input.keys.contains(&KeyCode::ControlRight),
+            cx.input.keys.contains(&KeyCode::AltLeft) || cx.input.keys.contains(&KeyCode::AltRight),
+        );
+        let bus_keys = cx.player.player.as_ref().map(|p| p.bindings.as_slice()).unwrap_or_default();
+        let (zoom_in, pad_in) = zoom_keys("view_zoom_in", &pressed, chord, &cx.input.game_keys, bus_keys, &cx.input.own_keys, 13, 78);
+        let (zoom_out, pad_out) = zoom_keys("view_zoom_out", &pressed, chord, &cx.input.game_keys, bus_keys, &cx.input.own_keys, 12, 74);
         if matches!(cx.view.view.as_str(), "driver" | "pax") {
             if zoom_in {
                 crate::app_impl::zoom_view(cx.view.cam, cx.view.view, 3.0 * dt);
@@ -110,12 +120,10 @@ pub(super) fn view_keys(mut cx: ViewKeysCx, dt: f32) {
         }
         // W/S and the wheel pull the outside camera in and out
         if *cx.view.view == "outside" {
-            if zoom_in || cx.input.keys.contains(&KeyCode::NumpadAdd)
-            {
+            if zoom_in || pad_in {
                 cx.view.cam.orbit = (cx.view.cam.orbit - 12.0 * dt).max(ORBIT_MIN);
             }
-            if zoom_out || cx.input.keys.contains(&KeyCode::NumpadSubtract)
-            {
+            if zoom_out || pad_out {
                 cx.view.cam.orbit = (cx.view.cam.orbit + 12.0 * dt).min(ORBIT_MAX);
             }
         }
@@ -133,6 +141,28 @@ pub(super) fn view_keys(mut cx: ViewKeysCx, dt: f32) {
         cx.view.cam.ego = false;
     }
     free_camera(&mut cx, dt);
+}
+
+/// Whether the keys held (`held`: their scan codes, `chord`: the modifiers) zoom: `action`'s
+/// [game] keys where keyboard.cfg gives it any, else the key `plain` (= or -) unless it is the
+/// player's own; and, second, the numpad key `pad` (outside only) where nothing is bound to it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn zoom_keys(
+    action: &str,
+    held: &[i32],
+    chord: i32,
+    game: &[omsi_content::KeyBinding],
+    bus: &[omsi_content::KeyBinding],
+    own: &std::collections::HashSet<i32>,
+    plain: i32,
+    pad: i32,
+) -> (bool, bool) {
+    let mut own_keys = game.iter().filter(|b| b.scan_code != 0 && b.action.eq_ignore_ascii_case(action)).peekable();
+    if own_keys.peek().is_some() {
+        return (own_keys.any(|b| held.contains(&b.scan_code) && b.matches(chord)), false);
+    }
+    let bound = |k: i32| own.contains(&k) || game.iter().chain(bus).any(|b| b.scan_code == k);
+    (held.contains(&plain) && !own.contains(&plain), held.contains(&pad) && !bound(pad))
 }
 
 /// The mirror editor's keys and Ctrl+Alt+arrows: the mirrors aimed, shifted and zoomed
@@ -283,5 +313,39 @@ fn free_camera(cx: &mut ViewKeysCx, dt: f32) {
         if cx.input.keys.contains(&KeyCode::ArrowDown) {
             cam.pitch = (cam.pitch - 40.0 * dt).max(-89.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::zoom_keys;
+    use omsi_content::KeyBinding;
+
+    fn kb(a: &str, k: i32, m: i32) -> KeyBinding {
+        KeyBinding { action: a.into(), scan_code: k, modifier: m }
+    }
+
+    /// Num+ and Num- zoomed the outside camera on top of the kickdown and the rear door
+    /// OMSI's file puts on them (#2469, #2322); `view_zoom_in/out` move the zoom.
+    #[test]
+    fn the_numpad_zooms_only_where_nothing_is_bound_to_it() {
+        let none = std::collections::HashSet::new();
+        // nothing bound: the numpad zooms outside, = everywhere
+        assert_eq!(zoom_keys("view_zoom_in", &[78], 0, &[], &[], &none, 13, 78), (false, true));
+        assert_eq!(zoom_keys("view_zoom_in", &[13], 0, &[], &[], &none, 13, 78), (true, false));
+        // the rear door on Num- (stock [vehicles], the bus's keys): no zoom
+        let bus = [kb("bus_dooraft", 74, 0)];
+        assert_eq!(zoom_keys("view_zoom_out", &[74], 0, &[], &bus, &none, 12, 74), (false, false));
+        // = the player's own: no zoom on it
+        let own: std::collections::HashSet<i32> = [13].into();
+        assert_eq!(zoom_keys("view_zoom_in", &[13], 0, &[], &[], &own, 13, 78), (false, false));
+        // the zoom moved to Ctrl+PageUp: only that zooms, = and the numpad do not
+        let game = [kb("view_zoom_in", 201, 4)];
+        assert_eq!(zoom_keys("view_zoom_in", &[201], 4, &game, &[], &none, 13, 78), (true, false));
+        assert_eq!(zoom_keys("view_zoom_in", &[201], 0, &game, &[], &none, 13, 78), (false, false));
+        assert_eq!(zoom_keys("view_zoom_in", &[13, 78], 0, &game, &[], &none, 13, 78), (false, false));
+        // an entry with no key (cleared) leaves the defaults
+        let cleared = [kb("view_zoom_in", 0, 0)];
+        assert_eq!(zoom_keys("view_zoom_in", &[13], 0, &cleared, &[], &none, 13, 78), (true, false));
     }
 }

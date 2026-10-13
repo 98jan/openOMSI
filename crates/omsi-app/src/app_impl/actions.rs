@@ -290,6 +290,11 @@ impl App {
                     self.service_msg = Some((format!("{} camera {n} of {count}", if pax { "Passenger" } else { "Driver" }), 2.0));
                 }
             }
+            // OMSI's quick menu from a key that is no Shift, Ctrl or Alt (a tap of one of
+            // those is `alt_tap`'s, #2392)
+            "open_menue" => self.quick_menu_key(),
+            // the zoom keys work while held: the frame reads them (`view_keys::zoom_keys`)
+            "view_zoom_in" | "view_zoom_out" => {}
             "toggel_mouse_ctrl" => {
                 self.set_mouse_drive(!self.input.mouse_drive);
                 let msg = if self.input.mouse_drive { "Mouse steering on: across steers, up is the throttle, down the brake (O turns it off)" } else { "Mouse steering off" };
