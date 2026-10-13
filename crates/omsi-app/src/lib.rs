@@ -769,6 +769,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             plugin_keys: Vec::new(),
             plugin_events: Vec::new(),
             plugin_events_ex: Vec::new(),
+            plugin_pointer: Default::default(),
             plugin_voices: Vec::new(),
             plugin_seen: Default::default(),
             plugin_command: false,

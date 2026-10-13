@@ -184,8 +184,8 @@ impl App {
         let Some((page, ..)) = self.input.html_pressed else { return };
         let Some((o, d, _)) = self.cursor_ray_now() else { return };
         let Some(p) = self.player.as_mut() else { return };
-        if let Some((pg, u, v)) = p.html_hit(o, d).filter(|h| h.0 == page) {
-            p.html_pointer(pg, u, v, omsi_sim::htmltex::PointerKind::Move);
+        if let Some((pg, u, v)) = p.html_hit(o, d, &self.integrations.plugin_pointer).filter(|h| h.0 == page) {
+            p.html_pointer(pg, u, v, omsi_sim::htmltex::PointerKind::Move, &mut self.integrations.plugin_pointer);
             self.input.html_pressed = Some((pg, u, v));
         }
     }
@@ -518,9 +518,9 @@ impl App {
             let (dx, dy) = std::mem::take(&mut self.input.drag_delta);
             p.occlude_controls = self.view == "outside";
             if pressed {
-                if let Some((page, u, v)) = p.html_hit(o, d) {
+                if let Some((page, u, v)) = p.html_hit(o, d, &self.integrations.plugin_pointer) {
                     p.release();
-                    p.html_pointer(page, u, v, omsi_sim::htmltex::PointerKind::Down);
+                    p.html_pointer(page, u, v, omsi_sim::htmltex::PointerKind::Down, &mut self.integrations.plugin_pointer);
                     self.input.html_pressed = Some((page, u, v));
                     self.input.dragging = false;
                     return;
@@ -537,8 +537,8 @@ impl App {
                     .is_some();
             } else {
                 if let Some((page, u, v)) = self.input.html_pressed.take() {
-                    let (u, v) = p.html_hit(o, d).filter(|h| h.0 == page).map_or((u, v), |h| (h.1, h.2));
-                    p.html_pointer(page, u, v, omsi_sim::htmltex::PointerKind::Up);
+                    let (u, v) = p.html_hit(o, d, &self.integrations.plugin_pointer).filter(|h| h.0 == page).map_or((u, v), |h| (h.1, h.2));
+                    p.html_pointer(page, u, v, omsi_sim::htmltex::PointerKind::Up, &mut self.integrations.plugin_pointer);
                     self.input.dragging = false;
                     return;
                 }
