@@ -252,6 +252,7 @@ impl Schedule {
         if let Some(b) = car.bus.as_mut() {
             b.layover = departure > day_time
                 && b.stops.front().map(|st| st.ri == 0 && (st.s - s).abs() < 2.0).unwrap_or(false);
+            b.put_out = b.layover;
             b.route_open = end < slots.len();
             b.terminus = terminus.clone();
             b.last_stop = last_stop;
