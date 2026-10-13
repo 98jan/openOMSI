@@ -73,6 +73,7 @@ impl PeopleSim {
             log::warn!("human pool limit {configured_people} adjusted to {people_limit} for safe spawning");
         }
         PeopleSim {
+            pool_types: types.len(),
             types,
             people: Vec::new(),
             rng: 0x1234_5678_9ABC_DEF1,
@@ -432,7 +433,7 @@ impl PeopleSim {
             .collect();
         let mut choice: Option<(usize, usize)> = None;
         for attempt in 0..10 {
-            let pick = (self.rand() % self.types.len() as u64) as usize;
+            let pick = (self.rand() % self.pool_types.clamp(1, self.types.len()) as u64) as usize;
             let idx = kind.map(|k| k % self.types.len()).unwrap_or(pick);
             let t = &self.types[idx];
             let tk = Arc::as_ptr(t) as usize;
@@ -554,19 +555,33 @@ impl PeopleSim {
         self.map_humans_done = true;
         let path = omsi_cfg::resolve_path(world.map_dir(), "humans.txt");
         let list = omsi_map::ailists::load_list(&path);
+        // (the figures put after the pool meanwhile stay, after it)
+        let figures: Vec<Arc<HumanType>> = self.types.get(self.pool_types..).map(<[_]>::to_vec).unwrap_or_default();
         if list.is_empty() {
+            // no list: everybody installed - but the map's bus drivers (`drivers.txt`, the
+            // AI packs' driver figures) drive and do not ride (#2223)
+            let drivers: Vec<String> = ["drivers.txt", "drivers.cfg"]
+                .iter()
+                .flat_map(|f| omsi_map::ailists::load_list(&omsi_cfg::resolve_path(world.map_dir(), f)))
+                .map(|l| human_key(&l))
+                .collect();
+            let pool: Vec<Arc<HumanType>> = self.types[..self.pool_types.min(self.types.len())]
+                .iter()
+                .filter(|t| !drivers.contains(&human_key(&t.def.path.to_string_lossy())))
+                .cloned()
+                .collect();
+            if !drivers.is_empty() && !pool.is_empty() && pool.len() < self.pool_types {
+                log::info!("humans: {} of the map's drivers left out of the passengers", self.pool_types - pool.len());
+                self.pool_types = pool.len();
+                self.types = pool;
+                self.types.extend(figures);
+            }
             return;
         }
         // the people installed already (any content root, mods too), matched by the path
         // below `Humans/`; an entry not among them (a pack nested deeper than the scan) is
         // loaded from its own path
-        let key = |p: &str| -> String {
-            let p = p.replace('\\', "/").to_ascii_lowercase();
-            match p.rfind("humans/") {
-                Some(k) => p[k + 7..].to_string(),
-                None => p,
-            }
-        };
+        let key = human_key;
         let mut picked: Vec<Arc<HumanType>> = Vec::new();
         for line in &list {
             let want = key(line.trim());
@@ -587,7 +602,9 @@ impl PeopleSim {
             list.len(),
             path.display()
         );
+        self.pool_types = picked.len();
         self.types = picked;
+        self.types.extend(figures);
     }
 
     /// People the moving bus has just knocked down. OMSI counts them in the driver's
@@ -728,5 +745,15 @@ mod cabin_key_tests {
         assert_eq!(map.get(&CabinKey(&[a, b])), Some(&2));
         assert_eq!(map.get(&CabinKey(&[b, a])), None);
         assert_eq!(map.get(&CabinKey(&[])), None);
+    }
+}
+
+/// A human file's path below `Humans/`, lower case with forward slashes: how a map's
+/// lists (`humans.txt`, `drivers.txt`) and the installed people are matched.
+fn human_key(p: &str) -> String {
+    let p = p.replace('\\', "/").to_ascii_lowercase();
+    match p.rfind("humans/") {
+        Some(k) => p[k + 7..].to_string(),
+        None => p,
     }
 }
