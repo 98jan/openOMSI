@@ -307,6 +307,24 @@ fn liveries(def: &omsi_vehicle::Vehicle) -> Vec<String> {
     names
 }
 
+/// A seed that differs from call to call (the random livery).
+fn fresh_seed() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
+    h.finish()
+}
+
+/// One of `items`, chosen by `seed` (None for none).
+fn pick_random<T>(items: &[T], seed: u64) -> Option<&T> {
+    // (splitmix64: neighbouring seeds land far apart)
+    let mut z = seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^= z >> 31;
+    (!items.is_empty()).then(|| &items[(z % items.len() as u64) as usize])
+}
+
 /// A depot file's name for the lists: its `[name]`, and the file.
 fn hof_label(p: &std::path::Path) -> String {
     let file = p.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
@@ -1001,7 +1019,13 @@ pub(crate) fn run_move(app: &mut App, kind: &ListKind, action: &str, mv: Move) -
         ListKind::PlaceMaker | ListKind::PlaceType(_) => Some(ListKind::PlaceLivery(arg.to_string())),
         ListKind::PlaceLivery(bus) => Some(ListKind::PlaceHof(bus.clone(), arg.to_string())),
         ListKind::PlaceHof(bus, paint) => {
-            let (bus, paint, hof) = (bus.clone(), paint.clone(), arg.trim().to_string());
+            let (bus, mut paint, hof) = (bus.clone(), paint.clone(), arg.trim().to_string());
+            // "Random livery": one of the bus's liveries, drawn now (#2410: no livery asked
+            // for gave the model's own textures every time)
+            if paint.trim().is_empty() {
+                let names = bus_def(app, &bus).map(|d| liveries(&d)).unwrap_or_default();
+                paint = pick_random(&names, fresh_seed()).cloned().unwrap_or_default();
+            }
             app.close_game_menu();
             app.place_vehicle(&bus, Some(paint).filter(|p| !p.is_empty()), Some(hof).filter(|h| !h.is_empty()));
             None
@@ -1071,6 +1095,19 @@ pub(crate) use duty::*;
 
 #[cfg(test)]
 mod tests {
+    /// "Random livery" draws among all liveries (#2410: it always gave the same one).
+    #[test]
+    fn random_livery_reaches_every_livery() {
+        let names = ["A", "B", "C", "D"];
+        let mut seen = std::collections::HashSet::new();
+        for seed in 0..64u64 {
+            seen.insert(*super::pick_random(&names, seed).unwrap());
+        }
+        assert_eq!(seen.len(), 4);
+        assert!(super::pick_random::<&str>(&[], 7).is_none());
+        assert_ne!(super::fresh_seed(), super::fresh_seed());
+    }
+
     /// The start points as OMSI lists them: a name once (Gerolstein's ten depot places of
     /// one name are one line), its places in global.cfg's order, the names in OMSI's order.
     #[test]
