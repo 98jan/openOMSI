@@ -403,7 +403,12 @@ pub fn start(args: &LanConfig, host: &dyn LanHost) -> Option<LanSession> {
                 (*port, false)
             };
             match LanSession::host(p, &player_name(args), world, try_next) {
-                Ok(s) => Some(s),
+                Ok(mut s) => {
+                    if args.server {
+                        s.tell_strangers_the_session();
+                    }
+                    Some(s)
+                }
                 Err(e) => {
                     log::warn!("LAN: cannot host on port {p}: {e}");
                     write_failure(&format!("cannot host on port {p}: {e}"));
@@ -538,8 +543,8 @@ fn mod_source(args: &LanConfig) -> crate::mods::ModSource {
 pub fn share_mods(args: &mut LanConfig, lan: &mut LanSession) {
     match lan.role {
         Role::Host => {
-            if let Some(port) = lan.local_addr().map(|a| a.port()) {
-                crate::mods::serve(port, lan.session, &mod_source(args));
+            if let (Some(port), Some(key)) = (lan.local_addr().map(|a| a.port()), lan.host_key()) {
+                crate::mods::serve(port, key, &mod_source(args));
             }
         }
         Role::Client => {
@@ -1251,6 +1256,10 @@ fn freetex_names(ty: &omsi_sim::VehicleType) -> Vec<String> {
     names
 }
 
+fn freetex_ids(ty: &omsi_sim::VehicleType) -> Vec<u32> {
+    freetex_names(ty).iter().filter_map(|n| ty.program.str_var(n)).collect()
+}
+
 /// What the vehicle's `[matl_freetex]` variables hold now (see [`freetex_names`]).
 fn freetex_values(v: &omsi_sim::VehicleInstance) -> Vec<String> {
     freetex_names(&v.ty)
@@ -1883,7 +1892,10 @@ fn drive_remote(rv: &mut RemoteVehicle, pose: &Pose, dt: f32, exact: bool) {
     // local AI scripts cannot replace a stand-in's display before visual updates.
     let display_names = display_vars(&rv.vehicle);
     let free_names = freetex_names(&rv.vehicle.ty);
-    let strings: Vec<_> = display_names.iter().zip(&pose.texts).chain(free_names.iter().zip(&pose.freetex))
+    let strings: Vec<_> = display_names.iter().zip(&pose.texts)
+        .filter(|(_, value)| omsi_net::remote_text::remote_string_ok(value, false))
+        .chain(free_names.iter().zip(&pose.freetex)
+            .filter(|(_, value)| omsi_net::remote_text::freetex_ok(value)))
         .filter_map(|(name, value)| rv.vehicle.ty.program.str_var(name).map(|id| (id, value.as_str())))
         .filter(|(id, _)| !rv.synced_strings.contains_key(id))
         .chain(rv.synced_strings.iter().map(|(id, value)| (*id, value.as_str())))
@@ -1986,14 +1998,25 @@ fn sync_vars(lan: &mut LanSession, game: &mut LanGame, player: Option<&omsi_sim:
                 }
             }
         }
-        for (id, s) in v.strings {
-            if let Some(&local) = t.strings.get(id as usize) {
-                if (local as usize) < ns {
-                    rv.synced_strings.insert(local, s);
-                }
-            }
-        }
+        let pictures = if v.strings.is_empty() { Vec::new() } else { freetex_ids(&rv.vehicle.ty) };
+        rv.synced_strings.extend(mapped_remote_strings(t, v.strings, ns, &pictures));
     }
+}
+
+/// Check the local destination's role after translating the owner's wire index:
+/// compatible buses can assign different indices to the same picture variable.
+fn mapped_remote_strings<'a>(
+    table: &'a crate::sync::VarTable,
+    strings: Vec<(u16, String)>,
+    count: usize,
+    pictures: &'a [u32],
+) -> impl Iterator<Item = (u32, String)> + 'a {
+    strings.into_iter().filter_map(move |(id, value)| {
+        let local = *table.strings.get(id as usize)?;
+        ((local as usize) < count
+            && omsi_net::remote_text::remote_string_ok(&value, pictures.contains(&local)))
+            .then_some((local, value))
+    })
 }
 
 fn publish_script_textures(lan: &mut LanSession, game: &mut LanGame, player: Option<&mut omsi_sim::VehicleInstance>, bus: &str) {

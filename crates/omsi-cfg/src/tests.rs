@@ -223,6 +223,7 @@ fn windows_paths() {
     assert_eq!(windows_components("Folder.\\"), vec!["Folder"]);
     assert_eq!(windows_components("str_gehweg02.bmp "), vec!["str_gehweg02.bmp"]);
     assert_eq!(windows_components(""), Vec::<&str>::new());
+    assert_eq!(windows_components("a\\.. \\...\\. .\\b.bmp"), vec!["a", "b.bmp"]);
     let dir = std::env::temp_dir().join(format!("omsi-cfg-paths-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("Texture").join("Bahn\u{fc}bergang")).unwrap();
     std::fs::write(dir.join("Texture").join("Bahn\u{fc}bergang").join("anz-oben.jpg"), b"x").unwrap();

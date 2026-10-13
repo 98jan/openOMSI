@@ -369,6 +369,8 @@ const general = {
       title: 'Interface & online',
       rows: [
         { type: 'custom', id: 'theme' },
+        { type: 'custom', id: 'launcher_layout' },
+        { type: 'custom', id: 'launcher_size' },
         { type: 'select', key: 'language', label: 'Language', raw: true, options: (s, boot) => (boot?.languages || []).map((l) => [l.code, l.name]) },
         // (texts nobody has translated: translated on this machine)
         { type: 'toggle', key: 'machine_translation', label: 'Translate the remaining texts automatically (offline, downloads 620 MB once)' },
@@ -393,6 +395,8 @@ const general = {
         { type: 'toggle', key: 'navigator', label: 'Navigator (Shift+N: map, schedule, off)' },
         { type: 'toggle', key: 'nav_arrows', label: 'Route arrows (as in OMSI 2)' },
         { type: 'toggle', key: 'nav_ai', label: 'AI vehicles on the map' },
+        { type: 'toggle', key: 'nav_surface', label: 'Map surface under the roads' },
+        { type: 'toggle', key: 'nav_light', label: 'Light map' },
         { type: 'custom', id: 'corner' },
       ],
     },

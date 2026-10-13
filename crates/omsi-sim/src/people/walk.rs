@@ -249,6 +249,23 @@ impl PeopleSim {
                 remove.push(i);
             }
             Want::stand(None, Activity::Stand)
+        } else if let State::Leaving { to } = &self.people[i].state {
+            // (a few steps away from the door, each to a place of their own, then standing
+            // there until gone - GONE_AFTER_S after getting off at the latest, as above)
+            let goal = to.truncate();
+            let here = self.people[i].position.truncate();
+            if self.people[i].t_state > GONE_AFTER_S {
+                remove.push(i);
+                return Want::stand(None, Activity::Stand);
+            }
+            if (goal - here).length() < 0.35 {
+                self.people[i].state = State::Standing;
+                // (the steps away are taken: no more walking off along the heading)
+                self.people[i].t_state = self.people[i].t_state.max(STEP_AWAY_S);
+                return Want::stand(None, Activity::Stand);
+            }
+            let pace = self.people[i].pace;
+            Want { vel: arrive(here, goal, pace), face: None, give: 0.35, corridor: None, idle: Activity::Stand }
         } else {
             Want::stand(None, Activity::Stand)
         }

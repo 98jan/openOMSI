@@ -489,9 +489,16 @@ pub fn downloaded(r: &Release) -> bool {
         (Some(want), got) if got == want => true,
         (Some(want), "-") => {
             let Ok(mut f) = std::fs::File::open(&file) else { return false };
+            // (read in blocks: sha2 0.11's hasher is no `io::Write` any more)
             let mut h = sha2::Sha256::new();
-            if std::io::copy(&mut f, &mut h).is_err() {
-                return false;
+            let mut buf = vec![0u8; 1 << 16];
+            loop {
+                match std::io::Read::read(&mut f, &mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => h.update(&buf[..n]),
+                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                    Err(_) => return false,
+                }
             }
             let got: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
             got == want

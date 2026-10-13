@@ -316,7 +316,7 @@ impl PeopleSim {
         }
         let free = (0..self.people.len()).find(|&i| {
             let p = &self.people[i];
-            p.puppet.is_none() && !p.remote && matches!(p.state, State::Strolling(_) | State::Standing) && !self.seen(p.position)
+            p.puppet.is_none() && !p.remote && matches!(p.state, State::Strolling(_) | State::Standing | State::Leaving { .. }) && !self.seen(p.position)
         });
         match free {
             Some(i) => {
@@ -552,6 +552,34 @@ impl PeopleSim {
         }
     }
 
+    /// The figures the map's `drivers.txt` names are drivers, not passengers: out of the
+    /// pool when a map has no `humans.txt` list to draw from, or one that names nobody
+    /// installed (a London driver rode a German bus as a passenger, #2223). Only when others
+    /// remain; the figures put after the pool meanwhile (the player's own, other players')
+    /// stay after it.
+    pub(crate) fn leave_out_drivers(&mut self, map_dir: &std::path::Path) {
+        let drivers: Vec<String> = ["drivers.txt", "drivers.cfg"]
+            .iter()
+            .flat_map(|f| omsi_map::ailists::load_list(&omsi_cfg::resolve_path(map_dir, f)))
+            .map(|l| human_key(&l))
+            .collect();
+        if drivers.is_empty() {
+            return;
+        }
+        let figures: Vec<Arc<HumanType>> = self.types.get(self.pool_types..).map(<[_]>::to_vec).unwrap_or_default();
+        let pool: Vec<Arc<HumanType>> = self.types[..self.pool_types.min(self.types.len())]
+            .iter()
+            .filter(|t| !drivers.contains(&human_key(&t.def.path.to_string_lossy())))
+            .cloned()
+            .collect();
+        if !pool.is_empty() && pool.len() < self.pool_types {
+            log::info!("humans: {} of the map's drivers left out of the passengers", self.pool_types - pool.len());
+            self.pool_types = pool.len();
+            self.types = pool;
+            self.types.extend(figures);
+        }
+    }
+
     /// Keep only the people the map's `humans.txt` names, an entry listed twice counting
     /// twice, as OMSI draws a map's pedestrians and passengers from that list alone. A map
     /// without the file, or whose list names nobody to be found, keeps everybody.
@@ -565,24 +593,8 @@ impl PeopleSim {
         // (the figures put after the pool meanwhile stay, after it)
         let figures: Vec<Arc<HumanType>> = self.types.get(self.pool_types..).map(<[_]>::to_vec).unwrap_or_default();
         if list.is_empty() {
-            // no list: everybody installed - but the map's bus drivers (`drivers.txt`, the
-            // AI packs' driver figures) drive and do not ride (#2223)
-            let drivers: Vec<String> = ["drivers.txt", "drivers.cfg"]
-                .iter()
-                .flat_map(|f| omsi_map::ailists::load_list(&omsi_cfg::resolve_path(world.map_dir(), f)))
-                .map(|l| human_key(&l))
-                .collect();
-            let pool: Vec<Arc<HumanType>> = self.types[..self.pool_types.min(self.types.len())]
-                .iter()
-                .filter(|t| !drivers.contains(&human_key(&t.def.path.to_string_lossy())))
-                .cloned()
-                .collect();
-            if !drivers.is_empty() && !pool.is_empty() && pool.len() < self.pool_types {
-                log::info!("humans: {} of the map's drivers left out of the passengers", self.pool_types - pool.len());
-                self.pool_types = pool.len();
-                self.types = pool;
-                self.types.extend(figures);
-            }
+            // (no list: everybody installed, but not the map's drivers)
+            self.leave_out_drivers(world.map_dir());
             return;
         }
         // the people installed already (any content root, mods too), matched by the path
@@ -600,7 +612,8 @@ impl PeopleSim {
         // (a list that names nobody to be found keeps everybody: a map without people
         // looked broken)
         if picked.is_empty() {
-            log::warn!("humans.txt of the map names nobody installed: keeping all people");
+            log::warn!("humans.txt of the map names nobody installed: keeping all people (the map's drivers left out)");
+            self.leave_out_drivers(world.map_dir());
             return;
         }
         log::info!(
@@ -634,7 +647,7 @@ impl PeopleSim {
             // (sub_62a6a0 at 0x62dc6c: the people waiting at a stop and those on the pavements)
             let counts = match &p.state {
                 State::Pax(x) => x.task == Task::WaitingForBus,
-                State::Strolling(_) | State::Standing => true,
+                State::Strolling(_) | State::Standing | State::Leaving { .. } => true,
                 State::Idle => false,
             };
             if p.place != Place::Ground || !counts {

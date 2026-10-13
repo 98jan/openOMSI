@@ -2,6 +2,24 @@ include!("../../../../tools/test-support/original_root.rs");
 use super::*;
 
 #[test]
+fn compatible_string_tables_check_picture_paths_at_the_local_index() {
+    let table = crate::sync::VarTable {
+        hash: 0,
+        floats: Vec::new(),
+        strings: vec![1, 0, u32::MAX],
+    };
+    let take = |values| mapped_remote_strings(&table, values, 2, &[1]).collect::<Vec<_>>();
+    // A colon is valid in a display text but not in a picture path. The owner's
+    // picture is wire slot 0; on this bus it is local slot 1.
+    assert_eq!(take(vec![(0, "12:30".into()), (1, "12:30".into())]), vec![(0, "12:30".into())]);
+    assert_eq!(take(vec![(0, r"..\Texture\blind.bmp".into())]), vec![(1, r"..\Texture\blind.bmp".into())]);
+    for path in [r"\\host\share\x.bmp", "C:/x.bmp", "/dev/zero"] {
+        assert!(take(vec![(0, path.into()), (1, path.into())]).is_empty());
+    }
+    assert!(take(vec![(2, "unmapped".into()), (3, "out of range".into())]).is_empty());
+}
+
+#[test]
 fn runtime_weather_change_detects_custom_and_clearing_to_default() {
     let custom = "custom:vis=5000;br=0.80;wd=90;ws=4.0;t=22.0;rh=70;p=1013;c=2;cb=120;pt=1;pi=80;wet=0.50;snow=0;snowroad=0";
     assert!(runtime_weather_changed(

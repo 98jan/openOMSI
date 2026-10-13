@@ -4,6 +4,29 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.47 - 2026-10-13
+
+**Security release - please update.** Mods, maps, models and other players in an online session could, in 0.2.46 and before, write files outside the game (a `.7z` mod could put a DLL among the plugins of a Windows game), make Windows send the player's login to a stranger through a texture name, read files elsewhere on the computer, pose as the host of a session, take a player's place in it, or crash and hang the game with crafted files. All of that is closed (thanks to @thibautgnt). **The online protocol changes (6 to 7): every player and host needs 0.2.47**; an older game is refused cleanly when it joins. A dedicated server's `admin_password` needs at least 8 characters now.
+
+### New
+- **Model test** in the launcher, for modders: a bus is loaded exactly as for a drive, without a window, and every warning and error of its `.bus`, model, meshes, scripts, constfiles and paint schemes is listed, with the textures that are not there; the running game's warnings show live beside it (`openomsi --check-vehicle`) ([#2524](https://github.com/openOMSI-org/openOMSI/pull/2524), by @icacar98-dot).
+- **The navigator and the city map show the land under the roads** on a map that brings a package (`Maps/<Map>/openomsi-realmap`): water, parks and woods, rivers, rail and borders, in a dark or a light look; two new settings (Navigator surface, Light navigator). See docs/MAP_PACKAGE.md ([#2529](https://github.com/openOMSI-org/openOMSI/pull/2529), by @lmonteirotech).
+- **The launcher grows with its window** on a big or wide screen, and has a **Launcher size** setting; **Launcher layout: Classic** brings back the Drive page in steps (Bus, Day & weather, Map & duty); the bus preview can be looked at from the **passenger's and the driver's seat**; the launcher asks less of a weaker computer and rests while you drive ([#2493](https://github.com/openOMSI-org/openOMSI/pull/2493), by @thibautgnt; it supersedes #1631).
+
+### Fixes
+- **Security** (by @thibautgnt): mod archives can no longer write outside the mod being installed; texture and other content names cannot point at another computer (`\\server\share`) or climb out of the content folders, nor can another player's roller blind and script strings; online sessions: the host is signed (a per-session key), so nobody can pose as it on the relay or for its mods, a player's place cannot be taken with an overheard hello, the session is not told to strangers from outside the network, and a dedicated server's admin login uses PBKDF2 instead of one hash over plain UDP; bans hold the player's address; the mods download, the WebSocket gateway and files that claim billions of entries can no longer exhaust memory or hang the game; crafted glTF, `.x`, TGA and zip files no longer crash it; Android: other apps can no longer fake an update's answer; the website shows issue text through an allowlist with a Content-Security-Policy.
+- **The loading screen has its plain dark background again**, without the map's picture (0.2.46 put it there, #1383).
+- **Passengers read the destination from the IBIS**: the depot row the IBIS was set to, not the display script's own row - nobody boarded a bus showing a code typed past the list ([#2508](https://github.com/openOMSI-org/openOMSI/pull/2508), by @icacar98-dot).
+- **With one door open, nobody waits at a shut door with a button**: they walk to the open one ([#2509](https://github.com/openOMSI-org/openOMSI/pull/2509), by @icacar98-dot).
+- **People who get off where there is no pavement spread out beside the bus** instead of crowding the doorway, before they go ([#2510](https://github.com/openOMSI-org/openOMSI/pull/2510), by @icacar98-dot).
+- **The map's drivers stay out of the passengers** also when its humans.txt names nobody installed ([#2511](https://github.com/openOMSI-org/openOMSI/pull/2511), by @icacar98-dot).
+- **A repaint's folder no longer paints over the details of the other repaints in it**: only what its `.cti` names comes from there ([#2515](https://github.com/openOMSI-org/openOMSI/pull/2515), by @icacar98-dot).
+- **A paint scheme's `[setvar]`s are written before every frame of the scripts**, as Omsi.exe does - the IK-201's display went back to Latin letters only so ([#2519](https://github.com/openOMSI-org/openOMSI/pull/2519), by @icacar98-dot).
+- **Serbian and Croatian text in Windows-1250** (č, ć, đ with š or ž) is read as such, no longer as Western letters ([#2521](https://github.com/openOMSI-org/openOMSI/pull/2521), by @icacar98-dot).
+- Mac: the app is no longer overwritten by the game program beside it ([#2522](https://github.com/openOMSI-org/openOMSI/pull/2522), by @thibautgnt).
+- iPhone: the touch buttons answer where they are drawn from the first drive ([#2491](https://github.com/openOMSI-org/openOMSI/pull/2491), by @thibautgnt).
+- Dependencies: the crates' minor updates, pollster 1.0 and sha2 0.11 ([#2544](https://github.com/openOMSI-org/openOMSI/pull/2544), [#2545](https://github.com/openOMSI-org/openOMSI/pull/2545), [#2546](https://github.com/openOMSI-org/openOMSI/pull/2546)); Dependabot now comes once a month with the major versions grouped.
+
 ## 0.2.46 - 2026-10-13
 
 ### New

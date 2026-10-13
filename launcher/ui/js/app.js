@@ -4,12 +4,13 @@ import { html, render, useState, useEffect } from '../vendor/preact-htm.js';
 import { useStore, set, S } from './store.js';
 import { t, plainText } from './i18n.js';
 import { Icon } from './icons.js';
-import { Spinner, Button } from './ui.js';
-import { boot, installMod, jobRunning } from './data.js';
+import { Spinner } from './ui.js';
+import { boot, installMod, jobRunning, fitWindow } from './data.js';
 import { DrivePage } from './pages/drive.js';
 import { MultiplayerPage } from './pages/multiplayer.js';
 import { ProfilePage } from './pages/profile.js';
 import { ModsPage } from './pages/mods.js';
+import { ModelTestPage } from './pages/modeltest.js';
 import { SettingsPage } from './pages/settings.js';
 import { ControlsPage } from './pages/controls.js';
 import { GamesPage } from './pages/games.js';
@@ -30,6 +31,7 @@ const PAGES = [
   ['multiplayer', 'Multiplayer', 'users', MultiplayerPage],
   ['profile', 'Profile', 'user', ProfilePage],
   ['mods', 'Mods', 'puzzle', ModsPage],
+  ['modeltest', 'Model test', 'check', ModelTestPage],
   ['settings', 'Settings', 'sliders', SettingsPage],
   ['controls', 'Controls', 'keyboard', ControlsPage],
   null,
@@ -68,38 +70,37 @@ function Toasts() {
   return html`<div class="toasts">${s.toasts.map((x) => html`<div class=${'toast ' + x.kind}><${Icon} name=${x.kind === 'error' ? 'alert' : x.kind === 'ok' ? 'check' : 'info'} /><div class="selectable">${x.text}</div></div>`)}</div>`;
 }
 
-/** While a game runs and "The launcher rests while a game runs" is on, the page is put away
- * (no bus preview drawn, nothing asked of the graphics card) and says so (#2362). */
-function Resting({ onWake }) {
-  return html`<div class="overlay">
-    <div class="dialog" role="dialog">
-      <div class="dialog-head"><h2>${t('The launcher is resting')}</h2></div>
-      <div class="dialog-body stack" style="gap:8px">
-        <p>${t('A game is running: the launcher leaves the graphics card to it and wakes up when the game ends.')}</p>
-        <p class="muted small">${t('This can be turned off in Settings (The launcher rests while a game runs).')}</p>
-      </div>
-      <div class="dialog-foot"><${Button} kind="primary" label="Wake up" onClick=${onWake} /></div>
-    </div>
-  </div>`;
+function useFocused() {
+  const [focused, setFocused] = useState(() => document.hasFocus());
+  useEffect(() => {
+    const on = () => setFocused(true);
+    const off = () => setFocused(false);
+    addEventListener('focus', on);
+    addEventListener('blur', off);
+    return () => {
+      removeEventListener('focus', on);
+      removeEventListener('blur', off);
+    };
+  }, []);
+  return focused;
 }
 
 function App() {
   const s = useStore();
-  const running = s.poll.instances?.length || 0;
-  const [awake, setAwake] = useState(false);
-  useEffect(() => {
-    if (!running) setAwake(false);
-  }, [running]);
+  const focused = useFocused();
   if (!s.ready) {
     return html`<div class="splash">${s.errors.boot ? html`<div class="notice danger" style="max-width:520px">${s.errors.boot}</div>` : html`<${Spinner} />`}</div>`;
   }
   if (PHONE) return html`<${MobileApp} /><${GameEndDialogs} /><${UpdateDialog} /><${Toasts} />`;
   const page = PAGES.find((x) => x && x[0] === s.page) || PAGES[0];
   const Page = page[3];
-  const resting = running > 0 && !awake && s.settings?.launcher_rest !== false && !S.boot?.selftest;
+  const resting = !s.boot?.selftest && s.settings?.launcher_rest !== false && s.poll.instances?.length > 0 && !focused;
   return html`<div class="shell">
     <${Sidebar} />
-    <main class="main">${resting ? html`<${Resting} onWake=${() => setAwake(true)} />` : html`<div class="page" key=${s.page}><${Page} /></div>`}</main>
+    <main class="main">
+      <div class=${'page page-' + page[0]} key=${s.page} hidden=${resting}><${Page} /></div>
+      ${resting && html`<div class="splash resting"><${Icon} name="bus" size=${40} /><p>${t('The launcher rests while you drive, so that the game has the graphics card to itself. It is back as soon as the game ends.')}</p></div>`}
+    </main>
     <${GameEndDialogs} />
     <${UpdateDialog} />
     <${Toasts} />
@@ -107,6 +108,12 @@ function App() {
 }
 
 plainText(document.body);
+fitWindow();
+let fitting = 0;
+addEventListener('resize', () => {
+  clearTimeout(fitting);
+  fitting = setTimeout(fitWindow, 100);
+});
 render(html`<${App} />`, document.getElementById('app'));
 watchGameEnds();
 onDrop(

@@ -12,6 +12,7 @@
 //! launcher knows through `apple_bridge`.
 
 mod admin;
+mod check;
 use omsi_platform::discord;
 #[cfg(steam)]
 mod steam;
@@ -212,6 +213,11 @@ pub fn run() -> Result<()> {
     restart_with_allocator_settings();
     #[cfg(windows)]
     attach_parent_console();
+    // `--check-vehicle <file>`: the loaders' findings as JSON, no window, no log
+    if std::env::args().nth(1).as_deref() == Some("--check-vehicle") {
+        let rest: Vec<String> = std::env::args().skip(2).collect();
+        return check::run(&rest);
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     // a panic goes into the log (which the launcher keeps per session) with where it
     // happened and a backtrace, not only to a terminal that may not be there
