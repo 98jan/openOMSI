@@ -24,6 +24,10 @@ export const depotRun = (x) => !x.line?.trim() || /betriebsfahrt|leerfahrt|diens
 
 /** The trip a start at `now` (seconds) takes: the one under way or the next. */
 export function tripAt(tour, now) {
+  // a night tour's times run on past 24:00: at 03:25, before the tour's first trip of the
+  // day, its trip of 27:30 is the one at 03:30 (the tour begun the evening before, #2166)
+  const n = tour.trips.length;
+  if (n && now < 86400 && tour.trips[0].departure > now && tour.trips[n - 1].departure >= now + 86400 - 120) now += 86400;
   const i = tour.trips.findIndex((x) => x.departure >= now - 120);
   return i >= 0 ? i : tour.trips.length ? tour.trips.length - 1 : -1;
 }
@@ -263,7 +267,8 @@ function DutyCard() {
           </div>
         </div>
       </div>
-      ${tour && !tour.runs && html`<${Notice} kind="warn">${tour.next_run ? t('This tour does not run on the chosen date; it runs next on {date}.', { date: longDate(tour.next_run) }) : t('This tour does not run within a year of the chosen date.')}</${Notice}>`}
+      ${tour && !tour.runs && html`<${Notice} kind="warn">${tour.next_run ? t('This tour does not run on the chosen date; it runs next on {date}.', { date: longDate(tour.next_run) }) : t('This tour does not run within a year of the chosen date.')}
+        ${tour.next_run && !realDate() && html`<div style="margin-top:8px"><${Button} small icon="calendar" label="Drive it on that day" onClick=${() => choose({ date: tour.next_run, season: 'auto', own_date: null })} /></div>`}</${Notice}>`}
       ${tour && html`<div>
         <div class="row" style="margin-bottom:8px"><span class="label">${t('Trips of the tour')}</span><span class="muted small right">${t('Click a trip to start with it')}</span></div>
         <div class="trips" ref=${tripsRef}>
@@ -417,7 +422,8 @@ function DateInput({ value, onChange, disabled }) {
 /** Start the tour at this trip: at its departure (or at the real time: the bus waits). */
 export function pickTrip(x) {
   const c = S.choice;
-  const time = realTime() ? c.time : Math.floor(x.departure / 60);
+  // (a trip after midnight of a night tour, 24:30, starts at 00:30)
+  const time = realTime() ? c.time : Math.floor(x.departure / 60) % (24 * 60);
   choose({ time, start_trip: [c.line, c.tour, x.index, time] });
 }
 
