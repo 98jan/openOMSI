@@ -208,6 +208,16 @@ function DutyCard() {
     if (on) el.scrollTop += on.getBoundingClientRect().top - el.getBoundingClientRect().top - 70;
   }, [tripKey]);
   const entries = m ? [[-1, c.free ? 'Automatic (the map\'s first)' : 'Automatic (nearest to the first stop)'], ...m.entry_points.map((e, i) => [i, e.name])] : [];
+  // the tours of every line that leave next from the chosen time (#1885)
+  const upcoming = useMemo(() => {
+    const out = [];
+    for (const l of lines) for (const x of l.tours) {
+      if (!x.runs) continue;
+      const trip = x.trips[tripAt(x, now)];
+      if (trip && trip.departure >= now - 120 && !depotRun(trip)) out.push({ l, x, trip });
+    }
+    return out.sort((a, b) => a.trip.departure - b.trip.departure).slice(0, 15);
+  }, [lines, now]);
 
   let body;
   if (c.free) {
@@ -267,6 +277,19 @@ function DutyCard() {
           </div>
         </div>
       </div>
+      ${upcoming.length > 0 && html`<details class="next-tours">
+        <summary class="label" style="cursor:pointer">${t('Next departures from {time}', { time: hhmm(c.time) })}</summary>
+        <table class="table" style="margin-top:8px">
+          <tbody>
+            ${upcoming.map(({ l, x, trip }) => html`<tr class=${'click' + (l.name === c.line && x.number === c.tour ? ' on' : '')} onClick=${() => (choose({ line: l.name, tour: x.number, start_trip: null }), pickTrip(trip))}>
+              <td class="num"><b>${hms(trip.departure)}</b></td>
+              <td><span class="line-badge">${trip.line || l.name}</span></td>
+              <td>${t('Tour')} ${x.number}</td>
+              <td class="ellipsis" style="max-width:320px">${trip.from} → ${trip.terminus}</td>
+            </tr>`)}
+          </tbody>
+        </table>
+      </details>`}
       ${tour && !tour.runs && html`<${Notice} kind="warn">${tour.next_run ? t('This tour does not run on the chosen date; it runs next on {date}.', { date: longDate(tour.next_run) }) : t('This tour does not run within a year of the chosen date.')}
         ${tour.next_run && !realDate() && html`<div style="margin-top:8px"><${Button} small icon="calendar" label="Drive it on that day" onClick=${() => choose({ date: tour.next_run, season: 'auto', own_date: null })} /></div>`}</${Notice}>`}
       ${tour && html`<div>
