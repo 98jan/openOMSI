@@ -600,3 +600,30 @@ fn a_car_goes_round_the_players_bus_standing_well_before_a_red_light() {
     }
     assert!(went_round, "it does not go round the bus standing 60 m before the light");
 }
+
+/// #2048: over a solid centre line (`[rule] overtaking_prohib`) a car does not go round a
+/// vehicle that stands in its lane and will move on; it still goes round a parked car.
+#[test]
+fn no_pass_over_a_solid_centre_line_but_round_a_parked_car() {
+    let f = Fixture::new();
+    // the player's bus standing in the lane (not at a light): it will move on
+    let passes_standing = |prohibited: bool| {
+        let mut net = two_way(3.5, None);
+        net.lanes[0].no_overtaking = prohibited;
+        let mut t = traffic(&f, net);
+        let me = add_car(&mut t, &f, 0, 40.0, 0xa0a, Some(6.0));
+        let bus: PlayerBox = (DVec3::new(0.0, 106.0, 0.0), 0.0, 6.0, 1.25, 0.0);
+        let mut passed = false;
+        for _ in 0..(60.0 / DT) as usize {
+            t.tick(DT, Some(bus));
+            passed |= car(&t, me).is_some_and(|c| c.passing.is_some());
+        }
+        passed
+    };
+    assert!(passes_standing(false), "without the rule it never went round the standing bus");
+    assert!(!passes_standing(true), "it went over the solid line round a standing bus");
+    let mut net = two_way(3.5, None);
+    net.lanes[0].no_overtaking = true;
+    let (mut t, me) = parked_scene(&f, net);
+    assert!(passes_parked(&mut t, me, 30.0), "it does not go round the parked car");
+}
