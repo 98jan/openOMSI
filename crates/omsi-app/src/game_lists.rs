@@ -38,6 +38,8 @@ pub(crate) enum ListKind {
     Tours(String, Option<(String, usize, usize)>),
     Drivers,
     Numbers,
+    /// The vehicles placed in the world, to take the wheel of one of them (#2026).
+    SwitchTo,
     /// The termini of the bus's depot file, for its destination display.
     Destinations,
     /// The route numbers (lines) for the destination display: the depot file's and the
@@ -673,6 +675,32 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
                 }
             }
         }
+        ListKind::SwitchTo => {
+            // (the nearest first; the line's action is its place in `placed`)
+            let here = app.player.as_ref().map(|p| p.vehicle.position).or_else(|| app.camera.as_ref().map(|c| c.position));
+            let mut rows: Vec<(f64, String, String)> = app
+                .session
+                .placed
+                .iter()
+                .enumerate()
+                .map(|(k, q)| {
+                    let def = &q.vehicle.ty.def;
+                    let name = format!("{} {}", def.manufacturer.trim(), def.type_name.trim()).trim().to_string();
+                    let number = q.vehicle.ty.program.str_var("number").and_then(|i| q.vehicle.state.str_vars.get(i as usize)).map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+                    let dist = here.map(|h| (q.vehicle.position - h).truncate().length()).unwrap_or(0.0);
+                    let label = match number {
+                        Some(n) => format!("{name}  |  {n}  |  {}", crate::units::Units::now().distance(dist)),
+                        None => format!("{name}  |  {}", crate::units::Units::now().distance(dist)),
+                    };
+                    (dist, label, format!("switchto {k}"))
+                })
+                .collect();
+            rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+            out.extend(rows.into_iter().map(|(_, l, a)| (l, a)));
+            if out.is_empty() {
+                out.push((tr("There is no other vehicle to drive"), "back".into()));
+            }
+        }
         ListKind::Numbers => {
             if let Some(p) = app.player.as_ref() {
                 let mut numbers = fleet_numbers(&p.vehicle);
@@ -806,6 +834,7 @@ pub(crate) fn menu_extras(
         }
         ListKind::Drivers => (MenuKind::List, head("Driver..."), None),
         ListKind::Numbers => (MenuKind::List, head("Fleet number..."), None),
+        ListKind::SwitchTo => (MenuKind::List, head("Drive another vehicle..."), None),
         ListKind::Destinations => (MenuKind::List, head("Destination display..."), None),
         ListKind::RouteNumbers => (MenuKind::List, Some((tr("Route number"), String::new())), None),
         ListKind::Hofs => (MenuKind::List, head("Depot file (HOF)..."), None),
@@ -1060,6 +1089,13 @@ pub(crate) fn run_move(app: &mut App, kind: &ListKind, action: &str, mv: Move) -
                     log::info!("destination display set by hand: {} {} (terminus code now {:?})", t.code, name.trim(), p.vehicle.var("IBIS_TerminusCode"));
                     app.service_msg = Some((format!("Destination: {}", name.trim()), 3.0));
                 }
+            }
+            None
+        }
+        ListKind::SwitchTo => {
+            if let Ok(k) = arg.trim().parse::<usize>() {
+                app.close_game_menu();
+                app.switch_vehicle_to(k);
             }
             None
         }

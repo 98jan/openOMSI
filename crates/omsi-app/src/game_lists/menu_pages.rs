@@ -290,6 +290,10 @@ pub(super) fn vehicle_pages(app: &App) -> Vec<Page> {
     let mut fleet: Vec<(String, String)> = Vec::new();
     if has || !app.session.placed.is_empty() {
         fleet.push(button("Drive the next vehicle", "Switch", "Take the wheel of another vehicle standing in the world", "switch"));
+        // (one of them by name, rather than going through them one by one, #2026)
+        if app.session.placed.len() > 1 {
+            fleet.push(opens("Drive another vehicle", "Choose which of the vehicles standing in the world to drive", "switchto"));
+        }
     }
     fleet.push(opens("Place a vehicle", "Place a vehicle of your choice", "place"));
     if has {
