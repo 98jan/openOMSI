@@ -866,11 +866,20 @@ pub(crate) fn vehicle_temperatures(p: &Player) -> (f32, f32) {
 
 /// OMSI's information bar: the time, the speed, the kilometres driven this session and the
 /// bus's odometer, temperatures, the passengers aboard, and the trip with its next stop and delay.
-fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&crate::schedule::PlayerDuty>, passengers: Option<usize>, metres: f64) -> String {
+fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&crate::schedule::PlayerDuty>, passengers: Option<usize>, metres: f64, speed_limit: Option<f32>) -> String {
     let t = clock.time;
     let mut parts = vec![format!("{:02}:{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64, (t % 60.0) as i64)];
     if let Some(p) = player {
         parts.push(crate::units::Units::now().speed_text(p.vehicle.physics.velocity_kmh().abs()));
+        // the road's speed limit, as the navigator's top bar has it (#2476: its sign there is small)
+        if let Some(v) = speed_limit {
+            let u = crate::units::Units::now();
+            parts.push(format!("{} {:.0}", omsi_ui::tr("Speed limit"), u.speed_limit(v)));
+        }
+        // a stop asked for, as OMSI's Shift+Z overlay says (#1767: seen from outside too)
+        if crate::navigator::stop_requested(&p.vehicle) {
+            parts.push(omsi_ui::tr("Stop requested").into_owned());
+        }
         parts.push(distance_driven(metres));
         // the bus's whole mileage, as OMSI's Shift+Z overlay reads it ("Mileometer", the
         // `kmcounter_*` the cockpit shows, whole kilometres and the metres of the fraction)
