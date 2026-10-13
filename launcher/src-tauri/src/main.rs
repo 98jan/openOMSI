@@ -54,6 +54,7 @@ fn fresh_webview_profile(app: &tauri::App) -> Option<std::path::PathBuf> {
 
 fn main() {
     omsi_cfg::migrate_legacy_data_dir();
+    omsi_launcher_lib::adopt_own_inputs();
     let args: Vec<String> = std::env::args().collect();
     // (the terminal commands of the old launcher binary work here too)
     if args.get(1).is_some_and(|a| a == "--cli") {
