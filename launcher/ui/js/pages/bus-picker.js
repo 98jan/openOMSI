@@ -9,6 +9,7 @@ import { call } from '../api.js';
 import { Icon } from '../icons.js';
 import { Dialog, Search, Select, Segmented, Empty, Spinner, Button, Tag, Notice, Field } from '../ui.js';
 import { choose, busFile, serverBuses } from '../data.js';
+import { Notes } from './drive.js';
 
 const favKey = (file) => file.replace(/\\/g, '/').toLowerCase();
 
@@ -131,6 +132,7 @@ export function BusPicker({ onClose }) {
               <${Select} raw value=${paint} options=${[['', v.default_paint ? `${t('Standard')} (${v.default_paint})` : t('Standard')], ...v.paints.map((p) => [p, p])]} onChange=${setPaint} />
             </${Field}>
             ${v.description && html`<p class="dim selectable" style="white-space:pre-line;max-height:220px;overflow:auto">${v.description}</p>`}
+            <${Notes} kind="bus" file=${v.file} />
             <div class="muted small selectable">${v.file}</div>
           </div>`
           : html`<${Empty} icon="bus" title="Choose a bus on the left" />`}

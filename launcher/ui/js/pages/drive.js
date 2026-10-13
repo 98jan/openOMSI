@@ -110,6 +110,36 @@ export function DrivePage() {
   `;
 }
 
+// the player's notes on maps and buses (#1791): read once, saved as they are typed
+let notesNow = null;
+const noteKey = (kind, file) => `${kind}:${(file || '').replace(/\\/g, '/').toLowerCase()}`;
+
+/** A note of the player's own on a map or a bus, kept on this computer. */
+export function Notes({ kind, file }) {
+  const key = noteKey(kind, file);
+  const [text, setText] = useState(notesNow?.[key] || '');
+  const [open, setOpen] = useState(!!notesNow?.[key]);
+  const timer = useRef(0);
+  useEffect(() => {
+    let alive = true;
+    const show = (all) => alive && (setText(all[key] || ''), setOpen(!!all[key]));
+    if (notesNow) show(notesNow);
+    else call('notes_get').then((all) => ((notesNow = all || {}), show(notesNow)), () => {});
+    return () => {
+      alive = false;
+    };
+  }, [key]);
+  const save = (v) => {
+    setText(v);
+    if (notesNow) notesNow[key] = v;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => call('notes_save', { key, text: v }).catch(() => {}), 600);
+  };
+  if (!file) return null;
+  if (!open) return html`<div><${Button} small kind="ghost" icon="file" label="Add a note" onClick=${() => setOpen(true)} /></div>`;
+  return html`<textarea class="input" rows="3" style="width:100%" placeholder=${t('Your own note, kept on this computer')} value=${text} onInput=${(e) => save(e.currentTarget.value)}></textarea>`;
+}
+
 function MapCard({ onPick }) {
   const s = useStore();
   const m = curMap();
@@ -133,6 +163,7 @@ function MapCard({ onPick }) {
               <h3>${m.friendly || m.name}</h3>
               <p>${m.description || ''}</p>
               <div class="row" style="margin-top:8px">${m.installed && html`<${Tag}>${t('Mod')}</${Tag}>`}<span class="muted small">${t('{n} entry points', { n: m.entry_points.length })}</span></div>
+              <div style="margin-top:8px"><${Notes} kind="map" file=${m.file} /></div>
             </div>
           </div>`}
   </${Card}>`;
