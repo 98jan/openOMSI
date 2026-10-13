@@ -215,6 +215,9 @@ pub(super) fn humans(cx: HumansCx, dt: f32) {
         if let Some(m) = h.take_message() {
             *cx.ui.service_msg = Some((m, 6.0));
         }
+        if let Some(t) = h.take_dialog().and_then(|n| passenger_dialog(&n)) {
+            *cx.ui.service_msg = Some((t, 5.0));
+        }
         if let Some(p) = cx.player.player.as_mut() {
             if took {
                 p.vehicle.set_var("GivenTicket", -1.0);
@@ -251,3 +254,32 @@ pub(super) fn on_foot(mut cx: crate::on_foot::OnFootCx, dt: f32) {
     crate::on_foot::tick(&mut cx, dt);
     crate::on_foot::remote_walkers(&mut cx);
 }
+
+/// OMSI's hint for what a passenger has just said (`TooCold_1`: "Passengers complain about
+/// the low temperature in your bus!"), from the game's language files
+/// (`Languages/<LANG>_basic*.olf`, `RL_PassDlg_<name>`): Omsi.exe shows them as the riders
+/// speak. None for what has no hint (a greeting).
+fn passenger_dialog(name: &str) -> Option<String> {
+    static TEXTS: std::sync::OnceLock<Option<omsi_content::language::Language>> = std::sync::OnceLock::new();
+    let texts = TEXTS.get_or_init(|| {
+        let lang = crate::settings::Settings::load().language;
+        let load = |lang: &str| {
+            let mut out: Option<omsi_content::language::Language> = None;
+            for dir in omsi_cfg::content_dirs("Languages") {
+                for file in ["basic", "basic_103", "basic_200"] {
+                    if let Ok(l) = omsi_content::language::Language::load(&dir.join(format!("{lang}_{file}.olf"))) {
+                        match out.as_mut() {
+                            Some(o) => o.merge(l),
+                            None => out = Some(l),
+                        }
+                    }
+                }
+            }
+            out
+        };
+        load(&lang).or_else(|| load("ENG"))
+    });
+    let t = texts.as_ref()?.strings.get(&format!("RL_PassDlg_{name}"))?.trim().trim_matches('"').replace("\"\"", "\"");
+    (!t.is_empty()).then_some(t)
+}
+

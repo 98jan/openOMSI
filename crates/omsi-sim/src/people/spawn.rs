@@ -141,6 +141,7 @@ impl PeopleSim {
             due_at: f64::NEG_INFINITY,
             stop_names: None,
             stop_target_objects: None,
+            dialog: None,
             duty: None,
             stamped: Vec::new(),
             pedestrians: 14,
@@ -220,6 +221,11 @@ impl PeopleSim {
     /// `limited`: said only when the same file has not been said for 10 s (greetings and
     /// complaints; the ticket asked for, "thanks" and the missing change always are).
     pub fn say_ex(&mut self, i: usize, name: &str, limited: bool) {
+        // (what the riders of the player's bus say is shown as well, as OMSI's dialog hints
+        // do - whatever the voices setting, and with no voice files: #1806)
+        if self.pax(i).is_some_and(|p| p.bus == Some(BusId::Player)) {
+            self.dialog = Some(name.to_string());
+        }
         // the player may have silenced them (settings), all but the ticket they ask for
         match self.voices {
             2 => return,
