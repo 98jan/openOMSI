@@ -230,13 +230,24 @@ impl Traffic {
     }
 
     pub(super) fn sync(&mut self, view: &mut TrafficView, world: &World, scenery: &mut omsi_sim::scenery::SceneryState, renderer: &Renderer, scene: &mut Scene) {
-        // cars that have parked (the simulation takes them off): the parked object stands
-        // in their place from now on
+        self.sync_world(view, world, renderer, scene);
+        self.sync_drawn(view, world, scenery, renderer, scene);
+    }
+
+    /// What every tick needs: cars that have parked (the simulation takes them off) leave
+    /// their parked object in their place from now on, and the renders of cars gone go back
+    /// to the world.
+    pub(super) fn sync_world(&mut self, view: &mut TrafficView, world: &World, renderer: &Renderer, scene: &mut Scene) {
         self.settle_parked(world);
         apply_traffic(self, view, world, renderer, scene);
         for r in std::mem::take(&mut view.released) {
             world.release_vehicle(renderer, scene, r);
         }
+    }
+
+    /// What only the picture needs, once a frame: the drivers, the lamps and the cars'
+    /// transforms, materials and script textures.
+    pub(super) fn sync_drawn(&mut self, view: &mut TrafficView, world: &World, scenery: &mut omsi_sim::scenery::SceneryState, renderer: &Renderer, scene: &mut Scene) {
         // (drawn between the traffic's last two steps, where this frame falls: see
         // `TrafficSim::advance`; back where they stand once drawn)
         self.sim.show_between();

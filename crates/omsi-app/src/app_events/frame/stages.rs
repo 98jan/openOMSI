@@ -1,7 +1,7 @@
 //! The window's frame as lists of stages, and what takes them: the `App` with the frame's
 //! event loop and the values one stage hands to the next (see `frame_stages`). The frame runs
 //! [`FRAME_BEFORE`] once, [`FRAME_TICK`] once per tick of the fixed simulation step
-//! (`omsi_sim::tick`, 120 a second, with the tick's time) and [`FRAME_AFTER`] once (see
+//! (`omsi_sim::tick`, 60 a second, with the tick's time) and [`FRAME_AFTER`] once (see
 //! `ticked`); [`WINDOW_FRAME`] is the three in that order, as a frame of one tick runs them.
 
 use super::*;

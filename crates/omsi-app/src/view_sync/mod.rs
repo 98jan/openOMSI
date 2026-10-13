@@ -86,17 +86,26 @@ pub(crate) struct ViewSync<'a> {
     /// The traffic, with the scenery state that holds its lamps' scripts.
     pub(crate) traffic: Option<(&'a mut Traffic, &'a mut omsi_sim::scenery::SceneryState)>,
     pub(crate) people: Option<People<'a>>,
+    /// Only what the simulation's next tick needs (the traffic's parked cars and released
+    /// renders), not the picture: a tick that is not the frame's last (`SimTicks::view_due`).
+    pub(crate) world_only: bool,
 }
 
 impl<'a> ViewSync<'a> {
     /// The traffic alone.
     pub(crate) fn traffic(traffic: &'a mut Traffic, scenery: &'a mut omsi_sim::scenery::SceneryState) -> ViewSync<'a> {
-        ViewSync { traffic: Some((traffic, scenery)), people: None }
+        ViewSync { traffic: Some((traffic, scenery)), people: None, world_only: false }
     }
 
     /// The people alone (see [`People`]).
     pub(crate) fn people(humans: &'a mut Humans, bus: Option<&'a VehicleInstance>, camera: DVec3) -> ViewSync<'a> {
-        ViewSync { traffic: None, people: Some(People { humans, bus, camera }) }
+        ViewSync { traffic: None, people: Some(People { humans, bus, camera }), world_only: false }
+    }
+
+    /// Only what the next tick needs (see `world_only`) when `world_only`.
+    pub(crate) fn world_only(mut self, world_only: bool) -> ViewSync<'a> {
+        self.world_only = world_only;
+        self
     }
 }
 
@@ -107,7 +116,14 @@ impl<'a> ViewSync<'a> {
 /// skinning and their transforms).
 pub(crate) fn sync(what: ViewSync<'_>, view: &mut SimView, world: &World, renderer: &Renderer, scene: &mut Scene) {
     if let Some((t, scenery)) = what.traffic {
-        t.sync(&mut view.traffic, world, scenery, renderer, scene);
+        if what.world_only {
+            t.sync_world(&mut view.traffic, world, renderer, scene);
+        } else {
+            t.sync(&mut view.traffic, world, scenery, renderer, scene);
+        }
+    }
+    if what.world_only {
+        return;
     }
     if let Some(People { humans, bus, camera }) = what.people {
         if let Some(bus) = bus {

@@ -58,6 +58,19 @@ Passengers → Passenger animations** and choose **Procedural (experimental)** t
 earlier foot-planted/IK poses. **Original OMSI** is the default and remains compatible.
 For temporary A/B tests without changing the saved setting, set `OMSI_PAX_ANIMATION=enhanced`
 before starting openOMSI (or `OMSI_PAX_ANIMATION=original` to force the classic mode).
+
+**Character models.** **Settings → Gameplay → Passengers → Character models** chooses how
+the people look. **Original** (the default) draws the people of OMSI's content. **High
+quality (improved)** draws them with the [Microsoft Rocketbox avatars](https://github.com/microsoft/Microsoft-Rocketbox)
+(91 of them: everyday people, office workers, workers, nurses, pilots, police officers,
+children): each person an avatar of the same kind, with a living face - they blink, look
+about, smile when they pay, now and then raise their brows, frown in thought or yawn late
+at night, and their lips move with what they say. This is drawn on your computer only: the
+passengers themselves (where they go, sit and pay) stay as they are, and in multiplayer the
+others see their own people. The avatars are downloaded once, the first time the setting is
+on (about 310 MB, into `~/.openomsi/avatars`); until they are there the people stay the
+content's own. `OMSI_CHARACTER_MODELS=improved` or `=original` overrides the setting for one
+session, `OMSI_AVATARS_DIR` names another folder of avatars.
 This is a visual experiment: check boarding, seats, door steps, CPU time and mirrors before
 making it the default. The setting does not change passenger routing or tickets.
 

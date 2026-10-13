@@ -24,6 +24,8 @@ impl App {
             self.tick_weather(dt);
         }
         let daylight = omsi_sim::Daylight::compute(&self.clock, self.session.envir.as_ref());
+        // (the avatars' faces yawn late in the evening)
+        crate::view_sync::people::set_hour((self.clock.time / 3600.0).rem_euclid(24.0) as f32);
         let lamps = self.session.lamps_on != Some(daylight.lamps_on);
         self.session.lamps_on = Some(daylight.lamps_on);
         // the lit windows of the houses by their [NightMapMode] timetable (once a
@@ -160,6 +162,8 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
                             return since.elapsed() < std::time::Duration::from_secs(2);
                         }
                         if let Some(clip) = a.load_clip(&line.path) {
+                            // (an avatar's lips move with it)
+                            crate::view_sync::people::speak(line.speaker, &clip);
                             a.play(
                                 clip,
                                 omsi_audio::mixer::VoiceParams {

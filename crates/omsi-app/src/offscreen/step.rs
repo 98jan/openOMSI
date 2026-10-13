@@ -1,4 +1,4 @@
-//! The stages of the offscreen run's step (a tick of the fixed step, 1/120 s; their order is
+//! The stages of the offscreen run's step (a tick of the fixed step, 1/60 s; their order is
 //! `stages::OFFSCREEN_STEP`): the server's work, the traffic, the player's bus, the people, the
 //! LAN, the spray and the snapshots due.
 

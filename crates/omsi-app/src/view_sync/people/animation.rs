@@ -24,7 +24,7 @@ pub(super) fn enabled() -> bool {
 /// the frame has it: `PersonFrame::facts`). This changes only how bodies are skinned,
 /// never boarding, movement or ticket logic. `st`: the person as drawn (the pose's own
 /// state, the ankles for `OMSI_TRACE_PAX`).
-pub(super) fn bones(p: &PersonFrame, st: &mut PersonView, dt: f32, world: &World, buses: &HashMap<BusId, &omsi_sim::people::cabin::BusNow>) -> [Affine3A; SLOTS] {
+pub(super) fn bones(p: &PersonFrame, ty: &omsi_sim::human::HumanType, st: &mut PersonView, dt: f32, world: &World, buses: &HashMap<BusId, &omsi_sim::people::cabin::BusNow>) -> [Affine3A; SLOTS] {
     let (origin, heading, frame) = match p.place {
         Place::Ground => (p.position, p.heading, 0),
         Place::Bus(bus, at) => {
@@ -111,8 +111,8 @@ pub(super) fn bones(p: &PersonFrame, st: &mut PersonView, dt: f32, world: &World
     };
     let seed = p.id;
     let pose = st.procedural.get_or_insert_with(|| Pose::new(seed));
-    pose.advance(&p.ty.rig, &input, dt);
-    let mut posed = pose.bones(&p.ty.rig);
+    pose.advance(&ty.rig, &input, dt);
+    let mut posed = pose.bones(&ty.rig);
     // Shift the local pose back to the renderer's original anchor; no game logic moves.
     if floor_lift != 0.0 {
         let lift = Affine3A::from_translation(Vec3::Z * floor_lift);

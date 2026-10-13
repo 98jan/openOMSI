@@ -114,11 +114,14 @@ Bottom up:
   in commands in object order (`SceneryCmd`) that carry values - the meshes' transforms,
   the variables the view reads, changed texts, page pictures, fired triggers - so the view
   (`World::apply_scripted`) applies them without reading the simulation's list.
-* The fixed step (`omsi_sim::tick`, `RATE_HZ` = 120 ticks a second, always): the window's
+* The fixed step (`omsi_sim::tick`, `RATE_HZ` = 60 ticks a second, always; at most 4 a
+  frame, so the wall clock is kept down to 15 frames a second): the window's
   frame runs its stages as three lists (`app_events/frame/stages.rs`, run by `ticked.rs`):
   the housekeeping and the player's input once a frame (`FRAME_BEFORE`), the simulation
   (traffic, the player's bus with its scripts, the people, the duty, the clock and the
-  weather) once per tick of 1/120 s (`FRAME_TICK`), then the view, the sounds, the LAN, the
+  weather) once per tick of 1/60 s (`FRAME_TICK`; what only the picture and the sound need of
+  the traffic and the people - their view syncs, the AI's sounds - in the frame's last tick
+  alone, `SimTicks::view_due`), then the view, the sounds, the LAN, the
   interface and the picture once a frame (`FRAME_AFTER`), with the player's bus and the
   camera drawn between the last two ticks. The offscreen run's step is one tick. Still on the
   frame, not the tick: the tile streaming's handover and the population's camera, so the AI

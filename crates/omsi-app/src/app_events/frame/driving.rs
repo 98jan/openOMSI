@@ -147,7 +147,10 @@ pub(super) fn player_step(cx: PlayerStepCx, dt: f32) {
             }
             q.vehicle.update(dt);
         }
-        q.sync_transforms(r, scene, false, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
+        // (drawn as the frame's last tick leaves it)
+        if cx.clock.fixed_tick.view_due() {
+            q.sync_transforms(r, scene, false, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
+        }
         let f = crate::lan::footprint_of(&q.vehicle, [2.5, 11.5, 3.0, 0.0, 0.0, 1.5]);
         placed_boxes.push(omsi_sim::collision::Obb {
             center: glam::DVec2::new(f.x, f.y),

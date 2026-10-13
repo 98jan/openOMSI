@@ -1,4 +1,4 @@
-//! The window's frame with the fixed simulation step (`omsi_sim::tick`, 120 ticks a second):
+//! The window's frame with the fixed simulation step (`omsi_sim::tick`, 60 ticks a second):
 //! what the player does and the frame's housekeeping run once a frame (`FRAME_BEFORE`); the
 //! simulation - the traffic, the player's bus with its scripts, the people, the duty, the
 //! clock and the weather - runs once per tick, each tick as long as the next (`FRAME_TICK`);

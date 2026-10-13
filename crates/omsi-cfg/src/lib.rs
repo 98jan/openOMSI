@@ -498,6 +498,21 @@ pub fn content_generation() -> u64 {
     CONTENT_GENERATION.load(std::sync::atomic::Ordering::SeqCst)
 }
 
+/// Pictures that came with a model of another tool's format (a `.glb`'s packed textures,
+/// the `.png` beside an `.fbx`), by the bare file name its material gives: the texture
+/// lookup takes them when the usual folders have no picture of that name. The material
+/// keeps the bare name, so the `[matl]` lines of a model's `.cfg` find it as in OMSI.
+static MODEL_TEXTURES: std::sync::RwLock<Option<std::collections::HashMap<String, PathBuf>>> = std::sync::RwLock::new(None);
+
+pub fn register_model_texture(name: &str, path: PathBuf) {
+    MODEL_TEXTURES.write().unwrap().get_or_insert_with(std::collections::HashMap::new).entry(name.to_lowercase()).or_insert(path);
+}
+
+/// The picture a model brought for the bare name `name` (see [`register_model_texture`]).
+pub fn model_texture(name: &str) -> Option<PathBuf> {
+    MODEL_TEXTURES.read().unwrap().as_ref()?.get(&name.trim().to_lowercase()).cloned()
+}
+
 /// The entries of a directory by [`name_key`], listed once.
 fn dir_listing(dir: &Path) -> Listing {
     let cache = LISTINGS.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()));

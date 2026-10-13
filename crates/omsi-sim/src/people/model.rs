@@ -500,6 +500,8 @@ pub struct Footfall {
 /// A line a passenger says: the sample and where they stand.
 pub struct VoiceLine {
     pub position: DVec3,
+    /// Who says it (the person's id): their lips move with it.
+    pub speaker: u32,
     pub path: std::path::PathBuf,
 }
 

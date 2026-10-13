@@ -143,13 +143,23 @@ impl App {
                     // takes the wait for the card away, and the next reading alone asked
                     // to go up again - a step up and down every 10 s, each one new targets
                     // and a full upload of the instances, a stutter every time)
-                    static UP_READINGS: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-                    let ups = if step > 0.0 { UP_READINGS.load(std::sync::atomic::Ordering::Relaxed).saturating_add(1) } else { 0 };
-                    if step > 0.0 && ups < 2 {
+                    // A step up that the next reading takes back doubles the readings the next
+                    // step up waits for (up to two minutes); one that holds brings them back to
+                    // two. A card at its limit went 85-100-85 % every 10 s for minutes (#2295).
+                    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering::Relaxed};
+                    static UP_READINGS: AtomicU8 = AtomicU8::new(0);
+                    static UP_NEEDED: AtomicU8 = AtomicU8::new(2);
+                    static WENT_UP: AtomicBool = AtomicBool::new(false);
+                    if WENT_UP.load(Relaxed) {
+                        UP_NEEDED.store(if step < 0.0 { UP_NEEDED.load(Relaxed).saturating_mul(2).min(24) } else { 2 }, Relaxed);
+                    }
+                    let ups = if step > 0.0 { UP_READINGS.load(Relaxed).saturating_add(1) } else { 0 };
+                    if step > 0.0 && ups < UP_NEEDED.load(Relaxed) {
                         step = 0.0;
                     }
-                    UP_READINGS.store(if step > 0.0 { 0 } else { ups }, std::sync::atomic::Ordering::Relaxed);
+                    UP_READINGS.store(if step > 0.0 { 0 } else { ups }, Relaxed);
                     r.set_dynamic_scale(s + step);
+                    WENT_UP.store(r.dynamic_scale() > s + 1e-3, Relaxed);
                     if (r.dynamic_scale() - s).abs() > 1e-3 {
                         log::info!("frame rate {fps:.0} fps (presentation wait {:.0}%): the 3D picture is drawn at {:.0} % of the window now", wait_share * 100.0, r.dynamic_scale() * 100.0);
                         self.perf.governor_low = 0;

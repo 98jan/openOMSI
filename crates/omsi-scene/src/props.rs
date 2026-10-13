@@ -913,7 +913,13 @@ impl World {
             .textures
             .values()
             .fold((0u64, false), |(b, d), e| (b + e.bytes, d || e.dropped > 0));
-        let usage = scenery_bytes + vehicle_bytes;
+        // Every texture of the scene counts against the card as well (the people, the
+        // script and text textures, the sky's and the terrain's): past half of the card's own
+        // memory, what they hold beyond it is taken from the scenery and the vehicles. The
+        // budget counted the scenery and the vehicles alone, and on an 8 GB card with a
+        // 4000 MB budget the textures grew to 5.4 GB over a drive; with the picture's targets
+        // the card paged to the system's memory and the frame rate fell from 140 to 25 (#2295).
+        let usage = scenery_bytes + vehicle_bytes + texture_overdraft(renderer.texture_bytes(scene));
         if pass == BudgetPass::AfterStreaming && usage <= limit && !memo.resume {
             // (the bytes are all a forced look is for: the restores wait for the second's)
             return 0;
@@ -1313,6 +1319,16 @@ pub(super) fn mesh_bounds(m: &MeshData, xf: &Mat4, origin: DVec3) -> [f64; 4] {
         b[3] = b[3].max(w.y);
     }
     b
+}
+
+/// What all textures of the scene (`total`, bytes) hold beyond half of the graphics card's
+/// own memory (none on a card that shares the system's memory, whose size is not known).
+fn texture_overdraft(total: u64) -> u64 {
+    let vram_mb = omsi_render::ADAPTER_VRAM_MB.load(std::sync::atomic::Ordering::Relaxed);
+    if vram_mb == 0 {
+        return 0;
+    }
+    total.saturating_sub(vram_mb * 1_000_000 / 2)
 }
 
 /// Which look at the texture budget (see [`World::update_texture_budget`]).

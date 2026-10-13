@@ -125,6 +125,7 @@ pub fn vehicle_lights(
     lights: &mut Vec<PointLight>,
     night: f32,
     fades: &parking_lot::Mutex<CookieFades>,
+    lent_beams: bool,
 ) {
     let ty = &v.ty;
     // def index → loaded mesh index (animation transform)
@@ -235,7 +236,7 @@ pub fn vehicle_lights(
     // a vehicle without any spot of its own - every stock AI car: OMSI lights no road in
     // front of them, their headlamps are glows alone - is given a pair of headlamps from its
     // lit front lamps, in the Enhanced picture only (the classic one stays OMSI's)
-    if ty.model.spotlights.is_empty() && ty.model.spotlights_2.is_empty() && ty.model.spotlight_cookies.is_empty() {
+    if lent_beams && lends_beams(&ty.model) {
         for (at, d, color, share) in headlamps_of_lamps(&ty.model, &v.light_fade, &value_of) {
             let at = v.position + body.transform_point3(at).as_dvec3();
             let d = body.transform_vector3(d).normalize_or_zero();
@@ -424,6 +425,33 @@ fn push_spot(lights: &mut Vec<PointLight>, at: DVec3, d: Vec3, vals: &[f32; 12],
         ..Default::default()
     });
     push_enhanced_spot(lights, at, d, vals, share);
+}
+
+/// At most this many cars, the nearest to the camera within `AI_BEAM_RANGE`, are lent
+/// headlamps (`headlamps_of_lamps`): every stock AI car with them was two or three more
+/// lights each at night, a hundred and more on a busy street, each looked at by every pixel
+/// near it - for cars whose beams far off light a few metres of road nobody sees.
+const AI_BEAMS: usize = 12;
+const AI_BEAM_RANGE: f64 = 200.0;
+
+/// Whether a vehicle has no spot of its own and is lent its headlamps' beams.
+fn lends_beams(model: &omsi_model::Model) -> bool {
+    model.spotlights.is_empty() && model.spotlights_2.is_empty() && model.spotlight_cookies.is_empty()
+}
+
+/// Which of `vehicles` (by index) may be lent their headlamps' beams (lit ones alone get
+/// them): the nearest `AI_BEAMS` without spots of their own within `AI_BEAM_RANGE` of the
+/// camera.
+fn cars_with_beams(vehicles: &[&VehicleInstance], camera: DVec3) -> Vec<usize> {
+    let mut near: Vec<(f64, usize)> = vehicles
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| lends_beams(&v.ty.model))
+        .map(|(k, v)| ((v.position - camera).length(), k))
+        .filter(|(d, _)| *d < AI_BEAM_RANGE)
+        .collect();
+    near.sort_by(|a, b| a.0.total_cmp(&b.0));
+    near.into_iter().take(AI_BEAMS).map(|(_, k)| k).collect()
 }
 
 /// The headlamps a model without a `[spotlight]` has (its position, direction, colour 0..255
@@ -718,8 +746,11 @@ pub fn collect(
         }
     }
     let vehicle_smoke = scene.smoke.len();
-    for v in vehicles {
-        vehicle_lights(v, &mut scene.coronas, &mut scene.lights, night, &world.cookie_fades);
+    // the headlamps lent to cars without spots of their own: the nearest few alone (see
+    // `AI_BEAMS`)
+    let beams = cars_with_beams(vehicles, camera_pos);
+    for (k, v) in vehicles.iter().enumerate() {
+        vehicle_lights(v, &mut scene.coronas, &mut scene.lights, night, &world.cookie_fades, beams.contains(&k));
         particle_sprites(&v.particles, &mut scene.smoke, &mut scene.coronas);
         for t in &v.trailers {
             particle_sprites(&t.particles, &mut scene.smoke, &mut scene.coronas);

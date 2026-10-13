@@ -32,7 +32,9 @@ mod support;
 #[cfg(test)]
 mod contact_tests;
 
+pub mod avatar;
 mod bones;
+pub mod face;
 mod motion;
 mod rig;
 mod skin;

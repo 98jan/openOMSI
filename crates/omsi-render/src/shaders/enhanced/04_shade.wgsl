@@ -430,14 +430,16 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     var direct = vec3<f32>(0.0);
     if (enh.lights.w > 0.0 && max(enh.sun.r, enh.sun.g) > 1e-5) {
         var shadow = 0.0;
+        // (Enhanced+ without a traced shadow for the surface: the far map's as well, below -
+        // one call of it for both cases: two, each inlined, made the scene shader too big for
+        // Apple's M4 compiler, whose service crashed on every scene pipeline)
+        var far = false;
         if (glass && nl > 0.0) {
             // a pane lets nearly all of it through: the sun on it is its glint, for which one
             // compare says enough (the soft filter over a cab's windscreen, doors and side
             // windows was a millisecond of the frame)
             shadow = sun_shadow_hard(in.world, n);
-            if (camera.clouds.w > 1.5) {
-                shadow = shadow * sun_shadow_far(in.world, n);
-            }
+            far = camera.clouds.w > 1.5;
         } else if (nl > 0.0 || thin) {
             // Enhanced+: the traced shadow where there is one for this surface
             // (whose cut-out leaves and fences the shadow map holds alone: see `render_inner`)
@@ -445,9 +447,12 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             shadow = sun_shadow_soft(in.world, n, thin);
             if (traced.w > 0.5 && traced.z >= 0.0) {
                 shadow = shadow * traced.z;
-            } else if (camera.clouds.w > 1.5 && traced.w < 0.5) {
-                shadow = shadow * sun_shadow_far(in.world, n);
+            } else {
+                far = camera.clouds.w > 1.5 && traced.w < 0.5;
             }
+        }
+        if (far) {
+            shadow = shadow * sun_shadow_far(in.world, n);
         }
         let e_sun = enh.sun.rgb * shadow;
         if (thin) {
