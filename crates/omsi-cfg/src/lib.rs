@@ -471,7 +471,10 @@ fn name_key(name: &str) -> String {
     }
 }
 
-type Listing = std::sync::Arc<std::collections::HashMap<String, std::ffi::OsString>>;
+/// The entries of one directory by [`name_key`]. A key holds more than one name only on a
+/// case-sensitive file system that has two spellings of it side by side (`maps` and `Maps`,
+/// after an add-on was unpacked next to the original folders) - a name means any of them.
+type Listing = std::sync::Arc<std::collections::HashMap<String, Vec<std::ffi::OsString>>>;
 // (read far more often than added to, by the loaders side by side: a lock for readers)
 static LISTINGS: std::sync::OnceLock<std::sync::RwLock<std::collections::HashMap<PathBuf, Listing>>> = std::sync::OnceLock::new();
 /// Bumped whenever content may have come or gone (a root added or taken away, a mod
@@ -499,16 +502,28 @@ fn dir_listing(dir: &Path) -> Listing {
     if let Some(l) = cache.read().unwrap().get(dir) {
         return l.clone();
     }
-    let mut map = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<String, Vec<std::ffi::OsString>> = std::collections::HashMap::new();
     let entries = vfs::list_dir(dir).unwrap_or_default();
     for (name, _) in &entries {
-        map.insert(name_key(&name.to_string_lossy()), name.clone());
+        // every spelling, not the last one read: one that held the rest of a path used to be
+        // dropped for another differing only in case, and its content went missing
+        let names = map.entry(name_key(&name.to_string_lossy())).or_default();
+        if !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    // the file system's own order is no order of ours: sorted, the spelling a lookup
+    // settles on is the same from one run to the next
+    for names in map.values_mut() {
+        if names.len() > 1 {
+            names.sort();
+        }
     }
     // the other spellings of names beyond ASCII (see `codepage::name_variants`), behind
     // every real name
     for (name, _) in &entries {
         for v in codepage::name_variants(&name.to_string_lossy()) {
-            map.entry(name_key(&v)).or_insert_with(|| name.clone());
+            map.entry(name_key(&v)).or_insert_with(|| vec![name.clone()]);
         }
     }
     let l = std::sync::Arc::new(map);
@@ -516,16 +531,30 @@ fn dir_listing(dir: &Path) -> Listing {
     l
 }
 
-/// The entry of `dir` that `name` means: the same name without regard to case, or one of
-/// its other spellings (a name beyond ASCII read in another code page on the way).
-fn find_in_dir(dir: &Path, name: &str) -> Option<std::ffi::OsString> {
+/// Every entry of `dir` that `name` can mean, the spelling asked for first: the same name
+/// without regard to case, or one of its other spellings (a name beyond ASCII read in
+/// another code page on the way). More than one only where the file system holds two names
+/// differing in case alone - which of them is meant is decided by what lies inside, so the
+/// walk over a path ([`resolve_existing`]) tries each.
+fn candidates_in_dir(dir: &Path, name: &str) -> Vec<std::ffi::OsString> {
     let listing = dir_listing(dir);
-    if let Some(n) = listing.get(&name_key(name)) {
-        return Some(n.clone());
+    let mut out = listing.get(&name_key(name)).cloned().unwrap_or_default();
+    if out.is_empty() {
+        out = codepage::name_variants(name)
+            .iter()
+            .find_map(|v| listing.get(&name_key(v)).cloned())
+            .unwrap_or_default();
     }
-    codepage::name_variants(name)
-        .iter()
-        .find_map(|v| listing.get(&name_key(v)).cloned())
+    // the folder spells it exactly as asked: that one is meant
+    if let Some(i) = out.iter().position(|n| n.as_os_str() == std::ffi::OsStr::new(name)) {
+        out.swap(0, i);
+    }
+    out
+}
+
+/// The entry of `dir` that `name` means (the first of [`candidates_in_dir`]).
+fn find_in_dir(dir: &Path, name: &str) -> Option<std::ffi::OsString> {
+    candidates_in_dir(dir, name).into_iter().next()
 }
 
 /// Content roots, highest priority first: the game's own content folder next to its
@@ -666,7 +695,7 @@ fn mirrored_base(base: &Path, root: &Path, roots: &[PathBuf]) -> Option<PathBuf>
 /// listings only; None as soon as a component does not exist.
 fn resolve_existing(base: &Path, rel: &[&str]) -> Option<PathBuf> {
     let mut cur = base.to_path_buf();
-    for comp in rel {
+    for (i, comp) in rel.iter().enumerate() {
         if comp.is_empty() || *comp == "." {
             continue;
         }
@@ -674,8 +703,17 @@ fn resolve_existing(base: &Path, rel: &[&str]) -> Option<PathBuf> {
             cur.pop();
             continue;
         }
-        let found = find_in_dir(&cur, comp).map(|n| cur.join(n))?;
-        cur = found;
+        let names = candidates_in_dir(&cur, comp);
+        if names.len() < 2 {
+            cur = cur.join(names.into_iter().next()?);
+            continue;
+        }
+        // Two names differing in case alone, on a case-sensitive file system: the folder
+        // meant is whichever one holds the rest of the path. An add-on unpacked beside the
+        // original folders leaves a `Maps` with the new map next to the `maps` holding all
+        // the others; both have to stay reachable.
+        let rest = &rel[i + 1..];
+        return names.iter().find_map(|n| resolve_existing(&cur.join(n), rest));
     }
     Some(cur)
 }
@@ -833,7 +871,7 @@ pub fn resolve_path(base: &Path, rel: &str) -> PathBuf {
         // the folder's listing, kept from the first time, has the name spelled just so:
         // the path as asked for, which the file system would only confirm (a look on the
         // disk for every component of every path was most of a lookup's time)
-        if dir_listing(&cur).get(&name_key(comp)).is_some_and(|n| n.as_os_str() == std::ffi::OsStr::new(comp)) {
+        if dir_listing(&cur).get(&name_key(comp)).is_some_and(|names| names.iter().any(|n| n.as_os_str() == std::ffi::OsStr::new(comp))) {
             cur.push(comp);
             continue;
         }
@@ -846,6 +884,15 @@ pub fn resolve_path(base: &Path, rel: &str) -> PathBuf {
         // time (scanning the folder afresh for every miss made texture lookups crawl)
         let found = find_in_dir(&cur, comp).map(|n| cur.join(n));
         cur = found.unwrap_or(direct);
+    }
+    // The walk above takes each component on its own, which is enough until a folder has two
+    // names differing in case alone: it then follows the spelling asked for, and the rest of
+    // the path may lie under the other one. Looking the whole path up at once weighs the
+    // spellings against what is inside them (see `resolve_existing`).
+    if !vfs::exists(&cur) {
+        if let Some(p) = resolve_existing(base, rel) {
+            return p;
+        }
     }
     if let (Some(owner), false) = (&owner, vfs::exists(&cur)) {
         // not in `base`'s root either: another root may still have it - a lower-priority
@@ -1082,6 +1129,47 @@ mod tests {
         let none = mirrored_base(&mods.join("Vehicles/Other/texture"), &omsi, &roots).unwrap();
         assert_eq!(none, omsi.join("Vehicles/Other/texture"));
         std::fs::remove_dir_all(&t).unwrap();
+    }
+
+    #[test]
+    fn a_folder_spelled_twice_hides_neither_ones_content() {
+        // An add-on unpacked beside the original folders leaves `Maps` with the new map next
+        // to the `maps` holding all the others. Both spellings lower-case to one key, and the
+        // listing used to keep whichever the file system happened to read last - the stock
+        // maps then went missing (`missing: maps/Grundorf/global.cfg`).
+        let t = std::env::temp_dir().join(format!("omsi-cfg-case-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&t);
+        std::fs::create_dir_all(t.join("maps/Grundorf")).unwrap();
+        if t.join("Maps").exists() {
+            // a case-insensitive file system cannot hold both spellings, so there is nothing
+            // to tell apart here
+            std::fs::remove_dir_all(&t).unwrap();
+            return;
+        }
+        std::fs::create_dir_all(t.join("Maps/Keedlestone 1.8")).unwrap();
+        std::fs::write(t.join("maps/Grundorf/global.cfg"), b"x").unwrap();
+        std::fs::write(t.join("Maps/Keedlestone 1.8/global.cfg"), b"x").unwrap();
+        content_changed();
+
+        // each map is found under the spelling the file asks for, whichever folder holds it
+        assert_eq!(
+            resolve_existing(&t, &["maps", "Grundorf", "global.cfg"]),
+            Some(t.join("maps/Grundorf/global.cfg")),
+        );
+        assert_eq!(
+            resolve_existing(&t, &["maps", "Keedlestone 1.8", "global.cfg"]),
+            Some(t.join("Maps/Keedlestone 1.8/global.cfg")),
+        );
+        // and the capitalised spelling reaches the lower-case folder just as well
+        assert_eq!(
+            resolve_existing(&t, &["Maps", "Grundorf", "global.cfg"]),
+            Some(t.join("maps/Grundorf/global.cfg")),
+        );
+        // a name neither folder has is still absent
+        assert_eq!(resolve_existing(&t, &["maps", "Nowhere", "global.cfg"]), None);
+
+        std::fs::remove_dir_all(&t).unwrap();
+        content_changed();
     }
 
     #[test]
