@@ -30,6 +30,7 @@ fn early_departure_duty() -> PlayerDuty {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     }
 }
 
@@ -99,6 +100,7 @@ fn ibox_busstop_is_prepositioned_when_the_timetable_jumps() {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     // jump from the first stop to the last: the script will +1 once, so leave 1 behind
     duty.next_stop = 2;
@@ -140,6 +142,7 @@ fn duty_place_keeps_first_stop_while_its_place_is_unknown() {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     // late for the trip, standing at stop 2 whose place is known
     d.place(glam::DVec3::new(20.0, 0.0, 0.0), 250.0);
@@ -273,6 +276,7 @@ fn resumed_duty_keeps_its_trip_and_stop_before_the_first_script_frame() {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     // The same name appears twice. Its saved ordinal, rather than its name or the
     // bus's position far from any stop, selects the second occurrence.
@@ -360,6 +364,7 @@ fn a_stop_placed_only_once_its_tile_loads_is_reached() {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
     d.advance(glam::DVec3::new(100.0, 0.0, 0.0), 10.0);
@@ -403,6 +408,7 @@ fn the_next_trip_starts_at_its_first_stop_though_the_last_one_was_missed() {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
     d.advance(glam::DVec3::new(100.0, 0.0, 0.0), 10.0);
@@ -442,6 +448,7 @@ fn the_next_trip_starts_at_its_first_stop_though_the_last_one_was_missed() {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     d.advance(glam::DVec3::new(800.0, 0.0, 0.0), 345.0);
     assert_eq!(d.trip_index, 0);
@@ -452,7 +459,7 @@ fn the_next_trip_starts_at_its_first_stop_though_the_last_one_was_missed() {
 fn the_next_stop_can_be_skipped() {
     let trip = planned(0.0, &[(0.0, 0.0, 0.0), (100.0, 60.0, 60.0), (500.0, 120.0, 120.0), (1000.0, 200.0, 200.0)]);
     let next = planned(400.0, &[(1040.0, 400.0, 400.0), (1500.0, 500.0, 500.0)]);
-    let mut d = PlayerDuty { line: "5".into(), tour: "1".into(), trips: vec![trip, next], trip_index: 0, first_trip: 0, next_stop: 0, at_stop: false, arrived_late: None, done: false, served_terminus: None, left_late: None, held_back: false, placed: true, trip_changed: false, skipped: None, run: 0, finished: None, reopened: None, picked: true, first_update: None, heading: 90.0, position: None };
+    let mut d = PlayerDuty { line: "5".into(), tour: "1".into(), trips: vec![trip, next], trip_index: 0, first_trip: 0, next_stop: 0, at_stop: false, arrived_late: None, done: false, served_terminus: None, left_late: None, held_back: false, placed: true, trip_changed: false, skipped: None, run: 0, finished: None, reopened: None, picked: true, first_update: None, heading: 90.0, position: None, unnumbered_public: Vec::new() };
     // at the first stop and away from it: the next is s1
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
     d.advance(glam::DVec3::new(50.0, 0.0, 0.0), 10.0);
@@ -507,6 +514,7 @@ fn a_page_can_go_back_to_an_earlier_stop() {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     assert!(d.skip_to(2));
     assert_eq!(d.next_stop, 2);
@@ -562,6 +570,7 @@ fn a_loop_does_not_jump_to_the_stop_over_the_road() {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     // at stop 0, then leaving east
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
@@ -600,6 +609,7 @@ fn stops_passed_without_stopping_are_told_once() {
         first_update: None,
         heading: 90.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
     d.advance(glam::DVec3::new(60.0, 0.0, 0.0), 30.0);
@@ -673,6 +683,7 @@ fn a_duty_starts_with_the_trip_that_fits_the_time() {
         first_update: None,
         heading: 0.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     // 200 m from the first stop two minutes before the departure: early, next stop the first
     assert_eq!(d.advance(glam::DVec3::new(300.0, 0.0, 0.0), now), None);
@@ -729,6 +740,7 @@ fn a_duty_starts_with_a_trip_the_bus_can_reach() {
         first_update: None,
         heading: 0.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     // 4 km away two minutes before the 15:07 leaves: the duty begins with the 16:01
     let mut d = duty(trips.clone());
@@ -776,11 +788,44 @@ fn ibis_skips_a_service_leg_for_the_player_display() {
         first_update: None,
         heading: 0.0,
         position: None,
+        unnumbered_public: Vec::new(),
     };
     let (trip, stop) = d.trip_for_ibis();
     assert_eq!(trip.line, "5E");
     assert_eq!(trip.terminus, "T");
     assert_eq!(stop, 0);
+}
+
+/// A trip without a line number that the depot file runs as line 000 is the IBIS's own,
+/// not a works trip: Bad Kinzau's SkiXPress typed the next trip's line 311 (#2425).
+#[test]
+fn an_unnumbered_public_trip_keeps_the_ibis() {
+    let mut hof = omsi_vehicle::Hof {
+        termini: vec![
+            omsi_vehicle::hof::Terminus { code: 8, strings: vec!["Saasdorf Park".into()], ..Default::default() },
+            omsi_vehicle::hof::Terminus { code: 11, strings: vec!["GonnseeSKI".into()], ..Default::default() },
+            omsi_vehicle::hof::Terminus { code: 20, strings: vec!["Betriebsfahrt".into()], ..Default::default() },
+        ],
+        ..Default::default()
+    };
+    for (code, route, stops) in [("00001", "11", ["Bahnhof", "Talstation", "GonnseeSKI"]), ("31103", "8", ["Bahnhof", "Markt", "Saasdorf Park"])] {
+        hof.info_trips.push(omsi_vehicle::hof::InfoTrip { code: code.into(), route: route.into(), ..Default::default() });
+        hof.info_busstop_lists.push(stops.iter().map(|s| s.to_string()).collect());
+    }
+    assert!(serves_unnumbered(&hof, "GonnseeSKI", &["Bahnhof", "Talstation", "GonnseeSKI"]));
+    assert!(!serves_unnumbered(&hof, "Betriebsfahrt", &["Depot", "Bahnhof"]), "a works trip has no route");
+    assert!(!serves_unnumbered(&hof, "Saasdorf Park", &["Bahnhof", "Markt", "Saasdorf Park"]), "line 311's route is no line 000");
+    let mut ski = planned(100.0, &[(0.0, 100.0, 100.0), (100.0, 200.0, 200.0)]);
+    ski.line.clear();
+    ski.name = "SKI_bk1_gon".into();
+    ski.terminus = "GonnseeSKI".into();
+    let mut later = planned(300.0, &[(100.0, 300.0, 300.0), (200.0, 400.0, 400.0)]);
+    later.line = "311".into();
+    later.terminus = "Saasdorf Park".into();
+    let mut d = PlayerDuty::new("SKIXPress".into(), "1".into(), vec![ski, later], 0, 0, false);
+    assert_eq!(d.trip_for_ibis().0.terminus, "Saasdorf Park", "without the depot file's word: a works trip");
+    d.unnumbered_public = vec!["ski_bk1_gon".into()];
+    assert_eq!(d.trip_for_ibis().0.terminus, "GonnseeSKI");
 }
 
 #[test]

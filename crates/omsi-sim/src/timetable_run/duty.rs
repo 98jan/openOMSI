@@ -157,6 +157,7 @@ impl PlayerDuty {
             first_update: None,
             heading: 0.0,
             position: None,
+            unnumbered_public: Vec::new(),
         }
     }
 
@@ -184,7 +185,8 @@ impl PlayerDuty {
     /// player's IBIS should use the next public leg while the bus is waiting.
     pub fn trip_for_ibis(&self) -> (&PlannedTrip, usize) {
         let current = self.trip();
-        if !current.line.trim().is_empty() {
+        let public = |t: &PlannedTrip| !t.line.trim().is_empty() || self.unnumbered_public.iter().any(|n| n.eq_ignore_ascii_case(&t.name));
+        if public(current) {
             return (
                 current,
                 self.next_stop.min(current.stops.len().saturating_sub(1)),
@@ -194,7 +196,7 @@ impl PlayerDuty {
             .trips
             .iter()
             .skip(self.trip_index + 1)
-            .find(|trip| !trip.line.trim().is_empty());
+            .find(|trip| public(trip));
         match next {
             Some(trip) => (trip, 0),
             None => (

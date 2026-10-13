@@ -352,13 +352,36 @@ impl ScheduleSim {
             current.terminus,
             trips.get(trip_index + 1).map(|t| format!("{} at {}", t.name, hm(t.departure))).unwrap_or_else(|| "the end of the duty".into())
         );
-        Ok(PlayerDuty::new(
+        let unnumbered_public = self.unnumbered_public(&trips);
+        let mut duty = PlayerDuty::new(
             line_name,
             tour_name,
             trips,
             trip_index,
             first_trip,
             trip.map(|t| !t.trim().is_empty()).unwrap_or(false),
-        ))
+        );
+        duty.unnumbered_public = unnumbered_public;
+        Ok(duty)
+    }
+
+    /// The trips of `trips` without a line number that one of the map's depot files runs as
+    /// public trips ([`ibis::serves_unnumbered`]).
+    fn unnumbered_public(&self, trips: &[PlannedTrip]) -> Vec<String> {
+        let mut hofs: Vec<&Arc<omsi_vehicle::Hof>> = Vec::new();
+        for h in self.depots.values().flatten().filter_map(|v| v.2.as_ref()) {
+            if !hofs.iter().any(|x| Arc::ptr_eq(x, h)) {
+                hofs.push(h);
+            }
+        }
+        let mut out: Vec<String> = Vec::new();
+        for t in trips.iter().filter(|t| t.line.trim().is_empty()) {
+            let stops: Vec<&str> = t.stops.iter().map(|s| s.name.as_str()).collect();
+            if !out.contains(&t.name) && hofs.iter().any(|h| ibis::serves_unnumbered(h, &t.terminus, &stops)) {
+                log::info!("player duty: trip {} has no line number, but the depot file runs it as a public trip (line 000)", t.name);
+                out.push(t.name.clone());
+            }
+        }
+        out
     }
 }

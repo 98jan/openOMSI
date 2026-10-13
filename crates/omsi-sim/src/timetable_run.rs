@@ -209,6 +209,11 @@ pub struct PlayerDuty {
     /// Where the bus was at the last update: how far along the way to the next stop it
     /// is, for the delay on the way (`delay`).
     position: Option<glam::DVec3>,
+    /// The trips without a line number that are public trips all the same: the map's depot
+    /// file has a route of line 000 to their terminus through their stops (Bad Kinzau's
+    /// SkiXPress, 00001 to GonnseeSKI). The IBIS is typed for them, not for the next trip
+    /// with a number as on a works trip from the depot (#2425).
+    pub unnumbered_public: Vec<String>,
 }
 
 pub const DAY: f64 = 86_400.0;
