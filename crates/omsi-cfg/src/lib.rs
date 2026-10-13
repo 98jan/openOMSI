@@ -24,6 +24,7 @@
 use std::path::{Path, PathBuf};
 
 pub mod codepage;
+pub mod collate;
 pub mod flags;
 pub mod lang;
 mod keywords;

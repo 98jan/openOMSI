@@ -40,6 +40,11 @@ impl Traffic {
             lead = t;
             lead_rev = rev;
         }
+        self.touches(&bodies, pos)
+    }
+
+    /// Do `bodies` (around `pos`) touch an AI vehicle or one of `keep_clear`?
+    pub fn touches(&self, bodies: &[omsi_sim::collision::Obb], pos: DVec3) -> bool {
         let reach = bodies
             .iter()
             .map(|b| (b.center - pos.truncate()).length() + b.half.length())
