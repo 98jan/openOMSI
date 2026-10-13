@@ -44056,3 +44056,48 @@ _version: 2
   hi: "गियर R (मैनुअल गियरबॉक्स)"
   ca: "Marxa R (canvi manual)"
   sv: "Växel R (manuell växellåda)"
+
+"Loaded without errors: {name}":
+  sr: "Učitano bez grešaka: {name}"
+
+"Model test":
+  sr: "Test modela"
+
+"No game runs. Start one on the Drive page with the bus you work on; its warnings appear here as they happen.":
+  sr: "Nijedna igra ne radi. Pokreni je na stranici Vožnja sa autobusom na kom radiš; upozorenja se pojavljuju ovde kako nastaju."
+
+"Nothing to report.":
+  sr: "Nema šta da se prijavi."
+
+"Nothing yet from the game ({pid}).":
+  sr: "Još ništa iz igre ({pid})."
+
+"The vehicle did not load cleanly: {n} errors, {w} warnings":
+  sr: "Vozilo nije učitano čisto: {n} grešaka, {w} upozorenja"
+
+"log lines":
+  sr: "linija loga"
+
+"materials":
+  sr: "materijali"
+
+"meshes":
+  sr: "mreže"
+
+"missing":
+  sr: "nedostaje"
+
+"paint schemes":
+  sr: "šeme"
+
+"parts":
+  sr: "delovi"
+
+"script variables":
+  sr: "promenljive skripti"
+
+"textures":
+  sr: "teksture"
+
+"warnings":
+  sr: "upozorenja"

@@ -655,6 +655,7 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "poll" => poll(),
         "stop_game" => stop_game(arg::<u32>(args, "pid")?),
         "game_log" => game_log(arg::<u32>(args, "pid")?, arg::<Option<usize>>(args, "lines")?),
+        "model_check" => model_check(arg::<String>(args, "bus")?),
         "launch" => launch(p, arg::<Value>(args, "duty")?),
         "duty_args" => duty_args(arg::<Value>(args, "duty")?),
         "check_join" => check_join(arg::<String>(args, "text")?),
@@ -783,4 +784,27 @@ mod custom_weather_tests {
         let want = core::CustomWeather { visibility_m: 800.0, temp_c: -5.0, precip: 1, precip_intensity: 200.0, cloud_base_m: 900.0, pressure: 990.0, wind_speed: 12.5, snow_on_road: true, ..Default::default() };
         assert_eq!(back, want);
     }
+}
+
+// --- the model test ----------------------------------------------------------------
+
+/// The game program loads `bus` as it would for a drive (`openomsi --check-vehicle`) and
+/// answers its loaders' warnings and errors and the model's missing textures as JSON.
+fn model_check(bus: String) -> Answer {
+    let game = core::game_binary().ok_or_else(|| "the game program was not found: set it under Setup".to_string())?;
+    let root = core::root_dir().map_err(err)?;
+    let mut cmd = std::process::Command::new(&game);
+    cmd.arg("--check-vehicle").arg(&bus).arg("--root").arg(&root).env("OMSI_NO_GUARD", "1");
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let out = cmd.output().map_err(|e| format!("{}: {e}", game.display()))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().rev().find(|l| l.trim_start().starts_with('{')).ok_or_else(|| {
+        let last = String::from_utf8_lossy(&out.stderr);
+        format!("the game gave no answer ({})", last.lines().last().unwrap_or("").trim())
+    })?;
+    serde_json::from_str(line).map_err(err)
 }

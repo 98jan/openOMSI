@@ -10,6 +10,7 @@ import { DrivePage } from './pages/drive.js';
 import { MultiplayerPage } from './pages/multiplayer.js';
 import { ProfilePage } from './pages/profile.js';
 import { ModsPage } from './pages/mods.js';
+import { ModelTestPage } from './pages/modeltest.js';
 import { SettingsPage } from './pages/settings.js';
 import { ControlsPage } from './pages/controls.js';
 import { GamesPage } from './pages/games.js';
@@ -30,6 +31,7 @@ const PAGES = [
   ['multiplayer', 'Multiplayer', 'users', MultiplayerPage],
   ['profile', 'Profile', 'user', ProfilePage],
   ['mods', 'Mods', 'puzzle', ModsPage],
+  ['modeltest', 'Model test', 'check', ModelTestPage],
   ['settings', 'Settings', 'sliders', SettingsPage],
   ['controls', 'Controls', 'keyboard', ControlsPage],
   null,
