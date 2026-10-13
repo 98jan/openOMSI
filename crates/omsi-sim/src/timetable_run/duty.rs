@@ -611,30 +611,14 @@ impl PlayerDuty {
         {
             self.served_terminus = self.trip().stops.last().and_then(|stop| stop.position);
         }
-        // (the next trip starts on leaving the terminus only when it is due within a few
-        // minutes: a bus moved to its layover or across to the departure stand well before
-        // then waits for it, instead of being hours early on a trip begun at once)
-        if self.trip_index + 1 < self.trips.len()
-            && self.trips[self.trip_index + 1].departure - day_time <= EARLY_START
-            && self
-                .served_terminus
-                .is_some_and(|stop| (bus.position - stop).length() >= 60.0)
-        {
-            let terminus = self.served_terminus.unwrap();
+        // On to the next trip as soon as the bus has served the terminus (stopped there with
+        // a door open), as OMSI 2 does: the next trip's stops and departure, and the people
+        // at the terminus board for it. The duty stayed on the trip over until a minute before
+        // the next one left (or the bus drove off): nobody boarded the bus re-signed for its
+        // next trip while it waited at the terminus (#2148, #2060).
+        if self.trip_index + 1 < self.trips.len() && self.served_terminus.is_some() {
             self.set_trip(self.trip_index + 1);
-            // This trip has begun, however early it is. Do not place it again or skip it
-            // as an unbegun trip on a subsequent update.
-            self.picked = true;
-            self.left_late = Some(day_time - self.trip().departure);
-            if self
-                .trip()
-                .stops
-                .first()
-                .and_then(|stop| stop.position)
-                .is_some_and(|start| (start - terminus).length() < AT_STOP)
-            {
-                self.next_stop = 1.min(self.trip().stops.len().saturating_sub(1));
-            }
+            log::info!("duty: terminus served, on to trip {} {} to {}", self.trip_index + 1, self.trip().name, self.trip().terminus);
             self.advance(bus.position, day_time);
         }
         self.feed_host(bus, day_time);
@@ -787,7 +771,8 @@ impl PlayerDuty {
             self.place(pos, day_time);
         }
         // on to the next trip a minute before it leaves, once this one is over, was never
-        // begun, or was given up half an hour ago
+        // begun, or was given up half an hour ago (one whose terminus the bus served goes on
+        // at once, `update`)
         while self.trip_index + 1 < self.trips.len()
             && self.trips[self.trip_index + 1].departure - 60.0 <= day_time
         {

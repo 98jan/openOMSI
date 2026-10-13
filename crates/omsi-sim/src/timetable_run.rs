@@ -121,10 +121,6 @@ pub struct PlannedTrip {
 /// The bus is at a stop within this distance (m), and has left it beyond the second.
 pub const AT_STOP: f64 = 25.0;
 
-/// How long before its departure the next trip of a duty may begin when the bus leaves the
-/// terminus it has served (s).
-pub const EARLY_START: f64 = 300.0;
-
 pub const LEFT_STOP: f64 = 35.0;
 
 /// How a trip of the player's duty ended (`Finished`).

@@ -157,39 +157,33 @@ fn duty_place_keeps_first_stop_while_its_place_is_unknown() {
     assert_eq!(bus.host.tt_stops[0].0, "s0");
 }
 
+/// The terminus served (the bus stopped there, a door open): the duty goes on to the next
+/// trip at once, as OMSI 2 does - not a minute before it leaves (#2148, #2060).
 #[test]
-fn serving_the_terminus_then_leaving_60m_starts_the_next_trip_early() {
+fn serving_the_terminus_starts_the_next_trip() {
     for door in ["door_0", "PAX_Exit0_Open"] {
         let mut duty = early_departure_duty();
         let mut bus = timetable_test_vehicle_with_door(door);
         bus.position.x = 500.0;
+        bus.set_speed(5.0);
         bus.set_var(door, 1.0);
+        duty.update(&mut bus, 145.0);
+        assert_eq!(duty.trip_index, 0, "rolling in with a door open serves nothing");
+        bus.set_speed(0.0);
         duty.update(&mut bus, 150.0);
-        assert_eq!(duty.trip_index, 0, "opening a door does not depart");
+        assert_eq!((duty.trip_index, duty.next_stop), (1, 0));
+        assert!(duty.take_trip_change());
+        assert_eq!(bus.host.tt_busstop_index, 0);
+        assert_eq!(bus.host.tt_stops[0].1, 600.0);
+        // the next trip's first stop is where the bus stands: leaving it serves it
         bus.set_var(door, 0.0);
         bus.set_speed(5.0);
-        bus.position.x = 559.9;
-        assert_eq!(duty.update(&mut bus, 160.0), Some((-50.0, -40.0)));
-        assert_eq!(duty.trip_index, 0, "less than 60 m away");
-        bus.position.x = 560.0;
-        duty.update(&mut bus, 161.0);
-        assert_eq!(duty.trip_index, 0, "a trip due in more than five minutes waits (a bus moved to its layover)");
-        duty.update(&mut bus, 301.0);
+        bus.position.x = 540.0;
+        assert_eq!(duty.update(&mut bus, 160.0), Some((-450.0, -440.0)));
         assert_eq!((duty.trip_index, duty.next_stop), (1, 1));
-        assert_eq!(bus.host.tt_busstop_index, 1);
-        assert_eq!(bus.host.tt_stops[0].1, 600.0);
-        // (60 m of the 500 to the next stop gone: due there at 612, #1898)
-        assert_eq!(duty.delay(301.0), -311.0);
-        assert!(duty.take_trip_change());
         duty.update(&mut bus, 302.0);
         assert!(!duty.take_trip_change());
         assert_eq!(duty.trip_index, 1, "advance exactly one trip");
-        // The previous trip's door opening cannot finish the next trip too.
-        bus.position.x = 1000.0;
-        duty.update(&mut bus, 400.0);
-        bus.position.x = 1060.0;
-        duty.update(&mut bus, 410.0);
-        assert_eq!(duty.trip_index, 1);
     }
 }
 
@@ -214,11 +208,10 @@ fn early_trip_progress_requires_stopping_with_a_door_open_at_the_last_stop() {
 }
 
 #[test]
-fn waiting_at_the_terminus_still_uses_the_scheduled_changeover() {
+fn waiting_at_the_terminus_with_the_doors_shut_uses_the_scheduled_changeover() {
     let mut duty = early_departure_duty();
     let mut bus = timetable_test_vehicle();
     bus.position.x = 500.0;
-    bus.set_var("door_0", 1.0);
     duty.update(&mut bus, 150.0);
     duty.update(&mut bus, 539.0);
     assert_eq!(duty.trip_index, 0);
