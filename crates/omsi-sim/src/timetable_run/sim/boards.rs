@@ -356,14 +356,12 @@ impl ScheduleSim {
         out
     }
 
+    /// The line an AI bus and the departure boards show for departure `i`: its trip's own,
+    /// blank when the trip has none, as Omsi.exe shows it (Gerolstein's service trips: a
+    /// blank rear matrix and line column). The timetable line's name stood in for it once,
+    /// and the service trips read "Diensttafeln".
     pub fn display_line(&self, i: usize) -> String {
-        let d = &self.departures[i];
-        let own = self.data.trips[d.trip].line.trim();
-        if own.is_empty() {
-            d.line.trim().to_string()
-        } else {
-            own.to_string()
-        }
+        self.data.trips[self.departures[i].trip].line.trim().to_string()
     }
 }
 
@@ -420,6 +418,25 @@ mod tests {
             positions: Default::default(),
         };
         ScheduleSim::new(&world.path, &world, &crate::SimClock::default())
+    }
+
+    /// A trip without a line of its own shows none, as in Omsi.exe: Gerolstein's service
+    /// trips in `Diensttafeln.ttl` read "Diensttafeln" on the boards and the AI buses.
+    #[test]
+    fn a_trip_without_a_line_shows_none() {
+        let mut sim = schedule();
+        sim.data.trips.push(omsi_timetable::Trip { terminus: "Betriebsfahrt".into(), stations: vec![42], ..Default::default() });
+        sim.departures.push(Departure {
+            time: 100.0, trip: 0, profile: 0, line: "Diensttafeln".into(), ai_group: "depot".into(),
+            tour: "101 Mo-Do".into(), mask: -1, spawned: false,
+        });
+        sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0)], stops: vec![true], ..Default::default() }]];
+        sim.visits.insert(42, vec![(0, 0)]);
+        sim.trip_departures = vec![vec![0]];
+        assert_eq!(sim.display_line(0), "");
+        let clock = crate::SimClock { time: 0.0, ..Default::default() };
+        let (boards, _) = sim.make_boards(None, vec![42], vec!["markt".into()], None, &clock);
+        assert_eq!(boards[&42].iter().map(|r| (r.0.as_str(), r.1.as_str())).collect::<Vec<_>>(), [("", "Betriebsfahrt")]);
     }
 
     #[test]
