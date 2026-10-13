@@ -54,6 +54,10 @@ const NAME_OF = Object.fromEntries(
 NAME_OF[90] = 'Shift';
 NAME_OF[91] = 'Ctrl';
 NAME_OF[92] = 'Alt';
+// (the mouse's side buttons, as the game's keyboard.cfg has them, #2281)
+NAME_OF[1004] = 'Mouse 4';
+NAME_OF[1005] = 'Mouse 5';
+const MOUSE_SCAN = { 3: 1004, 4: 1005 };
 /** A Shift, Ctrl or Alt bound alone: OMSI's code for either side of it (#2003). */
 const BOTH_SIDES = { ShiftLeft: 90, ShiftRight: 90, ControlLeft: 91, ControlRight: 91, AltLeft: 92, AltRight: 92 };
 const MODIFIER_CODES = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight', 'OSLeft', 'OSRight']);
@@ -363,6 +367,19 @@ function CaptureDialog({ label, action, current, list, skip, onKey, onClose }) {
       }
       take(e.code, chordOfEvent(e));
     };
+    // the mouse's side buttons are keys of their own (with the modifiers held)
+    const mouse = (e) => {
+      const scan = MOUSE_SCAN[e.button];
+      if (!scan) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.type !== 'mousedown') return;
+      lone = null;
+      const chord = chordOfEvent(e);
+      const taken = list.filter((b, i) => i !== skip && b.scan_code === scan && chordOf(b.modifier) === chord && b.action !== action);
+      if (taken.length) setPending({ scan, chord, taken });
+      else onKey(scan, chord);
+    };
     const up = (e) => {
       if (!MODIFIER_CODES.has(e.code)) return;
       e.preventDefault();
@@ -376,9 +393,15 @@ function CaptureDialog({ label, action, current, list, skip, onKey, onClose }) {
     // (before the dialog's own Escape, and before any button the key would press)
     window.addEventListener('keydown', down, true);
     window.addEventListener('keyup', up, true);
+    window.addEventListener('mousedown', mouse, true);
+    window.addEventListener('mouseup', mouse, true);
+    window.addEventListener('auxclick', mouse, true);
     return () => {
       window.removeEventListener('keydown', down, true);
       window.removeEventListener('keyup', up, true);
+      window.removeEventListener('mousedown', mouse, true);
+      window.removeEventListener('mouseup', mouse, true);
+      window.removeEventListener('auxclick', mouse, true);
     };
   }, [list, skip, action, current, onKey, onClose]);
 
