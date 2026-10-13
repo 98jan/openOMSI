@@ -593,6 +593,14 @@ impl Model {
         }
     }
 
+    /// A text texture's full colour flag: Omsi.exe reads it with StrToInt into a byte and
+    /// tests that for non-zero (0x5f0919), so the `255` some add-ons write is set - read as
+    /// "not 1" the glyphs were filled with the RGB that follows (yellow on those fonts).
+    fn text_full_color(r: &mut CfgReader<'_>) -> bool {
+        let w = r.word();
+        w.eq_ignore_ascii_case("true") || omsi_cfg::parse_i32(w) != 0
+    }
+
     /// Handle one model.cfg keyword. Returns `false` when the keyword is not part of the
     /// model vocabulary (so the caller can try its own).
     pub fn handle_keyword(&mut self, k: &str, r: &mut CfgReader) -> bool {
@@ -666,7 +674,7 @@ impl Model {
                 let font = r.str().to_string();
                 let width = r.i32();
                 let height = r.i32();
-                let full_color = r.bool();
+                let full_color = Self::text_full_color(r);
                 let color = r.f32s::<3>();
                 self.text_textures.push(TextTexture { variable, font, width, height, full_color, color, orientation: 0, grid: 1 });
             }
@@ -681,7 +689,7 @@ impl Model {
                 let font = r.str().to_string();
                 let width = r.i32();
                 let height = r.i32();
-                let full_color = r.bool();
+                let full_color = Self::text_full_color(r);
                 let color = r.f32s::<3>();
                 let extra: Vec<String> = (0..2).map(|_| r.str().to_string()).collect();
                 let orientation = omsi_cfg::parse_i32(&extra[0]);
@@ -1374,6 +1382,20 @@ mod tests {
         assert!(m.items[1].set_vars.is_empty());
         assert_eq!((m.items[1].name.as_str(), m.items[1].ctc.as_str(), m.items[1].texture.as_str()), ("HVL", "body", "hvl.dds"));
         assert_eq!(m.set_vars, vec![("lost".to_string(), 1.0)]);
+    }
+
+    /// A text texture's full colour flag is set by any non-zero number, as Omsi.exe tests it:
+    /// add-ons that write 255 there drew their texts in the yellow that follows.
+    #[test]
+    fn text_texture_full_colour_flag_is_any_non_zero_value() {
+        let text = |flag: &str| {
+            format!("[texttexture]\nnr\nArial\n256\n32\n{flag}\n255\n255\n0\n[texttexture_enh]\nnr\nArial\n256\n32\n{flag}\n255\n255\n0\n1\n1\n")
+        };
+        for (flag, want) in [("255", true), ("1", true), ("true", true), ("0", false)] {
+            let m = Model::parse(&CfgFile::from_str("model.cfg", &text(flag)));
+            assert!(m.text_textures.iter().all(|t| t.full_color == want), "{flag}");
+            assert_eq!(m.text_textures.len(), 2);
+        }
     }
 
     /// A `[matl_item]` is a copy of the material before it: the SD77's lit roller blind
