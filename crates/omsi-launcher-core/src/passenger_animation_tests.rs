@@ -11,3 +11,13 @@
         assert_eq!(settings_from_text(Some(&saved))["passenger_animation"], "enhanced");
         assert_eq!(settings_from_text(Some("version=3\npassenger_animation=unknown\n"))["passenger_animation"], "original");
     }
+
+#[test]
+    fn photo_mode_is_saved_and_restored() {
+        assert_eq!(settings_from_text(None)["photo_mode"], "simple");
+        let mut settings = settings_from_text(None);
+        settings["photo_mode"] = json!("advanced");
+        let saved = settings_to_text(&settings, Some("photo_mode=simple\n"));
+        assert_eq!(saved.lines().filter(|s| s.starts_with("photo_mode=")).count(), 1);
+        assert_eq!(settings_from_text(Some(&saved))["photo_mode"], "advanced");
+    }

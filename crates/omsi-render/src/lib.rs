@@ -140,6 +140,9 @@ pub struct Renderer {
     last_frame: Option<std::time::Instant>,
     /// The next frame stands alone (an offscreen picture): the exposure is there at once.
     pub instant_exposure: bool,
+    /// The next picture keeps its depth to be read back (`render_to_image_with_depth`): the
+    /// depth prepass runs whatever else it would.
+    pub(crate) depth_readback: bool,
     /// Overlay pipeline without multisampling, for drawing the HUD after the post pass.
     overlay_pipeline_1x: wgpu::RenderPipeline,
     xr_ui_pipeline: wgpu::RenderPipeline,

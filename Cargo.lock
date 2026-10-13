@@ -3364,6 +3364,7 @@ dependencies = [
  "omsi-world",
  "omsi-xr",
  "parking_lot",
+ "png 0.18.1",
  "pollster",
  "rayon",
  "rfd",

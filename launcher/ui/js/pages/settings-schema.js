@@ -383,6 +383,7 @@ const general = {
         // (on top of the interface's size; Ctrl + the wheel over it in the game)
         { type: 'slider', key: 'chat_size', label: 'Chat size', min: 0.5, max: 3, step: 0.1, def: 1, format: pct, store: r1 },
         { type: 'toggle', key: 'name_tags', label: "Other players' names above their buses" },
+        { type: 'select', key: 'photo_mode', label: 'Photo mode', options: [['simple', 'Simple'], ['advanced', 'Advanced (for photographers)']], help: 'Simple: the lens, the look and the frame. Advanced: a camera body - sensor size, P/A/S/M exposure with ISO and metering, white balance in kelvin, tilt-shift, histogram, focus peaking, bracketing and 16-bit PNG.' },
         { type: 'section', title: 'Navigator' },
         { type: 'toggle', key: 'navigator', label: 'Navigator (Shift+N: map, schedule, off)' },
         { type: 'toggle', key: 'nav_arrows', label: 'Route arrows (as in OMSI 2)' },

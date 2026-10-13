@@ -608,8 +608,25 @@ impl App {
             self.shell.button(pressed);
             // (the left button dragged over the photo turns the photo camera)
             let over = self.shell.over_ui;
+            let size = self.gfx.surface.as_ref().map(|s| (s.config.width as f32, s.config.height as f32)).unwrap_or((1.0, 1.0));
+            let at = (self.input.cursor.0 / size.0.max(1.0), self.input.cursor.1 / size.1.max(1.0));
+            let mut focus = None;
             if let Some(ph) = self.photo.as_mut() {
                 ph.looking = pressed && !over;
+                // (a click on the picture that does not turn the view focuses there)
+                if pressed && !over {
+                    ph.press = Some(at);
+                    ph.dragged = 0.0;
+                } else if !pressed {
+                    if let Some(p) = ph.press.take() {
+                        if ph.dragged < 0.3 {
+                            focus = Some(p);
+                        }
+                    }
+                }
+            }
+            if let Some((x, y)) = focus {
+                self.photo_request(crate::photo::Request::FocusAt(x, y));
             }
             self.sync_look_hold();
             return;
