@@ -753,6 +753,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             mouse_pedals: (0.0, 0.0),
             mouse_kmh: 0.0,
             wheel_zoomed_at: None,
+            camera_keys_off: false,
             pad_kmh: 0.0,
             pad_steer_target: 0.0,
             game_keys,

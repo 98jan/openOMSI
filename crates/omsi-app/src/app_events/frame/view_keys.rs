@@ -265,28 +265,32 @@ fn free_camera(cx: &mut ViewKeysCx, dt: f32) {
         if cx.ui.photo.is_none() {
             cam.roll = 0.0;
         }
+        // (the keys handed to the bus, #1779: the camera keeps still but for the mouse)
+        let keys_on = !cx.input.camera_keys_off || cx.player.player.is_none() || cx.view.cam.ego;
+        let keys = &cx.input.keys;
+        let held = |k: KeyCode| keys_on && keys.contains(&k);
         let mut v = Vec3::ZERO;
         let f = cam.forward();
         let r = cam.right();
-        if cx.input.keys.contains(&KeyCode::KeyW) {
+        if held(KeyCode::KeyW) {
             v += f;
         }
-        if cx.input.keys.contains(&KeyCode::KeyS) {
+        if held(KeyCode::KeyS) {
             v -= f;
         }
-        if cx.input.keys.contains(&KeyCode::KeyD) {
+        if held(KeyCode::KeyD) {
             v += r;
         }
-        if cx.input.keys.contains(&KeyCode::KeyA) {
+        if held(KeyCode::KeyA) {
             v -= r;
         }
-        if cx.input.keys.contains(&KeyCode::KeyE) || cx.input.keys.contains(&KeyCode::Space) {
+        if held(KeyCode::KeyE) || held(KeyCode::Space) {
             v += Vec3::Z;
         }
-        if cx.input.keys.contains(&KeyCode::KeyQ) {
+        if held(KeyCode::KeyQ) {
             v -= Vec3::Z;
         }
-        let boost = if cx.input.keys.contains(&KeyCode::ShiftLeft) {
+        let boost = if held(KeyCode::ShiftLeft) {
             5.0
         } else {
             1.0
@@ -302,16 +306,16 @@ fn free_camera(cx: &mut ViewKeysCx, dt: f32) {
         } else {
             cam.position += (v.normalize_or_zero() * cx.view.cam.speed * boost * dt).as_dvec3();
         }
-        if cx.input.keys.contains(&KeyCode::ArrowLeft) {
+        if held(KeyCode::ArrowLeft) {
             cam.yaw -= 60.0 * dt;
         }
-        if cx.input.keys.contains(&KeyCode::ArrowRight) {
+        if held(KeyCode::ArrowRight) {
             cam.yaw += 60.0 * dt;
         }
-        if cx.input.keys.contains(&KeyCode::ArrowUp) {
+        if held(KeyCode::ArrowUp) {
             cam.pitch = (cam.pitch + 40.0 * dt).min(89.0);
         }
-        if cx.input.keys.contains(&KeyCode::ArrowDown) {
+        if held(KeyCode::ArrowDown) {
             cam.pitch = (cam.pitch - 40.0 * dt).max(-89.0);
         }
     }

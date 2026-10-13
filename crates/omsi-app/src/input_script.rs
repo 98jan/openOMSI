@@ -361,6 +361,7 @@ impl App {
             // Ctrl+S, OMSI's quicksave, stays a [game] key)
             let flying = m == 0
                 && flies_free_camera(code)
+                && !(self.input.camera_keys_off && self.player.is_some())
                 && (self.view == "free" || (self.player.is_none() && self.session.on_foot.is_none()));
             // (Ctrl+Alt+arrows turn the mirror looked at: not Ctrl+arrow's gear or camera)
             let mirror_aim = ctrl && alt && matches!(code, KeyCode::ArrowLeft | KeyCode::ArrowRight | KeyCode::ArrowUp | KeyCode::ArrowDown);
@@ -647,7 +648,9 @@ impl App {
             self.input.keys.contains(&KeyCode::ShiftLeft) || self.input.keys.contains(&KeyCode::ShiftRight);
         if let Some(p) = self.player.as_mut() {
             let ctrl_alt_held = (self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight)) && (self.input.keys.contains(&KeyCode::AltLeft) || self.input.keys.contains(&KeyCode::AltRight));
-            if self.view != "free" && !repeat && !shift_held && !(ctrl_alt_held && pressed) {
+            // (in the free view too while its keys are handed to the bus, #1779)
+            let bus_keys = self.view != "free" || self.input.camera_keys_off;
+            if bus_keys && !repeat && !shift_held && !(ctrl_alt_held && pressed) {
                 if let Some(a) = fallback_action(code, wasd) {
                     p.axes.set(a, pressed);
                 }
@@ -665,11 +668,11 @@ impl App {
         // viewpoint - otherwise a bus driven with WASD could never be put in gear.
         let shift =
             self.input.keys.contains(&KeyCode::ShiftLeft) || self.input.keys.contains(&KeyCode::ShiftRight);
-        let covers_vehicle_key = fallback_action(code, wasd).is_some() && self.view != "free";
+        let covers_vehicle_key = fallback_action(code, wasd).is_some() && (self.view != "free" || self.input.camera_keys_off);
         let driving_key = covers_vehicle_key && !shift;
         // (the keys that fly the free camera are the camera's: W switched the wipers on
         // while flying)
-        let fly_key = self.view == "free" && flies_free_camera(code);
+        let fly_key = self.view == "free" && flies_free_camera(code) && !self.input.camera_keys_off;
         if let (Some(p), Some(scan)) = (
             self.player.as_mut(),
             keys::dik_code(code).filter(|_| !driving_key && !fly_key),
