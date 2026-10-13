@@ -559,7 +559,10 @@ impl App {
         // original fires while the mouse is dragged, with the notch as the
         // movement. Knobs, the sun blind and the ignition key are far easier to
         // set that way than by holding the button down and moving the mouse.
-        if self.menus.hover.is_some() && self.view != "free" {
+        // (not while the wheel is zooming: the zoom moved the switches under the cursor, and
+        // the wheel's next notch turned one instead of zooming on, #1224)
+        let zooming = wheel_goes_on(self.input.wheel_zoomed_at, std::time::Instant::now());
+        if self.menus.hover.is_some() && self.view != "free" && !zooming {
             let ray = self.camera.as_ref().zip(self.gfx.surface.as_ref())
                 .map(|(cam, s)| self.cockpit_cursor_ray(cam, (s.config.width, s.config.height)));
             if let (Some(p), Some((o, d, spread))) = (
@@ -584,6 +587,9 @@ impl App {
             }
         }
         let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
+        if matches!(self.view.as_str(), "driver" | "pax") && self.player.is_some() {
+            self.input.wheel_zoomed_at = Some(std::time::Instant::now());
+        }
         if self.view == "outside" && self.player.is_some() && ctrl {
             // Ctrl+wheel: the outside camera stays where it is and narrows its field of view
             // (a telephoto; OMSI's own zoom there only moves the camera, as the wheel does)
@@ -1059,6 +1065,30 @@ mod vr_mirror_tests {
         assert_eq!(vr_mirror_updates(&mut budget, 0.1, -1.0, 0), 0);
         assert_eq!(vr_mirror_updates(&mut budget, 0.1, 360.0, 0), 0);
         assert_eq!(budget, 0.0);
+    }
+}
+
+/// How long after a notch of the mouse wheel that zoomed the next one still counts as the same
+/// turn of the wheel (a turn sends its notches some 20-100 ms apart).
+const WHEEL_TURN: std::time::Duration = std::time::Duration::from_millis(350);
+
+/// Whether a notch of the wheel at `now` goes on zooming, the last one having zoomed at
+/// `zoomed` (#1224).
+fn wheel_goes_on(zoomed: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    zoomed.is_some_and(|t| now.saturating_duration_since(t) < WHEEL_TURN)
+}
+
+#[cfg(test)]
+mod wheel_turn_tests {
+    /// A turn of the wheel that zooms goes on zooming over a switch; a notch a while later
+    /// over the switch turns the switch (#1224).
+    #[test]
+    fn a_turn_of_the_wheel_zooms_on() {
+        let t = std::time::Instant::now();
+        let ms = std::time::Duration::from_millis;
+        assert!(!super::wheel_goes_on(None, t));
+        assert!(super::wheel_goes_on(Some(t), t + ms(80)));
+        assert!(!super::wheel_goes_on(Some(t), t + ms(600)));
     }
 }
 
