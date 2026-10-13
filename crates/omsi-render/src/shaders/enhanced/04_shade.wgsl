@@ -723,13 +723,16 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // night, and less where the saloon lamps light the surface already. (As an emission
         // at 0.6 of the texture by day and on top of the lamps at night, a switched-on
         // cabin's light-mapped parts were flat white.)
-        let lm = textureSample(t_light, s_diffuse, buv).rgb;
-        let night = clamp(camera.sun_color.w, 0.0, 1.0);
-        let left = (vec3<f32>(1.0) - clamp(cabin_light, vec3<f32>(0.0), vec3<f32>(1.0))) * (0.12 + 0.88 * night);
-        let w = lm * left * clamp(in.params2.x, 0.0, 1.0);
+        let lm = textureSample(t_light, s_diffuse, buv).rgb * clamp(in.params2.x, 0.0, 1.0);
         if (material.emissive.w < -1.5) {
-            emit = emit + tex.rgb * w * max(enh.exposure.z * 2.0, 0.6);
+            let night = clamp(camera.sun_color.w, 0.0, 1.0);
+            let left = (vec3<f32>(1.0) - clamp(cabin_light, vec3<f32>(0.0), vec3<f32>(1.0))) * (0.12 + 0.88 * night);
+            emit = emit + tex.rgb * lm * left * max(enh.exposure.z * 2.0, 0.6);
         } else {
+            // (By day as by night: ADDSMOOTH lifts the surface to its texture's colour by the
+            // map whatever light it has, and what the light already gives - the day's, the
+            // saloon lamps' - is taken off below. Lifted by an eighth of that by day, a
+            // display in the cab's shade was far darker than in Vanilla+, #2051.)
             // ... and as there it lifts the surface to its texture's own colour at the
             // most, shown as a display is (see the unlit path): taken as a light of the
             // night's level on top, a white light map (`weiss.bmp`, laid on a display so
@@ -738,7 +741,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             // light map stays as it was: its dots are meant to burn above their colour.)
             // The map's script variable controls its backlight. Dimming every light-mapped
             // surface as a cab screen hid instrument backlights even with the lights on.
-            emit = emit + max(display_level(tex.rgb) * enh.exposure.y - rgb, vec3<f32>(0.0)) * w;
+            emit = emit + max(display_level(tex.rgb) * enh.exposure.y - rgb, vec3<f32>(0.0)) * lm;
         }
     }
     if (material.emissive.w < -1.5) {
