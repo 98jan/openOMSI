@@ -303,6 +303,10 @@ const BAY_REACH: f32 = 30.0;
 /// long waiting for the script to say they are shut.
 const CLOSE_MIN: f32 = 1.5;
 const CLOSE_MAX: f32 = 12.0;
+/// A bus whose script never says its doors are shut and whose doors stand open leaves after
+/// this long all the same (s): it stood at the stop for good, the traffic of the whole street
+/// behind it (a São Paulo two-sided door script, #1801, #1921).
+const DOORS_GIVE_UP: f32 = 45.0;
 /// Brake for the stop from this far.
 const STOP_REACH: f32 = 80.0;
 /// This near its stop a timetable bus settles whether it stops there at all (Omsi.exe
@@ -452,8 +456,8 @@ impl BusService {
             Phase::Running => 0.0,
             Phase::Boarding => self.boarding.max(0.0) + 2.0 + wait,
             Phase::Waiting => wait + 2.0,
-            // (doors open that the script never shuts: it stands until somebody sees to it)
-            Phase::Closing if self.fault == Some(ServiceFault::DoorsOpenUnanswered) => 600.0,
+            // (doors open that the script never shuts: it stands until `DOORS_GIVE_UP`)
+            Phase::Closing if self.fault == Some(ServiceFault::DoorsOpenUnanswered) => (DOORS_GIVE_UP - self.phase_t).max(0.0),
             Phase::Closing => 1.0,
             Phase::TripDone => 600.0,
         }
@@ -666,7 +670,7 @@ impl BusService {
             self.fault = Some(fault);
             log::warn!("t={:.1}: timetable bus {}: its script never said the doors are shut ({fault:?})", ctx.day_time, ctx.id);
         }
-        !open
+        !open || self.phase_t >= DOORS_GIVE_UP
     }
 
     /// One frame of the service: where the bus has to stop (distance from its origin along
@@ -1313,10 +1317,10 @@ mod tests {
         let (left, fault) = close_doors(&mut v, 0.0, Some(0.0));
         assert!(left.is_some_and(|t| (CLOSE_MIN..CLOSE_MIN + 0.3).contains(&t)), "{left:?}");
         assert_eq!(fault, None);
-        // it has not, and its doors stand open: the bus does not drive off
+        // it has not, and its doors stand open: the bus waits for them, but not for good
         let mut v = crate::timetable_run::tests::script_test_vehicle(answering, vars, "");
         let (left, fault) = close_doors(&mut v, -1.0, Some(1.0));
-        assert_eq!(left, None);
+        assert!(left.is_some_and(|t| (DOORS_GIVE_UP..DOORS_GIVE_UP + 0.3).contains(&t)), "{left:?}");
         assert_eq!(fault, Some(ServiceFault::DoorsOpenUnanswered));
         // it has not, and nobody knows about the doors: off after the longest wait
         let mut v = crate::timetable_run::tests::script_test_vehicle(answering, "AI_Scheduled_AtStation\n", "");
