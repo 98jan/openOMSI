@@ -341,8 +341,13 @@ impl PeopleSim {
                         let force_exit = reg.all_exit
                             && !bn.terminus.as_ref().is_some_and(|name| stop.is_named(name));
                         if !force_exit && p.dest.as_ref().is_some_and(|dest| stop.is_named(dest)) {
-                            let departing = bn.speed.abs() > 0.1
-                                && !bn.entry_open.iter().chain(&bn.exit_open).any(|open| *open);
+                            // (or simply under way: many buses report a door "open" to the
+                            // passengers while its release is on, and with that their riders
+                            // never chose a point and asked only once the stop was in
+                            // reach, a few metres before it, #2346)
+                            let departing = (bn.speed.abs() > 0.1
+                                && !bn.entry_open.iter().chain(&bn.exit_open).any(|open| *open))
+                                || bn.speed.abs() > 3.0;
                             let arrived = reg.next == Some(stop.id)
                                 && bn.speed.abs() < 1.0
                                 && bn.exit_open.iter().any(|open| *open);
