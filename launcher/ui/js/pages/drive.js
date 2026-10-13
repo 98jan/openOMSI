@@ -7,7 +7,7 @@ import { t, hhmm, longDate, language } from '../i18n.js';
 import { call, contentUrl } from '../api.js';
 import { Icon } from '../icons.js';
 import { Button, Card, Field, Select, Input, Toggle, Segmented, Slider, Picture, Notice, Spinner, PageHead, Tag, Search, Dialog } from '../ui.js';
-import { choose, curMap, curBus, curLine, curTour, pickedTrip, realTime, realDate, start, loadSituations, duty, weatherName, weatherOfItsOwn, mapName, askJoined, noServerBus } from '../data.js';
+import { choose, curMap, curBus, curLine, curTour, pickedTrip, realTime, realDate, start, loadSituations, duty, weatherName, weatherOfItsOwn, mapName, askJoined, noServerBus, busFile } from '../data.js';
 import { MapPicker } from './map-picker.js';
 import { BusPicker } from './bus-picker.js';
 import { BusPreview } from '../preview.js';
@@ -292,6 +292,7 @@ function DutyCard() {
       </details>`}
       ${tour && !tour.runs && html`<${Notice} kind="warn">${tour.next_run ? t('This tour does not run on the chosen date; it runs next on {date}.', { date: longDate(tour.next_run) }) : t('This tour does not run within a year of the chosen date.')}
         ${tour.next_run && !realDate() && html`<div style="margin-top:8px"><${Button} small icon="calendar" label="Drive it on that day" onClick=${() => choose({ date: tour.next_run, season: 'auto', own_date: null })} /></div>`}</${Notice}>`}
+      ${tour && html`<${TourBus} tour=${tour} />`}
       ${tour && html`<div>
         <div class="row" style="margin-bottom:8px"><span class="label">${t('Trips of the tour')}</span><span class="muted small right">${t('Click a trip to start with it')}</span></div>
         <div class="trips" ref=${tripsRef}>
@@ -318,6 +319,38 @@ function DutyCard() {
   return html`<${Card} title="Duty" actions=${html`<${Segmented} value=${c.free ? 'free' : 'line'} options=${[['line', 'Timetable'], ['free', 'Free drive']]} onChange=${(v) => choose({ free: v === 'free' })} />`}>
     ${body}
   </${Card}>`;
+}
+
+/** The buses the map's ailists.cfg gives the tour's AI group, to drive one of them (#1886). */
+function TourBus({ tour }) {
+  const s = useStore();
+  const c = s.choice;
+  const [found, setFound] = useState([]);
+  useEffect(() => {
+    setFound([]);
+    if (!tour.ai_group || !c.map) return;
+    let alive = true;
+    call('tour_buses', { map: c.map, group: tour.ai_group, date: c.date }).then((r) => alive && setFound(r || []), () => {});
+    return () => (alive = false);
+  }, [c.map, c.date, tour.ai_group]);
+  const buses = found
+    .map((f) => {
+      const v = (s.vehicles || []).find((x) => busFile(x.file) === busFile(f.file));
+      if (!v) return null;
+      const paint = v.paints.includes(f.paint) ? f.paint : '';
+      const number = (v.numbers || []).some(([n]) => n === f.number) ? f.number : '';
+      return { v, paint, number };
+    })
+    .filter(Boolean)
+    .slice(0, 10);
+  if (!buses.length) return null;
+  return html`<div class="row muted small" style="gap:6px;flex-wrap:wrap;align-items:center">
+    <span>${t('Buses the timetable gives this tour:')}</span>
+    ${buses.map(({ v, paint, number }) => {
+      const on = v.file === c.bus && (c.paint || '') === paint;
+      return html`<${Button} small kind=${on ? 'primary' : ''} icon=${on ? 'check' : 'bus'} label=${[v.name, paint].filter(Boolean).join(' - ')} onClick=${() => choose({ bus: v.file, paint, number, hof_manual: false })} />`;
+    })}
+  </div>`;
 }
 
 function ibisCodes(info, code, line) {

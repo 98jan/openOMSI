@@ -580,6 +580,10 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "vehicles" => vehicles(p),
         "weather" => weather(),
         "nearest_airport" => nearest_airport(arg::<String>(args, "map")?),
+        "tour_buses" => Ok(json!(core::tour_buses(&arg::<String>(args, "map")?, &arg::<String>(args, "group")?, &arg::<String>(args, "date")?)
+            .into_iter()
+            .map(|(file, paint, number)| json!({ "file": file, "paint": paint, "number": number }))
+            .collect::<Vec<_>>())),
         "metar_airports" => metar_airports(),
         "custom_weather" => custom_weather(arg::<String>(args, "weather")?),
         "custom_weather_text" => custom_weather_text(arg::<Value>(args, "custom")?),

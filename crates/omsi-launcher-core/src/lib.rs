@@ -258,6 +258,33 @@ pub fn content_path(rel: &str) -> Result<PathBuf> {
     resolve_content(rel)
 }
 
+/// The buses the map's ailists.cfg gives a tour's AI group on `date` (#1886: to drive a
+/// model the AI drives on it): of a depot group each vehicle type with a bus that runs
+/// that day - the file, the first such bus's repaint and fleet number -, else the group's
+/// vehicles, the most likely first. (file, paint, number)
+pub fn tour_buses(map: &str, group: &str, date: &str) -> Vec<(String, String, String)> {
+    let want = group.trim();
+    let (Ok(dir), Some(day)) = (resolve_content(map), omsi_map::ailists::date_code(date)) else { return Vec::new() };
+    let Some(dir) = dir.parent().filter(|_| !want.is_empty()) else { return Vec::new() };
+    let lists = omsi_map::ailists::ailists_with_chrono(dir, &omsi_map::ailists::active_chrono_dirs(dir, day));
+    let Some(g) = lists.groups.iter().find(|g| g.name.trim().eq_ignore_ascii_case(want)) else { return Vec::new() };
+    let file = |f: &str| f.trim().replace('\\', "/");
+    let mut depot: Vec<(String, String, String)> = g
+        .typgroups
+        .iter()
+        .filter_map(|t| t.entries.iter().find(|e| e.from.is_none_or(|f| f <= day) && e.to.is_none_or(|to| day <= to)).map(|e| (file(&t.file), e.paint.trim().to_string(), e.number.trim().to_string())))
+        .collect();
+    // (a type listed in several groups of the depot: once)
+    let mut seen = std::collections::HashSet::new();
+    depot.retain(|(f, _, _)| seen.insert(f.to_ascii_lowercase()));
+    if !depot.is_empty() {
+        return depot;
+    }
+    let mut v: Vec<_> = g.vehicles.iter().collect();
+    v.sort_by(|a, b| b.weight.total_cmp(&a.weight));
+    v.into_iter().map(|v| (file(&v.file), String::new(), v.number.clone().unwrap_or_default().trim().to_string())).collect()
+}
+
 /// The depot file a bus uses on `map` on `date`: the map's own buses' of that day (chrono
 /// scenarios move it - Berlin's 1994 depot has 137, 1986's 92), one of the bus's carrying
 /// the line driven, its own of that name or named like the map, else the first (#896).
