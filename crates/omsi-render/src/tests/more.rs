@@ -559,7 +559,6 @@ fn shaders_validate_and_match_the_uniforms() {
     let modules = [
         ("scene", scene_shader_source(false)),
         ("scene opaque", scene_shader_source(false)),
-        ("scene blend depth", scene_shader_source(false)),
         ("scene terrain paint", scene_shader_source(false)),
         ("sky", sky_shader_source()),
         ("corona", corona_shader_source()),
@@ -605,9 +604,6 @@ fn shaders_validate_and_match_the_uniforms() {
         let mut constants = naga::back::PipelineConstants::default();
         if name.starts_with("scene ") {
             constants.insert("ALPHA_TEST".into(), 0.0);
-        }
-        if *name == "scene blend depth" {
-            constants.insert("BLEND_DEPTH".into(), 1.0);
         }
         if *name == "scene terrain paint" {
             constants.insert("TERRAIN_PAINT".into(), 1.0);

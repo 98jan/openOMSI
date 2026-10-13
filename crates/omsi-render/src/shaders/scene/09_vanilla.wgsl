@@ -1,9 +1,7 @@
 @fragment
 fn fs_main(in: FsIn) -> @location(0) vec4<f32> {
     var unused = 0.0;
-    let c = shade_vanilla(in, &unused, camera.cam_pos.xyz);
-    if (BLEND_DEPTH && c.a == 0.0) { discard; }
-    return c;
+    return shade_vanilla(in, &unused, camera.cam_pos.xyz);
 }
 
 // Shared with Enhanced and the wheel splash mask: pools spread as the road soaks.
@@ -23,7 +21,6 @@ fn road_puddle_coverage(world: vec3<f32>, normal: vec3<f32>, wet: f32) -> f32 {
 fn fs_vanilla_reflections(in: FsIn) -> EnhancedOut {
     var weight = 0.0;
     let c = shade_vanilla(in, &weight, camera.cam_pos.xyz);
-    if (BLEND_DEPTH && c.a == 0.0) { discard; }
     let coverage = select(c.a, 0.0, in.params2.w > 1.5);
     var out: EnhancedOut;
     out.color = c;
