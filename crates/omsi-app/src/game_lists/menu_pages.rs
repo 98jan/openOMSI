@@ -238,6 +238,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         .collect();
     let interface: Vec<(String, String)> = vec![
         pick("language", "Language", "The language of the game's interface"),
+        pick("units", "Units", "Speeds, distances and temperatures in the game's own texts"),
         switch_row(app, "machine_translation", "Translate the remaining texts automatically (offline, downloads 620 MB once)", "Translates texts nobody has translated, on this machine"),
         slider_row(app, "ui_scale", "Game interface size", "The size of the texts, the menu, the timetable and the navigator", &pct),
         switch_row(app, "ui_scale_window", "Interface grows with the window", "On a window taller than 1080p the interface grows with it"),

@@ -217,7 +217,7 @@ impl Journey {
             .map(|r| {
                 let (plan, real) = if r.first { (r.plan.1, r.left) } else { (r.plan.0, r.arrived) };
                 let [p, a, d] = times(plan, real);
-                [r.name.clone(), p, a, d, r.odo.map(|k| format!("{k:.1} km")).unwrap_or_default()]
+                [r.name.clone(), p, a, d, r.odo.map(|k| crate::units::Units::now().long_distance(k as f64, 1)).unwrap_or_default()]
             })
             .collect();
         let served = rows.iter().filter(|r| r.served()).count();

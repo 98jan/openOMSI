@@ -2065,6 +2065,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
     // Human posing; the original OMSI behavior remains the default.
     v["passenger_animation"] = json!("enhanced");
     v["photo_mode"] = json!("simple");
+    v["units"] = json!("metric");
     // the trees' foliage bends and sways in the weather's wind
     v["windy_trees"] = json!(true);
     v["mirror_hud_every_frame"] = json!(false);
@@ -2141,6 +2142,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
             "touch_door_mode" => v[&k] = json!(if val.eq_ignore_ascii_case("direct") { "direct" } else { "standard" }),
             "photo_mode" => v[&k] = json!(if val.eq_ignore_ascii_case("advanced") { "advanced" } else { "simple" }),
             "passenger_animation" => v[&k] = json!(if val.eq_ignore_ascii_case("enhanced") { "enhanced" } else { "original" }),
+            "units" => v[&k] = json!(units_setting(val)),
             "ctrl_off" => v[&k] = json!(val),
             "metar_station" => v[&k] = json!(val.chars().filter(|c| c.is_ascii_alphabetic()).take(4).collect::<String>().to_ascii_uppercase()),
             "discord_app_id" => v[&k] = json!(val),
@@ -2405,6 +2407,15 @@ pub fn apply_graphics_profile(profile: &Value, settings: &mut Value) {
 
 /// The `settings.cfg` text for the page's values `v`; the lines of the `old` file that the
 /// page does not manage (keys of newer games, hand-written switches) are kept.
+/// The `units` setting's value: `metric`, `uk` or `us` (the game's `units` module).
+fn units_setting(v: &str) -> &'static str {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "uk" | "british" => "uk",
+        "us" | "american" | "imperial" => "us",
+        _ => "metric",
+    }
+}
+
 pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     let b = |k: &str, d: bool| v.get(k).and_then(|x| x.as_bool()).unwrap_or(d) as u8;
     // a number, also as the string a select gives
@@ -2602,6 +2613,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("triple_left_angle_deg={}\ntriple_right_angle_deg={}\ntriple_eye_height_mm={}\n", f("triple_left_angle_deg", 45.0).clamp(0.0, 90.0), f("triple_right_angle_deg", 45.0).clamp(0.0, 90.0), f("triple_eye_height_mm", 0.0).clamp(-500.0, 500.0)));
     text.push_str(&format!("photo_mode={}\n", if v.get("photo_mode").and_then(|x| x.as_str()) == Some("advanced") { "advanced" } else { "simple" }));
     text.push_str(&format!("passenger_animation={}\n", if v.get("passenger_animation").and_then(|x| x.as_str()) == Some("enhanced") { "enhanced" } else { "original" }));
+    text.push_str(&format!("units={}\n", units_setting(v.get("units").and_then(|x| x.as_str()).unwrap_or("metric"))));
     let written: Vec<String> = text.lines().filter_map(|l| l.split_once('=')).map(|(k, _)| k.trim().to_ascii_lowercase()).collect();
     for line in old.unwrap_or("").lines() {
         let t = line.trim();

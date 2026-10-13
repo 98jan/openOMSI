@@ -266,6 +266,7 @@ pub(super) fn select_options(key: &str) -> Vec<(&'static str, &'static str)> {
         "navigator_corner" => vec![("top-left", "Top left"), ("top-right", "Top right"), ("bottom-left", "Bottom left"), ("bottom-right", "Bottom right")],
         "boarding" => vec![("auto", "Pay and take the ticket"), ("pay", "The driver sells the ticket"), ("walk", "Just walk in")],
         "standing_chance" => vec![("0", "Never"), ("5", "5%"), ("10", "10%"), ("25", "25%"), ("50", "50%"), ("100", "Always")],
+        "units" => vec![("metric", "Metric (km/h, km, °C)"), ("uk", "British (mph, miles, yards, °C)"), ("us", "American (mph, miles, feet, °F)")],
         "pax_voices" => vec![("all", "Greetings and tickets"), ("tickets", "Only the ticket asked for"), ("off", "Silent")],
         "perf_overlay" => vec![("off", "Off"), ("compact", "Compact"), ("detailed", "Detailed")],
         "maintenance" => vec![("0", "Infinite (no wear)"), ("1", "Very bad"), ("2", "Bad"), ("3", "Normal"), ("4", "Good")],
@@ -330,6 +331,7 @@ pub(super) fn reload_settings(app: &mut App) {
     app.settings = crate::settings::Settings::load();
     app.session.seat_bus.clear();
     crate::ui_language(&app.settings.language);
+    crate::units::Units::from_setting(&app.settings.units).set();
     sync_live(app);
 }
 

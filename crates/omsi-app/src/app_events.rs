@@ -870,7 +870,7 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
     let t = clock.time;
     let mut parts = vec![format!("{:02}:{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64, (t % 60.0) as i64)];
     if let Some(p) = player {
-        parts.push(format!("{:.0} km/h", p.vehicle.physics.velocity_kmh().abs()));
+        parts.push(crate::units::Units::now().speed_text(p.vehicle.physics.velocity_kmh().abs()));
         parts.push(distance_driven(metres));
         // the bus's whole mileage, as OMSI's Shift+Z overlay reads it ("Mileometer", the
         // `kmcounter_*` the cockpit shows, whole kilometres and the metres of the fraction)
@@ -878,7 +878,8 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
             parts.push(odometer_reading(km as f64 + p.vehicle.var("kmcounter_m").unwrap_or(0.0) as f64 / 1000.0));
         }
         let (outside, inside) = vehicle_temperatures(p);
-        parts.push(format!("EXT {:.0} °C / INT {:.0} °C", outside, inside));
+        let u = crate::units::Units::now();
+        parts.push(format!("EXT {} / INT {}", u.temperature(outside), u.temperature(inside)));
         // the tank as the bus's script says it (OMSI's RL_TankContent: tank_percent)
         if let Some(tank) = p.vehicle.var("tank_percent").filter(|v| v.is_finite()) {
             parts.push(format!("tank {:.0} %", (tank * 100.0).round()));
@@ -905,7 +906,7 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
 
 /// The kilometres driven this session (`Career::metres`), to a hundred metres.
 fn distance_driven(metres: f64) -> String {
-    format!("{:.1} km", metres.max(0.0) / 1000.0)
+    crate::units::Units::now().long_distance(metres.max(0.0) / 1000.0, 1)
 }
 
 /// The passenger places (`[passpos]`) in the player's bus and any coupled sections: nobody
@@ -926,7 +927,7 @@ fn passenger_capacity(vehicle: &omsi_sim::VehicleInstance) -> Option<usize> {
 
 /// The bus's odometer to a hundred metres, as the stock cockpits show it (km and tenths).
 fn odometer_reading(km: f64) -> String {
-    format!("{} {:.1} km", omsi_ui::tr("Odometer"), km.max(0.0))
+    format!("{} {}", omsi_ui::tr("Odometer"), crate::units::Units::now().long_distance(km.max(0.0), 1))
 }
 
 /// `n` (out of `capacity` places, where known) with the word for a passenger in the
