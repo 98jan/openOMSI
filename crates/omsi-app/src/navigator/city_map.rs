@@ -438,6 +438,9 @@ impl Navigator {
             ui.rounded(r, 4.0 * s, *color);
             ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, LINE_TEXT);
         }
+        if let Some(sf) = self.surface.as_deref().filter(|_| self.show_surface) {
+            self.place.draw_names(&mut ui, &mut self.atlas, &self.fonts, sf, self.light, self.city.mpp, &mut taken, win, s, &to_screen);
+        }
         if let (Some(st), true) = (self.streets.clone(), self.city.mpp < 3.2 && self.global.is_some()) {
             let px = 12.0 * s;
             for (q, a, id) in &st.labels {
@@ -501,6 +504,7 @@ impl Navigator {
             ui.text_in(&mut self.atlas, &self.fonts, &name, px, Weight::Bold, r, Align::Center, LINE_TEXT);
         }
         arrow(&mut ui, to_screen(f.bus), (f.heading as f32).to_radians(), 10.0 * s, 1.3, Color::rgba(10, 10, 10, 0.9), TEXT);
+        let icon_verts = self.city_icons(&to_screen, win, s);
         // header: the line and where it goes, the next stop; buttons on the right
         // (opaque: the route and the stops showed through behind its text)
         let head = Rect::new(0.0, 0.0, w, 44.0 * s);
@@ -527,14 +531,11 @@ impl Navigator {
             self.city.buttons.push((r, id));
             bx -= bs + 8.0 * s;
         }
+        if self.show_surface && self.place.has_location() {
+            self.place.draw_chips(&mut ui, &mut self.atlas, &self.fonts, head, w, pad, s, f.language);
+        }
         self.draw_credit(&mut ui, w, h, s);
-        // a scale bar, bottom left
-        let nice = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0];
-        let metres = nice.iter().copied().find(|m| m / self.city.mpp > 70.0 * s as f64).unwrap_or(5000.0);
-        let len = (metres / self.city.mpp) as f32;
-        let by = h - 22.0 * s;
-        ui.rect(Rect::new(pad, by, len, 2.0 * s), TEXT_DIM);
-        ui.text(&mut self.atlas, &self.fonts, &if metres >= 1000.0 { format!("{:.0} km", metres / 1000.0) } else { format!("{metres:.0} m") }, 12.0 * s, Weight::Medium, Vec2::new(pad + len + 8.0 * s, by + 4.0 * s), Align::Left, TEXT_DIM);
+        self.draw_scale_bar(&mut ui, h, pad, s);
 
         // --- to the GPU
         let (tex, _, _) = self.city.target.unwrap();
@@ -554,6 +555,7 @@ impl Navigator {
         let n_ui = all.len() as u32;
         all.extend(ui.verts);
         gpu.upload(device, queue, 5, &all);
+        let (icon_n, icon_tex) = self.place.upload(gpu, device, queue, 9, &icon_verts);
         gpu.upload_atlas(queue, &mut self.atlas);
         let flat = Layer::flat([0.0, 0.0, w, h], 8.0 * s, 1.0);
         let layers = [flat, world];
@@ -564,6 +566,7 @@ impl Navigator {
             Draw { buffer: 3, range: 0..roads_n, layer: 1, texture: 0 },
             Draw { buffer: 4, range: 0..self.city.route.1, layer: 1, texture: 0 },
             Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 1, texture: 0 },
+            Draw { buffer: 9, range: 0..icon_n, layer: 0, texture: icon_tex },
             Draw { buffer: 5, range: n_ui..all.len() as u32, layer: 0, texture: 0 },
         ];
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("city map") });
@@ -571,5 +574,15 @@ impl Navigator {
         queue.submit([enc.finish()]);
         let _ = n_dots;
         scene.overlays.push((tex, [x0, y0, x0 + w, y0 + h]));
+    }
+
+    /// A scale bar, bottom left.
+    fn draw_scale_bar(&mut self, ui: &mut Painter, h: f32, pad: f32, s: f32) {
+        let nice = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0];
+        let metres = nice.iter().copied().find(|m| m / self.city.mpp > 70.0 * s as f64).unwrap_or(5000.0);
+        let len = (metres / self.city.mpp) as f32;
+        let by = h - 22.0 * s;
+        ui.rect(Rect::new(pad, by, len, 2.0 * s), TEXT_DIM);
+        ui.text(&mut self.atlas, &self.fonts, &if metres >= 1000.0 { format!("{:.0} km", metres / 1000.0) } else { format!("{metres:.0} m") }, 12.0 * s, Weight::Medium, Vec2::new(pad + len + 8.0 * s, by + 4.0 * s), Align::Left, TEXT_DIM);
     }
 }
