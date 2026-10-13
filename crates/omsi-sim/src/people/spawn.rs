@@ -315,7 +315,7 @@ impl PeopleSim {
         }
         let free = (0..self.people.len()).find(|&i| {
             let p = &self.people[i];
-            p.puppet.is_none() && !p.remote && matches!(p.state, State::Strolling(_) | State::Standing) && !self.seen(p.position)
+            p.puppet.is_none() && !p.remote && matches!(p.state, State::Strolling(_) | State::Standing | State::Leaving { .. }) && !self.seen(p.position)
         });
         match free {
             Some(i) => {
@@ -646,7 +646,7 @@ impl PeopleSim {
             // (sub_62a6a0 at 0x62dc6c: the people waiting at a stop and those on the pavements)
             let counts = match &p.state {
                 State::Pax(x) => x.task == Task::WaitingForBus,
-                State::Strolling(_) | State::Standing => true,
+                State::Strolling(_) | State::Standing | State::Leaving { .. } => true,
                 State::Idle => false,
             };
             if p.place != Place::Ground || !counts {

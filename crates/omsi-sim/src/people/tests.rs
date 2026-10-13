@@ -1186,3 +1186,23 @@ fn the_maps_drivers_are_not_passengers() {
     let left: Vec<String> = h.types.iter().map(|t| t.def.path.file_name().unwrap().to_string_lossy().to_string()).collect();
     assert_eq!(left, ["Man.hum", "Woman.hum"], "the driver is out, the others stay");
 }
+
+/// Off a bus where no pavement is, people walk a few steps out and to the side, each to a
+/// place of their own, and never back into the bus.
+#[test]
+fn people_off_a_bus_without_a_pavement_step_away_from_the_door() {
+    let door = DVec3::new(100.0, 50.0, 0.0);
+    let (out, along) = (DVec3::X, DVec3::Y);
+    let mut places = Vec::new();
+    for id in 1..40u32 {
+        let p = super::pax_task::away_point(door, out, along, id);
+        let d = p - door;
+        assert!((2.5..=5.0).contains(&d.x), "{id}: {d:?} out from the door");
+        assert!(d.y.abs() <= 7.0, "{id}: {d:?} along the bus");
+        assert_eq!(d.z, 0.0);
+        places.push((d.x * 10.0) as i64 * 1000 + (d.y * 10.0) as i64);
+    }
+    places.sort();
+    places.dedup();
+    assert!(places.len() > 30, "a busload spreads out: {} places of 39", places.len());
+}
