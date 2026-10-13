@@ -362,6 +362,7 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "mouse_right" => s.mouse_right_off,
         "mouse_smooth" => s.mouse_smooth,
         "mouse_hold" => s.mouse_hold,
+        "mouse_pedals" => s.mouse_pedals,
         "blinker_cancel" => s.blinker_cancel,
         "fps" => s.show_fps,
         "get_up" => s.get_up,
@@ -499,6 +500,10 @@ pub(super) fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static 
             app.settings.mouse_hold = on;
             app.sync_mouse_grab();
             Some(("mouse_hold", bit))
+        }
+        "mouse_pedals" => {
+            app.settings.mouse_pedals = on;
+            Some(("mouse_pedals", bit))
         }
         "get_up" => {
             app.settings.get_up = on;

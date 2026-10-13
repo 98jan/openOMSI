@@ -224,13 +224,20 @@ impl App {
             // a steering key's leftover turn must not take over whenever the cursor
             // passes the middle - the wheel jumped there; and the pedals, which Omsi.exe
             // writes from the cursor every frame: a brake the keys held stayed on (#395)
+            // (the setting off, the mouse only steers: the pedals stay the keys' and a
+            // controller's, #1704)
+            let pedals = self.settings.mouse_pedals;
             if let Some(p) = self.player.as_mut() {
                 p.axes.steering = 0.0;
-                p.axes.brake = 0.0;
-                p.axes.throttle = 0.0;
+                if pedals {
+                    p.axes.brake = 0.0;
+                    p.axes.throttle = 0.0;
+                }
             }
-            analog.throttle = Some(self.input.mouse_pedals.0);
-            analog.brake = Some(self.input.mouse_pedals.1);
+            if pedals {
+                analog.throttle = Some(self.input.mouse_pedals.0);
+                analog.brake = Some(self.input.mouse_pedals.1);
+            }
         } else if self.input.mouse_drive && bus_view && (self.input.mouse_look || self.input.input_away || panels_mouse)
             && self.menus.game_menu.is_none() {
             // looking round with the right button: the wheel and the pedals stay where
@@ -239,8 +246,10 @@ impl App {
             // background the same, its throttle let go (`App::input_lost`): the
             // cursor wandering over other windows steered and drove the bus.
             analog.steering = Some(self.input.mouse_steer.0);
-            analog.throttle = Some(self.input.mouse_pedals.0);
-            analog.brake = Some(self.input.mouse_pedals.1);
+            if self.settings.mouse_pedals {
+                analog.throttle = Some(self.input.mouse_pedals.0);
+                analog.brake = Some(self.input.mouse_pedals.1);
+            }
             if let Some(p) = self.player.as_mut() {
                 p.axes.steering = 0.0;
             }

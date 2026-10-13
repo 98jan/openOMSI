@@ -22,7 +22,8 @@ pub(super) fn view_keys(mut cx: ViewKeysCx, dt: f32) {
         // a controller's look buttons (Settings → Controllers: view_look_*)
         cx.view.cam.look.0 += step * 1.5 * (cx.input.pad_look[1] as i32 - cx.input.pad_look[0] as i32) as f32;
         cx.view.cam.look.1 = (cx.view.cam.look.1 + step * 0.7 * (cx.input.pad_look[2] as i32 - cx.input.pad_look[3] as i32) as f32).clamp(-85.0, 85.0);
-        // with a wheel steering, the arrow keys look around as in OMSI
+        // with a wheel steering and the setting off, the arrow keys look around (a glance;
+        // in OMSI they switch the cameras with a wheel as without one, the default, #2164)
         if !ctrl_alt && !cx.common.settings.arrows_switch_cams && cx.input.controllers.as_ref().is_some_and(|c| c.wheel_steering()) && !cx.input.keys.contains(&KeyCode::ControlLeft) && !cx.input.keys.contains(&KeyCode::ControlRight) {
             // a glance: held, the head turns (in the driver's seat to 140 degrees
             // at most, or no further than the mouse had it); let go, it comes back

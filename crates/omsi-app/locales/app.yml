@@ -80,6 +80,26 @@ _version: 2
   ca: "Data actual"
   sv: "Aktuellt datum"
 
+"The mouse works the pedals":
+  fr: "La souris actionne les pédales"
+  ca: "El ratolí acciona els pedals"
+  zh-tw: "滑鼠控制踏板"
+  pt: "O mouse aciona os pedais"
+  pt-pt: "O rato aciona os pedais"
+  zh: "鼠标控制踏板"
+  de: "Die Maus bedient die Pedale"
+  nl: "De muis bedient de pedalen"
+  sv: "Musen styr pedalerna"
+"Up the throttle, down the brake, as in OMSI; off: the mouse only steers, the pedals stay on the keys":
+  fr: "En haut l'accélérateur, en bas le frein, comme sur OMSI ; désactivé : la souris ne fait que diriger, les pédales restent au clavier"
+  ca: "Amunt l'accelerador, avall el fre, com a OMSI; desactivat: el ratolí només dirigeix, els pedals queden al teclat"
+  zh-tw: "向上為油門，向下為煞車，如同 OMSI；關閉：滑鼠只控制轉向，踏板仍由鍵盤控制"
+  pt: "Para cima o acelerador, para baixo o freio, como no OMSI; desativado: o mouse só esterça, os pedais ficam no teclado"
+  pt-pt: "Para cima o acelerador, para baixo o travão, como no OMSI; desativado: o rato só dirige, os pedais ficam no teclado"
+  zh: "向上为油门，向下为刹车，如同 OMSI；关闭：鼠标只控制转向，踏板仍由键盘控制"
+  de: "Nach oben Gas, nach unten Bremse, wie in OMSI; aus: Die Maus lenkt nur, die Pedale bleiben auf der Tastatur"
+  nl: "Omhoog gas, omlaag remmen, zoals in OMSI; uit: de muis stuurt alleen, de pedalen blijven op het toetsenbord"
+  sv: "Uppåt gas, nedåt broms, som i OMSI; av: musen styr bara, pedalerna ligger kvar på tangentbordet"
 "Smooth mouse steering":
   fr: "Direction à la souris adoucie"
   ca: "Direcció suau amb el ratolí"
