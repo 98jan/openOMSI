@@ -158,6 +158,7 @@ impl PlayerDuty {
             heading: 0.0,
             position: None,
             unnumbered_public: Vec::new(),
+            passed: PassedStop::default(),
         }
     }
 
@@ -484,6 +485,7 @@ impl PlayerDuty {
         let back = stop < self.next_stop;
         self.next_stop = stop;
         self.at_stop = false;
+        self.passed = PassedStop::default();
         self.served_terminus = None;
         self.arrived_late = None;
         if back {
@@ -535,6 +537,7 @@ impl PlayerDuty {
         self.held_back = false;
         self.trip_changed = true;
         self.picked = false;
+        self.passed = PassedStop::default();
     }
 
     /// How late the bus is (s; negative = early), as the IBIS shows it: at a stop against
@@ -595,6 +598,12 @@ impl PlayerDuty {
         self.heading = bus.heading;
         self.position = Some(bus.position);
         let served = self.advance(bus.position, day_time);
+        let standing = bus.physics.velocity_kmh().abs() < 0.36;
+        if self.at_stop && Self::doors_open(bus) {
+            self.passed.doors = true;
+        } else if !self.at_stop && standing && Self::doors_open(bus) {
+            self.step_back(bus.position, day_time);
+        }
         if self.done
             && self.at_stop
             && bus.physics.velocity_kmh().abs() < 0.36
@@ -630,6 +639,31 @@ impl PlayerDuty {
         }
         self.feed_host(bus, day_time);
         served
+    }
+
+    /// The bus stands with its doors open after the stop it passed without opening them, nearer
+    /// to that one than to the next and at most [`STEP_BACK`] beyond it: it serves that stop
+    /// here, and the duty (the IBIS, the navigator, the information bar) goes back to it. Its
+    /// object stood at the beginning of a station's long bay: the bus passed it on the way
+    /// to its platform, the duty moved on to the next stop, and it stayed there when the bus
+    /// stopped and opened its doors (Ahlheim's Eichenhöhe Bf, #2468).
+    pub(crate) fn step_back(&mut self, pos: glam::DVec3, day_time: f64) {
+        let Some(k) = self.passed.stop else { return };
+        if self.done || k + 1 != self.next_stop || self.held_back {
+            return;
+        }
+        let trip = &self.trips[self.trip_index];
+        let at = |i: usize| trip.stops.get(i).and_then(|s| s.position).map(|p| (p - pos).length());
+        let Some(back) = at(k) else { return };
+        if back > STEP_BACK || at(k + 1).is_some_and(|ahead| ahead <= back) {
+            return;
+        }
+        let stop = &trip.stops[k];
+        log::info!("duty: trip {}: the bus serves stop {} '{}' it had passed, {back:.0} m beyond it", trip.name, k + 1, stop.name.trim());
+        self.arrived_late = Some(day_time - stop.arr);
+        self.next_stop = k;
+        self.at_stop = true;
+        self.passed = PassedStop { doors: true, stop: None, stand: Some(pos) };
     }
 
     pub(crate) fn doors_open(bus: &crate::VehicleInstance) -> bool {
@@ -804,7 +838,9 @@ impl PlayerDuty {
         if let Some(stop) = trip.stops.get(self.next_stop) {
             if let Some(p) = stop.position {
                 let d = (p - pos).length();
-                if d < AT_STOP {
+                // (a stop served beyond its object is left from where the bus stood)
+                let gone = self.passed.stand.map_or(d, |s| (s - pos).length());
+                if d < AT_STOP && self.passed.stand.is_none() {
                     self.held_back = false;
                     if !self.at_stop {
                         self.arrived_late = Some(day_time - stop.arr);
@@ -814,8 +850,10 @@ impl PlayerDuty {
                         self.done = true;
                         self.finish(TripEnd::Arrived);
                     }
-                } else if self.at_stop && d > LEFT_STOP {
+                } else if self.at_stop && gone > LEFT_STOP {
                     self.at_stop = false;
+                    let left = self.next_stop;
+                    self.passed = PassedStop { doors: false, stop: (!self.passed.doors && stop.stops).then_some(left), stand: None };
                     let late = day_time - stop.dep;
                     self.left_late = Some(late);
                     // (OMSI counts a stop only with its arrival: the original)

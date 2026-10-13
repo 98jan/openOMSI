@@ -31,6 +31,7 @@ fn early_departure_duty() -> PlayerDuty {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     }
 }
 
@@ -101,6 +102,7 @@ fn ibox_busstop_is_prepositioned_when_the_timetable_jumps() {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     // jump from the first stop to the last: the script will +1 once, so leave 1 behind
     duty.next_stop = 2;
@@ -143,6 +145,7 @@ fn duty_place_keeps_first_stop_while_its_place_is_unknown() {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     // late for the trip, standing at stop 2 whose place is known
     d.place(glam::DVec3::new(20.0, 0.0, 0.0), 250.0);
@@ -277,6 +280,7 @@ fn resumed_duty_keeps_its_trip_and_stop_before_the_first_script_frame() {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     // The same name appears twice. Its saved ordinal, rather than its name or the
     // bus's position far from any stop, selects the second occurrence.
@@ -365,6 +369,7 @@ fn a_stop_placed_only_once_its_tile_loads_is_reached() {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
     d.advance(glam::DVec3::new(100.0, 0.0, 0.0), 10.0);
@@ -409,6 +414,7 @@ fn the_next_trip_starts_at_its_first_stop_though_the_last_one_was_missed() {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
     d.advance(glam::DVec3::new(100.0, 0.0, 0.0), 10.0);
@@ -449,6 +455,7 @@ fn the_next_trip_starts_at_its_first_stop_though_the_last_one_was_missed() {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     d.advance(glam::DVec3::new(800.0, 0.0, 0.0), 345.0);
     assert_eq!(d.trip_index, 0);
@@ -459,7 +466,7 @@ fn the_next_trip_starts_at_its_first_stop_though_the_last_one_was_missed() {
 fn the_next_stop_can_be_skipped() {
     let trip = planned(0.0, &[(0.0, 0.0, 0.0), (100.0, 60.0, 60.0), (500.0, 120.0, 120.0), (1000.0, 200.0, 200.0)]);
     let next = planned(400.0, &[(1040.0, 400.0, 400.0), (1500.0, 500.0, 500.0)]);
-    let mut d = PlayerDuty { line: "5".into(), tour: "1".into(), trips: vec![trip, next], trip_index: 0, first_trip: 0, next_stop: 0, at_stop: false, arrived_late: None, done: false, served_terminus: None, left_late: None, held_back: false, placed: true, trip_changed: false, skipped: None, run: 0, finished: None, reopened: None, picked: true, first_update: None, heading: 90.0, position: None, unnumbered_public: Vec::new() };
+    let mut d = PlayerDuty { line: "5".into(), tour: "1".into(), trips: vec![trip, next], trip_index: 0, first_trip: 0, next_stop: 0, at_stop: false, arrived_late: None, done: false, served_terminus: None, left_late: None, held_back: false, placed: true, trip_changed: false, skipped: None, run: 0, finished: None, reopened: None, picked: true, first_update: None, heading: 90.0, position: None, unnumbered_public: Vec::new(), passed: Default::default() };
     // at the first stop and away from it: the next is s1
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
     d.advance(glam::DVec3::new(50.0, 0.0, 0.0), 10.0);
@@ -515,6 +522,7 @@ fn a_page_can_go_back_to_an_earlier_stop() {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     assert!(d.skip_to(2));
     assert_eq!(d.next_stop, 2);
@@ -571,6 +579,7 @@ fn a_loop_does_not_jump_to_the_stop_over_the_road() {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     // at stop 0, then leaving east
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
@@ -610,6 +619,7 @@ fn stops_passed_without_stopping_are_told_once() {
         heading: 90.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
     d.advance(glam::DVec3::new(60.0, 0.0, 0.0), 30.0);
@@ -684,6 +694,7 @@ fn a_duty_starts_with_the_trip_that_fits_the_time() {
         heading: 0.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     // 200 m from the first stop two minutes before the departure: early, next stop the first
     assert_eq!(d.advance(glam::DVec3::new(300.0, 0.0, 0.0), now), None);
@@ -741,6 +752,7 @@ fn a_duty_starts_with_a_trip_the_bus_can_reach() {
         heading: 0.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     // 4 km away two minutes before the 15:07 leaves: the duty begins with the 16:01
     let mut d = duty(trips.clone());
@@ -789,6 +801,7 @@ fn ibis_skips_a_service_leg_for_the_player_display() {
         heading: 0.0,
         position: None,
         unnumbered_public: Vec::new(),
+        passed: Default::default(),
     };
     let (trip, stop) = d.trip_for_ibis();
     assert_eq!(trip.line, "5E");
@@ -956,4 +969,41 @@ fn the_delay_on_the_way_follows_where_the_bus_is() {
     assert!((d.delay(150.0) - 0.0).abs() < 1e-6);
     assert!((d.delay(170.0) - 20.0).abs() < 1e-6);
     assert!((d.delay(120.0) + 30.0).abs() < 1e-6);
+}
+
+/// A station's stop object at the beginning of its long bay: the bus passes it on the way to
+/// its platform, stops 50 m on and opens its doors - the duty goes back to that stop and
+/// leaves it when the bus pulls away from where it stood (#2468).
+#[test]
+fn a_stop_passed_and_served_further_on_is_stepped_back_to() {
+    let trip = planned(0.0, &[(0.0, 0.0, 0.0), (100.0, 60.0, 60.0), (600.0, 120.0, 120.0)]);
+    let mut d = PlayerDuty::new("132".into(), "1".into(), vec![trip], 0, 0, true);
+    d.placed = true;
+    d.next_stop = 1;
+    d.left_late = Some(0.0);
+    let at = |x: f64| glam::DVec3::new(x, 0.0, 0.0);
+    d.advance(at(90.0), 50.0);
+    assert!(d.at_stop);
+    d.advance(at(150.0), 55.0);
+    assert_eq!(d.next_stop, 2, "past the object: on to the next stop");
+    // standing at the platform with the doors open
+    d.step_back(at(150.0), 60.0);
+    assert_eq!((d.next_stop, d.at_stop), (1, true), "back to the station");
+    d.advance(at(170.0), 70.0);
+    assert_eq!(d.next_stop, 1, "still where it stood");
+    let served = d.advance(at(190.0), 75.0);
+    assert_eq!(d.next_stop, 2);
+    assert!(served.is_some(), "the station counts as served");
+    // a stop the doors were opened at is not gone back to
+    d.step_back(at(190.0), 80.0);
+    assert_eq!(d.next_stop, 2);
+    // nor one far behind, or with the next stop nearer
+    let trip = planned(0.0, &[(0.0, 0.0, 0.0), (100.0, 60.0, 60.0), (300.0, 120.0, 120.0)]);
+    let mut d = PlayerDuty::new("132".into(), "1".into(), vec![trip], 0, 0, true);
+    d.placed = true;
+    d.next_stop = 1;
+    d.advance(at(100.0), 50.0);
+    d.advance(at(150.0), 55.0);
+    d.step_back(at(260.0), 60.0);
+    assert_eq!(d.next_stop, 2, "nearer to the next stop: no step back");
 }
