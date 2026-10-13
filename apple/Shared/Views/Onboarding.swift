@@ -76,11 +76,13 @@ struct Onboarding: View {
 
     private var welcome: some View {
         VStack(spacing: 22) {
-            Image(systemName: "bus.fill")
-                .font(.system(size: 46, weight: .semibold))
-                .foregroundStyle(Theme.accentText)
-                .frame(width: 96, height: 96)
-                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            Image("AppLogo")
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 120, height: 120)
+                .clipShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
+                .shadow(color: .black.opacity(0.4), radius: 16, y: 8)
+                .accessibilityLabel("openOMSI")
                 .padding(.top, 24)
             VStack(spacing: 10) {
                 Text("Welcome to openOMSI").font(.inter(28, .bold)).multilineTextAlignment(.center)
