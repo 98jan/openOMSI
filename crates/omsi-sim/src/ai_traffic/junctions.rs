@@ -939,8 +939,14 @@ impl TrafficSim {
                 }
                 let oncoming = crate::traffic::wrap_deg(self.net.lanes[m].start_heading() - self.net.lanes[l].start_heading()).abs() > 135.0;
                 let must_yield = self.net.must_yield(l, m);
-                // signs decide between the two (a priority road, a ring)
-                let signed = self.net.signed(l, m);
+                // signs decide between the two (a priority road, a ring) - and so does the
+                // turn across the oncoming traffic, which gives way to it whoever decided
+                // first (Omsi.exe FUN_00716970: a vehicle turning left yields to one that does
+                // not, whatever was reserved). Decided by being first, a turn claimed from far
+                // off held the oncoming queue at its green, half the cars of that approach
+                // went through (#2431).
+                let across = if self.net.left_hand { 2 } else { 1 };
+                let signed = self.net.signed(l, m) || (oncoming && (self.net.lanes[l].turn == across) != (self.net.lanes[m].turn == across));
                 // this car's front to the meeting place
                 let my_room = point - c.before - st.front;
                 // A driver who gives way by a sign and can still stop has not taken the way
