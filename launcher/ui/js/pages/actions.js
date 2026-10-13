@@ -27,8 +27,11 @@ export const KNOWN = {
   kw_wipermode_up: 'Wipers (next mode)',
   cp_batterietrennschalter_toggle: 'Battery / ignition',
   automatic_D: 'Gear D',
-  automatic_N: 'Gear N',
-  automatic_R: 'Gear R',
+  // (OMSI 2 has R and N twice, for each gearbox: said which, #1691)
+  automatic_N: 'Gear N (automatic gearbox)',
+  automatic_R: 'Gear R (automatic gearbox)',
+  kw_s_N: 'Gear N (manual gearbox)',
+  kw_s_R: 'Gear R (manual gearbox)',
   bus_doorfront0: 'Front door (leaf 1)',
   bus_doorfront1: 'Front door (leaf 2)',
   bus_dooraft: 'Release rear doors',
