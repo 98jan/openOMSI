@@ -111,11 +111,17 @@ pub(super) fn humans(cx: HumansCx, dt: f32) {
         cx.gfx.renderer.as_ref(),
         cx.gfx.scene.as_mut(),
     ) {
-        let center = cx.player.player
-            .as_ref()
-            .map(|p| p.vehicle.position)
-            .or(cx.view.camera.as_ref().map(|c| c.position))
-            .unwrap_or(DVec3::ZERO);
+        // (where the camera is, as Omsi.exe fills the stops round the tile it shows - at the
+        // bus's height, not up in the sky of the map view. Kept at the player's bus, the stops
+        // an AI bus was watched at from the free camera stood empty: nobody got on or off
+        // after its first stop, #2319)
+        let bus = cx.player.player.as_ref().map(|p| p.vehicle.position);
+        let center = match (cx.view.camera.as_ref().map(|c| c.position), bus) {
+            (Some(c), Some(b)) => DVec3::new(c.x, c.y, b.z),
+            (Some(c), None) => c,
+            (None, Some(b)) => b,
+            (None, None) => DVec3::ZERO,
+        };
         // (the trips due at the stops soon: once a game minute, #1415)
         if let (Some(s), Some(t)) = (cx.traffic.schedule.as_ref(), cx.traffic.traffic.as_ref()) {
             if (t.day_time - h.due_at).abs() >= 60.0 {
