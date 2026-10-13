@@ -247,8 +247,11 @@ impl App {
                     (t, t)
                 }
             };
-            // (on foot the map follows the walker, not the bus left standing)
+            // (on foot the map follows the walker, not the bus left standing - but on a duty it
+            // stays the bus's: the route and the stops are the bus's, and walking round the bus
+            // standing at a stop recalculated the route and moved the stops on, #2426)
             let (at, heading) = match (self.session.on_foot.as_ref(), p) {
+                (Some(_), Some(p)) if self.session.duty.is_some() => (p.vehicle.position, p.vehicle.heading),
                 (Some(f), _) => (f.pos, f.heading),
                 (None, Some(p)) => (p.vehicle.position, p.vehicle.heading),
                 (None, None) => return,
