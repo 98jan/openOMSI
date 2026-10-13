@@ -337,6 +337,13 @@ pub(crate) struct PersonView {
     pub(super) ankles: [Vec3; 2],
     /// The earlier IK/foot-planted animation, allocated only for the enhanced poses.
     pub(super) procedural: Option<omsi_sim::human::Pose>,
+    /// A jump of the person's place within a bus (onto the seat, as Omsi.exe puts them
+    /// there) drawn as a glide instead: what is left of it in the bus's frame, the same in
+    /// the world for the drawing, and the place last frame (the bus, where).
+    pub(super) glide: glam::Vec3,
+    pub(super) glide_world: DVec3,
+    pub(super) last_place: Option<(u64, DVec3)>,
+    pub(super) last_world: DVec3,
 }
 
 impl PeopleView {
@@ -450,14 +457,14 @@ impl PeopleView {
                 }
                 st.skinned = true;
                 st.since_posed = 0;
-                st.posed_at = (p.position, p.heading);
+                st.posed_at = (p.position + st.glide_world, p.heading);
             }
             // riders go with their bus; on the ground a mesh not posed this frame goes on
             // with the body too (left where it was posed, a far walker moved in jerks -
             // its feet slide a few centimetres instead, which nobody sees at that distance)
             let (at, heading) = match p.place {
                 Place::Ground if go => st.posed_at,
-                _ => (p.position, p.heading),
+                _ => (p.position + st.glide_world, p.heading),
             };
             // (riders with the tilt of their floor)
             let tilt = if matches!(p.place, Place::Bus(..)) { p.tilt } else { Mat4::IDENTITY };

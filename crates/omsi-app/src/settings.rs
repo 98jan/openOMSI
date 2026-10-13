@@ -770,7 +770,7 @@ impl Settings {
         // waiting for a driver who did not know he had to sell them a ticket.
         // Files older than version 3 say `passenger_animation=original` because that was the
         // default, not because anybody chose it: the people's own poses are the default now.
-        if version < 3 && s.passenger_animation == "original" {
+        if version < SETTINGS_VERSION && s.passenger_animation == "original" {
             log::info!("settings: passenger_animation=original from an old settings file taken as the people's own poses (choose Original OMSI again to keep it)");
             s.passenger_animation = "enhanced".into();
         }

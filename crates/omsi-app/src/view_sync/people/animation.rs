@@ -40,6 +40,46 @@ pub(super) fn bones(p: &PersonFrame, st: &mut PersonView, dt: f32, world: &World
         Place::Bus(id, _) => buses.get(&id).copied(),
         Place::Ground => None,
     };
+    // The place jumps within the bus where Omsi.exe puts a passenger straight onto the seat
+    // from the aisle's nearest point (0.7 - 1.9 m): drawn as a glide at a walking pace, the
+    // feet stepping along under the body, while the pose sits down - the person popped onto
+    // the seat before.
+    let origin = {
+        // (in f64: the ground's places are world coordinates, far too large for an f32)
+        // (on the ground as well: where the bus comes and the waiting take their way to the
+        // door, their places jump a little; and from the ground into the bus, compared in
+        // the world where they were drawn last - the bus stands then)
+        // (a jump is the place's own, frame to frame: walking moves it by a few centimetres;
+        // across the floor only - its height the floor and the seat's anchor decide, which
+        // the pose follows by itself)
+        match st.last_place {
+            Some((f, last)) if f == frame => {
+                let jump = ((last - origin).as_vec3()) * glam::Vec3::new(1.0, 1.0, 0.0);
+                if (0.1..3.0).contains(&jump.length()) {
+                    st.glide += jump;
+                }
+            }
+            Some(_) => {
+                let drawn = match bus {
+                    Some(b) => b.to_local(st.last_world) - origin.as_vec3(),
+                    None => (st.last_world - origin).as_vec3(),
+                } * glam::Vec3::new(1.0, 1.0, 0.0);
+                st.glide = if drawn.length() < 3.0 { drawn } else { glam::Vec3::ZERO };
+            }
+            None => st.glide = glam::Vec3::ZERO,
+        }
+        st.last_place = Some((frame, origin));
+        let len = st.glide.length();
+        if len > 0.0 {
+            st.glide *= ((len - 1.2 * dt) / len).max(0.0);
+        }
+        st.glide_world = match bus {
+            Some(b) => b.world(origin.as_vec3() + st.glide) - b.world(origin.as_vec3()),
+            None => st.glide.as_dvec3(),
+        };
+        st.last_world = p.position + st.glide_world;
+        origin + st.glide.as_dvec3()
+    };
     // A seated renderer anchor is [passpos] - human [seatheight], not the floor.
     let level = match seated_level {
         Some(lift) => origin.z + lift,
