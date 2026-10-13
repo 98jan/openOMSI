@@ -321,6 +321,20 @@ function Keyboard() {
 function CaptureDialog({ label, action, current, list, skip, onKey, onClose }) {
   const [pending, setPending] = useState(null);
   useEffect(() => {
+    // a Shift, Ctrl or Alt pressed and let go with no other key between is the key itself
+    // (#2003: a lone modifier could not be bound, as OMSI 2 allows)
+    let lone = null;
+    const take = (code, chord) => {
+      const scan = SCAN_OF[code];
+      if (!scan) {
+        toast(t('{code} has no DirectInput scan code the game understands.', { code }), 'error');
+        return;
+      }
+      const taken = list.filter((b, i) => i !== skip && b.scan_code === scan && chordOf(b.modifier) === chord && b.action !== action);
+      if (taken.length) setPending({ scan, chord, taken });
+      else onKey(scan, chord);
+    };
+    const chordOfEvent = (e) => (e.shiftKey ? KEY_SHIFT : 0) | (e.ctrlKey ? KEY_CTRL : 0) | (e.altKey ? KEY_ALT : 0);
     const down = (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -331,20 +345,34 @@ function CaptureDialog({ label, action, current, list, skip, onKey, onClose }) {
         else onClose();
         return;
       }
-      if (MODIFIER_CODES.has(e.code)) return;
-      const scan = SCAN_OF[e.code];
-      if (!scan) {
+      if (MODIFIER_CODES.has(e.code)) {
+        lone = e.code;
+        return;
+      }
+      lone = null;
+      if (!SCAN_OF[e.code]) {
         toast(t('{code} has no DirectInput scan code the game understands.', { code: e.code || e.key }), 'error');
         return;
       }
-      const chord = (e.shiftKey ? KEY_SHIFT : 0) | (e.ctrlKey ? KEY_CTRL : 0) | (e.altKey ? KEY_ALT : 0);
-      const taken = list.filter((b, i) => i !== skip && b.scan_code === scan && chordOf(b.modifier) === chord && b.action !== action);
-      if (taken.length) setPending({ scan, chord, taken });
-      else onKey(scan, chord);
+      take(e.code, chordOfEvent(e));
+    };
+    const up = (e) => {
+      if (!MODIFIER_CODES.has(e.code)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (lone !== e.code) return;
+      lone = null;
+      // (the modifiers still held around it are its combination)
+      const own = e.code.startsWith('Shift') ? KEY_SHIFT : e.code.startsWith('Control') ? KEY_CTRL : e.code.startsWith('Alt') ? KEY_ALT : 0;
+      take(e.code, chordOfEvent(e) & ~own);
     };
     // (before the dialog's own Escape, and before any button the key would press)
     window.addEventListener('keydown', down, true);
-    return () => window.removeEventListener('keydown', down, true);
+    window.addEventListener('keyup', up, true);
+    return () => {
+      window.removeEventListener('keydown', down, true);
+      window.removeEventListener('keyup', up, true);
+    };
   }, [list, skip, action, current, onKey, onClose]);
 
   return html`<${Dialog}
@@ -366,7 +394,7 @@ function CaptureDialog({ label, action, current, list, skip, onKey, onClose }) {
         ${t('This key is already used by: {actions}', { actions: pending.taken.map((b) => actionText(b.action)).join(', ') })}
         <div class="muted small" style="margin-top:4px">${t('Both will react to it. Press another key, or use it anyway.')}</div>
       </${Notice}></div>`}
-      <div class="muted small">${t('Hold Shift, Ctrl or Alt for a combination. Escape cancels; Backspace or Delete clears the key.')}</div>
+      <div class="muted small">${t('Hold Shift, Ctrl or Alt for a combination, or press one alone to bind it. Escape cancels; Backspace or Delete clears the key.')}</div>
     </div>
   </${Dialog}>`;
 }
