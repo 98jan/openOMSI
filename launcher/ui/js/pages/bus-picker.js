@@ -98,7 +98,7 @@ export function BusPicker({ onClose }) {
             const has = f.versions.some((x) => x.v.file === sel);
             const row = (x, sub, indent) => html`<div class=${'list-item' + (x.file === sel ? ' on' : '')} style=${indent ? 'padding-left:30px' : ''} onClick=${() => (setSel(x.file), setPaint(x.file === s.choice.bus ? s.choice.paint : ''))} onDblClick=${() => (setSel(x.file), setTimeout(take))}>
               <div class="grow" style="min-width:0">
-                <div class="title ellipsis" title=${sub}>${sub}</div>
+                <div class="title" style="overflow-wrap:anywhere" title=${sub}>${sub}</div>
                 <div class="sub ellipsis">${[indent ? null : x.manufacturer, x.paints.length ? t('{n} paints', { n: x.paints.length + 1 }) : null].filter(Boolean).join(' - ')}</div>
               </div>
               ${x.missing_packs?.length > 0 && html`<span title=${t('Parts missing')}><${Icon} name="alert" size=${16} /></span>`}
@@ -106,10 +106,11 @@ export function BusPicker({ onClose }) {
                 <${Icon} name="star" fill=${s.favourites.includes(favKey(x.file))} />
               </button>
             </div>`;
-            if (one) return row(f.versions[0].v, f.versions[0].v.name, false);
+            // (the type's name: the maker is on the line under it, #2355)
+            if (one) return row(f.versions[0].v, f.versions[0].v.type_name || f.versions[0].v.name, false);
             return html`<div class=${'list-item' + (has && !shown ? ' on' : '')} onClick=${() => toggle(f.key)}>
                 <div class="grow" style="min-width:0">
-                  <div class="title ellipsis" title=${f.name}>${f.name}</div>
+                  <div class="title" style="overflow-wrap:anywhere" title=${f.name}>${f.name}</div>
                   <div class="sub ellipsis">${[f.maker, t('{n} versions', { n: f.versions.length })].filter(Boolean).join(' - ')}</div>
                 </div>
                 <${Icon} name=${shown ? 'down' : 'right'} size=${18} />
