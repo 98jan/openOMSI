@@ -258,10 +258,36 @@ pub fn content_path(rel: &str) -> Result<PathBuf> {
     resolve_content(rel)
 }
 
-/// The depot file a bus uses on `map` on `date`: the one the map's own buses use that day
-/// (the chrono scenarios change it: Berlin's 1994 depot has line 137 where 1986's had 92),
-/// one of the bus's carrying the line driven, the bus's own of that name or one named like
-/// the map, else the bus's first (#896).
+/// The buses the map's ailists.cfg gives a tour's AI group on `date` (#1886: to drive a
+/// model the AI drives on it): of a depot group each vehicle type with a bus that runs
+/// that day - the file, the first such bus's repaint and fleet number -, else the group's
+/// vehicles, the most likely first. (file, paint, number)
+pub fn tour_buses(map: &str, group: &str, date: &str) -> Vec<(String, String, String)> {
+    let want = group.trim();
+    let (Ok(dir), Some(day)) = (resolve_content(map), omsi_map::ailists::date_code(date)) else { return Vec::new() };
+    let Some(dir) = dir.parent().filter(|_| !want.is_empty()) else { return Vec::new() };
+    let lists = omsi_map::ailists::ailists_with_chrono(dir, &omsi_map::ailists::active_chrono_dirs(dir, day));
+    let Some(g) = lists.groups.iter().find(|g| g.name.trim().eq_ignore_ascii_case(want)) else { return Vec::new() };
+    let file = |f: &str| f.trim().replace('\\', "/");
+    let mut depot: Vec<(String, String, String)> = g
+        .typgroups
+        .iter()
+        .filter_map(|t| t.entries.iter().find(|e| e.from.is_none_or(|f| f <= day) && e.to.is_none_or(|to| day <= to)).map(|e| (file(&t.file), e.paint.trim().to_string(), e.number.trim().to_string())))
+        .collect();
+    // (a type listed in several groups of the depot: once)
+    let mut seen = std::collections::HashSet::new();
+    depot.retain(|(f, _, _)| seen.insert(f.to_ascii_lowercase()));
+    if !depot.is_empty() {
+        return depot;
+    }
+    let mut v: Vec<_> = g.vehicles.iter().collect();
+    v.sort_by(|a, b| b.weight.total_cmp(&a.weight));
+    v.into_iter().map(|v| (file(&v.file), String::new(), v.number.clone().unwrap_or_default().trim().to_string())).collect()
+}
+
+/// The depot file a bus uses on `map` on `date`: the map's own buses' of that day (chrono
+/// scenarios move it - Berlin's 1994 depot has 137, 1986's 92), one of the bus's carrying
+/// the line driven, its own of that name or named like the map, else the first (#896).
 pub fn default_hof(map: Option<&MapInfo>, bus: Option<&VehicleInfo>, date: &str, line: Option<&str>) -> String {
     let on_date = map.and_then(|m| {
         let dir = resolve_content(&m.file).ok()?;
@@ -345,9 +371,8 @@ pub fn content_dir() -> Option<PathBuf> {
 }
 
 /// Tell the OMSI readers about the content folder, the archives used in place in its
-/// `Archives` folder and the OMSI folder (in that order, as the game has them), so that a
-/// path inside one is also looked for in the others (a repaint's `.cti` in the content
-/// folder's copy of a stock bus folder, a map inside an archive).
+/// `Archives` folder and the OMSI folder (in that order, as the game has them), so a path
+/// inside one is also looked for in the others (a repaint's `.cti`, a map in an archive).
 fn register_roots(content: &Path) {
     static DONE: std::sync::Once = std::sync::Once::new();
     let content = content.to_path_buf();
@@ -1947,12 +1972,9 @@ pub fn graphics_mode(v: &str) -> &'static str {
 /// The Graphics settings' quality presets - Low, Medium, High and Ultra - for the graphics
 /// mode chosen (`graphics_mode`), shared by the launcher and the game's options. A preset
 /// tunes that mode and keeps it: it never switches Enhanced or ray tracing on or off.
-/// Vanilla's leave out what OMSI 2 does not draw (sun shadows, ambient occlusion, detail
-/// texturing); the enhanced modes, whose pixels cost more, take fewer MSAA samples and a
-/// smaller render scale at the lower levels, and Enhanced+ (which traces its shadows,
-/// occlusion and reflections) smaller shadow maps and mirrors too. High is the defaults
-/// of a computer in Vanilla+. The texture memory stays automatic: the renderer sizes it
-/// to the device (a fixed 800 MB blurred a large card's textures and overfilled a phone).
+/// Vanilla's leave out what OMSI 2 does not draw; High is the defaults of Vanilla+; the
+/// enhanced modes take fewer MSAA samples and a smaller render scale below High, and
+/// Enhanced+ smaller shadow maps and mirrors too. The texture memory stays automatic.
 pub fn graphics_presets_for(mode: &str) -> [(&'static str, Value); 4] {
     let mode = graphics_mode(mode);
     let classic = mode == "vanilla";
@@ -2079,7 +2101,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
         v[k] = d;
     }
     // openOMSI's own: what passengers say, OMSI's route arrows, getting up from the seat
-    for (k, d) in [("pax_voices", json!("all")), ("nav_arrows", json!(false)), ("nav_ai", json!(true)), ("get_up", json!(false)), ("time_speed", json!("1")), ("time_sync", json!(false)), ("metar_sync", json!(false)), ("metar_station", json!("")), ("machine_translation", json!(false)), ("shadow_casters", json!("all")), ("shadow_blobs", json!(true)), ("reflections", json!(true)), ("mouse_sens", json!(1.0)), ("graphics_api", json!("auto")), ("ctrl_off", json!("")), ("steering_linear", json!(false)), ("old_steering", json!(false)), ("red_steer_spd", json!(false)), ("ff_invert", json!(false)), ("ff_enabled", json!(true)), ("brake_hold", json!(true)), ("auto_clutch", json!(true)), ("momentary_gears", json!(false)), ("auto_shift", json!(false)), ("wheel_range", json!(900.0)), ("wheel_lock", json!(0.0)), ("fov", json!(0.0)), ("camera_collision", json!(true)), ("right_stick_look", json!(true)), ("steer_look", json!(false)), ("pedal_throttle", json!(1.0)), ("pedal_brake", json!(1.0)), ("seat_x", json!(0.0)), ("seat_y", json!(0.0)), ("seat_z", json!(0.0)), ("seat_pitch_deg", json!(0.0)), ("head_tracking", json!(false)), ("head_tracking_yaw_sens", json!(100.0)), ("head_tracking_pitch_sens", json!(100.0)), ("head_tracking_roll_sens", json!(100.0)), ("head_tracking_x_sens", json!(100.0)), ("head_tracking_y_sens", json!(100.0)), ("head_tracking_z_sens", json!(100.0)), ("head_tracking_invert_yaw", json!(false)), ("head_tracking_invert_pitch", json!(false)), ("head_tracking_invert_roll", json!(false)), ("head_tracking_invert_x", json!(false)), ("head_tracking_invert_y", json!(false)), ("head_tracking_invert_z", json!(false)), ("led_glow", json!(6)), ("led_mips", json!(1.3)), ("night_brightness", json!(0.0)), ("ui_scale", json!(1.0)), ("ui_scale_window", json!(true)), ("chat_size", json!(1.0)), ("notes", json!(true)), ("mouse_steering", json!(false)), ("mouse_right_off", json!(false)), ("mouse_smooth", json!(true)), ("mouse_hold", json!(true)), ("blinker_cancel", json!(true)), ("ff_road_vib", json!(1.0)), ("ff_engine_vib", json!(1.0)), ("ff_fade", json!(0.28))] {
+    for (k, d) in [("pax_voices", json!("all")), ("nav_arrows", json!(false)), ("nav_ai", json!(true)), ("get_up", json!(false)), ("time_speed", json!("1")), ("time_sync", json!(false)), ("metar_sync", json!(false)), ("metar_station", json!("")), ("machine_translation", json!(false)), ("shadow_casters", json!("all")), ("shadow_blobs", json!(true)), ("reflections", json!(true)), ("mouse_sens", json!(1.0)), ("graphics_api", json!("auto")), ("ctrl_off", json!("")), ("steering_linear", json!(false)), ("old_steering", json!(false)), ("red_steer_spd", json!(false)), ("ff_invert", json!(false)), ("ff_enabled", json!(true)), ("brake_hold", json!(true)), ("auto_clutch", json!(true)), ("momentary_gears", json!(false)), ("auto_shift", json!(false)), ("wheel_range", json!(900.0)), ("wheel_lock", json!(0.0)), ("fov", json!(0.0)), ("camera_collision", json!(true)), ("right_stick_look", json!(true)), ("steer_look", json!(false)), ("pedal_throttle", json!(1.0)), ("pedal_brake", json!(1.0)), ("seat_x", json!(0.0)), ("seat_y", json!(0.0)), ("seat_z", json!(0.0)), ("seat_pitch_deg", json!(0.0)), ("head_tracking", json!(false)), ("head_tracking_yaw_sens", json!(100.0)), ("head_tracking_pitch_sens", json!(100.0)), ("head_tracking_roll_sens", json!(100.0)), ("head_tracking_x_sens", json!(100.0)), ("head_tracking_y_sens", json!(100.0)), ("head_tracking_z_sens", json!(100.0)), ("head_tracking_invert_yaw", json!(false)), ("head_tracking_invert_pitch", json!(false)), ("head_tracking_invert_roll", json!(false)), ("head_tracking_invert_x", json!(false)), ("head_tracking_invert_y", json!(false)), ("head_tracking_invert_z", json!(false)), ("led_glow", json!(6)), ("led_mips", json!(1.3)), ("night_brightness", json!(0.0)), ("ui_scale", json!(1.0)), ("ui_scale_window", json!(true)), ("chat_size", json!(1.0)), ("notes", json!(true)), ("mouse_steering", json!(false)), ("mouse_right_off", json!(false)), ("mouse_smooth", json!(true)), ("mouse_hold", json!(true)), ("mouse_pedals", json!(true)), ("key_pedal_speed", json!(1.0)), ("blinker_cancel", json!(true)), ("ff_road_vib", json!(1.0)), ("ff_engine_vib", json!(1.0)), ("ff_fade", json!(0.28))] {
         v[k] = d;
     }
     v["steer_look_angle"] = json!(30.0);
@@ -2091,7 +2113,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
     v["pad_deadzone"] = json!(0.08);
     v["pad_type"] = json!("auto");
     v["pad_buttons"] = json!(true);
-    v["arrows_switch_cams"] = json!(false);
+    v["arrows_switch_cams"] = json!(true);
     v["steer_look_response"] = json!(0.25);
     v["head_idle"] = json!(0.0);
     v["head_idle_pace"] = json!(1.0);
@@ -2154,6 +2176,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
             "shadow_casters" => v[&k] = json!(if val.eq_ignore_ascii_case("omsi") { "omsi" } else { "all" }),
             "ctrl_deadzone" => v[&k] = json!(val.parse::<f64>().unwrap_or(0.0).clamp(0.0, 0.3)),
             "mouse_sens" => v[&k] = json!(val.parse::<f64>().unwrap_or(1.0).clamp(0.1, 3.0)),
+            "key_pedal_speed" => v[&k] = json!(val.parse::<f64>().unwrap_or(1.0).clamp(0.25, 2.0)),
             "mouse_pedal_strength" => {
                 v[&k] = json!(
                     val.parse::<f64>()
@@ -2190,7 +2213,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
             "seat_x" | "seat_y" | "seat_z" => v[&k] = json!(val.parse::<f64>().map(|x| x.clamp(-1.5, 1.5)).unwrap_or(0.0)),
             "seat_pitch_deg" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).unwrap_or(0.0).clamp(-45.0, 45.0)),
             "head_tracking_yaw_sens" | "head_tracking_pitch_sens" | "head_tracking_roll_sens" | "head_tracking_x_sens" | "head_tracking_y_sens" | "head_tracking_z_sens" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.0, 100.0)).unwrap_or(100.0)),
-            "nav_arrows" | "nav_ai" | "get_up" | "time_sync" | "metar_sync" | "ui_scale_window" | "notes" | "machine_translation" | "update_check" | "update_auto" | "update_notify" | "presence" | "reflections" | "steering_linear" | "old_steering" | "red_steer_spd" | "ff_invert" | "ff_enabled" | "brake_hold" | "auto_clutch" | "momentary_gears" | "auto_shift" | "mouse_steering" | "mouse_right_off" | "mouse_smooth" | "mouse_hold" | "blinker_cancel" => v[&k] = json!(b(val)),
+            "nav_arrows" | "nav_ai" | "get_up" | "time_sync" | "metar_sync" | "ui_scale_window" | "notes" | "machine_translation" | "update_check" | "update_auto" | "update_notify" | "presence" | "reflections" | "steering_linear" | "old_steering" | "red_steer_spd" | "ff_invert" | "ff_enabled" | "brake_hold" | "auto_clutch" | "momentary_gears" | "auto_shift" | "mouse_steering" | "mouse_right_off" | "mouse_smooth" | "mouse_hold" | "mouse_pedals" | "blinker_cancel" => v[&k] = json!(b(val)),
             "info_bar" => v[&k] = json!(b(val)),
             "perf_overlay" => v[&k] = json!(perf_overlay_mode(val)),
             "windy_trees" | "mirror_hud_every_frame" | "ai_wait_timed_stops_only" | "ambient" => v[&k] = json!(b(val)),
@@ -2593,7 +2616,9 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("pad_steer_speed={}\npad_deadzone={}\npad_buttons={}\n", f("pad_steer_speed", 2.0).clamp(0.8, 5.0), f("pad_deadzone", 0.08).clamp(0.0, 0.4), b("pad_buttons", true)));
     text.push_str(&format!("pad_type={}\n", match v.get("pad_type").and_then(|x| x.as_str()).unwrap_or("auto") { t @ ("xbox" | "ps4" | "ps5") => t, _ => "auto" }));
     text.push_str(&format!("touch_door_mode={}\n", if v.get("touch_door_mode").and_then(|x| x.as_str()) == Some("direct") { "direct" } else { "standard" }));
-    text.push_str(&format!("arrows_switch_cams={}\n", b("arrows_switch_cams", false)));
+    text.push_str(&format!("arrows_switch_cams={}\n", b("arrows_switch_cams", true)));
+    text.push_str(&format!("mouse_pedals={}\n", b("mouse_pedals", true)));
+    text.push_str(&format!("key_pedal_speed={}\n", f("key_pedal_speed", 1.0).clamp(0.25, 2.0)));
     text.push_str(&format!("resolution={}\n", resolution_text(v.get("resolution").and_then(|x| x.as_str()).unwrap_or("auto"))));
     text.push_str(&format!("gpu_texture_compression={}\n", b("gpu_texture_compression", true)));
     text.push_str(&format!("cloud_quality={}\n", cloud_quality(v.get("cloud_quality").and_then(|x| x.as_str()).unwrap_or("high"))));

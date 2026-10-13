@@ -699,7 +699,8 @@ impl App {
     /// The keys on foot (and Ctrl+Shift+G at the wheel); true when the key was taken.
     pub(crate) fn foot_key(&mut self, code: KeyCode, pressed: bool, repeat: bool, ctrl: bool, shift: bool) -> bool {
         if self.session.on_foot.is_none() {
-            if pressed && !repeat && code == KeyCode::KeyG && ctrl && shift && self.player.is_some() {
+            // (not where the player bound Ctrl+Shift+G to something, #2478)
+            if pressed && !repeat && code == KeyCode::KeyG && ctrl && shift && self.player.is_some() && !self.chord_bound(code, shift, ctrl, false) {
                 self.get_up();
                 return true;
             }
@@ -995,7 +996,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
     let alt = cx.input.keys.contains(&KeyCode::AltLeft) || cx.input.keys.contains(&KeyCode::AltRight);
     let modifier = omsi_content::input::chord(shift, ctrl, alt);
     let key = |k: KeyCode| cx.input.keys.contains(&k) && !omsi_input::keys::dik_code(k).is_some_and(|scan|
-        cx.input.game_keys.iter().any(|b| b.action == "pax_door_request" && b.scan_code == scan && b.matches(modifier)));
+        cx.input.game_keys.iter().any(|b| b.action == "pax_door_request" && crate::input_script::binding_is_key(b, k, scan, modifier & !omsi_input::keys::own_modifier_bit(k))));
     if key(KeyCode::ArrowLeft) {
         f.yaw -= 90.0 * dt;
     }
