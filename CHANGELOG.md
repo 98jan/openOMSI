@@ -4,6 +4,17 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.45 - 2026-10-13
+
+### New
+- **An `[htmltexture]` page that says `lit` is a surface on a bus too**, not only on a scenery object: it takes the sun, the street lamps and the fog instead of glowing at its own brightness. With a dot mask and a white light map such a page is an LED matrix whose dots burn and glow in Enhanced like the Krueger and K++ panels. Pages without the word look exactly as before ([#2460](https://github.com/openOMSI-org/openOMSI/pull/2460), by @NACHN).
+- **Traditional Chinese** for the rest of the launcher and the pause menu: Drive, Settings, Controls, Profile, the head tracking and ambience settings, the controller descriptions and the status messages ([#2459](https://github.com/openOMSI-org/openOMSI/pull/2459), by @shamough1792). The launcher's "Light" theme is now named as a theme in every language, no longer as the light of the photo mode.
+
+### Fixes
+- **The driver no longer flickers in front of the cab view while the bus drives fast** (from about third gear, sooner at low frame rates such as on phones). The figure is still seen in the mirrors, and in the photo mode once its camera leaves the driver's eyes ([#2449](https://github.com/openOMSI-org/openOMSI/issues/2449), [#2461](https://github.com/openOMSI-org/openOMSI/pull/2461), by @thibautgnt).
+- **AI buses sound like they pull away and brake.** Their scripts now get the throttle and brake pedals, so engines rev up under load and brake sounds play, instead of idling all the way (Hamburg's HHA buses and others) ([#2456](https://github.com/openOMSI-org/openOMSI/pull/2456), by @SpicySpaceman).
+- **On foot, getting up under a building** (an indoor terminus, a canopy, a covered platform) leaves you on the floor under the roof instead of on top of the building ([#2201](https://github.com/openOMSI-org/openOMSI/pull/2201), by @KYChung1287).
+
 ## 0.2.44 - 2026-10-13
 
 ### New

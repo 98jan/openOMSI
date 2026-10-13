@@ -18,6 +18,9 @@ _version: 2
   zh-tw: "Z 軸靈敏度（前／後）"
 "Light theme":
   zh-tw: "淺色"
+  de: "Hell"
+  ru: "Светлая"
+  sv: "Ljust"
 
 "Current time":
   de: "Aktuelle Uhrzeit"
