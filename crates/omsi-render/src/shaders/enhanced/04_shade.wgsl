@@ -435,6 +435,9 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             // compare says enough (the soft filter over a cab's windscreen, doors and side
             // windows was a millisecond of the frame)
             shadow = sun_shadow_hard(in.world, n);
+            if (camera.clouds.w > 1.5) {
+                shadow = shadow * sun_shadow_far(in.world, n);
+            }
         } else if (nl > 0.0 || thin) {
             // Enhanced+: the traced shadow where there is one for this surface
             // (whose cut-out leaves and fences the shadow map holds alone: see `render_inner`)
@@ -442,6 +445,8 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             shadow = sun_shadow_soft(in.world, n, thin);
             if (traced.w > 0.5 && traced.z >= 0.0) {
                 shadow = shadow * traced.z;
+            } else if (camera.clouds.w > 1.5 && traced.w < 0.5) {
+                shadow = shadow * sun_shadow_far(in.world, n);
             }
         }
         let e_sun = enh.sun.rgb * shadow;

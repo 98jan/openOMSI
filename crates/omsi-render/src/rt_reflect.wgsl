@@ -118,19 +118,30 @@ fn ggx_normal(n: vec3<f32>, rough: f32, u: vec2<f32>) -> vec3<f32> {
     return normalize(basis(n) * vec3<f32>(st * cos(phi), st * sin(phi), ct));
 }
 
-// Where a point is on the screen: x 1 there and seen (the picture's colour is its own),
-// 2 there but the picture shows something further (a gap: the ray went through a cut-out
-// texel), 3 there behind something nearer, 0 off the screen; yz its place.
-fn on_screen(pt: vec3<f32>) -> vec3<f32> {
+// Where a point a ray along `d` meets is on the screen: x 1 there and seen (the picture's
+// colour is its own), 2 there but the picture shows something further (a gap: the ray went
+// through a cut-out texel), 3 there behind something nearer - or the picture shows the other
+// face of it - 0 off the screen; yz its place.
+fn on_screen(pt: vec3<f32>, d: vec3<f32>) -> vec3<f32> {
     let c = p.view_proj * vec4<f32>(pt, 1.0);
     if (c.w > 0.05) {
         let uv = vec2<f32>(c.x / c.w * 0.5 + 0.5, 0.5 - c.y / c.w * 0.5);
         if (all(uv > vec2<f32>(0.002)) && all(uv < vec2<f32>(0.998))) {
             let q = vec2<i32>(uv * p.size.xy);
-            let d = textureLoad(t_depth, q, 0);
-            let seen = select(1e9, linear_depth(d), d > 0.0);
-            let tol = 0.04 * c.w + 0.15;
-            return vec3<f32>(select(select(3.0, 2.0, seen > c.w + tol), 1.0, abs(seen - c.w) < tol), uv);
+            let dq = textureLoad(t_depth, q, 0);
+            let seen = select(1e9, linear_depth(dq), dq > 0.0);
+            let tol = 0.02 * c.w + 0.08;
+            if (abs(seen - c.w) < tol) {
+                // (the picture shows the face turned to the camera: a ray that met the
+                // other one - a car's reflection that went in through the bus's window and
+                // met the back of a seat, or the bus's side from outside next to the seat
+                // the camera sees from inside - is not lit as the picture there is; taken
+                // as it was, every car beside the bus mirrored its red seats)
+                let qc = (vec2<f32>(q) + vec2<f32>(0.5)) * p.size.zw;
+                let ns = depth_normal(q, world_pos(qc, dq), dq);
+                return vec3<f32>(select(3.0, 1.0, dot(ns, d) < 0.0), uv);
+            }
+            return vec3<f32>(select(3.0, 2.0, seen > c.w + tol), uv);
         }
     }
     return vec3<f32>(0.0);
@@ -254,6 +265,18 @@ fn cs_reflect(@builtin(global_invocation_id) gid: vec3<u32>) {
         // its texels are: where it shows a gap there, the ray goes on)
         var start = 0.0;
         l = sky_probe(d, rough);
+        // A pane first: what it mirrors itself (glass at the slant a reflection meets it
+        // takes about a tenth) and the inside behind it, seen through its tint. The inside
+        // is lit only through the panes as well: where the picture does not show it, the
+        // mean colour lit as if outdoors is dimmed by the tint once more.
+        var through = 1.0;
+        var pane = vec3<f32>(0.0);
+        let gh = ray_hit(RT_FORCE_OPAQUE, MASK_SEEN | MASK_GLASS_SEEN, 0.0, 400.0, o, d);
+        if (gh.kind != RAY_QUERY_INTERSECTION_NONE && (records[gh.instance_custom_data + gh.geometry_index].flags & 64u) != 0u) {
+            pane = sky_probe(d, rough) * 0.1;
+            through = 0.45;
+            start = gh.t + 0.01;
+        }
         for (var k = 0; k < 4; k++) {
             let ch = ray_hit(RT_FORCE_OPAQUE, MASK_SEEN, start, 400.0, o, d);
             if (ch.kind == RAY_QUERY_INTERSECTION_NONE) {
@@ -264,7 +287,7 @@ fn cs_reflect(@builtin(global_invocation_id) gid: vec3<u32>) {
             h.record = ch.instance_custom_data + ch.geometry_index;
             let rec = records[h.record];
             let cut = (rec.flags & 1u) != 0u;
-            let sc = on_screen(o + d * h.t);
+            let sc = on_screen(o + d * h.t, d);
             let texel = hit_texel(rec, ch.primitive_index, ch.barycentrics);
             let hidden = sc.x != 1.0 && sc.x != 2.0;
             // (off the screen or hidden, a cut-out texel lets the ray through, as the main
@@ -278,8 +301,12 @@ fn cs_reflect(@builtin(global_invocation_id) gid: vec3<u32>) {
                 // (its texels not known yet: as much of the sky through it as they leave)
                 l = mix(sky_probe(d, rough), l, mix(coverage(rec), 1.0, 0.5));
             }
+            if (through < 1.0 && sc.x != 1.0) {
+                l = l * through;
+            }
             break;
         }
+        l = pane + l * through * select(1.0, 0.9, through < 1.0);
     }
     // (no single ray brighter than the sky's brightest: the sun's own glint on the surface
     // is the main pass's, and a ray that found the sun's disc was a speck of light)

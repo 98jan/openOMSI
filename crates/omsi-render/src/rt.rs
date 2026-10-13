@@ -594,7 +594,9 @@ impl Renderer {
                 let mask = match kind {
                     0 => (caster as u8) | ((seen as u8) << 1),
                     1 => (seen as u8) << 2,
-                    _ => (caster as u8) << 3,
+                    // (the panes also stop the reflections' rays: a car beside the bus mirrors
+                    // its windows, not the seats behind them in the sun and the open sky)
+                    _ => ((caster as u8) << 3) | ((seen as u8) << 4),
                 };
                 if bits == 0 || mask == 0 {
                     continue;
@@ -679,6 +681,9 @@ impl Renderer {
                     // main pass)
                     if mat.uniform.params[2] > 0.5 && mat.uniform.params[3] < 0.5 {
                         flags |= 32;
+                    }
+                    if kind == 2 {
+                        flags |= 64;
                     }
                     // (a range's triangles are the mesh's from its first on: a range that
                     // starts within a triangle has none)
