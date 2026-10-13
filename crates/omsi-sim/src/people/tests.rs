@@ -804,7 +804,15 @@ fn places_follow_their_own_variables() {
     PeopleSim::write_door_requests(&mut v, &DoorWants { places: taken, ..Default::default() });
     assert_eq!(v.var("fold_seat_down"), Some(1.0));
     PeopleSim::write_door_requests(&mut v, &DoorWants { places: places_taken(&bn, &[]), ..Default::default() });
-    assert_eq!(v.var("fold_seat_down"), Some(0.0), "up again once they have got up");
+    assert_eq!(v.var("fold_seat_down"), Some(0.0), "up again once they have got up");    // a player's figure on the tip-up seat counts for the scripts' GetHumanCountOnSeat
+    let cab = bn.cabin.clone();
+    h.player_cabin = Some(cab.clone());
+    assert!(h.seat_counts().iter().all(|&n| n == 0));
+    let sat = cab.seats[1].omsi_seat;
+    h.avatar_cmds.insert(7, AvatarCmd { seat: Some((BusId::Player, 1)), pos: DVec3::ZERO, heading: 0.0, vel: DVec2::ZERO, lift: 0.0, floor: None, aboard: None });
+    assert_eq!(h.seat_counts()[sat], 1);
+    h.avatar_cmds.insert(8, AvatarCmd { seat: Some((BusId::Ai(2), 1)), pos: DVec3::ZERO, heading: 0.0, vel: DVec2::ZERO, lift: 0.0, floor: None, aboard: None });
+    assert_eq!(h.seat_counts().iter().sum::<u32>(), 1, "another bus's seat is not this one's");
 }
 
 /// A timetable bus boarding at a stop the passengers' stops do not have (#1593): its
