@@ -32,7 +32,8 @@ impl Pose {
         let lat_walk = -0.022 * rig.scale * sway.min(1.3) * (ph - 0.25).sin() * intensity;
         let lat_idle = self.shift * still * (1.0 - s_ease);
         let run = run_factor(self.speed);
-        let bob = -0.018 * rig.scale * intensity * (1.0 + 1.8 * run) * (0.5 + 0.5 * (2.0 * ph - 0.35).cos());
+        // (each person bounces, swings the arms and leans walking in a way of their own)
+        let bob = -0.018 * rig.scale * intensity * (1.0 + 1.8 * run) * (1.0 + 0.3 * self.style[1]) * (0.5 + 0.5 * (2.0 * ph - 0.35).cos());
         let lean_acc = (self.accel * 1.8).clamp(-6.0, 7.0) * walk;
         let pelvis_roll = d(3.5) * sway * intensity * (ph - 0.35).sin()
             - d(2.2) * (self.shift / (0.03 * rig.scale)) * still * (1.0 - s_ease);
@@ -127,7 +128,7 @@ impl Pose {
         let trunk_yaw = -pelvis_yaw * 1.7
             - d((self.head.x.clamp(-90.0, 90.0) * 0.42).clamp(-30.0, 30.0)) * (1.0 - walk) * (1.0 - self.reach)
             + reach_twist;
-        let trunk_lean = d(3.0 * walk + lean_acc)
+        let trunk_lean = d((3.0 + 2.0 * self.style[3]) * walk + lean_acc)
             + d(34.0) * bump
             + d(12.0 - 4.0) * s_ease
             + d(0.7) * breath
@@ -238,7 +239,7 @@ impl Pose {
 
         // --- arms ---
         let run = run_factor(self.speed);
-        let arm_amp = d(17.0) * rig.arm_swing.powf(0.7) * intensity * (1.0 + 1.1 * run);
+        let arm_amp = d(17.0) * rig.arm_swing.powf(0.7) * intensity * (1.0 + 1.1 * run) * (1.0 + 0.35 * self.style[0]);
         for side in 0..2 {
             let s = SIDE[side];
             let sh_at = trunk_m.transform_point3(rig.shoulder[side]);

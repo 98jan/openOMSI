@@ -293,6 +293,9 @@ pub struct Pose {
     style: [f32; 4],
     /// How the person stands, waiting (see `Idle`): the way before and the way now, how far
     /// the change between them has come (0 … 1) and how long the way now is kept.
+    /// The person's own pace: steps a little quicker and shorter, or slower and longer
+    /// (1 the type's own), so that no two walk alike.
+    pace: f32,
     idle_from: Idle,
     idle_to: Idle,
     idle_mix: f32,

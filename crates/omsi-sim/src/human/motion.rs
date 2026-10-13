@@ -43,6 +43,7 @@ impl Pose {
             drop: 0.0,
             body_floor: 0.0,
             style: [0.0; 4],
+            pace: 1.0,
             idle_from: Idle::Hang,
             idle_to: Idle::Hang,
             idle_mix: 1.0,
@@ -57,6 +58,7 @@ impl Pose {
         p.breath = p.rand() * TAU;
         p.glance_t = p.rand() * 3.0;
         p.shift_t = p.rand() * 5.0;
+        p.pace = 0.92 + 0.16 * p.rand();
         p.idle_to = Idle::pick(p.rand());
         p.idle_from = p.idle_to;
         p.idle_t = 12.0 + p.rand() * 28.0;
@@ -168,7 +170,7 @@ impl Pose {
     ) -> (DVec3, f64) {
         let r = rig.rest_foot(side);
         let (x, y) = if walking {
-            let stride = self.speed / (rig.cadence(self.speed) * 0.5);
+            let stride = self.speed / (rig.cadence(self.speed) * self.pace * 0.5);
             let beta = stance_fraction(self.speed);
             (r.x * 0.62, r.y + 0.4 * beta * stride)
         } else {
@@ -312,7 +314,7 @@ impl Pose {
         };
         self.walk += (walk_to - self.walk) * ease_k(dt, 0.2);
         let speed = self.speed.max(0.08);
-        let cadence = rig.cadence(speed) * 0.5;
+        let cadence = rig.cadence(speed) * self.pace * 0.5;
         let beta = stance_fraction(speed);
         if gait_now && !self.gait {
             // start with the foot that is further back (or the one already in the air)
