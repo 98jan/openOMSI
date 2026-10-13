@@ -6,7 +6,7 @@ import { S, useStore, set, toast } from '../store.js';
 import { t, hhmm, longDate, language } from '../i18n.js';
 import { call, contentUrl } from '../api.js';
 import { Icon } from '../icons.js';
-import { Button, Card, Field, Select, Input, Toggle, Segmented, Slider, Picture, Notice, Spinner, PageHead, Tag, Search } from '../ui.js';
+import { Button, Card, Field, Select, Input, Toggle, Segmented, Slider, Picture, Notice, Spinner, PageHead, Tag, Search, Dialog } from '../ui.js';
 import { choose, curMap, curBus, curLine, curTour, pickedTrip, realTime, realDate, start, loadSituations, duty, weatherName, weatherOfItsOwn, mapName, askJoined, noServerBus } from '../data.js';
 import { MapPicker } from './map-picker.js';
 import { BusPicker } from './bus-picker.js';
@@ -339,7 +339,57 @@ function TimeInput({ minutes, onChange, disabled }) {
     if (h >= 0 && h < 24 && mi >= 0 && mi < 60) onChange(h * 60 + mi);
     else setText(hhmm(minutes));
   };
-  return html`<input class="input num" value=${text} disabled=${disabled} maxlength="5" placeholder="09:00" onInput=${(e) => setText(e.currentTarget.value)} onBlur=${commit} onKeyDown=${(e) => e.key === 'Enter' && e.currentTarget.blur()} />`;
+  // the mouse wheel turns the clock: a minute over the minutes, an hour over the hours (#2351)
+  const wheel = (e) => {
+    if (disabled) return;
+    e.preventDefault();
+    const d = e.deltaY || e.deltaX;
+    if (!d) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const hours = e.shiftKey || e.clientX - box.left < Math.min(box.width / 2, 34);
+    const step = (d < 0 ? 1 : -1) * (hours ? 60 : 1);
+    onChange((((minutes + step) % 1440) + 1440) % 1440);
+  };
+  return html`<input class="input num" value=${text} disabled=${disabled} maxlength="5" placeholder="09:00" title=${t('The mouse wheel turns the hours (left) or the minutes (right)')} onWheel=${wheel} onInput=${(e) => setText(e.currentTarget.value)} onBlur=${commit} onKeyDown=${(e) => e.key === 'Enter' && e.currentTarget.blur()} />`;
+}
+
+/** A month to click a day in (#2351, #1625): the week starts on Monday, as the timetables'. */
+function DatePicker({ value, onPick, onClose }) {
+  const at = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  const [month, setMonth] = useState(() => (at ? new Date(Date.UTC(+at[1], +at[2] - 1, 1)) : new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), 1))));
+  const y = month.getUTCFullYear();
+  const m = month.getUTCMonth();
+  const step = (n) => setMonth(new Date(Date.UTC(y, m + n, 1)));
+  const loc = language();
+  const title = new Intl.DateTimeFormat(loc, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(month);
+  const dayName = new Intl.DateTimeFormat(loc, { weekday: 'short', timeZone: 'UTC' });
+  // (2024-01-01 was a Monday)
+  const heads = [0, 1, 2, 3, 4, 5, 6].map((i) => dayName.format(new Date(Date.UTC(2024, 0, 1 + i))));
+  const lead = (month.getUTCDay() + 6) % 7;
+  const days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const iso = (d) => new Date(Date.UTC(y, m, d)).toISOString().slice(0, 10);
+  const today = localNow().date;
+  const cell = 'height:34px;border-radius:6px;border:none;font:inherit;cursor:pointer;';
+  return html`<${Dialog} title="Choose a date" onClose=${onClose}>
+    <div class="stack" style="gap:10px;min-width:280px">
+      <div class="row" style="gap:6px;align-items:center">
+        <${Button} small kind="ghost" icon="left" title="Previous month" onClick=${() => step(-1)} />
+        <div class="grow" style="text-align:center;font-weight:600">${title}</div>
+        <${Button} small kind="ghost" icon="right" title="Next month" onClick=${() => step(1)} />
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center">
+        ${heads.map((h) => html`<div class="muted small">${h}</div>`)}
+        ${Array.from({ length: lead }, () => html`<div></div>`)}
+        ${Array.from({ length: days }, (_, i) => {
+          const d = iso(i + 1);
+          const on = d === value;
+          const bg = on ? 'background:var(--accent);color:#000;font-weight:600;' : 'background:var(--surface-2);color:var(--text);';
+          const ring = d === today && !on ? 'box-shadow:inset 0 0 0 1px var(--accent);' : '';
+          return html`<button type="button" style=${cell + bg + ring} onClick=${() => onPick(d)}>${i + 1}</button>`;
+        })}
+      </div>
+    </div>
+  </${Dialog}>`;
 }
 
 /** A date typed as the timetables write it (YYYY-MM-DD), whatever the system's locale. */
@@ -352,7 +402,16 @@ function DateInput({ value, onChange, disabled }) {
     if (d && d.getUTCMonth() === +m[2] - 1) onChange(d.toISOString().slice(0, 10));
     else setText(value);
   };
-  return html`<input class="input num" value=${text} disabled=${disabled} maxlength="10" placeholder="1989-05-30" onInput=${(e) => setText(e.currentTarget.value)} onBlur=${commit} onKeyDown=${(e) => e.key === 'Enter' && e.currentTarget.blur()} />`;
+  // the mouse wheel steps a day (#2351)
+  const wheel = (e) => {
+    if (disabled) return;
+    e.preventDefault();
+    const d = e.deltaY || e.deltaX;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+    if (!d || !m) return;
+    onChange(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + (d < 0 ? 1 : -1))).toISOString().slice(0, 10));
+  };
+  return html`<input class="input num" value=${text} disabled=${disabled} maxlength="10" placeholder="1989-05-30" onWheel=${wheel} onInput=${(e) => setText(e.currentTarget.value)} onBlur=${commit} onKeyDown=${(e) => e.key === 'Enter' && e.currentTarget.blur()} />`;
 }
 
 /** Start the tour at this trip: at its departure (or at the real time: the bus waits). */
@@ -397,6 +456,7 @@ function TimeCard() {
   const metar = c.weather?.startsWith('metar:') ? c.weather.slice(6) || airport : airport;
   const [airports, setAirports] = useState([]);
   const [editing, setEditing] = useState(null);
+  const [picking, setPicking] = useState(false);
   const custom = isCustomWeather(c.weather);
   useEffect(() => {
     if (c.weather?.startsWith('metar:') && !airports.length) call('metar_airports').then(setAirports).catch(() => {});
@@ -431,6 +491,7 @@ function TimeCard() {
         <${Field} label="Date" help=${rd ? 'Today (Settings)' : null}>
           <div class="row" style="gap:6px">
             <div class="grow"><${DateInput} value=${c.date} disabled=${rd} onChange=${(date) => choose({ date, season: 'auto', own_date: null })} /></div>
+            ${!rd && html`<${Button} icon="down" title="Choose a date" onClick=${() => setPicking(true)} />`}
             ${!rd && html`<${Button} icon="calendar" title="Current date" onClick=${() => choose({ date: localNow().date, season: 'auto', own_date: null })} />`}
           </div>
         </${Field}>
@@ -446,6 +507,7 @@ function TimeCard() {
         </div>
       </${Field}>
       ${editing != null && html`<${WeatherEditor} from=${editing} onClose=${() => setEditing(null)} />`}
+      ${picking && html`<${DatePicker} value=${c.date} onClose=${() => setPicking(false)} onPick=${(date) => (setPicking(false), choose({ date, season: 'auto', own_date: null }))} />`}
       ${c.weather?.startsWith('metar:') && airports.length > 0 && html`<${Field} label="Airport">
         <${Select} raw value=${metar} options=${airports} onChange=${(code) => choose({ weather: `metar:${code}` })} />
       </${Field}>`}
