@@ -175,3 +175,30 @@ fn every_approach_of_a_signalled_crossroads_flows() {
         }
     }
 }
+
+/// Spandau's `Einm_CharlCh_Polizei`: the main road stays green at 34 s until the side road
+/// asks (`[traffic_light_stop] 1 34.0 1`), then the cycle runs on.
+#[test]
+fn a_held_program_runs_on_when_the_side_road_asks() {
+    let mut c = TrafficLightController::from_program(
+        vec![
+            (vec![(3, 2.0), (6, 51.0), (9, 3.0), (0, 0.0)], None),
+            (vec![(0, 63.0), (3, 2.0), (6, 11.0), (9, 3.0), (0, 0.0)], None),
+        ],
+        Some(82.0),
+        &[[1.0, 34.0, 1.0]],
+        &[],
+    );
+    c.start(18.04);
+    for _ in 0..1000 {
+        c.request.fill(false);
+        c.advance(0.02);
+    }
+    assert!((c.time - 34.0).abs() < 0.01, "held at {}", c.time);
+    for _ in 0..1000 {
+        c.request.fill(false);
+        c.request[1] = true;
+        c.advance(0.02);
+    }
+    assert!(c.time > 50.0, "still at {}", c.time);
+}
