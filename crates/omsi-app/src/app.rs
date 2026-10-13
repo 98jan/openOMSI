@@ -798,7 +798,6 @@ impl App {
             }
             self.menus.loading.step(done as f32 / total.max(1) as f32, dt);
             self.menus.loading.title = name.trim().to_string();
-            ui.set_loading_map(&self.args.root, &self.args.map, (s.config.width, s.config.height));
             ui.loading(&renderer, &mut scene, s.config.width as f32, s.config.height as f32, scale, name.trim(), self.menus.loading.shown(), self.menus.loading.clock(), self.menus.loading.tip());
             let acquired = s.acquire();
             // a swapchain that no longer fits the window (Vulkan says so after the switch
