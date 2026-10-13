@@ -4,6 +4,81 @@ Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
 [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
 
+## 0.2.44 - 2026-10-13
+
+### New
+- **Character models: High quality (improved)** (Settings, Gameplay, Passengers) draws the people with the 91 everyday [Microsoft Rocketbox avatars](https://github.com/microsoft/Microsoft-Rocketbox) (MIT) in place of the content's own, on your computer only: each person an avatar of the same kind, posed by OMSI's animation or the procedural one, with a living face from the avatars' ARKit blend shapes - blinks, glances, a mood of their own, passing smiles, raised brows, frowns and yawns, a smile at the cash desk, and lips that move with what they say. Servers and other players keep their own people. The avatars are downloaded once, like the ambience (about 310 MB). **Original** stays the default.
+- **glTF / GLB, FBX and OBJ models** wherever OMSI reads a mesh (sceneries, splines' objects, vehicles, humans), with their materials, textures beside the model or packed into it, skins and blend shapes; the format is told by content.
+- **Every picture format**: DDS with BC4-BC7, the DX10 header's 10-bit, float and packed formats, ATI1/ATI2 and DX10 cube maps; KTX 1 / KTX 2 (BC, ETC, ASTC); WebP, GIF, TIFF, QOI, OpenEXR, Radiance HDR, ICO, PNM and farbfeld; 16-bit PNGs. A texture is read by its content, whatever its name says, and found under all these extensions.
+- **Every sound format**: WAV with extensible floats, 64-bit float, A-law / mu-law, 20- and 12-bit samples, RF64, ADPCM and the truncated headers old tools wrote; AIFF, CAF, M4A (AAC, ALAC), Matroska audio and MP2 besides Ogg, FLAC and MP3, all told by content. Surround is mixed down to stereo, and a sound missing under its name (`horn.wav`) is taken in another format of the same name (`horn.ogg`).
+
+### Fixes
+- **Higher frame rates below 120 frames a second, mostly on big maps with heavy AI lists.** Since 0.2.39 the whole simulation ran 120 times a second however fast the picture was. Each frame below 120 fps ran it two to four times (at 30 fps four times), up to 13 times in a slow frame, and every run brought the AI cars' meshes, lamps, drivers and sounds and every person's pose up to date again. A slower frame held more ticks and got slower still. Now:
+  - the simulation steps 60 times a second;
+  - a frame runs at most four steps, so the game keeps real time down to 15 fps;
+  - what only the picture and the sound need of the traffic and the people is brought up to date once a frame, in its last step.
+
+  At 30 fps the simulation's share of the frame is about half what it was ([#2246](https://github.com/openOMSI-org/openOMSI/issues/2246), [#2388](https://github.com/openOMSI-org/openOMSI/issues/2388), [#2295](https://github.com/openOMSI-org/openOMSI/issues/2295), [#2365](https://github.com/openOMSI-org/openOMSI/issues/2365)).
+- **The frame rate no longer collapses after half an hour on 8 GB graphics cards.** The texture budget counted only the scenery's and the vehicles' textures. All the others (the people's, the scripts' and texts', the sky's and the terrain's) grew past it until the card ran out of its own memory: from 140 to 25 fps on a long drive. Textures beyond half of the card's memory are now taken from the scenery and the vehicles ([#2295](https://github.com/openOMSI-org/openOMSI/issues/2295), [#2121](https://github.com/openOMSI-org/openOMSI/issues/2121), [#1314](https://github.com/openOMSI-org/openOMSI/issues/1314)).
+- **The automatic render scale no longer swings between 85 and 100 % every ten seconds** on a card at its limit. Each swing made new targets and was a stutter of its own. A step up that does not hold now waits twice as long before the next try, up to two minutes ([#2295](https://github.com/openOMSI-org/openOMSI/issues/2295), [#2121](https://github.com/openOMSI-org/openOMSI/issues/2121)).
+- **Night in Enhanced is lighter on the graphics card.** Only the 12 AI cars nearest the camera, within 200 m, light the road with their headlamps; every car on the street did, a hundred lights and more on a busy road ([#1774](https://github.com/openOMSI-org/openOMSI/issues/1774), [#1467](https://github.com/openOMSI-org/openOMSI/issues/1467)).
+- **Macs with Apple M4 draw the full picture again.** 0.2.43's far-map shadow for Enhanced+ made the scene shader too big for Apple's shader compiler. It crashed on every scene pipeline, and the game fell back to the basic picture or closed. The same shadow now takes one call instead of two.
+
+## 0.2.43 - 2026-10-13
+
+### New
+- **Photo mode: depth of field without ghost copies.** Out of focus things were drawn as so many separate copies side by side (one for each point of the aperture the photo was taken through), worst wide open. Every picture of the shot now reads back its depth and is softened by what lies between two copies, so they run together into one smooth blur even at 16 samples. Lamps burnt out in the picture spread into bright bokeh discs.
+- **Photo mode focuses where you click**, and focusing "On the bus" finds the bus's side the camera looks at instead of its middle a couple of metres behind it.
+- **Photo mode, Advanced (for photographers)**, chosen in the launcher (Settings, Interface & online, Photo mode): a camera body with a sensor size (full frame, APS-C, Micro Four Thirds, medium format, 1-inch) and real focal lengths; P/A/S/M exposure in third stops (f/1 - f/32, 30 s - 1/8000, ISO 50 - 51200) with Auto ISO that keeps the time hand-held and exposure compensation; matrix, centre-weighted or spot metering of the scene's light (some EV 15 at noon, EV 4 at night) with an exposure meter; sensor noise that grows with the ISO, a sensor that burns out over its white and diffraction when closed down; the lens as it comes (distortion, vignetting wide open, colour fringes); tilt (the plane of focus leaned about its hinge line, for a miniature look or a whole street sharp) and shift (verticals kept upright); white balance by preset or in kelvin, picture profiles, split toning; histogram, clipping warning (zebra) and focus peaking in the live view; the depth of field's limits and the hyperfocal distance; exposure bracketing; 16-bit PNG; the camera's settings written into every photo as XMP metadata.
+- **Photo mode, Simple** keeps its few settings and gains motion frozen, panned with the bus or from a tripod (the bus blurs past a sharp street), bright bokeh of lights, "everything sharp" (the hyperfocal distance), clarity, borders (white, black, instant print, gallery mat) and a spirit level.
+- **Passengers move by their own poses by default** (Settings, Passengers: Natural; Original OMSI stays to choose). They wait in ways of their own - arms hanging, hands clasped or behind the back, arms crossed, a hand on the hip, looking at a phone - and each walks a little differently.
+- **Units** for the game's own texts: metric, British (mph, miles and yards) or American (mph, miles and feet, °F) - the navigator and its speed limit signs, the information bar, the touch speedometer, LAN players' distances and the trip summary.
+- **Time menu**: the date with its weekday, moved by a day, a week or a month with the time of day kept; the timetable's day, the season and the map's chrono follow it.
+- **Plugins can draw on a bus's script textures** and react to clicks on them (`[scripttexturelist]`, `AccessScriptTexture`, `AccessScriptTexturePointer`, see docs/PLUGINS.md), so ticket machines and driver terminals written for OmsiHook can run ([#2367](https://github.com/openOMSI-org/openOMSI/pull/2367), by @Spindlerkoo).
+- **The launcher's timetable editor is back**: lines, tours and trips of a map, saved as `.ttl` files in the content folder, never into OMSI 2's own ([#2448](https://github.com/openOMSI-org/openOMSI/pull/2448), by @thibautgnt).
+- **A custom weather can be made again** on the launcher's Drive page ([#2446](https://github.com/openOMSI-org/openOMSI/pull/2446), by @thibautgnt).
+- **The Drive page shows what to type into the bus's IBIS** for the chosen line again ([#2445](https://github.com/openOMSI-org/openOMSI/pull/2445), by @thibautgnt).
+- **The bus radio's stations can be edited in the launcher again** (Settings, Sound) ([#2444](https://github.com/openOMSI-org/openOMSI/pull/2444), by @thibautgnt).
+
+### Fixes
+- **Nothing that goes with a moving vehicle shakes any more**: the mirrors, the bus's lamps and their glow, the passengers in every bus, the coins on the change tray, the highlighted switch, AI cars beside the bus and the view on foot aboard a bus are drawn where the bus is drawn ([#2439](https://github.com/openOMSI-org/openOMSI/pull/2439), by @thibautgnt).
+- **Key bindings and game controllers are kept across updates** and new install folders: they live in `~/.openomsi/Inputs` now, and the first start brings over those an earlier version saved beside the program ([#2443](https://github.com/openOMSI-org/openOMSI/pull/2443), by @thibautgnt).
+- **An add-on's `Maps` folder next to the original `maps`** on a case-sensitive file system no longer hides the stock maps ([#2450](https://github.com/openOMSI-org/openOMSI/issues/2450), [#2451](https://github.com/openOMSI-org/openOMSI/pull/2451), by @Bluscream).
+- **Passengers' legs stay under them when they turn**: the body turned to a new heading at once over feet that stayed put, the legs ran diagonally and the person seemed to slide.
+- **Passengers no longer pop onto their seats**: the jump from the aisle onto the seat (as Omsi.exe places them) is drawn as a short glide while they sit down, and a foot no longer leaps up a step as the body climbs into the bus.
+- **People sit on a stop's bench** as on a bus seat; they sat 11 cm too low and 31 cm too far back, with their legs straight down as if kneeling.
+- **People no longer shine in the sun** in Enhanced: their cut-out hair and clothes were lit as leaves, from every side with the sun through them.
+- **Enhanced+ shadows**: where no traced shadow is found for a surface (a pane, a step's edge, a thin handrail) the far shadow map still shades it, so there are no bright specks and stair-stepped lines under a roof; the sun no longer lays stripes of shadow on faceted ground and a road's camber where it grazes; reflections in the panes take their colour from the face turned to them.
+- **The clock past New Year's Eve** goes on into the next year instead of starting the same year again.
+- **Map: Esc -> Move** lets the city map be dragged again, and the bus goes where a click lets go.
+- **Start points** show each name once, sorted as OMSI sorts them; a name whose places are all taken is left out, and choosing a name again goes on to its next free place.
+- **Tip-up seats fold down under a player on foot** or a LAN player's figure sitting on them, as under a passenger.
+- **A depot file's destination with the route in front of it** ("402 Apsley Station") is the timetable's stop to the people waiting, and the bus empties there.
+- **A trip without a line of its own** shows none on the AI buses and the departure boards, as in OMSI.
+- **Buses no longer sink into a street** with a road face buried under drawn ground (Ahlheim & Laurenzbach).
+- **Text textures** written with 255 as the full colour flag are no longer yellow.
+- **.x models**: texture coordinates and normals from DeclData (houses and trees drawn in one flat colour) and binary .x files (25 PAD-Labs houses were missing).
+
+## 0.2.42 - 2026-10-12
+
+### New
+- **Mirror quality**: "As the picture (Enhanced)" draws the mirrors with the Enhanced shading, its light and its sky, instead of the plain light (Settings, Graphics, and the pause menu).
+- **Real-time reflections: Every frame** redraws every mirror in the picture each frame. In turns, each mirror's picture was a step behind, and the steps grew with the speed, so the street seemed to shake in them.
+- **AI cars light the road with their headlamps** in Enhanced and Enhanced+: the stock cars have no spotlight of their own, so their lit front lamps now give them a pair of beams.
+
+### Fixes
+- **Windows: the WebView2 installer is offered only when the runtime is really missing.** Any launcher that failed in its first two seconds was taken for one without WebView2, and Microsoft's installer, answering "already installed", was offered at every start. With the runtime installed the launcher is now tried again with a fresh web view profile, and its own error is shown; a runtime whose files are missing is explained, with how to repair it.
+- **The sun is its real size** (0.27 degrees) in Enhanced and Enhanced+, with a camera lens' glare round it instead of the eye's, which drew a white blot ten degrees round it ([#2400](https://github.com/openOMSI-org/openOMSI/issues/2400)).
+- **The sun's glare no longer switches off and on as the camera turns**: with the sun just off the picture, whatever stood at the picture's edge decided whether the glare was there, and a sheet of light over the picture vanished and came back.
+- **Paint and windows keep their shine at night** in Vanilla and Vanilla+, where the lamps light them, as in OMSI: the reflection was darkened twice by the night ([#2284](https://github.com/openOMSI-org/openOMSI/issues/2284)).
+- **Bus and car bodies have a lacquer's shine in Enhanced**: a body that mirrors a few per cent (the MAN NL's 15 of 255) was drawn as matte plastic ([#2067](https://github.com/openOMSI-org/openOMSI/issues/2067)).
+- **Photo mode keeps the driver at the wheel** when it is opened from the driver's seat and the camera moves away; every photo taken from there showed the bus without its driver.
+
+## 0.2.41 - 2026-10-12
+
+### Fixes
+- **On a phone the on-screen pedals and wheel drive the bus again**: since 0.2.39 the accelerator, the brake, the clutch and the steering wheel lit up under the finger, but the bus never felt them - the fixed simulation step took the controllers' axes before the touch controls were added to them. The buttons and the menus were not affected ([#2442](https://github.com/openOMSI-org/openOMSI/pull/2442), by @thibautgnt).
+
 ## 0.2.39 - 2026-10-12
 
 ### New

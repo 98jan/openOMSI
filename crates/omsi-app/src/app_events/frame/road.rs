@@ -110,8 +110,11 @@ pub(super) fn traffic(cx: TrafficCx, dt: f32) {
         }
         // the options' [no_collision_vehToVeh]: the bus drives through the traffic
         steps::traffic_boxes(t, cx.player.player.as_mut(), cx.common.settings.collision_vehicles);
+        // (the sounds and the picture only in the frame's last tick: the triggers the cars
+        // fire wait in them until then, and only the last tick's state is drawn)
+        let view_due = cx.clock.fixed_tick.view_due();
         let __t3 = Instant::now();
-        if let Some(a) = cx.sound.audio.as_ref() {
+        if let Some(a) = cx.sound.audio.as_ref().filter(|_| view_due) {
             let street = cx.weather.weather
                 .as_ref()
                 .map(|w| street_condition(w, *cx.weather.wetness))
@@ -133,7 +136,7 @@ pub(super) fn traffic(cx: TrafficCx, dt: f32) {
         t.camera = cx.view.camera.as_ref().map(|c| c.position);
         // the view sync of the traffic: before the player and the people move, as the
         // cars that parked leave the traffic here (see `view_sync`)
-        view_sync::sync(ViewSync::traffic(t, &mut *cx.world.scenery), &mut cx.gfx.gfx.sim_view, w, r, scene);
+        view_sync::sync(ViewSync::traffic(t, &mut *cx.world.scenery).world_only(!view_due), &mut cx.gfx.gfx.sim_view, w, r, scene);
         cx.perf.profile.add(crate::profile_keys::ProfKey::TrafficSync, __t4.elapsed().as_secs_f64());
     }
 }

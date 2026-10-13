@@ -31,12 +31,14 @@ pub(crate) fn open_app_launcher() -> Result<()> {
         fatal_message(&text);
         anyhow::bail!("{text}");
     };
-    let failed = start_app_launcher(&bin, &exe);
-    // (Windows without WebView2: once it is installed, the launcher is tried again)
+    let failed = start_app_launcher(&bin, &exe, false);
     #[cfg(windows)]
-    let failed = if failed.is_some() && offer_webview2() { start_app_launcher(&bin, &exe) } else { failed };
+    let failed = match failed {
+        Some(why) => webview2_rescue(&bin, &exe, why),
+        None => None,
+    };
     if let Some(why) = failed {
-        let text = format!("The openOMSI launcher ({}) {why}.\n\n{WEBVIEW_HINT}", bin.display());
+        let text = format!("The openOMSI launcher ({}) {why}.\n\n{}", bin.display(), webview_hint());
         fatal_message(&text);
         anyhow::bail!("{text}");
     }
@@ -45,9 +47,16 @@ pub(crate) fn open_app_launcher() -> Result<()> {
 }
 
 /// Start the desktop launcher; what went wrong when it did not start or ended at once.
-fn start_app_launcher(bin: &Path, exe: &Path) -> Option<String> {
-    log::info!("starting the desktop launcher {}", bin.display());
-    let mut child = match std::process::Command::new(bin).env("OPENOMSI_BIN", exe).spawn() {
+/// `fresh`: its web view starts from a new profile (the old one set aside, see the launcher's
+/// `fresh_webview_profile`).
+fn start_app_launcher(bin: &Path, exe: &Path, fresh: bool) -> Option<String> {
+    log::info!("starting the desktop launcher {}{}", bin.display(), if fresh { " (a fresh web view profile)" } else { "" });
+    let mut cmd = std::process::Command::new(bin);
+    cmd.env("OPENOMSI_BIN", exe);
+    if fresh {
+        cmd.env("OPENOMSI_WEBVIEW_FRESH", "1");
+    }
+    let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => return Some(format!("could not be started: {e}")),
     };
@@ -64,6 +73,43 @@ fn start_app_launcher(bin: &Path, exe: &Path) -> Option<String> {
     None
 }
 
+/// The launcher ended at once on Windows: what its web view needs. Only a Windows without
+/// the WebView2 runtime is offered Microsoft's installer (and the launcher tried again once it
+/// is in); with the runtime there the launcher is tried once more with a fresh web view
+/// profile (a broken one stops WebView2 as well), and what still fails is said as it is - the
+/// installer, which only answers "already installed" then, was offered at every start before.
+#[cfg(windows)]
+fn webview2_rescue(bin: &Path, exe: &Path, why: String) -> Option<String> {
+    match omsi_platform::webview2::runtime() {
+        None => {
+            log::warn!("desktop launcher: {why}; no WebView2 runtime is registered");
+            if offer_webview2() {
+                start_app_launcher(bin, exe, false)
+            } else {
+                Some(why)
+            }
+        }
+        Some(rt) if !rt.present => {
+            log::warn!("desktop launcher: {why}; WebView2 {} is registered, its files are missing", rt.version);
+            Some(format!("{why}.\n\nMicrosoft Edge WebView2 {} is registered on this Windows, but its files are missing (removed by a clean-up tool?). Repair it: Settings > Apps > Installed apps > Microsoft Edge WebView2 Runtime > Modify > Repair, or install Microsoft's \"Evergreen Standalone Installer\" from https://developer.microsoft.com/microsoft-edge/webview2/", rt.version))
+        }
+        Some(rt) => {
+            log::warn!("desktop launcher: {why}; WebView2 {} is installed - trying a fresh web view profile", rt.version);
+            let again = start_app_launcher(bin, exe, true)?;
+            let said = launcher_error().map(|e| format!(": {e}")).unwrap_or_default();
+            Some(format!("{again}{said}.\n\nMicrosoft Edge WebView2 {} is installed, so it is not missing", rt.version))
+        }
+    }
+}
+
+/// What the launcher last wrote about its window not opening (its log, launcher.log).
+#[cfg(windows)]
+fn launcher_error() -> Option<String> {
+    let log = std::fs::read_to_string(omsi_launcher_lib::data_dir().join("launcher.log")).ok()?;
+    let line = log.lines().rev().take(20).find(|l| l.contains("could not open"))?;
+    Some(line.split_once("could not open: ").map(|(_, e)| e).unwrap_or(line).trim().to_string())
+}
+
 /// Windows without WebView2 (the launcher's window could not open): Microsoft's installer,
 /// when the player wants it. True once it is installed.
 #[cfg(windows)]
@@ -78,21 +124,27 @@ fn offer_webview2() -> bool {
     }
     match omsi_platform::webview2::install() {
         Ok(()) => true,
+        // (the installer's "already installed" is an error code too: what counts is the runtime)
         Err(e) => {
             log::warn!("WebView2: {e:#}");
-            false
+            omsi_platform::webview2::runtime().is_some_and(|r| r.present)
         }
     }
 }
 
 /// What the launcher needs of the system to show its window.
-const WEBVIEW_HINT: &str = if cfg!(windows) {
-    "The launcher's window needs Microsoft Edge WebView2 (part of Windows 10 and 11; for older systems: https://developer.microsoft.com/microsoft-edge/webview2/)."
-} else if cfg!(target_os = "linux") {
-    "The launcher's window needs WebKitGTK 4.1 (the package libwebkit2gtk-4.1-0 on Debian and Ubuntu, webkit2gtk4.1 on Fedora, webkit2gtk-4.1 on Arch)."
-} else {
-    "Its log is in the openOMSI data folder (launcher.log)."
-};
+fn webview_hint() -> String {
+    if cfg!(windows) {
+        match omsi_platform::webview2::runtime() {
+            Some(rt) if rt.present => format!("Its log is in the openOMSI data folder (launcher.log); Microsoft Edge WebView2 {} is installed.", rt.version),
+            _ => "The launcher's window needs Microsoft Edge WebView2 (part of Windows 10 and 11; for older systems: https://developer.microsoft.com/microsoft-edge/webview2/).".to_string(),
+        }
+    } else if cfg!(target_os = "linux") {
+        "The launcher's window needs WebKitGTK 4.1 (the package libwebkit2gtk-4.1-0 on Debian and Ubuntu, webkit2gtk4.1 on Fedora, webkit2gtk-4.1 on Arch).".to_string()
+    } else {
+        "Its log is in the openOMSI data folder (launcher.log).".to_string()
+    }
+}
 
 /// Start the program `OMSI_LAUNCHER` names and return once it is running. `Ok(false)` when
 /// it names none that is there.

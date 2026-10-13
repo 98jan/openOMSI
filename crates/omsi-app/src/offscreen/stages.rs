@@ -1,4 +1,4 @@
-//! The offscreen run's step as a list of stages (`OFFSCREEN_STEP`, a tick of 1/120 s each),
+//! The offscreen run's step as a list of stages (`OFFSCREEN_STEP`, a tick of 1/60 s each),
 //! taken by the same runner as the window's frame (see `frame_stages`).
 
 use super::*;

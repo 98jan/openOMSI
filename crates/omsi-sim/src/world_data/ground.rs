@@ -26,9 +26,17 @@ pub struct GroundTiles {
 /// drawn sunk into what they drove on.
 pub const PAINT_LAYER: f32 = 0.02;
 
-/// How far a road face may lie under drawn ground before it counts as buried (m): far more
-/// than the ground poking through the asphalt that the road is there to keep out.
-pub const BURIED_FACE: f32 = 1.0;
+/// How far drawn ground may poke through a road face and the wheel still stands on the
+/// road (m): the coarse terrain grid rising a few centimetres through the asphalt between its
+/// samples, which Omsi.exe's highest face would turn into bumps.
+pub const GROUND_THROUGH_ROAD: f32 = 0.1;
+
+/// How far a road face may lie under drawn ground before it counts as buried (m): from here
+/// the wheel stands on the ground, as on Omsi.exe's highest face. Between this and
+/// [`GROUND_THROUGH_ROAD`] it rises smoothly from the one to the other, so no step is met
+/// where the ground slowly covers a road. (1 m once: a footway 0.77 m under Quellengrunder
+/// Straße on Ahlheim & Laurenzbach sank the buses that far into the street.)
+pub const BURIED_FACE: f32 = 0.3;
 
 /// How far over the ground a wall's top must stand to be a wall to the wheels (a kerb is
 /// less, and the tyre climbs it).
@@ -150,7 +158,17 @@ pub fn probe_tile(
     // 20 m over 30 m on each side) reaching under a junction the terrain carries. Omsi.exe
     // takes the highest face there, the ground; taken as the road, it dropped the bus 8 m
     // through the asphalt into the slope (Cotterell, the junction by the park at 250, 427).
-    let buried = matches!((probe.below, ground), (Some(z), Some((h, false))) if h <= top as f32 && h - z > BURIED_FACE);
+    let sunk = match (probe.below, ground) {
+        (Some(z), Some((h, false))) if h <= top as f32 => h - z,
+        _ => 0.0,
+    };
+    let buried = sunk >= BURIED_FACE;
+    if let (Some(z), false) = (probe.below, buried) {
+        if sunk > GROUND_THROUGH_ROAD {
+            let t = (sunk - GROUND_THROUGH_ROAD) / (BURIED_FACE - GROUND_THROUGH_ROAD);
+            probe.below = Some(z + sunk * t * t * (3.0 - 2.0 * t));
+        }
+    }
     let on_road = probe.below.is_some() && !buried;
     if let (Some((h, cut)), false) = (ground, on_road) {
         // the ground counts where it is drawn; where it is cut away and nothing else is
@@ -341,5 +359,49 @@ impl crate::rigid::Ground for LiveGround {
             let (_, surface, terrain) = &tiles[i];
             probe_tile(surface.as_deref(), terrain.as_deref(), key, x, y, top)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::Mat4;
+
+    /// A flat road face 20 m square at height `z` in tile (0, 0), and the terrain at `h`.
+    fn tile(z: f32, h: f32) -> (TileSurface, Terrain) {
+        let x = format!("xof 0303txt 0032\nMesh {{\n4;\n100;{z};100;,\n120;{z};100;,\n100;{z};120;,\n120;{z};120;;\n2;\n3;0,2,1;,\n3;1,2,3;;\n}}\n");
+        let road = omsi_geometry::mesh_from_o3d(&omsi_o3d::xfile::parse_x(x.as_bytes()).unwrap());
+        let mut surface = TileSurface::new(128);
+        surface.add_drive_mesh(&road, &Mat4::IDENTITY, DVec3::ZERO, 0, 0);
+        surface.finish();
+        let mut terrain = Terrain::flat();
+        terrain.heights.iter_mut().for_each(|v| *v = h);
+        (surface, terrain)
+    }
+
+    fn wheel(z: f32, h: f32) -> f64 {
+        let (s, t) = tile(z, h);
+        probe_tile(Some(&s), Some(&t), (0, 0), 110.0, 110.0, 5.0).below.unwrap()
+    }
+
+    /// Ground drawn over a road face carries the wheel as Omsi.exe's highest face does - a
+    /// footway 0.77 m under Quellengrunder Straße (Ahlheim & Laurenzbach) sank the buses into
+    /// the street - while ground poking a few centimetres through the asphalt stays no bump,
+    /// and in between the wheel rises without a step.
+    #[test]
+    fn drawn_ground_over_a_buried_road_face_carries_the_wheel() {
+        assert!((wheel(-0.67, 0.1) - 0.1).abs() < 1e-4, "{}", wheel(-0.67, 0.1));
+        assert!((wheel(0.0, 0.06) - 0.0).abs() < 1e-4);
+        assert!((wheel(0.0, BURIED_FACE) - BURIED_FACE as f64).abs() < 1e-4);
+        let mut last = 0.0;
+        for i in 0..=40 {
+            let h = i as f32 * 0.01;
+            let z = wheel(0.0, h);
+            assert!(z >= last - 1e-6 && z <= h as f64 + 1e-6, "{h}: {z}");
+            assert!(z - last < 0.03, "a step at {h}: {last} -> {z}");
+            last = z;
+        }
+        // the road over the ground stays the road
+        assert!((wheel(0.5, 0.0) - 0.5).abs() < 1e-4);
     }
 }

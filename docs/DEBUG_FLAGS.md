@@ -35,6 +35,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DEBUG_DRIVER` | bool | off | use | scene | Log the driver figure's settling (grips, wrists, elbows). |
 | `OMSI_DEBUG_ENHANCED` | num | 0 | once | render | Enhanced main pass shows one of its terms alone (n selects it: 1 sun shadow, 2 occlusion, ...). |
 | `OMSI_DEBUG_EXPOSURE` | bool | off | use | render | Read back and log the adapted exposure metering now and then. |
+| `OMSI_DEBUG_FACE` | text | - | use | app | Log the avatars' faces as they are posed (the strongest expressions of the near faces, once a second); `smile`, `open` or `blink` also puts that expression on every face. |
 | `OMSI_DEBUG_FLICKER` | bool | off | frame | render | Log near instances drawn in one frame and not the next (objects blinking). |
 | `OMSI_DEBUG_FLOAT` | bool | off | use | scene | Log objects floating over the ground while placing them. |
 | `OMSI_DEBUG_FOG_LAMPS` | bool | off | frame | render | Log the fog lamp passes per frame. |
@@ -215,6 +216,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_SKIP_OBJECT` | text | - | use | scene | Leave out the objects whose file name contains this text. |
 | `OMSI_SKIP_PIPE` | text | - | frame | render | Pipeline kinds to leave out of the main pass (comma-separated numbers). |
 | `OMSI_SPOT_SELECT` | num | - | use | scene | Turn on spotlight n (headlight pictures). |
+| `OMSI_TEST_AVATAR` | text | - | test | sim | Test only: an avatar FBX for the avatar loading test (`cargo test -p omsi-sim a_rocketbox_avatar_loads -- --ignored`). |
 | `OMSI_TEST_CONTENT` | text | - | test | o3d, scene | Content root for tests that need real OMSI content. |
 | `OMSI_TEST_WINE_DIR` | text | - | test | plugin | Plugin demo test: folder holding omsi-plugin-host.exe for Wine. |
 | `OMSI_TOUCH` | bool | off | use | app | The on-screen touch controls on a computer. |
@@ -313,6 +315,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 
 | Name | Type | Default | Read | Crates | Description |
 |---|---|---|---|---|---|
+| `OMSI_CHARACTER_MODELS` | text | settings | use | app | Override the character models for a game session: original (OMSI's people) or improved (the Microsoft Rocketbox avatars, drawn on this computer only). |
 | `OMSI_ENHANCED` | bool | settings | use | app | Enhanced graphics for this run. |
 | `OMSI_ENHANCED_PLUS` | bool | settings | use | app | Enhanced+ (ray traced) graphics for this run. |
 | `OMSI_GRAPHICS` | text | settings | use | app | vanilla, vanilla_plus or enhanced: another renderer for one run. |
@@ -340,6 +343,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | Name | Type | Default | Read | Crates | Description |
 |---|---|---|---|---|---|
 | `OMSI_AMBIENCE_DIR` | text | - | use | soundscape | The folder of the ambience's recordings (its pack.json), instead of `ambience` beside the program or in ~/.openomsi. |
+| `OMSI_AVATARS_DIR` | text | - | use | platform | The folder of the passenger avatars (its pack.json), instead of `avatars` beside the program or in ~/.openomsi. |
 | `OMSI_BACKEND` | text | settings | use | app | vulkan, dx12, metal, gl or angle (dx11, d3d11; Windows): the graphics API tried first (overrides the settings). Set at runtime by the launcher and on Android. |
 | `OMSI_CLOUDFLARED` | text | - | use | net | Path of the cloudflared binary for the LAN tunnel (searched after the game's folder, before the PATH). |
 | `OMSI_CONTENT` | text | beside the game | use | app, cfg, launcher-core, sim | The content folder (mods, archives, screenshots). Set at runtime on Android and iOS. |

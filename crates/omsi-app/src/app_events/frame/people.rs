@@ -230,9 +230,11 @@ pub(super) fn humans(cx: HumansCx, dt: f32) {
             h.give_change(w, r, scene, &coins);
         }
         // the view sync of the people: the coins and ticket blocks of the player's bus,
-        // then everybody's pose (see `view_sync`)
-        let bus = cx.player.player.as_ref().map(|p| &p.vehicle);
-        view_sync::sync(ViewSync::people(h, bus, center), &mut cx.gfx.gfx.sim_view, w, r, scene);
+        // then everybody's pose (see `view_sync`), in the frame's last tick only
+        if cx.clock.fixed_tick.view_due() {
+            let bus = cx.player.player.as_ref().map(|p| &p.vehicle);
+            view_sync::sync(ViewSync::people(h, bus, center), &mut cx.gfx.gfx.sim_view, w, r, scene);
+        }
     }
 }
 

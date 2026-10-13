@@ -65,6 +65,8 @@ pub(crate) struct Integrations {
     pub(crate) plugin_events: Vec<omsi_plugin::GameEvent>,
     /// The same for events whose values are tables (see `plugins::queue_event_ex`).
     pub(crate) plugin_events_ex: Vec<(&'static str, Vec<omsi_plugin::api::Value>)>,
+    /// The mouse on the script textures `.opl` plugins draw (clicked like a bus's pages).
+    pub(crate) plugin_pointer: omsi_plugin::TexturePointer,
     /// The plugins' sounds playing, and whether each moves with the player's bus.
     pub(crate) plugin_voices: Vec<(u64, bool)>,
     /// What the plugins' events last saw of the game (see `plugins::Seen`).

@@ -4,17 +4,6 @@
 use super::*;
 
 impl App {
-    /// The on-screen wheel and pedals, the cab's sound for a walker: false when there is no
-    /// bus to drive or nothing to draw it with.
-    pub(super) fn frame_player_input(&mut self, dt: f32) -> bool {
-        // the on-screen wheel and pedals (a phone)
-        self.touch_frame(dt);
-        // a walker stepping into or out of the bus hears its cab by degrees
-        let walker = self.foot_sound_amount(dt);
-        omsi_audio::soundset::set_cab_amount(walker);
-        !(self.player.is_none() || self.renderer.is_none() || self.scene.is_none())
-    }
-
     /// The cursor's aim into the cab.
     pub(super) fn frame_player_hover(&mut self) {
         let __th = Instant::now();
@@ -158,7 +147,10 @@ pub(super) fn player_step(cx: PlayerStepCx, dt: f32) {
             }
             q.vehicle.update(dt);
         }
-        q.sync_transforms(r, scene, false, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
+        // (drawn as the frame's last tick leaves it)
+        if cx.clock.fixed_tick.view_due() {
+            q.sync_transforms(r, scene, false, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
+        }
         let f = crate::lan::footprint_of(&q.vehicle, [2.5, 11.5, 3.0, 0.0, 0.0, 1.5]);
         placed_boxes.push(omsi_sim::collision::Obb {
             center: glam::DVec2::new(f.x, f.y),
@@ -216,9 +208,12 @@ pub(super) fn player_to_scene(cx: PlayerToSceneCx, dt: f32) {
     p.sync_transforms(r, scene, inside, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
     crate::scene::sync_vehicle_damage(r, scene, &mut p.vehicle, &mut p.render);
     // from the driver's seat the figure stays in the mirrors
-    // (from the driver's seat only the mirrors show him)
+    // (from the driver's seat only the mirrors show him - while the camera is at his eyes:
+    // the photo mode keeps the driver's view while its camera flies off, and taken from
+    // there every photo showed the bus without its driver)
     // (out of the seat: nobody at the wheel)
-    p.sync_driver_hands(r, scene, dt, cx.common.settings.driver && cx.people.on_foot.is_none(), *cx.view.view == "driver", cx.common.settings.hands_in_cab);
+    let at_eyes = *cx.view.view == "driver" && cx.view.camera.as_ref().is_none_or(|c| (c.position - crate::camera_util::driver_eye(p)).length() < 0.5);
+    p.sync_driver_hands(r, scene, dt, cx.common.settings.driver && cx.people.on_foot.is_none(), at_eyes, cx.common.settings.hands_in_cab);
 }
 
 crate::app::stage_ctx!(

@@ -34,7 +34,8 @@ struct Record {
     trans: u32,
     // bit 0: alpha-tested (stochastic), bit 1: unlit (shows its own colour), bit 2: the
     // coverage is the transmap's alpha, bits 3-4 how its textures are addressed (rt_tex.rs
-    // `address_mode`), bit 5: opaque all the same (a transmap whose alpha is not taken)
+    // `address_mode`), bit 5: opaque all the same (a transmap whose alpha is not taken),
+    // bit 6: a see-through pane
     flags: u32,
     // its first triangle's texture coordinates (rt_tex.rs; 0xffffffff: none yet)
     uvs: u32,
@@ -64,6 +65,8 @@ const MASK_SHADOW: u32 = 0x01u;
 const MASK_SEEN: u32 = 0x06u;
 // see-through panes (their shadow: part of the sun gets through)
 const MASK_GLASS: u32 = 0x08u;
+// ... and the same panes as the reflections' rays meet them
+const MASK_GLASS_SEEN: u32 = 0x10u;
 // Ray flags. (Not called RAY_FLAG_*: Direct3D's HLSL has those names built in, and naga
 // writes the constants out under their own names - DXC refused the redefinition, the ray
 // tracing's pipelines were never made on Windows, and every frame was thrown away.)

@@ -1,6 +1,6 @@
 type Reply = std::sync::Arc<dyn Fn(&serde_json::Value, serde_json::Value, &[u8]) + Send + Sync>;
 
-pub struct Paths { pub read_root: fn() -> std::path::PathBuf, pub write_root: fn() -> std::path::PathBuf }
+pub struct Paths { pub read_root: fn() -> std::path::PathBuf }
 use crate::controllers::{self, Connected, DeviceCfg, Devices, Func};
 use crate::ffb_calibration::Calibration;
 use crate::gamepad_profile::{self, PadKind};
@@ -60,7 +60,7 @@ fn run(rx: Receiver<(Value, Reply)>, paths: Paths) {
                         watch(&mut rests, d);
                         Ok(state(d, std::mem::take(&mut pressed), &rests, &saved, &off(&req)))
                     }
-                    "save" => save(&req, &mut saved, paths.write_root),
+                    "save" => save(&req, &mut saved),
                     "ffb_test" => {
                         io = None;
                         pressed.clear();
@@ -210,14 +210,11 @@ fn device_from(v: &Value) -> Result<DeviceCfg, String> {
     Ok(d)
 }
 
-fn save(req: &Value, saved: &mut Vec<DeviceCfg>, write_root: fn() -> std::path::PathBuf) -> Result<Value, String> {
+fn save(req: &Value, saved: &mut Vec<DeviceCfg>) -> Result<Value, String> {
     let devices = req.get("devices").and_then(Value::as_array).ok_or("no devices")?.iter().map(device_from).collect::<Result<Vec<_>, _>>()?;
-    let base = write_root();
-    if base.as_os_str().is_empty() { return Err("the game's content folder was not found".into()); }
-    std::fs::create_dir_all(base.join("Inputs")).map_err(|e| format!("{}: {e}", base.join("Inputs").display()))?;
-    controllers::save_cfg(Some(base.clone()), &devices)?;
+    let path = controllers::save_cfg(&devices)?;
     *saved = devices;
-    Ok(json!({ "path": base.join("Inputs").join("gamectrler.cfg").to_string_lossy() }))
+    Ok(json!({ "path": path.to_string_lossy() }))
 }
 
 fn ffb_test(req: &Value, hwnd: Option<isize>) -> Result<Value, String> {

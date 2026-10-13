@@ -29,3 +29,6 @@ pub use paint::{Color, Painter, Rect, Vertex};
 pub use text::{Fonts, Weight};
 
 pub mod performance;
+
+pub mod profile_times;
+pub mod units;

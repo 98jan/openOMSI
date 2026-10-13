@@ -24,11 +24,13 @@
 use std::path::{Path, PathBuf};
 
 pub mod codepage;
+pub mod collate;
 pub mod flags;
 pub mod lang;
 mod keywords;
 pub mod number;
 pub mod par;
+pub mod radio;
 pub mod panic_guard;
 pub mod vfs;
 pub mod install_search;
@@ -471,7 +473,10 @@ fn name_key(name: &str) -> String {
     }
 }
 
-type Listing = std::sync::Arc<std::collections::HashMap<String, std::ffi::OsString>>;
+/// The entries of one directory by [`name_key`]. A key holds more than one name only on a
+/// case-sensitive file system that has two spellings of it side by side (`maps` and `Maps`,
+/// after an add-on was unpacked next to the original folders) - a name means any of them.
+type Listing = std::sync::Arc<std::collections::HashMap<String, Vec<std::ffi::OsString>>>;
 // (read far more often than added to, by the loaders side by side: a lock for readers)
 static LISTINGS: std::sync::OnceLock<std::sync::RwLock<std::collections::HashMap<PathBuf, Listing>>> = std::sync::OnceLock::new();
 /// Bumped whenever content may have come or gone (a root added or taken away, a mod
@@ -493,22 +498,49 @@ pub fn content_generation() -> u64 {
     CONTENT_GENERATION.load(std::sync::atomic::Ordering::SeqCst)
 }
 
+/// Pictures that came with a model of another tool's format (a `.glb`'s packed textures,
+/// the `.png` beside an `.fbx`), by the bare file name its material gives: the texture
+/// lookup takes them when the usual folders have no picture of that name. The material
+/// keeps the bare name, so the `[matl]` lines of a model's `.cfg` find it as in OMSI.
+static MODEL_TEXTURES: std::sync::RwLock<Option<std::collections::HashMap<String, PathBuf>>> = std::sync::RwLock::new(None);
+
+pub fn register_model_texture(name: &str, path: PathBuf) {
+    MODEL_TEXTURES.write().unwrap().get_or_insert_with(std::collections::HashMap::new).entry(name.to_lowercase()).or_insert(path);
+}
+
+/// The picture a model brought for the bare name `name` (see [`register_model_texture`]).
+pub fn model_texture(name: &str) -> Option<PathBuf> {
+    MODEL_TEXTURES.read().unwrap().as_ref()?.get(&name.trim().to_lowercase()).cloned()
+}
+
 /// The entries of a directory by [`name_key`], listed once.
 fn dir_listing(dir: &Path) -> Listing {
     let cache = LISTINGS.get_or_init(|| std::sync::RwLock::new(std::collections::HashMap::new()));
     if let Some(l) = cache.read().unwrap().get(dir) {
         return l.clone();
     }
-    let mut map = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<String, Vec<std::ffi::OsString>> = std::collections::HashMap::new();
     let entries = vfs::list_dir(dir).unwrap_or_default();
     for (name, _) in &entries {
-        map.insert(name_key(&name.to_string_lossy()), name.clone());
+        // every spelling, not the last one read: one that held the rest of a path used to be
+        // dropped for another differing only in case, and its content went missing
+        let names = map.entry(name_key(&name.to_string_lossy())).or_default();
+        if !names.contains(name) {
+            names.push(name.clone());
+        }
+    }
+    // the file system's own order is no order of ours: sorted, the spelling a lookup
+    // settles on is the same from one run to the next
+    for names in map.values_mut() {
+        if names.len() > 1 {
+            names.sort();
+        }
     }
     // the other spellings of names beyond ASCII (see `codepage::name_variants`), behind
     // every real name
     for (name, _) in &entries {
         for v in codepage::name_variants(&name.to_string_lossy()) {
-            map.entry(name_key(&v)).or_insert_with(|| name.clone());
+            map.entry(name_key(&v)).or_insert_with(|| vec![name.clone()]);
         }
     }
     let l = std::sync::Arc::new(map);
@@ -516,16 +548,30 @@ fn dir_listing(dir: &Path) -> Listing {
     l
 }
 
-/// The entry of `dir` that `name` means: the same name without regard to case, or one of
-/// its other spellings (a name beyond ASCII read in another code page on the way).
-fn find_in_dir(dir: &Path, name: &str) -> Option<std::ffi::OsString> {
+/// Every entry of `dir` that `name` can mean, the spelling asked for first: the same name
+/// without regard to case, or one of its other spellings (a name beyond ASCII read in
+/// another code page on the way). More than one only where the file system holds two names
+/// differing in case alone - which of them is meant is decided by what lies inside, so the
+/// walk over a path ([`resolve_existing`]) tries each.
+fn candidates_in_dir(dir: &Path, name: &str) -> Vec<std::ffi::OsString> {
     let listing = dir_listing(dir);
-    if let Some(n) = listing.get(&name_key(name)) {
-        return Some(n.clone());
+    let mut out = listing.get(&name_key(name)).cloned().unwrap_or_default();
+    if out.is_empty() {
+        out = codepage::name_variants(name)
+            .iter()
+            .find_map(|v| listing.get(&name_key(v)).cloned())
+            .unwrap_or_default();
     }
-    codepage::name_variants(name)
-        .iter()
-        .find_map(|v| listing.get(&name_key(v)).cloned())
+    // the folder spells it exactly as asked: that one is meant
+    if let Some(i) = out.iter().position(|n| n.as_os_str() == std::ffi::OsStr::new(name)) {
+        out.swap(0, i);
+    }
+    out
+}
+
+/// The entry of `dir` that `name` means (the first of [`candidates_in_dir`]).
+fn find_in_dir(dir: &Path, name: &str) -> Option<std::ffi::OsString> {
+    candidates_in_dir(dir, name).into_iter().next()
 }
 
 /// Content roots, highest priority first: the game's own content folder next to its
@@ -666,7 +712,7 @@ fn mirrored_base(base: &Path, root: &Path, roots: &[PathBuf]) -> Option<PathBuf>
 /// listings only; None as soon as a component does not exist.
 fn resolve_existing(base: &Path, rel: &[&str]) -> Option<PathBuf> {
     let mut cur = base.to_path_buf();
-    for comp in rel {
+    for (i, comp) in rel.iter().enumerate() {
         if comp.is_empty() || *comp == "." {
             continue;
         }
@@ -674,8 +720,17 @@ fn resolve_existing(base: &Path, rel: &[&str]) -> Option<PathBuf> {
             cur.pop();
             continue;
         }
-        let found = find_in_dir(&cur, comp).map(|n| cur.join(n))?;
-        cur = found;
+        let names = candidates_in_dir(&cur, comp);
+        if names.len() < 2 {
+            cur = cur.join(names.into_iter().next()?);
+            continue;
+        }
+        // Two names differing in case alone, on a case-sensitive file system: the folder
+        // meant is whichever one holds the rest of the path. An add-on unpacked beside the
+        // original folders leaves a `Maps` with the new map next to the `maps` holding all
+        // the others; both have to stay reachable.
+        let rest = &rel[i + 1..];
+        return names.iter().find_map(|n| resolve_existing(&cur.join(n), rest));
     }
     Some(cur)
 }
@@ -833,7 +888,7 @@ pub fn resolve_path(base: &Path, rel: &str) -> PathBuf {
         // the folder's listing, kept from the first time, has the name spelled just so:
         // the path as asked for, which the file system would only confirm (a look on the
         // disk for every component of every path was most of a lookup's time)
-        if dir_listing(&cur).get(&name_key(comp)).is_some_and(|n| n.as_os_str() == std::ffi::OsStr::new(comp)) {
+        if dir_listing(&cur).get(&name_key(comp)).is_some_and(|names| names.iter().any(|n| n.as_os_str() == std::ffi::OsStr::new(comp))) {
             cur.push(comp);
             continue;
         }
@@ -846,6 +901,15 @@ pub fn resolve_path(base: &Path, rel: &str) -> PathBuf {
         // time (scanning the folder afresh for every miss made texture lookups crawl)
         let found = find_in_dir(&cur, comp).map(|n| cur.join(n));
         cur = found.unwrap_or(direct);
+    }
+    // The walk above takes each component on its own, which is enough until a folder has two
+    // names differing in case alone: it then follows the spelling asked for, and the rest of
+    // the path may lie under the other one. Looking the whole path up at once weighs the
+    // spellings against what is inside them (see `resolve_existing`).
+    if !vfs::exists(&cur) {
+        if let Some(p) = resolve_existing(base, rel) {
+            return p;
+        }
     }
     if let (Some(owner), false) = (&owner, vfs::exists(&cur)) {
         // not in `base`'s root either: another root may still have it - a lower-priority
@@ -1015,15 +1079,7 @@ pub fn content_dir() -> Option<PathBuf> {
     if let Some(d) = crate::flags::OMSI_CONTENT.os() {
         return Some(PathBuf::from(d));
     }
-    let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?.to_path_buf();
-    // inside an .app bundle the binary sits in Contents/MacOS: use the folder beside the bundle
-    let dir = if dir.ends_with("Contents/MacOS") {
-        dir.parent()?.parent()?.parent()?.to_path_buf()
-    } else {
-        dir
-    };
-    let cand = content_folder_of(&dir);
+    let cand = content_folder_of_program(&std::env::current_exe().ok()?)?;
     if !is_programs_folder(&cand) && (cand.exists() || std::fs::create_dir_all(&cand).is_ok()) && is_writable(&cand) {
         Some(cand)
     } else {
@@ -1032,6 +1088,77 @@ pub fn content_dir() -> Option<PathBuf> {
         let _ = ensure_content_layout(&fallback);
         Some(fallback)
     }
+}
+
+fn content_folder_of_program(exe: &Path) -> Option<PathBuf> {
+    let dir = exe.parent()?;
+    // inside an .app bundle the binary sits in Contents/MacOS: use the folder beside the bundle
+    let dir = if dir.ends_with("Contents/MacOS") { dir.parent()?.parent()?.parent()? } else { dir };
+    Some(content_folder_of(dir))
+}
+
+const OWN_INPUTS: [&str; 2] = ["keyboard.cfg", "gamectrler.cfg"];
+
+pub fn own_input(name: &str) -> Option<PathBuf> {
+    if crate::flags::OMSI_CONTENT.os().is_some() {
+        return content_dir().map(|c| c.join("Inputs").join(name));
+    }
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    Some(PathBuf::from(home).join(".openomsi").join("Inputs").join(name))
+}
+
+pub fn input_in_use(name: &str) -> Option<PathBuf> {
+    newest([own_input(name), content_dir().map(|c| c.join("Inputs").join(name))])
+}
+
+pub fn adopt_own_inputs(previous_program: Option<&Path>) {
+    if crate::flags::OMSI_CONTENT.os().is_some() {
+        return;
+    }
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(|h| PathBuf::from(h).join(".openomsi").join("content"));
+    let here = std::env::current_exe().ok().and_then(|e| content_folder_of_program(&e));
+    for name in OWN_INPUTS {
+        let Some(own) = own_input(name).filter(|p| !p.exists()) else { continue };
+        let mut dirs: Vec<PathBuf> = [content_dir(), previous_program.and_then(content_folder_of_program), home.clone()].into_iter().flatten().collect();
+        dirs.extend(here.as_deref().map(sibling_installs).unwrap_or_default());
+        if let Some(found) = newest(dirs.iter().map(|d| Some(d.join("Inputs").join(name)))) {
+            adopt_input(&own, &found);
+        }
+    }
+}
+
+fn sibling_installs(here: &Path) -> Vec<PathBuf> {
+    let Some(parent) = here.parent() else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(parent) else { return Vec::new() };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|d| ["openomsi", "openomsi.exe", "openOMSI.app"].iter().any(|p| d.join(p).exists()))
+        .map(|d| content_folder_of(&d))
+        .collect()
+}
+
+fn newest(paths: impl IntoIterator<Item = Option<PathBuf>>) -> Option<PathBuf> {
+    let mut best: Option<(PathBuf, std::time::SystemTime)> = None;
+    for p in paths.into_iter().flatten() {
+        let Some(t) = std::fs::metadata(&p).ok().filter(|m| m.is_file()).and_then(|m| m.modified().ok()) else { continue };
+        if best.as_ref().is_none_or(|(_, b)| t > *b) {
+            best = Some((p, t));
+        }
+    }
+    best.map(|(p, _)| p)
+}
+
+fn adopt_input(own: &Path, from: &Path) {
+    let (Some(dir), Some(name)) = (own.parent(), own.file_name()) else { return };
+    if own.exists() || own == from {
+        return;
+    }
+    let tmp = dir.join(format!("{}.{}.tmp", name.to_string_lossy(), std::process::id()));
+    let _ = std::fs::create_dir_all(dir).and_then(|_| std::fs::copy(from, &tmp)).and_then(|_| {
+        std::fs::hard_link(&tmp, own).or_else(|e| if e.kind() == std::io::ErrorKind::AlreadyExists { Ok(()) } else { std::fs::rename(&tmp, own) })
+    });
+    let _ = std::fs::remove_file(&tmp);
 }
 
 /// Create the content folder layout at `dir` (idempotent).
@@ -1060,185 +1187,7 @@ pub fn ensure_content_layout(dir: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_mods_lowercase_texture_folder_does_not_hide_the_originals() {
-        // A mod ships `Vehicles/Pack/texture/..` (a livery) next to the original pack's
-        // `Vehicles/Pack/Texture/..`: a file asked for from the mod's folder is found in the
-        // original's, whatever the case of the folder, as on a case-insensitive file system
-        let t = std::env::temp_dir().join(format!("omsi-cfg-mirror-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&t);
-        let (mods, omsi) = (t.join("mods"), t.join("omsi"));
-        std::fs::create_dir_all(mods.join("Vehicles/Pack/texture")).unwrap();
-        std::fs::create_dir_all(omsi.join("Vehicles/Pack/Texture")).unwrap();
-        std::fs::write(omsi.join("Vehicles/Pack/Texture/black.dds"), b"x").unwrap();
-        let roots = vec![mods.clone(), omsi.clone()];
-        let mirrored = mirrored_base(&mods.join("Vehicles/Pack/texture"), &omsi, &roots).unwrap();
-        assert_eq!(mirrored, omsi.join("Vehicles/Pack/Texture"));
-        assert!(resolve_existing(&mirrored, &["black.dds"]).is_some());
-        // a folder the other root does not have keeps the plain spelling
-        let none = mirrored_base(&mods.join("Vehicles/Other/texture"), &omsi, &roots).unwrap();
-        assert_eq!(none, omsi.join("Vehicles/Other/texture"));
-        std::fs::remove_dir_all(&t).unwrap();
-    }
-
-    #[test]
-    fn writable_check() {
-        let tmp = std::env::temp_dir();
-        assert!(is_writable(&tmp));
-        let nonexistent = tmp.join("nonexistent_subfolder_xyz_123");
-        assert!(!is_writable(&nonexistent));
-    }
-
-    #[test]
-    fn applications_folder_is_no_content_folder() {
-        assert!(is_programs_folder(Path::new("/Users/x/Applications")));
-        assert!(!is_programs_folder(Path::new("/Users/x/Games/openOMSI")));
-        // content an older version installed there stays in use
-        let dir = std::env::temp_dir().join(format!("omsi-apps-{}", std::process::id())).join("Applications");
-        std::fs::create_dir_all(dir.join("Mods")).unwrap();
-        std::fs::create_dir_all(dir.join("Vehicles")).unwrap();
-        std::fs::create_dir_all(dir.join("maps").join("Grundorf")).unwrap();
-        std::fs::write(dir.join("Mods").join("README.txt"), b"x").unwrap();
-        std::fs::write(dir.join("maps").join("Grundorf").join("laststn.osn"), b"x").unwrap();
-        assert!(is_programs_folder(&dir));
-        std::fs::create_dir_all(dir.join("Vehicles").join("MAN_SD200")).unwrap();
-        assert!(!is_programs_folder(&dir));
-        std::fs::remove_dir_all(dir.parent().unwrap()).unwrap();
-    }
-
-    #[test]
-    fn keywords() {
-        assert_eq!(keyword_of("[mesh]"), Some("mesh"));
-        assert_eq!(keyword_of("\t[mesh]"), None);
-        assert_eq!(keyword_of("        [NightMapMode]"), None);
-        assert_eq!(keyword_of("[mesh] "), None);
-        assert_eq!(keyword_of("[busstop] macht aus dem Objekt"), None);
-        assert_eq!(keyword_of("[coupling_front] / [coupling_back]"), None);
-        // the original's spelling counts for its own keywords …
-        assert_eq!(keyword_of("[matl_noZwrite]"), Some("matl_noZwrite"));
-        assert_eq!(keyword_of("[matl_nozWrite]"), None);
-        assert_eq!(keyword_of("[NoDistanceCheck]"), None);
-        assert_eq!(keyword_of("[Mesh]"), None);
-        assert_eq!(keyword_of("[LOD]"), Some("LOD"));
-        assert_eq!(keyword_of("[lod]"), None);
-        // … not for the rest
-        assert_eq!(keyword_of("[Infosystem_Busstop]"), Some("Infosystem_Busstop"));
-        // .hof: spreadsheet exports
-        assert_eq!(keyword_with("[global_strings]\t\t\t", KeywordRule::TrimEnd), Some("global_strings"));
-        assert_eq!(keyword_with("[end]\"\t", KeywordRule::TrimEnd), Some("end"));
-        assert_eq!(keyword_with("\t[end]", KeywordRule::TrimEnd), None);
-        assert_eq!(keyword_of("[global_strings]\t"), None);
-        // ailists.cfg
-        assert_eq!(keyword_with("[AIGroup_2]", KeywordRule::AnyCase), Some("AIGroup_2"));
-        assert_eq!(keyword_with(" [aigroup_2]", KeywordRule::AnyCase), None);
-        for k in keywords::MIXED_CASE.iter().chain(keywords::LOWER_CASE) {
-            assert_eq!(omsi_spelling(&k.to_ascii_uppercase()), Some(*k));
-        }
-    }
-
-    /// The stock files' indented keywords are the original's help texts and switched-off
-    /// blocks: the SD202 cabin's `[exit]` help line adds no exit.
-    #[test]
-    fn indented_help_text() {
-        let text = "\t[entry]\t\tdefiniert Eingang\r\n\t[exit]\r\n\tnum\t\tanalog f\u{fc}r Ausgang\r\n\r\n###\r\n[exit]\r\n20\r\n";
-        let f = CfgFile::from_str("passengercabin.cfg", text);
-        let mut r = f.reader();
-        assert_eq!(r.next_keyword().as_deref(), Some("exit"));
-        assert_eq!(r.i32(), 20);
-        assert_eq!(r.next_keyword(), None);
-    }
-
-    #[test]
-    fn disabled_blocks() {
-        let text = "[mesh]\na.o3d\n-<DISABLED>-\n[mesh]\nb.o3d\n-<ENABLED>-\n[mesh]\n-<DISABLED>-\n[mesh]\nd.o3d\n";
-        let f = CfgFile::from_str("model.cfg", text);
-        let mut r = f.reader().disabled_blocks();
-        let mut meshes = Vec::new();
-        while let Some(k) = r.next_keyword() {
-            assert_eq!(k, "mesh");
-            meshes.push(r.str().to_string());
-        }
-        // a marker read as a parameter is a parameter; an unclosed block runs to the end
-        assert_eq!(meshes, vec!["a.o3d", "-<DISABLED>-", "d.o3d"]);
-        // loaders without the feature see the blocks
-        let mut r = f.reader();
-        let mut n = 0;
-        while r.next_keyword().is_some() {
-            n += 1;
-        }
-        assert_eq!(n, 4);
-        let f = CfgFile::from_str("model.cfg", "-<DISABLED>-\n[mesh]\nx\n -<ENABLED>-\n[mesh]\ny\n");
-        assert_eq!(f.reader().disabled_blocks().next_keyword(), None);
-    }
-
-    #[test]
-    fn bare_tokens() {
-        let text = "[new_attachment]\n\ntext\n[complexity]\n2\n\nattach_trans\n1\n2\n3\n\tattach_rot_x\nAttach_rot_y\n";
-        let f = CfgFile::from_str("x.sco", text);
-        let mut r = f.reader();
-        const T: &[&str] = &["attach_trans", "attach_rot_x", "attach_rot_y"];
-        assert_eq!(r.next_entry(T), Some(Entry::Keyword("new_attachment".into())));
-        assert_eq!(r.next_entry(T), Some(Entry::Keyword("complexity".into())));
-        assert_eq!(r.i32(), 2);
-        assert_eq!(r.next_entry(T), Some(Entry::Token("attach_trans")));
-        assert_eq!(r.f32s::<3>(), [1.0, 2.0, 3.0]);
-        assert_eq!(r.next_entry(T), None);
-    }
-
-    #[test]
-    fn until_follows_the_rule() {
-        let f = CfgFile::from_str("x.owt", "[description]\na\n[END]\n[end] \nb\n[end]\nc\n");
-        let mut r = f.reader();
-        r.next_keyword();
-        assert_eq!(r.until("[end]"), vec!["a", "[END]", "[end] ", "b"]);
-        let f = CfgFile::from_str("x.hof", "[addbusstop_list]\na\t\n[end]\t\t\nc\n");
-        let mut r = f.reader().with_rule(KeywordRule::TrimEnd);
-        r.next_keyword();
-        assert_eq!(r.until("[end]"), vec!["a\t"]);
-        assert_eq!(r.str(), "c");
-    }
-
-    #[test]
-    fn windows_paths() {
-        assert_eq!(windows_components("texture\\anz-oben.jpg."), vec!["texture", "anz-oben.jpg"]);
-        assert_eq!(windows_components(" ..\\..\\Model.\\a.o3d . "), vec!["..", "..", "Model", "a.o3d"]);
-        assert_eq!(windows_components("\\Splines//x\\.\\y.sli"), vec!["Splines", "x", "y.sli"]);
-        assert_eq!(windows_components("Folder..\\x"), vec!["Folder.", "x"]);
-        assert_eq!(windows_components("Folder.\\"), vec!["Folder"]);
-        assert_eq!(windows_components("str_gehweg02.bmp "), vec!["str_gehweg02.bmp"]);
-        assert_eq!(windows_components(""), Vec::<&str>::new());
-        let dir = std::env::temp_dir().join(format!("omsi-cfg-paths-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("Texture").join("Bahn\u{fc}bergang")).unwrap();
-        std::fs::write(dir.join("Texture").join("Bahn\u{fc}bergang").join("anz-oben.jpg"), b"x").unwrap();
-        let p = resolve_path(&dir.join("model"), "..\\TEXTURE.\\BAHN\u{dc}BERGANG/Anz-Oben.JPG. ");
-        assert!(vfs::is_file(&p), "{}", p.display());
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn reader() {
-        let f = CfgFile::from_str("x.cfg", "hello\r\n[mesh]\r\na.o3d\r\n\r\n[LOD]\r\n0.5\r\n");
-        let mut r = f.reader();
-        assert_eq!(r.next_keyword().as_deref(), Some("mesh"));
-        assert_eq!(r.str(), "a.o3d");
-        assert_eq!(r.next_keyword().as_deref(), Some("lod"));
-        assert_eq!(r.f32(), 0.5);
-        assert_eq!(r.next_keyword(), None);
-    }
-
-    #[test]
-    fn utf16() {
-        let mut b = vec![0xFF, 0xFE];
-        for c in "[name]\r\nGrundorf".encode_utf16() {
-            b.extend_from_slice(&c.to_le_bytes());
-        }
-        let f = CfgFile::from_bytes("g.cfg", &b);
-        assert_eq!(f.lines, vec!["[name]", "Grundorf"]);
-    }
-}
+mod tests;
 
 /// The `OMSI_*` switches of the environment, read once: the frame asked for dozens of them
 /// every time round (`getenv` takes a lock and walks the environment - 2 % of a frame's CPU

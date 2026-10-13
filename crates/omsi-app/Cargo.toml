@@ -68,6 +68,7 @@ serde.workspace = true
 hashbrown.workspace = true
 parking_lot.workspace = true
 image.workspace = true
+png = "0.18"
 serde_json.workspace = true
 ab_glyph.workspace = true
 rustrict = "0.7"

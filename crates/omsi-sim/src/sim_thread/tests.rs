@@ -283,7 +283,7 @@ fn pipelined_ticks_match_inline_ticks() {
         assert_eq!(piped_t.rng, inline_t.rng, "frame {k}");
         assert_eq!(outputs_of(&mut piped_s), outputs_of(&mut inline_s), "frame {k}");
     }
-    assert!(counts.contains(&0) && counts.contains(&1) && counts.iter().any(|n| *n >= 4), "ticks a frame: {counts:?}");
+    assert!(counts.contains(&0) && counts.contains(&1) && counts.iter().any(|n| *n >= 2), "ticks a frame: {counts:?}");
     assert_eq!(piped_t.sim_accum.to_bits(), inline_t.sim_accum.to_bits());
     assert_eq!(piped_t.day_time.to_bits(), inline_t.day_time.to_bits());
     assert!((inline.people[0].position - glam::DVec3::ZERO).length() > 5.0, "the riders went along with the bus");

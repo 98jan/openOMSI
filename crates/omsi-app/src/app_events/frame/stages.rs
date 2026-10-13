@@ -1,7 +1,7 @@
 //! The window's frame as lists of stages, and what takes them: the `App` with the frame's
 //! event loop and the values one stage hands to the next (see `frame_stages`). The frame runs
 //! [`FRAME_BEFORE`] once, [`FRAME_TICK`] once per tick of the fixed simulation step
-//! (`omsi_sim::tick`, 120 a second, with the tick's time) and [`FRAME_AFTER`] once (see
+//! (`omsi_sim::tick`, 60 a second, with the tick's time) and [`FRAME_AFTER`] once (see
 //! `ticked`); [`WINDOW_FRAME`] is the three in that order, as a frame of one tick runs them.
 
 use super::*;
@@ -31,6 +31,7 @@ pub(crate) enum WindowStage {
     Duty,
     Integrations,
     ViewKeys,
+    Drawn,
     Weather,
     Lights,
     Scripted,
@@ -64,7 +65,7 @@ pub(crate) const FRAME_TICK: &[WindowStage] = {
 /// sounds, the LAN, the interface (with the photo mode's camera and panel) and the picture.
 pub(crate) const FRAME_AFTER: &[WindowStage] = {
     use WindowStage::*;
-    &[PlayerView, Audio, Lan, Integrations, ViewKeys, Lights, Scripted, Photo, Ui, Lighting, TraceLook, Render]
+    &[PlayerView, Audio, Lan, Integrations, ViewKeys, Drawn, Lights, Scripted, Photo, Ui, Lighting, TraceLook, Render]
 };
 
 const FRAME_LEN: usize = FRAME_BEFORE.len() + FRAME_TICK.len() + FRAME_AFTER.len();
@@ -107,7 +108,7 @@ impl frame_stages::Stage for WindowStage {
             Timing => StageInfo {
                 takes: &[],
                 gives: &[Carry::Time],
-                ..stage("timing", P::Housekeeping, Role::Own, &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::Input, G::Menus, G::Weather, G::Traffic, G::Player, G::People, G::Duty, G::Ui], &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::World], Profile::None)
+                ..stage("timing", P::Housekeeping, Role::Own, &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::Input, G::Menus, G::Weather, G::Traffic, G::Player, G::People, G::Duty, G::Ui], &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::World, G::Integrations], Profile::None)
             },
             ShellActions => StageInfo { takes: &[], ..stage("shell_actions", P::Housekeeping, Role::Own, &[G::Menus, G::Input, G::Traffic, G::People, G::Duty, G::Net, G::Integrations, G::Sound, G::View, G::Ui, G::Gfx, G::Perf], &[G::Menus, G::Player, G::World, G::Clock, G::Weather], Profile::Key(K::Shell)) },
             Placement => StageInfo { takes: &[], ..stage("placement", P::Housekeeping, Role::Own, crate::app_impl::PlacementCx::READS, crate::app_impl::PlacementCx::WRITES, Profile::Key(K::Placement)) },
@@ -116,7 +117,7 @@ impl frame_stages::Stage for WindowStage {
             Traffic => stage("traffic", P::Sim, Role::Traffic, super::road::TrafficCx::READS, super::road::TrafficCx::WRITES, Profile::Key(K::Traffic)),
             Controllers => StageInfo { gives: &[Carry::Controls], ..stage("controllers", P::Input, Role::Own, &[G::Input, G::Player, G::Menus, G::Clock, G::Weather, G::World, G::Traffic, G::People, G::Duty, G::Net, G::Integrations, G::View, G::Gfx], &[G::Input, G::Ui], Profile::Key(K::Player)) },
             MouseDrive => StageInfo { takes: &[Carry::Time, Carry::Controls], gives: &[Carry::Controls], ..stage("mouse_drive", P::Input, Role::Own, &[G::Input, G::Player, G::View, G::Menus, G::Clock, G::World, G::People, G::Duty, G::Net, G::Integrations, G::Ui, G::Gfx], &[G::Input, G::View], Profile::Key(K::Player)) },
-            PadActions => StageInfo { takes: &[Carry::Controls], ..stage("pad_actions", P::Input, Role::Own, &[G::Input, G::Clock, G::Weather, G::World, G::Traffic, G::People, G::Duty, G::Net, G::Integrations, G::Ui, G::Gfx, G::Perf], &[G::Player, G::Menus, G::View], Profile::Key(K::Player)) },
+            PadActions => StageInfo { takes: &[Carry::Time, Carry::Controls], ..stage("pad_actions", P::Input, Role::Own, &[G::Clock, G::Weather, G::World, G::Traffic, G::People, G::Duty, G::Net, G::Integrations, G::Ui, G::Gfx, G::Perf], &[G::Input, G::Player, G::Menus, G::View], Profile::Key(K::Player)) },
             PlayerTick => stage("player_tick", P::Sim, Role::Player, super::driving::PlayerStepCx::READS, super::driving::PlayerStepCx::WRITES, Profile::Key(K::Player)),
             PlayerView => stage("player_view", P::Present, Role::Own, &[G::Player, G::View, G::Clock, G::Input, G::World, G::Menus, G::People, G::Duty, G::Net, G::Sound, G::Ui, G::Perf], &[G::Player, G::View, G::Gfx], Profile::Key(K::Player)),
             Audio => stage("audio", P::Present, Role::Own, super::driving::AudioCx::READS, super::driving::AudioCx::WRITES, Profile::Key(K::Player)),
@@ -127,6 +128,7 @@ impl frame_stages::Stage for WindowStage {
             Duty => stage("duty", P::Sim, Role::Duty, &[G::Duty, G::Player, G::People, G::Clock, G::World, G::Net, G::Input, G::Menus, G::Traffic, G::Sound, G::View, G::Gfx], &[G::Duty, G::Player, G::Integrations, G::Ui, G::Net], Profile::Key(K::Duty)),
             Integrations => stage("integrations", P::Sim, Role::Own, &[G::Integrations, G::Player, G::Duty, G::World, G::Net, G::Input, G::Clock, G::Weather, G::Traffic, G::People, G::Sound, G::View, G::Ui, G::Gfx, G::Perf], &[G::Integrations, G::Player, G::Menus, G::Duty], Profile::Key(K::Integrations)),
             ViewKeys => stage("view_keys", P::Input, Role::Own, super::view_keys::ViewKeysCx::READS, super::view_keys::ViewKeysCx::WRITES, Profile::Key(K::ViewKeys)),
+            Drawn => stage("drawn", P::Present, Role::Own, &[G::Clock, G::Net, G::World, G::People, G::Traffic, G::Player, G::View, G::Gfx], &[G::Player, G::Traffic, G::People, G::View, G::Gfx], Profile::Key(K::Player)),
             Weather => StageInfo { gives: &[Carry::Daylight], ..stage("weather", P::Sim, Role::Clock, &[G::Clock, G::Weather, G::World, G::Net, G::Ui, G::Perf], &[G::Clock, G::Weather, G::Traffic, G::Player, G::Gfx], Profile::Key(K::Weather)) },
             Lights => StageInfo { takes: &[Carry::Time, Carry::Daylight], ..stage("lights", P::Present, Role::Surroundings, super::surroundings::LightsCx::READS, super::surroundings::LightsCx::WRITES, Profile::Key(K::LightsAndRain)) },
             Scripted => StageInfo { takes: &[Carry::Time, Carry::Daylight], ..stage("scripted", P::Present, Role::Own, super::surroundings::ScriptedCx::READS, super::surroundings::ScriptedCx::WRITES, Profile::Key(K::Scripted)) },
@@ -135,7 +137,7 @@ impl frame_stages::Stage for WindowStage {
             Ui => StageInfo { gives: &[Carry::VrNavDisplay], ..stage("ui", P::Ui, Role::Own, &[G::Menus, G::Player, G::Duty, G::People, G::Integrations, G::Input, G::World, G::Clock, G::Weather, G::Traffic, G::Net, G::Sound, G::View, G::Perf], &[G::Ui, G::Gfx, G::Menus], Profile::Inner) },
             Lighting => StageInfo { takes: &[Carry::Time, Carry::Daylight], gives: &[Carry::Lighting], ..stage("lighting", P::Output, Role::Own, super::present::LightingCx::READS, super::present::LightingCx::WRITES, Profile::Key(K::Lighting)) },
             TraceLook => StageInfo { takes: &[], ..stage("trace_look", P::Output, Role::Own, super::TraceLookCx::READS, super::TraceLookCx::WRITES, Profile::None) },
-            Render => StageInfo { takes: &[Carry::Time, Carry::Lighting, Carry::VrNavDisplay], ..stage("render", P::Output, Role::Picture, &[G::Gfx, G::View, G::Ui, G::Input, G::Menus, G::Clock, G::World, G::Traffic, G::Player, G::People, G::Duty, G::Net], &[G::Gfx, G::Perf, G::Integrations], Profile::Inner) },
+            Render => StageInfo { takes: &[Carry::Time, Carry::Lighting, Carry::VrNavDisplay], ..stage("render", P::Output, Role::Picture, &[G::Gfx, G::View, G::Ui, G::Input, G::Menus, G::Clock, G::World, G::Traffic, G::People, G::Duty, G::Net], &[G::Gfx, G::Perf, G::Integrations, G::Player], Profile::Inner) },
         }
     }
 }
@@ -216,6 +218,7 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
             PadActions => {
                 let (analog, actions) = self.controls.take().expect("the controllers stage comes first");
                 app.frame_pad_actions(analog, actions);
+                app.touch_frame(dt());
             }
             PlayerTick => super::driving::player_step(super::driving::PlayerStepCx::of(&mut app.parts()), dt()),
             PlayerView => app.frame_player_view(dt()),
@@ -230,20 +233,34 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
             Duty => app.frame_duty(dt()),
             Integrations => app.frame_integrations(el, dt()),
             ViewKeys => super::view_keys::view_keys(super::view_keys::ViewKeysCx::of(&mut app.parts()), dt()),
+            Drawn => app.frame_drawn(),
             Weather => self.daylight = Some(app.frame_weather(dt())),
-            Lights => super::surroundings::lights(super::surroundings::LightsCx::of(&mut app.parts()), dt(), self.daylight.expect(NO_DAYLIGHT)),
+            Lights => {
+                let daylight = self.daylight.expect(NO_DAYLIGHT);
+                let behind = app.drawn_behind();
+                let sim = app.player_to_drawn_pose();
+                super::surroundings::lights(super::surroundings::LightsCx::of(&mut app.parts()), dt(), daylight, behind);
+                app.player_back_to_sim_pose(sim);
+            }
             Scripted => super::surroundings::scripted(super::surroundings::ScriptedCx::of(&mut app.parts()), dt(), self.daylight.expect(NO_DAYLIGHT)),
             WheelSurface => super::wheel_surface(super::WheelSurfaceCx::of(&mut app.parts())),
             Photo => crate::photo::photo(crate::photo::PhotoCx::of(&mut app.parts()), times.expect(NO_TIME).1),
             Ui => self.vr_nav_display = app.frame_ui(dt()),
-            Lighting => self.lighting = Some(super::present::lighting(super::present::LightingCx::of(&mut app.parts()), dt(), self.daylight.expect(NO_DAYLIGHT))),
+            Lighting => {
+                let daylight = self.daylight.expect(NO_DAYLIGHT);
+                let sim = app.player_to_drawn_pose();
+                self.lighting = Some(super::present::lighting(super::present::LightingCx::of(&mut app.parts()), dt(), daylight));
+                app.player_back_to_sim_pose(sim);
+            }
             TraceLook => super::trace_look(super::TraceLookCx::of(&mut app.parts())),
             Render => {
                 let lighting = self.lighting.take().expect("the lighting stage comes first");
                 // (OMSI_SIM_THREAD: the steps the stages left run beside the picture, back
                 // before the frame is counted - see `sim_thread`)
                 app.start_sim_thread();
+                let sim = app.player_to_drawn_pose();
                 app.frame_render(el, self.time.as_ref().expect(NO_TIME), &lighting, self.vr_nav_display.take());
+                app.player_back_to_sim_pose(sim);
                 app.join_sim_thread();
             }
         }

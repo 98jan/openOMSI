@@ -263,7 +263,7 @@ impl PeopleSim {
         if debug_pax() {
             log::info!("t={:.1} pax {} says {name}", self.time, self.people[i].label());
         }
-        self.voice_lines.push(VoiceLine { position: self.people[i].position + DVec3::new(0.0, 0.0, 1.6), path });
+        self.voice_lines.push(VoiceLine { position: self.people[i].position + DVec3::new(0.0, 0.0, 1.6), speaker: self.people[i].id, path });
     }
 
     pub fn rand(&mut self) -> u64 {

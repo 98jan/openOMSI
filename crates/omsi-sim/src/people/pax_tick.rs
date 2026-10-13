@@ -93,7 +93,8 @@ impl PeopleSim {
             }
         }
         self.pax_busy = busy;
-        // the places' own occupancy variables (#721): the riders at their places
+        // the places' own occupancy variables (#721): the riders at their places, and the
+        // players' figures sitting on one (a player on foot, a LAN player's)
         let sitting: Vec<(BusId, usize)> = self
             .people
             .iter()
@@ -101,6 +102,7 @@ impl PeopleSim {
                 State::Pax(x) if x.task == Task::SittingInBus => Some((x.inside?, x.seat?)),
                 _ => None,
             })
+            .chain(self.avatar_cmds.values().filter_map(|c| c.seat))
             .collect();
         self.pax_places = buses.iter().map(|bn| (bn.id, places_taken(bn, &sitting))).collect();
         // the player's bus reads its requests from `entry_req` / `exit_req`

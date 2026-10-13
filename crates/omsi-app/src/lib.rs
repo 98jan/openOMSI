@@ -32,6 +32,7 @@ mod apple;
 mod apple_bridge;
 mod platform;
 mod touch;
+mod units;
 mod placing;
 mod mt;
 use omsi_platform::updater;
@@ -206,6 +207,7 @@ pub fn run() -> Result<()> {
     view_sync::install_sim_decoder();
     startup::install_scene_settings();
     omsi_cfg::migrate_legacy_data_dir();
+    omsi_launcher_lib::adopt_own_inputs();
     #[cfg(target_os = "macos")]
     restart_with_allocator_settings();
     #[cfg(windows)]
@@ -294,6 +296,7 @@ fn game_event_loop() -> Result<EventLoop<()>> {
 /// nothing more to do (a fatal error was shown).
 pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option<server::ServerCfg>)>> {
     ui_language(&settings::Settings::load().language);
+    units::Units::from_setting(&settings::Settings::load().units).set();
     // (a server has no interface to translate)
     mt::enable(settings::Settings::load().machine_translation && args.server.is_none());
     // the dedicated server: server.cfg decides the world, the rest is a host without a window
@@ -768,6 +771,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             plugin_keys: Vec::new(),
             plugin_events: Vec::new(),
             plugin_events_ex: Vec::new(),
+            plugin_pointer: Default::default(),
             plugin_voices: Vec::new(),
             plugin_seen: Default::default(),
             plugin_command: false,

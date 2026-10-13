@@ -492,6 +492,12 @@ impl App {
 
     /// The mouse wheel (or a pinch of two fingers): `amount` notches, up positive.
     pub(crate) fn wheel(&mut self, amount: f32) {
+        let sim = self.player_to_drawn_pose();
+        self.wheel_now(amount);
+        self.player_back_to_sim_pose(sim);
+    }
+
+    fn wheel_now(&mut self, amount: f32) {
         // the photo mode: the lens zooms, or its panel scrolls under the mouse
         if self.photo_on() {
             if self.shell.over_ui {
@@ -608,8 +614,25 @@ impl App {
             self.shell.button(pressed);
             // (the left button dragged over the photo turns the photo camera)
             let over = self.shell.over_ui;
+            let size = self.gfx.surface.as_ref().map(|s| (s.config.width as f32, s.config.height as f32)).unwrap_or((1.0, 1.0));
+            let at = (self.input.cursor.0 / size.0.max(1.0), self.input.cursor.1 / size.1.max(1.0));
+            let mut focus = None;
             if let Some(ph) = self.photo.as_mut() {
                 ph.looking = pressed && !over;
+                // (a click on the picture that does not turn the view focuses there)
+                if pressed && !over {
+                    ph.press = Some(at);
+                    ph.dragged = 0.0;
+                } else if !pressed {
+                    if let Some(p) = ph.press.take() {
+                        if ph.dragged < 0.3 {
+                            focus = Some(p);
+                        }
+                    }
+                }
+            }
+            if let Some((x, y)) = focus {
+                self.photo_request(crate::photo::Request::FocusAt(x, y));
             }
             self.sync_look_hold();
             return;
@@ -847,7 +870,7 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
     let t = clock.time;
     let mut parts = vec![format!("{:02}:{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64, (t % 60.0) as i64)];
     if let Some(p) = player {
-        parts.push(format!("{:.0} km/h", p.vehicle.physics.velocity_kmh().abs()));
+        parts.push(crate::units::Units::now().speed_text(p.vehicle.physics.velocity_kmh().abs()));
         parts.push(distance_driven(metres));
         // the bus's whole mileage, as OMSI's Shift+Z overlay reads it ("Mileometer", the
         // `kmcounter_*` the cockpit shows, whole kilometres and the metres of the fraction)
@@ -855,7 +878,8 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
             parts.push(odometer_reading(km as f64 + p.vehicle.var("kmcounter_m").unwrap_or(0.0) as f64 / 1000.0));
         }
         let (outside, inside) = vehicle_temperatures(p);
-        parts.push(format!("EXT {:.0} °C / INT {:.0} °C", outside, inside));
+        let u = crate::units::Units::now();
+        parts.push(format!("EXT {} / INT {}", u.temperature(outside), u.temperature(inside)));
         // the tank as the bus's script says it (OMSI's RL_TankContent: tank_percent)
         if let Some(tank) = p.vehicle.var("tank_percent").filter(|v| v.is_finite()) {
             parts.push(format!("tank {:.0} %", (tank * 100.0).round()));
@@ -882,7 +906,7 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
 
 /// The kilometres driven this session (`Career::metres`), to a hundred metres.
 fn distance_driven(metres: f64) -> String {
-    format!("{:.1} km", metres.max(0.0) / 1000.0)
+    crate::units::Units::now().long_distance(metres.max(0.0) / 1000.0, 1)
 }
 
 /// The passenger places (`[passpos]`) in the player's bus and any coupled sections: nobody
@@ -903,7 +927,7 @@ fn passenger_capacity(vehicle: &omsi_sim::VehicleInstance) -> Option<usize> {
 
 /// The bus's odometer to a hundred metres, as the stock cockpits show it (km and tenths).
 fn odometer_reading(km: f64) -> String {
-    format!("{} {:.1} km", omsi_ui::tr("Odometer"), km.max(0.0))
+    format!("{} {}", omsi_ui::tr("Odometer"), crate::units::Units::now().long_distance(km.max(0.0), 1))
 }
 
 /// `n` (out of `capacity` places, where known) with the word for a passenger in the

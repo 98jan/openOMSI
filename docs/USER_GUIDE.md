@@ -58,6 +58,19 @@ Passengers → Passenger animations** and choose **Procedural (experimental)** t
 earlier foot-planted/IK poses. **Original OMSI** is the default and remains compatible.
 For temporary A/B tests without changing the saved setting, set `OMSI_PAX_ANIMATION=enhanced`
 before starting openOMSI (or `OMSI_PAX_ANIMATION=original` to force the classic mode).
+
+**Character models.** **Settings → Gameplay → Passengers → Character models** chooses how
+the people look. **Original** (the default) draws the people of OMSI's content. **High
+quality (improved)** draws them with the [Microsoft Rocketbox avatars](https://github.com/microsoft/Microsoft-Rocketbox)
+(91 of them: everyday people, office workers, workers, nurses, pilots, police officers,
+children): each person an avatar of the same kind, with a living face - they blink, look
+about, smile when they pay, now and then raise their brows, frown in thought or yawn late
+at night, and their lips move with what they say. This is drawn on your computer only: the
+passengers themselves (where they go, sit and pay) stay as they are, and in multiplayer the
+others see their own people. The avatars are downloaded once, the first time the setting is
+on (about 310 MB, into `~/.openomsi/avatars`); until they are there the people stay the
+content's own. `OMSI_CHARACTER_MODELS=improved` or `=original` overrides the setting for one
+session, `OMSI_AVATARS_DIR` names another folder of avatars.
 This is a visual experiment: check boarding, seats, door steps, CPU time and mirrors before
 making it the default. The setting does not change passenger routing or tickets.
 
@@ -270,6 +283,9 @@ scroll to zoom. Its pages:
   server names a voice channel (see [SERVER.md](SERVER.md) and
   `tools/greenteaspeak-plugin/README.md`).
 * **Controls** - `Inputs/keyboard.cfg`: click a key, press the new one; clashes are red. The
+  keys and the game controllers are kept in `~/.openomsi/Inputs` (on Windows
+  `C:\Users\<you>\.openomsi\Inputs`), so an update or a new program folder keeps them; the first
+  start of this version brings over those an earlier one saved beside the program. The
   keys are the game's with *Driving keys: Custom controls* (Settings → Driving); with a ready-made
   layout (W A S D, arrows) those keys drive and win over the list - the page says so, and
   changing a key switches to Custom controls by itself. *Game controllers*: wheels, pedals,
@@ -303,7 +319,7 @@ scroll to zoom. Its pages:
   (it is then neither read nor listed as steering); **Remove this device** (clicked twice) takes
   one out of the list, kept so by **Save**. Select a device to adjust *Steering force*
   (centering and resistance) and *Vibration* separately, then press **Save**. The values are stored
-  for that device in the content folder's `Inputs/gamectrler.cfg`; restart a running game to use
+  for that device in `~/.openomsi/Inputs/gamectrler.cfg`; restart a running game to use
   the new values. *Force feedback and vibration* in Settings → Driving remains the global on/off switch.
 * **Sessions** - every game started from the launcher, with its log, a **Stop** that lets
   it save its run (SIGTERM, up to 8 s, and only a stuck game is killed) and, for a LAN

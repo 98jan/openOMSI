@@ -7,6 +7,5 @@ pub(super) fn paths() -> omsi_input::launcher_pads::Paths {
             let _ = omsi_launcher_lib::content_dir();
             omsi_launcher_lib::root_dir().unwrap_or_default()
         },
-        write_root: || omsi_cfg::content_dir().unwrap_or_default(),
     }
 }

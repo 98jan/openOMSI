@@ -1,4 +1,4 @@
-//! The window's frame with the fixed simulation step (`omsi_sim::tick`, 120 ticks a second):
+//! The window's frame with the fixed simulation step (`omsi_sim::tick`, 60 ticks a second):
 //! what the player does and the frame's housekeeping run once a frame (`FRAME_BEFORE`); the
 //! simulation - the traffic, the player's bus with its scripts, the people, the duty, the
 //! clock and the weather - runs once per tick, each tick as long as the next (`FRAME_TICK`);
@@ -8,6 +8,12 @@
 use super::stages::{WindowFrame, FRAME_AFTER, FRAME_BEFORE, FRAME_TICK};
 use super::*;
 use crate::frame_stages::Flow;
+
+pub(crate) struct DrawnPose {
+    uid: u64,
+    sim: Vec<omsi_sim::tick::BodyPose>,
+    drawn: Vec<omsi_sim::tick::BodyPose>,
+}
 
 impl App {
     /// One frame of the window (see the module's notes).
@@ -48,21 +54,37 @@ impl App {
     /// The player's bus as the frame shows it (`FRAME_AFTER`): between its last two ticks,
     /// into the scene and under the camera, then back where the simulation has it.
     pub(super) fn frame_player_view(&mut self, dt: f32) {
-        if !self.frame_player_input(dt) {
+        // a walker stepping into or out of the bus hears its cab by degrees
+        let walker = self.foot_sound_amount(dt);
+        omsi_audio::soundset::set_cab_amount(walker);
+        if self.player.is_none() || self.renderer.is_none() || self.scene.is_none() {
             return;
         }
-        let between = match self.player.as_ref() {
-            Some(p) if !self.paused => self.fixed_tick.between(&p.vehicle),
-            _ => None,
-        };
-        if let (Some((_, at)), Some(p)) = (between.as_ref(), self.player.as_mut()) {
-            omsi_sim::tick::put(&mut p.vehicle, at);
-        }
+        let sim = self.player_to_drawn_pose();
         super::driving::player_to_scene(super::driving::PlayerToSceneCx::of(&mut self.parts()), dt);
         self.frame_view_camera(dt);
-        if let (Some((cur, _)), Some(p)) = (between.as_ref(), self.player.as_mut()) {
-            omsi_sim::tick::put(&mut p.vehicle, cur);
-        }
+        self.player_back_to_sim_pose(sim);
         self.frame_player_hover();
+    }
+
+    pub(crate) fn player_to_drawn_pose(&mut self) -> Option<DrawnPose> {
+        let p = self.player.as_mut().filter(|_| !self.paused)?;
+        let (sim, drawn) = self.fixed_tick.to_drawn(&mut p.vehicle)?;
+        Some(DrawnPose { uid: p.uid, sim, drawn })
+    }
+
+    pub(super) fn drawn_behind(&self) -> f32 {
+        if self.paused {
+            0.0
+        } else {
+            self.fixed_tick.behind()
+        }
+    }
+
+    pub(crate) fn player_back_to_sim_pose(&mut self, pose: Option<DrawnPose>) {
+        let Some(p) = self.player.as_mut() else { return };
+        if let Some(d) = pose.filter(|d| d.uid == p.uid && omsi_sim::tick::poses_of(&p.vehicle) == d.drawn) {
+            omsi_sim::tick::put(&mut p.vehicle, &d.sim);
+        }
     }
 }

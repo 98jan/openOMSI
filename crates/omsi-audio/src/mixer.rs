@@ -257,11 +257,22 @@ fn muted() -> bool {
     omsi_cfg::flags::OMSI_MUTE.is_set()
 }
 
+/// The sound formats tried for a file that is missing under its own name, best first.
+pub const SOUND_EXTENSIONS: [&str; 9] = ["wav", "ogg", "flac", "mp3", "m4a", "aac", "aiff", "aif", "caf"];
+
 /// Read and decode a clip (any thread).
 pub fn read_clip(path: &Path) -> Option<Arc<Clip>> {
-    let bytes = omsi_cfg::vfs::read(path).ok()?;
-    let compressed = bytes.starts_with(b"OggS") || bytes.starts_with(b"fLaC") || crate::wav::is_mp3(&bytes);
-    let clip = match if compressed { crate::wav::parse_compressed(&bytes) } else { crate::wav::parse_wav(&bytes) } {
+    let bytes = match omsi_cfg::vfs::read(path) {
+        Ok(b) => b,
+        // a sound a mod converted to another format and left the name in its sound.cfg
+        // (`horn.wav` shipped as `horn.ogg`): the same name in a format read here
+        Err(_) => SOUND_EXTENSIONS
+            .iter()
+            .filter(|e| path.extension().is_none_or(|x| !x.eq_ignore_ascii_case(e)))
+            .find_map(|e| omsi_cfg::vfs::read(&path.with_extension(e)).ok())?,
+    };
+    // (by content: a `.wav` that is an MP3 is common)
+    let clip = match crate::wav::parse_any(&bytes) {
         Ok(w) => Some(Arc::new(Clip {
             sample_rate: w.sample_rate,
             channels: w.channels,

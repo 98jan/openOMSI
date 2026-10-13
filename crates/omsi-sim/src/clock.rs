@@ -56,13 +56,39 @@ impl SimClock {
             self.time += dt as f64;
             while self.time >= 86400.0 {
                 self.time -= 86400.0;
-                self.day_of_year += 1;
-                if self.day_of_year > days_in_year(self.year) {
-                    self.day_of_year = 1;
-                    self.year += 1;
-                }
+                self.next_day();
             }
         }
+    }
+
+    /// The calendar a day on (into the next year after its last day).
+    pub fn next_day(&mut self) {
+        self.day_of_year += 1;
+        if self.day_of_year > days_in_year(self.year) {
+            self.day_of_year = 1;
+            self.year += 1;
+        }
+    }
+
+    /// The calendar a day back (into the year before from its first day).
+    pub fn prev_day(&mut self) {
+        self.day_of_year -= 1;
+        if self.day_of_year < 1 {
+            self.year -= 1;
+            self.day_of_year = days_in_year(self.year);
+        }
+    }
+
+    /// Seconds from now to the same time of the same day `months` months on (or back), the
+    /// day kept within the month it lands in (31 January + 1 month: 28 or 29 February).
+    pub fn months_away(&self, months: i32) -> f64 {
+        let (d, m) = self.day_month();
+        let total = self.year * 12 + (m - 1) + months;
+        let (y, m) = (total.div_euclid(12), total.rem_euclid(12) + 1);
+        let mut there = self.clone();
+        there.set_date(y, m, d);
+        let days = |c: &SimClock| -> i64 { (1..c.year).map(|y| days_in_year(y) as i64).sum::<i64>() + c.day_of_year as i64 };
+        (days(&there) - days(self)) as f64 * 86400.0
     }
 
     pub fn hour(&self) -> f32 {
@@ -144,5 +170,22 @@ mod date_tests {
         assert_eq!(c.day_of_year, 59, "the day kept within its month");
         c.set_date(i32::MAX, i32::MAX, i32::MAX);
         assert!(c.day_of_year <= 366 && c.year <= 9999);
+    }
+    /// The days and months the time menu steps the date by: over the end of a year into
+    /// the next one (it used to start the same year again), and a month to the same day.
+    #[test]
+    fn days_and_months_step_across_the_year() {
+        let mut c = SimClock::default();
+        c.set_date(2023, 12, 31);
+        c.next_day();
+        assert_eq!((c.year, c.day_month()), (2024, (1, 1)));
+        c.prev_day();
+        assert_eq!((c.year, c.day_month()), (2023, (31, 12)));
+        assert_eq!(c.months_away(1), 31.0 * 86400.0);
+        assert_eq!(c.months_away(-1), -31.0 * 86400.0, "to 30 November");
+        c.set_date(2024, 1, 31);
+        assert_eq!(c.months_away(1), 29.0 * 86400.0, "to 29 February");
+        c.set_date(2024, 3, 15);
+        assert_eq!(c.months_away(-12), -366.0 * 86400.0);
     }
 }

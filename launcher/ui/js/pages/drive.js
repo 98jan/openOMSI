@@ -12,6 +12,7 @@ import { MapPicker } from './map-picker.js';
 import { BusPicker } from './bus-picker.js';
 import { BusPreview } from '../preview.js';
 import { RouteMap } from '../routemap.js';
+import { WeatherEditor, isCustomWeather, editableWeather } from './weather-editor.js';
 
 /** HH:MM of seconds of the day (the timetables' unit). */
 export const hms = (s) => hhmm((s || 0) / 60);
@@ -280,6 +281,7 @@ function DutyCard() {
           </table>
         </div>
       </div>`}
+      <${IbisBox} />
       <${Field} label="Start at"><${Select} value=${c.entry} options=${entries} onChange=${(v) => choose({ entry: Number(v) })} /></${Field}>
       ${trips[current] && html`<${RouteMap} map=${c.map} date=${c.date} trip=${trips[current].name} entry=${c.entry}
         stops=${trips[current].stops.map((x) => ({ time: hms(x.dep || x.arr), name: x.name }))} onEntry=${(entry) => choose({ entry })} />`}
@@ -288,6 +290,42 @@ function DutyCard() {
   return html`<${Card} title="Duty" actions=${html`<${Segmented} value=${c.free ? 'free' : 'line'} options=${[['line', 'Timetable'], ['free', 'Free drive']]} onChange=${(v) => choose({ free: v === 'free' })} />`}>
     ${body}
   </${Card}>`;
+}
+
+function ibisCodes(info, code, line) {
+  return code.length > 2 ? [code.slice(0, -2), code.slice(-2)] : [info.line_code || line, code];
+}
+
+function IbisBox() {
+  const s = useStore();
+  const x = s.ibis;
+  if (!x || s.choice.free) return null;
+  const i = x.info;
+  let body;
+  if ('error' in x) body = html`<${Notice} kind="warn">${x.error}</${Notice}>`;
+  else if (!i.routes.length) body = html`<p class="muted small">${t('Depot file {hof} has no entries for this line. Type line {line} and the terminus code by hand, or press Shift+U.', { hof: i.hof, line: i.line_code || s.choice.line })}</p>`;
+  else {
+    body = html`<div class="trips">
+        <table class="table ibis">
+          <thead><tr><th></th><th>${t('Line')}</th><th>${t('Route code')}</th></tr></thead>
+          <tbody>
+            ${i.routes.slice(0, 3).map((r) => {
+              const [line, route] = ibisCodes(i, r.code, s.choice.line);
+              return html`<tr>
+                <td class="ellipsis">${(r.name || r.terminus).trim()}</td>
+                <td><span class="line-badge">${line}</span></td>
+                <td><span class="line-badge">${route}</span></td>
+              </tr>`;
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div class="muted small">${t('Depot file {hof} | Shift+U in the game types it for you', { hof: i.hof })}</div>`;
+  }
+  return html`<div class="stack" style="gap:8px">
+    <span class="label">IBIS</span>
+    ${body}
+  </div>`;
 }
 
 /** HH:MM typed in 24 hours (the timetables' clock, whatever the system's locale says). */
@@ -358,12 +396,15 @@ function TimeCard() {
   }, [c.map]);
   const metar = c.weather?.startsWith('metar:') ? c.weather.slice(6) || airport : airport;
   const [airports, setAirports] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const custom = isCustomWeather(c.weather);
   useEffect(() => {
     if (c.weather?.startsWith('metar:') && !airports.length) call('metar_airports').then(setAirports).catch(() => {});
   }, [c.weather]);
   const weatherHelp = cur ? cur.description
     : c.weather?.startsWith('metar:') ? t('METAR of {} (fetched at the start)', [metar])
     : c.weather === 'cycle' ? 'Changes every 25-60 minutes, as the month allows'
+    : custom ? 'Set visibility, wind, clouds, rain, temperature and road state'
     : c.weather ? null : 'Develops by itself through the day and the season';
   if (c.lan_mode === 'join') {
     const srv = c.lan_server || {};
@@ -399,8 +440,12 @@ function TimeCard() {
       </${Field}>
       ${c.season !== 'auto' && html`<${Segmented} full value=${c.phase} options=${PHASES} onChange=${(p) => setSeason(c.season, p)} />`}
       <${Field} label="Weather" help=${weatherHelp}>
-        <${Select} raw value=${c.weather} options=${[['', t('Natural weather')], ...(metar ? [[`metar:${metar}`, t('Current weather')]] : []), ['cycle', t('Weather cycle')], ...(weatherOfItsOwn(c.weather) && c.weather !== `metar:${metar}` && c.weather !== 'cycle' ? [[c.weather, weatherName(c.weather)]] : []), ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => choose({ weather })} />
+        <div class="row" style="gap:6px">
+          <div class="grow"><${Select} raw value=${c.weather} options=${[['', t('Natural weather')], [custom ? c.weather : 'custom:', t('Custom weather')], ...(metar ? [[`metar:${metar}`, t('Current weather')]] : []), ['cycle', t('Weather cycle')], ...(weatherOfItsOwn(c.weather) && !custom && c.weather !== `metar:${metar}` && c.weather !== 'cycle' ? [[c.weather, weatherName(c.weather)]] : []), ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => (isCustomWeather(weather) ? setEditing(weather) : choose({ weather }))} /></div>
+          ${editableWeather(c.weather) && html`<${Button} icon="sliders" title=${custom ? 'Custom weather' : 'Edit selected weather as custom'} onClick=${() => setEditing(c.weather)} />`}
+        </div>
       </${Field}>
+      ${editing != null && html`<${WeatherEditor} from=${editing} onClose=${() => setEditing(null)} />`}
       ${c.weather?.startsWith('metar:') && airports.length > 0 && html`<${Field} label="Airport">
         <${Select} raw value=${metar} options=${airports} onChange=${(code) => choose({ weather: `metar:${code}` })} />
       </${Field}>`}

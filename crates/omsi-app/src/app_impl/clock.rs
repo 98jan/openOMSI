@@ -111,11 +111,11 @@ pub(crate) fn shift_clock(cx: ShiftClockCx, secs: f64) {
     let mut t = cx.clock.clock.time + secs;
     while t < 0.0 {
         t += 86400.0;
-        cx.clock.clock.day_of_year = if cx.clock.clock.day_of_year > 1 { cx.clock.clock.day_of_year - 1 } else { omsi_sim::clock::days_in_year(cx.clock.clock.year - 1) };
+        cx.clock.clock.prev_day();
     }
     while t >= 86400.0 {
         t -= 86400.0;
-        cx.clock.clock.day_of_year = cx.clock.clock.day_of_year % omsi_sim::clock::days_in_year(cx.clock.clock.year) + 1;
+        cx.clock.clock.next_day();
     }
     cx.clock.clock.time = t;
     if let Some(tr) = cx.traffic.traffic.as_mut() {
@@ -125,7 +125,12 @@ pub(crate) fn shift_clock(cx: ShiftClockCx, secs: f64) {
         p.vehicle.host.clock = cx.clock.clock.clone();
     }
     let h = (t / 3600.0) as u32;
-    *cx.ui.service_msg = Some((format!("Clock: {h:02}:{:02}", ((t / 60.0) as u32) % 60), 3.0));
+    *cx.ui.service_msg = Some(if secs.abs() >= 86400.0 {
+        let (d, m) = cx.clock.clock.day_month();
+        (format!("Date: {:04}-{m:02}-{d:02}", cx.clock.clock.year), 3.0)
+    } else {
+        (format!("Clock: {h:02}:{:02}", ((t / 60.0) as u32) % 60), 3.0)
+    });
     *cx.clock.clock_jump += secs;
     // (held Page Up/Down: once they are let go)
     if cx.input.clock_hold == 0.0 {

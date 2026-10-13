@@ -24,6 +24,8 @@ impl App {
             self.tick_weather(dt);
         }
         let daylight = omsi_sim::Daylight::compute(&self.clock, self.session.envir.as_ref());
+        // (the avatars' faces yawn late in the evening)
+        crate::view_sync::people::set_hour((self.clock.time / 3600.0).rem_euclid(24.0) as f32);
         let lamps = self.session.lamps_on != Some(daylight.lamps_on);
         self.session.lamps_on = Some(daylight.lamps_on);
         // the lit windows of the houses by their [NightMapMode] timetable (once a
@@ -48,12 +50,12 @@ impl App {
 
 crate::app::stage_ctx!(
     /// The lights' stage's part of the game: the lamps, the rain and the spray, the sounds of the world around.
-    LightsCx { reads: [player, clock, world, net, view, menus], writes: [perf, sound, weather, people, gfx, traffic] }
+    LightsCx { reads: [clock, world, net, view, menus], writes: [perf, sound, weather, people, gfx, traffic, player] }
 );
 
 /// The lights (the lamps' cones, the light maps, every light that shines), the rain and
 /// the snow, the cabin air, the tyres' spray and the sounds of the street.
-pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight) {
+pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind: f32) {
     // the lamps' cones in fog and falling rain or snow, and new light pictures
     let cone = cx.weather.weather.as_ref().map(|wt| lights::ConeWeather::new(wt.fog.0, daylight.night)).unwrap_or_default();
     if let Some(r) = cx.gfx.renderer.as_mut() {
@@ -74,15 +76,12 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight) {
         // steps, as the view sync puts them - at the step's own pose a car's glow ran up to a
         // step ahead of its body, in and out of it at speed, and the lamps seemed to flicker)
         if let Some(t) = cx.traffic.traffic.as_mut() {
-            t.sim.show_between();
+            t.sim.show_between_at(behind);
         }
         let vehicles = steps::light_vehicles(cx.player.player.as_ref(), cx.traffic.traffic.as_ref(), &cx.net.remotes);
         let __tc = Instant::now();
         lights::collect(w, scene, &daylight, cam.position, &vehicles, cone);
         drop(vehicles);
-        if let Some(t) = cx.traffic.traffic.as_mut() {
-            t.sim.show_actual();
-        }
         cx.perf.profile.add(crate::profile_keys::ProfKey::LightsCollect, __tc.elapsed().as_secs_f64());
         // the object editor's pick: a magenta glow over it
         if let Some(id) = cx.menus.menus.editor.as_ref().and_then(|e| e.selected) {
@@ -163,6 +162,8 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight) {
                             return since.elapsed() < std::time::Duration::from_secs(2);
                         }
                         if let Some(clip) = a.load_clip(&line.path) {
+                            // (an avatar's lips move with it)
+                            crate::view_sync::people::speak(line.speaker, &clip);
                             a.play(
                                 clip,
                                 omsi_audio::mixer::VoiceParams {
@@ -233,6 +234,9 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight) {
                     }
                 }
             }
+        }
+        if let Some(t) = cx.traffic.traffic.as_mut() {
+            t.sim.show_actual();
         }
     }
 }
