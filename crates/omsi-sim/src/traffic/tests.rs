@@ -615,8 +615,9 @@ fn right_of_way_between_paths() {
     c.turn = 1;
     let mut net = Network { lanes: vec![a, b, c], ..Default::default() };
     net.link(1.5);
-    // equal priority: b comes from a's right
-    assert!(net.must_yield(0, 1));
+    // equal priority: neither gives way by where it comes from - the first there goes
+    // first, as in Omsi.exe (no priority to the right, #2058)
+    assert!(!net.must_yield(0, 1));
     assert!(!net.must_yield(1, 0));
     // the left turn waits for the oncoming car
     assert!(net.must_yield(2, 0));
@@ -630,8 +631,8 @@ fn right_of_way_between_paths() {
 
 #[test]
 fn right_of_way_on_the_left() {
-    // the same crossing on a left-hand-traffic map: b (from a's right) now waits for a
-    // (from b's left), and a right turn across the oncoming traffic waits, a left one not
+    // the same crossing on a left-hand-traffic map: a right turn across the oncoming traffic
+    // waits, a left one not; crossing straight on, nobody gives way by the side
     let a = LaneBuilder::arc(DVec3::new(0.0, -10.0, 0.0), 0.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let b = LaneBuilder::arc(DVec3::new(10.0, 0.0, 0.0), 270.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let mut c = LaneBuilder::arc(DVec3::new(-1.5, 10.0, 0.0), 180.0, 10.0 * std::f64::consts::FRAC_PI_2, -10.0, 0.0, LaneKind::Street, 3.0);
@@ -639,7 +640,7 @@ fn right_of_way_on_the_left() {
     let mut net = Network { lanes: vec![a, b, c], left_hand: true, ..Default::default() };
     net.link(1.5);
     assert!(!net.must_yield(0, 1));
-    assert!(net.must_yield(1, 0));
+    assert!(!net.must_yield(1, 0));
     assert!(net.must_yield(2, 0));
     net.lanes[2].turn = 1;
     assert!(!net.must_yield(2, 0));
@@ -1016,15 +1017,13 @@ fn a_blockpath_has_no_effect_as_in_omsi() {
 
 #[test]
 fn the_ring_goes_before_the_entry_where_the_map_sets_no_priorities() {
-    // an entry from the south joining a ring lane that comes from the entry's right
-    // (from the east, heading west across it): by right-before-left the ring would go
-    // first anyway; one coming from the left is the case that matters
+    // an entry from the south and a ring lane coming from its left
     let a = LaneBuilder::arc(DVec3::new(0.0, -10.0, 0.0), 0.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let b = LaneBuilder::arc(DVec3::new(-10.0, 0.0, 0.0), 90.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let mut net = Network { lanes: vec![a, b], ..Default::default() };
     net.link(1.5);
-    // b comes from a's left: a goes first by right-before-left
-    assert!(!net.must_yield(0, 1) && net.must_yield(1, 0));
+    // without the ring nobody gives way by the side
+    assert!(!net.must_yield(0, 1) && !net.must_yield(1, 0));
     net.lanes[1].ring = true;
     assert!(net.must_yield(0, 1) && !net.must_yield(1, 0));
     // the map's priorities still decide where it sets them

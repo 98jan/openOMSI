@@ -170,7 +170,7 @@ fn an_unsignalled_junction_kept_for_it_is_crossed_at_normal_speed_while_the_cros
     let f = Fixture::new();
     let mut t = sim(&f, crossroads(150.0), 0);
     let e = siren(&mut t, &f, 0, 105.0, 1, 10.0);
-    // from the east: by the rules (priority to the right) this one would go first
+    // from the east, there as early: without the emergency vehicle it could go first
     let cross = car(&mut t, &f, 3, 100.0, 2, 8.0);
     let mut fastest_inside = 0.0f32;
     let mut cross_waited = false;
