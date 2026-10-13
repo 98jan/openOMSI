@@ -39,7 +39,7 @@ impl App {
         let repaired = (kind == "repair" && msg.iter().any(|m| m.starts_with("repaired"))).then(|| ((clock.time - self.clock.time) / 60.0) as f32);
         while clock.time >= 86400.0 {
             clock.time -= 86400.0;
-            clock.day_of_year = clock.day_of_year % omsi_sim::clock::days_in_year(clock.year) + 1;
+            clock.next_day();
         }
         if !self.settings.time_sync || self.net.lan.as_ref().is_some_and(|l| l.role == omsi_net::Role::Client) {
             self.clock = clock;
