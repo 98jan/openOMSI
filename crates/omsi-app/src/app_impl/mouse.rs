@@ -540,6 +540,13 @@ impl App {
                     self.input.dragging = false;
                     return;
                 }
+                // the change on the tray: taken back, as with the `change_take` key
+                if self.session.humans.as_ref().and_then(|h| h.sim.money.as_ref()).is_some_and(|m| crate::money::change_hit(m, o, d, &p.vehicle)) {
+                    log::info!("change on the tray taken back");
+                    p.take_change = true;
+                    self.input.dragging = false;
+                    return;
+                }
                 self.input.dragging = p
                     .click(o, d, spread)
                     .is_some();

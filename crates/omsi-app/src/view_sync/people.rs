@@ -287,6 +287,14 @@ impl PeopleView {
     }
 }
 
+/// The ticket blocks taken out of the picture (the player's bus they hung in is gone or
+/// another bus is driven): left in the scene they hung in the air where it last stood.
+pub(crate) fn drop_ticket_blocks(view: &mut PeopleView, renderer: &Renderer, scene: &mut Scene) {
+    if let Some(b) = view.ticket_blocks.take() {
+        b.remove(renderer, scene);
+    }
+}
+
 impl Humans {
     /// Coins the driver handed out (from the host's GiveChangeCoin list) onto the change point.
     pub fn give_change(
@@ -328,9 +336,15 @@ impl Humans {
         if let Some(pack) = self.sim.tickets.as_ref().map(|t| &t.path) {
             // (compared in place: both paths were copied for it every frame)
             let fresh = view.ticket_blocks.as_ref().is_none_or(|b| b.made_for.0 != bus.ty.def.path || b.made_for.1 != *pack);
-            if fresh && !bus.ty.def.attachments.is_empty() {
-                view.ticket_blocks = Some(crate::money::TicketBlocks::new(world, renderer, scene, bus, pack));
+            if fresh {
+                // (the blocks of the bus driven before go: they stayed in the air where it was)
+                drop_ticket_blocks(view, renderer, scene);
+                if !bus.ty.def.attachments.is_empty() {
+                    view.ticket_blocks = Some(crate::money::TicketBlocks::new(world, renderer, scene, bus, pack));
+                }
             }
+        } else {
+            drop_ticket_blocks(view, renderer, scene);
         }
         if let Some(b) = view.ticket_blocks.as_ref() {
             b.sync(renderer, scene, bus);
