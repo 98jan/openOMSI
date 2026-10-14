@@ -194,5 +194,11 @@ coffee or support it on Ko-fi - thank you!
 
 ## License
 
-openOMSI is released under the [MIT License](LICENSE). OMSI and OMSI 2 are trademarks of their
+openOMSI is released under the [GNU Affero General Public License, version 3 only](LICENSE)
+(`AGPL-3.0-only`). The historical MIT copyright and permission notice is retained in
+`LICENSE`; earlier MIT releases keep their terms. Third-party files keep their own licenses.
+The openOMSI name and original project logos are marks of `usonskyyyy`, who created
+the original codebase; see [TRADEMARKS.md](TRADEMARKS.md). The official organization is
+[openOMSI.org (`openOMSI-org`)](https://github.com/openOMSI-org).
+OMSI and OMSI 2 are trademarks of their
 respective owners. openOMSI is an independent project and is not affiliated with them.
