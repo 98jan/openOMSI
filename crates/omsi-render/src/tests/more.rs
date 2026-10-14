@@ -331,6 +331,40 @@ fn excavation_keeps_ordinary_depth_prefilling_without_a_gpu() {
 }
 
 #[test]
+fn an_excavation_is_prefilled_at_1x_only_on_apple_graphics() {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::NOOP;
+    descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
+    let instance = wgpu::Instance::new(descriptor);
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: true, render_scale: 1.0, ..Default::default() },
+    )).expect("noop renderer");
+    renderer.profiling = true;
+    let mut scene = renderer.new_scene();
+    let material = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [1.0; 4], true);
+    let mesh = renderer.add_mesh(&mut scene, &MeshData {
+        positions: vec![Vec3::new(-2.0, 4.0, -2.0), Vec3::new(2.0, 4.0, -2.0),
+            Vec3::new(2.0, 4.0, 2.0), Vec3::new(-2.0, 4.0, 2.0)],
+        normals: vec![-Vec3::Y; 4], uvs: vec![glam::Vec2::ZERO; 4],
+        indices: vec![0, 1, 2, 0, 2, 3], ranges: vec![(0, 6, 0)],
+        ..Default::default()
+    });
+    let floor = renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![material]);
+    scene.instances[floor].presurface = true;
+    let glass_material = renderer.add_material(&mut scene, None, AlphaMode::Blend, [1.0, 1.0, 1.0, 0.25], true);
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![glass_material]);
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![material]);
+    let camera = Camera { position: DVec3::ZERO, yaw: 0.0, pitch: 0.0, roll: 0.0,
+        fov_deg: 90.0, near: 0.1, far: 100.0 };
+    let lighting = Lighting { enhanced: true, shadows: false, fog_density: 0.0, ..Default::default() };
+    renderer.counts.borrow_mut().clear();
+    renderer.render_to_image(&mut scene, 16, 16, &camera, &lighting).unwrap();
+    let prefilled = renderer.counts.borrow().get("presurface prepass batches").is_some_and(|n| *n > 0.0);
+    assert_eq!(prefilled, cfg!(target_vendor = "apple"));
+}
+
+#[test]
 fn declared_transmap_ignores_slot_alpha() {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::NOOP;
