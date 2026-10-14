@@ -13,7 +13,8 @@ Thanks for helping! A few rules keep the project healthy:
 
 ## Files and licences
 
-* **Contributions are MIT**, like the rest of the code and documentation. The few
+* **New contributions are AGPL-3.0-only**, like the project license in `LICENSE`.
+  Historical MIT notices are retained, and earlier MIT releases keep their terms. The few
   third-party files the game ships (the Inter fonts, the Material icons with their
   `LICENSE.txt`) keep their own licences; adding another - map data from OpenStreetMap
   (ODbL), CC-BY-SA pictures, other fonts or icon sets - needs the maintainers' agreement
