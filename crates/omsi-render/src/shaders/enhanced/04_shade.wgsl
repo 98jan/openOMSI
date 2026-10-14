@@ -284,7 +284,12 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // up to a share of a half they came out matte, #2067; smooth from 4 %, a body meant
         // to mirror barely shone like glass against the light, #2474), and where the mask
         // says nothing reflects - a tyre or a seal - the rough rubber or plastic it is.
-        let coat_rough = clamp(0.06 + (0.087 - refl) * 11.9, 0.06, 0.8);
+        // Between those and chrome, the share says how much the paint mirrors, not how
+        // sharply: Omsi.exe lays a soft sphere map over it, a blurred sheen of the sky. Taken
+        // as polished glass from 8.7 % on (0.2.42), the many mod bodies whose texture alpha
+        // holds a tenth to a half mirrored the grey sky like chrome - silver buses and AI
+        // cars that glowed (#2563, #2301). Only a share near the whole is a sharp mirror.
+        let coat_rough = max(clamp(0.06 + (0.087 - refl) * 11.9, 0.06, 0.8), mix(0.3, 0.06, smoothstep(0.5, 0.95, refl)));
         // Where the model says how much it mirrors - a [matl_envmap_mask], or the texture's
         // alpha under a [matl_transmap] (most mod bodies) - Omsi.exe lays the sphere map
         // over the paint by that share at every angle (shader.wgsl's environment stage):
