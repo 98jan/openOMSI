@@ -1122,6 +1122,8 @@ fn a_texture_the_card_refuses_is_drawn_plain_without_cutting_the_texture_budget(
     };
     let scope = renderer.device.push_error_scope(wgpu::ErrorFilter::Validation);
     assert!(crate::resources::try_create_texture(&renderer.device, &desc).is_none());
+    let empty = wgpu::TextureDescriptor { size: wgpu::Extent3d { width: 1, height: 0, depth_or_array_layers: 1 }, ..desc.clone() };
+    assert!(crate::resources::try_create_texture(&renderer.device, &empty).is_none());
     // the stand-in is a valid texture: a material made with it is no device error
     let mut scene = renderer.new_scene();
     let t = crate::resources::stand_in_texture(&renderer.device, &renderer.queue);
