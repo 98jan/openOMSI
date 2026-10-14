@@ -274,65 +274,36 @@ impl ScheduleSim {
                 self.startup.insert(i);
             }
         }
-        // Buses on their layover: a trip that leaves within the next quarter of an hour,
-        // whose tour's previous trip is already over, stands at its first stop with the
-        // doors shut until its departure. Without this a map with one bus per line
-        // showed no bus at all for most of the hour - it only existed while driving.
+        // Buses on their layover: a tour under way has its bus. A trip whose tour's previous
+        // trip is over, with no bus of the tour on the road (the map just loaded, the bus
+        // left the loaded tiles), stands at its first stop with the doors shut until its
+        // departure, whether other lines stop there or not - for as long as a bus
+        // that drove the previous trip would wait there (TOUR_LAYOVER_MAX). The first trip
+        // of a tour has no bus before it leaves: Omsi.exe 0x73bc00 (called with no lead by
+        // the loader 0x709274 and the thread 0x6fdef4) puts a tour's bus out only from its
+        // first trip's departure to its last trip's end, and 0x73a700 places it on the last
+        // trip that has begun. Buses appeared a quarter of an hour early at their first
+        // stop (#2595), and at a stop other lines use only a minute before leaving (#2593).
         let mut early: Vec<usize> = Vec::new();
-        // departures are sorted by time: only the ones in the next quarter of an hour
+        // departures are sorted by time: only the ones within a layover from now
         let start = self.departures.partition_point(|d| d.time <= tod);
         for i in start..self.departures.len() {
             let d = &self.departures[i];
-            if d.time > tod + LAYOVER {
+            if d.time > tod + TOUR_LAYOVER_MAX {
                 break;
             }
             if d.spawned || self.later_layover.contains(&i) || !self.runs(i) {
                 continue;
             }
-            // only a trip with stops has a first stop to wait at: a flight (TXL.ttl, every
-            // ten minutes) would take off a quarter of an hour early
-            let Some(first) = trip_stations(&self.data.trips[d.trip]).first().copied() else {
+            let Some(k) = self.tour_prev[i] else {
                 continue;
             };
-            if d.time > tod + LAYOVER_SHARED {
-                let shared = match self.shared_stand.get(&first) {
-                    Some(&v) => v,
-                    None => {
-                        let positions = world.object_positions();
-                        let Some(&(here, _)) = positions.get(&first) else {
-                            continue;
-                        };
-                        let v = self.served.contains(&first)
-                            || self.served.iter().any(|sid| {
-                            positions
-                                .get(sid)
-                                .map(|p| (p.0 - here).length() < 30.0)
-                                .unwrap_or(false)
-                        });
-                        if omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set() {
-                            let nearest = self
-                                .served
-                                .iter()
-                                .filter_map(|sid| {
-                                    positions.get(sid).map(|p| ((p.0 - here).length(), *sid))
-                                })
-                                .fold((f64::MAX, 0), |a, b| if b.0 < a.0 { b } else { a });
-                            log::info!("layover stand {first} at ({:.0}, {:.0}): shared {v}, nearest served station {} at {:.0} m", here.x, here.y, nearest.1, nearest.0);
-                        }
-                        self.shared_stand.insert(first, v);
-                        v
-                    }
-                };
-                if shared {
-                    continue;
-                }
+            // only a trip with stops has a first stop to wait at: a flight (TXL.ttl, every
+            // ten minutes) would take off early
+            if trip_stations(&self.data.trips[d.trip]).is_empty() {
+                continue;
             }
-            let prev_running = self.tour_prev[i]
-                .map(|k| {
-                    self.dep_time(k) + self.times_of(k).duration >= day_time
-                        || self.tour_bus(k, traffic).is_some()
-                })
-                .unwrap_or(false);
+            let prev_running = self.dep_time(k) + self.times_of(k).duration >= day_time || self.tour_bus(k, traffic).is_some();
             if !prev_running {
                 early.push(i);
             }

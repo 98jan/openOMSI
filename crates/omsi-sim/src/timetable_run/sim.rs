@@ -180,12 +180,6 @@ pub struct ScheduleSim {
     /// The lines the date's chrono folders take off the timetable, with the folder that does
     /// it: why a duty on such a line cannot be driven.
     deactivated: Vec<(String, PathBuf)>,
-    /// Stations some trip stops at on its way or ends at (not only starts from).
-    served: std::collections::HashSet<i64>,
-    /// Per first station: whether another trip's bus stops there or within a bus length
-    /// or two of it (maps often put one stop object per line at the same kerb), once its
-    /// position is known.
-    shared_stand: HashMap<i64, bool>,
     /// Departures queued while the map loads: their buses may appear in view.
     startup: std::collections::HashSet<usize>,
     /// Layover departures whose stand was taken: they come at their departure time.
@@ -232,15 +226,10 @@ pub struct ScheduleSim {
 }
 
 /// A tour's bus waits at the end of a trip for the next one of its tour when that leaves
-/// within this many seconds; for a longer break it goes (and a bus comes back for it).
+/// within this many seconds; for a longer break it goes (and a bus comes back for it). A
+/// tour's bus missing on its layover (the map just loaded) stands at the next trip's
+/// first stop as long before it (#2593).
 const TOUR_LAYOVER_MAX: f64 = 30.0 * 60.0;
-
-/// How early a bus waits at its first stop for its departure (s): a quarter of an hour at a
-/// stand of its own, a minute where other buses stop as well (a layover bus there made
-/// every bus of the other lines queue behind it until it left).
-const LAYOVER: f64 = 900.0;
-
-const LAYOVER_SHARED: f64 = 60.0;
 
 /// How far ahead (s) the departure displays look.
 const BOARD_AHEAD: f64 = 2.0 * 3600.0;

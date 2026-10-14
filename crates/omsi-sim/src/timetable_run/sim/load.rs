@@ -227,11 +227,6 @@ impl ScheduleSim {
         }
         let today = departures.iter().filter(|d| d.mask & day_bit != 0 && d.mask & school_bit != 0).count();
         log::info!("timetable: {} lines, {} trips, {} tracks, {} departures today (weekday {weekday}, holiday {holiday}, school holidays {school_holiday}; {skipped_tours} tours not today), {} depot groups", data.lines.len(), data.trips.len(), data.tracks.len(), today, depots.len());
-        let served = data
-            .trips
-            .iter()
-            .flat_map(|t| trip_stations(t).into_iter().skip(1))
-            .collect();
         let mut s = ScheduleSim {
             data,
             departures,
@@ -258,8 +253,6 @@ impl ScheduleSim {
             lan_tours: HashSet::new(),
             last_tod: 0.0,
             deactivated,
-            served,
-            shared_stand: HashMap::new(),
             startup: Default::default(),
             later_layover: Default::default(),
             tour_next,

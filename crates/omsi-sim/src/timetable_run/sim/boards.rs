@@ -521,4 +521,42 @@ mod tests {
         assert_eq!(sim.dep_time(0), DAY + 1800.0, "the same moment as before midnight");
     }
 
+    /// A tour's bus is out only while its tour runs: the second trip of a tour whose bus is
+    /// missing stands at its first stop well before it leaves (#2593), the first trip of a
+    /// tour comes at its departure time and not before (#2595).
+    #[test]
+    fn only_a_tour_under_way_has_its_bus_before_a_departure() {
+        let mut sim = schedule();
+        let world = EmptyWorld { path: std::env::temp_dir(), ai: Default::default(), positions: Default::default() };
+        let mut traffic = crate::ai_traffic::TrafficSim::assemble(
+            Path::new(""),
+            Default::default(),
+            crate::ai_traffic::setup::RandomTypes { types: Vec::new(), groups: Vec::new(), group_curves: false, group_uvg: Vec::new(), uvg_defaults: Vec::new() },
+            Vec::new(),
+            Default::default(),
+            (Vec::new(), Vec::new()),
+            Vec::new(),
+            (1.0, 0),
+            0,
+        );
+        sim.data.trips.push(omsi_timetable::Trip { terminus: "Bahnhof".into(), line: "1".into(), stations: vec![42, 43], ..Default::default() });
+        sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0), (600.0, 600.0)], stops: vec![true, true], duration: 600.0, ..Default::default() }]];
+        let mask = sim.day_bits.0 | sim.day_bits.1;
+        let d = |time: f64, tour: &str| Departure {
+            time, trip: 0, profile: 0, line: "1".into(), ai_group: "depot".into(), tour: tour.into(), mask, spawned: true, yesterday: false,
+        };
+        // tour 1 at 10:00 and 10:50 (its first trip over at 10:10), tour 2 from 10:30
+        sim.departures = vec![d(36_000.0, "1"), d(37_800.0, "2"), d(39_000.0, "1")];
+        sim.departures[1].spawned = false;
+        sim.departures[2].spawned = false;
+        sim.tour_prev = vec![None, None, Some(0)];
+        sim.tour_next = vec![Some(2), None, None];
+        // 10:25: tour 1's bus stands for its 10:50 trip, tour 2 has no bus yet
+        sim.queue_due(&world, &mut traffic, 36_000.0 + 1500.0, 1.0);
+        assert_eq!(sim.pending.iter().copied().collect::<Vec<_>>(), [2]);
+        // 10:30: tour 2 leaves now
+        sim.queue_due(&world, &mut traffic, 37_800.0 + 0.5, 1.0);
+        assert_eq!(sim.pending.iter().copied().collect::<Vec<_>>(), [2, 1]);
+    }
+
 }
