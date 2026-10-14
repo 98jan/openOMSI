@@ -11,7 +11,7 @@ pub fn system_proxy() -> Option<String> {
         .get_or_init(|| {
             let found = from_env().or_else(from_system);
             if let Some(p) = &found {
-                log::info!("network: through the proxy {p}");
+                log::info!("network: through the proxy {}", redact(p));
             }
             found
         })
@@ -95,6 +95,30 @@ fn scutil_proxy(text: &str) -> Option<String> {
     })
 }
 
+/// A proxy address as it may go to a log: `scheme://host:port`, the login of
+/// `scheme://user:password@host:port` hidden. The password is often written with characters
+/// a URL does not allow (`@`, `/`, `:` unescaped, as people type them into `HTTPS_PROXY`), so
+/// the host starts after the *last* `@`, not the first; and an address that is no URL at all
+/// still never shows more than its host part. Query and fragment are dropped.
+pub fn redact(proxy: &str) -> String {
+    let proxy = proxy.trim();
+    let (scheme, rest) = match proxy.split_once("://") {
+        Some((scheme, rest)) => (Some(scheme), rest),
+        None => (None, proxy),
+    };
+    let (login, host) = match rest.rsplit_once('@') {
+        Some((_, host)) => (true, host),
+        None => (false, rest),
+    };
+    // (what follows the host: a path, a query, a fragment)
+    let host = host.split(['/', '?', '#']).next().unwrap_or("");
+    let login = if login { "***@" } else { "" };
+    match scheme {
+        Some(scheme) => format!("{scheme}://{login}{host}"),
+        None => format!("{login}{host}"),
+    }
+}
+
 /// A proxy written without its protocol is an HTTP one.
 fn with_scheme(s: &str) -> String {
     if s.contains("://") {
@@ -115,6 +139,31 @@ mod tests {
         assert_eq!(windows_server("http=10.0.0.1:80").as_deref(), Some("http://10.0.0.1:80"));
         assert_eq!(windows_server("socks=127.0.0.1:1080"), None);
         assert_eq!(windows_server(""), None);
+    }
+
+    #[test]
+    fn redact_hides_the_login_and_keeps_the_address() {
+        assert_eq!(redact("http://127.0.0.1:7890"), "http://127.0.0.1:7890");
+        assert_eq!(redact("http://user:secret@proxy.example:3128"), "http://***@proxy.example:3128");
+        assert_eq!(redact("socks5://user@proxy.example:1080/"), "socks5://***@proxy.example:1080");
+        // percent-encoded, and not encoded at all: a password with '@', '/', ':' and '#' in it
+        assert_eq!(redact("http://user:p%40ss%2Fword@proxy.example:3128"), "http://***@proxy.example:3128");
+        assert_eq!(redact("http://user:p@ss/wo:rd#x@proxy.example:3128"), "http://***@proxy.example:3128");
+        // no scheme, a path or query after the host, surrounding blanks
+        assert_eq!(redact("user:secret@proxy.example:3128"), "***@proxy.example:3128");
+        assert_eq!(redact("  http://u:s@proxy.example:3128/path?token=abc#f "), "http://***@proxy.example:3128");
+        assert_eq!(redact("proxy.example:3128"), "proxy.example:3128");
+        // IPv6 host keeps its brackets
+        assert_eq!(redact("http://u:s@[::1]:8080"), "http://***@[::1]:8080");
+    }
+
+    #[test]
+    fn redact_of_malformed_addresses_never_shows_the_password() {
+        for bad in ["", "://", "http://", "http://:secret@", "http://user:secret@", "@", "user:secret@", "http://user:secret@/x"] {
+            let shown = redact(bad);
+            assert!(!shown.contains("secret"), "{bad:?} -> {shown:?}");
+        }
+        assert_eq!(redact(""), "");
     }
 
     #[test]

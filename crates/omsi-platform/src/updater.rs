@@ -283,7 +283,7 @@ pub fn agent() -> ureq::Agent {
         .timeout_read(std::time::Duration::from_secs(30))
         .user_agent(&format!("openOMSI/{} (updater)", current_version()));
     // (through the proxy the system is set to use, #1000)
-    match crate::proxy::system_proxy().and_then(|p| ureq::Proxy::new(&p).map_err(|e| log::warn!("network: the proxy {p} cannot be used: {e}")).ok()) {
+    match crate::proxy::system_proxy().and_then(|p| ureq::Proxy::new(&p).map_err(|e| log::warn!("network: the proxy {} cannot be used: {e}", crate::proxy::redact(&p))).ok()) {
         Some(proxy) => b.proxy(proxy).build(),
         None => b.build(),
     }
