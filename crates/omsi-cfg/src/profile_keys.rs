@@ -151,6 +151,7 @@ impl ProfKey {
     }
 
     /// The key of a name (the tests' profiles, written by name).
+    #[doc(hidden)]
     pub fn of(name: &str) -> ProfKey {
         *Self::ALL.iter().find(|k| k.name() == name).unwrap_or_else(|| panic!("no profile key {name:?}"))
     }
@@ -197,6 +198,7 @@ impl ProfileTimes {
     }
 
     /// A profile of named keys (the tests').
+    #[doc(hidden)]
     pub fn of(entries: &[(&str, f64)]) -> Self {
         let mut p = Self::default();
         for (k, v) in entries {

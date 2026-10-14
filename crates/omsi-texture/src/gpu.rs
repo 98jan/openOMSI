@@ -250,14 +250,18 @@ pub fn prepare_image_with(img: Image, o: GpuOptions) -> (TextureData, Prepared) 
     let (mut blocks, mut ec, ea) = bc::encode(&img.rgba, img.width, img.height, format.bc(false));
     info.psnr = (psnr(ec, texels), if opaque { 99.0 } else { psnr(ea, texels) });
     let mut shifts = info.psnr.0 >= MIN_PSNR_COLOUR && info.psnr.1 >= MIN_PSNR_ALPHA && swatch_shifts(&img.rgba, &blocks, img.width, img.height, format);
+    let mut repaired = false;
     if shifts {
-        if let Some(d) = bc::repair_swatches(&img.rgba, &mut blocks, img.width, img.height, format.bc(false), MAX_SWATCH_SHIFT * MAX_SWATCH_SHIFT) {
+        let mut fixed = blocks.clone();
+        if let Some(d) = bc::repair_swatches(&img.rgba, &mut fixed, img.width, img.height, format.bc(false), MAX_SWATCH_SHIFT * MAX_SWATCH_SHIFT) {
+            blocks = fixed;
             ec += d;
             info.psnr.0 = psnr(ec, texels);
             shifts = swatch_shifts(&img.rgba, &blocks, img.width, img.height, format);
+            repaired = true;
         }
     }
-    if shifts && info.psnr.0 >= MIN_PSNR_COLOUR && info.psnr.1 >= MIN_PSNR_ALPHA {
+    if shifts || (repaired && info.psnr.0 < MIN_PSNR_COLOUR) {
         if let Some((t, psnr)) = bc7_texture(&img) {
             info.psnr = psnr;
             info.encoded = true;
