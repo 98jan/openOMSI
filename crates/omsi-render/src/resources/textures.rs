@@ -142,6 +142,7 @@ pub fn prepare_texture(
         PixelFormat::Bc1 => wgpu::TextureFormat::Bc1RgbaUnormSrgb,
         PixelFormat::Bc2 => wgpu::TextureFormat::Bc2RgbaUnormSrgb,
         PixelFormat::Bc3 => wgpu::TextureFormat::Bc3RgbaUnormSrgb,
+        PixelFormat::Bc7 => wgpu::TextureFormat::Bc7RgbaUnormSrgb,
     };
     let (w, h) = (data.width.max(1), data.height.max(1));
     if data.levels.is_empty()
@@ -350,14 +351,9 @@ pub fn fit_texture(data: &omsi_texture::TextureData, max: u32) -> Option<omsi_te
         return Some(omsi_texture::TextureData { width: (w >> k).max(1), height: (h >> k).max(1), levels: data.levels[k as usize..].to_vec(), ..data.clone() });
     }
     // one level only: decode it and halve it
-    let mut rgba = match (data.format, data.levels.first()) {
-        (PixelFormat::Rgba8, Some(l)) => l.clone(),
-        (f, Some(l)) => omsi_texture::bc::decode(l, w, h, match f {
-            PixelFormat::Bc1 => omsi_texture::bc::Bc::Bc1 { punch: true },
-            PixelFormat::Bc2 => omsi_texture::bc::Bc::Bc2,
-            _ => omsi_texture::bc::Bc::Bc3,
-        }),
-        _ => return None,
+    let mut rgba = match data.levels.first() {
+        Some(l) => data.format.decode_level(l, w, h, true),
+        None => return None,
     };
     let (mut cw, mut ch) = (w, h);
     for _ in 0..k {
@@ -510,25 +506,14 @@ impl Renderer {
         if let Some(t) = prepare_texture(&self.device, &self.queue, data) {
             return t.0;
         }
-        use omsi_texture::PixelFormat;
         let (w, h) = (data.width.max(1), data.height.max(1));
         let blocks_ok =
             !data.format.is_compressed() || (self.supports_bc() && w % 4 == 0 && h % 4 == 0);
         if !blocks_ok || data.levels.is_empty() {
             // a device without block formats (the loader was told otherwise): decode
-            let rgba = match (data.format, data.levels.first()) {
-                (PixelFormat::Rgba8, Some(l)) => l.clone(),
-                (f, Some(l)) => omsi_texture::bc::decode(
-                    l,
-                    w,
-                    h,
-                    match f {
-                        PixelFormat::Bc1 => omsi_texture::bc::Bc::Bc1 { punch: true },
-                        PixelFormat::Bc2 => omsi_texture::bc::Bc::Bc2,
-                        _ => omsi_texture::bc::Bc::Bc3,
-                    },
-                ),
-                _ => vec![255; (w * h * 4) as usize],
+            let rgba = match data.levels.first() {
+                Some(l) => data.format.decode_level(l, w, h, true),
+                None => vec![255; (w * h * 4) as usize],
             };
             return self.upload_texture_gpu_mips(&omsi_texture::Image {
                 width: w,

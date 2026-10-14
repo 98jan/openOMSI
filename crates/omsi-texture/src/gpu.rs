@@ -18,6 +18,7 @@ pub enum PixelFormat {
     Bc2,
     /// DXT5: 16 bytes per block, interpolated alpha.
     Bc3,
+    Bc7,
 }
 
 impl PixelFormat {
@@ -31,7 +32,17 @@ impl PixelFormat {
         match self {
             PixelFormat::Rgba8 => w * h * 4,
             PixelFormat::Bc1 => w.div_ceil(4) * h.div_ceil(4) * 8,
-            PixelFormat::Bc2 | PixelFormat::Bc3 => w.div_ceil(4) * h.div_ceil(4) * 16,
+            PixelFormat::Bc2 | PixelFormat::Bc3 | PixelFormat::Bc7 => w.div_ceil(4) * h.div_ceil(4) * 16,
+        }
+    }
+
+    pub fn decode_level(self, data: &[u8], w: u32, h: u32, punch: bool) -> Vec<u8> {
+        match self {
+            PixelFormat::Rgba8 => data.to_vec(),
+            PixelFormat::Bc7 => crate::blocks::decode(crate::blocks::Block::Bc7, data, w.max(1) as usize, h.max(1) as usize)
+                .map(|i| i.rgba)
+                .unwrap_or_else(|_| vec![255; w.max(1) as usize * h.max(1) as usize * 4]),
+            f => bc::decode(data, w, h, f.bc(punch)),
         }
     }
 
@@ -165,7 +176,7 @@ fn encode_levels(mut rgba: Vec<u8>, mut w: u32, mut h: u32, format: PixelFormat,
     let full = mip_count(w, h);
     for _ in 1..full {
         let (next, nw, nh) = bc::downsample_alpha_weighted(&rgba, w, h);
-        let (blocks, _, _) = bc::encode(&next, nw, nh, format.bc(punch));
+        let blocks = if format == PixelFormat::Bc7 { crate::bc7::encode(&next, nw, nh) } else { bc::encode(&next, nw, nh, format.bc(punch)).0 };
         out.push(blocks);
         rgba = next;
         w = nw;
@@ -196,6 +207,28 @@ pub fn block_size(w: u32, h: u32) -> Option<(u32, u32)> {
 /// texel is a larger share of them).
 const MIN_RESIZE_SIDE: u32 = 128;
 
+fn bc7_texture(img: &Image) -> Option<(TextureData, (f64, f64))> {
+    let (w, h) = (img.width, img.height);
+    let blocks = crate::bc7::encode(&img.rgba, w, h);
+    let dec = PixelFormat::Bc7.decode_level(&blocks, w, h, false);
+    if bc::worst_patch_shift(&img.rgba, &dec, w, h) > MAX_SWATCH_SHIFT * MAX_SWATCH_SHIFT {
+        return None;
+    }
+    let (mut ec, mut ea) = (0.0f64, 0.0f64);
+    for (s, d) in img.rgba.chunks_exact(4).zip(dec.chunks_exact(4)) {
+        ec += (0..3).map(|c| (s[c] as f64 - d[c] as f64).powi(2) * [0.299, 0.587, 0.114][c]).sum::<f64>();
+        ea += (s[3] as f64 - d[3] as f64).powi(2);
+    }
+    let texels = w as u64 * h as u64;
+    let quality = (psnr(ec, texels), psnr(ea, texels));
+    if quality.0 < MIN_PSNR_COLOUR || quality.1 < MIN_PSNR_ALPHA {
+        return None;
+    }
+    let mut levels = vec![blocks];
+    encode_levels(img.rgba.clone(), w, h, PixelFormat::Bc7, false, &mut levels);
+    Some((TextureData { width: w, height: h, format: PixelFormat::Bc7, levels, has_alpha: img.has_alpha, gpu_mips: false }, quality))
+}
+
 pub fn prepare_image_with(img: Image, o: GpuOptions) -> (TextureData, Prepared) {
     let mut info = Prepared::default();
     let texels = img.width as u64 * img.height as u64;
@@ -214,9 +247,24 @@ pub fn prepare_image_with(img: Image, o: GpuOptions) -> (TextureData, Prepared) 
     let texels = nw as u64 * nh as u64;
     let opaque = !img.has_alpha || img.rgba.chunks_exact(4).all(|p| p[3] == 255);
     let format = if opaque { PixelFormat::Bc1 } else { PixelFormat::Bc3 };
-    let (blocks, ec, ea) = bc::encode(&img.rgba, img.width, img.height, format.bc(false));
+    let (mut blocks, mut ec, ea) = bc::encode(&img.rgba, img.width, img.height, format.bc(false));
     info.psnr = (psnr(ec, texels), if opaque { 99.0 } else { psnr(ea, texels) });
-    if info.psnr.0 < MIN_PSNR_COLOUR || info.psnr.1 < MIN_PSNR_ALPHA || swatch_shifts(&img.rgba, &blocks, img.width, img.height, format) {
+    let mut shifts = info.psnr.0 >= MIN_PSNR_COLOUR && info.psnr.1 >= MIN_PSNR_ALPHA && swatch_shifts(&img.rgba, &blocks, img.width, img.height, format);
+    if shifts {
+        if let Some(d) = bc::repair_swatches(&img.rgba, &mut blocks, img.width, img.height, format.bc(false), MAX_SWATCH_SHIFT * MAX_SWATCH_SHIFT) {
+            ec += d;
+            info.psnr.0 = psnr(ec, texels);
+            shifts = swatch_shifts(&img.rgba, &blocks, img.width, img.height, format);
+        }
+    }
+    if shifts && info.psnr.0 >= MIN_PSNR_COLOUR && info.psnr.1 >= MIN_PSNR_ALPHA {
+        if let Some((t, psnr)) = bc7_texture(&img) {
+            info.psnr = psnr;
+            info.encoded = true;
+            return (t, info);
+        }
+    }
+    if info.psnr.0 < MIN_PSNR_COLOUR || info.psnr.1 < MIN_PSNR_ALPHA || shifts {
         info.rejected = true;
         return (TextureData::from_image(img), info);
     }
@@ -524,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn an_atlas_whose_swatch_changes_colour_stays_rgba() {
+    fn an_atlas_whose_swatch_changes_colour_in_bc1_goes_bc7() {
         // a smooth picture with one block of four one-texel swatches (red, green, blue,
         // yellow): the picture measures well, but no block can hold those four colours
         let (w, h) = (128u32, 128u32);
@@ -538,8 +586,15 @@ mod tests {
         let on = GpuOptions { bc: true, compress: true };
         let (t, info) = prepare_image_with(Image { width: w, height: h, rgba: rgba.clone(), has_alpha: false }, on);
         assert!(info.psnr.0 > MIN_PSNR_COLOUR, "{info:?}");
-        assert_eq!(t.format, PixelFormat::Rgba8);
-        assert!(info.rejected);
+        assert_eq!(t.format, PixelFormat::Bc7);
+        assert!(!info.rejected);
+        assert_eq!(t.levels.len() as u32, mip_count(w, h));
+        let back = t.format.decode_level(&t.levels[0], w, h, false);
+        assert!(bc::worst_patch_shift(&rgba, &back, w, h) <= MAX_SWATCH_SHIFT * MAX_SWATCH_SHIFT);
+        assert!(back.chunks_exact(4).all(|p| p[3] == 255));
+        for (l, level) in t.levels.iter().enumerate() {
+            assert_eq!(level.len(), PixelFormat::Bc7.level_bytes((w >> l).max(1), (h >> l).max(1)));
+        }
         // two swatches on a line are exact: compressed as before
         for y in 0..4 {
             for x in 0..4 {
