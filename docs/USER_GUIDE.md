@@ -88,7 +88,8 @@ is the same thing for an offscreen run.
 
 **Updates.** (Not yet in the desktop launcher and the Android page: offering and installing an
 update was the game's old launcher window's, which is gone, and their update page is still to
-come - until then a new release is downloaded from the releases page. During a session the game
+come - until then a new release is downloaded from the
+[latest release](https://github.com/openOMSI-org/openOMSI/releases/latest) page. During a session the game
 still downloads a newer release and says so, as below.) When the launcher starts it asks
 [github.com/openOMSI-org/openOMSI](https://github.com/openOMSI-org/openOMSI) for the latest release
 and, when there is a newer one, offers it: **Update now** downloads it (checked against the

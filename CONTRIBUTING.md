@@ -56,5 +56,8 @@ See the layout in the [README](README.md#repository-layout) and
 
 ## Releases
 
-Maintainers bump `MAJOR.MINOR` in the `VERSION` file; everything else is automatic - see
-[docs/VERSIONING.md](docs/VERSIONING.md).
+Every merge into `main` is published as a **beta** (a GitHub pre-release) for testers;
+players only get **stable** releases, which are betas the maintainers have tested and
+promoted, about once a week. A published release is never replaced: a fix is a new version.
+Maintainers bump `MAJOR.MINOR` in the `VERSION` file and promote betas; everything else is
+automatic - see [docs/VERSIONING.md](docs/VERSIONING.md).
