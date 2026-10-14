@@ -28,8 +28,14 @@ There are two channels:
 
 | Channel | What it is | Who gets it |
 | --- | --- | --- |
-| **Beta** | every push to `main`, published as a GitHub **pre-release** | testers, who download it from the [Releases](https://github.com/openOMSI-org/openOMSI/releases) page |
-| **Stable** | a beta the maintainers have tested and promoted | every player: the launcher's updater, the start guard, the website's Download page, `releases/latest` and the README badge only ever see stable releases |
+| **Beta** | every push to `main`, published as a GitHub **pre-release** | testers: the launcher's **Settings → General → Updates → Update channel: Beta**, or the [Releases](https://github.com/openOMSI-org/openOMSI/releases) page |
+| **Stable** | a beta the maintainers have tested and promoted | every other player: on the Stable channel (the default) the launcher's updater, the start guard, the website's Download page, `releases/latest` and the README badge only ever see stable releases |
+
+On the Beta channel the updater offers the newest release, beta or stable, that has a file
+for this computer and is not listed in `release/health.json`, and *Choose a version…* lists
+the betas too (marked *Beta*). Changing the channel looks for an update again at once. Back on Stable, nothing is taken away: the
+beta installed stays until a newer stable release comes out, or an older one is chosen in
+*Choose a version…*.
 
 ### Beta: every push to `main`
 
