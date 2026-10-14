@@ -1,10 +1,10 @@
 //! The Swift launcher's way into the launcher's data (iPhone, iPad, Mac).
 //!
-//! Apple's systems get a launcher of their own, written in SwiftUI (`apple/Shared`), with the
-//! same pages and the same look as the launcher the game draws - but what it knows and
-//! does is not written twice: it is the very `launcher::state::State` the game's launcher
-//! keeps (the content lists, the duty chosen, the timetable, profiles, mods, servers ...),
-//! read as JSON and changed by actions through two C functions:
+//! Apple's systems get a launcher of their own, written in SwiftUI (`apple/Shared`) - but what
+//! it knows and does is not written here twice: it is the launcher's model,
+//! `launcher::state::State` (crate omsi-launcher-model: the content lists, the duty chosen, the
+//! timetable, profiles, mods, servers ...), read as JSON and changed by actions through two C
+//! functions:
 //!
 //! - `openomsi_bridge(cmd, json)` → a JSON reply `{"ok": true, "value": …}` or
 //!   `{"ok": false, "error": "…"}`, freed with `openomsi_bridge_free`;
@@ -47,7 +47,6 @@ pub(crate) fn prepare_once() {
         if let Err(e) = crate::prepare(args, true) {
             log::error!("{e:#}");
         }
-        crate::launcher_statics();
     });
 }
 
@@ -133,6 +132,17 @@ fn call(cmd: &str, arg: &str) -> anyhow::Result<Value> {
             // (the tiles are read here, a second or so on a big map: the state is not held
             // meanwhile - the Swift side asks from a queue of its own)
             Ok(crate::launcher::mapview::overview(look))
+        }
+        "find_root" => {
+            let given = a.get("path").and_then(|v| v.as_str()).map(|p| std::path::PathBuf::from(p.trim()));
+            match omsi_cfg::copied_install::look(given, core::content_dir) {
+                omsi_cfg::copied_install::Look::Root(p) => {
+                    with_state(|s| use_root(s, p.to_string_lossy().to_string()))?;
+                    Ok(json!({ "found": true }))
+                }
+                omsi_cfg::copied_install::Look::Waiting => Ok(json!({ "found": false })),
+                omsi_cfg::copied_install::Look::Missing(m) => Ok(json!({ "found": false, "missing": m })),
+            }
         }
         _ => with_state(|s| state_call(s, cmd, &a)),
     }
@@ -258,6 +268,24 @@ fn snapshot(s: &mut State) -> Value {
         "fresh": s.fresh.keys().collect::<Vec<_>>(),
         "preview": preview,
     })
+}
+
+fn use_root(s: &mut State, chosen: String) -> anyhow::Result<()> {
+    let mut config = s.config.clone();
+    config.root = chosen.clone();
+    core::save_config(&config)?;
+    s.config = config;
+    omsi_cfg::content_changed();
+    if !chosen.is_empty() {
+        omsi_cfg::add_content_root(std::path::PathBuf::from(&chosen));
+        if let Some(memo) = crate::startup::root_memo() {
+            let _ = std::fs::write(memo, chosen.as_bytes());
+        }
+    }
+    s.config = core::load_config();
+    s.set_status("Saved. Reading the content again...", false);
+    s.load_content();
+    Ok(())
 }
 
 fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
@@ -393,10 +421,6 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
         "setting" => {
             let key = st("key");
             let value = a.get("value").cloned().unwrap_or(Value::Null);
-            if key == "cross_platform_launcher" {
-                #[cfg(target_os = "ios")]
-                crate::ios::set_cross_platform_launcher(value.as_bool().unwrap_or(false));
-            }
             s.settings[key.as_str()] = value;
             s.settings_dirty = 0.3;
         }
@@ -457,23 +481,13 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
             // the Setup page's Save: a folder that is no complete installation is said so,
             // with what it lacks, and nothing is saved (as the launcher's own page does)
             let chosen = st("path").trim().to_string();
+            omsi_cfg::content_changed();
             let missing = if chosen.is_empty() { Vec::new() } else { omsi_cfg::missing_original_essentials(std::path::Path::new(&chosen)) };
             if !missing.is_empty() {
                 let shown: Vec<&str> = missing.iter().map(String::as_str).take(6).collect();
                 anyhow::bail!("{chosen} is not a complete OMSI 2 installation - it lacks {}", shown.join(", "));
             }
-            s.config.root = chosen.clone();
-            core::save_config(&s.config)?;
-            omsi_cfg::content_changed();
-            if !chosen.is_empty() {
-                omsi_cfg::add_content_root(std::path::PathBuf::from(&chosen));
-                if let Some(memo) = crate::startup::root_memo() {
-                    let _ = std::fs::write(memo, chosen.as_bytes());
-                }
-            }
-            s.config = core::load_config();
-            s.set_status("Saved. Reading the content again...", false);
-            s.load_content();
+            use_root(s, chosen)?;
         }
         "reload" => {
             omsi_cfg::content_changed();

@@ -615,6 +615,7 @@ impl Renderer {
             texture_aspect: None,
             last_frame: None,
             instant_exposure: false,
+            depth_readback: false,
             overlay_pipeline_1x,
             xr_ui_pipeline,
             // (OMSI_RENDER_CLOCK=<s>: the animations' clock starts that far on - offscreen

@@ -39,6 +39,7 @@ type BodyWork<'a> = (
     &'a mut std::collections::VecDeque<(f64, DVec3)>,
     &'a mut f32,
     &'a mut super::scenery::SceneryGuard,
+    &'a mut f32,
 );
 
 /// A worker more helps with the cars' bodies and scripts per this much of their work (s,
@@ -46,9 +47,9 @@ type BodyWork<'a> = (
 pub const BODY_SECS_PER_HELPER: f64 = 0.5e-3;
 
 /// One car's body and scripts in a step (see `TrafficSim::step_bodies`).
-fn step_body(net: &Network, dt: f32, profile: bool, w: &mut BodyWork) {
-    let (state, body, vehicle, frame, trail, secs, guard) =
-        (&mut *w.0, &mut *w.1, &mut *w.2, &mut *w.3, &mut *w.4, &mut *w.5, &mut *w.6);
+fn step_body(net: &Network, dt: f32, scripts: bool, profile: bool, w: &mut BodyWork) {
+    let (state, body, vehicle, frame, trail, secs, guard, owed) =
+        (&mut *w.0, &mut *w.1, &mut *w.2, &mut *w.3, &mut *w.4, &mut *w.5, &mut *w.6, &mut *w.7);
     let t0 = std::time::Instant::now();
     let ground = vehicle.ground.clone();
     let contact = vehicle.contact.clone();
@@ -71,13 +72,24 @@ fn step_body(net: &Network, dt: f32, profile: bool, w: &mut BodyWork) {
     body.apply(vehicle);
     if rail && !vehicle.trailers.is_empty() {
         // the coupled cars (a train's, a tram's sections) on the track it
-        // came along, not dragged round the bends like a road trailer
-        vehicle.retrail(0.0, &|d| Some(behind(d)));
+        // came along, not dragged round the bends like a road trailer; with the step's
+        // time, as this is where they animate (`update_trailers` leaves a train's cars
+        // standing on their track alone, and the scripts' frame skips them)
+        vehicle.retrail(dt, &|d| Some(behind(d)));
+    } else if !vehicle.trailers.is_empty() {
+        // (a road trailer, an articulated bus's rear section: with its front in every step)
+        vehicle.step_ai_trailers(dt);
     }
     state.body = link;
     frame.steer_deg = body.steer;
     let t1 = std::time::Instant::now();
-    vehicle.update_ai(dt, frame);
+    // (the scripts once a frame, with the steps' time since they last ran: see
+    // `TrafficSim::scripts_due`)
+    *owed += dt;
+    if !scripts {
+        return;
+    }
+    vehicle.update_ai(std::mem::take(owed), frame);
     *secs = t0.elapsed().as_secs_f32();
     if profile && t0.elapsed().as_secs_f64() > 0.01 {
         log::info!(
@@ -1158,7 +1170,15 @@ impl TrafficSim {
         }
         if !car.state.drive(&self.net, dt, lead_now, stop_at) {
             if debug {
-                log::info!("t={:.1}: car {} ran out of road at {:.1} m/s: taken off", self.time, car.id, car.state.speed);
+                // (where, and the nearest lane start beyond the end: a network gap the map's
+                // paths do not close shows here)
+                let lane = &self.net.lanes[car.state.lane];
+                let end = lane.end();
+                let near = (0..self.net.lanes.len())
+                    .filter(|&l| l != car.state.lane && self.net.lanes[l].kind == lane.kind)
+                    .map(|l| (l, (self.net.lanes[l].start() - end).length()))
+                    .min_by(|a, b| a.1.total_cmp(&b.1));
+                log::info!("t={:.1}: car {} ran out of road at {:.1} m/s on lane {} ending at ({:.1}, {:.1}, {:.1}) heading {:.0}: taken off (nearest lane start {:?}, next {:?}, route {}, pool {:?}, type {})", self.time, car.id, car.state.speed, car.state.lane, end.x, end.y, end.z, lane.headings.last().copied().unwrap_or(0.0), near.map(|(l, d)| (l, d, self.net.lanes[l].headings.first().copied().unwrap_or(0.0), self.net.lanes[l].start().z)), lane.next.iter().map(|&n| (n, self.net.lanes[n].no_cars, self.net.lanes[n].density)).collect::<Vec<_>>(), car.state.route.len(), car.state.traffic_pool.as_ref().map(|p| p.0), car.state.veh_type);
             }
             return None;
         }
@@ -1192,6 +1212,17 @@ impl TrafficSim {
                 log::info!("doors t={:.1} car {} {} phase {:?} speed {:.1}: AtStation {st} door {} {} {} {} target {} {} {} halte {} timer {}", self.time, car.id, v.ty.def.type_name, car.bus.as_ref().map(|b| b.phase), car.state.speed, g("door_0"), g("door_1"), g("door_2"), g("door_3"), g("doorTarget_0"), g("doorTarget_1"), g("doorTarget_2"), g("bremse_halte_sw"), g("door_AI_timer"));
             }
         }
+        // Full drivetrain scripts read the ordinary pedals even under AI control. Leaving
+        // them at zero keeps fuel injection and the loaded engine sounds at idle.
+        car.vehicle.set_controls(crate::Controls {
+            throttle: (car.state.cmd / car.state.accel.max(0.1)).clamp(0.0, 1.0),
+            brake: if car.state.held && car.state.speed < 0.3 {
+                1.0
+            } else {
+                (-car.state.cmd / car.state.decel.max(0.5)).clamp(0.0, 1.0)
+            },
+            ..Default::default()
+        });
         // An emergency vehicle on an active drive is told `TrafficPriorityWarningNeeded`
         // (`priority_warning`) while it crosses against a red light or has a vehicle in its
         // way close ahead: its script sounds the siren or the horn on it.
@@ -1240,15 +1271,20 @@ impl TrafficSim {
             .zip(frames.iter_mut())
             .filter_map(|(c, f)| {
                 let f = f.as_mut()?;
-                Some((&mut c.state, &mut c.body, &mut c.vehicle, f, &mut c.rail_trail, &mut c.ai_secs, &mut c.guard))
+                Some((&mut c.state, &mut c.body, &mut c.vehicle, f, &mut c.rail_trail, &mut c.ai_secs, &mut c.guard, &mut c.script_owed))
             })
             .collect();
         // (the slowest first, by what each took the step before: the last ones taken are
         // short, so nobody waits long for whoever holds one)
         work.sort_by(|a, b| b.5.total_cmp(a.5));
         let total: f32 = work.iter().map(|w| *w.5).sum();
-        let helpers = omsi_cfg::par::helpers_for(total as f64, BODY_SECS_PER_HELPER);
-        omsi_cfg::par::frame_each(&mut work, helpers, |w| step_body(net, dt, profile, w));
+        let scripts = self.step_scripts;
+        // (a step without the scripts is the bodies alone, a small part of what the cars
+        // took when their scripts ran: the workers are woken for it only when even that
+        // share is worth it)
+        let share = if scripts { 1.0 } else { 0.2 };
+        let helpers = omsi_cfg::par::helpers_for(total as f64 * share, BODY_SECS_PER_HELPER);
+        omsi_cfg::par::frame_each(&mut work, helpers, |w| step_body(net, dt, scripts, profile, w));
     }
 
     /// The debug output of a tick (`OMSI_DEBUG_TRAILERS`, `OMSI_DEBUG_TRAFFIC`,

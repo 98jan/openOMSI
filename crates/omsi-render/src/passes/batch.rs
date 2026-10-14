@@ -75,6 +75,17 @@ fn prepass_items(scene: &Scene, visible: &[(usize, f32, bool)], deferred: bool) 
             let mat_id = inst.materials.get(*slot as usize).copied().unwrap_or(0);
             let mat = &scene.materials[mat_id];
             let kind = kind_of(mat.alpha);
+            // A model drawn in its own order: an opaque part that a depth-writing pane
+            // before it hides (a scroll box's line under its invisible cover) put its depth
+            // here, kept the wall behind it from being drawn, and then failed against the
+            // pane itself - a hole of the clear colour (#2059). So its parts after the first
+            // such pane stay out of the prepass; the ones before it go in as any model's.
+            // (0.2.46 left the whole model out: a bus with its glass listed early lost its
+            // body from the depth that the ambient occlusion and the sun's glare read - no
+            // contact shadow under it, the glare and the passengers through its roof.)
+            if inst.ordered && kind == PIPE_BLEND && mat.writes_depth {
+                break;
+            }
             // Ground blends compose before they may occlude later scenery.
             // The transmap body prepass is for ordinary meshes, not these
             // authored surface layers (including their terrain brush masks).
@@ -506,6 +517,14 @@ impl Renderer {
             *c.entry("opaque draws").or_default() += main_draws[0] as f64;
             *c.entry("blended draws").or_default() += main_draws[1] as f64;
             *c.entry("main batches").or_default() += main_batches.len() as f64;
+            // the state the main pass's bundles set (each part starts afresh), and what an
+            // order by material within the opaque runs would set instead
+            let (pipes, binds) = state_changes(&bundle_chunks(self.encoding_pool.as_ref(), main_batches));
+            *c.entry("main pipeline switches").or_default() += pipes as f64;
+            *c.entry("main material binds").or_default() += binds as f64;
+            let (pipes_m, binds_m) = state_changes_by_material(main_batches);
+            *c.entry("main pipeline switches by material").or_default() += pipes_m as f64;
+            *c.entry("main material binds by material").or_default() += binds_m as f64;
             *c.entry("prepass batches").or_default() += prepass_batches.len() as f64;
             *c.entry("shadow batches").or_default() +=
                 (shadow_batches[0].len() + shadow_batches[1].len()) as f64;
@@ -673,6 +692,19 @@ mod tests {
     use super::sort_blended_draws;
     use crate::{AlphaMode, MeshData, RenderOptions, Renderer};
     use glam::{DVec3, Mat4, Vec3};
+
+    #[test]
+    fn state_changes_count_what_the_encoder_sets() {
+        use crate::frame_plan::{state_changes, state_changes_by_material, Batch};
+        let b = |pipe: u8, material: u32| Batch { pipe, mesh: 0, first: 0, count: 3, material, instances: 0..1 };
+        // opaque culled (pipe 2) and not culled (pipe 0) of two looks, then a blended one
+        let batches = [b(0, 1), b(0, 2), b(2, 1), b(2, 2), b(8, 1)];
+        assert_eq!(state_changes(&[&batches]), (3, 5));
+        // two parts: each sets its own state
+        assert_eq!(state_changes(&[&batches[..3], &batches[3..]]), (4, 5));
+        // by material: 1 1 2 2 then blended 1 - fewer binds, more pipeline switches
+        assert_eq!(state_changes_by_material(&batches), (5, 3));
+    }
 
     #[test]
     fn recycled_display_layers_keep_model_order_after_distance_and_camera_rank() {

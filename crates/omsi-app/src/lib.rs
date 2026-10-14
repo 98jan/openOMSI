@@ -12,6 +12,7 @@
 //! launcher knows through `apple_bridge`.
 
 mod admin;
+mod check;
 use omsi_platform::discord;
 #[cfg(steam)]
 mod steam;
@@ -32,6 +33,7 @@ mod apple;
 mod apple_bridge;
 mod platform;
 mod touch;
+mod units;
 mod placing;
 mod mt;
 use omsi_platform::updater;
@@ -56,7 +58,10 @@ mod hud;
 mod humans;
 mod journey;
 use omsi_input::keys;
-mod lan;
+// (LAN play: the session is omsi-lan's `game`, see `lan_play`; the shared world's mirror
+// stays here: it drives the app's `Traffic`, `Humans` and their view directly)
+mod lan_play;
+use lan_play as lan;
 mod lan_world;
 use omsi_scene::lights;
 mod launcher;
@@ -99,6 +104,7 @@ mod cli;
 mod diagnostics;
 mod perf_overlay;
 mod perf_report;
+mod profile_keys;
 mod frame_stages;
 mod support_bundle;
 mod duty_start;
@@ -119,6 +125,7 @@ use omsi_plugin_ui as plugin_ui;
 mod plugin_panels;
 mod plugins;
 mod services;
+mod sim_thread;
 mod situation;
 mod spawn;
 use omsi_input::stock_keys;
@@ -201,10 +208,16 @@ pub fn run() -> Result<()> {
     view_sync::install_sim_decoder();
     startup::install_scene_settings();
     omsi_cfg::migrate_legacy_data_dir();
+    omsi_launcher_lib::adopt_own_inputs();
     #[cfg(target_os = "macos")]
     restart_with_allocator_settings();
     #[cfg(windows)]
     attach_parent_console();
+    // `--check-vehicle <file>`: the loaders' findings as JSON, no window, no log
+    if std::env::args().nth(1).as_deref() == Some("--check-vehicle") {
+        let rest: Vec<String> = std::env::args().skip(2).collect();
+        return check::run(&rest);
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     // a panic goes into the log (which the launcher keeps per session) with where it
     // happened and a backtrace, not only to a terminal that may not be there
@@ -244,19 +257,13 @@ pub fn run() -> Result<()> {
     // The launcher itself runs the game with a full command line (--no-menu, --map, ...).
     let bare = std::env::args().len() == 1;
     let Some((args, server_cfg)) = prepare(args, bare)? else { return Ok(()) };
-    if args.launcher || (bare && !args.menu) {
-        // the launcher window (the game started again by it with a full command line);
-        // OMSI_LAUNCHER=<program> still opens another launcher instead, and a plain start
-        // the desktop launcher beside the game
+    if bare && !args.menu {
+        // the launcher, another program (it starts the game again with a full command
+        // line): OMSI_LAUNCHER=<program>, else the desktop launcher beside the game
         if omsi_cfg::flags::OMSI_LAUNCHER.is_set() && open_launcher()? {
             return Ok(());
         }
-        // a plain start (not `--launcher`): the desktop launcher when it is beside the game
-        if !args.launcher && open_app_launcher()? {
-            return Ok(());
-        }
-        launcher_statics();
-        return launcher::run(graphics_instance());
+        return open_app_launcher();
     }
     let Some(app) = make_app(args, server_cfg)? else { return Ok(()) };
     // a game session's start goes into the start guard's journal (a version whose sessions
@@ -289,19 +296,13 @@ fn game_event_loop() -> Result<EventLoop<()>> {
     Ok(EventLoop::new()?)
 }
 
-/// The showroom is drawn the way the game will be.
-pub(crate) fn launcher_statics() {
-    let s = settings::Settings::load();
-    ENHANCED.store(s.enhanced || omsi_cfg::flags::OMSI_ENHANCED.is_set(), std::sync::atomic::Ordering::Relaxed);
-    CLASSIC.store(s.classic(), std::sync::atomic::Ordering::Relaxed);
-    CLOUDS.store(s.clouds && !omsi_cfg::flags::OMSI_NO_CLOUDS.is_set(), std::sync::atomic::Ordering::Relaxed);
-}
 
 /// Everything before a window: the language, the session's random seed, the original
 /// installation and the content roots (mods, archives). None when the program has
 /// nothing more to do (a fatal error was shown).
 pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option<server::ServerCfg>)>> {
     ui_language(&settings::Settings::load().language);
+    units::Units::from_setting(&settings::Settings::load().units).set();
     // (a server has no interface to translate)
     mt::enable(settings::Settings::load().machine_translation && args.server.is_none());
     // the dedicated server: server.cfg decides the world, the rest is a host without a window
@@ -329,7 +330,7 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
         });
     omsi_script::set_session_seed(seed);
     log::info!("script random seed {seed} (OMSI_SEED={seed} repeats it)");
-    let launcher_mode = args.launcher || (bare && !args.menu);
+    let launcher_mode = bare && !args.menu;
     if !is_omsi_root(&args.root) {
         match find_root() {
             Some(p) => {
@@ -436,25 +437,11 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     {
         args.drive_keys = settings.drive_keys.clone();
     }
-    let plus = args.enhanced_plus || omsi_cfg::flags::OMSI_ENHANCED_PLUS.is_set();
-    ENHANCED_PLUS.store(plus, std::sync::atomic::Ordering::Relaxed);
-    ENHANCED.store(
-        settings.enhanced || args.enhanced || plus || omsi_cfg::flags::OMSI_ENHANCED.is_set(),
-        std::sync::atomic::Ordering::Relaxed,
-    );
-    CLOUDS.store(settings.clouds && !omsi_cfg::flags::OMSI_NO_CLOUDS.is_set(), std::sync::atomic::Ordering::Relaxed);
-    SOUND_AI.store(settings.vol_ai.to_bits(), std::sync::atomic::Ordering::Relaxed);
-    SOUND_SCENERY.store(settings.vol_scenery.to_bits(), std::sync::atomic::Ordering::Relaxed);
-    MIRROR_SIZE.store(settings.mirror_size, std::sync::atomic::Ordering::Relaxed);
-    omsi_audio::DOPPLER.store(settings.doppler, std::sync::atomic::Ordering::Relaxed);
-    CLASSIC.store(
-        settings.classic() && !ENHANCED.load(std::sync::atomic::Ordering::Relaxed),
-        std::sync::atomic::Ordering::Relaxed,
-    );
+    args.session_settings = startup::SessionSettings::for_session(&settings, &args);
     // the LAN session (offscreen too, so that one game's view of another can be rendered);
     // a joining player's world is the host's (taken over again when the window loads it)
     let mut lan = if args.export_glb.is_none() {
-        lan::start(&args)
+        lan::start(&args.lan_config(), &lan::AppLanHost { args: &args, world: None })
     } else {
         None
     };
@@ -467,8 +454,10 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     // made (see `lan_mods`)
     lan_mods::remove_stale();
     if let Some(l) = lan.as_mut() {
-        lan::share_mods(&mut args, l);
-        lan::take_host_map(&mut args, l);
+        let mut c = args.lan_config();
+        lan::share_mods(&mut c, l);
+        lan::take_host_map(&mut c, l);
+        args.take_lan_config(&c);
     }
     if let (Some(cfg), Some(l)) = (server_cfg.as_ref(), lan.as_ref()) {
         lan::open_public_gateway(l, server::info_of(cfg), cfg.web_port, cfg.tunnel);
@@ -505,7 +494,9 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     }
     if let Some(out) = args.offscreen.clone() {
         if let Some(l) = lan.as_mut() {
-            lan::adopt_host_world(&mut args, l, &mut lan_game);
+            let mut c = args.lan_config();
+            lan::adopt_host_world(&mut c, &crate::app_impl::lan_tick::AppLanHost { args: &args, world: None }, l, &mut lan_game);
+            args.take_lan_config(&c);
         }
         let r = run_offscreen(&args, &out, lan, lan_game);
         lan_mods::clean_up();
@@ -528,13 +519,13 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
 /// The game's App for `args` and `settings`, every part of it as it starts (the window comes
 /// later).
 fn assemble_app(args: Args, settings: settings::Settings) -> App {
-    rain::set_quality(&settings.rain_quality);
     let view = args.view.clone();
     let args_root_for_keys = args.root.clone();
     let clock_note = args.clock_moved.clone();
     // (as the last session left it, #1164)
     let info_bar = settings.info_bar;
     let is_server = args.server.is_some();
+    let sky = crate::weather_setup::SkyState { look: args.session_settings, ..Default::default() };
     // What loads, starts or reads the clock, made one after the other in a fixed order before
     // the App and its groups are put together (their logs and threads come in this order).
     // Steam must be initialized before the graphics instance and window so its overlay can
@@ -546,7 +537,8 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
     let ui = ui::Ui::new();
     let rain = rain::Rain::new();
     let cabin_air = crate::condensation::CabinAir::new();
-    let spray = puddles::Spray::new();
+    let mut spray = puddles::Spray::new();
+    spray.graphics = args.session_settings.graphics();
     let radio = radio::Radio::load(&args_root_for_keys);
     let started = Instant::now();
     let last = Instant::now();
@@ -557,7 +549,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
     let fps_t = Instant::now();
     let update_watch = crate::update_watch::UpdateWatch::new();
     // (a server counts its players by their own games, not itself)
-    let presence = if is_server { None } else { crate::presence::Presence::start() };
+    let presence = if is_server || cfg!(test) { None } else { crate::presence::Presence::start() };
     let touch = touch::Touch::new();
     App {
         args,
@@ -596,6 +588,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         player: None,
         session: SessionState {
             placed: Vec::new(),
+            scenery: Default::default(),
             traffic: None,
             schedule: None,
             timetable_book: None,
@@ -630,7 +623,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             metar_rx: None,
             metar_once: false,
             metar_next: 0.0,
-            sky: Default::default(),
+            sky,
         },
         menus: MenuState {
             list_dirty: false,
@@ -765,6 +758,8 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             last_ctl_steer: None,
             mouse_pedals: (0.0, 0.0),
             mouse_kmh: 0.0,
+            wheel_zoomed_at: None,
+            camera_keys_off: false,
             pad_kmh: 0.0,
             pad_steer_target: 0.0,
             game_keys,
@@ -784,6 +779,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             plugin_keys: Vec::new(),
             plugin_events: Vec::new(),
             plugin_events_ex: Vec::new(),
+            plugin_pointer: Default::default(),
             plugin_voices: Vec::new(),
             plugin_seen: Default::default(),
             plugin_command: false,
@@ -802,6 +798,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             is_admin: false,
             lan: None,
             remotes: Default::default(),
+            lan_world: Default::default(),
         },
         service_msg: clock_note.map(|m| (m, 10.0)),
         settings,
@@ -810,6 +807,8 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         photo: None,
         photo_settings: None,
         devtools: None,
+        fixed_tick: omsi_sim::tick::SimTicks::default(),
+        pipeline: Default::default(),
     }
 }
 

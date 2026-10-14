@@ -8,14 +8,15 @@ import { t } from '../i18n.js';
 import { call } from '../api.js';
 import { Icon } from '../icons.js';
 import { Dialog, Search, Select, Segmented, Empty, Spinner, Button, Tag, Notice, Field } from '../ui.js';
-import { choose } from '../data.js';
+import { choose, busFile, serverBuses } from '../data.js';
+import { Notes } from './drive.js';
 
 const favKey = (file) => file.replace(/\\/g, '/').toLowerCase();
 
 const words = (x) => (x || '').replace(/_/g, ' ').split(/\s+/).filter(Boolean);
 
 /** One vehicle folder's buses of a maker as one model, named by what their types share. */
-function families(list) {
+export function families(list) {
   const by = new Map();
   for (const v of list) {
     const key = `${(v.manufacturer || '').toLowerCase()}|${favKey(v.file).replace(/[^/]*$/, '')}`;
@@ -54,7 +55,8 @@ export function BusPicker({ onClose }) {
   const [show, setShow] = useState('all');
   const [sel, setSel] = useState(s.choice.bus);
   const [paint, setPaint] = useState(s.choice.bus === sel ? s.choice.paint : '');
-  const all = s.vehicles || [];
+  const joined = serverBuses(s.choice);
+  const all = (s.vehicles || []).filter((v) => !joined || joined.has(busFile(v.file)));
   const makers = useMemo(() => [...new Set(all.map((v) => v.manufacturer).filter(Boolean))].sort(), [all]);
   const ql = q.trim().toLowerCase();
   const list = all
@@ -84,8 +86,8 @@ export function BusPicker({ onClose }) {
       <div class="left">
         <div class="tools">
           <${Search} value=${q} onInput=${setQ} placeholder="Search buses" autofocus />
-          <div class="row">
-            <div class="grow"><${Select} raw value=${maker} options=${[['', t('All makers')], ...makers.map((m) => [m, m])]} onChange=${setMaker} /></div>
+          <div class="row wrap">
+            <div class="grow" style="min-width:140px"><${Select} raw value=${maker} options=${[['', t('All makers')], ...makers.map((m) => [m, m])]} onChange=${setMaker} /></div>
             <${Segmented} value=${show} options=${[['all', 'All'], ['fav', 'Starred'], ['mods', 'Mods']]} onChange=${setShow} />
           </div>
         </div>
@@ -97,7 +99,7 @@ export function BusPicker({ onClose }) {
             const has = f.versions.some((x) => x.v.file === sel);
             const row = (x, sub, indent) => html`<div class=${'list-item' + (x.file === sel ? ' on' : '')} style=${indent ? 'padding-left:30px' : ''} onClick=${() => (setSel(x.file), setPaint(x.file === s.choice.bus ? s.choice.paint : ''))} onDblClick=${() => (setSel(x.file), setTimeout(take))}>
               <div class="grow" style="min-width:0">
-                <div class="title ellipsis" title=${sub}>${sub}</div>
+                <div class="title" style="overflow-wrap:anywhere" title=${sub}>${sub}</div>
                 <div class="sub ellipsis">${[indent ? null : x.manufacturer, x.paints.length ? t('{n} paints', { n: x.paints.length + 1 }) : null].filter(Boolean).join(' - ')}</div>
               </div>
               ${x.missing_packs?.length > 0 && html`<span title=${t('Parts missing')}><${Icon} name="alert" size=${16} /></span>`}
@@ -105,10 +107,11 @@ export function BusPicker({ onClose }) {
                 <${Icon} name="star" fill=${s.favourites.includes(favKey(x.file))} />
               </button>
             </div>`;
-            if (one) return row(f.versions[0].v, f.versions[0].v.name, false);
+            // (the type's name: the maker is on the line under it, #2355)
+            if (one) return row(f.versions[0].v, f.versions[0].v.type_name || f.versions[0].v.name, false);
             return html`<div class=${'list-item' + (has && !shown ? ' on' : '')} onClick=${() => toggle(f.key)}>
                 <div class="grow" style="min-width:0">
-                  <div class="title ellipsis" title=${f.name}>${f.name}</div>
+                  <div class="title" style="overflow-wrap:anywhere" title=${f.name}>${f.name}</div>
                   <div class="sub ellipsis">${[f.maker, t('{n} versions', { n: f.versions.length })].filter(Boolean).join(' - ')}</div>
                 </div>
                 <${Icon} name=${shown ? 'down' : 'right'} size=${18} />
@@ -129,6 +132,7 @@ export function BusPicker({ onClose }) {
               <${Select} raw value=${paint} options=${[['', v.default_paint ? `${t('Standard')} (${v.default_paint})` : t('Standard')], ...v.paints.map((p) => [p, p])]} onChange=${setPaint} />
             </${Field}>
             ${v.description && html`<p class="dim selectable" style="white-space:pre-line;max-height:220px;overflow:auto">${v.description}</p>`}
+            <${Notes} kind="bus" file=${v.file} />
             <div class="muted small selectable">${v.file}</div>
           </div>`
           : html`<${Empty} icon="bus" title="Choose a bus on the left" />`}

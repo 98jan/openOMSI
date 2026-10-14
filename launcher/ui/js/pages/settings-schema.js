@@ -1,9 +1,9 @@
 // What the Settings page shows: per tab its two columns, per column its rows, in the order
-// the game's own launcher had them. The English labels are the translation keys, so they
-// stay word for word as they were.
+// the game's own launcher window had them (it is gone). The English labels are the
+// translation keys, so they stay word for word as they were.
 //
 // A row is one of:
-//   { type: 'select', key, label, options, raw?, help? }   options: [value, label] pairs, or (s, boot) => pairs
+//   { type: 'select', key, label, options, raw?, help?, recheckUpdates? }   options: [value, label] pairs, or (s, boot) => pairs
 //   { type: 'toggle', key, label, help? }
 //   { type: 'slider', key, label, min, max, step, def, format, store?, also? }
 //   { type: 'section', title }        { type: 'note', text }
@@ -123,7 +123,8 @@ const graphics = {
         { type: 'select', key: 'max_obj_dist', label: 'Object distance', options: [['auto', 'Automatic'], ['500', '500 m'], ['750', '750 m'], ['900', '900 m'], ['1500', '1500 m'], ['3000', '3000 m']] },
         { type: 'select', key: 'min_obj_size', label: 'Small objects', options: [['0.005', 'All'], ['0.013', 'Normal'], ['0.02', 'Fewer (faster)'], ['0.03', 'Few (fastest)']] },
         { type: 'select', key: 'mirror_size', label: 'Mirrors', options: [['0', 'Off'], ['128', 'Low (128)'], ['256', 'Normal (256)'], ['512', 'High (512)'], ['1024', 'Very high (1024)']] },
-        { type: 'select', key: 'mirror_refresh', label: 'Real-time reflections', options: [['off', 'None (frozen picture)'], ['eco', 'Economical'], ['full', 'Full']] },
+        { type: 'select', key: 'mirror_refresh', label: 'Real-time reflections', options: [['off', 'None (frozen picture)'], ['eco', 'Economical'], ['full', 'Full'], ['every', 'Every frame (smoothest)']] },
+        { type: 'select', key: 'mirror_quality', label: 'Mirror quality', options: [['standard', 'Standard'], ['enhanced', 'As the picture (Enhanced)']] },
         { type: 'toggle', key: 'mirror_hud_every_frame', label: 'Mirror panels every frame' },
         { type: 'select', key: 'texture_memory', label: 'Texture memory', options: textureMemory },
         { type: 'toggle', key: 'texture_compression', label: 'Compress textures on loading' },
@@ -153,10 +154,12 @@ const driving = {
         { type: 'slider', key: 'mouse_sens', label: 'Mouse steering sensitivity (O)', min: 0.1, max: 3, step: 0.05, def: 1, format: omsiPct, store: r2 },
         { type: 'slider', key: 'mouse_pedal_strength', label: 'Mouse pedal strength', min: 0.5, max: 2, step: 0.05, def: 1, format: omsiPct, store: r2 },
         { type: 'toggle', key: 'mouse_smooth', label: 'Smooth mouse steering (off: the wheel follows the cursor at once, as in OMSI)' },
+        { type: 'toggle', key: 'mouse_pedals', label: 'The mouse works the pedals', help: 'Up the throttle, down the brake, as in OMSI; off: the mouse only steers, the pedals stay on the keys' },
         { type: 'toggle', key: 'mouse_hold', label: "Hold the cursor while the mouse steers (off: the crosshair stays free, the window's edges are the lock)" },
         { type: 'toggle', key: 'mouse_right_off', label: 'A right click ends the mouse steering (as in OMSI)' },
         { type: 'toggle', key: 'blinker_cancel', label: "Indicators cancel themselves (as the bus's script does)" },
         { type: 'toggle', key: 'brake_hold', label: 'The keyboard brake stays on until the throttle (as in OMSI)' },
+        { type: 'slider', key: 'key_pedal_speed', label: 'Pedal keys speed (100 % = OMSI)', min: 0.25, max: 2, step: 0.05, def: 1, format: omsiPct, store: r2 },
         { type: 'toggle', key: 'auto_clutch', label: 'Automatic clutch (manual gearboxes)' },
         { type: 'toggle', key: 'auto_shift', label: 'Automated manual gearbox (shifts a manual gearbox for you by the engine speed)' },
         { type: 'button', label: 'Change the keys', icon: 'keyboard', controls: 0 },
@@ -306,8 +309,7 @@ const sound = {
       title: 'Radio stations',
       rows: [
         { type: 'note', text: "A radio's station button n plays the n-th station, a cassette player the first; Shift+R steps through them. An address is an MP3, AAC or Ogg stream or an .m3u/.pls playlist." },
-        // (the launcher has no command for radio.cfg yet)
-        { type: 'note', text: 'The stations cannot be edited here yet.' },
+        { type: 'custom', id: 'radio' },
       ],
     },
   ],
@@ -322,7 +324,9 @@ const gameplay = {
       rows: [
         { type: 'select', key: 'boarding', label: 'Boarding', options: [['auto', 'Pay and take the ticket'], ['pay', 'The driver sells the ticket'], ['walk', 'Just walk in']] },
         { type: 'select', key: 'standing_chance', label: 'Standing passengers', options: [['0', 'Never'], ['5', '5%'], ['10', '10%'], ['25', '25%'], ['50', '50%'], ['100', 'Always']] },
-        { type: 'select', key: 'passenger_animation', label: 'Passenger animations', options: [['original', 'Original OMSI'], ['enhanced', 'Procedural (experimental)']] },
+        { type: 'select', key: 'passenger_animation', label: 'Passenger animations', options: [['original', 'Original OMSI'], ['enhanced', 'Natural (procedural)']] },
+        // (drawn on this computer only; the avatars are downloaded once, about 310 MB)
+        { type: 'select', key: 'character_models', label: 'Character models', options: [['original', 'Original'], ['improved', 'High quality (improved)']], help: 'High quality draws the people with the Microsoft Rocketbox avatars and their living faces, on this computer only: servers and other players keep their own. They are downloaded once (about 310 MB).' },
         { type: 'toggle', key: 'exact_fare', label: 'Passengers pay the exact fare' },
         { type: 'slider', key: 'pax_density', label: 'How many passengers', min: 0, max: 2, step: 0.1, def: 1, format: pct, store: r2 },
         { type: 'toggle', key: 'get_up', label: 'Ability to get up (Ctrl+Shift+G)' },
@@ -330,6 +334,8 @@ const gameplay = {
         { type: 'select', key: 'ai_unsched_factor', label: 'Random traffic', options: [['25', '25%'], ['50', '50%'], ['75', '75%'], ['100', '100%'], ['150', '150%'], ['200', '200%']] },
         { type: 'select', key: 'ai_max_scheduled', label: 'Timetable vehicles', options: [['0', 'All'], ['10', 'At most 10'], ['25', 'At most 25'], ['50', 'At most 50']] },
         { type: 'select', key: 'ai_max_parked', label: 'Parked cars', options: [['-1', 'None'], ['0', 'Every space'], ['35', 'At most 35'], ['100', 'At most 100'], ['250', 'At most 250']] },
+        // (OMSI's AIMaxHumans, #2087)
+        { type: 'select', key: 'ai_max_humans', label: 'People at once', options: [['50', '50'], ['100', '100'], ['200', '200'], ['400', '400'], ['720', '720'], ['1000', '1000']] },
         // (off: an early bus waits at every stop, as in OMSI)
         { type: 'toggle', key: 'ai_wait_timed_stops_only', label: 'Timetable buses ahead of time wait only at timed stops' },
       ],
@@ -363,6 +369,8 @@ const general = {
       title: 'Interface & online',
       rows: [
         { type: 'custom', id: 'theme' },
+        { type: 'custom', id: 'launcher_layout' },
+        { type: 'custom', id: 'launcher_size' },
         { type: 'select', key: 'language', label: 'Language', raw: true, options: (s, boot) => (boot?.languages || []).map((l) => [l.code, l.name]) },
         // (texts nobody has translated: translated on this machine)
         { type: 'toggle', key: 'machine_translation', label: 'Translate the remaining texts automatically (offline, downloads 620 MB once)' },
@@ -382,10 +390,13 @@ const general = {
         // (on top of the interface's size; Ctrl + the wheel over it in the game)
         { type: 'slider', key: 'chat_size', label: 'Chat size', min: 0.5, max: 3, step: 0.1, def: 1, format: pct, store: r1 },
         { type: 'toggle', key: 'name_tags', label: "Other players' names above their buses" },
+        { type: 'select', key: 'photo_mode', label: 'Photo mode', options: [['simple', 'Simple'], ['advanced', 'Advanced (for photographers)']], help: 'Simple: the lens, the look and the frame. Advanced: a camera body - sensor size, P/A/S/M exposure with ISO and metering, white balance in kelvin, tilt-shift, histogram, focus peaking, bracketing and 16-bit PNG.' },
         { type: 'section', title: 'Navigator' },
         { type: 'toggle', key: 'navigator', label: 'Navigator (Shift+N: map, schedule, off)' },
         { type: 'toggle', key: 'nav_arrows', label: 'Route arrows (as in OMSI 2)' },
         { type: 'toggle', key: 'nav_ai', label: 'AI vehicles on the map' },
+        { type: 'toggle', key: 'nav_surface', label: 'Map surface under the roads' },
+        { type: 'toggle', key: 'nav_light', label: 'Light map' },
         { type: 'custom', id: 'corner' },
       ],
     },
@@ -394,6 +405,7 @@ const general = {
       title: 'Updates',
       rows: [
         { type: 'toggle', key: 'update_check', label: 'Look for updates when the launcher starts' },
+        { type: 'select', key: 'update_channel', label: 'Update channel', options: [['stable', 'Stable'], ['beta', 'Beta (for testers)']], help: 'Beta: every new version as soon as it is built, before it is tested. Back on Stable, the beta you have stays until a newer stable version comes out.', recheckUpdates: true },
         { type: 'toggle', key: 'update_auto', label: 'Install updates without asking' },
         { type: 'toggle', key: 'update_notify', label: 'Tell me about a new version during a session' },
         { type: 'toggle', key: 'presence', label: 'Count me in the website\'s "playing now" (anonymous)' },
@@ -413,5 +425,5 @@ export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, genera
 /** The settings a saved graphics profile holds (`GRAPHICS_PROFILE_KEYS`). */
 export const GRAPHICS_PROFILE_KEYS = [
   'graphics', 'msaa', 'render_scale', 'anisotropy', 'shadow_size', 'ssao', 'shadows', 'shadow_casters', 'detail_textures', 'led_glow', 'led_mips', 'reflections', 'clouds', 'cloud_quality', 'rain_quality', 'windy_trees',
-  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_hud_every_frame', 'texture_memory', 'texture_compression',
+  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_quality', 'mirror_hud_every_frame', 'texture_memory', 'texture_compression',
 ];

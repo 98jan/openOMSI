@@ -46,7 +46,10 @@ export function Select({ value, options, onChange, disabled, raw, placeholder })
     const below = innerHeight - r.bottom - 12;
     const up = below < 220 && r.top > below;
     const max = Math.min(320, up ? r.top - 12 : below);
-    setPlace({ left: r.left, width: r.width, max, ...(up ? { bottom: innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
+    const right = innerWidth - r.left - 12;
+    const left = r.right - 12;
+    const leftward = right < 420 && left > right;
+    setPlace({ ...(leftward ? { right: innerWidth - r.right } : { left: r.left }), width: r.width, widest: Math.max(r.width, Math.min(420, leftward ? left : right)), max, ...(up ? { bottom: innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
     setHi(at);
     const out = (e) => !box.current?.contains(e.target) && !list.current?.contains(e.target) && setOpen(false);
     const away = (e) => !list.current?.contains(e.target) && setOpen(false);
@@ -85,7 +88,10 @@ export function Select({ value, options, onChange, disabled, raw, placeholder })
       }
       return;
     }
-    if (e.key === 'Escape' || e.key === 'Tab') setOpen(false);
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      setOpen(false);
+    } else if (e.key === 'Tab') setOpen(false);
     else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       move(hi + (e.key === 'ArrowDown' ? 1 : -1));
@@ -102,7 +108,7 @@ export function Select({ value, options, onChange, disabled, raw, placeholder })
     <button type="button" class=${'select' + (open ? ' open' : '')} disabled=${disabled} title=${label} aria-haspopup="listbox" aria-expanded=${open}
       onClick=${() => setOpen(!open)} onKeyDown=${key}><span>${label}</span></button>
     ${open && place && html`<div class="dropdown-list" role="listbox" ref=${list}
-      style=${`left:${place.left}px;width:${place.width}px;max-height:${place.max}px;` + (place.top != null ? `top:${place.top}px` : `bottom:${place.bottom}px`)}>
+      style=${(place.left != null ? `left:${place.left}px;` : `right:${place.right}px;`) + `min-width:${place.width}px;width:max-content;max-width:${place.widest}px;max-height:${place.max}px;` + (place.top != null ? `top:${place.top}px` : `bottom:${place.bottom}px`)}>
       ${items.map(([v, l], i) => html`<div role="option" aria-selected=${v === now} title=${l}
         class=${'dropdown-item' + (v === now ? ' on' : '') + (i === hi ? ' hi' : '')}
         onMouseMove=${() => i !== hi && setHi(i)} onMouseDown=${(e) => { e.preventDefault(); pick(v); }}>${l}</div>`)}
@@ -170,15 +176,15 @@ export function Tag({ kind = '', children }) {
 }
 
 /** A dialog over the page; Escape and a click beside it close it. */
-export function Dialog({ title, onClose, children, footer, wide }) {
+export function Dialog({ title, onClose, children, footer, wide, class: cls = '' }) {
   useEffect(() => {
     const k = (e) => e.key === 'Escape' && onClose?.();
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
   return html`<div class="overlay" onMouseDown=${(e) => e.target === e.currentTarget && onClose?.()}>
-    <div class=${'dialog' + (wide ? ' wide' : '')} role="dialog">
-      <div class="dialog-head"><h2>${t(title)}</h2><${Button} kind="ghost" icon="x" title="Close" onClick=${onClose} /></div>
+    <div class=${'dialog' + (wide ? ' wide' : '') + (cls ? ' ' + cls : '')} role="dialog">
+      <div class="dialog-head"><h2>${t(title)}</h2>${onClose && html`<${Button} kind="ghost" icon="x" title="Close" onClick=${onClose} />`}</div>
       <div class="dialog-body">${children}</div>
       ${footer && html`<div class="dialog-foot">${footer}</div>`}
     </div>

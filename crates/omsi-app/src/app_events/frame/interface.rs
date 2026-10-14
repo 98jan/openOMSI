@@ -72,7 +72,7 @@ impl App {
         self.frame_loading_fade();
         // the pause menu, drawn with the launcher's toolkit over all of it
         self.frame_shell(dt);
-        *self.perf.profile.entry("hud").or_default() += __t.elapsed().as_secs_f64();
+        self.perf.profile.add(crate::profile_keys::ProfKey::Hud, __t.elapsed().as_secs_f64());
         vr_nav_display
     }
 
@@ -127,7 +127,7 @@ impl App {
         }
         self.service_msg = self.service_msg.take().filter(|(_, l)| *l > 0.0);
         if let Some(lan) = self.net.lan.as_ref() {
-            for t in lan::hud_lines(lan, &self.net.remotes, self.player.as_ref()).into_iter().chain(self.sound.voice.as_ref().and_then(|v| v.hud_line())) {
+            for t in lan::hud_lines(lan).into_iter().chain(self.sound.voice.as_ref().and_then(|v| v.hud_line())) {
                 say(t.clone(), t, NoticeKind::Info);
             }
         }
@@ -247,8 +247,11 @@ impl App {
                     (t, t)
                 }
             };
-            // (on foot the map follows the walker, not the bus left standing)
+            // (on foot the map follows the walker, not the bus left standing - but on a duty it
+            // stays the bus's: the route and the stops are the bus's, and walking round the bus
+            // standing at a stop recalculated the route and moved the stops on, #2426)
             let (at, heading) = match (self.session.on_foot.as_ref(), p) {
+                (Some(_), Some(p)) if self.session.duty.is_some() => (p.vehicle.position, p.vehicle.heading),
                 (Some(f), _) => (f.pos, f.heading),
                 (None, Some(p)) => (p.vehicle.position, p.vehicle.heading),
                 (None, None) => return,
@@ -293,11 +296,11 @@ impl App {
             nav.frame_at(r, scene, &frame, hud[0]);
             nav.enabled = old_enabled;
             nav.opacity = old_opacity;
-            *self.perf.profile.entry("hud.navigator").or_default() += __tn.elapsed().as_secs_f64();
+            self.perf.profile.add(crate::profile_keys::ProfKey::HudNavigator, __tn.elapsed().as_secs_f64());
             // OMSI 2's dynamic route arrows over the junctions ahead
             if nav.arrows {
                 if let Some(w) = self.world.as_ref() {
-                    let spots = nav.arrow_spots(self.session.traffic.as_ref().map(|t| &t.net), 350.0, &|id| w.object_positions.lock().get(&id).map(|p| (p.0, p.1[0])));
+                    let spots = nav.arrow_spots(self.session.traffic.as_ref().map(|t| &t.net), 350.0, &|id| w.data.peek().objects.get(&id).map(|p| (p.0, p.1[0])));
                     self.gfx.route_arrows.tick(dt, w, r, scene, &spots);
                 }
             } else if self.gfx.route_arrows.any() {
@@ -435,7 +438,7 @@ impl App {
             };
             // (the game menu's greyed-out lines: the timetable needs an active route)
             let menu_disabled: &[&str] = &[];
-            let (menu_kind, menu_head, menu_preview) = crate::game_lists::menu_extras(self.menus.list_kind.as_ref(), self.menus.admin_list.as_deref(), chooser_sel, self.session.schedule.as_ref(), self.clock.time);
+            let (menu_kind, menu_head, menu_preview) = crate::game_lists::menu_extras(self.menus.list_kind.as_ref(), self.menus.admin_list.as_deref(), chooser_sel, self.session.schedule.as_ref().or(self.session.timetable_book.as_ref()), self.clock.time);
             crate::telemetry::publish(self.player.as_ref(), self.session.duty.as_ref(), self.session.humans.as_ref(), self.paused, self.session.schedule.as_ref(), self.session.traffic.as_ref());
             let frame = ui::Frame {
                 scale,
@@ -475,10 +478,12 @@ impl App {
                 dropdown,
                 menu_kbd: self.menus.menu_kbd,
                 menu_top: self.menus.menu_top,
+                // (a seat or view slider held: the view behind is seen changing, #2359)
+                menu_peek: self.menus.menu_drag.filter(|k| chooser_items.get(*k).is_some_and(|(id, _)| id.starts_with("seat") || *id == "fov")),
                 // (not over the city map, which has the stops and their times: it
                 // covered the map's zoom and close buttons)
                 timetable: (self.menus.timetable && !map_open).then(|| timetable_rows(self.session.duty.as_ref(), self.player.as_ref().map(|p| p.vehicle.host.tt_delay as f64))).flatten(),
-                info: self.menus.info_bar.then(|| info_line(&self.clock, self.player.as_ref(), self.session.duty.as_ref(), self.session.humans.as_ref().map(|h| h.riding()), self.session.career.metres)),
+                info: self.menus.info_bar.then(|| info_line(&self.clock, self.player.as_ref(), self.session.duty.as_ref(), self.session.humans.as_ref().map(|h| h.riding()), self.session.career.metres, self.menus.navigator.as_ref().filter(|n| n.enabled).and_then(|n| n.speed_limit))),
                 info_room: self.input.touch.info_room.filter(|_| self.input.touch.enabled),
                 tutorial: self.menus.tutorial.as_ref().filter(|t| !t.hidden && self.menus.game_menu.is_none()).and_then(|t| t.page().map(|p| (p.title.as_str(), p.text.as_str(), p.image.as_deref(), t.at, t.pages.len()))),
                 chat,

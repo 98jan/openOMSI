@@ -14,14 +14,13 @@ extern "C" {
     fn openomsi_swift_detach_window(view: *mut c_void);
     /// A game is starting: the Swift launcher steps back (and stops its timers).
     fn openomsi_swift_game_started();
-    /// The cross-platform launcher was switched off: the Swift one is shown again.
-    fn openomsi_swift_show_launcher();
     fn openomsi_swift_tilt(on: i32);
     /// The latest turn of the device (-1 .. 1) into `out`; 0 while there is none yet.
     fn openomsi_swift_tilt_value(out: *mut f32) -> i32;
     fn openomsi_swift_haptic(ms: u32);
     fn openomsi_swift_open_url(url: *const c_char);
     fn openomsi_swift_set_clipboard(text: *const c_char) -> i32;
+    fn openomsi_swift_is_phone() -> i32;
     /// The game window's safe area in pixels: left, top, right, bottom.
     fn openomsi_swift_safe_insets(out: *mut f32);
 }
@@ -52,11 +51,6 @@ pub(crate) fn detach_window(window: &Arc<Window>) {
 pub(crate) fn game_started() {
     // SAFETY: a plain call into the app
     unsafe { openomsi_swift_game_started() }
-}
-
-pub(crate) fn show_native_launcher() {
-    // SAFETY: a plain call into the app
-    unsafe { openomsi_swift_show_launcher() }
 }
 
 pub(crate) fn set_tilt(on: bool) {
@@ -94,4 +88,8 @@ pub(crate) fn safe_insets() -> (f32, f32, f32, f32) {
     // SAFETY: four writable f32s
     unsafe { openomsi_swift_safe_insets(v.as_mut_ptr()) };
     (v[0], v[1], v[2], v[3])
+}
+
+pub(crate) fn is_phone() -> bool {
+    unsafe { openomsi_swift_is_phone() != 0 }
 }

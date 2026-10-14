@@ -137,6 +137,7 @@ fn freetex_test_look() -> Look {
         color: [1.0; 4],
         emissive: [0.0; 3],
         unlit: false,
+        lit: false,
         diffuse: None,
         transmap: None,
         night: None,
@@ -145,6 +146,21 @@ fn freetex_test_look() -> Look {
         extra: MaterialExtra::default(),
         dyn_tex: DynTex::default(),
     }
+}
+
+/// A page's `lit` word is the slot's too: its material is a surface, not the bus's own
+/// unlit display. The flag rides down with the `Look` (`DynSlot`s carry it likewise,
+/// see `instantiate_vehicle`); without it a script texture stays a display.
+#[test]
+fn a_lit_pages_slot_is_not_drawn_unlit() {
+    let mut look = freetex_test_look();
+    look.dyn_tex = DynTex { script: Some(3), ..DynTex::default() };
+    assert!(look.for_vehicle(&[], &[]).unlit, "a script texture is the bus's display");
+    look.lit = true;
+    assert!(!look.for_vehicle(&[], &[]).unlit, "the page said lit: a surface");
+    // (a slot of no script texture is untouched by either)
+    look.dyn_tex = DynTex::default();
+    assert!(!look.for_vehicle(&[], &[]).unlit);
 }
 
 /// An LED panel's light map is one white pixel; a flipdot's is a picture with dark
@@ -1058,18 +1074,21 @@ fn scenery_mouseevent_hit_and_trigger() {
     let miss = world.scenery_object_hit(DVec3::ZERO, -glam::Vec3::Y, 50.0, 0.0);
     assert!(miss.is_none());
 
-    // 3. Test click triggers toggle_switch: Switch was 0, becomes 1
-    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(0.0));
-    assert!(world.scenery_object_click(42, "toggle_switch"));
-    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(1.0));
+    // 3. Test click triggers toggle_switch: Switch was 0, becomes 1 (the simulation's list
+    // takes the placed object from the world's inbox first)
+    let mut scenery = omsi_sim::scenery::SceneryState::default();
+    world.scenery_sync(&mut scenery);
+    assert_eq!(scenery.objects()[0].inst.var("Switch"), Some(0.0));
+    assert!(world.scenery_object_click(&mut scenery, 42, "toggle_switch"));
+    assert_eq!(scenery.objects()[0].inst.var("Switch"), Some(1.0));
 
     // 4. Test drag triggers toggle_switch_drag with mouse_x
-    assert!(world.scenery_object_drag(42, "toggle_switch", 0.75, 0.0));
-    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(0.75));
+    assert!(world.scenery_object_drag(&mut scenery, 42, "toggle_switch", 0.75, 0.0));
+    assert_eq!(scenery.objects()[0].inst.var("Switch"), Some(0.75));
 
     // 5. Test release triggers toggle_switch_off
-    assert!(world.scenery_object_release(42, "toggle_switch"));
-    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(0.0));
+    assert!(world.scenery_object_release(&mut scenery, 42, "toggle_switch"));
+    assert_eq!(scenery.objects()[0].inst.var("Switch"), Some(0.0));
 
     let _ = std::fs::remove_dir_all(&dir);
 }
