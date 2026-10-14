@@ -57,17 +57,19 @@ pub(crate) static TEXTURE_OUT_OF_MEMORY: std::sync::atomic::AtomicBool = std::sy
 /// every view, bind group and render bundle made with it afterwards - the whole scene's
 /// main pass among them: a black picture for the rest of the session while the sounds and
 /// the menus went on (#2472). A texture that cannot be made is drawn as a plain stand-in
-/// instead, and the game keeps fewer textures from then on.
+/// instead, and when memory ran short the game keeps fewer textures from then on.
 pub(crate) fn try_create_texture(device: &wgpu::Device, desc: &wgpu::TextureDescriptor) -> Option<wgpu::Texture> {
     let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
     let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let texture = device.create_texture(desc);
     let invalid = pollster::block_on(validation.pop());
     let out_of_memory = pollster::block_on(memory.pop());
+    if out_of_memory.is_some() {
+        TEXTURE_OUT_OF_MEMORY.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     let Some(e) = out_of_memory.or(invalid) else {
         return Some(texture);
     };
-    TEXTURE_OUT_OF_MEMORY.store(true, std::sync::atomic::Ordering::Relaxed);
     static FAILED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = FAILED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     if n < 5 || n % 1000 == 0 {
