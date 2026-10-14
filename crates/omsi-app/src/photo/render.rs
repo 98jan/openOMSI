@@ -219,7 +219,7 @@ impl crate::App {
                         Some(h) => h.people.iter().filter(|q| q.inside(crate::humans::BusId::Player)).flat_map(|q| people.get(&q.id).into_iter().flat_map(|v| v.meshes.iter().map(|m| m.1))).collect(),
                         None => Vec::new(),
                     };
-                    motion_parts(&bus, &trailers, &riders).into_iter().filter_map(|i| scene.instances.get(i).map(|x| (i, x.origin, x.transform))).collect()
+                    omsi_photo::motion_parts(&bus, &trailers, &riders).into_iter().filter_map(|i| scene.instances.get(i).map(|x| (i, x.origin, x.transform))).collect()
                 }
                 _ => Vec::new(),
             };
@@ -417,15 +417,6 @@ impl crate::App {
     }
 }
 
-/// The instances a rolling shot moves with the shutter: the bus's, its trailers' and the
-/// riders', each once and in that order. The bus's come first, as the wheels' spin is read
-/// by their place in this list (`wheel_spin`); one that is named twice would be moved twice
-/// in one picture and stand a step ahead of the rest.
-fn motion_parts(bus: &[usize], trailers: &[usize], riders: &[usize]) -> Vec<usize> {
-    let mut seen = std::collections::HashSet::new();
-    bus.iter().chain(trailers).chain(riders).copied().filter(|i| seen.insert(*i)).collect()
-}
-
 /// For each mesh of the vehicle (in the order of its render's instances): a wheel's body
 /// rotation, its centre in the body's frame and its radius - the meshes a `Wheel_Rotation_*`
 /// variable turns, the tallest of each giving the centre - else None.
@@ -553,21 +544,6 @@ fn chrono_like_stamp() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::motion_parts;
-
-    #[test]
-    fn a_rolling_shot_moves_the_bus_its_trailers_and_the_riders_once_each_in_that_order() {
-        assert_eq!(motion_parts(&[3, 4, 5], &[9, 10], &[20, 21, 22]), [3, 4, 5, 9, 10, 20, 21, 22]);
-        // an instance named twice (a rider seen through two lists) is moved once
-        assert_eq!(motion_parts(&[3, 4], &[4, 9], &[9, 20, 3]), [3, 4, 9, 20]);
-        // nobody aboard: as before
-        assert_eq!(motion_parts(&[1, 2], &[], &[]), [1, 2]);
-        assert!(motion_parts(&[], &[], &[]).is_empty());
-        // the bus's own come first and keep their places: the wheels' spin is read by them
-        let parts = motion_parts(&[7, 8, 9], &[], &[1, 2]);
-        assert_eq!(&parts[..3], &[7, 8, 9]);
-    }
-
     #[test]
     fn a_stamp_reads_as_a_date_and_time() {
         let s = super::chrono_like_stamp();
