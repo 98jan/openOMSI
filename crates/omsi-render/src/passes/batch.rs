@@ -39,18 +39,15 @@ impl DrawPlan {
         let remaining = if self.has_presurface { &self.main_batches[self.presurface_batch_end..] } else { &self.main_batches };
         let needs = !cfg!(target_vendor = "apple") || remaining.iter().chain(&self.cab_batches)
             .any(|b| matches!(b.pipe / 4, PIPE_ALPHA_TEST | PIPE_BLEND | PIPE_BLEND_NO_WRITE));
+        let single = renderer.options.msaa <= 1;
         renderer.prepass_msaa_pipelines.is_some()
-            && f.enhanced && (f.with_overlays || f.xr_view) && renderer.options.msaa > 1
-            && (!self.has_presurface || self.msaa_safe_batches.iter().any(|b| b.pipe / 2 != PIPE_ALPHA_TEST))
+            && f.enhanced && (f.with_overlays || f.xr_view) && (!single || self.has_presurface)
+            && (!self.has_presurface || self.msaa_safe_batches.iter().any(|b| single || b.pipe / 2 != PIPE_ALPHA_TEST))
             && f.prepass_on && needs && !f.env.no_msaa_prepass
     }
 
     pub(crate) fn presurface_prefill(&self, renderer: &Renderer, f: &FrameCtx) -> bool {
-        self.has_presurface
-            && renderer.prepass_msaa_pipelines.is_some()
-            && (self.msaa_prepass(renderer, f)
-                || (renderer.options.msaa == 1 && f.enhanced
-                    && (f.with_overlays || f.xr_view) && f.prepass_on))
+        self.has_presurface && self.msaa_prepass(renderer, f)
     }
 
     /// the rain films out of the main pass: they are drawn after copying the clean picture
