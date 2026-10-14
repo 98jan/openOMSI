@@ -1,6 +1,7 @@
 # Dependency updates, once a month. Minor and patch versions of the crates come together in
-# one pull request, and new major versions together in another, so they do not flood the
-# list. Security fixes come whenever an advisory is published, whatever the schedule.
+# one pull request, so they do not flood the list; a new major version of a game crate comes
+# in a pull request of its own, so one that breaks the build does not hold back the others.
+# Security fixes come whenever an advisory is published, whatever the schedule.
 version: 2
 updates:
   - package-ecosystem: cargo
@@ -11,7 +12,7 @@ updates:
     # usually yanked by then (security fixes do not wait)
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 10
     groups:
       # wgpu, wgpu-hal and naga are released together and must stay on one version (the
       # game hands wgpu-hal's and naga's types to wgpu): their updates come as one pull
@@ -26,10 +27,6 @@ updates:
         update-types:
           - minor
           - patch
-      # the new major versions, in one pull request: each needs its code looked at
-      majors:
-        update-types:
-          - major
     # a new major wgpu changes the experimental ray query API Enhanced+ is built on (and the
     # gpu-allocator patch): it is moved to by hand
     ignore:
