@@ -7,8 +7,10 @@ impl VehicleInstance {
     /// `Driver_Seat_VertTransl`: the sprung driver's seat, as OMSI moves it:
     /// the body's vertical acceleration and its roll and pitch at the seat's place (the
     /// driver's camera) push a spring (3000) and damper (2000) on 150 kg; ±10 cm at most.
+    /// (Omsi.exe 0x7e2110 keeps it at +0x510, hands it to the scripts at 0x7cffb8 and lifts
+    /// the driver's camera by the same amount, 0x7e24b2: see [`Self::driver_seat_travel`];
+    /// worked out for a model whose scripts do not read it as well.)
     pub(super) fn update_driver_seat(&mut self, dt: f32) {
-        let Some(id) = self.program_ids().driver_seat else { return };
         if dt <= 0.0 {
             return;
         }
@@ -31,7 +33,15 @@ impl VehicleInstance {
             v = 0.0;
         }
         self.seat = (x, v, omega);
-        self.state.vars[id as usize] = x;
+        if let Some(id) = self.program_ids().driver_seat {
+            self.state.vars[id as usize] = x;
+        }
+    }
+
+    /// How far the sprung driver's seat stands above its rest (m, ±0.1): the driver's eye
+    /// rides on it, as the seat mesh does with `Driver_Seat_VertTransl` (#2550).
+    pub fn driver_seat_travel(&self) -> f32 {
+        self.seat.0
     }
 
     /// Dirt and spray. OMSI writes three engine variables every frame and the bus scripts
