@@ -667,6 +667,13 @@ openOMSI is distributed under the GNU Affero General Public License,
 version 3 only (SPDX-License-Identifier: AGPL-3.0-only), except for files
 that carry their own license notices.
 
+The openOMSI name and original project logos are marks of usonskyyyy,
+who created the original project codebase. The official organization is
+openOMSI.org: https://github.com/openOMSI-org (previously openOMSI-Project).
+The source-code license does not grant permission to use these marks to
+imply official status, sponsorship or endorsement. See TRADEMARKS.md:
+https://github.com/openOMSI-org/openOMSI/blob/main/TRADEMARKS.md
+
 The following copyright and permission notice is retained for code and
 documentation previously distributed under the MIT License. This change
 does not revoke MIT permissions already granted for those versions.
