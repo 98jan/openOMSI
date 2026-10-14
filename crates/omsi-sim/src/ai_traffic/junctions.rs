@@ -931,8 +931,7 @@ impl TrafficSim {
         let v = st.speed;
         let a_me = st.accel;
         let mut hard = false;
-        // what is only a matter of the rules (right of way, a full exit) against someone
-        // physically in the way
+        // a matter of the rules (right of way, a full exit), not of someone in the way
         let mut ruled = false;
         let mut soft: Vec<usize> = Vec::new();
         let mut why: Vec<String> = Vec::new();
