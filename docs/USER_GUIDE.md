@@ -98,7 +98,8 @@ again - on Windows `openomsi.exe` and `openomsi-launcher.exe`, on macOS the `ope
 you started, on Linux the program files; mods, content and settings stay. On Android the
 system's installer asks "Do you want to update this app?"; Update replaces openOMSI and starts
 it again, Cancel leaves it as it was. Settings → General → Updates: look for updates at the start (on
-by default), install without asking (off by default), Check now. A folder openOMSI cannot
+by default), install without asking (off by default), the update channel (Stable, the tested
+releases, by default; Beta, every new version before it is tested, for testers), Check now. A folder openOMSI cannot
 write to (Program Files, an app opened straight from Downloads on macOS) is reported with
 what to do. A download that breaks goes on where it stopped (up to four times), a request
 that times out is tried again after 3 and 10 s, and when the GitHub API does not answer (or
