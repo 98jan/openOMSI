@@ -11,11 +11,11 @@
 `COMMIT` restarts from `0` whenever `VERSION` changes: after `1.1.23`, a commit that sets
 `VERSION` to `1.2` is released as `1.2.0`, and the next one as `1.2.1`.
 
-To start a new version, edit one line and push:
+To start a new version, change that one line in a pull request like any other change:
 
 ```sh
-echo 1.2 > VERSION
-git commit -am "Version 1.2" && git push
+git switch -c version-1.2 && echo 1.2 > VERSION
+git commit -am "Version 1.2" && git push -u origin version-1.2
 ```
 
 `scripts/version.sh` prints the version of the checked-out commit; the game shows it in the
