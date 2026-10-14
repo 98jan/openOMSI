@@ -150,8 +150,7 @@ fn swatch_shifts(src: &[u8], blocks: &[u8], w: u32, h: u32, format: PixelFormat)
     if w as u64 * h as u64 > MAX_SWATCH_CHECK_TEXELS {
         return false;
     }
-    let dec = bc::decode(blocks, w, h, format.bc(false));
-    bc::worst_patch_shift(src, &dec, w, h) > MAX_SWATCH_SHIFT * MAX_SWATCH_SHIFT
+    bc::worst_block_patch_shift(src, blocks, w, h, format.bc(false)) > MAX_SWATCH_SHIFT * MAX_SWATCH_SHIFT
 }
 
 fn psnr(sum_sq: f64, n: u64) -> f64 {

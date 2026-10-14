@@ -590,16 +590,20 @@ pub fn encode(rgba: &[u8], width: u32, height: u32, format: Bc) -> (Vec<u8>, f64
     (out, ec, ea)
 }
 
+fn decode_kind(format: Bc) -> u8 {
+    match format {
+        Bc::Bc1 { .. } => 1,
+        Bc::Bc2 => 3,
+        Bc::Bc3 => 5,
+    }
+}
+
 /// Decode blocks back to RGBA (`kind` 1, 3 or 5 as in DXT1/3/5).
 pub fn decode(blocks: &[u8], width: u32, height: u32, format: Bc) -> Vec<u8> {
     let (w, h) = (width.max(1) as usize, height.max(1) as usize);
     let bw = w.div_ceil(4);
     let bb = format.block_bytes();
-    let kind = match format {
-        Bc::Bc1 { .. } => 1,
-        Bc::Bc2 => 3,
-        Bc::Bc3 => 5,
-    };
+    let kind = decode_kind(format);
     let mut rgba = vec![0u8; w * h * 4];
     for (i, blk) in blocks.chunks_exact(bb).enumerate() {
         let (bx, by) = (i % bw, i / bw);
@@ -625,44 +629,75 @@ pub fn decode(blocks: &[u8], width: u32, height: u32, format: Bc) -> Vec<u8> {
 /// colour altogether while the picture as a whole still measures well.
 pub fn worst_patch_shift(src: &[u8], dec: &[u8], width: u32, height: u32) -> f64 {
     let (w, h) = (width as usize, height as usize);
+    worst_shift(src, w, h, |bx, by| gather(dec, w, h, bx, by))
+}
+
+pub(crate) fn worst_block_patch_shift(src: &[u8], blocks: &[u8], width: u32, height: u32, format: Bc) -> f64 {
+    let (w, h) = (width as usize, height as usize);
+    let (bw, bb, kind) = (w.div_ceil(4), format.block_bytes(), decode_kind(format));
+    worst_shift(src, w, h, |bx, by| decode_block(&blocks[(by * bw + bx) * bb..][..bb], kind))
+}
+
+fn worst_shift(src: &[u8], w: usize, h: usize, dec: impl Fn(usize, usize) -> [[u8; 4]; 16]) -> f64 {
     let mut worst = 0.0f64;
     for by in 0..h / 4 {
         for bx in 0..w / 4 {
-            worst = worst.max(block_patch_shift(&gather(src, w, h, bx, by), &gather(dec, w, h, bx, by)));
+            let mut keys = [0u32; 16];
+            for (y, row) in keys.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                let o = ((by * 4 + y) * w + bx * 4) * 4;
+                for (k, p) in row.iter_mut().zip(src[o..o + 16].as_chunks::<4>().0) {
+                    *k = u32::from_le_bytes(*p) & 0x00FF_FFFF;
+                }
+            }
+            if let Some(counts) = swatch_counts(&keys) {
+                worst = worst.max(keys_shift(&keys, &counts, &dec(bx, by)));
+            }
         }
     }
     worst
 }
 
 fn block_patch_shift(src: &[[u8; 4]; 16], dec: &[[u8; 4]; 16]) -> f64 {
-    let (mut seen, mut patches, mut covered, mut block_worst) = (0u16, 0, 0, 0.0f64);
+    let keys = src.map(|p| u32::from_le_bytes([p[0], p[1], p[2], 0]));
+    swatch_counts(&keys).map_or(0.0, |counts| keys_shift(&keys, &counts, dec))
+}
+
+fn swatch_counts(keys: &[u32; 16]) -> Option<[u8; 16]> {
+    if keys.iter().all(|&k| k == keys[0]) {
+        return None;
+    }
+    let counts: [u8; 16] = std::array::from_fn(|i| keys.iter().map(|&k| (k == keys[i]) as u8).sum());
+    if counts.iter().filter(|&&n| n >= 2).count() < 12 {
+        return None;
+    }
+    let patches = (0..16).filter(|&i| counts[i] >= 2 && !keys[..i].contains(&keys[i])).count();
+    (patches >= 3).then_some(counts)
+}
+
+fn keys_shift(keys: &[u32; 16], counts: &[u8; 16], dec: &[[u8; 4]; 16]) -> f64 {
+    let mut block_worst = 0.0f64;
     for i in 0..16 {
-        if seen & (1 << i) != 0 {
+        if counts[i] < 2 || keys[..i].contains(&keys[i]) {
             continue;
         }
-        let (mut n, mut sum) = (0u32, [0u32; 3]);
+        let (n, mut sum) = (counts[i] as u32, [0u32; 3]);
         for j in i..16 {
-            if src[j][..3] == src[i][..3] {
-                seen |= 1 << j;
-                n += 1;
+            if keys[j] == keys[i] {
                 for c in 0..3 {
                     sum[c] += dec[j][c] as u32;
                 }
             }
         }
-        if n >= 2 {
-            patches += 1;
-            covered += n;
-            let e: f64 = (0..3)
-                .map(|c| {
-                    let d = sum[c] as f64 / n as f64 - src[i][c] as f64;
-                    d * d * WEIGHTS[c] as f64
-                })
-                .sum();
-            block_worst = block_worst.max(e);
-        }
+        let colour = keys[i].to_le_bytes();
+        let e: f64 = (0..3)
+            .map(|c| {
+                let d = sum[c] as f64 / n as f64 - colour[c] as f64;
+                d * d * WEIGHTS[c] as f64
+            })
+            .sum();
+        block_worst = block_worst.max(e);
     }
-    if patches >= 3 && covered >= 12 { block_worst } else { 0.0 }
+    block_worst
 }
 
 fn quantised_ends(c: [f32; 3]) -> [u16; 3] {
@@ -1096,6 +1131,138 @@ mod tests {
         }
         // the same size is a copy
         assert_eq!(resize(&src, w, h, w, h), src);
+    }
+
+    fn old_block_patch_shift(src: &[[u8; 4]; 16], dec: &[[u8; 4]; 16]) -> f64 {
+        let (mut seen, mut patches, mut covered, mut block_worst) = (0u16, 0, 0, 0.0f64);
+        for i in 0..16 {
+            if seen & (1 << i) != 0 {
+                continue;
+            }
+            let (mut n, mut sum) = (0u32, [0u32; 3]);
+            for j in i..16 {
+                if src[j][..3] == src[i][..3] {
+                    seen |= 1 << j;
+                    n += 1;
+                    for c in 0..3 {
+                        sum[c] += dec[j][c] as u32;
+                    }
+                }
+            }
+            if n >= 2 {
+                patches += 1;
+                covered += n;
+                let e: f64 = (0..3)
+                    .map(|c| {
+                        let d = sum[c] as f64 / n as f64 - src[i][c] as f64;
+                        d * d * WEIGHTS[c] as f64
+                    })
+                    .sum();
+                block_worst = block_worst.max(e);
+            }
+        }
+        if patches >= 3 && covered >= 12 { block_worst } else { 0.0 }
+    }
+
+    fn old_worst_patch_shift(src: &[u8], dec: &[u8], width: u32, height: u32) -> f64 {
+        let (w, h) = (width as usize, height as usize);
+        let mut worst = 0.0f64;
+        for by in 0..h / 4 {
+            for bx in 0..w / 4 {
+                worst = worst.max(old_block_patch_shift(&gather(src, w, h, bx, by), &gather(dec, w, h, bx, by)));
+            }
+        }
+        worst
+    }
+
+    struct Rng(u32);
+
+    impl Rng {
+        fn next(&mut self) -> u32 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 17;
+            self.0 ^= self.0 << 5;
+            self.0
+        }
+    }
+
+    fn swatch_picture(rng: &mut Rng, w: u32, h: u32) -> Vec<u8> {
+        let palette: Vec<[u8; 4]> = (0..24).map(|_| rng.next().to_le_bytes()).map(|c| [c[0], c[1], c[2], if c[3] > 40 { 255 } else { c[3] }]).collect();
+        let mut rgba = vec![0u8; (w * h * 4) as usize];
+        for by in 0..h / 4 {
+            for bx in 0..w / 4 {
+                let style = rng.next() % 6;
+                let colours = 1 + rng.next() as usize % 6;
+                let base = rng.next() as usize % palette.len();
+                for i in 0..16u32 {
+                    let (x, y) = (bx * 4 + i % 4, by * 4 + i / 4);
+                    let p = match style {
+                        0 => [x as u8, y as u8, (x ^ y) as u8, 255],
+                        1 => rng.next().to_le_bytes(),
+                        2 => palette[base],
+                        3 => palette[(base + (i % 4) as usize % colours) % palette.len()],
+                        4 => palette[(base + rng.next() as usize % colours) % palette.len()],
+                        _ => {
+                            let mut c = palette[(base + (i / 4) as usize % colours) % palette.len()];
+                            c[0] = c[0].wrapping_add(rng.next().is_multiple_of(3) as u8);
+                            c
+                        }
+                    };
+                    rgba[((y * w + x) * 4) as usize..][..4].copy_from_slice(&p);
+                }
+            }
+        }
+        rgba
+    }
+
+    #[test]
+    fn swatch_check_is_unchanged() {
+        let mut rng = Rng(0x9E37_79B9);
+        let mut swatch_blocks = 0;
+        for _ in 0..200_000 {
+            let colours = 1 + rng.next() as usize % 7;
+            let palette: Vec<[u8; 4]> = (0..colours).map(|_| rng.next().to_le_bytes()).collect();
+            let src: [[u8; 4]; 16] = std::array::from_fn(|_| {
+                let mut c = palette[rng.next() as usize % colours];
+                c[3] = rng.next() as u8;
+                c
+            });
+            let noisy = rng.next().is_multiple_of(2);
+            let dec: [[u8; 4]; 16] = std::array::from_fn(|i| if noisy { rng.next().to_le_bytes() } else { src[i].map(|v| v.saturating_add(rng.next() as u8 % 9)) });
+            let old = old_block_patch_shift(&src, &dec);
+            assert_eq!(block_patch_shift(&src, &dec).to_bits(), old.to_bits(), "{src:?} {dec:?}");
+            swatch_blocks += (old > 0.0) as u32;
+        }
+        assert!(swatch_blocks > 10_000, "{swatch_blocks}");
+        for (w, h) in [(64u32, 64u32), (256, 128), (36, 20), (6, 9)] {
+            let src = swatch_picture(&mut rng, w, h);
+            for format in [Bc::Bc1 { punch: false }, Bc::Bc1 { punch: true }, Bc::Bc3, Bc::Bc2] {
+                let (blocks, _, _) = encode(&src, w, h, format);
+                let dec = decode(&blocks, w, h, format);
+                let old = old_worst_patch_shift(&src, &dec, w, h);
+                assert_eq!(worst_patch_shift(&src, &dec, w, h).to_bits(), old.to_bits());
+                assert_eq!(worst_block_patch_shift(&src, &blocks, w, h, format).to_bits(), old.to_bits());
+                if w >= 64 {
+                    assert!(old > 0.0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn swatch_check_speed() {
+        let (w, h) = (1024u32, 1024u32);
+        let src = swatch_picture(&mut Rng(12345), w, h);
+        let (blocks, _, _) = encode(&src, w, h, Bc::Bc1 { punch: false });
+        let t = std::time::Instant::now();
+        let dec = decode(&blocks, w, h, Bc::Bc1 { punch: false });
+        let old = old_worst_patch_shift(&src, &dec, w, h);
+        let before = t.elapsed().as_secs_f64();
+        let t = std::time::Instant::now();
+        let new = worst_block_patch_shift(&src, &blocks, w, h, Bc::Bc1 { punch: false });
+        let after = t.elapsed().as_secs_f64();
+        assert_eq!(old.to_bits(), new.to_bits());
+        eprintln!("swatch check of a 1024x1024 BC1 picture: decode + check {:.1} ms before, {:.1} ms now", before * 1e3, after * 1e3);
     }
 
     #[test]
