@@ -402,6 +402,10 @@ impl Renderer {
             // took the snowfall off DirectX 12 for ever; a phone keeps to what worked, its
             // second build took long enough for Android to close the app, #1708)
             Some((m, true, false)) if !cfg!(any(target_os = "android", target_os = "ios")) => vec![(m.min(options.msaa).max(1), false), (m.min(options.msaa).max(1), true), (1, true)],
+            // (and the multisampling chosen: one failure of it - a driver of the time, a
+            // device lost while building - kept a computer at 1x MSAA for good, whatever the
+            // options said, #2597)
+            Some((m, b, false)) if !cfg!(any(target_os = "android", target_os = "ios")) && m < options.msaa => vec![(options.msaa, b), (m.max(1), b), (1, true)],
             Some((m, b, _)) => vec![(m.min(options.msaa).max(1), b), (1, true)],
             // (a phone starts with the basic set: the full one failed on Adreno and the
             // second build after it took long enough for Android to close the app)
