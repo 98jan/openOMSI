@@ -46,7 +46,8 @@ use std::sync::{Arc, Mutex};
 pub const REPO: &str = "openOMSI-org/openOMSI";
 pub const REPO_URL: &str = "https://github.com/openOMSI-org/openOMSI";
 const LATEST_API: &str = "https://api.github.com/repos/openOMSI-org/openOMSI/releases/latest";
-const RELEASES_API: &str = "https://api.github.com/repos/openOMSI-org/openOMSI/releases?per_page=50";
+const RELEASES_API: &str = "https://api.github.com/repos/openOMSI-org/openOMSI/releases?per_page=100";
+const RELEASE_PAGES: u32 = 5;
 pub const FIRST_SELF_TESTED: &str = "0.2.32";
 
 /// A build the App Store delivers (every iPhone and iPad build, and a Mac build made with
@@ -436,8 +437,25 @@ pub fn releases() -> anyhow::Result<Vec<Listed>> {
     if STORE_BUILD {
         return Ok(Vec::new());
     }
-    let text = fetch_text(RELEASES_API)?;
-    Ok(releases_of(&serde_json::from_str(&text)?))
+    releases_paged(|page| fetch_text(&format!("{RELEASES_API}&page={page}")))
+}
+
+fn releases_paged(fetch: impl Fn(u32) -> anyhow::Result<String>) -> anyhow::Result<Vec<Listed>> {
+    let mut all = Vec::new();
+    for page in 1..=RELEASE_PAGES {
+        let items = match fetch(page).and_then(|t| Ok(serde_json::from_str::<serde_json::Value>(&t)?)) {
+            Ok(serde_json::Value::Array(items)) => items,
+            Err(e) if page == 1 => return Err(e),
+            _ => break,
+        };
+        let full = items.len() == 100;
+        let too_old = items.iter().filter_map(|r| r["tag_name"].as_str()).any(|t| newer(FIRST_SELF_TESTED, t.trim_start_matches(['v', 'V'])));
+        all.extend(items);
+        if !full || too_old {
+            break;
+        }
+    }
+    Ok(releases_of(&serde_json::Value::Array(all)))
 }
 
 fn releases_of(v: &serde_json::Value) -> Vec<Listed> {
@@ -1105,6 +1123,51 @@ mod tests {
         assert_eq!(list[0].published, "2026-10-12");
         assert_eq!((list[0].release.asset_url.as_str(), list[0].release.size), ("https://x/v0.2.38.zip", 7));
         assert!(releases_of(&serde_json::json!({"message": "rate limited"})).is_empty());
+    }
+
+    #[test]
+    fn stable_releases_behind_a_page_of_betas_are_found() {
+        let release_of_minor = |minor: u32, n: u32, prerelease: bool| {
+            let tag = format!("v0.{minor}.{n}");
+            serde_json::json!({
+                "tag_name": tag, "prerelease": prerelease, "published_at": "2026-10-20T00:00:00Z",
+                "assets": [{"name": asset_name(&tag[1..]).unwrap(), "browser_download_url": format!("https://x/{tag}.zip"), "size": 7}]
+            })
+        };
+        let release = |n: u32, prerelease: bool| release_of_minor(3, n, prerelease);
+        let pages = std::cell::Cell::new(0);
+        let fetch = |page: u32| {
+            pages.set(pages.get() + 1);
+            let list: Vec<_> = match page {
+                1 => (100..200).rev().map(|n| release(n, n != 150)).collect(),
+                2 => (40..100).rev().map(|n| release(n, n % 10 != 0)).collect(),
+                _ => panic!("page {page} asked after a short page"),
+            };
+            Ok(serde_json::Value::Array(list).to_string())
+        };
+        let versions: Vec<String> = releases_paged(fetch).unwrap().into_iter().map(|l| l.release.version).collect();
+        assert_eq!(versions, ["0.3.150", "0.3.90", "0.3.80", "0.3.70", "0.3.60", "0.3.50", "0.3.40"]);
+        assert_eq!(pages.get(), 2);
+
+        let rate_limited = |page: u32| if page == 1 { Ok(r#"{"message": "rate limited"}"#.to_string()) } else { anyhow::bail!("offline") };
+        assert!(releases_paged(rate_limited).unwrap().is_empty());
+        let page_two_fails = |page: u32| if page == 1 { Ok(serde_json::Value::Array((0..100).map(|n| release(n, n != 7)).collect()).to_string()) } else { anyhow::bail!("offline") };
+        assert_eq!(releases_paged(page_two_fails).unwrap().len(), 1);
+        assert!(releases_paged(|_| anyhow::bail!("offline")).is_err());
+
+        let pages = std::cell::Cell::new(0);
+        let reaches_unlisted = |page: u32| {
+            pages.set(pages.get() + 1);
+            let list: Vec<_> = match page {
+                1 => (100..200).rev().map(|n| release(n, true)).collect(),
+                2 => (0..100).rev().map(|n| release_of_minor(2, n, false)).collect(),
+                _ => panic!("page {page} asked after releases too old to list"),
+            };
+            Ok(serde_json::Value::Array(list).to_string())
+        };
+        let found = releases_paged(reaches_unlisted).unwrap();
+        assert_eq!((found.first().map(|l| l.release.version.as_str()), found.len()), (Some("0.2.99"), 68));
+        assert_eq!(pages.get(), 2);
     }
 
     #[test]

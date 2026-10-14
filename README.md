@@ -33,8 +33,10 @@ and fully compatible with the existing maps, buses, scenery and mods.
 
 ## Download
 
-Every commit to `main` is built by GitHub Actions and published on the
-[**Releases**](https://github.com/openOMSI-org/openOMSI/releases) page:
+Every commit to `main` is built by GitHub Actions and published as a beta (marked
+*Pre-release*) on the [**Releases**](https://github.com/openOMSI-org/openOMSI/releases) page;
+the tested ones become stable releases, and the newest stable release is always at
+[**Releases → Latest**](https://github.com/openOMSI-org/openOMSI/releases/latest):
 
 | Platform | File |
 | --- | --- |
