@@ -44,13 +44,13 @@ pub(crate) struct Probe {
     pub(crate) bind_groups: Vec<[wgpu::BindGroup; 2]>,
     pub(crate) sky_pipeline: wgpu::RenderPipeline,
     pub(crate) filter_pipeline: wgpu::RenderPipeline,
-    /// Frames since it was drawn, and the sky table scale it was drawn with.
-    pub(crate) age: u32,
+    /// The sky table scale it was drawn with (when, see `SkySched`).
     pub(crate) scale: f32,
     /// The enhanced sky itself at `SKY_CUBE_SIZE` a face (clouds and all), drawn a face a
     /// frame; the dome reads it (camera binding 17). The volumetric clouds cost 6-18 ms a
     /// frame drawn for every pixel of a 1440p sky; a face a frame is well under one.
     pub(crate) cube_view: wgpu::TextureView,
+    pub(crate) cube_tex: wgpu::Texture,
     pub(crate) cube_faces: Vec<wgpu::TextureView>,
     pub(crate) cube_bind_groups: Vec<wgpu::BindGroup>,
     pub(crate) cube_pipeline: wgpu::RenderPipeline,
@@ -58,8 +58,6 @@ pub(crate) struct Probe {
     pub(crate) cube_filled: bool,
     /// Redraws so far (picks the round of the next).
     pub(crate) cube_round: u32,
-    /// Window frames since the last face was redrawn (see SKY_CUBE_EVERY).
-    pub(crate) cube_wait: u32,
     /// Where every face of the cube is drawn from (world). A face drawn from wherever the
     /// camera stood at the time left six faces from six places: flying up towards the
     /// clouds, the faces disagreed at their seams and the blended history dragged each one
@@ -67,13 +65,17 @@ pub(crate) struct Probe {
     /// takes the parallax out, and the eye moves on (the whole cube redrawn) once the
     /// camera has gone far enough for the correction to show.
     pub(crate) cube_eye: Option<DVec3>,
-    pub(crate) cube_recapture: bool,
+    /// Which slices of the cube are drawn when, the cube for the next eye and the probe's
+    /// turn.
+    pub(crate) sched: SkySched,
 }
 
 /// The textures of the ambient-occlusion pass for one target size.
 pub(crate) struct AoTargets {
     pub(crate) size: (u32, u32),
     pub(crate) depth_view: wgpu::TextureView,
+    /// (the texture itself, to read the depth back for the photo mode)
+    pub(crate) depth_tex: wgpu::Texture,
     pub(crate) ao_view: wgpu::TextureView,
     pub(crate) blur_view: wgpu::TextureView,
     pub(crate) ssao_bg: wgpu::BindGroup,
@@ -174,8 +176,8 @@ impl Renderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING
-                | if self.puddles.is_some() { wgpu::TextureUsages::COPY_SRC } else { wgpu::TextureUsages::empty() },
+            // (copied from: by the puddles, and read back for the photo mode's depth of field)
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         // the AO itself at half size: four times fewer pixels, and the blur hides the rest
@@ -256,6 +258,7 @@ impl Renderer {
         self.targets.ao = Some(AoTargets {
             size: (w, h),
             depth_view,
+            depth_tex: depth.clone(),
             ao_view,
             blur_view,
             ssao_bg,

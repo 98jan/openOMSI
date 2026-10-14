@@ -230,6 +230,7 @@ pub struct DirectInput {
     ff: bool,
     /// A foreground FFB device must not be reacquired while the window is away.
     focused: bool,
+    background: bool,
     pub devices: Vec<Device>,
     found: Arc<Mutex<Option<ScanResult>>>,
     scan: mpsc::Sender<()>,
@@ -436,6 +437,54 @@ fn notification_window() -> Option<HWND> {
     }
 }
 
+unsafe extern "system" fn quiet_proc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
+}
+
+static BACKGROUND: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+
+pub fn background_window() -> Option<isize> {
+    if let Some(h) = BACKGROUND.get() {
+        return Some(*h);
+    }
+    unsafe {
+        let hinst: HINSTANCE = GetModuleHandleW(None).ok()?.into();
+        let class = w!("openOMSI launcher controllers");
+        let wc = WNDCLASSW {
+            lpfnWndProc: Some(quiet_proc),
+            hInstance: hinst,
+            lpszClassName: class,
+            ..Default::default()
+        };
+        let _ = RegisterClassW(&wc);
+        let hwnd = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            class,
+            w!(""),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(hinst),
+            None,
+        )
+        .ok()?;
+        Some(*BACKGROUND.get_or_init(|| hwnd.0 as isize))
+    }
+}
+
+pub fn pump_messages() {
+    unsafe {
+        let mut msg = MSG::default();
+        while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+            DispatchMessageW(&msg);
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct InputObject {
     guid: GUID,
@@ -625,6 +674,14 @@ impl DirectInput {
             let started = Instant::now();
             // (a device plugged in raises several notifications: look once they settle)
             let mut pending: Option<Instant> = None;
+            // Some computers announce a device every few seconds without anything plugged in
+            // or out (a laptop's power-managed USB hub, a virtual or Bluetooth device): each
+            // notification was a full enumeration, which holds up the whole process, so the
+            // game hitched every few seconds for the whole session (#2213, #2246, #2388).
+            // An enumeration that finds just the devices of the last one makes the next
+            // one wait longer (up to half a minute); a change in the list brings the wait back.
+            let mut last_names: Option<Vec<String>> = None;
+            let mut quiet_for = Duration::from_millis(300);
             loop {
                 loop {
                     match requests.try_recv() {
@@ -663,12 +720,20 @@ impl DirectInput {
                     // enumeration of DirectInput holds up the whole process (#2213).
                     pending = Some(Instant::now() - Duration::from_secs(1));
                 }
-                if pending.is_some_and(|t| t.elapsed() > Duration::from_millis(300)) {
+                if pending.is_some_and(|t| t.elapsed() > Duration::from_millis(300) && last.elapsed() >= quiet_for) {
                     pending = None;
                     last = Instant::now();
                     let v = list(&di);
                     empty = v.is_empty();
-                    log::info!("game controllers found: {}", v.iter().map(|d| d.1.as_str()).collect::<Vec<_>>().join(", "));
+                    let names: Vec<String> = v.iter().map(|d| d.1.clone()).collect();
+                    if last_names.as_ref() == Some(&names) {
+                        quiet_for = (quiet_for * 2).clamp(Duration::from_secs(5), Duration::from_secs(30));
+                        log::debug!("game controllers unchanged: {} (the next look in {} s at the soonest)", names.join(", "), quiet_for.as_secs());
+                    } else {
+                        quiet_for = Duration::from_millis(300);
+                        log::info!("game controllers found: {}", names.join(", "));
+                    }
+                    last_names = Some(names);
                     let mut found = f2.lock().unwrap();
                     // A second enumeration must not overwrite a removal before poll consumes it.
                     let mut removed_paths = found.take().map(|r| r.removed_paths).unwrap_or_default();
@@ -682,6 +747,7 @@ impl DirectInput {
             hwnd: HWND(hwnd as *mut _),
             ff,
             focused: true,
+            background: BACKGROUND.get() == Some(&hwnd),
             devices: Vec::new(),
             found,
             scan,
@@ -845,7 +911,7 @@ impl DirectInput {
             let ff_capable = caps.dwFlags & DIDC_FORCEFEEDBACK != 0;
             let mut wants_ff = self.ff && ff_capable;
             let level = if wants_ff {
-                DISCL_EXCLUSIVE | DISCL_FOREGROUND
+                DISCL_EXCLUSIVE | if self.background { DISCL_BACKGROUND } else { DISCL_FOREGROUND }
             } else {
                 DISCL_NONEXCLUSIVE | DISCL_BACKGROUND
             };

@@ -18,9 +18,14 @@ pub struct CityMap {
     /// The view stays on the bus until the map is dragged.
     follow: bool,
     pub(super) drag: Option<(f32, f32)>,
+    /// How far the mouse has moved (pixels) since it was pressed on the map: a press let go
+    /// without moving is a click.
+    travel: f32,
     target: Option<(TextureId, u32, u32)>,
     /// The roads mesh (buffer 3): the map version it was built for, its size and anchor.
     roads: Option<(u64, u32, DVec2)>,
+    /// The surface mesh (buffer 7): the surface version it was built for, its size and anchor.
+    pub(super) surface: Option<(u64, u32, DVec2)>,
     /// The route mesh (buffer 4): the route, traffic, arrow spacing and roads versions it
     /// was built for, and its size.
     route: ((u64, u64, u32, u64), u32),
@@ -125,7 +130,7 @@ impl Navigator {
     /// middle with the on-screen controls (`touch`), below the information bar (`info`) where
     /// they would lie over each other - unless it was dragged somewhere, which it keeps
     /// (kept inside the window), by the mouse or a finger.
-    pub(super) fn panel_origin(&mut self, screen: (f32, f32), size: (f32, f32), touch: bool, info: Option<[f32; 4]>) -> (f32, f32) {
+    pub(super) fn panel_origin(&mut self, screen: (f32, f32), size: (f32, f32), touch: bool, info: Option<[f32; 4]>, gap: Option<[f32; 3]>) -> (f32, f32) {
         let ((sw, sh), (pw, ph)) = (screen, size);
         let margin = (sh * 0.018).max(10.0).round();
         // (with the on-screen controls the corners are theirs: the top middle)
@@ -138,6 +143,11 @@ impl Navigator {
         // phone it took the navigator's place in the top middle, #1164)
         let y0 = match info {
             Some(i) if top && x0 < i[2] && x0 + pw > i[0] => y0.max((i[3] + margin * 0.5).round()),
+            _ => y0,
+        };
+        // (and below the on-screen buttons where it is wider than the gap between them)
+        let y0 = match gap {
+            Some([l, r, bottom]) if top && (x0 < l || x0 + pw > r) => y0.max((bottom + margin * 0.5).round()),
             _ => y0,
         };
         // (dragged somewhere else: there - on a phone too, where it had to stay in the
@@ -207,7 +217,10 @@ impl Navigator {
             Some(1) => self.city.mpp = (self.city.mpp / 1.6).max(0.25),
             Some(2) => self.city.mpp = (self.city.mpp * 1.6).min(self.max_mpp()),
             Some(3) => self.city.open = false,
-            _ => self.city.drag = Some((x, y)),
+            _ => {
+                self.city.drag = Some((x, y));
+                self.city.travel = 0.0;
+            }
         }
     }
 
@@ -223,13 +236,16 @@ impl Navigator {
         Some(self.city.center + DVec2::new(lx, -ly) * self.city.mpp)
     }
 
-    pub fn map_release(&mut self) {
-        self.city.drag = None;
+    /// The mouse let go over the map: true when the press was a click on the map itself
+    /// (not a drag, not one of its buttons).
+    pub fn map_release(&mut self) -> bool {
+        self.city.drag.take().is_some() && self.city.travel < 6.0
     }
 
     pub fn map_move(&mut self, x: f32, y: f32) {
         if let Some((px, py)) = self.city.drag {
             let (dx, dy) = ((x - px) as f64, (y - py) as f64);
+            self.city.travel += (dx.abs() + dy.abs()) as f32;
             if dx.abs() + dy.abs() > 0.5 {
                 self.city.follow = false;
             }
@@ -290,7 +306,7 @@ impl Navigator {
         // roads of the whole map (buffer 3), once per map version
         let mut roads_verts = None;
         if let Some(n) = net {
-            let version = self.global_version * 1_000_000 + n.lanes.len() as u64;
+            let version = (self.global_version * 1_000_000 + n.lanes.len() as u64) * 2 + self.light as u64;
             if self.city.roads.map(|r| r.0 != version).unwrap_or(true) {
                 let (mut lo, mut hi) = (DVec2::splat(f64::MAX), DVec2::splat(f64::MIN));
                 let road_lanes = road_geometry(n);
@@ -308,13 +324,15 @@ impl Navigator {
                 self.city.extent = (lo, hi);
                 let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
                 let mut p = Painter::new();
+                let (edge, road, main) = road_colors(self.light);
+                let edge = if self.light { edge } else { Color::rgba(26, 26, 26, 1.0) };
                 for pass in 0..2 {
                     for l in &road_lanes {
                         let pts = simplify(&l.points.iter().map(|q| rel(*q)).collect::<Vec<_>>(), 0.12);
                         if pass == 0 {
-                            p.ribbon(&pts, l.width + 2.0, 2.4, Color::rgba(26, 26, 26, 1.0), true);
+                            p.ribbon(&pts, l.width + 2.0, 2.4, edge, true);
                         } else {
-                            p.ribbon(&pts, l.width, 1.4, if l.main { ROAD_MAIN } else { ROAD }, true);
+                            p.ribbon(&pts, l.width, 1.4, if l.main { main } else { road }, true);
                         }
                     }
                 }
@@ -323,6 +341,9 @@ impl Navigator {
             }
         }
         let anchor = self.city.roads.map(|r| r.2).unwrap_or(f.bus.truncate());
+        // the map's surface (buffer 7)
+        let surface_verts = self.city_surface(anchor);
+        let surface_n = if self.show_surface { self.city.surface.map(|m| m.1).unwrap_or(0) } else { 0 };
         let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
         // the whole route (buffer 4): the part driven grey, the rest by how busy it is,
         // with arrows about 90 pixels apart (built again when the zoom changes that much)
@@ -351,7 +372,7 @@ impl Navigator {
         let (hw, hh) = (w as f64 * 0.5 * self.city.mpp, h as f64 * 0.5 * self.city.mpp);
         let proj = Mat4::orthographic_rh((c.x - hw) as f32, (c.x + hw) as f32, (c.y - hh) as f32, (c.y + hh) as f32, -1000.0, 1000.0);
         let vp = [0.0, 0.0, w, h];
-        let world = Layer { view_proj: proj, viewport: vp, clip: [0.0, 0.0, w, h], radius: 10.0 * s, opacity: 1.0, px_scale: self.city.mpp as f32 };
+        let world = Layer { view_proj: proj, viewport: vp, clip: [0.0, 0.0, w, h], radius: 8.0 * s, opacity: 1.0, px_scale: self.city.mpp as f32 };
         let to_screen = |q: DVec3| -> Vec2 {
             let d = q.truncate() - self.city.center;
             Vec2::new((w as f64 * 0.5 + d.x / self.city.mpp) as f32, (h as f64 * 0.5 - d.y / self.city.mpp) as f32)
@@ -359,7 +380,7 @@ impl Navigator {
         let win = Rect::new(0.0, 0.0, w, h);
         let mut bg = Painter::new();
         // (the opacity setting the map's ground too; the roads, names and header stay solid)
-        bg.rounded(win, 10.0 * s, Color::rgba(15, 15, 15, crate::ui::backdrop(self.opacity).min(1.0)));
+        bg.rounded(win, 8.0 * s, self.city_ground());
         let n_bg = bg.len();
         // traffic: blue dots, the public transport in its colours with its line (as on the
         // small map)
@@ -414,7 +435,6 @@ impl Navigator {
                 continue;
             }
             taken.push(r);
-            ui.rounded(Rect::new(r.x - 1.0 * s, r.y - 1.0 * s, r.w + 2.0 * s, r.h + 2.0 * s), 4.5 * s, Color::rgba(10, 10, 10, 0.9));
             ui.rounded(r, 4.0 * s, *color);
             ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, LINE_TEXT);
         }
@@ -443,10 +463,6 @@ impl Navigator {
                     continue;
                 }
                 taken.push(bb);
-                let halo = Color::rgba(15, 15, 15, 0.9);
-                for o in [Vec2::new(1.0, 0.0), Vec2::new(-1.0, 0.0), Vec2::new(0.0, 1.0), Vec2::new(0.0, -1.0)] {
-                    ui.text_rotated(&mut self.atlas, &self.fonts, name, px, Weight::Medium, c + o * s, ang, halo);
-                }
                 ui.text_rotated(&mut self.atlas, &self.fonts, name, px, Weight::Medium, c, ang, STREET);
             }
         }
@@ -454,7 +470,6 @@ impl Navigator {
             let next = k == 0;
             if self.city.mpp < 4.0 || next || k + 1 == n_stops {
                 let badge = if next { 7.0 } else { 5.5 } * s;
-                ui.circle(p, badge + 1.5 * s, Color::rgba(8, 8, 8, 0.95));
                 let fill = if next { Color::rgba(45, 116, 205, 1.0) } else if k + 1 == n_stops { ROUTE } else { Color::rgba(76, 91, 112, 0.98) };
                 ui.circle(p, badge, fill);
                 ui.icon(&mut self.atlas, "directions_bus", p, if next { 11.5 } else { 9.5 } * s, TEXT);
@@ -464,7 +479,7 @@ impl Navigator {
             }
         }
         for (k, name, r) in stop_labels {
-            ui.rounded(r, 4.0 * s, Color::rgba(12, 12, 12, 0.85));
+            ui.rounded(r, 4.0 * s, Color::rgba(37, 37, 37, 0.92));
             ui.text_in(&mut self.atlas, &self.fonts, &name, 12.5 * s, if k == 0 { Weight::Bold } else { Weight::Medium }, r.pad(6.0 * s, 0.0), Align::Left, if k == 0 { TEXT } else { TEXT_DIM });
         }
         // the other players: an arrow the way they face and their name (as on the small map)
@@ -482,7 +497,6 @@ impl Navigator {
                 continue;
             }
             taken.push(r);
-            ui.rounded(Rect::new(r.x - 1.0 * s, r.y - 1.0 * s, r.w + 2.0 * s, r.h + 2.0 * s), 4.5 * s, Color::rgba(10, 10, 10, 0.9));
             ui.rounded(r, 4.0 * s, PLAYER);
             ui.text_in(&mut self.atlas, &self.fonts, &name, px, Weight::Bold, r, Align::Center, LINE_TEXT);
         }
@@ -490,7 +504,7 @@ impl Navigator {
         // header: the line and where it goes, the next stop; buttons on the right
         // (opaque: the route and the stops showed through behind its text)
         let head = Rect::new(0.0, 0.0, w, 44.0 * s);
-        ui.rect(head, Color::rgba(18, 18, 18, 0.96));
+        ui.rect(head, Color::rgba(28, 28, 28, 0.96));
         let pad = 16.0 * s;
         let wd = words(f.language);
         let title = match (&f.line, &f.terminus) {
@@ -508,11 +522,12 @@ impl Navigator {
         let mut bx = w - pad - bs;
         for (icon, id) in [("close", 3u8), ("zoom_out", 2), ("zoom_in", 1), ("my_location", 0)] {
             let r = Rect::new(bx, head.y + (head.h - bs) * 0.5, bs, bs);
-            ui.rounded(r, 5.0 * s, if id == 0 && self.city.follow { Color::rgba(60, 60, 60, 1.0) } else { Color::rgba(34, 34, 34, 1.0) });
+            ui.rounded(r, 6.0 * s, if id == 0 && self.city.follow { Color::rgba(47, 47, 47, 1.0) } else { Color::rgba(37, 37, 37, 1.0) });
             ui.icon(&mut self.atlas, icon, r.center(), 18.0 * s, TEXT);
             self.city.buttons.push((r, id));
             bx -= bs + 8.0 * s;
         }
+        self.draw_credit(&mut ui, w, h, s);
         // a scale bar, bottom left
         let nice = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0];
         let metres = nice.iter().copied().find(|m| m / self.city.mpp > 70.0 * s as f64).unwrap_or(5000.0);
@@ -520,7 +535,6 @@ impl Navigator {
         let by = h - 22.0 * s;
         ui.rect(Rect::new(pad, by, len, 2.0 * s), TEXT_DIM);
         ui.text(&mut self.atlas, &self.fonts, &if metres >= 1000.0 { format!("{:.0} km", metres / 1000.0) } else { format!("{metres:.0} m") }, 12.0 * s, Weight::Medium, Vec2::new(pad + len + 8.0 * s, by + 4.0 * s), Align::Left, TEXT_DIM);
-        ui.rounded_border(win, 10.0 * s, 1.0, Color::WHITE.alpha(0.08));
 
         // --- to the GPU
         let (tex, _, _) = self.city.target.unwrap();
@@ -528,6 +542,9 @@ impl Navigator {
         let (Some(gpu), device, queue) = (self.gpu.as_mut(), &renderer.device, &renderer.queue) else { return };
         if let Some(v) = roads_verts {
             gpu.upload(device, queue, 3, &v);
+        }
+        if let Some(v) = surface_verts {
+            gpu.upload(device, queue, 7, &v);
         }
         if let Some(v) = route_verts {
             gpu.upload(device, queue, 4, &v);
@@ -538,11 +555,12 @@ impl Navigator {
         all.extend(ui.verts);
         gpu.upload(device, queue, 5, &all);
         gpu.upload_atlas(queue, &mut self.atlas);
-        let flat = Layer::flat([0.0, 0.0, w, h], 10.0 * s, 1.0);
+        let flat = Layer::flat([0.0, 0.0, w, h], 8.0 * s, 1.0);
         let layers = [flat, world];
         let roads_n = self.city.roads.map(|r| r.1).unwrap_or(0);
         let draws = [
             Draw { buffer: 5, range: 0..n_bg, layer: 0, texture: 0 },
+            Draw { buffer: 7, range: 0..surface_n, layer: 1, texture: 0 },
             Draw { buffer: 3, range: 0..roads_n, layer: 1, texture: 0 },
             Draw { buffer: 4, range: 0..self.city.route.1, layer: 1, texture: 0 },
             Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 1, texture: 0 },

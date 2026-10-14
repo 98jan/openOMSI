@@ -1026,6 +1026,7 @@ fn presurface_reveals_excavation_before_terrain_is_drawn() {
     for (msaa, ssao, enhanced) in [
         (1, false, false),
         (1, true, false),
+        (1, false, true),
         (1, true, true),
         (4, true, true),
     ] {
@@ -1141,15 +1142,18 @@ fn presurface_reveals_excavation_before_terrain_is_drawn() {
         let rgba = renderer
             .render_to_image(&mut scene, 64, 64, &camera, &lighting)
             .unwrap();
-        if enhanced && renderer.options.msaa > 1 {
-            assert!(renderer.counts.borrow().get("msaa prepass batches").copied().unwrap_or(0.0) > 0.0,
+        if enhanced {
+            let key = if renderer.options.msaa > 1 { "msaa prepass batches" } else { "presurface prepass batches" };
+            assert!(renderer.counts.borrow().get(key).copied().unwrap_or(0.0) > 0.0,
                 "an excavation must not disable depth prefilling for the rest of the view");
         }
-        let saved = renderer.prepass_msaa_pipelines.take();
-        let reference = renderer.render_to_image(&mut scene, 64, 64, &camera, &lighting).unwrap();
-        renderer.prepass_msaa_pipelines = saved;
-        assert!(rgba.iter().zip(&reference).all(|(a, b)| a.abs_diff(*b) <= 2),
-            "presurface depth optimization changed the image: {msaa}/{ssao}/{enhanced}");
+        if enhanced {
+            let saved = renderer.prepass_msaa_pipelines.take();
+            let reference = renderer.render_to_image(&mut scene, 64, 64, &camera, &lighting).unwrap();
+            renderer.prepass_msaa_pipelines = saved;
+            assert!(rgba.iter().zip(&reference).all(|(a, b)| a.abs_diff(*b) <= 2),
+                "presurface depth optimization changed the image: {msaa}/{ssao}/{enhanced}");
+        }
         let centre = pixel(&rgba, 32);
         assert!(
             centre[2] > centre[1] + 40,
@@ -1402,4 +1406,8 @@ fn flares_show_through_the_glass_of_the_vehicle_the_camera_is_in() {
 
 // (the rest of the renderer's tests, in a file of their own for the size budget)
 mod bundles;
+mod lamp_shadows;
+mod light_maps;
 mod more;
+mod transparency;
+mod vanilla_lighting;

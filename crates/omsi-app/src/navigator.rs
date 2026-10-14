@@ -41,10 +41,14 @@ const NAV_REDRAW_S: f32 = 1.0 / 30.0;
 /// wgpu makes the GL calls in the submit, 4.2 ms of a 43 ms frame (a Radeon R7 200, 23
 /// fps), against 0.6 ms on Vulkan. Every other frame halves that where frames are slow.
 const NAV_REDRAW_FRAMES: u32 = 2;
-const PANEL: Color = Color::rgba(10, 10, 10, 0.70);
-// (the bars under the texts darken whatever the opacity setting leaves of the panel: at a
-// third the cab showed through behind the next stop)
-const BAR: Color = Color::rgba(0, 0, 0, 0.55);
+// (the launcher's graphite surface, a little see-through over the cab; no edge round it)
+const PANEL: Color = Color::rgba(28, 28, 28, 0.88);
+// (the bars under the texts: the panel's own grey a step darker, which also keeps whatever the
+// opacity setting leaves of the panel readable - at a third the cab showed through behind the
+// next stop)
+const BAR: Color = Color::rgba(18, 18, 18, 0.55);
+/// The plates over the map (the next turn, the street): the launcher's raised surface.
+const PLATE: Color = Color::rgba(37, 37, 37, 0.92);
 // (the launcher's map picture draws with these too, so the two maps cannot look apart)
 pub(crate) const ROAD_CASING: Color = Color::rgba(30, 30, 30, 0.9);
 pub(crate) const ROAD: Color = Color::rgba(92, 92, 92, 1.0);
@@ -132,9 +136,9 @@ fn level(score: f32) -> usize {
         _ => 4,
     }
 }
-const TEXT: Color = Color::rgba(235, 235, 235, 1.0);
+const TEXT: Color = Color::rgba(237, 237, 237, 1.0);
 // (the second texts - units, the day, the times - bright enough to read on a lit cab)
-const TEXT_DIM: Color = Color::rgba(178, 178, 178, 1.0);
+const TEXT_DIM: Color = Color::rgba(184, 184, 184, 1.0);
 const LATE: Color = Color::rgba(235, 85, 70, 1.0);
 const EARLY: Color = Color::rgba(90, 160, 240, 1.0);
 const ON_TIME: Color = Color::rgba(110, 200, 120, 1.0);
@@ -175,15 +179,8 @@ pub struct NavStop {
     pub arrival: f64,
 }
 
-/// Another player of the session as the maps show them.
-#[derive(Debug, Clone, PartialEq)]
-pub struct NavPlayer {
-    /// Where they are: their bus, or on foot where they walk (riding in someone's bus: that bus).
-    pub position: DVec3,
-    /// Compass heading (degrees, 0 = +y, clockwise).
-    pub heading: f64,
-    pub name: String,
-}
+/// Another player of the session as the maps show them (the session's, see `lan`).
+pub use omsi_lan::game::NavPlayer;
 
 /// What the navigator is told each frame.
 pub struct NavFrame<'a> {
@@ -222,6 +219,9 @@ pub struct NavFrame<'a> {
     /// Where the information bar is (`ui::Ui::info_rect`): a navigator along the top keeps
     /// below it.
     pub info_rect: Option<[f32; 4]>,
+    /// The on-screen controls' row along the top (`touch::Touch::top_gap`): the gap between
+    /// its buttons, left and right, and the buttons' bottom.
+    pub touch_gap: Option<[f32; 3]>,
 }
 
 /// The texts, per language.
@@ -277,6 +277,7 @@ struct Route {
 
 /// Roads around a centre, built into vertex buffer 0.
 struct Roads {
+    light: bool,
     anchor: DVec2,
     lanes_seen: usize,
     verts: usize,
@@ -287,6 +288,8 @@ pub struct Navigator {
     /// The current small-map texture in Scene::overlays, for the cockpit display.
     pub panel_overlay: Option<usize>,
     pub cockpit_display: bool,
+    /// The speed limit (km/h) the top bar showed last, for the information bar (#2476).
+    pub(crate) speed_limit: Option<f32>,
     drawn_at: f32,
     /// Frames since the last drawing (see `NAV_REDRAW_FRAMES`).
     frames_since_drawn: u32,
@@ -326,7 +329,7 @@ pub struct Navigator {
     /// Street names of the map's lanes (from its street name signs).
     streets: Option<std::sync::Arc<Streets>>,
     #[allow(clippy::type_complexity)]
-    building: Option<std::sync::mpsc::Receiver<(Network, HashMap<i64, DVec3>, Streets)>>,
+    building: Option<std::sync::mpsc::Receiver<(Network, HashMap<i64, DVec3>, Streets, Option<omsi_map::package::Package>)>>,
     pub global_version: u64,
     roads: Option<Roads>,
     route: Route,
@@ -353,6 +356,16 @@ pub struct Navigator {
     pub arrows: bool,
     /// The other (AI) vehicles are drawn on the maps (the `nav_ai` setting).
     pub show_ai: bool,
+    /// The map's own surface (`Maps/<Map>/openomsi-realmap`), once read, and a number that changes
+    /// when it arrives (the meshes are built again).
+    surface: Option<std::sync::Arc<omsi_map::package::Package>>,
+    surface_version: u64,
+    /// The surface is drawn (the `nav_surface` setting).
+    pub show_surface: bool,
+    /// The light look of the maps (the `nav_light` setting).
+    pub light: bool,
+    /// The small map's surface mesh (buffer 6): the surface version and anchor it was built for, and its size.
+    surface_mesh: Option<(u64, DVec2, u32)>,
     /// How far the panel has faded in (Shift+N fades it in and out rather than cutting).
     shown: f32,
     /// The trip's next stops (place, name, the bus's heading there) and where the bus is,
@@ -425,6 +438,7 @@ impl Navigator {
         Navigator {
             panel_overlay: None,
             cockpit_display: false,
+            speed_limit: None,
             drawn_at: f32::MIN,
             frames_since_drawn: u32::MAX,
             enabled,
@@ -461,6 +475,11 @@ impl Navigator {
             next_dist: None,
             arrows: false,
             show_ai: true,
+            surface: None,
+            surface_version: 0,
+            show_surface: true,
+            light: false,
+            surface_mesh: None,
             shown: if enabled { 1.0 } else { 0.0 },
             stop_spots: Vec::new(),
             bus_at: DVec3::ZERO,
@@ -481,13 +500,15 @@ impl Navigator {
         std::thread::Builder::new()
             .name("navigator map".into())
             .spawn(move || {
+                // (the map's package: Maps/<Map>/openomsi-realmap, if it has one)
+                let surface = omsi_map::package::Package::open(&world.map_dir);
                 let m = world.navigation_map();
                 let mut net = Network { lanes: m.lanes, ..Default::default() };
                 net.link(1.5);
                 confirm_road_surfaces(&mut net, &m.road_surfaces);
                 probe_lanes(&net);
                 let streets = build_streets(&net, &m.signs);
-                let _ = tx.send((net, m.places, streets));
+                let _ = tx.send((net, m.places, streets, surface));
             })
             .ok();
         self.building = Some(rx);
@@ -898,9 +919,10 @@ impl Navigator {
         }
         self.time += f.dt;
         if let Some(rx) = self.building.as_ref() {
-            if let Ok((net, pos, streets)) = rx.try_recv() {
+            if let Ok((net, pos, streets, surface)) = rx.try_recv() {
                 log::info!("navigator: the map's road network is there ({} lanes, {} streets named)", net.lanes.len(), streets.names.len());
                 self.streets = Some(std::sync::Arc::new(streets));
+                self.set_surface(surface);
                 self.global = Some(std::sync::Arc::new(net));
                 self.stop_pos = std::sync::Arc::new(pos);
                 self.global_version += 1;
@@ -974,7 +996,9 @@ impl Navigator {
         // sixth of a 4K screen's - but 300 px at least, where its smallest texts were 8 px
         // high on a 720p window; made larger, still short enough to fit the window with its
         // schedule)
-        let base = (sh * 0.33).max(300.0);
+        // (of the shorter side: a tablet held upright gave it half the screen's width, over
+        // the on-screen buttons along the top)
+        let base = (sh.min(sw) * 0.33).max(300.0);
         let base = if f.follow_window { base } else { base.min(480.0) };
         let pw = (base * f.ui_scale).min((sh * 0.7).max(300.0)).round();
         let map_h = (pw * 0.62).round();
@@ -983,7 +1007,7 @@ impl Navigator {
         let sched = if self.schedule { (f.stops.len().clamp(1, 5) as f32 * 22.0 + 12.0) * s } else { 0.0 };
         let ph = (map_h + bars + sched).round();
         let (w, h) = (pw as u32, ph as u32);
-        let (x0, y0) = self.panel_origin((sw, sh), (pw, ph), crate::platform::touch_controls(), f.info_rect);
+        let (x0, y0) = self.panel_origin((sw, sh), (pw, ph), crate::platform::touch_controls(), f.info_rect, f.touch_gap);
 
         if self.gpu.is_none() {
             self.gpu = Some(Gpu::new(&renderer.device, renderer.format(), map_samples(renderer.format()), self.atlas.size));
@@ -1024,7 +1048,8 @@ impl Navigator {
         let wd = words(f.language);
         self.atlas.begin_frame();
         let panel = Rect::new(0.0, 0.0, pw, ph);
-        let radius = 7.0 * s;
+        // (the corners of the other panels: 8 px at their size, never less)
+        let radius = (8.0 * s).max(8.0);
         let top_h = (34.0 * s).round();
         let map = Rect::new(0.0, top_h, pw, map_h);
         let vp = [map.x, map.y, map.w, map.h];
@@ -1036,7 +1061,7 @@ impl Navigator {
         let lanes_now = net.map(|n| n.lanes.len()).unwrap_or(0);
         let rebuild = match &self.roads {
             None => lanes_now > 0,
-            Some(r) => (r.anchor - f.bus.truncate()).length() > ROAD_RADIUS * 0.45 || (r.lanes_seen != lanes_now && self.time - r.built_at > 1.5),
+            Some(r) => r.light != self.light || (r.anchor - f.bus.truncate()).length() > ROAD_RADIUS * 0.45 || (r.lanes_seen != lanes_now && self.time - r.built_at > 1.5),
         };
         let mut road_verts = None;
         if rebuild {
@@ -1044,17 +1069,20 @@ impl Navigator {
                 let anchor = f.bus.truncate();
                 let mut p = Painter::new();
                 let t0 = std::time::Instant::now();
-                build_roads(&mut p, net, anchor);
+                build_roads(&mut p, net, anchor, self.light);
                 if omsi_cfg::flags::OMSI_DEBUG_NAV.is_set() {
                     log::info!("navigator: roads around ({:.0}, {:.0}) in {:.1} ms: {} vertices", anchor.x, anchor.y, t0.elapsed().as_secs_f64() * 1000.0, p.verts.len());
                 }
                 road_verts = Some(p.verts);
-                self.roads = Some(Roads { anchor, lanes_seen: lanes_now, verts: 0, built_at: self.time });
+                self.roads = Some(Roads { light: self.light, anchor, lanes_seen: lanes_now, verts: 0, built_at: self.time });
             }
         }
 
         // --- the map camera (world coordinates relative to the anchor)
         let anchor = self.roads.as_ref().map(|r| r.anchor).unwrap_or(f.bus.truncate());
+        // --- the map's surface (buffer 6)
+        let surface_verts = self.minimap_surface(anchor);
+        let surface_n = if self.show_surface { self.surface_mesh.map(|m| m.2).unwrap_or(0) } else { 0 };
         let rel = |p: DVec3| Vec3::new((p.x - anchor.x) as f32, (p.y - anchor.y) as f32, 0.0);
         let hd = self.cam_heading.to_radians();
         let fwd = DVec2::new(hd.sin(), hd.cos());
@@ -1088,7 +1116,11 @@ impl Navigator {
 
         // --- background (half transparent), traffic, markers, text
         let mut bg = Painter::new();
-        bg.rounded(panel, radius, if self.cockpit_display { Color::rgba(10, 10, 10, 1.0) } else { PANEL });
+        bg.rounded(panel, radius, if self.cockpit_display { Color::rgba(28, 28, 28, 1.0) } else { PANEL });
+        // the map's own ground under the roads (the panel's opacity setting dims it as it does the panel)
+        if let (true, Some(sf)) = (self.show_surface, self.surface.as_ref()) {
+            bg.rect(map, ground(sf, self.light));
+        }
         let n_bg = bg.len();
 
         let mut dy = Painter::new();
@@ -1145,6 +1177,9 @@ impl Navigator {
             }
             gpu.upload(device, queue, 0, &v);
         }
+        if let Some(v) = surface_verts {
+            gpu.upload(device, queue, 6, &v);
+        }
         if let Some(v) = route_verts {
             gpu.upload(device, queue, 1, &v);
         }
@@ -1164,6 +1199,7 @@ impl Navigator {
         let roads_n = self.roads.as_ref().map(|r| r.verts as u32).unwrap_or(0);
         let draws = [
             Draw { buffer: 2, range: 0..n_bg, layer: 2, texture: 0 },
+            Draw { buffer: 6, range: 0..surface_n, layer: 1, texture: 0 },
             Draw { buffer: 0, range: 0..roads_n, layer: 1, texture: 0 },
             Draw { buffer: 2, range: n_bg..n_bg + n_traffic, layer: 1, texture: 0 },
             Draw { buffer: 1, range: 0..self.route_mesh.3, layer: 1, texture: 0 },
@@ -1181,7 +1217,7 @@ impl Navigator {
     fn draw_map_marks(&mut self, ui: &mut Painter, f: &NavFrame, map: Rect, vpm: Mat4, vp: [f32; 4], anchor: DVec2, s: f32, mut lines: Vec<(DVec3, Color, String)>) {
         let rel = |p: DVec3| Vec3::new((p.x - anchor.x) as f32, (p.y - anchor.y) as f32, 0.0);
         // the far end of the map fades into the panel
-        ui.gradient(Rect::new(map.x, map.y, map.w, map.h * 0.3), Color::rgba(10, 10, 10, 0.75), Color::rgba(10, 10, 10, 0.0));
+        ui.gradient(Rect::new(map.x, map.y, map.w, map.h * 0.3), Color::rgba(28, 28, 28, 0.75), Color::rgba(28, 28, 28, 0.0));
         // the next turn: an arrow and how far, top left of the map
         if let Some((dir, angle, dist, street)) = self.next_turn.as_ref() {
             let icon = match *dir {
@@ -1191,13 +1227,13 @@ impl Navigator {
                 -1 => "turn_left",
                 _ => "turn_right",
             };
-            let t = if *dist >= 1000.0 { format!("{:.1} km", dist / 1000.0) } else { format!("{:.0} m", ((dist / 10.0).round() * 10.0).max(10.0)) };
+            let t = crate::units::Units::now().distance(*dist as f64);
             let tw = self.fonts.width(&t, 14.0 * s, Weight::Bold);
             // with the street it turns into, when the map names it
             let street = street.as_deref().map(|n| self.fonts.fit(n, 12.0 * s, Weight::Medium, map.w * 0.62 - 50.0 * s - tw));
             let sw_ = street.as_deref().map(|n| self.fonts.width(n, 12.0 * s, Weight::Medium) + 10.0 * s).unwrap_or(0.0);
             let b = Rect::new(map.x + 8.0 * s, map.y + 8.0 * s, 44.0 * s + tw + sw_, 34.0 * s);
-            ui.rounded(b, 5.0 * s, Color::rgba(10, 10, 10, 0.85));
+            ui.rounded(b, 6.0 * s, PLATE);
             ui.icon(&mut self.atlas, icon, Vec2::new(b.x + 18.0 * s, b.center().y), 24.0 * s, TEXT);
             ui.text_in(&mut self.atlas, &self.fonts, &t, 14.0 * s, Weight::Bold, Rect::new(b.x + 34.0 * s, b.y, tw + 4.0, b.h), Align::Left, TEXT);
             if let Some(n) = street.as_deref() {
@@ -1210,7 +1246,7 @@ impl Navigator {
             let n = self.fonts.fit(n, px, Weight::Medium, map.w * 0.7);
             let w = self.fonts.width(&n, px, Weight::Medium) + 14.0 * s;
             let r = Rect::new(map.center().x - w * 0.5, map.bottom() - 24.0 * s, w, 18.0 * s);
-            ui.rounded(r, 9.0 * s, Color::rgba(10, 10, 10, 0.8));
+            ui.rounded(r, 9.0 * s, PLATE);
             ui.text_in(&mut self.atlas, &self.fonts, &n, px, Weight::Medium, r, Align::Center, STREET);
         }
         // Stops ahead use a bus badge so they read as stops, not generic route dots.
@@ -1222,7 +1258,6 @@ impl Navigator {
             }
             let next = k == 0;
             let badge = if next { 8.0 } else { 6.5 } * s;
-            ui.circle(sp, badge + 1.5 * s, Color::rgba(10, 10, 10, 0.95));
             let fill = if next { Color::rgba(45, 116, 205, 1.0) } else if k + 1 == n_stops { ROUTE } else { Color::rgba(76, 91, 112, 0.98) };
             ui.circle(sp, badge, fill);
             ui.icon(&mut self.atlas, "directions_bus", sp, if next { 12.5 } else { 10.5 } * s, TEXT);
@@ -1244,7 +1279,6 @@ impl Navigator {
                 continue;
             }
             taken.push(r);
-            ui.rounded(Rect::new(r.x - 1.0 * s, r.y - 1.0 * s, r.w + 2.0 * s, r.h + 2.0 * s), 4.0 * s, Color::rgba(10, 10, 10, 0.9));
             ui.rounded(r, 3.5 * s, PLAYER);
             ui.text_in(&mut self.atlas, &self.fonts, &name, px, Weight::Bold, r, Align::Center, LINE_TEXT);
         }
@@ -1258,7 +1292,6 @@ impl Navigator {
                 continue;
             }
             taken.push(r);
-            ui.rounded(Rect::new(r.x - 1.0 * s, r.y - 1.0 * s, r.w + 2.0 * s, r.h + 2.0 * s), 4.0 * s, Color::rgba(10, 10, 10, 0.9));
             ui.rounded(r, 3.5 * s, *color);
             ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, LINE_TEXT);
         }
@@ -1279,21 +1312,25 @@ impl Navigator {
         let pad = 11.0 * s;
         let base = top.y + top.h * 0.5 + self.fonts.cap_height(17.0 * s, Weight::Bold) * 0.5;
         let mut x = pad;
-        x += ui.text(&mut self.atlas, &self.fonts, &format!("{:.0}", f.speed_kmh.abs()), 17.0 * s, Weight::Bold, Vec2::new(x, base), Align::Left, TEXT);
+        let units = crate::units::Units::now();
+        let (speed, unit) = units.speed(f.speed_kmh.abs());
+        x += ui.text(&mut self.atlas, &self.fonts, &format!("{speed:.0}"), 17.0 * s, Weight::Bold, Vec2::new(x, base), Align::Left, TEXT);
         x += 4.0 * s;
-        x += ui.text(&mut self.atlas, &self.fonts, wd.kmh, 12.0 * s, Weight::Medium, Vec2::new(x, base), Align::Left, TEXT_DIM);
+        let unit = if units == crate::units::Units::Metric { wd.kmh } else { unit };
+        x += ui.text(&mut self.atlas, &self.fonts, unit, 12.0 * s, Weight::Medium, Vec2::new(x, base), Align::Left, TEXT_DIM);
         let limit = net.and_then(|n| {
             let lane = if self.route.on_route { self.route.lanes.get(self.route.progress).copied() } else { None };
             let lane = lane.or_else(|| n.nearest_lane_near(f.bus, LaneKind::Street).filter(|l| l.2 < 8.0).map(|l| l.0))?;
             let v = n.lanes.get(lane)?.speed_limit_kmh;
             (v > 1.0 && v < 200.0).then_some(v)
         });
+        self.speed_limit = limit;
         if let Some(v) = limit {
             x += 10.0 * s;
             let c = Vec2::new(x + 10.0 * s, top.center().y);
             ui.circle(c, 10.5 * s, Color::rgba(200, 40, 40, 1.0));
             ui.circle(c, 8.3 * s, Color::rgba(235, 235, 235, 1.0));
-            let t = format!("{:.0}", (v / 5.0).round() * 5.0);
+            let t = format!("{:.0}", units.speed_limit(v));
             let px = if t.len() > 2 { 7.5 } else { 9.0 } * s;
             ui.text(&mut self.atlas, &self.fonts, &t, px, Weight::Black, Vec2::new(c.x, c.y + self.fonts.cap_height(px, Weight::Black) * 0.5), Align::Center, Color::rgba(15, 15, 15, 1.0));
         }
@@ -1357,7 +1394,7 @@ impl Navigator {
                 ui.text_in(&mut self.atlas, &self.fonts, &name, 13.5 * s, Weight::Bold, stop_row, Align::Left, TEXT);
                 let mut parts = Vec::new();
                 if let Some(d) = self.next_dist {
-                    parts.push(if d >= 1000.0 { format!("{:.1} km", d / 1000.0) } else { format!("{:.0} m", (d / 10.0).round() * 10.0) });
+                    parts.push(crate::units::Units::now().distance(d as f64));
                     let secs = d / (self.speed_avg.max(5.0) as f64);
                     parts.push(if secs < 60.0 { "<1 min".to_string() } else { format!("{:.0} min", (secs / 60.0).round()) });
                 }
@@ -1381,7 +1418,7 @@ impl Navigator {
                     let (txt, c) = if d > 59.0 {
                         (format!("+{}:{:02}", (d / 60.0) as i32, (d % 60.0) as i32), LATE)
                     } else if d < -59.0 {
-                        (format!("−{}:{:02}", (-d / 60.0) as i32, (-d % 60.0) as i32), EARLY)
+                        (format!("-{}:{:02}", (-d / 60.0) as i32, (-d % 60.0) as i32), EARLY)
                     } else {
                         (wd.on_time.to_string(), ON_TIME)
                     };
@@ -1432,13 +1469,15 @@ fn congestion_on(net: &Network, traffic: &Network, c: &HashMap<usize, f32>) -> H
 
 impl<'a> NavFrame<'a> {
     fn clone_ref(&self) -> NavFrame<'a> {
-        NavFrame { traffic: self.traffic, players: self.players.clone(), bus: self.bus, heading: self.heading, speed_kmh: self.speed_kmh, outside_temp: self.outside_temp, inside_temp: self.inside_temp, line: self.line.clone(), terminus: self.terminus.clone(), stops: self.stops.clone(), delay: self.delay, passengers: self.passengers, time: self.time, weekday: self.weekday, language: self.language, screen: self.screen, ui_scale: self.ui_scale, follow_window: self.follow_window, dt: self.dt, stop_requested: self.stop_requested, info_rect: self.info_rect }
+        NavFrame { traffic: self.traffic, players: self.players.clone(), bus: self.bus, heading: self.heading, speed_kmh: self.speed_kmh, outside_temp: self.outside_temp, inside_temp: self.inside_temp, line: self.line.clone(), terminus: self.terminus.clone(), stops: self.stops.clone(), delay: self.delay, passengers: self.passengers, time: self.time, weekday: self.weekday, language: self.language, screen: self.screen, ui_scale: self.ui_scale, follow_window: self.follow_window, dt: self.dt, stop_requested: self.stop_requested, info_rect: self.info_rect, touch_gap: self.touch_gap }
     }
 }
 
 
 mod roads;
 pub(crate) use roads::*;
+mod surface;
+use surface::ground;
 mod city_map;
 pub use city_map::*;
 #[cfg(test)]

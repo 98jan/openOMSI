@@ -26,6 +26,7 @@ impl Renderer {
             smoke: Vec::new(),
             smoke_buf: None,
             smoke_count: 0,
+            smoke_sent: Vec::new(),
             corona_runs: Vec::new(),
             draw_buf: None,
             camera_bind_group: None,

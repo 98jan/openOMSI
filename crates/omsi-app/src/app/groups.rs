@@ -50,6 +50,8 @@ pub(crate) struct NetState {
     /// chat line.
     pub(crate) lan: Option<omsi_net::LanSession>,
     pub(crate) remotes: lan::LanGame,
+    /// The shared world: the host's traffic and people, sent (host) or mirrored (client).
+    pub(crate) lan_world: crate::lan_world::LanWorld,
 }
 
 /// What the game talks to besides itself: the OMSI and Lua plugins, Discord, Steam, the
@@ -63,6 +65,8 @@ pub(crate) struct Integrations {
     pub(crate) plugin_events: Vec<omsi_plugin::GameEvent>,
     /// The same for events whose values are tables (see `plugins::queue_event_ex`).
     pub(crate) plugin_events_ex: Vec<(&'static str, Vec<omsi_plugin::api::Value>)>,
+    /// The mouse on the script textures `.opl` plugins draw (clicked like a bus's pages).
+    pub(crate) plugin_pointer: omsi_plugin::TexturePointer,
     /// The plugins' sounds playing, and whether each moves with the player's bus.
     pub(crate) plugin_voices: Vec<(u64, bool)>,
     /// What the plugins' events last saw of the game (see `plugins::Seen`).
@@ -92,9 +96,9 @@ pub(crate) struct Integrations {
 pub(crate) struct PerfState {
     pub(crate) fps: f32,
     /// Per-stage frame time accumulators (OMSI_PROFILE), seconds.
-    pub(crate) profile: std::collections::BTreeMap<&'static str, f64>,
+    pub(crate) profile: crate::profile_keys::ProfileTimes,
     /// `profile` as it was at the start of the last frame: what a slow frame spent where.
-    pub(crate) profile_prev: std::collections::BTreeMap<&'static str, f64>,
+    pub(crate) profile_prev: crate::profile_keys::ProfileTimes,
     pub(crate) total_frames: u32,
     /// `OMSI_INPUT` script: (seconds after start, command), in order.
     pub(crate) input_script: Vec<(f32, String)>,
@@ -130,6 +134,8 @@ pub(crate) struct PerfState {
     /// since then (s), for the exit summary's percentiles (see `perf_report`).
     pub(crate) profile_mark: Option<crate::perf_report::ProfileMark>,
     pub(crate) frame_times: Vec<f32>,
+    pub(crate) overlay: crate::perf_overlay::PerfOverlay,
+    pub(crate) texture_cut_at: Option<Instant>,
 }
 
 /// The drawing around the renderer: the wgpu instance and surface, the tile streaming, the
@@ -144,6 +150,8 @@ pub(crate) struct GfxState {
     pub(crate) spanned: bool,
     /// Mirror pictures due (see `MIRROR_RATE`), and which mirror is next.
     pub(crate) mirror_budget: f32,
+    /// The frame time the mirrors' count a frame follows (see `mirror_updates`).
+    pub(crate) mirror_dt: f32,
     pub(crate) mirrors_seen: usize,
     pub(crate) mirror_turn: usize,
     /// The mirrors the panels show, drawn every frame (kept for its room).
@@ -291,6 +299,13 @@ pub(crate) struct InputState {
     pub(crate) mouse_pedals: (f32, f32),
     /// The speed mouse steering divides by, smoothed.
     pub(crate) mouse_kmh: f32,
+    /// When the mouse wheel last zoomed the view: a turn of the wheel that goes on zooms on,
+    /// also where the zoom has brought a cockpit switch under the cursor (#1224).
+    pub(crate) wheel_zoomed_at: Option<std::time::Instant>,
+    /// The free camera's keys handed to the bus (`view_camera_keys_toggle`, #1779): W, A, S,
+    /// D, Q, E, Space, Shift and the arrows drive and work the bus in the free view, the
+    /// mouse still turns the camera.
+    pub(crate) camera_keys_off: bool,
     /// The speed a gamepad stick's steering divides by, smoothed (as `mouse_kmh`).
     pub(crate) pad_kmh: f32,
     /// Where a gamepad stick turns the wheel to, smoothed (`pad_steer_smooth`).
@@ -415,8 +430,13 @@ pub(crate) struct MenuState {
     pub(crate) info_bar: bool,
     /// OMSI's timetable window (`view_set_schedule`, Insert).
     pub(crate) timetable: bool,
-    /// The server's notifications on the screen (`notify`), oldest first.
+    /// The notifications on the screen (the server's `notify`, the plugins', the update
+    /// check's and the game's own), oldest first.
     pub(crate) notices: Vec<crate::ui::Notice>,
+    /// What the game tells the driver to do, turned into notifications when it starts.
+    pub(crate) note_watch: crate::ui::NoteWatch,
+    /// The loading screen at the session's start, and its fade over the first pictures.
+    pub(crate) loading: crate::ui::Loading,
 }
 
 /// The simulated session besides the map, the player's bus and the clock: the other
@@ -429,6 +449,9 @@ pub(crate) struct SessionState {
     /// `follow_date`).
     pub(crate) world_day: Option<(i32, Option<String>)>,
     pub(crate) traffic: Option<traffic::Traffic>,
+    /// The scripts and variables of the map's scripted scenery objects (the world's tile
+    /// loader hands them over, see `World::scenery_sync`).
+    pub(crate) scenery: omsi_sim::scenery::SceneryState,
     pub(crate) schedule: Option<schedule::Schedule>,
     /// The map's timetable read for the menu while it does not run (timetable traffic off):
     /// its lines and tours can be looked at and picked, as in OMSI 2. Picking a duty makes
@@ -446,6 +469,10 @@ pub(crate) struct SessionState {
     pub(crate) lamps_on: Option<bool>,
     pub(crate) populate_t: f32,
     pub(crate) humans_populate_t: f32,
+    /// The traffic put out vehicles or departures this frame (`populate_seen` /
+    /// `schedule_tick`, or a slice of them): the people's own filling of the map waits a
+    /// frame, so that the two never land in the same frame.
+    pub(crate) traffic_heavy_frame: bool,
     pub(crate) first_populate: bool,
     pub(crate) envir: Option<omsi_content::Envir>,
     pub(crate) weather: Option<omsi_content::weather::Weather>,
@@ -475,7 +502,7 @@ pub(crate) struct SessionState {
     pub(crate) wetness: f32,
     /// How far the cloud cover has drifted with the wind (fractions of its tiling), summed
     /// up frame by frame so that a change of wind does not throw the sky around.
-    pub(crate) cloud_drift: [f32; 4],
+    pub(crate) cloud_drift: [f64; 4],
     /// A change of weather coming in (see `weather_cycle`).
     pub(crate) weather_blend: Option<crate::weather_cycle::Blend>,
     /// The weather cycle, when the weather chosen is `cycle`.

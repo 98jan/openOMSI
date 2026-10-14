@@ -31,6 +31,35 @@ fn vr_mirror_updates(budget: &mut f32, dt: f32, rate: f32, mirrors: usize) -> us
     updates
 }
 
+/// The window's mirror redraws this frame, `rate` pictures a second (at least `min_rate`)
+/// and at most `most` a frame: a steady count. With the credit spent as it came, frames
+/// drew 0, 1 or 2 mirrors (each a few milliseconds) as the frame times wobbled, and two
+/// after a slow frame. Now the count follows the frame time averaged over half a second:
+/// as many a frame as the rate asks for (rounded, every frame alike), or with fewer than
+/// one a frame due, one every so many frames, the fraction carried on and never two at
+/// once. `avg_dt`: the average kept between frames (0 at first).
+fn mirror_updates(budget: &mut f32, avg_dt: &mut f32, dt: f32, rate: f32, min_rate: f32, most: usize) -> usize {
+    let dt = dt.clamp(0.0, 0.1);
+    *avg_dt = if *avg_dt <= 0.0 { dt } else { *avg_dt + (dt - *avg_dt) * (dt / 0.5).min(1.0) };
+    let per_frame = rate.max(0.0) * *avg_dt;
+    if most == 0 || per_frame <= 0.0 {
+        *budget = 0.0;
+        return 0;
+    }
+    if per_frame >= 1.0 {
+        *budget = 0.0;
+        let least = (min_rate.min(rate) * *avg_dt - 0.05).ceil().max(1.0) as usize;
+        return (per_frame.round() as usize).max(least).clamp(1, most);
+    }
+    *budget = (*budget + per_frame).min(1.0 + per_frame);
+    if *budget >= 1.0 {
+        *budget -= 1.0;
+        1
+    } else {
+        0
+    }
+}
+
 fn render_scale_step(fps: f32, slow_frame_wait_share: f32) -> f32 {
     // (three levels, far apart, and a wide band between going down and up again: every
     // step makes the picture's targets anew - hundreds of MB with MSAA and HDR - and a
@@ -51,7 +80,7 @@ mod frame;
 pub(crate) use frame::steps;
 pub(crate) use frame::stages::WINDOW_FRAME;
 #[cfg(test)]
-pub(crate) use frame::stages::WindowStage;
+pub(crate) use frame::stages::{WindowStage, FRAME_AFTER, FRAME_BEFORE, FRAME_TICK};
 
 /// How fast a stick turns the head, fully pushed (degrees a second, see `Analog::look`).
 const LOOK_STICK_DEG_S: f32 = 120.0;
@@ -145,7 +174,7 @@ impl ApplicationHandler for App {
                 // releases go on, so that nothing held stays held)
                 if event.state == ElementState::Pressed {
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        if self.plugin_typing_key(code, event.text.as_deref()) || self.devtools_typing(code, event.text.as_deref()) {
+                        if self.integrations.plugin_typing_key(code, event.text.as_deref()) || self.devtools_typing(code, event.text.as_deref()) {
                             return;
                         }
                         // the game's panels: the field typed into, Esc closing the one on top
@@ -186,7 +215,7 @@ impl ApplicationHandler for App {
                 {
                     self.net.remotes.chat.open();
                     if let PhysicalKey::Code(code) = event.physical_key {
-                        lan::chat_swallow(&mut self.net.remotes, code);
+                        lan::chat_swallow(&mut self.net.remotes, crate::app_impl::lan_tick::chat_key_of(code));
                     }
                     return;
                 }
@@ -247,6 +276,11 @@ impl ApplicationHandler for App {
                     self.on_right(state == ElementState::Pressed);
                 }
             }
+            // the mouse's side buttons (Mouse 4 and 5): keys of their own for keyboard.cfg (#2281)
+            WindowEvent::MouseInput { state, button: button @ (winit::event::MouseButton::Back | winit::event::MouseButton::Forward), .. } => {
+                let scan = if button == winit::event::MouseButton::Back { crate::keys::MOUSE_4 } else { crate::keys::MOUSE_5 };
+                self.mouse_side_button(scan, state == ElementState::Pressed);
+            }
             // (the middle button - the wheel pressed - turns the view as well: OMSI's pan)
             WindowEvent::MouseInput {
                 state,
@@ -304,7 +338,7 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 // while the plugins' panels have the mouse its clicks are theirs, none the bus's
-                if self.plugin_focus() {
+                if self.integrations.plugin_focus() {
                     self.plugin_click(state == ElementState::Pressed);
                     return;
                 }
@@ -458,14 +492,17 @@ impl ApplicationHandler for App {
 impl App {
     /// The window's size in pixels, while the mirror panels can be worked (in the cab, no menu).
     pub(crate) fn mirror_hud_size(&self) -> Option<(f32, f32)> {
-        if !self.cam.in_cab || self.menus.game_menu.is_some() || !self.gfx.mirror_hud.editing() {
-            return None;
-        }
-        Some(self.hud_size())
+        mirror_hud_size(&self.settings, &self.cam, &self.menus, &self.gfx)
     }
 
     /// The mouse wheel (or a pinch of two fingers): `amount` notches, up positive.
     pub(crate) fn wheel(&mut self, amount: f32) {
+        let sim = self.player_to_drawn_pose();
+        self.wheel_now(amount);
+        self.player_back_to_sim_pose(sim);
+    }
+
+    fn wheel_now(&mut self, amount: f32) {
         // the photo mode: the lens zooms, or its panel scrolls under the mouse
         if self.photo_on() {
             if self.shell.over_ui {
@@ -527,7 +564,10 @@ impl App {
         // original fires while the mouse is dragged, with the notch as the
         // movement. Knobs, the sun blind and the ignition key are far easier to
         // set that way than by holding the button down and moving the mouse.
-        if self.menus.hover.is_some() && self.view != "free" {
+        // (not while the wheel is zooming: the zoom moved the switches under the cursor, and
+        // the wheel's next notch turned one instead of zooming on, #1224)
+        let zooming = wheel_goes_on(self.input.wheel_zoomed_at, std::time::Instant::now());
+        if self.menus.hover.is_some() && self.view != "free" && !zooming {
             let ray = self.camera.as_ref().zip(self.gfx.surface.as_ref())
                 .map(|(cam, s)| self.cockpit_cursor_ray(cam, (s.config.width, s.config.height)));
             if let (Some(p), Some((o, d, spread))) = (
@@ -546,12 +586,15 @@ impl App {
             if let (Some(w), Some((o, d, spread))) = (self.world.as_ref(), self.cursor_ray_now()) {
                 let blocked = self.player.as_ref().and_then(|p| p.opaque_body_hit(o, d));
                 if let Some(hit) = w.scenery_object_hit(o, d, crate::input_script::SCENERY_OBJECT_REACH, spread).filter(|h| blocked.map_or(true, |t| t >= h.t)) {
-                    w.scenery_object_wheel(hit.map_id, &hit.event, -amount * 40.0);
+                    w.scenery_object_wheel(&mut self.session.scenery, hit.map_id, &hit.event, -amount * 40.0);
                     return;
                 }
             }
         }
         let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
+        if matches!(self.view.as_str(), "driver" | "pax") && self.player.is_some() {
+            self.input.wheel_zoomed_at = Some(std::time::Instant::now());
+        }
         if self.view == "outside" && self.player.is_some() && ctrl {
             // Ctrl+wheel: the outside camera stays where it is and narrows its field of view
             // (a telephoto; OMSI's own zoom there only moves the camera, as the wheel does)
@@ -582,8 +625,25 @@ impl App {
             self.shell.button(pressed);
             // (the left button dragged over the photo turns the photo camera)
             let over = self.shell.over_ui;
+            let size = self.gfx.surface.as_ref().map(|s| (s.config.width as f32, s.config.height as f32)).unwrap_or((1.0, 1.0));
+            let at = (self.input.cursor.0 / size.0.max(1.0), self.input.cursor.1 / size.1.max(1.0));
+            let mut focus = None;
             if let Some(ph) = self.photo.as_mut() {
                 ph.looking = pressed && !over;
+                // (a click on the picture that does not turn the view focuses there)
+                if pressed && !over {
+                    ph.press = Some(at);
+                    ph.dragged = 0.0;
+                } else if !pressed {
+                    if let Some(p) = ph.press.take() {
+                        if ph.dragged < 0.3 {
+                            focus = Some(p);
+                        }
+                    }
+                }
+            }
+            if let Some((x, y)) = focus {
+                self.photo_request(crate::photo::Request::FocusAt(x, y));
             }
             self.sync_look_hold();
             return;
@@ -780,40 +840,27 @@ impl App {
 
 /// OMSI's timetable window: the current trip's stops with their times, the ones served
 /// greyed, the next one marked.
-fn timetable_rows(duty: Option<&crate::schedule::PlayerDuty>, delay: Option<f64>) -> Option<(String, Vec<(String, String, u8)>)> {
+fn timetable_rows(duty: Option<&crate::schedule::PlayerDuty>, delay: Option<f64>) -> Option<crate::ui::TimetableView> {
     let d = duty?;
     let trip = d.trips.get(d.trip_index)?;
     let hm = |t: f64| format!("{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64);
-    let delay = delay.unwrap_or(0.0);
-    let title = format!(
-        "{} › {}   {}{}:{:02}   ({}/{})",
-        if trip.line.trim().is_empty() { d.line.trim() } else { trip.line.trim() },
-        trip.terminus.trim(),
-        if delay < 0.0 { "−" } else { "+" },
-        (delay.abs() / 60.0) as i64,
-        (delay.abs() % 60.0) as i64,
-        d.trip_index + 1,
-        d.trips.len()
-    );
-    // (as a driver's paper timetable: the departure, the arrival at the last stop; a stop
-    // with a wait shows both)
-    let last = trip.stops.iter().rposition(|s| s.stops);
-    let mut rows: Vec<(String, String, u8)> = trip
-        .stops
+    let line = if trip.line.trim().is_empty() { d.line.trim() } else { trip.line.trim() };
+    let meta = format!("{} {}  -  {} {}/{}", omsi_ui::tr("Tour"), d.tour.trim(), omsi_ui::tr("Trip"), d.trip_index + 1, d.trips.len());
+    // (the first stop is left, the last arrived at; the others both, as the launcher's trips)
+    let stops: Vec<(usize, &_)> = trip.stops.iter().enumerate().filter(|(_, s)| s.stops).collect();
+    let (first, last) = (stops.first().map(|s| s.0), stops.last().map(|s| s.0));
+    let rows = stops
         .iter()
-        .enumerate()
-        .filter(|(_, s)| s.stops)
-        .map(|(k, s)| {
-            let time = if Some(k) == last { hm(s.arr) } else if s.dep - s.arr >= 60.0 { format!("{}-{}", hm(s.arr), &hm(s.dep)[3..]) } else { hm(s.dep) };
-            (s.name.trim().to_string(), time, if k < d.next_stop { 0 } else if k == d.next_stop { 1 } else { 2 })
+        .map(|&(k, s)| crate::ui::TimetableRow {
+            name: s.name.trim().to_string(),
+            arr: if Some(k) == first { String::new() } else { hm(s.arr) },
+            dep: if Some(k) == last { String::new() } else { hm(s.dep) },
+            state: if k < d.next_stop { 0 } else if k == d.next_stop { 1 } else { 2 },
         })
         .collect();
     // the trip after this one
-    if let Some(next) = d.trips.get(d.trip_index + 1) {
-        let name = format!("› {} {}", if next.line.trim().is_empty() { d.line.trim() } else { next.line.trim() }, next.terminus.trim());
-        rows.push((name, hm(next.departure), 0));
-    }
-    Some((title, rows))
+    let next = d.trips.get(d.trip_index + 1).map(|n| (format!("{} {}", if n.line.trim().is_empty() { d.line.trim() } else { n.line.trim() }, n.terminus.trim()), hm(n.departure)));
+    Some(crate::ui::TimetableView { line: line.to_string(), terminus: trip.terminus.trim().to_string(), meta, delay: delay.unwrap_or(0.0), rows, next })
 }
 
 /// The outside air from the weather and the cabin air the vehicle scripts/engine maintain.
@@ -830,11 +877,20 @@ pub(crate) fn vehicle_temperatures(p: &Player) -> (f32, f32) {
 
 /// OMSI's information bar: the time, the speed, the kilometres driven this session and the
 /// bus's odometer, temperatures, the passengers aboard, and the trip with its next stop and delay.
-fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&crate::schedule::PlayerDuty>, passengers: Option<usize>, metres: f64) -> String {
+fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&crate::schedule::PlayerDuty>, passengers: Option<usize>, metres: f64, speed_limit: Option<f32>) -> String {
     let t = clock.time;
     let mut parts = vec![format!("{:02}:{:02}:{:02}", ((t / 3600.0) as i64).rem_euclid(24), ((t % 3600.0) / 60.0) as i64, (t % 60.0) as i64)];
     if let Some(p) = player {
-        parts.push(format!("{:.0} km/h", p.vehicle.physics.velocity_kmh().abs()));
+        parts.push(crate::units::Units::now().speed_text(p.vehicle.physics.velocity_kmh().abs()));
+        // the road's speed limit, as the navigator's top bar has it (#2476: its sign there is small)
+        if let Some(v) = speed_limit {
+            let u = crate::units::Units::now();
+            parts.push(format!("{} {:.0}", omsi_ui::tr("Speed limit"), u.speed_limit(v)));
+        }
+        // a stop asked for, as OMSI's Shift+Z overlay says (#1767: seen from outside too)
+        if crate::navigator::stop_requested(&p.vehicle) {
+            parts.push(omsi_ui::tr("Stop requested").into_owned());
+        }
         parts.push(distance_driven(metres));
         // the bus's whole mileage, as OMSI's Shift+Z overlay reads it ("Mileometer", the
         // `kmcounter_*` the cockpit shows, whole kilometres and the metres of the fraction)
@@ -842,7 +898,8 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
             parts.push(odometer_reading(km as f64 + p.vehicle.var("kmcounter_m").unwrap_or(0.0) as f64 / 1000.0));
         }
         let (outside, inside) = vehicle_temperatures(p);
-        parts.push(format!("EXT {:.0} °C / INT {:.0} °C", outside, inside));
+        let u = crate::units::Units::now();
+        parts.push(format!("EXT {} / INT {}", u.temperature(outside), u.temperature(inside)));
         // the tank as the bus's script says it (OMSI's RL_TankContent: tank_percent)
         if let Some(tank) = p.vehicle.var("tank_percent").filter(|v| v.is_finite()) {
             parts.push(format!("tank {:.0} %", (tank * 100.0).round()));
@@ -860,7 +917,7 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
                     parts.push(format!("next: {}", s.name.trim()));
                 }
                 let delay = p.vehicle.host.tt_delay;
-                parts.push(format!("{}{}:{:02}", if delay < 0.0 { "−" } else { "+" }, (delay.abs() / 60.0) as i64, (delay.abs() % 60.0) as i64));
+                parts.push(format!("{}{}:{:02}", if delay < 0.0 { "-" } else { "+" }, (delay.abs() / 60.0) as i64, (delay.abs() % 60.0) as i64));
             }
         }
     }
@@ -869,7 +926,7 @@ fn info_line(clock: &omsi_sim::SimClock, player: Option<&Player>, duty: Option<&
 
 /// The kilometres driven this session (`Career::metres`), to a hundred metres.
 fn distance_driven(metres: f64) -> String {
-    format!("{:.1} km", metres.max(0.0) / 1000.0)
+    crate::units::Units::now().long_distance(metres.max(0.0) / 1000.0, 1)
 }
 
 /// The passenger places (`[passpos]`) in the player's bus and any coupled sections: nobody
@@ -890,7 +947,7 @@ fn passenger_capacity(vehicle: &omsi_sim::VehicleInstance) -> Option<usize> {
 
 /// The bus's odometer to a hundred metres, as the stock cockpits show it (km and tenths).
 fn odometer_reading(km: f64) -> String {
-    format!("{} {:.1} km", omsi_ui::tr("Odometer"), km.max(0.0))
+    format!("{} {}", omsi_ui::tr("Odometer"), crate::units::Units::now().long_distance(km.max(0.0), 1))
 }
 
 /// `n` (out of `capacity` places, where known) with the word for a passenger in the
@@ -948,7 +1005,36 @@ mod info_tests {
 
 #[cfg(test)]
 mod vr_mirror_tests {
-    use super::vr_mirror_updates;
+    use super::{mirror_updates, vr_mirror_updates};
+
+    /// The window's mirrors: the same count every frame once the frame time has settled,
+    /// never two after a slow frame below one a frame, and the rate kept.
+    #[test]
+    fn window_mirrors_take_a_steady_count() {
+        for (fps, rate, want) in [(140.0f32, 75.0f32, None), (60.0, 75.0, Some(1)), (30.0, 75.0, Some(2)), (240.0, 75.0, None)] {
+            let (mut budget, mut avg) = (1.0, 0.0);
+            let mut total = 0;
+            for n in 0..(fps as usize * 4) {
+                // (frame times wobbling by a tenth)
+                let dt = (1.0 + if n % 3 == 0 { 0.1 } else { -0.05 }) / fps;
+                let k = mirror_updates(&mut budget, &mut avg, dt, rate, 40.0, 2);
+                assert!(k <= 1 || want == Some(2), "fps {fps}: {k}");
+                if let Some(w) = want.filter(|_| n > fps as usize) {
+                    assert_eq!(k, w, "fps {fps} frame {n}");
+                }
+                total += k;
+            }
+            let per_s = total as f32 / 4.0;
+            assert!(per_s >= 40.0 && per_s <= rate.max(fps) + 1.0, "fps {fps}: {per_s} a second");
+            if fps > rate {
+                assert!((per_s - rate).abs() < 2.0, "fps {fps}: {per_s} a second");
+            }
+        }
+        // a slow frame below one a frame: one mirror, not a burst
+        let (mut budget, mut avg) = (0.0, 1.0 / 140.0);
+        assert!(mirror_updates(&mut budget, &mut avg, 0.1, 75.0, 40.0, 2) <= 2);
+        assert_eq!(mirror_updates(&mut budget, &mut avg, 0.0, 0.0, 40.0, 2), 0);
+    }
 
     #[test]
     fn every_frame_updates_all_mirrors_even_at_low_game_fps() {
@@ -987,8 +1073,40 @@ mod vr_mirror_tests {
     }
 }
 
+/// How long after a notch of the mouse wheel that zoomed the next one still counts as the same
+/// turn of the wheel (a turn sends its notches some 20-100 ms apart).
+const WHEEL_TURN: std::time::Duration = std::time::Duration::from_millis(350);
+
+/// Whether a notch of the wheel at `now` goes on zooming, the last one having zoomed at
+/// `zoomed` (#1224).
+fn wheel_goes_on(zoomed: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    zoomed.is_some_and(|t| now.saturating_duration_since(t) < WHEEL_TURN)
+}
+
+#[cfg(test)]
+mod wheel_turn_tests {
+    /// A turn of the wheel that zooms goes on zooming over a switch; a notch a while later
+    /// over the switch turns the switch (#1224).
+    #[test]
+    fn a_turn_of_the_wheel_zooms_on() {
+        let t = std::time::Instant::now();
+        let ms = std::time::Duration::from_millis;
+        assert!(!super::wheel_goes_on(None, t));
+        assert!(super::wheel_goes_on(Some(t), t + ms(80)));
+        assert!(!super::wheel_goes_on(Some(t), t + ms(600)));
+    }
+}
+
 /// A test window in the background driven by an input script (`OMSI_BACKGROUND` with
 /// `OMSI_INPUT`): its mouse is the script's alone.
 fn scripted_window() -> bool {
     omsi_cfg::flags::OMSI_BACKGROUND.is_set() && omsi_cfg::flags::OMSI_INPUT.var().is_some()
+}
+
+/// [`App::mirror_hud_size`] on the parts it reads.
+pub(crate) fn mirror_hud_size(settings: &settings::Settings, cam: &ViewState, menus: &MenuState, gfx: &GfxState) -> Option<(f32, f32)> {
+    if !cam.in_cab || menus.game_menu.is_some() || !gfx.mirror_hud.editing() {
+        return None;
+    }
+    Some(crate::app_impl::hud_size(settings, gfx))
 }

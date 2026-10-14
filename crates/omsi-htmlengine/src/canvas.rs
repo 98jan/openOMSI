@@ -134,7 +134,7 @@ struct GlyphBmp {
 /// every frame rasterises each glyph once.
 const SUB: f32 = 4.0;
 
-/// (glyph, size, bold, face (0 Roboto, 1 the fallback), sub-pixel x, y)
+/// (glyph, size, bold, face (0 Inter, 1 the fallback), sub-pixel x, y)
 type GlyphKey = (u16, u32, bool, u8, u8, u8);
 
 thread_local! {

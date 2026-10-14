@@ -166,12 +166,10 @@ fn tree_sway(local: vec3<f32>, m: mat4x4<f32>) -> vec3<f32> {
     return d;
 }
 
-@vertex
-fn vs_main(in: VsIn) -> VsOut {
-    let e = draw_list[in.inst];
-    let m = model_matrix(e);
-    let wp = m * vec4<f32>(in.pos, 1.0) + vec4<f32>(tree_sway(in.pos, m), 0.0);
-    var out: VsOut;
+// Where a scene vertex lands on the screen: the main pass's and the depth passes' vertex
+// shaders (`vs_main`, `vs_depth`) both take it from here, so that their depths agree to the
+// last bit (the main pass tests against the depth the prepass left).
+fn scene_clip(e: u32, wp: vec4<f32>) -> vec4<f32> {
     // Road surfaces (splines, the objects lying on them, a shadow blob) are pulled towards
     // the eye along the line of sight - the picture does not move, only the depth - so that
     // they win over the flush ground beside them. Code 0.9 keeps the surface shading without
@@ -204,7 +202,16 @@ fn vs_main(in: VsIn) -> VsOut {
         let pull = min(min(share * d, 0.05) + fixed, d * 0.3);
         cp = wp.xyz - to / max(d, 1e-3) * pull;
     }
-    out.clip = camera.view_proj * vec4<f32>(cp, 1.0);
+    return camera.view_proj * vec4<f32>(cp, 1.0);
+}
+
+@vertex
+fn vs_main(in: VsIn) -> VsOut {
+    let e = draw_list[in.inst];
+    let m = model_matrix(e);
+    let wp = m * vec4<f32>(in.pos, 1.0) + vec4<f32>(tree_sway(in.pos, m), 0.0);
+    var out: VsOut;
+    out.clip = scene_clip(e, wp);
     out.world = wp.xyz;
     out.normal = safe_normal((m * vec4<f32>(in.normal, 0.0)).xyz);
     let sp = vertex_specular(wp.xyz, out.normal);
@@ -220,6 +227,40 @@ fn vs_main(in: VsIn) -> VsOut {
     out.wipe_uv = vec3<f32>((pane - material.wipe_bounds.xy) * abs(material.wipe_bounds.zw), select(in.pos.y, in.pos.x, side_pane));
     if (pr.y < 0.5) {
         // invisible: collapse the triangle
+        out.clip = vec4<f32>(0.0, 0.0, 2.0, 1.0);
+    }
+    return out;
+}
+
+// What the depth-only passes (the depth prepass, the multisampled prefill) take from a
+// vertex: its place and what a cut-out or a transmap needs to decide its coverage. The
+// highlights, the sphere map and the normal of `vs_main` are not worked out for them.
+struct DepthOut {
+    @builtin(position) @invariant clip: vec4<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) params: vec4<f32>,
+    // the instance's surface code (`inst_params` w, see `scene_clip`)
+    @location(4) surf: f32,
+};
+struct DepthIn {
+    @builtin(position) clip: vec4<f32>,
+    @location(2) uv: vec2<f32>,
+    @location(3) params: vec4<f32>,
+    @location(4) surf: f32,
+};
+
+@vertex
+fn vs_depth(in: VsIn) -> DepthOut {
+    let e = draw_list[in.inst];
+    let m = model_matrix(e);
+    let wp = m * vec4<f32>(in.pos, 1.0) + vec4<f32>(tree_sway(in.pos, m), 0.0);
+    var out: DepthOut;
+    out.clip = scene_clip(e, wp);
+    let pr = inst_params[e * 2u];
+    out.uv = in.uv + pr.zw;
+    out.params = pr;
+    out.surf = inst_params[e * 2u + 1u].w;
+    if (pr.y < 0.5) {
         out.clip = vec4<f32>(0.0, 0.0, 2.0, 1.0);
     }
     return out;

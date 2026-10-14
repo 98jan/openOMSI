@@ -44,6 +44,8 @@ pub struct Schedule {
     fleet_ready: Arc<parking_lot::Mutex<Vec<crate::scene::VehicleKey>>>,
     /// Time of day of the last look at the next departures' vehicles.
     fleet_check: f64,
+    /// Seconds until the next look for due departures (see `frame_traffic`).
+    pub(crate) tick_t: f32,
 }
 
 impl std::ops::Deref for Schedule {
@@ -64,24 +66,26 @@ impl Schedule {
     /// holiday, 8 school days, 9 school holidays) that selects which run today.
     pub fn new(root: &Path, world: &World, clock: &omsi_sim::SimClock) -> Schedule {
         Schedule {
-            sim: ScheduleSim::new(root, world, clock),
+            sim: ScheduleSim::new(root, &*world.data(), clock),
             next_number: 0,
             fleet_reading: HashMap::new(),
             fleet_ready: Default::default(),
             fleet_check: f64::NEG_INFINITY,
+            // (a second after the population's, never in the same frame)
+            tick_t: 1.0,
         }
     }
 
     /// The lanes a trip runs on (for the navigator): its track, else the station links
     /// between its stops, as far as the tiles have brought them - and whether that is all.
     pub fn trip_route(&self, world: &World, traffic: &Traffic, trip_name: &str) -> (Vec<usize>, bool) {
-        self.sim.trip_route(world, &traffic.sim, trip_name)
+        self.sim.trip_route(&*world.data(), &traffic.sim, trip_name)
     }
 
     /// `OMSI_CHECK_TRIPS=1`: the routes of every trip on the loaded lanes checked (see
     /// `ScheduleSim::check_routes`).
     pub fn check_routes(&self, world: &World, traffic: &mut Traffic) {
-        self.sim.check_routes(world, &mut traffic.sim)
+        self.sim.check_routes(&*world.data(), &mut traffic.sim)
     }
 
     /// Assign the player a tour of a line (see `ScheduleSim::player_duty`).
@@ -94,7 +98,7 @@ impl Schedule {
         trip: Option<&str>,
         whole_tour: bool,
     ) -> Result<PlayerDuty, String> {
-        self.sim.player_duty(world, line, tour, now, trip, whole_tour)
+        self.sim.player_duty(&*world.data(), line, tour, now, trip, whole_tour)
     }
 
     /// Make the departure boards of the stops whose displays are near

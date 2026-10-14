@@ -491,7 +491,7 @@ impl Renderer {
         let gl = GL_BACKEND.load(std::sync::atomic::Ordering::Relaxed);
         let ssao = ssao::ssao(&device, gl);
         let fog_lamps = ssao::fog_lamps(&device, &scene.camera_layout, hdr_format, gl);
-        let prepass = scene::prepass(&device, &scene, msaa);
+        let prepass = scene::prepass(&device, &scene, msaa, !leave_out_enhanced);
         let mip = mip::build(&device);
         let post = post::build(&device, format, hdr_format, &defaults.white_texture);
         let enhanced = enhanced::build(&device, &queue, hdr_format, &defaults.camera_buf, &sky, !leave_out_enhanced);
@@ -573,12 +573,14 @@ impl Renderer {
                 probe: enhanced.probe,
                 view_lamps: None,
                 exposure: None,
+                enh_last: bytemuck::Zeroable::zeroed(),
             },
             shadows: ShadowRes {
                 shadow_far_cache: std::cell::Cell::new((Mat4::IDENTITY, 0, DVec3::ZERO, Vec3::ZERO)),
                 shadow_near_cache: std::cell::Cell::new((Mat4::IDENTITY, 0, DVec3::ZERO, Vec3::ZERO)),
                 xr_shadow_cache: std::cell::Cell::new(None),
                 shadow_clear_pipeline: shadows.clear_pipeline,
+                lamp_tiles: Default::default(),
                 shadow_view: shadows.view,
                 shadow_view_far: shadows.view_far,
                 shadow_sampler: shadows.sampler,
@@ -589,6 +591,7 @@ impl Renderer {
                 triple_culling: Default::default(),
                 flicker: std::cell::RefCell::new(HashMap::new()),
                 main_bundles: Default::default(),
+                mirror_bundles: Default::default(),
                 bundle_stats: Default::default(),
                 cull_drawn: std::cell::RefCell::new(Vec::new()),
                 object_sizes: Default::default(),
@@ -612,6 +615,7 @@ impl Renderer {
             texture_aspect: None,
             last_frame: None,
             instant_exposure: false,
+            depth_readback: false,
             overlay_pipeline_1x,
             xr_ui_pipeline,
             // (OMSI_RENDER_CLOCK=<s>: the animations' clock starts that far on - offscreen
@@ -625,7 +629,6 @@ impl Renderer {
             ao_buf: ssao.buf,
             prepass_pipelines: prepass.pipelines,
             prepass_msaa_pipelines: prepass.msaa_pipelines,
-            presurface_msaa_pipelines: prepass.presurface_pipelines,
             ssao_pipeline: ssao.ssao_pipeline,
             blur_pipeline: ssao.blur_pipeline,
             device,
@@ -651,6 +654,7 @@ impl Renderer {
             gpu_timers,
             stats: Default::default(),
             counts: Default::default(),
+            frame_draws: (0, 0),
             profiling: omsi_cfg::flags::OMSI_PROFILE.is_set(),
             draw_audit_at: std::time::Instant::now(),
             encoding_pool: if omsi_cfg::flags::OMSI_NO_RENDER_POOL.is_set() {

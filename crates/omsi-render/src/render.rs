@@ -690,7 +690,7 @@ impl Renderer {
         if f.rt_frame {
             self.encode_ray_tracing(&mut enc.prepass, scene, timers.set.as_ref(), &mut timers.timed);
         }
-        self.encode_sky_cube(&mut enc.prepass, scene, &f, sh.redraw_near, probe_redraw, &mut timers);
+        self.encode_sky_cube(&mut enc.prepass, scene, &f, probe_redraw, &mut timers);
         self.encode_probe(&mut enc.prepass, scene, probe_redraw, &mut timers);
         let main_parts = self.encode_main_pass(&mut enc.picture, scene, &f, &plan, &main_bundles, &mut timers);
         let puddles_on = self.encode_scene_reflections(&mut enc.picture, scene, &f, &plan, &cu, &mut timers);
@@ -720,6 +720,47 @@ impl Renderer {
         lighting: &Lighting,
     ) -> Result<Vec<u8>> {
         self.render_image(scene, width, height, camera, lighting, None)
+    }
+
+    /// A picture as `render_to_image`, and the distance along the view (m) of what each of
+    /// its pixels shows, from the depth prepass (None where the renderer has none).
+    pub fn render_to_image_with_depth(
+        &mut self,
+        scene: &mut Scene,
+        width: u32,
+        height: u32,
+        camera: &Camera,
+        lighting: &Lighting,
+    ) -> Result<(Vec<u8>, Option<Vec<f32>>)> {
+        self.depth_readback = true;
+        let px = self.render_image(scene, width, height, camera, lighting, None);
+        self.depth_readback = false;
+        let px = px?;
+        let tex = self.targets.ao.as_ref().filter(|a| a.size == (width, height)).map(|a| a.depth_tex.clone());
+        let depth = match tex {
+            Some(t) => {
+                // (a backend that cannot copy depth back: the picture without it)
+                match self.read_texture(&t, wgpu::TextureAspect::DepthOnly) {
+                    Ok(raw) => {
+                        // reversed depth (1 at the near plane, 0 at the far one) of
+                        // `perspective_rh(fov, aspect, far, near)` back to the distance along
+                        // the view
+                        let (near, far) = (camera.near as f64, camera.far as f64);
+                        let r = near / (far - near);
+                        Some(raw.chunks_exact(4).take((width * height) as usize).map(|b| {
+                            let d = f32::from_le_bytes([b[0], b[1], b[2], b[3]]) as f64;
+                            (r * far / (d + r)).min(far) as f32
+                        }).collect())
+                    }
+                    Err(e) => {
+                        log::warn!("the depth could not be read back: {e}");
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+        Ok((px, depth))
     }
 
     /// Capture all three physical screen projections, including the shared HUD.
@@ -858,4 +899,7 @@ pub(crate) struct ToneMapping {
     pub(crate) view_lamps: Option<f32>,
     /// The pre-exposure (natural log) as it follows the sky's.
     pub(crate) exposure: Option<f32>,
+    /// The enhanced lighting uniform as last written (`prepare_enhanced`), for the passes
+    /// that decide on the CPU whether they have anything to draw (`shafts_seen`).
+    pub(crate) enh_last: crate::uniforms::EnhancedUniform,
 }

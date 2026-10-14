@@ -132,6 +132,7 @@ impl Offscreen<'_> {
             ref traffic,
             ref mut schedule,
             ref world,
+            ref mut scenery,
             ref duty,
             ref renderer,
             ref mut scene,
@@ -159,6 +160,7 @@ impl Offscreen<'_> {
                     clock,
                 );
                 n = world.update_scripted(
+                    scenery,
                     renderer,
                     scene,
                     dt,
@@ -167,6 +169,7 @@ impl Offscreen<'_> {
                     &phase,
                     None,
                     false,
+                    &mut Default::default(),
                 );
             }
             log::info!(
@@ -198,7 +201,7 @@ impl Offscreen<'_> {
             world_lights(renderer, world, scene, weather, daylight, camera.position, &vehicles);
             let (kind, rate) = precip_of(weather);
             let mut rn = rain::Rain::new();
-            rn.set(kind, rate);
+            rn.set(kind, rate, world.settings.rain_quality());
             for _ in 0..30 {
                 scene
                     .coronas
@@ -305,7 +308,7 @@ impl Offscreen<'_> {
                 lines.push(format!("No duty: {e}"));
             }
             if let Some(l) = lan_off.as_ref() {
-                lines.extend(lan::hud_lines(l, remotes_off, Some(p)));
+                lines.extend(lan::hud_lines(l));
             }
             let viewport = settings.hud_viewport((w, h));
             let overlay_start = scene.overlays.len();
@@ -316,13 +319,16 @@ impl Offscreen<'_> {
                 let mut nav = navigator::Navigator::new(true, settings.ui_opacity, &settings.navigator_corner);
                 nav.schedule = omsi_cfg::flags::OMSI_NAV_SCHEDULE.is_set();
                 nav.show_ai = settings.nav_ai;
+                nav.show_surface = settings.nav_surface;
+                nav.light = settings.nav_light;
                 if omsi_cfg::flags::OMSI_NAV_MAP.is_set() {
                     nav.toggle_map();
                 }
                 if traffic.is_none() {
-                    nav.add_lanes(world.lanes.lock().clone());
+                    nav.add_lanes(world.traffic_inbox.peek(omsi_sim::world_data::TrafficArrivals::lanes_of));
                 }
                 nav.set_map(world.navigation_map());
+                nav.set_surface(omsi_map::package::Package::open(&world.map_dir));
                 let (line, terminus, stops, trip) = navigator::duty_parts(duty.as_ref());
                 if let (Some((key, name)), Some(sch)) = (trip, schedule.as_ref()) {
                     let lanes = sch.trip_route_in(nav.map_net().unwrap(), &name);
@@ -352,6 +358,7 @@ impl Offscreen<'_> {
                     follow_window: settings.ui_scale_window,
                     dt: 0.1,
                     info_rect: None,
+                    touch_gap: None,
                 };
                 for _ in 0..30 {
                     nav.frame_at(renderer, scene, &frame, viewport[0]);
@@ -489,6 +496,7 @@ impl Offscreen<'_> {
             ref player_ref,
             ref settings,
             ref camera,
+            ref sim_view,
             ..
         } = *self;
         let t0 = Instant::now();
@@ -509,6 +517,7 @@ impl Offscreen<'_> {
             let viewport = settings.hud_viewport((w, h));
             steps::push_mirror_hud(&panels, scene, world, viewport, (0.0, 0.0));
         }
+        crate::view_sync::digest::log_scene_digest(scene, Some(sim_view), "picture");
         let pixels = if settings.triple.enabled && !settings.vr_requested() {
             renderer.render_triple_to_image(scene, w, h, camera, lighting, &settings.triple)?
         } else {

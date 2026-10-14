@@ -88,6 +88,7 @@ pub struct AiCar {
     pub exit_wait: bool,
     /// Stopped by a red light this frame.
     pub light_hold: bool,
+    pub since_player_at_light: f32,
     /// Junction lanes this car has claimed to drive through (`TPathInfo::reservePaths`).
     pub reserved: Vec<usize>,
     /// The light (controller, lamp) the driver decided to pass on yellow.
@@ -140,6 +141,9 @@ pub struct AiCar {
     pub rail_trail: std::collections::VecDeque<(f64, DVec3)>,
     /// Seconds its body and script took last frame (heavy ones get an AI job of their own).
     pub ai_secs: f32,
+    /// Seconds of steps its scripts have not been run for yet: they run once a frame (see
+    /// `TrafficSim::scripts_due`), with all the time since they last ran.
+    pub script_owed: f32,
     /// A train turned round as a whole (its last car leads now): what a trip's
     /// `[trainreverse]` is compared with (Omsi.exe's vehicle +0x4e1).
     pub consist_reversed: bool,
@@ -635,6 +639,7 @@ impl TrafficSim {
             yielding: false,
             exit_wait: false,
             light_hold: false,
+            since_player_at_light: f32::MAX,
             reserved: Vec::new(),
             amber: None,
             amber_start: false,
@@ -656,6 +661,7 @@ impl TrafficSim {
             pull_out: 0.0,
             rail_trail: Default::default(),
             ai_secs: 0.0,
+            script_owed: 0.0,
             consist_reversed: false,
             waits_on: None,
             yield_to: None,

@@ -500,7 +500,9 @@ impl Renderer {
         // the driver looks along, nearer than any street lamp)
         let headlamps = own.and_then(|b| passes::headlamp_shadow(&own_lamps, b, cam_rel));
         chosen.truncate(LAMP_SHADOWS - usize::from(headlamps.is_some()));
-        scene.lamp_shadow_last = chosen.iter().map(|c| c.2).collect();
+        if lamp_shadows && enhanced {
+            scene.lamp_shadow_last = chosen.iter().map(|c| c.2).collect();
+        }
         let lamps = chosen.into_iter().map(|c| c.1).chain(headlamps).collect();
         ([origin[0], origin[1], LIGHT_CELL, side as f32], lamps)
     }
@@ -538,7 +540,9 @@ impl Renderer {
         let bytes: &[u8] = bytemuck::cast_slice(data);
         match &scene.smoke_buf {
             Some(b) if b.size() as usize >= bytes.len() => {
-                if scene.corona_sent != bytes {
+                // (compared with what the smoke buffer holds: compared with the coronas'
+                // bytes, which it never equals, it was written again every frame)
+                if scene.smoke_sent != bytes {
                     self.queue.write_buffer(b, 0, bytes);
                 }
             }
@@ -553,6 +557,8 @@ impl Renderer {
                 scene.smoke_buf = Some(b);
             }
         }
+        scene.smoke_sent.clear();
+        scene.smoke_sent.extend_from_slice(bytes);
     }
 
     /// Put a tile's light map into its place of the atlas (`slot`: column from the west, row

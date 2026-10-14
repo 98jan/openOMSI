@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' https:; connect-src 'self' https://api.github.com https://openomsi.savvabestbrother.workers.dev; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>openOMSI</title>
 <meta name="description" content="openOMSI: OMSI 2 recreated from scratch in Rust, fully compatible with every map and mod.">
@@ -9,15 +10,11 @@
 <link rel="apple-touch-icon" href="assets/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono&family=Material+Icons&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Material+Icons&display=swap" rel="stylesheet">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1f2227" media="(prefers-color-scheme: dark)">
-<script>
-  // the theme picked with the button in the app bar (light / dark), before the page is drawn;
-  // nothing stored = follow the system
-  try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
-</script>
+<script src="theme.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -38,6 +35,7 @@
   <div class="drawer-section">
     <a href="#/" data-route="/"><span class="material-icons">home</span>Overview</a>
     <a href="#/download" data-route="/download"><span class="material-icons">download</span>Download</a>
+    <a href="#/beta" data-route="/beta"><span class="material-icons">science</span>Betas</a>
   </div>
   <div class="drawer-subheader">Documentation</div>
   <div class="drawer-section" id="doc-links"></div>
@@ -68,7 +66,7 @@
   <div id="view"></div>
   <footer class="footer">
     openOMSI is an independent project, not affiliated with the makers of OMSI 2.
-    OMSI&nbsp;2 is required to play. · <a href="https://github.com/openOMSI-org/openOMSI/blob/main/LICENSE">MIT License</a>
+    OMSI&nbsp;2 is required to play. · <a href="https://github.com/openOMSI-org/openOMSI/blob/main/LICENSE">GNU AGPL v3</a>
   </footer>
 </main>
 
@@ -122,9 +120,10 @@
 <template id="download">
   <div class="content">
     <h1>Download</h1>
+    <p class="lead" id="dl-channel">The stable release is recommended for everyday use. To try upcoming changes, visit <a href="#/beta">Beta downloads</a>.</p>
     <div class="card card-warning elevation-2">
       <span class="material-icons card-icon">construction</span>
-      <div><h3>Early release: expect bugs</h3><p>openOMSI is in an early stage of development. Things may be missing or broken, and may change between versions. Please report problems on the <a href="#/issues">Issues</a> page.</p></div>
+      <div><h3 id="dl-warning-title">Early release: expect bugs</h3><p id="dl-warning-text">openOMSI is in an early stage of development. Things may be missing or broken, and may change between versions. Please report problems on the <a href="#/issues">Issues</a> page.</p></div>
     </div>
     <div class="card card-warning elevation-2">
       <span class="material-icons card-icon">warning</span>
@@ -145,7 +144,7 @@
   </div>
 </template>
 
-<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous"></script>
 <script src="app.js"></script>
 </body>
 </html>

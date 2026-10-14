@@ -1,10 +1,10 @@
-//! The interface's text: Roboto rendered once per label into a small texture with a dark
+//! The interface's text: Inter rendered once per label into a small texture with a dark
 //! outline, kept while it is shown, and the plates and shapes drawn with it.
 
 use super::*;
 
-/// Roboto (Apache 2.0), the interface font.
-pub(super) const ROBOTO: &[u8] = include_bytes!("../../../../assets/fonts/Roboto-VariableFont_wdth,wght.ttf");
+/// Inter (SIL Open Font Licence 1.1), the interface font.
+pub(super) const INTER: &[u8] = include_bytes!("../../../../assets/fonts/InterVariable.ttf");
 
 /// A rendered text: its texture and size in pixels.
 #[derive(Clone, Copy)]
@@ -21,7 +21,7 @@ pub(super) const BOLD: u32 = 1 << 31;
 /// Texts rendered into textures, kept while they are used.
 pub struct TextCache {
     pub(super) font: FontVec,
-    /// The same Roboto at 700: the menu's titles and its primary button, as the launcher
+    /// The same Inter at 700: the menu's titles and its primary button, as the launcher
     /// draws them (`Weight::Bold`); asked for with `BOLD` in the size.
     pub(super) bold: FontVec,
     pub(super) labels: hashbrown::HashMap<(String, u32, [u8; 4]), Label>,
@@ -34,11 +34,11 @@ pub struct TextCache {
 
 impl TextCache {
     pub fn new() -> Option<TextCache> {
-        let mut font = FontVec::try_from_vec(ROBOTO.to_vec()).ok()?;
+        let mut font = FontVec::try_from_vec(INTER.to_vec()).ok()?;
         // a little heavier than the regular 400: light text on a dark panel is thin and
         // greyish at menu sizes otherwise
         let _ = font.set_variation(b"wght", 500.0);
-        let mut bold = FontVec::try_from_vec(ROBOTO.to_vec()).ok()?;
+        let mut bold = FontVec::try_from_vec(INTER.to_vec()).ok()?;
         let _ = bold.set_variation(b"wght", 700.0);
         Some(TextCache { font, bold, labels: hashbrown::HashMap::new(), frame: 0, backdrop: 1.0, flat: false })
     }
@@ -59,6 +59,33 @@ impl TextCache {
         }
         let font = if px & BOLD != 0 { &self.bold } else { &self.font };
         let img = render_text(font, text, (px & !BOLD) as f32, color);
+        let tex = r.add_texture(scene, &img, false);
+        let l = Label { tex, w: img.width, h: img.height, used: self.frame };
+        self.labels.insert(key, l);
+        l
+    }
+
+    /// `text` as it is (not looked up for a translation: the caller has the words in the
+    /// player's language already) at `px` pixels in `color`, without an outline, `opacity`
+    /// of the way faded in - in sixteenths, so that a fade is a few textures, not one a frame.
+    /// The calm look of the notifications and the loading screen: flat text on its card.
+    pub(super) fn label_op(&mut self, r: &Renderer, scene: &mut Scene, text: &str, px: u32, color: [u8; 4], opacity: f32) -> Label {
+        let k = (opacity.clamp(0.0, 1.0) * 16.0).round() as u32;
+        let color = [color[0], color[1], color[2], 0];
+        let text = &*omsi_ui::text::composed(text);
+        // (the step of the fade in the key's size, above the pixel size and under `BOLD`)
+        let key = (text.to_string(), px | ((k + 1) << 24), color);
+        if let Some(l) = self.labels.get_mut(&key) {
+            l.used = self.frame;
+            return *l;
+        }
+        let font = if px & BOLD != 0 { &self.bold } else { &self.font };
+        let mut img = render_text(font, text, (px & !BOLD) as f32, color);
+        if k < 16 {
+            for a in img.rgba.iter_mut().skip(3).step_by(4) {
+                *a = (*a as u32 * k / 16) as u8;
+            }
+        }
         let tex = r.add_texture(scene, &img, false);
         let l = Label { tex, w: img.width, h: img.height, used: self.frame };
         self.labels.insert(key, l);
@@ -132,15 +159,15 @@ pub(super) fn outline_px(px: f32) -> f32 {
     (px / 9.0).clamp(1.0, 3.0)
 }
 
-/// The font that draws `c`: Roboto, else the system's font for the script (Chinese,
+/// The font that draws `c`: Inter, else the system's font for the script (Chinese,
 /// Japanese, Korean, Thai, Hindi - the menu was a column of boxes in those languages).
-pub(super) fn font_for(roboto: &FontVec, c: char) -> &FontVec {
-    if omsi_ui::text::needs_fallback(roboto, c) {
+pub(super) fn font_for(inter: &FontVec, c: char) -> &FontVec {
+    if omsi_ui::text::needs_fallback(inter, c) {
         if let Some(f) = omsi_ui::text::fallback_font(c) {
             return f;
         }
     }
-    roboto
+    inter
 }
 
 /// `text` as straight-alpha RGBA: the glyphs in `color` over a dark outline.

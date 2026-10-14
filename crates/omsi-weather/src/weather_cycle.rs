@@ -234,6 +234,24 @@ mod tests {
         assert!((0..20).map(|i| pick(&all, &all[1].1, "Weather/b.owt", 1, i as f32 / 20.0)).any(|p| p.as_deref() == Some("Weather/c.owt")));
     }
     #[test]
+    fn the_cloud_drift_goes_round_where_every_cloud_texture_does() {
+        // (2500 m tiles: the shape map 13 km, the cover field 40 km, the billows 420 m at
+        // 1.3 times the drift - a wrap must be a whole number of each, or the sky jumps)
+        let wrap_m = crate::conditions::CLOUD_DRIFT_WRAP * 2500.0;
+        for period in [13000.0, 40000.0, 420.0 / 1.3] {
+            let n = wrap_m / period;
+            assert!((n - n.round()).abs() < 1e-6, "{period}: {n}");
+        }
+        // and a 240 fps frame's step in a light wind still moves the drift near the wrap
+        let mut x = w("x", 0.4, 0.0, 50000.0, 20.0, false);
+        x.wind = (45.0, 2.0);
+        let mut d = [crate::conditions::CLOUD_DRIFT_WRAP - 1e-3, 0.0, 0.0, 0.0];
+        let before = d[0];
+        crate::conditions::cloud_drift_step(&mut d, &x, 1.0 / 240.0);
+        assert!(d[0] != before);
+    }
+
+    #[test]
     fn the_clouds_drift_smoothly_while_the_wind_blends() {
         let mut a = w("calm", 0.4, 0.0, 50000.0, 20.0, false);
         a.wind = (0.0, 1.0);
@@ -248,7 +266,8 @@ mod tests {
             crate::conditions::cloud_drift_step(&mut d, &x, 1.0 / 2.0);
             for i in 0..2 {
                 let step = (d[i] - before[i]).abs();
-                assert!(step.min(1.0 - step) < 0.01, "jump {step}");
+                let wrap = crate::conditions::CLOUD_DRIFT_WRAP;
+                assert!(step.min(wrap - step) < 0.01, "jump {step}");
             }
         }
     }

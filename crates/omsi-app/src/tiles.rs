@@ -116,7 +116,17 @@ pub struct Streamer {
     initial_upload: Option<((i32, i32), std::time::Instant)>,
     /// Tiles loaded and unloaded when the heap's free pages were last given back, and when.
     relieved_at: (usize, usize, std::time::Instant),
+    /// Since when tiles came in whose stops, obstacles and lights are not in the world's
+    /// lists yet (see `update`).
+    lists_due: Option<std::time::Instant>,
+    /// Loaded tiles to be read again (see `reload`).
+    stale: hashbrown::HashSet<(i32, i32)>,
 }
+
+/// How long the lists of the world (`World::refresh_tile_lists`) may leave out tiles that
+/// came in: they are made again for all the loaded tiles at once, 0.3 to 6 ms on
+/// Berlin-Spandau, and while driving a tile came in every few frames.
+const LISTS_AFTER_LOADS: std::time::Duration = std::time::Duration::from_millis(400);
 
 impl Streamer {
     /// Start streaming around `centers`: the tiles within `initial_radius` of them form the
@@ -156,6 +166,8 @@ impl Streamer {
             inflight_batch: None,
             initial_upload: None,
             relieved_at: (0, 0, std::time::Instant::now()),
+            lists_due: None,
+            stale: Default::default(),
         };
         let first: hashbrown::HashSet<(i32, i32)> = s.tiles.iter().filter(|t| Self::nearest(centers, t.0, t.1) <= initial_radius.min(load_radius)).map(|t| (t.0, t.1)).collect();
         log::info!("tile streaming: {} tiles in the map, load radius {:.0} m around {} points ({} tiles now), first area {} tiles", s.tiles.len(), load_radius, centers.len(), s.tiles.iter().filter(|t| Self::nearest(centers, t.0, t.1) <= load_radius).count(), first.len());
@@ -179,8 +191,10 @@ impl Streamer {
 
     /// Read tiles `keys` again (a chrono scenario changed them, the season's textures
     /// changed): those loaded go and come back with the next batches. `None`: every loaded
-    /// tile.
-    pub fn reload(&mut self, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene, keys: Option<&[(i32, i32)]>, audio: Option<&omsi_audio::AudioEngine>) {
+    /// tile. They go in the frames after, the farthest first and as many a frame as the
+    /// unloading's share of the budget allows (see `update`): a snow weather that changed
+    /// the season's textures took the whole map away in one frame.
+    pub fn reload(&mut self, keys: Option<&[(i32, i32)]>) {
         let keys: Vec<(i32, i32)> = match keys {
             Some(k) => k.to_vec(),
             None => {
@@ -188,17 +202,12 @@ impl Streamer {
                 self.world.loaded_tiles()
             }
         };
-        let mut freed = false;
         for k in &keys {
             self.failed.remove(k);
             if !self.requested.contains(k) {
-                freed |= self.world.unload_tile(renderer, scene, *k, audio);
+                self.stale.insert(*k);
             }
         }
-        if freed {
-            self.world.trim_object_types();
-        }
-        self.world.refresh_tile_lists();
         log::info!("tile streaming: {} tiles to be read again", keys.len());
     }
 
@@ -226,6 +235,7 @@ impl Streamer {
     /// when the loaded tiles changed (the caller then refreshes whatever copies world data).
     pub fn update(&mut self, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene, centers: &[DVec3], budget: std::time::Duration, audio: Option<&omsi_audio::AudioEngine>) -> bool {
         let mut changed = false;
+        let first_area = self.initial.is_some();
         while let Ok((asked, prepared, stats, secs)) = self.rx.try_recv() {
             self.inflight = false;
             if let Some((keys, started)) = self.inflight_batch.take() {
@@ -326,12 +336,18 @@ impl Streamer {
         if self.initial.is_none() {
             let now = std::time::Instant::now();
             let unload_deadline = deadline.max(now + budget / 2);
-            let mut far: Vec<(f64, (i32, i32))> = self.world.loaded_tiles().into_iter().filter(|k| !self.requested.contains(k)).map(|k| (Self::nearest(centers, k.0, k.1), k)).filter(|(d, _)| *d > self.unload_radius).collect();
+            let loaded = self.world.loaded_tiles();
+            if !self.stale.is_empty() {
+                let now_loaded: hashbrown::HashSet<(i32, i32)> = loaded.iter().copied().collect();
+                self.stale.retain(|k| now_loaded.contains(k));
+            }
+            let mut far: Vec<(f64, (i32, i32))> = loaded.into_iter().filter(|k| !self.requested.contains(k)).map(|k| (Self::nearest(centers, k.0, k.1), k)).filter(|(d, k)| *d > self.unload_radius || self.stale.contains(k)).collect();
             far.sort_by(|a, b| b.0.total_cmp(&a.0));
             for (_, key) in far {
                 if unloaded > 0 && std::time::Instant::now() >= unload_deadline {
                     break;
                 }
+                self.stale.remove(&key);
                 freed_types |= self.world.unload_tile(renderer, scene, key, audio);
                 self.unloaded_total += 1;
                 unloaded += 1;
@@ -346,9 +362,20 @@ impl Streamer {
             self.world.trim_staged(&self.requested);
         }
         let t_unload = t0.elapsed();
+        // A tile gone must leave the lists at once (they name its instances and materials,
+        // which are handed to other objects); tiles that came in - at the edge of the load
+        // radius - are put in together, 0.4 s after the first of them, as are the first
+        // area's at once.
         if changed {
+            self.lists_due.get_or_insert_with(std::time::Instant::now);
+        }
+        let lists_now = self.lists_due.is_some_and(|t| unloaded > 0 || first_area || t.elapsed() >= LISTS_AFTER_LOADS);
+        if lists_now {
+            self.lists_due = None;
             self.world.refresh_tile_lists();
         }
+        // (the caller hands the new lists on - the bus's obstacles - when they change)
+        let changed = changed || lists_now;
         // Loading and unloading tiles leaves the allocator with pages it keeps for later: they
         // count as the game's memory until they are handed back (half a gigabyte on
         // Ahlheim). At most every few seconds, on a thread of its own.

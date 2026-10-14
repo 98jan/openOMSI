@@ -11,10 +11,23 @@ Thanks for helping! A few rules keep the project healthy:
 * `cargo test --workspace` and `cargo build --release` must pass (CI checks all platforms).
 * Code style: `rustfmt` defaults, comments explain *why*.
 
+## Pull requests
+
+1. Work on a branch of your own (of your fork), never on `main`, and open a pull request
+   against `main`. Unfinished work can be opened as a draft.
+2. Fill in the template: what the player notices, how to test it, what could break.
+3. The checks run on every push, and test builds for Windows, macOS, Linux and Android are
+   linked in a comment, so anyone can try the change before it is merged.
+4. One maintainer other than the author approves it, and it is merged. Some parts need a
+   second review: see [GOVERNANCE.md](GOVERNANCE.md).
+5. Once merged, it is in the next **beta** (a merge marked `[skip ci]` is not released), and
+   players get it with the next stable release.
+
 ## Files and licences
 
-* **Contributions are MIT**, like the rest of the code and documentation. The few
-  third-party files the game ships (the Roboto fonts, the Material icons with their
+* **New contributions are AGPL-3.0-only**, like the project license in `LICENSE`.
+  Historical MIT notices are retained, and earlier MIT releases keep their terms. The few
+  third-party files the game ships (the Inter fonts, the Material icons with their
   `LICENSE.txt`) keep their own licences; adding another - map data from OpenStreetMap
   (ODbL), CC-BY-SA pictures, other fonts or icon sets - needs the maintainers' agreement
   first. A format can be documented here and its real data published elsewhere (a release,
@@ -56,5 +69,8 @@ See the layout in the [README](README.md#repository-layout) and
 
 ## Releases
 
-Maintainers bump `MAJOR.MINOR` in the `VERSION` file; everything else is automatic - see
-[docs/VERSIONING.md](docs/VERSIONING.md).
+Every merge into `main` is published as a **beta** (a GitHub pre-release) for testers;
+players only get **stable** releases, which are betas the maintainers have tested and
+promoted, about once a week. A published release is never replaced: a fix is a new version.
+Maintainers bump `MAJOR.MINOR` in the `VERSION` file (in a pull request) and promote betas;
+everything else is automatic - see [docs/VERSIONING.md](docs/VERSIONING.md).

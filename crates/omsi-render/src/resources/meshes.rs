@@ -17,6 +17,9 @@ pub struct GpuMesh {
     /// Which mesh this is (a page's range handed to another mesh is another): what the ray
     /// tracer's structures are kept by, with the mesh's place.
     pub(crate) gen: u64,
+    /// Counts the vertices' rewrites (`update_mesh`, a skinned human's poses): a street
+    /// lamp's shadow tile kept from an earlier frame is drawn anew when it changes.
+    pub(crate) pose: u32,
     pub ranges: Vec<(u32, u32, u32)>,
     pub bounds_center: Vec3,
     pub bounds_radius: f32,
@@ -110,7 +113,7 @@ pub(crate) fn page_give(free: &mut Vec<(u64, u64)>, top: &mut u64, at: u64, len:
 
 impl MeshPage {
     pub(crate) fn new(device: &wgpu::Device, vertex_bytes: u64, index_bytes: u64) -> MeshPage {
-        let blas = if RT_BUFFERS.load(std::sync::atomic::Ordering::Relaxed) { wgpu::BufferUsages::BLAS_INPUT } else { wgpu::BufferUsages::empty() };
+        let blas = if RT_BUFFERS.load(std::sync::atomic::Ordering::Relaxed) { wgpu::BufferUsages::BLAS_INPUT | wgpu::BufferUsages::STORAGE } else { wgpu::BufferUsages::empty() };
         let buffer = |size: u64, usage| device.create_buffer(&wgpu::BufferDescriptor { label: Some("mesh page"), size: size.max(32), usage: usage | wgpu::BufferUsages::COPY_DST | blas, mapped_at_creation: false });
         MeshPage {
             vertex: buffer(vertex_bytes, wgpu::BufferUsages::VERTEX),
@@ -160,6 +163,7 @@ impl MeshPage {
             vertex_bytes: vb.len() as u64,
             index_bytes: ib.len() as u64,
             gen: next_gen(),
+            pose: 0,
             ranges: data.ranges.clone(),
             bounds_center: center,
             bounds_radius: radius,
@@ -271,6 +275,7 @@ impl Renderer {
         if (m.vertex_bytes as usize) < bytes.len() {
             return;
         }
+        m.pose = m.pose.wrapping_add(1);
         {
             // (a newer pose of the same mesh replaces one still waiting)
             let mut pending = self.pending_meshes.borrow_mut();

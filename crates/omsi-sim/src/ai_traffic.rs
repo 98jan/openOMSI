@@ -48,6 +48,8 @@ mod tests;
 mod lateral_tests;
 #[cfg(test)]
 mod emergency_tests;
+#[cfg(test)]
+mod signal_tests;
 
 use crate::ai_motion::{
     back_in_ramp, pull_out_ramps, AiBody, MotionKind, BACK_IN_LAT_ACCEL, PULL_OUT_ACCEL,
@@ -252,12 +254,17 @@ pub struct TrafficSim {
     /// Where the last `tick` spent its time (s, OMSI_PROFILE): who is on which lane and the
     /// light programs, every car's plan, the bodies and scripts on the workers.
     pub tick_split: [f64; 3],
+    /// `tick_split` summed over the steps of the last frame (`advance`).
+    pub frame_split: [f64; 3],
     /// Seconds each of them has stood still.
     pub others_still: HashMap<u32, f32>,
     /// Per car: `AiCar::geo_block` of the frame before (who waits for whom by geometry).
     pub geo_prev: Vec<Option<u64>>,
     /// Car index by id (as of the start of the tick).
     pub index_of: HashMap<u64, usize>,
+    /// The plans of a tick's cars and the order they plan in, kept for the next tick.
+    pub frames_buf: Vec<Option<AiFrame>>,
+    pub order_buf: Vec<usize>,
     /// `pull_out_room` by vehicle file.
     pub pull_out_rooms: HashMap<std::path::PathBuf, f32>,
     /// Timetable buses taken off the road because the tile under them was unloaded (their
@@ -295,10 +302,19 @@ pub struct TrafficSim {
     pub scenery_through: Vec<Obb>,
     /// The frame time not yet run as a step (s, see `fixed_step`).
     pub sim_accum: f64,
+    /// Whether the scripts and animations of the cars run in this call's last step (the
+    /// game sets it for the frame's last tick of the fixed simulation step; true by
+    /// default). The bodies move in every step; the scripts, the animations and the sounds
+    /// they trigger once a frame, as Omsi.exe runs them - run in every 20 ms step they cost
+    /// up to four times as much as a frame had time for at low frame rates, and the frame
+    /// rate fell the further the slower it already was (big maps, heavy AI lists).
+    pub scripts_due: bool,
+    /// The step running now runs the scripts (see `scripts_due`).
+    pub step_scripts: bool,
     /// How far this frame's picture is from the step before the last to the last (0..1).
     pub frame_alpha: f32,
     /// Every car's parts as they stood before the last step, by id (see `fixed_step`).
-    pub pose_before: HashMap<u64, Vec<fixed_step::PartPose>>,
+    pub poses: fixed_step::StepPoses,
     /// The lane changes the cars' ways require and those begun this step (see
     /// `lateral::ChangeClaim`).
     pub change_claims: Vec<lateral::ChangeClaim>,

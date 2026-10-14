@@ -1,6 +1,6 @@
 @group(0) @binding(0) var<uniform> camera: Camera;
-// Whether this pipeline draws alpha-tested materials (the only ones that may `discard`).
-// Pipelines of every other kind set it false, and the discard is compiled out: a fragment
+// Whether this pipeline draws alpha-tested materials.
+// Opaque pipelines set the discard overrides false: a fragment
 // function that can discard turns the GPU's early depth test off - on Apple's GPUs the
 // hidden surface removal as well - for everything it draws, and the heavy shading then
 // ran for every covered layer of the city, not once per pixel.

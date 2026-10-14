@@ -9,9 +9,13 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
     let pct = |v: f32| format!("{:.0} %", v * 100.0);
     let cm = |v: f32| format!("{:+.0} cm", v * 100.0);
     let later = "Takes effect when the game starts the next time";
+    let mode = session_mode(app);
+    let shown = |key: &str| shown_in_mode(mode, key);
     let game: Vec<(String, String)> = vec![
         switch_row(app, "navigator", "Navigator", "Enables/Disables the Minimap"),
         switch_row(app, "nav_ai", "AI vehicles on the map", "Shows/hides the other (AI) vehicles on the Minimap and the city map"),
+        switch_row(app, "nav_surface", "Map surface under the roads", "Shows the map's own water, green land, rivers and rail under the roads of the Minimap and the city map, when the map has a package"),
+        switch_row(app, "nav_light", "Light map", "The Minimap and the city map in a light look"),
         switch_row(app, "nav_arrows", "Route arrows (as in OMSI 2)", "Shows OMSI 2's route arrows over the road"),
         pick("navigator_corner", "Corner", later),
         switch_row(app, "get_up", "Ability to get up (Ctrl+Shift+G)", "Allows you to get out of the car and explore the world"),
@@ -28,6 +32,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         pick("ai_unsched_factor", "Random traffic", later),
         pick("ai_max_scheduled", "Timetable vehicles", later),
         pick("ai_max_parked", "Parked cars", later),
+        pick("ai_max_humans", "People at once", later),
     ]
         .into_iter()
         .flatten()
@@ -39,18 +44,17 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         pick("render_scale", "Render scale", later),
         pick("anisotropy", "Anisotropic", later),
         // (Enhanced+ traces its shadows, occlusion and reflections: always on there)
-        switch_row(app, "shadows", "Sun shadows", "Enables/Disabled shadows").filter(|_| !app.settings.ray_tracing()),
-        pick("shadow_size", "Shadow map", later),
-        switch_row(app, "ssao", "Ambient occlusion", later).filter(|_| !app.settings.ray_tracing()),
-        pick("shadow_casters", "Shadows cast by", later),
-        switch_row(app, "detail_textures", "Detail texturing up close", "The ground and large walls get fine grain when close"),
-        slider_row(app, "night_brightness", "Night brightness", "Enhanced graphics: how much brighter the night is shown", &|v| if v < 0.01 { "Off".to_string() } else { format!("+{v:.2}") }),
-        slider_row(app, "led_glow", "LED glow", "How strongly the dots of LED destination displays glow", &|v| format!("{}/15", v as i64)),
-        slider_row(app, "led_mips", "LED mask mipmaps", "Keep the mip chain of the LED masks (smoother from a distance).", &|v| format!("{v:.2}")),
-        switch_row(app, "reflections", "Reflection maps (paint, chrome, glass)", later).filter(|_| !app.settings.ray_tracing()),
+        switch_row(app, "shadows", "Sun shadows", "Enables/Disables shadows").filter(|_| shown("shadows")),
+        pick("shadow_size", "Shadow map", later).filter(|_| shown("shadow_size")),
+        switch_row(app, "ssao", "Ambient occlusion", later).filter(|_| shown("ssao")),
+        pick("shadow_casters", "Shadows cast by", later).filter(|_| shown("shadow_casters")),
+        switch_row(app, "detail_textures", "Detail texturing up close", "The ground and large walls get fine grain when close").filter(|_| shown("detail_textures")),
+        slider_row(app, "night_brightness", "Night brightness", "Enhanced graphics: how much brighter the night is shown", &|v| if v < 0.01 { "Off".to_string() } else { format!("+{v:.2}") }).filter(|_| shown("night_brightness")),
+        slider_row(app, "led_glow", "LED glow", "How strongly the dots of LED destination displays glow", &|v| format!("{}/15", v as i64)).filter(|_| shown("led_glow")),
+        slider_row(app, "led_mips", "LED mip strength", "Lower: sharper LED dots that shimmer from a distance; higher: calmer, softer dots", &|v| format!("{v:.2}")).filter(|_| shown("led_mips")),
+        switch_row(app, "reflections", "Reflection maps (paint, chrome, glass)", later).filter(|_| shown("reflections")),
         switch_row(app, "clouds", "Clouds", later),
-        pick("cloud_quality", "Cloud quality", "Enhanced: the volumetric clouds marched in fewer steps - faster, a little grainier")
-            .filter(|_| matches!(crate::settings::graphics_mode(&app.settings.graphics), "enhanced" | "enhanced_plus") && app.settings.clouds),
+        pick("cloud_quality", "Cloud quality", "Enhanced: the volumetric clouds marched in fewer steps - faster, a little grainier").filter(|_| shown("cloud_quality") && app.settings.clouds),
         pick("rain_quality", "Rain quality", "Lower is faster: the drops on the glass painted less often, less spray and fewer streaks; Low shows OMSI 2's own rain on the glass (from the next bus loaded)"),
         switch_row(app, "windy_trees", "Windy trees", "The trees' leaves bend and sway in the wind and its gusts; with no wind they stand still"),
     ]
@@ -131,10 +135,13 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         switch_row(app, "vsync", "V-sync", "Waits for the screen's refresh"),
         pick("max_fps", "Frame limit", "Frames a second at most"),
         switch_row(app, "fps", "Frame rate", "Show the frames per second in the top right corner"),
+        pick("perf_overlay", "Performance details", "Where each frame's time goes, how busy the processor is and what slows the game down, with live graphs"),
         pick("view_distance", "View distance", later),
         pick("max_obj_dist", "Object distance", later),
         pick("min_obj_size", "Small objects", later),
         pick("mirror_size", "Mirrors", later),
+        pick("mirror_refresh", "Bus mirror refresh", "How often the mirrors are drawn: every frame, the street moves through them as smoothly as through the windscreen"),
+        pick("mirror_quality", "Mirror quality", "In Enhanced and Enhanced+: the mirrors shaded as the picture is, with its light and its sky, instead of the plain light").filter(|_| shown("mirror_quality")),
         switch_row(app, "mirror_hud_every_frame", "Mirror panels every frame", "The mirror panels in the cab (Ctrl+M) are drawn every frame, as in ETS2, instead of taking turns with the other mirrors"),
         pick("texture_memory", "Texture memory", later),
         switch_row(app, "texture_compression", "Compress textures on loading", later),
@@ -214,7 +221,9 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         slider_row(app, "mouse_sens", "Mouse steering sensitivity", "Adjust how much the steering wheel turns based on mouse movement", &pct),
         slider_row(app, "mouse_pedal_strength", "Mouse pedal strength", "Adjust how much mouse travel is needed to reach full throttle or braking", &|v| if (v - 1.0).abs() < 0.01 { "OMSI".to_string() } else { format!("{:.0}%", v * 100.0) }),
         switch_row(app, "mouse_smooth", "Smooth mouse steering", "The wheel eases after the cursor; off: it follows at once, as in OMSI"),
+        switch_row(app, "mouse_pedals", "The mouse works the pedals", "Up the throttle, down the brake, as in OMSI; off: the mouse only steers, the pedals stay on the keys"),
         switch_row(app, "mouse_hold", "Hold the cursor while steering", "The wheel reaches its lock past the window's edges; off: the crosshair stays free and without delay, as in OMSI"),
+        slider_row(app, "key_pedal_speed", "Pedal keys speed", "How fast the throttle and brake keys press their pedals; slower is finer", &|v| if (v - 1.0).abs() < 0.01 { "OMSI".to_string() } else { format!("{:.0}%", v * 100.0) }),
         switch_row(app, "steering_linear", "Steering linearity (keys at OMSI's steady pace)", "Keyboard steering at OMSI's steady pace"),
         switch_row(app, "old_steering", "Old Steering (the wheel stays, turn it back yourself)", "The wheel stays where the keys left it"),
         switch_row(app, "red_steer_spd", "Dynamic steering (slower keys at speed, OMSI's redSteerSpd)", "The steering keys act slower at speed"),
@@ -235,12 +244,13 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         .collect();
     let interface: Vec<(String, String)> = vec![
         pick("language", "Language", "The language of the game's interface"),
+        pick("units", "Units", "Speeds, distances and temperatures in the game's own texts"),
         switch_row(app, "machine_translation", "Translate the remaining texts automatically (offline, downloads 620 MB once)", "Translates texts nobody has translated, on this machine"),
         slider_row(app, "ui_scale", "Game interface size", "The size of the texts, the menu, the timetable and the navigator", &pct),
         switch_row(app, "ui_scale_window", "Interface grows with the window", "On a window taller than 1080p the interface grows with it"),
         slider_row(app, "ui_opacity", "Interface opacity", "How much of the interface's backgrounds shows", &pct),
         switch_row(app, "tooltips", "Name of the button under the mouse", "Shows the name of what the cursor points at"),
-        switch_row(app, "notes", "Notes in the top-left corner", "Why the vehicle does not move, the change due, what a service did"),
+        switch_row(app, "notes", "Driving hints", "Why the vehicle does not move, the change due, what a service did: as short notifications"),
         switch_row(app, "chat", "Chat in online games", "Shows the chat of a LAN session"),
         slider_row(app, "chat_size", "Chat size", "The chat's texts on top of the interface size (also Ctrl + the mouse wheel over the chat)", &pct),
         switch_row(app, "name_tags", "Other players' names above their buses", "Shows the names of the other players"),
@@ -284,6 +294,10 @@ pub(super) fn vehicle_pages(app: &App) -> Vec<Page> {
     let mut fleet: Vec<(String, String)> = Vec::new();
     if has || !app.session.placed.is_empty() {
         fleet.push(button("Drive the next vehicle", "Switch", "Take the wheel of another vehicle standing in the world", "switch"));
+        // (one of them by name, rather than going through them one by one, #2026)
+        if app.session.placed.len() > 1 {
+            fleet.push(opens("Drive another vehicle", "Choose which of the vehicles standing in the world to drive", "switchto"));
+        }
     }
     fleet.push(opens("Place a vehicle", "Place a vehicle of your choice", "place"));
     if has {
@@ -346,13 +360,34 @@ pub(super) fn world_pages(app: &App) -> Vec<Page> {
             }
             time.extend(slider_row(app, "hour", "Hour", "Set the hour of the day directly", &|v| format!("{:02}", v as i64)));
             time.extend(slider_row(app, "minute", "Minute", "Set the minute directly", &|v| format!("{:02}", v as i64)));
+            // (forwards and back by a tap: the typed time wants Enter and the held keys Ctrl+Shift+Page Up,
+            // neither of which a phone has)
+            for (name, text, secs) in [("Clock -1 hour", "-1 h", -3600), ("Clock -10 minutes", "-10 min", -600), ("Clock +10 minutes", "+10 min", 600), ("Clock +1 hour", "+1 h", 3600)] {
+                time.push(button(name, text, "Move the clock.", &format!("clock_shift {secs}")));
+            }
             for (name, hm, secs) in [("Morning", "06:00", 6 * 3600), ("Noon", "12:00", 12 * 3600), ("Evening", "18:00", 18 * 3600), ("Night", "23:00", 23 * 3600)] {
                 time.push(button(name, hm, "Jump to this time of day.", &format!("clock_set {secs}")));
+            }
+            // the date: by a day, a week or a month, the time of day kept (the timetable's
+            // day, the season and the map's chrono changes follow it as at midnight)
+            let (d, m) = app.clock.day_month();
+            let day = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][app.clock.weekday().rem_euclid(7) as usize];
+            let date = format!("{:04}-{m:02}-{d:02}  {}", app.clock.year, omsi_ui::tr(day));
+            time.push((row("Date", 'i', &date, "The day the timetable, the season and the map's changes follow", None), "noop".to_string()));
+            for (name, text, secs) in [
+                ("Date -1 month", "-1 month", app.clock.months_away(-1)),
+                ("Date -1 week", "-1 week", -7.0 * 86400.0),
+                ("Date -1 day", "-1 day", -86400.0),
+                ("Date +1 day", "+1 day", 86400.0),
+                ("Date +1 week", "+1 week", 7.0 * 86400.0),
+                ("Date +1 month", "+1 month", app.clock.months_away(1)),
+            ] {
+                time.push(button(name, text, "Move the date.", &format!("clock_shift {secs}")));
             }
             if let (Some(_), Some(p)) = (app.session.duty.as_ref(), app.player.as_ref()) {
                 let d = p.vehicle.host.tt_delay as f64;
                 if d.abs() >= 1.0 {
-                    let text = format!("{}{}:{:02}", if d < 0.0 { "−" } else { "+" }, (d.abs() / 60.0) as i64, d.abs() as i64 % 60);
+                    let text = format!("{}{}:{:02}", if d < 0.0 { "-" } else { "+" }, (d.abs() / 60.0) as i64, d.abs() as i64 % 60);
                     time.push(button("On time with the timetable", &text, "Move the clock so that the vehicle is on time", "clock_ontime"));
                 }
             }
@@ -372,7 +407,7 @@ pub(super) fn world_pages(app: &App) -> Vec<Page> {
         } else {
             weather.push(button("METAR report", "Load once", "Load the selected station once without enabling continuous METAR sync.", "metar_once"));
         }
-        weather.push((row("Preset", 'o', &weather_name(app), "A ready-made weather", None), "weather".to_string()));
+        weather.push((row("Preset", 'o', &weather_shown(app), "A ready-made weather", None), "weather".to_string()));
         if !app.metar_locked() {
             weather.push(button("Custom weather", "Edit current", "Freeze the weather currently in force and edit it as a custom weather.", "weather_custom"));
         }
@@ -424,6 +459,17 @@ pub(super) fn pages_of(app: &App, kind: &ListKind) -> Option<(Vec<Page>, usize)>
     Some((pages, tab))
 }
 
+fn shown_in_mode(mode: &str, key: &str) -> bool {
+    let mode = crate::settings::graphics_mode(mode);
+    match key {
+        "shadows" | "ssao" => !matches!(mode, "vanilla" | "enhanced_plus"),
+        "shadow_size" | "shadow_casters" | "detail_textures" => mode != "vanilla",
+        "reflections" => mode != "enhanced_plus",
+        "night_brightness" | "led_glow" | "led_mips" | "mirror_quality" | "cloud_quality" => matches!(mode, "enhanced" | "enhanced_plus"),
+        _ => true,
+    }
+}
+
 /// Which tab of a window (`kind`: Options, World ...) is the one titled `title` (the first if none is).
 pub(crate) fn tab_of(app: &App, kind: ListKind, title: &str) -> usize {
     pages_of(app, &kind).and_then(|(pages, _)| pages.iter().position(|p| p.0 == title)).unwrap_or(0)
@@ -450,4 +496,45 @@ pub(crate) fn page_titles(app: &App, kind: &ListKind) -> Option<(Vec<String>, us
     let r = (pages.iter().map(|p| p.0.to_string()).collect::<Vec<_>>(), tab);
     *app.menus.page_titles.borrow_mut() = Some((kind.clone(), vr_nav_available, std::time::Instant::now(), r.clone()));
     Some(r)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shown_in_mode;
+    use crate::game_lists::{mode_of_session, text_in_mode};
+    use crate::startup::SessionSettings;
+
+    #[test]
+    fn graphics_rows_follow_the_sessions_mode() {
+        let keys = ["shadows", "shadow_size", "ssao", "shadow_casters", "detail_textures", "night_brightness", "led_glow", "led_mips", "reflections", "mirror_quality", "cloud_quality", "msaa"];
+        let shown = |mode: &str| keys.iter().filter(|k| shown_in_mode(mode, k)).copied().collect::<Vec<_>>();
+        assert_eq!(shown("vanilla"), ["reflections", "msaa"]);
+        assert_eq!(shown("vanilla_plus"), ["shadows", "shadow_size", "ssao", "shadow_casters", "detail_textures", "reflections", "msaa"]);
+        assert_eq!(shown("enhanced"), keys);
+        assert_eq!(shown("Enhanced+"), ["shadow_size", "shadow_casters", "detail_textures", "night_brightness", "led_glow", "led_mips", "mirror_quality", "cloud_quality", "msaa"]);
+    }
+    #[test]
+    fn the_running_sessions_mode_decides_what_it_forces() {
+        let file = "graphics=vanilla\nshadows=1\nssao=1\ndetail_textures=1\n";
+        assert!(!crate::settings::Settings::from_text(file).shadows);
+        let s = text_in_mode(file, "vanilla_plus");
+        assert_eq!(s.graphics, "vanilla_plus");
+        assert!(s.shadows && s.ssao && s.detail_textures && !s.classic());
+        let s = text_in_mode("graphics=enhanced_plus\nshadows=0\nssao=0\nreflections=0\n", "vanilla");
+        assert!(!s.ray_tracing() && !s.enhanced && !s.shadows && !s.ssao && !s.reflections);
+        let s = text_in_mode("graphics=vanilla\nshadows=0\n", "enhanced_plus");
+        assert!(s.ray_tracing() && s.enhanced && s.shadows && s.ssao && s.reflections);
+    }
+
+    #[test]
+    fn the_sessions_mode_comes_from_how_the_game_was_started() {
+        let session = |enhanced_plus, enhanced, classic| SessionSettings { enhanced_plus, enhanced, classic, ..Default::default() };
+        assert_eq!(mode_of_session(&session(false, false, true), "vanilla"), "vanilla");
+        assert_eq!(mode_of_session(&session(false, false, false), "vanilla_plus"), "vanilla_plus");
+        assert_eq!(mode_of_session(&session(false, true, false), "enhanced"), "enhanced");
+        assert_eq!(mode_of_session(&session(false, true, false), "enhanced_plus"), "enhanced_plus");
+        assert_eq!(mode_of_session(&session(false, true, false), "vanilla"), "enhanced");
+        assert_eq!(mode_of_session(&session(true, true, false), "vanilla"), "enhanced_plus");
+        assert_eq!(mode_of_session(&session(false, false, false), "enhanced"), "vanilla_plus");
+    }
 }

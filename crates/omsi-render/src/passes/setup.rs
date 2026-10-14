@@ -102,13 +102,14 @@ impl Renderer {
         // prepass (sized for the window) every layer of a mirror's picture ran the enhanced
         // shader, 12.7 ms of GPU time for one 256-pixel mirror against 5.8 ms for the whole
         // window; plainly shaded it is 0.6 ms, and a mirror's small picture shows no
-        // difference worth that. `OMSI_MIRROR_ENHANCED=1` draws them enhanced again.
+        // difference worth that - unless the player asks for it (`mirror_quality=enhanced`,
+        // `RenderOptions::mirror_enhanced`) or `OMSI_MIRROR_ENHANCED=1`.
         // The headset's eyes are the real picture as much as the window is (#784: VR showed
         // the plain graphics with Enhanced on); the first eye is the one that moves the
         // exposure, the sky cube and the frame clock on, as the window does without VR.
         let xr_view = projection.is_some();
         let lead_view = (with_overlays || xr_view) && !second_eye;
-        let enhanced_frame = lighting.enhanced && self.hdr_pass.is_some() && !env.no_enhanced && (with_overlays || xr_view || env.mirror_enhanced);
+        let enhanced_frame = lighting.enhanced && self.hdr_pass.is_some() && !env.no_enhanced && (with_overlays || xr_view || env.mirror_enhanced || self.options.mirror_enhanced);
         // the mirrors are drawn by the same path as the window (their picture graded with
         // the window's exposure, see the post passes)
         let enhanced = enhanced_frame;
@@ -125,7 +126,10 @@ impl Renderer {
         let masked_frame = enhanced || reflection_frame;
         let (grid, lamp_shadows) = self.prepare_lights(scene, cam_rel, enhanced_frame, lighting.lamp_shadows && with_overlays && projection.is_none() && self.shadows.shadow_pipelines.len() > 6, lighting.inside.as_ref());
         self.prepare_coronas(scene, lighting.night, lighting.inside.as_ref().filter(|v| point_in_vehicle_box(camera.position, v)));
-        self.prepare_smoke(scene, camera.position);
+        // (the mirrors draw no smoke, see `encode_main_late`)
+        if exclude_texture.is_none() {
+            self.prepare_smoke(scene, camera.position);
+        }
         // ambient occlusion only for the real picture, not for the mirrors
         // Enhanced+: the window's picture traces its sun shadow and ambient occlusion (not the
         // mirrors, a headset's eyes or a triple screen's panels: they keep the shadow map)
@@ -133,17 +137,17 @@ impl Renderer {
         let ao_on = with_overlays && self.rt.is_none() && self.options.ssao && self.ssao_pipeline.is_some() && !env.no_ao;
         // the enhanced path's shading is costly: the depth prepass keeps it to the visible
         // surface (without multisampling, see `share_depth`)
-        let prepass_on = ao_on || puddles_wanted || glass_on || (enhanced && (with_overlays || xr_view));
+        let prepass_on = ao_on || puddles_wanted || glass_on || (enhanced && (with_overlays || xr_view)) || (self.depth_readback && projection.is_none());
+        // (only the bind group is made again, by `upload_draw_list`: dropping the instance
+        // buffers for it wrote every instance's entries again at each render-scale step)
         if prepass_on && self.ensure_ao(width, height) {
             // a new AO texture: the camera bind group must point at it
-            scene.dirty = true;
-            scene.model_buf = None;
+            scene.camera_bind_group = None;
             self.targets.hdr_targets.clear();
         }
         if rt_frame && self.rt.as_mut().is_some_and(|rt| rt.ensure_targets(&self.device, width, height)) {
             // the camera bind group must point at the new lighting texture
-            scene.dirty = true;
-            scene.model_buf = None;
+            scene.camera_bind_group = None;
         }
         if masked_frame {
             self.hdr_targets(width, height);

@@ -575,6 +575,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("ray-traced lighting", rt::lighting_source()),
         ("ray-traced reflections", rt::reflect_source()),
         ("texture means", include_str!("../rt_avg.wgsl").to_string()),
+        ("rt texture coordinates", include_str!("../rt_uv.wgsl").to_string()),
     ];
     let sizes: &[(&str, usize)] = &[
         ("Enhanced", std::mem::size_of::<EnhancedUniform>()),
@@ -587,6 +588,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("Camera", std::mem::size_of::<CameraUniform>()),
         ("MaterialParams", std::mem::size_of::<MaterialUniform>()),
         ("RtParams", rt::PARAMS_SIZE),
+        ("Record", rt::RECORD_SIZE),
     ];
     let mut checked = std::collections::HashSet::new();
     for (name, src) in &modules {
@@ -1094,4 +1096,39 @@ fn display_behind_a_pane_keeps_its_pixel_contrast() {
         }
         assert!(mist_error <= 1, "clear pane was mistaken for condensation (LED={led}): {mist_error}");
     }
+}
+
+#[test]
+fn a_texture_the_card_refuses_is_drawn_plain_without_cutting_the_texture_budget() {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::NOOP;
+    descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
+    let instance = wgpu::Instance::new(descriptor);
+    let renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, render_scale: 1.0, ..Default::default() },
+    )).expect("noop renderer");
+    let _ = renderer.take_out_of_memory();
+    let too_big = renderer.device.limits().max_texture_dimension_2d + 1;
+    let desc = wgpu::TextureDescriptor {
+        label: None,
+        size: wgpu::Extent3d { width: too_big, height: 4, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    };
+    let scope = renderer.device.push_error_scope(wgpu::ErrorFilter::Validation);
+    assert!(crate::resources::try_create_texture(&renderer.device, &desc).is_none());
+    // the stand-in is a valid texture: a material made with it is no device error
+    let mut scene = renderer.new_scene();
+    let t = crate::resources::stand_in_texture(&renderer.device, &renderer.queue);
+    assert_eq!((t.size, t.bytes), ((1, 1), 0));
+    scene.textures.push(t);
+    let id = scene.textures.len() - 1;
+    let _ = renderer.add_material(&mut scene, Some(id), AlphaMode::Opaque, [1.0; 4], true);
+    assert!(pollster::block_on(scope.pop()).is_none(), "nothing invalid reached the device");
+    assert!(!renderer.take_out_of_memory(), "a refused texture is no shortage of graphics memory");
 }

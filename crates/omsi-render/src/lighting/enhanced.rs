@@ -327,7 +327,9 @@ pub(crate) fn headlamp_profile(t: Vec3, dir: Vec3, low: bool) -> f32 {
     }
     let across = (t.x * fwd.y - t.y * fwd.x).abs() / ahead;
     let wide = 0.12 * atmosphere::smoothstep(1.0, 0.45, across) + 0.88 * (-across * across / 0.06).exp();
-    let drop = -t.z / t.truncate().length().max(1e-3);
+    // (about the horizon of the vehicle's floor, which `dir` lies in: see `lamp_air.wgsl`)
+    let (rise, tilt) = (t.z / t.truncate().length().max(1e-3), dir.z / dir.truncate().length().max(1e-3));
+    let drop = (tilt - rise) / (1.0 + rise * tilt).max(1e-3);
     let mut up = (0.06 / drop.abs().max(1e-4)).powf(3.4).min(1.0);
     if low {
         up *= atmosphere::smoothstep(-0.012, 0.025, drop);
@@ -500,8 +502,45 @@ pub(crate) fn sky_input_differs(a: &atmosphere::SkyInput, b: &atmosphere::SkyInp
             .any(|(x, y)| (*x - *y).abs().max_element() > 0.01)
 }
 
+/// A sky job for the sky's helper thread: the input, and where its sky goes.
+type SkyJob = (atmosphere::SkyInput, std::sync::mpsc::Sender<atmosphere::SkyState>);
+
+/// Compute a sky on the sky's helper thread, one for the game's life (a thread started
+/// for every new sky - every half minute of sun and with every change of the weather -
+/// cost its start and its stack's mapping on the frame thread each time).
+fn sky_worker_compute(input: atmosphere::SkyInput, tx: std::sync::mpsc::Sender<atmosphere::SkyState>) {
+    static WORKER: std::sync::OnceLock<Option<std::sync::mpsc::Sender<SkyJob>>> = std::sync::OnceLock::new();
+    let worker = WORKER.get_or_init(|| {
+        let (jobs, rx) = std::sync::mpsc::channel::<SkyJob>();
+        std::thread::Builder::new()
+            .name("sky".into())
+            .spawn(move || {
+                while let Ok((mut input, mut tx)) = rx.recv() {
+                    // (only the newest of the jobs waiting: the others are stale)
+                    while let Ok(newer) = rx.try_recv() {
+                        (input, tx) = newer;
+                    }
+                    let _ = tx.send(atmosphere::SkyState::compute(&input));
+                }
+            })
+            .ok()
+            .map(|_| jobs)
+    });
+    let sent = match worker {
+        Some(w) => w.send((input, tx)),
+        None => Err(std::sync::mpsc::SendError((input, tx))),
+    };
+    if let Err(std::sync::mpsc::SendError((input, tx))) = sent {
+        // (no helper thread: one for this sky)
+        std::thread::spawn(move || {
+            let _ = tx.send(atmosphere::SkyState::compute(&input));
+        });
+    }
+}
+
 impl Renderer {
-    /// Take in a newly computed sky: its table goes to the GPU, the probe is redrawn.
+    /// Take in a newly computed sky: its table goes to the GPU, the probe is redrawn (on the
+    /// next frame).
     pub(crate) fn install_sky(&mut self, st: atmosphere::SkyState) {
         let mut bytes: Vec<u8> = Vec::with_capacity(st.lut.len() * 8);
         for texel in &st.lut {
@@ -532,7 +571,7 @@ impl Renderer {
             log::info!("sky: sun {:?} (altitude {:.1}°) sky {:?} ground {:?} exposure {:.3} table scale {:.4} haze {:.2} overcast {:.2} rain {:.2} sun visibility {:.2} moon {:?} (altitude {:.1}°, lit {:.2}) city glow {:.2}", st.sun, st.input.sun_dir.z.asin().to_degrees(), st.sky_horizontal, st.ground, st.exposure, st.lut_scale, st.input.haze, st.input.overcast, st.input.rain, st.input.sun_visibility, st.moon_light, st.input.moon_dir.normalize_or_zero().z.asin().to_degrees(), st.input.moon_illum, st.input.city_glow);
         }
         if let Some(p) = self.tone.probe.as_mut() {
-            p.age = u32::MAX;
+            p.sched.sky_new = true;
         }
         self.sky.sky_state = Some(st);
     }
@@ -542,6 +581,8 @@ impl Renderer {
     /// Returns whether the reflection probe is to be drawn this frame.
     pub(crate) fn prepare_enhanced(&mut self, lighting: &Lighting, cam_rel: Vec3, ro: DVec3, dt: f32) -> bool {
         let (input, sun_visibility) = enhanced_sky_input(lighting, self.sky.city_glow.unwrap_or(1.0));
+        // (a sky taken in by an earlier frame: the probe's turn has come)
+        let sky_new = self.tone.probe.as_mut().is_some_and(|p| std::mem::take(&mut p.sched.sky_new));
         // A new sky takes a few milliseconds: it is computed on a helper thread and taken in
         // when it is ready. A picture on its own, and the first frame, wait for it.
         if let Some((_, rx)) = &self.sky.sky_job {
@@ -568,9 +609,7 @@ impl Renderer {
                 self.install_sky(atmosphere::SkyState::compute(&input));
             } else {
                 let (tx, rx) = std::sync::mpsc::channel();
-                std::thread::spawn(move || {
-                    let _ = tx.send(atmosphere::SkyState::compute(&input));
-                });
+                sky_worker_compute(input, tx);
                 self.sky.sky_job = Some((input, rx));
             }
         }
@@ -663,16 +702,21 @@ impl Renderer {
         for (k, c) in st.sh.iter().enumerate() {
             sh[k] = c.extend(0.0).to_array();
         }
-        // the probe is drawn every half second or so, and at once for a new sky
+        // the probe is drawn every half second (`PROBE_EVERY`), and for a new sky on the frame
+        // after it is taken in (its table upload and the probe's six faces and blurrier
+        // levels were one frame's work); it holds the sky divided by the table scale it was
+        // drawn with, which the uniform passes on, so a frame on the old one is right
         let instant = self.instant_exposure;
         let (redraw, probe_scale) = match self.tone.probe.as_mut() {
             Some(p) => {
-                let redraw = instant || p.age >= 30;
+                let redraw = instant || sky_new || p.sched.probe_since >= PROBE_EVERY;
                 if redraw {
-                    p.age = 0;
+                    p.sched.probe_since = 0.0;
                     p.scale = st.lut_scale;
+                    // (a sky taken in by this frame is in this drawing already)
+                    p.sched.sky_new = false;
                 } else {
-                    p.age += 1;
+                    p.sched.probe_since += dt.max(0.0);
                 }
                 (redraw, p.scale)
             }
@@ -695,8 +739,27 @@ impl Renderer {
                     _ => true,
                 };
                 if far {
-                    p.cube_eye = Some(cam_w);
-                    p.cube_recapture = p.cube_filled;
+                    if p.cube_filled && !instant {
+                        // (the cube for the new eye is filled beside the one in use, a
+                        // slice a frame: redrawn whole in one frame, that frame took the
+                        // six faces' 17 ms)
+                        p.sched.start_staging(cam_w);
+                    } else {
+                        p.cube_eye = Some(cam_w);
+                        p.sched.cancel_staging();
+                    }
+                }
+                if p.sched.staging_full() {
+                    // (filled: it goes over the one in use in this frame's prepass, and
+                    // this frame's uniform has its eye)
+                    if let Some(e) = p.sched.staging_eye.take() {
+                        if omsi_cfg::flags::OMSI_DEBUG_SKY.is_set() {
+                            log::info!("sky cube: new eye {:.0},{:.0},{:.0} ({:.0} m from the camera now)", e.x, e.y, e.z, (e - cam_w).length());
+                        }
+                        p.cube_eye = Some(e);
+                        p.sched.swap = true;
+                    }
+                    p.sched.staged = 0;
                 }
                 (p.cube_eye.unwrap_or(cam_w) - cam_w).as_vec3()
             }
@@ -747,6 +810,7 @@ impl Renderer {
         };
         self.queue
             .write_buffer(&self.tone.enh_buf, 0, bytemuck::bytes_of(&u));
+        self.tone.enh_last = u;
         redraw
     }
 }
@@ -765,10 +829,9 @@ pub(crate) const SKY_CUBE_SIZE: u32 = 1024;
 pub(crate) const SKY_CUBE_ROUNDS: u32 = 8;
 /// The old picture's share when a face is redrawn in the window.
 pub(crate) const SKY_CUBE_HISTORY: f64 = 0.8;
-/// A face is redrawn every this many window frames: the clouds drift by a pixel of the
-/// cube in seconds, and a face a frame (a 32-step march of 1024x1024 texels) cost 2.9 ms of
-/// every enhanced frame on an M4.
-pub(crate) const SKY_CUBE_EVERY: u32 = 4;
+// (a face is redrawn every fourth window frame, a slice at a time, see `SkySched`: the
+// clouds drift by a pixel of the cube in seconds, and a face a frame cost 2.9 ms of every
+// enhanced frame on an M4)
 
 pub(crate) const PROBE_SIZE: u32 = 64;
 pub(crate) const PROBE_MIPS: u32 = 6;
@@ -794,8 +857,34 @@ pub(crate) const TONE_CONTRAST_DAY: f32 = 1.22;
 pub(crate) const TONE_CONTRAST_NIGHT: f32 = 0.94;
 /// How far night vision takes the colour out of a dark scene (post.wgsl `night_vision`).
 pub(crate) const NIGHT_VISION: f32 = 0.3;
-/// The sun's angular radius as drawn (a little larger than the real 0.27°).
-pub(crate) const SUN_RADIUS: f32 = 0.0065;
+/// The sun's angular radius: the real 0.2665° (16 minutes of arc). Drawn 40 % larger, with
+/// the glare round it, the sun looked far too big (#2400).
+pub(crate) const SUN_RADIUS: f32 = 0.00465;
 /// The moon's, as drawn (the real one is as large as the sun's; a little more, as the
 /// eye sees it).
 pub(crate) const MOON_RADIUS: f32 = 0.0062;
+
+#[cfg(test)]
+mod beam_tests {
+    use super::headlamp_profile;
+    use glam::Vec3;
+
+    /// Up a ramp the low beam lights the road along the ramp as it lit the level road (#1897):
+    /// its cut-off is the vehicle's floor, not the world's horizon.
+    #[test]
+    fn a_low_beam_lights_a_ramp_as_the_level_road() {
+        let level = Vec3::Y;
+        let p = 8f32.to_radians();
+        let pitched = Vec3::new(0.0, p.cos(), p.sin());
+        for (ahead, down) in [(10.0f32, 1.0f32), (30.0, 1.0), (5.0, 0.5)] {
+            let flat = headlamp_profile(Vec3::new(0.0, ahead, -down).normalize(), level, true);
+            // the same point on a road rising at the bus's pitch, seen from the pitched lamp
+            let t = (pitched * ahead + Vec3::new(0.0, -p.sin(), p.cos()) * -down).normalize();
+            let ramp = headlamp_profile(t, pitched, true);
+            assert!((flat - ramp).abs() < 1e-3 * flat.max(1.0), "{ahead} m: {flat} level, {ramp} on the ramp");
+            assert!(flat > 0.1);
+        }
+        // above the floor's horizon the low beam is cut off either way
+        assert!(headlamp_profile((pitched * 30.0 + Vec3::new(0.0, -p.sin(), p.cos()) * 1.0).normalize(), pitched, true) < 0.05);
+    }
+}

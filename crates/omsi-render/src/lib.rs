@@ -29,6 +29,7 @@ pub mod pipeline_cache;
 mod pipelines;
 mod puddles;
 mod rt;
+mod rt_tex;
 mod shaders;
 mod srgb_encode;
 mod triple;
@@ -122,11 +123,10 @@ pub struct Renderer {
     /// Plain opaque, alpha-tested, and the opaque portions of blended transmap materials;
     /// each has a two-sided and a culled variant.
     prepass_pipelines: [wgpu::RenderPipeline; 6],
-    /// The same, multisampled: the enhanced main pass's own depth laid first (see
-    /// `render_inner`), so that its costly shading runs once per visible surface.
+    /// The same, at the main pass's sample count (colour writes off):
+    /// its own depth laid first (see `encode_prefill`), so that its costly shading runs
+    /// once per visible surface.
     prepass_msaa_pipelines: Option<[wgpu::RenderPipeline; 6]>,
-    /// Depth-only pipelines compatible with the existing HDR colour pass.
-    presurface_msaa_pipelines: Option<[wgpu::RenderPipeline; 4]>,
     /// Ambient occlusion and its blur; none on OpenGL (GLES), whose shading language cannot
     /// read a depth texture texel by texel - the pipelines failed there, AO off or not (#422).
     ssao_pipeline: Option<wgpu::RenderPipeline>,
@@ -140,6 +140,9 @@ pub struct Renderer {
     last_frame: Option<std::time::Instant>,
     /// The next frame stands alone (an offscreen picture): the exposure is there at once.
     pub instant_exposure: bool,
+    /// The next picture keeps its depth to be read back (`render_to_image_with_depth`): the
+    /// depth prepass runs whatever else it would.
+    pub(crate) depth_readback: bool,
     /// Overlay pipeline without multisampling, for drawing the HUD after the post pass.
     overlay_pipeline_1x: wgpu::RenderPipeline,
     xr_ui_pipeline: wgpu::RenderPipeline,
@@ -175,6 +178,7 @@ pub struct Renderer {
     /// What the window's pictures drew since start, summed (OMSI_PROFILE): instances that
     /// passed the culling and draws per pass.
     pub counts: std::cell::RefCell<std::collections::BTreeMap<&'static str, f64>>,
+    pub frame_draws: (usize, usize),
     profiling: bool,
     draw_audit_at: std::time::Instant,
     /// Reuse a small set of encoding workers instead of creating OS threads for each
@@ -249,6 +253,9 @@ pub struct RenderOptions {
     /// The original's `performance_maxObjDist` (m): objects farther away are not drawn
     /// unless they say `[noDistanceCheck]`. 0 = no limit.
     pub max_obj_dist: f32,
+    /// The mirrors of an Enhanced picture are shaded as the picture is (the settings'
+    /// `mirror_quality=enhanced`), not with the plain light (see `Renderer::render_inner`).
+    pub mirror_enhanced: bool,
     /// Only the meshes the models mark `[shadow]` cast sun shadows, as in OMSI 2 (else every
     /// solid mesh does).
     pub omsi_shadow_casters: bool,
@@ -289,6 +296,7 @@ impl Default for RenderOptions {
             fxaa: true,
             min_obj_size: 0.013,
             max_obj_dist: 0.0,
+            mirror_enhanced: false,
             omsi_shadow_casters: false,
             shadow_blobs: true,
             reflections: true,
@@ -307,7 +315,7 @@ impl Default for RenderOptions {
 /// million pixels, a 4K screen showed a picture of 58 % its size, and the enhanced
 /// graphics looked like textures of low quality; the frame-rate governor still steps down
 /// on a card that cannot keep up.
-pub const AUTO_SCALE_PIXELS: f32 = if cfg!(target_os = "macos") || cfg!(target_os = "android") { 2_800_000.0 } else { 8_400_000.0 };
+pub const AUTO_SCALE_PIXELS: f32 = if cfg!(any(target_os = "macos", target_os = "android", target_os = "ios")) { 2_800_000.0 } else { 8_400_000.0 };
 
 /// Interior lamps one mesh may be lit by (OMSI: four; a model may list more in its
 /// `[illumination_interior]`), and the step of the lamp code sent to the shaders (`first *
@@ -437,7 +445,7 @@ fn scene_scale_for(requested: f32, width: u32, height: u32) -> f32 {
     let pixels = width as f32 * height as f32;
     if requested > 0.0 {
         let requested = requested.clamp(0.5, 1.0);
-        if (cfg!(target_os = "macos") || cfg!(target_os = "android")) && pixels > AUTO_SCALE_PIXELS {
+        if cfg!(any(target_os = "macos", target_os = "android", target_os = "ios")) && pixels > AUTO_SCALE_PIXELS {
             return requested.min((AUTO_SCALE_PIXELS / pixels).sqrt().clamp(0.5, 1.0));
         }
         return requested;
@@ -477,6 +485,8 @@ fn snap_rect(r: [f32; 4]) -> [f32; 4] {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod stream_tests;
 
 /// Panics caught on purpose (a driver wgpu cannot use): see `omsi_cfg::panic_guard`.
 pub use omsi_cfg::panic_guard::{catch, catching};

@@ -2,6 +2,13 @@
 
 use crate::*;
 
+/// The room the instance entries' buffers get for `n` bytes of them: a third more than
+/// needed, so that the cars and people spawned over the next minutes are appended instead
+/// of forcing new buffers each time.
+fn entry_room(n: usize) -> u64 {
+    (((n as f64 * 1.35) as u64 + 65536).max(256)).div_ceil(256) * 256
+}
+
 impl Renderer {
     /// Upload instance transforms (call after building or changing the scene).
     /// The per-draw entries of one instance: one model matrix and two parameter vectors
@@ -59,6 +66,8 @@ impl Renderer {
         Self::prepare_bounds(scene);
         scene.bind_groups.clear();
         let moved_z = std::mem::take(&mut scene.origin_moved_z);
+        let profile = omsi_cfg::flags::OMSI_PROFILE.is_set();
+        let t0 = std::time::Instant::now();
         if std::mem::take(&mut scene.origin_moved) && !scene.dirty {
             let ro = scene.render_origin;
             let n = scene.uploaded_entries as usize;
@@ -85,6 +94,9 @@ impl Renderer {
                     }
                 }
                 _ => scene.dirty = true,
+            }
+            if profile {
+                log::info!("render origin moved: {} entries of {} instances written again in {:.1} ms", n, scene.uploaded_instances, t0.elapsed().as_secs_f64() * 1000.0);
             }
         }
         if !scene.dirty
@@ -122,7 +134,33 @@ impl Renderer {
                 scene.cpu_params.extend_from_slice(&params);
                 scene.uploaded_instances = scene.instances.len();
                 scene.uploaded_entries = base;
+            } else if scene.cpu_models.len() == scene.uploaded_entries as usize
+                && scene.cpu_params.len() == scene.uploaded_entries as usize * 2
+            {
+                // Out of room: bigger buffers, filled from the CPU copies with the new
+                // entries after them. The instances' entries stay where they are (rebuilt
+                // from the instances, all of them were computed again and the vectors made
+                // anew, for the few new ones that did not fit).
+                scene.cpu_models.extend_from_slice(&mats);
+                scene.cpu_params.extend_from_slice(&params);
+                scene.uploaded_instances = scene.instances.len();
+                scene.uploaded_entries = base;
+                let bytes: &[u8] = bytemuck::cast_slice(&scene.cpu_models);
+                let pbytes: &[u8] = bytemuck::cast_slice(&scene.cpu_params);
+                let model_buf = GpuArray::new(&self.device, "models", entry_room(bytes.len()), 16, true);
+                let params_buf = GpuArray::new(&self.device, "params", entry_room(pbytes.len()), 16, true);
+                model_buf.write(&self.queue, 0, bytes);
+                params_buf.write(&self.queue, 0, pbytes);
+                scene.model_buf = Some(model_buf);
+                scene.params_buf = Some(params_buf);
+                self.rebuild_camera_bind_group(scene);
+                if profile {
+                    log::info!("instance entries: {} new ones did not fit: {} in bigger buffers in {:.1} ms", mats.len(), scene.uploaded_entries, t0.elapsed().as_secs_f64() * 1000.0);
+                }
             } else {
+                if profile {
+                    log::info!("instance entries: {} new ones do not fit the buffers ({} bytes): all built again", mats.len(), scene.model_buf.as_ref().map(|b| b.size()).unwrap_or(0));
+                }
                 scene.dirty = true;
             }
         }
@@ -221,20 +259,23 @@ impl Renderer {
                 buf.write(&self.queue, 0, bytes);
                 pbuf.write(&self.queue, 0, pbytes);
                 scene.dirty = false;
+                if profile {
+                    log::info!("instance entries: {} of {} instances written again in {:.1} ms", scene.uploaded_entries, scene.instances.len(), t0.elapsed().as_secs_f64() * 1000.0);
+                }
                 return;
             }
         }
-        // a third more room than needed, so that the cars and people spawned over the
-        // next minutes are appended instead of forcing a rebuild each time
-        let cap = |n: usize| (((n as f64 * 1.35) as u64 + 65536).max(256)).div_ceil(256) * 256;
-        let model_buf = GpuArray::new(&self.device, "models", cap(bytes.len()), 16, true);
-        let params_buf = GpuArray::new(&self.device, "params", cap(pbytes.len()), 16, true);
+        let model_buf = GpuArray::new(&self.device, "models", entry_room(bytes.len()), 16, true);
+        let params_buf = GpuArray::new(&self.device, "params", entry_room(pbytes.len()), 16, true);
         model_buf.write(&self.queue, 0, bytes);
         params_buf.write(&self.queue, 0, pbytes);
         scene.model_buf = Some(model_buf);
         scene.params_buf = Some(params_buf);
         self.rebuild_camera_bind_group(scene);
         scene.dirty = false;
+        if profile {
+            log::info!("instance entries: {} of {} instances in new buffers in {:.1} ms", scene.uploaded_entries, scene.instances.len(), t0.elapsed().as_secs_f64() * 1000.0);
+        }
     }
 
     pub(crate) fn rebuild_camera_bind_group(&self, scene: &mut Scene) {

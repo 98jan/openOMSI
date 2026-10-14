@@ -37,7 +37,7 @@ impl World {
             tris += ts.drive.tris.len();
             wheel_meshes += wheels;
             // the wheel surfaces come and go with the tile (World::unload_tile)
-            self.surfaces.write().insert((p.tx, p.ty), ts);
+            self.data.update(|d| Arc::make_mut(&mut d.ground).surfaces.insert((p.tx, p.ty), ts));
             holes += check.0;
             cells += check.1;
             where_.extend(check.2);
@@ -88,7 +88,7 @@ impl World {
             let faces: Vec<String> = ts.drive.surface_examples().iter().map(|(id, n, m)| format!("{id}: {n} faces e.g. ({:.0}, {:.0}, {:.1})", x0 + m.x as f64, y0 + m.y as f64, m.z)).collect();
             log::info!("tile ({tx}, {ty}): wheel faces by surface {}", faces.join(", "));
         }
-        let tile_terrain = self.terrains.read().get(&key).cloned();
+        let tile_terrain = self.data.peek().ground.terrains.get(&key).cloned();
         p.hole_walls = tile_terrain
             .as_ref()
             .map(|terrain| omsi_geometry::terrain_hole_walls_with_roads(&hole_rims, terrain, &ts.drive))
@@ -341,17 +341,35 @@ impl World {
                 .collect();
             wanted.sort();
             wanted.dedup();
-            let decoded: Vec<(PathBuf, Arc<TextureData>)> = wanted
+            // A texture an earlier batch decoded that is still waiting for its upload is
+            // taken from there, not read and decoded once more (the next batch is prepared
+            // while the last one goes up, and neighbouring tiles share most textures).
+            let in_flight: Vec<(PathBuf, Arc<TextureData>)> = {
+                let mut known = self.decoded_in_flight.lock();
+                known.retain(|_, t| t.strong_count() > 0);
+                known.iter().filter_map(|(p, t)| Some((p.clone(), t.upgrade()?))).collect()
+            };
+            let in_flight: HashMap<PathBuf, Arc<TextureData>> = in_flight.into_iter().collect();
+            let decoded: Vec<(PathBuf, Arc<TextureData>, bool)> = wanted
                 .par_iter()
                 .filter_map(|(name, dirs)| {
                     let dirs_ref: Vec<&Path> = dirs.iter().map(|d| d.as_path()).collect();
                     let path = omsi_texture::find_texture(name, &dirs_ref)?;
+                    if let Some(t) = in_flight.get(&path) {
+                        return Some((path, t.clone(), false));
+                    }
                     let (img, _) = omsi_texture::gpu::load_gpu(&path).ok()?;
-                    Some((path, Arc::new(img)))
+                    Some((path, Arc::new(img), true))
                 })
                 .collect();
+            {
+                let mut known = self.decoded_in_flight.lock();
+                for (p, t, _) in decoded.iter().filter(|d| d.2) {
+                    known.insert(p.clone(), Arc::downgrade(t));
+                }
+            }
             let decoded: Arc<HashMap<PathBuf, Arc<TextureData>>> =
-                Arc::new(decoded.into_iter().collect());
+                Arc::new(decoded.into_iter().map(|(p, t, _)| (p, t)).collect());
             for p in prepared.iter_mut() {
                 p.images = decoded.clone();
             }
@@ -558,7 +576,7 @@ impl World {
         }
         // the water: cells whose surface stands over the ground
         // (only where the ground is known: without it nothing says the water lies over it)
-        if let (Some(w), Some(terrain)) = (p.water, self.terrains.read().get(&(p.tx, p.ty)).cloned()) {
+        if let (Some(w), Some(terrain)) = (p.water, self.data.peek().ground.terrains.get(&(p.tx, p.ty)).cloned()) {
             let level = (w[0] + w[1] + w[2] + w[3]) / 4.0;
             let n = WATER_CELLS;
             let cell = tile_size() as f32 / n as f32;

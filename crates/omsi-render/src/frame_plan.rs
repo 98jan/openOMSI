@@ -198,6 +198,48 @@ pub(crate) fn encode_batches_filtered<'a, E: wgpu::util::RenderEncoder<'a>>(
     }
 }
 
+/// The state changes `encode_batches` makes for `chunks` (each recorded on its own, as the
+/// main pass's bundles are): (pipeline switches, material bind groups set). OMSI_PROFILE.
+pub(crate) fn state_changes(chunks: &[&[Batch]]) -> (usize, usize) {
+    let (mut pipes, mut binds) = (0, 0);
+    for chunk in chunks {
+        let (mut pipe, mut material) = (u8::MAX, u32::MAX);
+        for b in chunk.iter() {
+            pipes += (b.pipe != pipe) as usize;
+            binds += (b.material != material) as usize;
+            (pipe, material) = (b.pipe, b.material);
+        }
+    }
+    (pipes, binds)
+}
+
+/// What `state_changes` would count if each run of opaque and alpha-tested batches (as
+/// `batch_items` sorts them: by pipeline, then look) were ordered by material first, the
+/// cull and bias variants of a kind after it - an estimate for OMSI_PROFILE of what such an
+/// order would save in bind groups and cost in pipeline switches. A run ends where the
+/// pipeline code goes down (the next sorted call) or a blended batch comes.
+pub(crate) fn state_changes_by_material(batches: &[Batch]) -> (usize, usize) {
+    let mut reordered: Vec<Batch> = Vec::with_capacity(batches.len());
+    let mut k = 0;
+    while k < batches.len() {
+        let sortable = |b: &Batch| b.pipe / 4 <= PIPE_ALPHA_TEST;
+        if !sortable(&batches[k]) {
+            reordered.push(batches[k].clone());
+            k += 1;
+            continue;
+        }
+        let start = k;
+        k += 1;
+        while k < batches.len() && sortable(&batches[k]) && batches[k].pipe >= batches[k - 1].pipe {
+            k += 1;
+        }
+        let mut run = batches[start..k].to_vec();
+        run.sort_by_key(|b| (b.pipe / 4, b.material, b.pipe));
+        reordered.extend(run);
+    }
+    state_changes(&[&reordered])
+}
+
 /// Main pass pipeline kinds (`pipe_code`): opaque, alpha-tested, blended, blended
 /// without depth write, depth-only surface coverage, and painted terrain without depth write.
 pub(crate) const PIPE_OPAQUE: u8 = 0;
@@ -409,13 +451,16 @@ pub(crate) struct ShadowRes {
     /// The far shadow cascade as last drawn: its light matrix, frames since, the render
     /// origin and the sun it was drawn for.
     pub(crate) shadow_far_cache: std::cell::Cell<(Mat4, u32, DVec3, Vec3)>,
-    /// The same for the near cascade, drawn every other frame (see `render_inner`).
+    /// The same for the near cascade, drawn every other frame (see `render_inner`), with the
+    /// window frames counted instead of its age (the frame's `ShadowPhase`).
     pub(crate) shadow_near_cache: std::cell::Cell<(Mat4, u32, DVec3, Vec3)>,
     /// Shadow atlas matrices from the first OpenXR eye, reused by the second eye.
     pub(crate) xr_shadow_cache: std::cell::Cell<Option<(DVec3, Vec3, Mat4, Mat4, Mat4)>>,
     /// Depth-only pipeline that fills its viewport with the far depth: clears the close
     /// cascade's part of the atlas when the near part is kept from the frame before.
     pub(crate) shadow_clear_pipeline: wgpu::RenderPipeline,
+    /// What the street lamps' shadow tiles hold, kept while nothing in them changes.
+    pub(crate) lamp_tiles: std::cell::Cell<passes::LampTiles>,
 }
 
 /// What the views drew in their last frames, which the next frame's culling and bundles go by.
@@ -426,6 +471,8 @@ pub(crate) struct ViewHistory {
     /// The window's main-pass bundles as last recorded, with what they were made of (see
     /// `record_main_bundles`).
     pub(crate) main_bundles: std::cell::RefCell<Option<passes::batch::MainBundles>>,
+    /// The same for each mirror (by its picture's texture), the latest last.
+    pub(crate) mirror_bundles: std::cell::RefCell<Vec<(TextureId, passes::batch::MainBundles)>>,
     /// The window's last main pass: bundles recorded anew and bundles kept from the frame
     /// before (the tests check the reuse by it).
     pub(crate) bundle_stats: std::cell::Cell<(usize, usize)>,
