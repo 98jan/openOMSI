@@ -670,37 +670,78 @@ fn shaders_validate_and_match_the_uniforms() {
     assert_eq!(checked.len(), sizes.len(), "structs checked: {checked:?}");
 }
 
-/// The scene module as the OpenGL backend gets it translates to GLSL ES 3.10 and desktop
-/// GLSL 4.30 for every entry point, with no `invariant gl_FragCoord` (rejected by AMD's
-/// desktop GL and by GLES) and no texture read through two samplers (#617, #610).
+/// The scene module as the OpenGL backend gets it translates to GLSL ES 3.10 and 3.20 and
+/// desktop GLSL 4.30 for every entry point, the reduced module of the basic pipelines too,
+/// with no `invariant gl_FragCoord` (rejected by AMD's desktop GL and by GLES), no texture
+/// read through two samplers and no constant array indexed by an element of another
+/// (#617, #610, #2009).
 #[test]
 fn the_scene_shader_translates_to_glsl() {
     use wgpu::naga;
     use wgpu::naga::back::glsl;
-    let src = scene_shader_source(true);
-    let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{}", e.emit_to_string(&src)));
-    let info = naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all())
-        .validate(&module)
-        .expect("validate");
-    let constants = [("ALPHA_TEST".into(), 0.0), ("TERRAIN_PAINT".into(), 1.0)]
-        .into_iter().collect();
-    let (module, info) =
-        naga::back::pipeline_constants::process_overrides(&module, &info, None, &constants).expect("overrides");
-    for version in [glsl::Version::Embedded { version: 310, is_webgl: false }, glsl::Version::Desktop(430)] {
-        let options = glsl::Options { version, ..Default::default() };
-        for entry in &module.entry_points {
-            let pipeline = glsl::PipelineOptions {
-                shader_stage: entry.stage,
-                entry_point: entry.name.clone(),
-                multiview: None,
-            };
-            let mut out = String::new();
-            glsl::Writer::new(&mut out, &module, &info, &options, &pipeline, Default::default())
-                .and_then(|mut w| w.write())
-                .unwrap_or_else(|e| panic!("{version:?} {}: {e:?}", entry.name));
-            assert!(!out.contains("invariant gl_FragCoord"), "{version:?} {}", entry.name);
+    for (basic, src) in [(false, scene_shader_source(true)), (true, lean_scene(scene_shader_source(true)))] {
+        let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{}", e.emit_to_string(&src)));
+        let info = naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all())
+            .validate(&module)
+            .expect("validate");
+        let constants = [("ALPHA_TEST".into(), 0.0), ("TERRAIN_PAINT".into(), 1.0)]
+            .into_iter().collect();
+        let versions = [
+            glsl::Version::Embedded { version: 310, is_webgl: false },
+            glsl::Version::Embedded { version: 320, is_webgl: false },
+            glsl::Version::Desktop(430),
+        ];
+        for version in versions {
+            let options = glsl::Options { version, ..Default::default() };
+            for entry in &module.entry_points {
+                // (as wgpu's OpenGL backend does it: the module cut down to the one entry point)
+                let (module, info) = naga::back::pipeline_constants::process_overrides(
+                    &module, &info, Some((entry.stage, &entry.name)), &constants,
+                )
+                .expect("overrides");
+                let pipeline = glsl::PipelineOptions {
+                    shader_stage: entry.stage,
+                    entry_point: entry.name.clone(),
+                    multiview: None,
+                };
+                let mut out = String::new();
+                glsl::Writer::new(&mut out, &module, &info, &options, &pipeline, Default::default())
+                    .and_then(|mut w| w.write())
+                    .unwrap_or_else(|e| panic!("basic {basic} {version:?} {}: {e:?}", entry.name));
+                assert!(!out.contains("invariant gl_FragCoord"), "basic {basic} {version:?} {}", entry.name);
+                assert_eq!(const_array_in_const_array(&out), None, "basic {basic} {version:?} {}", entry.name);
+            }
         }
     }
+    // the check finds the lookup Adreno rejected (0.2.20's sun shadow kernel)
+    let old = "const int SHADOW_CORNERS[5] = int[5](5, 1, 7, 12, 15);\n\
+        const vec2 SHADOW_OFFSETS[16] = vec2[16](vec2(0.0));\n\
+        vec2 o_2 = ((SHADOW_OFFSETS[SHADOW_CORNERS[_e17]] * texel) * spread);";
+    assert_eq!(const_array_in_const_array(old).as_deref(), Some("SHADOW_OFFSETS[SHADOW_CORNERS["));
+    assert_eq!(const_array_in_const_array("const int A[2] = int[2](0, 1);\nfloat x = b[A[i]];"), None);
+}
+
+/// A GLSL constant array indexed by an element of another (`A[B[i]]`, both declared
+/// `const`), if any. Adreno's GLES compiler (Adreno 710 among them) takes the inner lookup
+/// for a constant it cannot fold and rejects the shader ("array field selection out of
+/// range '-1'"): 0.2.20's sun shadow kernel did this and the scene pipelines failed on
+/// OpenGL there (#2009).
+fn const_array_in_const_array(glsl: &str) -> Option<String> {
+    let names: Vec<&str> = glsl
+        .lines()
+        .filter_map(|l| {
+            let rest = l.trim_start().strip_prefix("const ")?;
+            let decl = rest.split('=').next()?;
+            let name = decl.split_whitespace().nth(1)?;
+            name.split_once('[').map(|(n, _)| n)
+        })
+        .collect();
+    names.iter().flat_map(|a| names.iter().map(move |b| format!("{a}[{b}["))).find(|p| {
+        // (the whole word: not `MY_A[` for `A[`)
+        glsl.match_indices(p.as_str()).any(|(at, _)| {
+            !glsl[..at].chars().next_back().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+    })
 }
 
 /// The corona and smoke module (its smoke branch with the fade into the ground among
@@ -774,6 +815,7 @@ fn the_scene_shader_reads_its_arrays_from_textures_without_vertex_storage() {
                 if path == ArrayPath::NoStorage {
                     assert!(!out.contains("textureGather"), "{path:?} {version:?} {}: textureGather", entry.name);
                 }
+                assert_eq!(const_array_in_const_array(&out), None, "{path:?} {version:?} {}", entry.name);
             }
         }
     }
