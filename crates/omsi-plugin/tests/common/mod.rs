@@ -36,6 +36,8 @@ pub struct Game {
     pub log: RefCell<Vec<String>>,
     pub sounds: RefCell<Vec<(PathBuf, Sound)>>,
     pub lan_sent: Vec<(String, u32, String)>,
+    /// The passengers of the frame who decided about their ticket.
+    pub ticket_asks: Vec<TicketAsk>,
 }
 
 impl Game {
@@ -287,6 +289,16 @@ impl PluginIo for Game {
     fn people_set_density(&mut self, v: f32) -> bool {
         self.did(format!("people {v}"));
         true
+    }
+    fn ticket_asks(&self) -> Vec<TicketAsk> {
+        self.ticket_asks.clone()
+    }
+    fn people_set_ticket(&mut self, id: u32, c: &TicketChange, by: &str) -> Result<(), String> {
+        if id != 1 {
+            return Err("not boarding the bus yet".into());
+        }
+        self.did(format!("ticket {id} {:?} {:?} {:?} {:?} {:?} {:?} by {by}", c.kind, c.ticket, c.name, c.price, c.voice, c.tag));
+        Ok(())
     }
     fn duty(&self) -> Option<Duty> {
         self.duty.clone()

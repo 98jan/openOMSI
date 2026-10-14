@@ -232,6 +232,42 @@ plugins loaded. In a LAN game `omsi.lan.send(player, text)` reaches the same plu
 another player's game (`lan_message(from, text)`): short texts (120 characters), about ten
 a second, carried in the session's own messages - a game without the plugin ignores them.
 
+#### Passengers' tickets
+
+What a passenger asks for at the cash desk is the ticket pack's choice - unless a plugin
+says otherwise. Everybody boarding the player's bus is reported once, on their way to the
+door, as the `passenger_ticket` event: who they are (`id`, `age`), what they do about a
+ticket (`kind`: `"none"`, `"stamp"`, `"buy"`), the pack's ticket and price, the stop they
+board at and the stop they ride to, with where both are in the duty's trip. Their request at
+the desk waits until the plugins had that frame (a second at most), so a plugin has time to
+work out a fare of its own - a tariff of zones, a table of fare units, a pass - and hand it
+over with `omsi.people.set_ticket`:
+
+```lua
+omsi.on("passenger_ticket", function(p)
+  if p.kind ~= "buy" or not p.destination_number then return end
+  local stops = p.destination_number - p.stop_number
+  omsi.people.set_ticket(p.id, {
+    name = stops <= 3 and "Short hop" or "Single",
+    price = stops <= 3 and 1.5 or 3,
+    voice = "Zone_" .. stops,   -- Zone_<n>.wav of the passenger's voice folder, else the usual line
+    tag = "my_tariff",          -- kept with the passenger: omsi.people.get(id).tag
+  })
+end)
+```
+
+* `kind` changes only until the passenger is in the bus; the ticket, the name, the price
+  and the voice until they have asked for it (`omsi.people.get(id).ticket_asked`).
+* `ticket` picks another ticket of the pack (its name, price and `GivenTicket` number with
+  it); `name` and `price` alone keep the pack's number, so a bus's ticket printer and the
+  driver's ticket key go on working.
+* A voice line the passenger's voice folder does not have falls back to `Ticket_<n>_<k>`.
+* `omsi.people.get(id)` shows the passenger's ticket now and which plugin changed it
+  (`ticket_by`). Without a plugin listening the passengers do as before, and nobody waits.
+
+[`reduced_tickets.lua`](examples/plugins/reduced_tickets.lua) has every adult ask for the
+reduced fare of the stock Berlin ticket packs.
+
 ### On-screen panels
 
 `omsi.ui` puts panels of the plugin's own on the screen, in the game's look: Inter, the
@@ -343,6 +379,7 @@ Complete plugins to start from (each runs in the tests against a stand-in game):
 | [`trip_panel.lua`](examples/plugins/trip_panel.lua) | a panel with the line, the next stop and a button |
 | [`dispatcher/`](examples/plugins/dispatcher/main.lua) | a dispatcher and a small career: a draggable panel with tabs, the duty's next stops in a table, a chart of the delays, pay for stops and trips kept in the storage, today's duties offered and taken with a click, settings, hotkeys |
 | [`telemetry_hud.lua`](examples/plugins/telemetry_hud.lua) | a HUD: the speed with a chart of the last minute, gear, rpm, fuel, passengers, the speed limit and the traffic light ahead; a warning before a red light; the values as JSON over UDP for a program beside the game |
+| [`reduced_tickets.lua`](examples/plugins/reduced_tickets.lua) | every adult asks for the reduced fare instead of the full one (`passenger_ticket`, `people.set_ticket`) |
 | [`weather_controller.lua`](examples/plugins/weather_controller.lua) | the weather files as tabs, sliders for temperature, visibility and rain, snow cover, the clock moved by buttons, and a day cycle of its own |
 
 ### Safety and errors
@@ -528,8 +565,10 @@ declared to call the function (a plain `.lua` file has them all).
 | --- | --- | --- | --- |
 | `omsi.people.counts()` | walking, waiting, riding | The people of the map near the camera: walking, waiting at stops, riding a bus. | 0.2.22 |
 | `omsi.people.density()` | number or nil | The people setting: 0 to 3, 1 the map's own amount. | 0.2.22 |
-| `omsi.people.list([radius])` | list of tables | The people (within `radius` m of the player's bus, when given): `{id, x, y, z, state, aboard, ai_bus, stop, destination, ticket, complaint}`. `state`: `"strolling"`, `"idle"`, `"standing"`, `"waiting"`, `"to_bus"`, `"boarding"`, `"riding"`, `"seated"`, `"leaving"`, `"to_stop"`; `aboard` in the player's bus; `complaint` 0 to 3 (3: they leave). | 0.2.22 |
+| `omsi.people.get(id)` | table or nil | One person by id, as `people.list` gives them, and more: `stop_name` (the timetable's name of the stop they wait or waited at), `ticket` (the name of the ticket they ask for), `ticket_kind` (`"none"`, `"stamp"`, `"buy"`), `ticket_index` (the ticket pack's, from 1; 0 none), `ticket_price`, `ticket_voice`, `ticket_by` (the plugin that changed it), `ticket_asked` (asked for at the cash desk already), `tag` (`people.set_ticket`'s), `age`, `model` (the `.hum` file), `voice` (its voice folder). `people.list` gives the same fields. | 0.3 |
+| `omsi.people.list([radius])` | list of tables | The people (within `radius` m of the player's bus, when given): `{id, x, y, z, state, aboard, ai_bus, stop, destination, ticket, complaint}`. `state`: `"strolling"`, `"idle"`, `"standing"`, `"waiting"`, `"to_bus"`, `"boarding"`, `"riding"`, `"seated"`, `"leaving"`, `"to_stop"`; `aboard` in the player's bus; `complaint` 0 to 3 (3: they leave); and the fields `people.get` describes. | 0.2.22 |
 | `omsi.people.set_density(value)` | boolean | Changes the people setting (0 to 3). *Permission: `traffic_write`.* | 0.2.22 |
+| `omsi.people.set_ticket(id, ticket)` | true, or false and the reason | Changes the ticket of a passenger boarding the player's bus (the `passenger_ticket` event names them): `{kind, ticket, name, price, voice, tag}`, each optional. `kind` (`"none"`: a pass, `"stamp"`, `"buy"`) only until they are in the bus; `ticket` another ticket of the pack (from 1, its name and price with it), `name` and `price` what they ask for and pay, `voice` a line of their voice folder said instead of `Ticket_<n>_<k>` (`"Zone_4"`: `Zone_4.wav`; where it is missing the usual line, `""` back to it) - until they have asked at the cash desk. `tag` is a text of the plugin's own kept with the person (`people.get`), at any time. `false` and the reason when nothing changed. *Permission: `traffic_write`.* | 0.3 |
 | `omsi.people.stops()` | list of tables | The stops near the camera where people wait: `{id, name, x, y, z, waiting}`. | 0.2.22 |
 | `omsi.people.waiting(stop)` | integer | How many people wait at a stop (its map object id). | 0.2.22 |
 
@@ -782,6 +821,7 @@ declared to call the function (a plain `.lua` file has them all).
 | `passengers` | `count`, `old` | The number of passengers aboard the player's bus changed. | 0.2.22 |
 | `passenger_board` | `count`, `stop_id` | People got into the player's bus: how many, and the stop they waited at (its map object id, `nil` when none). | 0.2.22 |
 | `passenger_alight` | `count` | People got out of the player's bus. | 0.2.22 |
+| `passenger_ticket` | `passenger` | Somebody boarding the player's bus has decided about their ticket, on their way to the door - before they ask for it at the cash desk, which waits for this frame: `{id, age, kind, ticket, name, price, stop, stop_name, destination, stop_number, destination_number}` - `kind` `"none"`, `"stamp"` or `"buy"`, `ticket` the ticket pack's (from 1; 0 none fits their age) with its `name` and `price`, `stop` the map object id they board at and `stop_name` its timetable name, `destination` the stop they ride to, and where both are in the duty's trip (from 1, `nil` where the trip does not have them). `people.set_ticket(id, ...)` changes it. | 0.3 |
 | `stop_arrive` | `name`, `id`, `number`, `delay` | The bus came to the duty's next stop (within 25 m of it): its name, map object id, number in the trip (from 1) and the delay in seconds (late positive). | 0.2.22 |
 | `stop_depart` | `name`, `id`, `number`, `delay` | The bus left the stop it stood at (more than 35 m from it, or the duty moved on): the same values, the delay as it left. | 0.2.22 |
 | `trip_start` | `trip`, `name`, `terminus` | The duty moved on to another trip: its number in the duty (from 1), the timetable's name of the trip and its terminus. | 0.2.22 |
@@ -985,6 +1025,35 @@ answer:
 
 A press on such a texture is the plugin's: a `[mouseevent]` mesh under it does not fire, as
 for a page. Events are not kept while the game is paused.
+
+### Passengers' tickets (openOMSI only)
+
+```pascal
+procedure AccessTicketRequest(person: Cardinal; age: Single;
+  stop, destination: PWideChar; stopNumber, destinationNumber: Integer;
+  var kind, ticket: Integer; var price: Single; name, voice: PWideChar;
+  var write: Boolean); stdcall;
+```
+
+A library that exports this hears every passenger boarding the player's bus once, in the
+frame after they decided about their ticket (the Lua plugins' `passenger_ticket`), and may
+change what they ask for at the cash desk - which waits for that frame:
+
+* `person`: the passenger's id (as the Lua plugins' `omsi.people` know it); `age` in years.
+* `stop`, `destination`: the timetable's names of the stop they board at and the one they
+  ride to (`""` when not known); `stopNumber`, `destinationNumber`: where those are in the
+  duty's trip, from 1 (0: not in it).
+* `kind`: 0 nothing to do (a pass), 1 validates a ticket, 2 buys one at the cash desk;
+  `ticket` the ticket pack's (from 1; 0 none fits their age), `price` its price.
+* `name` is a buffer of 256 wide characters (the terminating zero included) holding the
+  ticket's name; `voice` one as long, empty: a line of the passenger's voice folder said at
+  the desk instead of `Ticket_<n>_<k>` (`Zone_4001` for `Zone_4001.wav`).
+* Set `write` to take what the plugin changed of them: only what differs is applied, the
+  kind only while the passenger is not in the bus yet. The plugin's name (the DLL's) is
+  kept as who changed it.
+
+`omsi-plugin-host32.exe` passes the call through; a host from before it does not report the
+procedure, and the plugin then does not hear of the passengers.
 
 A 64-bit DLL loads in-process in the 64-bit game, without the pipe; a 32-bit one runs in
 the host, which keeps the buffers on its side. A host from before this keeps working for

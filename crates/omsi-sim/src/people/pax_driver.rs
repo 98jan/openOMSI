@@ -156,12 +156,13 @@ impl PeopleSim {
         // the game plays the driver in `auto` boarding (a setting; OMSI has no such mode)
         let auto = self.boarding.eq_ignore_ascii_case("auto");
         let id = p.ticket_id as usize;
-        let (name, value) = self
-            .tickets
-            .as_ref()
-            .and_then(|t| t.tickets.get(id.saturating_sub(1)))
-            .map(|t| (t.name.clone(), t.value))
-            .unwrap_or_default();
+        // (the pack's ticket, or what a plugin made of it: `price` is the pack's value
+        // unless a plugin changed it)
+        let name = match &p.ticket_name {
+            Some(n) => n.clone(),
+            None => self.tickets.as_ref().and_then(|t| t.tickets.get(id.saturating_sub(1))).map(|t| t.name.clone()).unwrap_or_default(),
+        };
+        let value = p.price;
         let tol = self.money.as_ref().map(|m| m.smallest_value()).unwrap_or(0.01) / 2.0;
         let owed = p.paid - p.price;
         // the change on the tray (sub_7e8900): enough of it, too much, too many coins
@@ -193,12 +194,16 @@ impl PeopleSim {
         let (ch_ok, too_much, many) = if p.sub == 7 { change(self) } else { (false, false, false) };
         let (tk_ok, wrong) = if p.sub == 5 { ticket(self) } else { (false, false) };
         if p.sub == 3 {
+            // the plugins have not had their say about this ticket yet (a frame or two)
+            if p.ticket_hold.is_some_and(|t| self.time - t < super::ticket_hook::TICKET_HOLD && self.time >= t) {
+                return;
+            }
             // the desk free (sub_7d1fec, +0x7a8): "Einmal ..., bitte"
             if self.desk_busy.is_some_and(|d| d != self.people[i].id) {
                 return;
             }
             let k = 1 + self.rand() % 2;
-            self.say_ex(i, &format!("Ticket_{id}_{k}"), false);
+            self.say_ticket(i, id, k, p.ticket_voice.as_deref());
             self.ticket_requests += 1;
             self.request = Some((name, value));
             self.desk_busy = Some(self.people[i].id);

@@ -24,6 +24,7 @@ const OLD: &str = "0.1.5";
 const OLD10: &str = "0.1.10";
 const LATER: &str = "0.2.21";
 const NEW: &str = super::VERSION;
+const TICKETS: &str = "0.3";
 
 /// Every event, in the order of the documentation.
 pub static EVENTS: &[EventDef] = &[
@@ -60,6 +61,7 @@ pub static EVENTS: &[EventDef] = &[
     ev("passengers", &["count", "old"], NEW, "The number of passengers aboard the player's bus changed."),
     ev("passenger_board", &["count", "stop_id"], NEW, "People got into the player's bus: how many, and the stop they waited at (its map object id, `nil` when none)."),
     ev("passenger_alight", &["count"], NEW, "People got out of the player's bus."),
+    ev("passenger_ticket", &["passenger"], TICKETS, "Somebody boarding the player's bus has decided about their ticket, on their way to the door - before they ask for it at the cash desk, which waits for this frame: `{id, age, kind, ticket, name, price, stop, stop_name, destination, stop_number, destination_number}` - `kind` `\"none\"`, `\"stamp\"` or `\"buy\"`, `ticket` the ticket pack's (from 1; 0 none fits their age) with its `name` and `price`, `stop` the map object id they board at and `stop_name` its timetable name, `destination` the stop they ride to, and where both are in the duty's trip (from 1, `nil` where the trip does not have them). `people.set_ticket(id, ...)` changes it."),
     ev("stop_arrive", &["name", "id", "number", "delay"], NEW, "The bus came to the duty's next stop (within 25 m of it): its name, map object id, number in the trip (from 1) and the delay in seconds (late positive)."),
     ev("stop_depart", &["name", "id", "number", "delay"], NEW, "The bus left the stop it stood at (more than 35 m from it, or the duty moved on): the same values, the delay as it left."),
     ev("trip_start", &["trip", "name", "terminus"], NEW, "The duty moved on to another trip: its number in the duty (from 1), the timetable's name of the trip and its terminus."),

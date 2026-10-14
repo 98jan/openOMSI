@@ -308,6 +308,9 @@ impl PeopleSim {
                             pp.ticket = tk;
                             pp.ticket_id = id;
                             pp.price = if id > 0 { price } else { 0.0 };
+                            if bn.id == BusId::Player {
+                                self.ask_ticket(i);
+                            }
                             self.set_task(i, Task::WalkingToBus, buses, bus_ix, world);
                         }
                     }

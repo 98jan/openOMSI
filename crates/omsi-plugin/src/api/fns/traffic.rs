@@ -2,9 +2,11 @@
 
 use super::{def, multi, o, p, rec};
 use crate::api::{ApiError, ApiFn, Ctx, Value};
-use crate::io::AiCar;
+use crate::io::{AiCar, Person, TicketAsk, TicketChange, TicketKind};
 
 const NEW: &str = crate::api::VERSION;
+/// The passengers' tickets (`people.get`, `people.set_ticket`, the `passenger_ticket` event).
+const TICKETS: &str = "0.3";
 
 fn car(c: &AiCar, from: Option<[f64; 4]>) -> Value {
     let mut r = vec![
@@ -27,6 +29,68 @@ fn car(c: &AiCar, from: Option<[f64; 4]>) -> Value {
         r.push(("distance", (c.pos[0] - p[0]).hypot(c.pos[1] - p[1]).into()));
     }
     rec(r)
+}
+
+/// A person as `people.list` and `people.get` give them.
+fn person(p: Person) -> Value {
+    let t = p.pax_ticket.as_ref();
+    rec(vec![
+        ("id", Value::from(p.id)),
+        ("x", p.pos[0].into()),
+        ("y", p.pos[1].into()),
+        ("z", p.pos[2].into()),
+        ("state", p.state.into()),
+        ("aboard", p.aboard.into()),
+        ("ai_bus", p.in_ai_bus.map(|b| Value::Int(b as i64)).into()),
+        ("stop", p.stop.map(Value::Int).into()),
+        ("stop_name", p.stop_name.into()),
+        ("destination", p.destination.into()),
+        ("ticket", p.ticket.into()),
+        ("ticket_kind", t.map(|t| t.kind.as_str()).into()),
+        ("ticket_index", t.map(|t| Value::Int(t.index as i64)).into()),
+        ("ticket_price", t.map(|t| t.price).into()),
+        ("ticket_voice", t.and_then(|t| t.voice.clone()).into()),
+        ("ticket_by", t.and_then(|t| t.by.clone()).into()),
+        ("ticket_asked", t.map(|t| t.asked).into()),
+        ("tag", p.tag.into()),
+        ("age", p.age.into()),
+        ("model", p.model.into()),
+        ("voice", p.voice.into()),
+        ("complaint", Value::Int(p.complaint as i64)),
+    ])
+}
+
+/// A passenger's ticket as the `passenger_ticket` event gives it (the stops in the trip
+/// counted from 1, as the duty's are).
+pub(crate) fn ticket_ask(a: TicketAsk) -> Value {
+    rec(vec![
+        ("id", Value::from(a.person)),
+        ("age", a.age.into()),
+        ("kind", a.kind.as_str().into()),
+        ("ticket", Value::Int(a.ticket as i64)),
+        ("name", a.name.into()),
+        ("price", a.price.into()),
+        ("stop", a.stop.map(Value::Int).into()),
+        ("stop_name", a.stop_name.into()),
+        ("destination", a.destination.into()),
+        ("stop_number", a.stop_index.map(|k| k + 1).into()),
+        ("destination_number", a.destination_index.map(|k| k + 1).into()),
+    ])
+}
+
+/// `people.set_ticket`'s table.
+fn ticket_change(t: &Value) -> Result<TicketChange, ApiError> {
+    let bad = |k: &str, want: &str| ApiError(format!("omsi.people.set_ticket: `{k}` must be {want}"));
+    let field = |k: &str| t.get(k).filter(|v| !v.is_nil());
+    let text = |k: &str| field(k).map(|v| v.to_text().ok_or_else(|| bad(k, "a string"))).transpose();
+    Ok(TicketChange {
+        kind: field("kind").map(|v| v.to_text().and_then(|s| TicketKind::parse(&s)).ok_or_else(|| bad("kind", "\"none\", \"stamp\" or \"buy\""))).transpose()?,
+        ticket: field("ticket").map(|v| v.as_i64().filter(|n| (0..=255).contains(n)).map(|n| n as u8).ok_or_else(|| bad("ticket", "a ticket's number (0 to 255)"))).transpose()?,
+        name: text("name")?,
+        price: field("price").map(|v| v.as_f64().filter(|n| n.is_finite() && *n >= 0.0).map(|n| n as f32).ok_or_else(|| bad("price", "a number of 0 or more"))).transpose()?,
+        voice: text("voice")?,
+        tag: text("tag")?,
+    })
 }
 
 /// The cars within `r` m of the player's bus (all, without a bus or without `r`).
@@ -86,26 +150,25 @@ pub static FNS: &[ApiFn] = &[
         Ok::<_, ApiError>(c.io().traffic_light_ahead(r).map(|l| rec(vec![("aspect", l.aspect.into()), ("change_in", Value::from(l.change_in)), ("distance", l.distance.into())])))
     }),
     def!("people.counts", "people", [], "walking, waiting, riding", "The people of the map near the camera: walking, waiting at stops, riding a bus.", NEW, None, true, |c, a| multi(c.io().people_counts().map(|n| n.map(Value::from)))),
-    def!("people.list", "people", [o("radius", "number")], "list of tables", "The people (within `radius` m of the player's bus, when given): `{id, x, y, z, state, aboard, ai_bus, stop, destination, ticket, complaint}`. `state`: `\"strolling\"`, `\"idle\"`, `\"standing\"`, `\"waiting\"`, `\"to_bus\"`, `\"boarding\"`, `\"riding\"`, `\"seated\"`, `\"leaving\"`, `\"to_stop\"`; `aboard` in the player's bus; `complaint` 0 to 3 (3: they leave).", NEW, None, false, |c, a| {
+    def!("people.list", "people", [o("radius", "number")], "list of tables", "The people (within `radius` m of the player's bus, when given): `{id, x, y, z, state, aboard, ai_bus, stop, destination, ticket, complaint}`. `state`: `\"strolling\"`, `\"idle\"`, `\"standing\"`, `\"waiting\"`, `\"to_bus\"`, `\"boarding\"`, `\"riding\"`, `\"seated\"`, `\"leaving\"`, `\"to_stop\"`; `aboard` in the player's bus; `complaint` 0 to 3 (3: they leave); and the fields `people.get` describes.", NEW, None, false, |c, a| {
         let r = a.opt_num(0)?;
         let io = c.io();
         let me = io.position();
         Ok::<_, ApiError>(Value::List(io.people_list().into_iter().filter(|p| match (r, me) {
             (Some(r), Some(m)) => (p.pos[0] - m[0]).hypot(p.pos[1] - m[1]) <= r,
             _ => true,
-        }).map(|p| rec(vec![
-            ("id", Value::from(p.id)),
-            ("x", p.pos[0].into()),
-            ("y", p.pos[1].into()),
-            ("z", p.pos[2].into()),
-            ("state", p.state.into()),
-            ("aboard", p.aboard.into()),
-            ("ai_bus", p.in_ai_bus.map(|b| Value::Int(b as i64)).into()),
-            ("stop", p.stop.map(Value::Int).into()),
-            ("destination", p.destination.into()),
-            ("ticket", p.ticket.into()),
-            ("complaint", Value::Int(p.complaint as i64)),
-        ])).collect()))
+        }).map(person).collect()))
+    }),
+    def!("people.get", "people", [p("id", "integer")], "table or nil", "One person by id, as `people.list` gives them, and more: `stop_name` (the timetable's name of the stop they wait or waited at), `ticket` (the name of the ticket they ask for), `ticket_kind` (`\"none\"`, `\"stamp\"`, `\"buy\"`), `ticket_index` (the ticket pack's, from 1; 0 none), `ticket_price`, `ticket_voice`, `ticket_by` (the plugin that changed it), `ticket_asked` (asked for at the cash desk already), `tag` (`people.set_ticket`'s), `age`, `model` (the `.hum` file), `voice` (its voice folder). `people.list` gives the same fields.", TICKETS, None, false, |c, a| {
+        let id = a.int(0)?;
+        Ok::<_, ApiError>(c.io().people_list().into_iter().find(|p| p.id as i64 == id).map(person))
+    }),
+    def!("people.set_ticket", "people", [p("id", "integer"), p("ticket", "table")], "true, or false and the reason", "Changes the ticket of a passenger boarding the player's bus (the `passenger_ticket` event names them): `{kind, ticket, name, price, voice, tag}`, each optional. `kind` (`\"none\"`: a pass, `\"stamp\"`, `\"buy\"`) only until they are in the bus; `ticket` another ticket of the pack (from 1, its name and price with it), `name` and `price` what they ask for and pay, `voice` a line of their voice folder said instead of `Ticket_<n>_<k>` (`\"Zone_4\"`: `Zone_4.wav`; where it is missing the usual line, `\"\"` back to it) - until they have asked at the cash desk. `tag` is a text of the plugin's own kept with the person (`people.get`), at any time. `false` and the reason when nothing changed.", TICKETS, TrafficWrite, true, |c, a| {
+        let id = a.int(0)?;
+        let change = ticket_change(a.table(1)?)?;
+        let by = c.state().name.clone();
+        let id = u32::try_from(id).map_err(|_| ApiError("omsi.people.set_ticket: no such person".into()))?;
+        Ok::<_, ApiError>(super::core::ok_or_reason(c.io().people_set_ticket(id, &change, &by)))
     }),
     def!("people.stops", "people", [], "list of tables", "The stops near the camera where people wait: `{id, name, x, y, z, waiting}`.", NEW, None, false, |c, a| {
         Value::List(c.io().people_stops().into_iter().map(|s| rec(vec![("id", Value::Int(s.id)), ("name", s.name.trim().into()), ("x", s.pos[0].into()), ("y", s.pos[1].into()), ("z", s.pos[2].into()), ("waiting", s.waiting.into())])).collect())
