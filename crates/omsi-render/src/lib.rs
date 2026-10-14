@@ -123,7 +123,7 @@ pub struct Renderer {
     /// Plain opaque, alpha-tested, and the opaque portions of blended transmap materials;
     /// each has a two-sided and a culled variant.
     prepass_pipelines: [wgpu::RenderPipeline; 6],
-    /// The same, multisampled, drawn inside the enhanced main pass (colour writes off):
+    /// The same, at the main pass's sample count (colour writes off):
     /// its own depth laid first (see `encode_prefill`), so that its costly shading runs
     /// once per visible surface.
     prepass_msaa_pipelines: Option<[wgpu::RenderPipeline; 6]>,

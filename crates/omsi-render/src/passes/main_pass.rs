@@ -149,7 +149,7 @@ impl Renderer {
         main_parts
     }
 
-    /// The ordinary scenery's depth laid into the multisampled buffer before the colour
+    /// The ordinary scenery's depth laid into the main pass before the colour
     /// draws: every wall, tree and car hidden behind the one in front then fails the depth
     /// test before the enhanced shading runs for it.
     fn encode_prefill<'p>(&self, pass: &mut wgpu::RenderPass<'p>, scene: &'p Scene, f: &FrameCtx, batches: &[Batch], pipes: &'p [wgpu::RenderPipeline; 6]) {
@@ -160,7 +160,8 @@ impl Renderer {
         // depth of its fully covered inside here (`fs_depth_cover`) - the trees' crowns
         // then hide the houses and the other leaves behind them before their shading.
         if self.profiling && f.with_overlays {
-            *self.counts.borrow_mut().entry("msaa prepass batches").or_default() += batches.len() as f64;
+            let key = if self.options.msaa > 1 { "msaa prepass batches" } else { "presurface prepass batches" };
+            *self.counts.borrow_mut().entry(key).or_default() += batches.len() as f64;
         }
         // (the pipelines: plain, cut-out and transmap depth, each without and with culling)
         encode_batches(pass, scene, batches, |pipe| &pipes[pipe as usize]);
@@ -312,6 +313,8 @@ impl Renderer {
             // Colour and seal the excavation first; prefill ordinary scenery without
             // storing and reloading the colour attachments in a separate pass.
             encode_batches(&mut pass, scene, &plan.main_batches[..plan.presurface_batch_end], |pipe| main_pipeline(pp, pipe));
+            // At 1x an excavation still prevents sharing the earlier prepass depth.
+            // Refill ordinary scenery here, after its floor and cover have been coloured.
             let pipes = self.prepass_msaa_pipelines.as_ref().unwrap();
             self.encode_prefill(&mut pass, scene, f, &plan.msaa_safe_batches, pipes);
         } else if let Some((batches, pipes)) = prefill {
