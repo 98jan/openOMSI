@@ -58,6 +58,7 @@ pub(crate) struct WeatherPart<'p> {
     pub(crate) metar_rx: &'p mut Option<std::sync::mpsc::Receiver<Option<omsi_content::weather::Weather>>>,
     pub(crate) metar_once: &'p mut bool,
     pub(crate) metar_next: &'p mut f64,
+    pub(crate) tomorrow: &'p mut crate::weather_tomorrow::Tomorrow,
     pub(crate) sky: &'p mut crate::weather_setup::SkyState,
 }
 
@@ -175,7 +176,7 @@ impl App {
             cabin_air, spray, lamps_on, populate_t, humans_populate_t, traffic_heavy_frame,
             first_populate, envir, weather, clock_jump, seat_bus, on_foot, safe_pose, safe_age,
             pending_time, autosave_t, pumping, career, journey, wetness, cloud_drift, weather_blend,
-            weather_cycle, metar_rx, metar_once, metar_next, sky, scenery, tomorrow: _,
+            weather_cycle, metar_rx, metar_once, metar_next, sky, scenery, tomorrow,
         } = session;
         Parts {
             common: Common { args, settings, started: *started, last: *last, exiting: *exiting },
@@ -184,7 +185,7 @@ impl App {
             clock: ClockPart { clock, paused, world_day, clock_jump, pending_time, autosave_t, fixed_tick },
             weather: WeatherPart {
                 rain, cabin_air, spray, lamps_on, envir, weather, wetness, cloud_drift,
-                weather_blend, weather_cycle, metar_rx, metar_once, metar_next, sky,
+                weather_blend, weather_cycle, metar_rx, metar_once, metar_next, sky, tomorrow,
             },
             world: WorldPart { world, scenery },
             traffic: TrafficPart { traffic, schedule, timetable_book, populate_t, traffic_heavy_frame, first_populate, pipeline },
