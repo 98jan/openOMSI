@@ -189,14 +189,14 @@ impl SceneBase {
     }
 }
 
-/// The depth prepass's pipelines: single-sampled, and multisampled with MSAA.
+/// The depth-only pass's pipelines and depth prefilling inside the main pass.
 pub(crate) struct Prepass {
     pub pipelines: [wgpu::RenderPipeline; 6],
     /// (drawn in the enhanced main pass, see `encode_prefill`)
     pub msaa_pipelines: Option<[wgpu::RenderPipeline; 6]>,
 }
 
-pub(crate) fn prepass(device: &wgpu::Device, scene: &SceneBase, msaa: u32) -> Prepass {
+pub(crate) fn prepass(device: &wgpu::Device, scene: &SceneBase, msaa: u32, enhanced: bool) -> Prepass {
     let prepass_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("prepass"),
         bind_group_layouts: &[Some(&scene.camera_layout), Some(&scene.material_layout)],
@@ -209,7 +209,7 @@ pub(crate) fn prepass(device: &wgpu::Device, scene: &SceneBase, msaa: u32) -> Pr
             0 => "fs_depth",
             // (the multisampled prefill in the main pass: only what alpha-to-coverage will
             // cover in full, see `fs_depth_cover`)
-            1 if in_main => "fs_depth_cover",
+            1 if in_main && samples > 1 => "fs_depth_cover",
             1 => "fs_depth_test",
             2 => "fs_depth_transmap",
             _ => unreachable!(),
@@ -256,7 +256,9 @@ pub(crate) fn prepass(device: &wgpu::Device, scene: &SceneBase, msaa: u32) -> Pr
     // visibility depends on shading, unlike opaque hidden-surface removal.
     // Purely opaque Apple views still skip the prefill to avoid its cost.
     // (Only these: the prefill is drawn inside the main pass, with its colour targets.)
-    let msaa_pipelines = (msaa > 1).then(|| {
+    // Excavations need a depth refill even at 1x, after their floors and covers.
+    // The depth-only pass's pipelines cannot bind the main pass's colour targets.
+    let msaa_pipelines = (msaa > 1 || enhanced).then(|| {
         [(0, false), (0, true), (1, false), (1, true), (2, false), (2, true)]
             .map(|(kind, cull)| make_prepass_samples(kind, cull, msaa, true))
     });
