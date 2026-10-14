@@ -697,6 +697,21 @@ impl BusService {
                 up.or(here)
             }
             Phase::Boarding => {
+                // Served from behind the bus at the berth: once nobody is at the doors any
+                // more and the berth is free, it shuts them and pulls up onto the berth, and
+                // boards there again before it leaves. It stood behind until its own
+                // departure, the stop blocked for every bus coming in (#2591). Omsi.exe
+                // 0x7d9128 (0x7d9de4..0x7d9f41): a bus at a stop that rolls on more than 5 m
+                // short of its point with nobody boarding or getting off gives its stop up and
+                // comes to its point anew.
+                if self.behind && self.boarding <= 0.0 && ctx.day_time < self.leave_at {
+                    self.boarded = false;
+                    if let Some(up) = self.move_up(st, ctx, berths) {
+                        self.set_phase(Phase::Waiting);
+                        return Some(up);
+                    }
+                    self.boarded = true;
+                }
                 self.boarding -= ctx.dt;
                 if self.boarding > 0.0 && ctx.day_time >= self.leave_at {
                     self.held_over += ctx.dt;
@@ -1206,6 +1221,46 @@ mod tests {
         assert_eq!(service.boarding, 0.0);
         assert_eq!(service.phase_t, 0.0);
         assert!(service.layover && !service.boarded);
+    }
+
+    /// A bus that served its stop from behind the one at the berth pulls up onto the berth
+    /// once that bus has gone and nobody is at its doors, doors shut (#2591); while the
+    /// berth is held it stays where it is.
+    #[test]
+    fn a_bus_served_from_behind_pulls_up_when_the_berth_comes_free() {
+        let net = service_network();
+        let mut vehicle = service_vehicle();
+        let mut state = AiState::new(0, 0.0, 1);
+        let behind = || {
+            let mut s = BusService::new(vec![Stop::from_tuple((0, 30.0, 0.0, 400.0, 7, 0.0))]);
+            s.arrive(&service_context(&net, 100.0, 0.0), 400.0, (0, 10.0));
+            s.behind = true;
+            s.boarding = 0.0;
+            s
+        };
+        let mut ctx = service_context(&net, 200.0, 0.1);
+        ctx.berth = BerthScene { applies: true, free: true, there: false, pull_out_blocked: false };
+        // the berth still the other bus's: it stays, doors open
+        let mut berths = Berths::default();
+        let key = BerthKey { stop: 7, lane: 0 };
+        berths.ask(key, 2, true, 0.0);
+        assert!(berths.grant(key, 2, true));
+        let mut service = behind();
+        assert_eq!(service.step(&mut state, &mut vehicle, &ctx, &mut berths), Some(state.front));
+        assert_eq!(service.phase, Phase::Boarding);
+        // gone: it moves up with the doors shut and boards again at the berth
+        berths.release(key, 2);
+        let mut service = behind();
+        let at = service.step(&mut state, &mut vehicle, &ctx, &mut berths);
+        assert_eq!(service.phase, Phase::Waiting);
+        assert!(at.is_some_and(|d| d > state.front + 20.0), "{at:?}");
+        assert!(!service.at_station());
+        // somebody still at its doors: it waits for them first
+        let mut berths = Berths::default();
+        let mut service = behind();
+        service.boarding = 5.0;
+        service.step(&mut state, &mut vehicle, &ctx, &mut berths);
+        assert_eq!(service.phase, Phase::Boarding);
     }
 
     #[test]
