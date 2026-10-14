@@ -207,15 +207,13 @@ impl crate::App {
         let Some(acc) = ph.render.accum.as_mut() else { return };
         let mut added = false;
         if acc.n < target {
-            // the bus's parts, to move with the shutter (a rolling shot): the bus, its trailers
-            // and the people aboard, drawn apart from its meshes (left behind, ghosts: #2611)
+            // the bus's parts to move with the shutter (a rolling shot): bus, trailers, people aboard (#2611)
             let parts: Vec<(usize, glam::DVec3, glam::Mat4)> = match (shot.motion.is_some(), self.player.as_ref()) {
                 (true, Some(p)) => {
-                    let bus: Vec<usize> = p.render.instances.to_vec();
                     let trailers: Vec<usize> = p.trailer_renders.iter().flat_map(|t| t.instances.iter().copied()).collect();
                     let people = &self.gfx.sim_view.people.people;
                     let riders: Vec<usize> = self.session.humans.iter().flat_map(|h| h.people.iter()).filter(|q| q.inside(crate::humans::BusId::Player)).filter_map(|q| people.get(&q.id)).flat_map(|v| v.meshes.iter().map(|m| m.1)).collect();
-                    omsi_photo::motion_parts(&bus, &trailers, &riders).into_iter().filter_map(|i| scene.instances.get(i).map(|x| (i, x.origin, x.transform))).collect()
+                    omsi_photo::motion_parts(&p.render.instances, &trailers, &riders).into_iter().filter_map(|i| scene.instances.get(i).map(|x| (i, x.origin, x.transform))).collect()
                 }
                 _ => Vec::new(),
             };
