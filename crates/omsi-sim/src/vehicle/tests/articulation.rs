@@ -228,6 +228,41 @@ fn rear_section_turns_about_its_rot_pnt_long() {
     assert!((steered.pivot_length() - (4.169 - 1.0)).abs() < 1e-3, "{}", steered.pivot_length());
 }
 
+/// A rear section's axle behind its `[rot_pnt_long]` line turns against the bend, as far
+/// as points it at the bend's centre on that line (Omsi.exe 0x7e303d); the stock GN92's,
+/// on its line, stays straight (#322).
+#[test]
+#[ignore = "needs the original OMSI 2 install (OMSI_ROOT)"]
+fn rear_section_axle_behind_its_turning_line_steers() {
+    let root = original_root();
+    let bus = root.join("Vehicles/MAN_NL_NG/MAN_GN92_main.bus");
+    let trail = root.join("Vehicles/MAN_NL_NG/MAN_GN92_trail.bus");
+    require_content(&[&bus, &trail]);
+    let ty = Arc::new(VehicleType::load(&root, &bus).expect("GN92"));
+    // the front section driving a right-hand bend: a degree every 0.2 m
+    let steer = |line: Option<f32>| -> (f32, f32) {
+        let mut tt = VehicleType::load(&root, &trail).expect("GN92 trail");
+        if let Some(l) = line {
+            tt.def.rot_pnt_long = l;
+        }
+        let mut v = VehicleInstance::new(ty.clone(), VehicleHost::new(crate::SimClock::default()));
+        v.attach_trailer_ex(Arc::new(tt), false);
+        for _ in 0..200 {
+            let h = v.heading.to_radians();
+            v.position += DVec3::new(h.sin(), h.cos(), 0.0) * 0.2;
+            v.heading += 1.0;
+            v.update_visuals(0.02);
+        }
+        (v.var("Axle_Steering_2_L").unwrap(), v.trailers[0].kappa)
+    };
+    let (stock, kappa) = steer(None);
+    assert!(stock.abs() < 1e-4, "the GN92's axle steered {stock}");
+    assert!(kappa > 0.01, "a right-hand bend is {kappa}");
+    let (steered, kappa) = steer(Some(1.0));
+    let want = (-(1.0 + 0.387) * kappa).atan();
+    assert!(steered < -0.05 && (steered - want).abs() < 1e-4, "{steered} for {want}");
+}
+
 /// The rear section of an articulated bus on a viaduct stays on the deck: one frame with
 /// no deck under its axle (a gap at a joint) does not drop it onto the road below, and
 /// one that had sunk under the deck finds it again (#135).

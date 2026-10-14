@@ -61,6 +61,11 @@ pub struct TrailerPart {
     pub(super) coupling_back: Vec3,
     pub(super) axle_long: f32,
     pub(super) axle_count: usize,
+    /// The curvature (1/m, positive to the right) the part's turning line runs on, from
+    /// how far it turned over the way that line moved: Omsi.exe's inverse turning radius of
+    /// a coupled section (0x7e0f44 works it out of the part in front and the joint angle),
+    /// which steers each of its axles (see `axle_steering`).
+    pub(super) kappa: f32,
     /// First axle index of this part in the train's `Wheel_*` variables.
     pub(super) first_axle: usize,
     pub(super) wheel_radius: f32,
@@ -120,6 +125,8 @@ pub(super) struct AxleVarIds {
     pub(super) rotation_speed: Vec<[Option<omsi_script::VarId>; 2]>,
     /// `Axle_Suspension_<n>_L/R`.
     pub(super) suspension: Vec<[Option<omsi_script::VarId>; 2]>,
+    /// `Axle_Steering_<n>_L/R`.
+    pub(super) steering: Vec<[Option<omsi_script::VarId>; 2]>,
     /// `Axle_Springfactor_<n>_L`.
     pub(super) spring_factor: Vec<Option<omsi_script::VarId>>,
 }
@@ -138,6 +145,7 @@ impl AxleVarIds {
         self.rotation = n.clone().map(|k| sides(&|side| p.var(&format!("Wheel_Rotation_{k}_{side}")))).collect();
         self.rotation_speed = n.clone().map(|k| sides(&|side| p.var(&format!("Wheel_RotationSpeed_{k}_{side}")))).collect();
         self.suspension = n.clone().map(|k| sides(&|side| p.var(&format!("Axle_Suspension_{k}_{side}")))).collect();
+        self.steering = n.clone().map(|k| sides(&|side| p.var(&format!("Axle_Steering_{k}_{side}")))).collect();
         self.spring_factor = n.map(|k| main.var_slot(&format!("Axle_Springfactor_{k}_L")).map(|i| i as omsi_script::VarId)).collect();
         self.made_for = Some(key);
     }
@@ -315,6 +323,7 @@ impl TrailerPart {
             coupling_back,
             axle_long,
             axle_count: ty.def.axles.len().max(1),
+            kappa: 0.0,
             first_axle,
             wheel_radius,
             odometer: 0.0,
@@ -608,9 +617,16 @@ impl TrailerPart {
                 }
             }
         }
+        let turned = ((heading - self.heading + 540.0).rem_euclid(360.0) - 180.0).to_radians();
         self.heading = heading;
         let new_pivot = c - DVec3::new(dir.x, dir.y, 0.0) * self.length as f64;
         let ds = (new_pivot - pivot).truncate().length() as f32;
+        // (the way along its own heading, backwards below zero; over a step too short to
+        // tell the bend the last one holds)
+        let along = (new_pivot - pivot).truncate().dot(dir) as f32;
+        if self.pivot.is_some() && along.abs() > 1e-3 {
+            self.kappa = (turned as f32 / along).clamp(-1.0, 1.0);
+        }
         self.odometer += ds * (main.physics.velocity_kmh().signum().max(0.0) * 2.0 - 1.0).max(-1.0);
         self.pivot = Some(new_pivot);
         let ai = main.ev(Ev::Ai).map(|v| v > 0.5).unwrap_or(false);
@@ -740,7 +756,6 @@ impl TrailerPart {
             }
         }
         self.update_visuals_only(main, dt, lead);
-        let _ = self.axle_long;
     }
 
     pub(super) fn update_visuals_only(&mut self, main: &mut VehicleInstance, dt: f32, lead: Option<(DVec3, Mat4, f64)>) {
@@ -765,8 +780,12 @@ impl TrailerPart {
             main.physics.velocity_kmh() / 3.6 / (2.0 * std::f32::consts::PI * self.wheel_radius)
                 * 60.0;
         let rot = (self.odometer / self.wheel_radius).rem_euclid(std::f32::consts::TAU);
+        let steering = self.axle_steering();
         for a in 0..self.axle_count {
             for side in 0..2 {
+                if let (Some(Some(id)), Some(s)) = (self.axle_ids.steering.get(a).map(|s| s[side]), steering.get(a)) {
+                    main.state.vars[id as usize] = *s;
+                }
                 if let Some(id) = self.axle_ids.rotation[a][side] {
                     main.state.vars[id as usize] = rot;
                 }
@@ -786,6 +805,20 @@ impl TrailerPart {
 }
 
 impl TrailerPart {
+    /// Each road axle's steering angle (rad, positive to the right), what Omsi.exe hands the
+    /// scripts as the part's `Axle_Steering_<n>_L/R`: atan((axle long - turning line) x
+    /// curvature), every axle pointed at the centre of the bend on the part's
+    /// `[rot_pnt_long]` line (0x7e303d, as the front section's at 0x7df3ac). An axle on that
+    /// line (the GN92's) stays straight; the Van Hool AG300's, behind it, turns against the
+    /// bend. (No coupled part's axle had the variable set at all, #322.) Rail cars and parts
+    /// running backwards steer none.
+    pub(super) fn axle_steering(&self) -> Vec<f32> {
+        if self.ty.def.is_rail() || self.reversed {
+            return Vec::new();
+        }
+        self.ty.def.axles.iter().map(|a| ((a.long - self.axle_long) * self.kappa).atan().clamp(-1.05, 1.05)).collect()
+    }
+
     /// `Axle_Suspension_*` of the part's sprung axles from the ground under each wheel, the
     /// body standing at `self.position` turned by `rot` (see `update`).
     pub(super) fn spring_wheels(&self, main: &mut VehicleInstance, rot: Mat4) {
