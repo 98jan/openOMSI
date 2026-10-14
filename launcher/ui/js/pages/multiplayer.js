@@ -7,7 +7,7 @@ import { t } from '../i18n.js';
 import { call } from '../api.js';
 import { Icon } from '../icons.js';
 import { Button, Card, Field, Input, Empty, PageHead, Spinner, Tabs, Select, Toggle, Notice, Tag } from '../ui.js';
-import { choose, cached } from '../data.js';
+import { choose, cached, serverJoined, allowedBus } from '../data.js';
 
 export function MultiplayerPage() {
   const [tab, setTab] = useState('code');
@@ -27,17 +27,21 @@ function ByCode() {
   const [check, setCheck] = useState(null);
   const [host, setHost] = useState(null);
   useEffect(() => {
-    if (!code.trim()) return setCheck(null), setHost(null);
+    setHost(null);
+    if (!code.trim()) return setCheck(null);
+    const asked = code.trim();
     const id = setTimeout(() => {
       call('check_join', { text: code }).then(setCheck).catch(() => setCheck(null));
-      if (/^OMSI-/i.test(code.trim())) call('server_query', { address: code.trim() }).then(setHost).catch(() => setHost(null));
+      if (/^OMSI-/i.test(asked)) call('server_query', { address: asked }).then((h) => setHost({ ...h, code: asked })).catch(() => setHost(null));
     }, 300);
     return () => clearTimeout(id);
   }, [code]);
   const join = () => {
     if (!code.trim()) return toast(t('Paste a session code first'), 'error');
-    if (host?.map && S.maps?.some((m) => m.file.toLowerCase() === host.map.replace(/\\/g, '/').toLowerCase())) choose({ map: host.map.replace(/\\/g, '/') });
-    choose({ lan_mode: 'join', lan_addr: code.trim() });
+    const known = host?.code === code.trim() ? host : null;
+    if (known?.map && S.maps?.some((m) => m.file.toLowerCase() === known.map.replace(/\\/g, '/').toLowerCase())) choose({ map: known.map.replace(/\\/g, '/') });
+    choose({ lan_mode: 'join', lan_addr: code.trim(), lan_map: known?.map || '', ...serverJoined(known) });
+    choose(allowedBus());
     set({ page: 'drive' });
   };
   return html`<div class="grid-2" style="align-items:start">
@@ -111,8 +115,9 @@ function Servers() {
     const map = (i?.map || '').replace(/\\/g, '/');
     if (map && s.maps?.some((m) => m.file.toLowerCase() === map.toLowerCase())) choose({ map });
     else if (map) toast(t('The server plays {}, which is not installed here: it is fetched from the server on joining.', [map]));
-    choose({ lan_mode: 'join', lan_addr: !udp && !web && i?.reached_at ? i.reached_at : x.address });
-    toast(t('Joined {} - choose your bus and duty, then Start the duty', [i?.name || x.name]), 'ok');
+    choose({ lan_mode: 'join', lan_addr: !udp && !web && i?.reached_at ? i.reached_at : x.address, lan_map: i?.map || '', ...serverJoined(i ? { ...i, name: x.name || i.name } : null) });
+    choose(allowedBus());
+    toast(t('Joined {} - choose your bus and duty, then Start the duty', [x.name || i?.name || x.address]), 'ok');
     set({ page: 'drive' });
   };
   return html`<div class="stack">

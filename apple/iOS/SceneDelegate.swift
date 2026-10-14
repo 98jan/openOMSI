@@ -4,8 +4,7 @@ import UIKit
 
 /// The app's scene (UIKit's scene life cycle, which the systems after iOS 26 require): its
 /// window shows the launcher. The game's window is put on the same scene, in front, while a
-/// drive lasts (GameHost.swift); with "Cross-Platform Launcher" the launcher drawn by the game
-/// is that window from the start, and this one stays empty behind it.
+/// drive lasts (GameHost.swift).
 @objc(SceneDelegate)
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
@@ -23,18 +22,15 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         item.setTitleTextAttributes([.font: Theme.uiFont(10, .medium)], for: .normal)
         UINavigationBar.appearance().titleTextAttributes = [.font: Theme.uiFont(17, .semibold)]
         UIBarButtonItem.appearance().setTitleTextAttributes([.font: Theme.uiFont(17)], for: .normal)
+        store.open()
         let window = UIWindow(windowScene: scene)
-        let root = UIHostingController(rootView: LauncherRoot().environment(store).preferredColorScheme(.dark))
+        let root = LauncherHost(rootView: AnyView(LauncherRoot().environment(store).preferredColorScheme(.dark)))
         root.view.backgroundColor = UIColor(Theme.bg)
         window.rootViewController = root
         window.backgroundColor = UIColor(Theme.bg)
         window.makeKeyAndVisible()
         self.window = window
         GameHost.shared.launcherWindow = window
-        let crossPlatform = GameHost.shared.crossPlatformSetting()
-        if !crossPlatform {
-            store.open()
-        }
         // (`OMSI_APPLE_ORIENT=landscape|portrait`: the screen turned so, for looking at either
         // layout on a Simulator without a person to turn it)
         if let o = ProcessInfo.processInfo.environment["OMSI_APPLE_ORIENT"] {
@@ -51,5 +47,14 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         GameHost.shared.store.tick()
+    }
+}
+
+final class LauncherHost: UIHostingController<AnyView> {
+    override var supportedInterfaceOrientations: UIInterfaceOrientationMask {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return .all }
+        let store = GameHost.shared.store
+        guard store.onboarding else { return .landscape }
+        return store.onboardingStep == 2 ? .allButUpsideDown : .portrait
     }
 }
