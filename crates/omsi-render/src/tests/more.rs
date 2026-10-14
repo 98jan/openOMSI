@@ -604,6 +604,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("upscale", include_str!("../upscale.wgsl").to_string()),
         ("mip", include_str!("../mip.wgsl").to_string()),
         ("xr_ui", include_str!("../xr_ui.wgsl").to_string()),
+        ("lamp sight", include_str!("../lamp_sight.wgsl").to_string()),
         // Enhanced+: the scene's pass with its reflection targets, the ray tracing
         ("scene (Enhanced+)", scene_shader_source(false).replace("//RT ", "")),
         ("ray-traced lighting", rt::lighting_source()),
@@ -617,6 +618,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("FogLampParams", std::mem::size_of::<FogLampUniform>()),
         ("SnowParams", std::mem::size_of::<SnowUniform>()),
         ("PuddleParams", std::mem::size_of::<puddles::Uniform>()),
+        ("Sight", std::mem::size_of::<SightUniform>()),
         ("VehicleReflection", std::mem::size_of::<puddles::VehicleUniform>()),
         ("PointLight", std::mem::size_of::<GpuPointLight>()),
         ("Camera", std::mem::size_of::<CameraUniform>()),
@@ -1196,4 +1198,43 @@ fn the_lamps_light_the_scene_from_textures_where_storage_buffers_carry_nothing()
         assert_eq!(e.visibility, wgpu::ShaderStages::FRAGMENT);
         assert!(matches!(e.ty, wgpu::BindingType::Texture { sample_type: t, .. } if t == sample_type));
     }
+}
+
+#[test]
+#[ignore = "requires a graphics adapter; run with --ignored on a GPU host"]
+fn a_lamp_behind_a_wall_does_not_dazzle_and_one_in_view_still_does() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance,
+        None,
+        Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, shadow_size: 1024, fxaa: false, render_scale: 1.0, ..Default::default() },
+    ))
+    .expect("test renderer");
+    let mut scene = renderer.new_scene();
+    let wall = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [0.5, 0.5, 0.5, 1.0], true);
+    let mesh = renderer.add_mesh(
+        &mut scene,
+        &MeshData {
+            positions: vec![Vec3::new(-6.0, -5.0, -1.0), Vec3::new(6.0, -5.0, -1.0), Vec3::new(6.0, 5.0, -1.0), Vec3::new(-6.0, 5.0, -1.0)],
+            normals: vec![Vec3::Z; 4],
+            uvs: vec![glam::Vec2::splat(0.5); 4],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            ranges: vec![(0, 6, 0)],
+            one_sided: false,
+        },
+    );
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![wall]);
+    let (in_view, behind) = (DVec3::new(2.0, 0.0, 3.0), DVec3::new(-2.0, 0.0, -4.0));
+    scene.lights = [in_view, behind]
+        .map(|position| PointLight { position, radius: 20.0, core: 10.0, intensity: 1.0, ..Default::default() })
+        .to_vec();
+    let camera = Camera { position: DVec3::new(0.0, -0.105, 6.0), yaw: 0.0, pitch: -89.0, roll: 0.0, fov_deg: 90.0, near: 0.1, far: 100.0 };
+    let night = Lighting { enhanced: true, sun_dir: -Vec3::Z, sun_intensity: 0.0, night: 1.0, shadows: false, detail: false, fog_density: 0.0, ..Default::default() };
+    for _ in 0..2 {
+        renderer.render_to_image(&mut scene, 64, 64, &camera, &night).unwrap();
+    }
+    let sight = renderer.tone.lamp_sight.as_ref().expect("lamp sight");
+    assert!(sight.seen(in_view) > 0.9, "a lamp in plain view: {}", sight.seen(in_view));
+    assert!(sight.seen(behind) < 0.1, "a lamp behind the wall: {}", sight.seen(behind));
 }

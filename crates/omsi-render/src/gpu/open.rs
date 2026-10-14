@@ -568,6 +568,7 @@ impl Renderer {
                 adapt_bg: post.adapt_bg,
                 adapt_front: 0,
                 exposure_log: ExposureLog::new(&device),
+                lamp_sight: LampSight::new(&device, leave_out_enhanced),
                 enh_buf: enhanced.enh_buf,
                 lin_sampler: enhanced.lin_sampler,
                 probe: enhanced.probe,
