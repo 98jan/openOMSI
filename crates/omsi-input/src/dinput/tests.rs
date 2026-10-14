@@ -107,10 +107,10 @@ fn invalid_state_releases_shared_wheel_shifter_and_cannot_drive() {
     state.pov[3] = 18000;
     let mut valid = true;
     let mut events = Vec::new();
-    assert_eq!(state_axes(&state, valid, &[true; 8])[0], (0, 1.0));
+    assert_eq!(state_axes(&state, valid, &[true; 8], &[(-RANGE, RANGE); 8])[0], (0, 1.0));
     invalidate_state("G27", &mut state, &mut valid, &mut events);
     assert!(!valid);
-    assert!(state_axes(&state, valid, &[true; 8]).is_empty());
+    assert!(state_axes(&state, valid, &[true; 8], &[(-RANGE, RANGE); 8]).is_empty());
     assert_eq!(events.len(), 4);
     for button in [0, 8, 127] {
         assert!(events.contains(&("G27".into(), button, false)));
@@ -197,4 +197,17 @@ fn button_box_without_axes_formats_successfully() {
     for (i, obj) in objs.iter().enumerate() {
         assert_eq!(obj.dwOfs, (48 + i) as u32);
     }
+}
+
+/// A driver that keeps its own range for an axis is read in it: Fanatec's pedals at 0..RANGE
+/// gave half travel at rest (#521).
+#[test]
+fn an_axis_is_read_in_the_range_the_driver_reports() {
+    assert_eq!(axis_value(RANGE, (-RANGE, RANGE)), 1.0);
+    assert_eq!(axis_value(-RANGE / 2, (-RANGE, RANGE)), -0.5);
+    assert_eq!(axis_value(0, (0, RANGE)), -1.0);
+    assert_eq!(axis_value(RANGE, (0, RANGE)), 1.0);
+    assert_eq!(axis_value(32_767, (0, 65_535)), 0.0);
+    assert_eq!(axis_value(70_000, (0, 65_535)), 1.0);
+    assert_eq!(axis_value(RANGE / 2, (0, 0)), 0.5);
 }
