@@ -57,13 +57,14 @@ Every push to `main` runs [`.github/workflows/release.yml`](../.github/workflows
 
 Only betas of `main` are published (a workflow run on another branch builds without
 publishing). When a beta has been tested and nothing blocks it (about once a week, sooner for an urgent
-fix), a maintainer runs **Actions → Promote a beta → Run workflow** with its version
+fix), a maintainer runs **Actions → Promote a beta → Run workflow** from `main` with its version
 ([`.github/workflows/promote.yml`](../.github/workflows/promote.yml)). The beta becomes the
 stable release as it is: the same tag, the same files, the same SHA-256 - nothing is built
 again. Its notes are rewritten to list every change since the previous stable release (the
 sections of `CHANGELOG.md` in between). Only a published beta of `main`, newer than the current
 stable release, with the files of every platform and not listed in `release/health.json`,
-can be promoted.
+can be promoted. The workflow runs from `main` only and reads `release/health.json` and
+`CHANGELOG.md` as they are on `main` at that moment, whatever branch it is started from.
 
 ### A published release never changes
 
