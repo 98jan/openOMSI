@@ -16,6 +16,7 @@ pub mod bc;
 pub mod bc7;
 pub mod blocks;
 pub mod dds;
+pub mod disk_cache;
 pub mod ktx;
 pub mod gpu;
 pub mod tga;

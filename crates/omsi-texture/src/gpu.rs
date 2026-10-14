@@ -3,6 +3,7 @@
 //! where the device takes block formats and the result is close enough, RGBA otherwise.
 
 use crate::bc::{self, Bc};
+use crate::disk_cache::{DiskCache, Key};
 use crate::{Image, TextureError};
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -207,6 +208,18 @@ pub fn block_size(w: u32, h: u32) -> Option<(u32, u32)> {
 /// texel is a larger share of them).
 const MIN_RESIZE_SIDE: u32 = 128;
 
+fn resized(img: Image, nw: u32, nh: u32) -> Image {
+    if (nw, nh) == (img.width, img.height) {
+        return img;
+    }
+    let rgba = bc::resize(&img.rgba, img.width, img.height, nw, nh);
+    Image { rgba, width: nw, height: nh, has_alpha: img.has_alpha }
+}
+
+pub(crate) fn at_block_size(img: Image, w: u32, h: u32) -> Option<Image> {
+    (block_size(img.width, img.height) == Some((w, h))).then(|| resized(img, w, h))
+}
+
 fn bc7_texture(img: &Image) -> Option<(TextureData, (f64, f64))> {
     let (w, h) = (img.width, img.height);
     let blocks = crate::bc7::encode(&img.rgba, w, h);
@@ -238,12 +251,7 @@ pub fn prepare_image_with(img: Image, o: GpuOptions) -> (TextureData, Prepared) 
     }
     let (nw, nh) = target.unwrap();
     // (the picture as read goes as soon as its resized copy is there)
-    let img = if (nw, nh) != (img.width, img.height) {
-        let rgba = bc::resize(&img.rgba, img.width, img.height, nw, nh);
-        Image { rgba, width: nw, height: nh, has_alpha: img.has_alpha }
-    } else {
-        img
-    };
+    let img = resized(img, nw, nh);
     let texels = nw as u64 * nh as u64;
     let opaque = !img.has_alpha || img.rgba.chunks_exact(4).all(|p| p[3] == 255);
     let format = if opaque { PixelFormat::Bc1 } else { PixelFormat::Bc3 };
@@ -383,7 +391,41 @@ fn dds_blocks(bytes: &[u8]) -> Option<(PixelFormat, u32, u32, u32, usize)> {
 /// Load a texture file for the GPU under the current options.
 pub fn load_gpu(path: &Path) -> Result<(TextureData, Prepared), TextureError> {
     let bytes = omsi_cfg::vfs::read(path).map_err(|e| TextureError::Decode(path.to_path_buf(), e.to_string()))?;
-    load_gpu_bytes(&bytes, path, gpu_options())
+    load_gpu_cached(&bytes, path, gpu_options(), DiskCache::global())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Work {
+    None,
+    Chain,
+    Picture,
+}
+
+fn work_of(bytes: &[u8], o: GpuOptions) -> Work {
+    if !o.bc {
+        return Work::None;
+    }
+    if let Some((_, w, h, count, _)) = dds_blocks(bytes) {
+        if w % 4 == 0 && h % 4 == 0 {
+            return if count == 1 && mip_count(w, h) > 1 { Work::Chain } else { Work::None };
+        }
+    }
+    if o.compress { Work::Picture } else { Work::None }
+}
+
+pub fn load_gpu_cached(bytes: &[u8], path: &Path, o: GpuOptions, cache: Option<&DiskCache>) -> Result<(TextureData, Prepared), TextureError> {
+    let work = work_of(bytes, o);
+    let Some((cache, key)) = cache.filter(|_| work != Work::None).and_then(|c| Some((c, Key::new(bytes, path, o)?))) else {
+        return load_gpu_bytes(bytes, path, o);
+    };
+    if let Some(hit) = cache.load(&key).and_then(|e| e.restore(bytes, path)) {
+        return Ok(hit);
+    }
+    let (t, info) = load_gpu_bytes(bytes, path, o)?;
+    if info.encoded || info.rejected || (work == Work::Chain && t.format.is_compressed()) {
+        cache.store(&key, &t, info);
+    }
+    Ok((t, info))
 }
 
 /// A texture for the GPU as quickly as it can be had, for a picture wanted while the game
