@@ -20,9 +20,17 @@ const TEMP_EXT: &str = "tmp";
 pub struct DiskCache {
     dir: PathBuf,
     cap: u64,
-    total: Mutex<Option<u64>>,
+    budget: Mutex<Budget>,
     started: SystemTime,
     full: AtomicBool,
+    #[cfg(test)]
+    hold_after_admission: Option<Duration>,
+}
+
+#[derive(Default)]
+struct Budget {
+    on_disk: Option<u64>,
+    pending: u64,
 }
 
 pub(crate) struct Key {
@@ -37,7 +45,15 @@ pub(crate) enum Entry {
 
 impl DiskCache {
     pub fn new(dir: PathBuf, cap: u64) -> DiskCache {
-        DiskCache { dir, cap, total: Mutex::new(None), started: SystemTime::now(), full: AtomicBool::new(false) }
+        DiskCache {
+            dir,
+            cap,
+            budget: Mutex::new(Budget::default()),
+            started: SystemTime::now(),
+            full: AtomicBool::new(false),
+            #[cfg(test)]
+            hold_after_admission: None,
+        }
     }
 
     pub fn global() -> Option<&'static DiskCache> {
@@ -85,29 +101,46 @@ impl DiskCache {
         if std::fs::create_dir_all(&self.dir).is_err() {
             return;
         }
+        let len = body.len() as u64;
+        if !self.admit(len) {
+            return;
+        }
+        #[cfg(test)]
+        if let Some(hold) = self.hold_after_admission {
+            std::thread::sleep(hold);
+        }
         static SEQ: AtomicU64 = AtomicU64::new(0);
         let path = self.dir.join(&key.name);
         let tmp = self.dir.join(format!("{}.{}.{}.{TEMP_EXT}", key.name, std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)));
         let written = File::create(&tmp).and_then(|mut f| f.write_all(&body)).is_ok();
+        let mut budget = self.budget.lock();
         let replaced = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        if !written || std::fs::rename(&tmp, &path).is_err() {
+        let stored = written && std::fs::rename(&tmp, &path).is_ok();
+        if !stored {
             let _ = std::fs::remove_file(&tmp);
-            return;
         }
-        self.account(body.len() as u64, replaced);
+        budget.pending -= len;
+        if stored {
+            budget.on_disk = Some((budget.on_disk.unwrap_or(0) + len).saturating_sub(replaced));
+        }
     }
 
-    fn account(&self, added: u64, replaced: u64) {
-        let mut total = self.total.lock();
-        let now = match *total {
-            Some(t) => (t + added).saturating_sub(replaced),
-            None => self.trim(u64::MAX),
-        };
-        let now = if now > self.cap { self.trim(self.cap / 4 * 3) } else { now };
-        if now > self.cap {
-            self.full.store(true, Ordering::Relaxed);
+    fn admit(&self, len: u64) -> bool {
+        let mut budget = self.budget.lock();
+        if self.full.load(Ordering::Relaxed) {
+            return false;
         }
-        *total = Some(now);
+        let mut on_disk = budget.on_disk.unwrap_or_else(|| self.trim(u64::MAX));
+        if on_disk + budget.pending + len > self.cap {
+            on_disk = self.trim((self.cap / 4 * 3).saturating_sub(budget.pending + len));
+        }
+        budget.on_disk = Some(on_disk);
+        if on_disk + budget.pending + len > self.cap {
+            self.full.store(true, Ordering::Relaxed);
+            return false;
+        }
+        budget.pending += len;
+        true
     }
 
     fn trim(&self, target: u64) -> u64 {
@@ -657,9 +690,32 @@ mod tests {
             names.push(Key::new(&bytes, &path, ON).unwrap().name().to_string());
         }
         let left: Vec<String> = s.entries().iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
-        assert_eq!(left.len(), 3, "{left:?}");
-        assert!(names[..3].iter().all(|n| left.contains(n)), "{left:?}");
+        assert_eq!(left.len(), 2, "{left:?}");
+        assert!(names[..2].iter().all(|n| left.contains(n)), "{left:?}");
         assert!(cache.full.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn parallel_writers_stay_within_the_cap() {
+        use rayon::prelude::*;
+        let s = Scratch::new("parallel-cap");
+        let (_, bytes) = pictures().into_iter().next().unwrap();
+        let probe = s.cache(DEFAULT_CAP);
+        let path = write(&s.0, "p0.tga", &bytes);
+        load_gpu_cached(&bytes, &path, ON, Some(&probe)).unwrap();
+        let one = s.entries().iter().map(|p| std::fs::metadata(p).unwrap().len()).sum::<u64>();
+        std::fs::remove_dir_all(s.0.join("cache")).unwrap();
+        let mut cache = s.cache(one * 2 + one / 2);
+        cache.hold_after_admission = Some(Duration::from_millis(100));
+        let files: Vec<PathBuf> = (0..8).map(|i| write(&s.0, &format!("q{i}.tga"), &bytes)).collect();
+        rayon::ThreadPoolBuilder::new().num_threads(8).build().unwrap().install(|| {
+            files.par_iter().for_each(|path| {
+                load_gpu_cached(&bytes, path, ON, Some(&cache)).unwrap();
+            });
+        });
+        let total: u64 = s.entries().iter().map(|p| std::fs::metadata(p).unwrap().len()).sum();
+        assert!(total <= cache.cap, "{total} > {}", cache.cap);
+        assert_eq!(s.entries().len(), 2);
     }
 
     #[test]
