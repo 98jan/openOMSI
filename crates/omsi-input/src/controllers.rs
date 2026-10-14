@@ -238,13 +238,18 @@ const CENTRE_SNAP: f32 = 0.03;
 /// How far the X axis of a device nobody set up must leave its centre before it steers.
 const FREE_AXIS_MOVED: f32 = 0.15;
 
-/// Whether the X axis (at `x`) of a device nobody set up steers: once it has left its
-/// centre, and from then on (`moved` keeps the devices that have).
-fn free_axis_steers(moved: &mut Vec<String>, name: &str, x: f32) -> bool {
+/// Whether the X axis (at `x`) of a device nobody set up steers: once it has left where it
+/// rests (`rest`, None until known) round the centre, and from then on (`moved` keeps the
+/// devices that have). An X axis resting at an end is no steering: a pedal, or a stray axis
+/// of a macro keypad, which held the bus at full lock from the start (#868).
+fn free_axis_steers(moved: &mut Vec<String>, name: &str, x: f32, rest: Option<f32>) -> bool {
     if moved.iter().any(|n| n == name) {
         return true;
     }
-    if x.abs() < FREE_AXIS_MOVED {
+    let Some(rest) = rest.filter(|r| r.abs() < crate::auto_setup::PEDAL_REST) else {
+        return false;
+    };
+    if x.abs() < FREE_AXIS_MOVED || (x - rest).abs() < FREE_AXIS_MOVED {
         return false;
     }
     log::info!("game controller {name}: its X axis moved, it steers now");
@@ -1413,7 +1418,8 @@ impl Controllers {
                         self.notice = Some(format!("{} is not set up: it steers; set up its pedals and buttons in the launcher (Controls → Game controllers)", c.name));
                     }
                     if let Some((_, v)) = c.axes.iter().find(|(k, _)| *k == 0) {
-                        if !free_axis_steers(&mut self.moved, &c.name, *v) {
+                        let rest = self.rests.of(&c.name).and_then(|r| r.iter().find(|(k, _)| *k == 0).map(|(_, v)| *v));
+                        if !free_axis_steers(&mut self.moved, &c.name, *v, rest) {
                             continue;
                         }
                         // (a joystick's centre is slack, so it gets a little dead zone; a
@@ -1832,6 +1838,9 @@ pub fn di_slots(axes: &[(u32, f32)]) -> Vec<(usize, f32)> {
     let mut out: Vec<(usize, f32)> = Vec::new();
     let mut rest = Vec::new();
     for (c, v) in sorted {
+        if cfg!(target_os = "linux") && !controller_abs(c) {
+            continue;
+        }
         // (a second slider of the same usage is DirectInput's slider 1)
         let k = known(c).map(|k| if used[k] && k == 6 && !used[7] && cfg!(target_os = "macos") && c == 0x10036 { 7 } else { k });
         match k.filter(|k| !used[*k]) {
@@ -1849,6 +1858,14 @@ pub fn di_slots(axes: &[(u32, f32)]) -> Vec<(usize, f32)> {
         }
     }
     out
+}
+
+/// Linux: whether an evdev ABS code is a controller's axis. A hat (ABS_HAT0X..3Y) is read
+/// as its buttons; a keyboard's or a macro keypad's volume knob or ABS_MISC, a tablet's
+/// pressure and the touch codes are no axes at all - taking the first free slot, X, the
+/// stray axis of a macro keypad steered the bus (#868).
+fn controller_abs(code: u32) -> bool {
+    code & 0xFFFF < 0x10
 }
 
 /// OMSI stores DirectInput's product name; the system's may differ in spacing and case.
@@ -2222,6 +2239,18 @@ mod slot_tests {
         assert!(got.contains(&(0, 0.5)), "{got:?}");
         if !cfg!(windows) {
             assert!(got.contains(&(5, -1.0)), "{got:?}");
+        }
+    }
+
+    /// Linux: a macro keypad's ABS_MISC, a volume knob or a hat takes no slot - the stray axis
+    /// was X and steered the bus (#868). ABS_WHEEL still takes a free one.
+    #[test]
+    fn no_controller_axis_takes_no_slot_on_linux() {
+        assert!(controller_abs(0x3_0000) && controller_abs(0x3_0008) && controller_abs(0x3_000A));
+        assert!(!controller_abs(0x3_0010) && !controller_abs(0x3_0020) && !controller_abs(0x3_0028) && !controller_abs(0x3_0035));
+        if cfg!(target_os = "linux") {
+            assert!(di_slots(&[(0x3_0028, -1.0), (0x3_0020, 0.3), (0x3_0010, 1.0)]).is_empty());
+            assert_eq!(di_slots(&[(0x3_0008, 0.2), (0x3_0028, -1.0)]), [(0, 0.2)]);
         }
     }
 
