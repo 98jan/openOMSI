@@ -234,6 +234,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     var metal = 0.0;
     var f0 = vec3<f32>(0.04);
     var rough = 0.8;
+    let probe_only = camera.clouds.w < 1.5;
     if (terrain) {
         rough = 0.92;
         f0 = vec3<f32>(0.03);
@@ -551,7 +552,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     // surface wore a milky sheen of the bright horizon, strongest against a low sun)
     let surround = enh.fog_color.rgb * (0.25 / 0.9);
     let open = smoothstep(-0.05, 0.35, r.z);
-    env = mix(surround, env, mix(open, 1.0, select(0.25, 0.5, reflective_env)));
+    env = mix(surround, env, mix(open, 1.0, select(0.25, 0.5, reflective_env && !(glass && probe_only))));
     // the cabin reflects the cabin, not the sky - and so does the bus's own glass seen
     // from the driver's seat
     let cab_view = max(in_cab, near_player_vehicle(in.world) * inside_vehicle(camera.cam_pos.xyz));
@@ -600,7 +601,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // (the photo's own contrast, as the vanilla picture shows it, held only off black
         // and off a blinding white; clamped to 0.35 .. 2 and laid on at two thirds, the
         // windows mirrored a flat grey where the vanilla ones mirror trees and sky)
-        let ratio = clamp(photo / lum_avg, vec3<f32>(0.12), vec3<f32>(3.5));
+        let ratio = clamp(photo / lum_avg, vec3<f32>(0.12), vec3<f32>(select(3.5, 1.0, glass && probe_only)));
         let band = 1.0 - smoothstep(0.25, 0.7, abs(r.z));
         // Only a smooth surface mirrors the photo; a satin one a quarter of its contrast.
         // (A car's bonnet is a handful of triangles: the photo's mip level by its footprint
