@@ -1,18 +1,55 @@
 # Changelog
 
-Every push to `main` is released as `MAJOR.MINOR.COMMIT` (see
-[docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
-[Releases](https://github.com/openOMSI-Project/openOMSI/releases) page.
+Every push to `main` is released as the beta `MAJOR.MINOR.COMMIT`, and tested betas are
+promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
+[Releases](https://github.com/openOMSI-org/openOMSI/releases) page.
+
+## 0.2.60 - 2026-10-14
+
+### New
+
+- **Beta and Stable releases:** pushes to `main` publish Beta releases for testers.
+  Maintainers can promote a tested Beta to Stable without rebuilding or replacing
+  its files. Releases include `SHA256SUMS`, and an already published version is
+  never replaced ([#2565](https://github.com/openOMSI-org/openOMSI/pull/2565)).
+- **Update channel in the launcher:** Settings → General → Updates offers Stable
+  (the default, including for existing settings) and Beta. The Beta channel offers
+  the newest compatible release, including prereleases, while skipping releases
+  listed as broken. The version picker marks Beta releases, and Stable releases
+  remain visible behind pages of newer Betas
+  ([#2571](https://github.com/openOMSI-org/openOMSI/pull/2571)).
+
+### Project and security checks
+
+- The pull-request template asks authors to describe risks and check translations,
+  compatibility and the absence of original OMSI 2 content
+  ([#2566](https://github.com/openOMSI-org/openOMSI/pull/2566)).
+- CodeQL analyses the project's Rust, JavaScript/TypeScript and GitHub Actions
+  workflows; the custom scan excludes vendored launcher patches
+  ([#2568](https://github.com/openOMSI-org/openOMSI/pull/2568)).
+- The source distribution uses GNU AGPL v3 only and includes `TRADEMARKS.md`,
+  retaining historical MIT and third-party notices
+  ([#2599](https://github.com/openOMSI-org/openOMSI/pull/2599)).
+
+### Known follow-ups
+
+- Switching update channels while a lookup is already running can leave a result
+  from the previous channel. The approval of #2571 accepts this as a follow-up;
+  this release does not claim to fix that race.
+- Dispatch Beta promotion from current `main`: running the promotion workflow
+  from an older ref can read an older broken-release policy. This remains a
+  follow-up from the review of #2565.
+
+### Credits
+
+The release workflow, launcher channels, review template and CodeQL changes were
+authored by **Thibaut (@thibautgnt)**. The original openOMSI codebase was created
+by **usonskyyyy**. The official organization is
+[openOMSI.org (`openOMSI-org`)](https://github.com/openOMSI-org).
 
 ## 0.2.48 - 2026-10-13
 
-### Fixes
-- Hardening: the launcher's glib (GTK3, Linux) has the fix of RUSTSEC-2024-0429: its `VariantStrIter` wrote through a pointer it did not own mutably.
-- Hardening: ruzstd 0.9.1, the zstd decoder of plugin packages (`.oop`): a tiny crafted file could make it ask for all the memory (RUSTSEC-2026-0344).
-
-## 0.2.47 - 2026-10-13
-
-Additional security hardening and verification for mods, maps and online sessions (thanks to @thibautgnt); the details are in the list below. **Online play needs 0.2.47 on every computer** (the session protocol moves from 6 to 7; an older game is refused cleanly when it joins), and a dedicated server's `admin_password` needs at least 8 characters.
+Additional security hardening and verification for mods, maps and online sessions (thanks to @thibautgnt); the details are in the list below. **Online play needs 0.2.48 on every computer** (the session protocol moves from 6 to 7; 0.2.47 was not released; an older game is refused cleanly when it joins), and a dedicated server's `admin_password` needs at least 8 characters.
 
 ### New
 - **Model test** in the launcher, for modders: a bus is loaded exactly as for a drive, without a window, and every warning and error of its `.bus`, model, meshes, scripts, constfiles and paint schemes is listed, with the textures that are not there; the running game's warnings show live beside it (`openomsi --check-vehicle`) ([#2524](https://github.com/openOMSI-org/openOMSI/pull/2524), by @icacar98-dot).
@@ -21,6 +58,8 @@ Additional security hardening and verification for mods, maps and online session
 
 ### Fixes
 - **Hardening** (by @thibautgnt): mod archives can no longer write outside the mod being installed; texture and other content names cannot point at another computer (`\\server\share`) or climb out of the content folders, nor can another player's roller blind and script strings; online sessions: the host is signed (a per-session key), so nobody can pose as it on the relay or for its mods, a player's place cannot be taken with an overheard hello, the session is not told to strangers from outside the network, and a dedicated server's admin login uses PBKDF2 instead of one hash over plain UDP; bans hold the player's address; the mods download, the WebSocket gateway and files that claim billions of entries can no longer exhaust memory or hang the game; crafted glTF, `.x`, TGA and zip files no longer crash it; Android: other apps can no longer fake an update's answer; the website shows issue text through an allowlist with a Content-Security-Policy.
+- Hardening: the launcher's glib (GTK3, Linux) has the fix of RUSTSEC-2024-0429: its `VariantStrIter` wrote through a pointer it did not own mutably.
+- Hardening: ruzstd 0.9.1, the zstd decoder of plugin packages (`.oop`): a tiny crafted file could make it ask for all the memory (RUSTSEC-2026-0344).
 - **The loading screen has its plain dark background again**, without the map's picture (0.2.46 put it there, #1383).
 - **Passengers read the destination from the IBIS**: the depot row the IBIS was set to, not the display script's own row - nobody boarded a bus showing a code typed past the list ([#2508](https://github.com/openOMSI-org/openOMSI/pull/2508), by @icacar98-dot).
 - **With one door open, nobody waits at a shut door with a button**: they walk to the open one ([#2509](https://github.com/openOMSI-org/openOMSI/pull/2509), by @icacar98-dot).

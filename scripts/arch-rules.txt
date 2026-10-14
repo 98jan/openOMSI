@@ -12,9 +12,6 @@ forbid omsi-sim omsi-render
 forbid omsi-sim omsi-ui
 forbid omsi-sim omsi-audio
 forbid omsi-sim omsi-texture
-# Upstream 0.2.47 resolves paint-scheme files with omsi-texture's content lookup;
-# this crate decodes files and has no renderer or GPU dependency.
-allow omsi-sim omsi-texture
 forbid omsi-sim omsi-net
 forbid omsi-sim omsi-plugin
 forbid omsi-sim omsi-launcher-*

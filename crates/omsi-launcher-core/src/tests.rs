@@ -175,6 +175,11 @@ fn update_settings_round_trip() {
     assert_eq!((v["update_check"].clone(), v["update_auto"].clone()), (json!(false), json!(true)));
     let text = settings_to_text(&v, None);
     assert!(text.lines().any(|l| l == "update_check=0") && text.lines().any(|l| l == "update_auto=1"), "{text}");
+    assert_eq!(d["update_channel"], json!("stable"));
+    let beta = settings_from_text(Some("update_channel=Beta\n"));
+    assert_eq!(beta["update_channel"], json!("beta"));
+    assert!(settings_to_text(&beta, None).lines().any(|l| l == "update_channel=beta"));
+    assert_eq!(settings_from_text(Some("update_channel=nightly\n"))["update_channel"], json!("stable"));
 }
 
 #[test]
