@@ -239,12 +239,27 @@ impl ApplicationHandler for App {
                     k => k,
                 };
                 if let PhysicalKey::Code(code) = physical {
-                    self.on_key(
-                        event_loop,
-                        code,
-                        event.state == ElementState::Pressed,
-                        event.repeat,
-                    );
+                    let pressed = event.state == ElementState::Pressed;
+                    // Windows keeps one state per virtual key: Num4 (Num Lock off) and the
+                    // Left arrow held together are one key to it, the second press comes as
+                    // a repeat and one of the two releases never comes - the wheel stayed
+                    // at full lock until Num4 was pressed again (#1830). The second press
+                    // counts as a press, and letting go of one lets go of both.
+                    let mut repeat = event.repeat;
+                    if cfg!(windows) && pressed {
+                        let keys = &self.input.keys;
+                        if self.input.vk_twins.first_press(code, repeat, |k| keys.contains(&k)) {
+                            repeat = false;
+                        }
+                    }
+                    self.on_key(event_loop, code, pressed, repeat);
+                    if !pressed {
+                        if let Some(twin) = self.input.vk_twins.release(code) {
+                            if self.input.keys.contains(&twin) {
+                                self.on_key(event_loop, twin, false, false);
+                            }
+                        }
+                    }
                 }
             }
             // In VR right-click zooms; with mouse steering it first releases the steering.

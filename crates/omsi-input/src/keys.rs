@@ -132,6 +132,85 @@ pub fn both_code(key: KeyCode) -> Option<i32> {
     }
 }
 
+/// The other key Windows takes for the same virtual key: with Num Lock off (or Shift held
+/// with it on) a numpad key is its grey twin (Num4 is VK_LEFT, the Left arrow's key), and
+/// both Enters are VK_RETURN. Windows keeps one up/down state per virtual key.
+pub fn vk_twin(key: KeyCode) -> Option<KeyCode> {
+    use KeyCode::*;
+    const PAIRS: &[(KeyCode, KeyCode)] = &[
+        (Numpad0, Insert),
+        (NumpadDecimal, Delete),
+        (Numpad1, End),
+        (Numpad2, ArrowDown),
+        (Numpad3, PageDown),
+        (Numpad4, ArrowLeft),
+        (Numpad6, ArrowRight),
+        (Numpad7, Home),
+        (Numpad8, ArrowUp),
+        (Numpad9, PageUp),
+        (NumpadEnter, Enter),
+    ];
+    PAIRS.iter().find_map(|&(a, b)| if a == key { Some(b) } else if b == key { Some(a) } else { None })
+}
+
+/// Keys held together that Windows read as one (see [`vk_twin`]). The second one's press
+/// comes flagged as a repeat (the virtual key is down already) and, of the two releases,
+/// one never comes: with Num4 held and the Left arrow pressed and let go, Num4's release
+/// was lost and the wheel stayed at full lock until Num4 was pressed again (#1830).
+#[derive(Debug, Default)]
+pub struct VkTwins(Vec<(KeyCode, KeyCode)>);
+
+impl VkTwins {
+    /// A press of `key` flagged as a repeat while it is not held (`held`) but its twin is:
+    /// its first press, which `key` now goes on as. The pair is remembered for the release.
+    pub fn first_press(&mut self, key: KeyCode, repeat: bool, held: impl Fn(KeyCode) -> bool) -> bool {
+        self.0.retain(|&(a, b)| held(a) || held(b));
+        let Some(twin) = vk_twin(key).filter(|t| repeat && !held(key) && held(*t)) else {
+            return false;
+        };
+        self.0.push((key, twin));
+        true
+    }
+
+    /// `key` let go: the twin held with it, which is let go as well (its own release may
+    /// never come).
+    pub fn release(&mut self, key: KeyCode) -> Option<KeyCode> {
+        let i = self.0.iter().position(|&(a, b)| a == key || b == key)?;
+        let (a, b) = self.0.swap_remove(i);
+        Some(if a == key { b } else { a })
+    }
+}
+
+#[cfg(test)]
+mod vk_twin_tests {
+    use super::*;
+    use winit::keyboard::KeyCode::*;
+
+    #[test]
+    fn twins() {
+        assert_eq!(vk_twin(Numpad4), Some(ArrowLeft));
+        assert_eq!(vk_twin(ArrowLeft), Some(Numpad4));
+        assert_eq!(vk_twin(Enter), Some(NumpadEnter));
+        assert_eq!(vk_twin(Numpad5), None);
+        assert_eq!(vk_twin(KeyA), None);
+    }
+
+    /// Num4 held, Left pressed (a "repeat") and let go: both are let go (#1830).
+    #[test]
+    fn numpad_and_arrow_held_together() {
+        let mut t = VkTwins::default();
+        let held = [Numpad4];
+        assert!(t.first_press(ArrowLeft, true, |k| held.contains(&k)));
+        assert_eq!(t.release(ArrowLeft), Some(Numpad4));
+        assert_eq!(t.release(Numpad4), None);
+        // a real repeat of a key held, or a repeat with no twin held, stays a repeat
+        let held = [ArrowLeft, Numpad4];
+        assert!(!t.first_press(ArrowLeft, true, |k| held.contains(&k)));
+        assert!(!t.first_press(ArrowRight, true, |k| held.contains(&k)));
+        assert!(!t.first_press(ArrowRight, false, |_| false));
+    }
+}
+
 /// The mouse's side buttons, Mouse 4 (back) and Mouse 5 (forward), as keyboard.cfg keys: codes
 /// past DirectInput's 0..255, which OMSI never writes (#2281).
 pub const MOUSE_4: i32 = 1004;
