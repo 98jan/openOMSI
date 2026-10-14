@@ -426,18 +426,18 @@ impl Renderer {
                 let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
                 let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
                 let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
-                let renderer = Self::build(device.clone(), queue.clone(), name.to_string(), format, RenderOptions { msaa, ..options });
+                let (renderer, caught) = pipelines::parallel::catching(|| Self::build(device.clone(), queue.clone(), name.to_string(), format, RenderOptions { msaa, ..options }));
                 // (test hook: OMSI_FAKE_GPU_ERROR=pipeline fails a pipeline until the basic ones)
                 #[cfg(feature = "test-hooks")]
                 if !basic && omsi_cfg::flags::OMSI_FAKE_GPU_ERROR.var() == Some("pipeline") {
                     let _ = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("test"), source: wgpu::ShaderSource::Wgsl("fn broken( {".into()) });
                 }
-                (renderer, [validation.pop(), memory.pop(), internal.pop()])
+                (renderer, [validation.pop(), memory.pop(), internal.pop()], caught)
             };
-            let (renderer, scopes) = if is_angle(info) { angle::compile(device, build) } else { build() };
+            let (renderer, scopes, caught) = if is_angle(info) { angle::compile(device, build) } else { build() };
             let [validation, memory, internal] = scopes;
             let errors = [validation.await, memory.await, internal.await];
-            match errors.iter().flatten().next() {
+            match errors.iter().flatten().chain(&caught).next() {
                 None => {
                     if msaa != options.msaa || basic {
                         log::warn!("{}: drawing with {}x MSAA{}", info.name, msaa, if basic { ", without the snowfall, the lamps in the fog and the street lamps' shadows" } else { "" });

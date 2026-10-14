@@ -426,6 +426,7 @@ flags! {
     OMSI_SCENE_DIGEST: Bool, Test, Use, "off", "Log a hash of the renderer's scene (its instances in order, their places, materials and parameters) before each offscreen picture: two runs whose renderers saw the same calls log the same digests.";
     OMSI_SCREEN_AT: Text, Setup, Once, "-", "x,y: the screen (a point on the desktop, pixels) the game window opens on; the launcher sets it to where it stands.";
     OMSI_SEED: Num, Test, Use, "random", "Seed of the scripts' random numbers (repeat a session).";
+    OMSI_SERIAL_PIPELINES: Bool, Switch, Use, "off", "Compile the renderer's pipelines one after the other on one thread, as before (A/B).";
     OMSI_SHADOW_FAR_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the far shadow map every frame.";
     OMSI_SHADOW_NEAR_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the near shadow map every frame.";
     OMSI_SIM_THREAD: Bool, Switch, Use, "off", "Window: the AI traffic's, the people's and the scenery scripts' steps run on a thread of its own while the picture is drawn (one frame later); the offscreen run ignores it.";

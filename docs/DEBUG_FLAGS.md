@@ -303,6 +303,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_REPAIR_BODY_DEPTH` | bool | off | use | scene | The old guess for [matl_alpha] 2 vehicle bodies (A/B). |
 | `OMSI_ROAD_CUT` | bool | off | once | geometry | Take the ground away under every road surface (Omsi.exe does not). |
 | `OMSI_RT_REFL_HALF` | bool | off | use | render | Trace reflections at half size. |
+| `OMSI_SERIAL_PIPELINES` | bool | off | use | render | Compile the renderer's pipelines one after the other on one thread, as before (A/B). |
 | `OMSI_SHADOW_FAR_EVERY_FRAME` | bool | off | frame | render | Redraw the far shadow map every frame. |
 | `OMSI_SHADOW_NEAR_EVERY_FRAME` | bool | off | frame | render | Redraw the near shadow map every frame. |
 | `OMSI_SIM_THREAD` | bool | off | use | sim | Window: the AI traffic's, the people's and the scenery scripts' steps run on a thread of its own while the picture is drawn (one frame later); the offscreen run ignores it. |
