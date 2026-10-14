@@ -12,6 +12,7 @@ pub(super) fn weather_files() -> Vec<String> {
         .collect();
     files.sort_by(|a, b| bus_cmp(a.trim_start_matches("Weather/").trim_start_matches('#'), b.trim_start_matches("Weather/").trim_start_matches('#')));
     files.dedup();
+    files.insert(0, "tomorrow".into());
     files
 }
 
@@ -47,7 +48,8 @@ pub(crate) fn dropdown_for(app: &App, row: usize, id: &str) -> Option<Dropdown> 
                         current = Some(i);
                     }
                     // (shown by its name in the interface's language, not its German file name)
-                    let name = omsi_launcher_lib::content_path(&f).map(|p| omsi_launcher_lib::weather_name(&p)).unwrap_or(stem);
+                    let name = if f == "tomorrow" { "Tomorrow.io".into() }
+                        else { omsi_launcher_lib::content_path(&f).map(|p| omsi_launcher_lib::weather_name(&p)).unwrap_or(stem) };
                     (omsi_ui::tr(&name).into_owned(), format!("wx {f}"))
                 })
                 .collect()
@@ -181,6 +183,7 @@ pub(crate) fn dropdown_apply(app: &mut App, action: &str) {
 
 /// The session's weather as the player reads it (its name in the interface's language).
 pub(super) fn weather_shown(app: &App) -> String {
+    if crate::weather_tomorrow::selected(app.args.weather.as_deref()) { return "Tomorrow.io".into(); }
     match app.args.weather.as_deref() {
         Some(p) => {
             let p = p.replace('\\', "/");

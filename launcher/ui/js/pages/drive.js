@@ -601,7 +601,7 @@ function TimeCard() {
       ${c.season !== 'auto' && html`<${Segmented} full value=${c.phase} options=${PHASES} onChange=${(p) => setSeason(c.season, p)} />`}
       <${Field} label="Weather" help=${weatherHelp}>
         <div class="row" style="gap:6px">
-          <div class="grow"><${Select} raw value=${c.weather} options=${[['', t('Natural weather')], [custom ? c.weather : 'custom:', t('Custom weather')], ...(metar ? [[`metar:${metar}`, t('Current weather')]] : []), ['cycle', t('Weather cycle')], ...(weatherOfItsOwn(c.weather) && !custom && c.weather !== `metar:${metar}` && c.weather !== 'cycle' ? [[c.weather, weatherName(c.weather)]] : []), ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => (isCustomWeather(weather) ? setEditing(weather) : choose({ weather }))} /></div>
+          <div class="grow"><${Select} raw value=${c.weather} options=${[['', t('Natural weather')], [custom ? c.weather : 'custom:', t('Custom weather')], ...(metar ? [[`metar:${metar}`, t('Current weather')]] : []), ['cycle', t('Weather cycle')], ['tomorrow', 'Tomorrow.io'], ...(weatherOfItsOwn(c.weather) && !custom && c.weather !== `metar:${metar}` && c.weather !== 'cycle' && c.weather !== 'tomorrow' ? [[c.weather, weatherName(c.weather)]] : []), ...w.map((x) => [x.file, x.name])]} onChange=${(weather) => (isCustomWeather(weather) ? setEditing(weather) : choose({ weather }))} /></div>
           ${editableWeather(c.weather) && html`<${Button} icon="sliders" title=${custom ? 'Custom weather' : 'Edit selected weather as custom'} onClick=${() => setEditing(c.weather)} />`}
         </div>
       </${Field}>

@@ -77,10 +77,11 @@ export async function loadContent() {
   loadProfiles();
 }
 
-export const weatherOfItsOwn = (w) => /^(cycle$|metar:|custom:)/i.test(w || '');
+export const weatherOfItsOwn = (w) => /^(cycle$|tomorrow$|metar:|custom:)/i.test(w || '');
 
 export const weatherName = (w, list) =>
   /^metar:/i.test(w || '') ? `${t('Current weather')}${w.length > 6 ? ` (${w.slice(6)})` : ''}`
+  : /^tomorrow$/i.test(w || '') ? 'Tomorrow.io'
   : /^cycle$/i.test(w || '') ? t('Weather cycle')
   : /^custom:/i.test(w || '') ? t('Custom weather')
   : list?.find((x) => x.file === w)?.name || t('Natural weather');

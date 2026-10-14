@@ -514,6 +514,7 @@ pub(crate) struct SessionState {
     /// The current METAR receiver is a single manual fetch rather than the continuous sync.
     pub(crate) metar_once: bool,
     pub(crate) metar_next: f64,
+    pub(crate) tomorrow: crate::weather_tomorrow::Tomorrow,
     /// The sky's cloud type and the physical weather model (see `weather_setup::SkyState`).
     pub(crate) sky: crate::weather_setup::SkyState,
 }
