@@ -370,15 +370,27 @@ impl TrafficSim {
                 }
             }
         }
-        for (pos, heading) in askers {
+        // The lights ahead within their approach distance. A light path marked with a turn
+        // asks only for the indicator it is marked with, and of a junction that has one for
+        // the indicator shown the unmarked paths do not ask either: every stage of a junction
+        // whose paths are marked left, straight and right got its approach request at once,
+        // whichever way the bus was indicating (#2532). Unmarked paths ask as before.
+        let blinkers: Vec<u8> = player.iter().map(|_| self.player_blinker).chain(self.others.iter().map(|(id, _)| self.other_blinkers.get(id).copied().unwrap_or(0))).collect();
+        for ((pos, heading), blinker) in askers.into_iter().zip(blinkers) {
+            let mut near: Vec<(usize, usize, i32)> = Vec::new();
             for (l, d) in self.lanes_ahead_of(pos, heading, reach) {
                 if let Some((ci, li)) = self.net.lanes[l].traffic_light {
-                    if let Some(ctl) = self.lights.get_mut(ci) {
-                        if d <= ctl.approach_dist(li) {
-                            if let Some(r) = ctl.request.get_mut(li) {
-                                *r = true;
-                            }
-                        }
+                    if self.lights.get(ci).is_some_and(|ctl| d <= ctl.approach_dist(li)) {
+                        near.push((ci, li, self.net.lanes[l].turn));
+                    }
+                }
+            }
+            let marked_for = |ci: usize| near.iter().any(|&(c, _, turn)| c == ci && matches!(blinker, 1 | 2) && turn == blinker as i32);
+            for &(ci, li, turn) in &near {
+                let asks = if matches!(turn, 1 | 2) { turn == blinker as i32 } else { !marked_for(ci) };
+                if asks {
+                    if let Some(r) = self.lights.get_mut(ci).and_then(|c| c.request.get_mut(li)) {
+                        *r = true;
                     }
                 }
             }
