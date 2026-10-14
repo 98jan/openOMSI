@@ -491,7 +491,7 @@ impl Renderer {
         let gl = GL_BACKEND.load(std::sync::atomic::Ordering::Relaxed);
         let ssao = ssao::ssao(&device, gl);
         let fog_lamps = ssao::fog_lamps(&device, &scene.camera_layout, hdr_format, gl);
-        let prepass = scene::prepass(&device, &scene, msaa);
+        let prepass = scene::prepass(&device, &scene, msaa, !leave_out_enhanced);
         let mip = mip::build(&device);
         let post = post::build(&device, format, hdr_format, &defaults.white_texture);
         let enhanced = enhanced::build(&device, &queue, hdr_format, &defaults.camera_buf, &sky, !leave_out_enhanced);

@@ -46,7 +46,11 @@ impl DrawPlan {
     }
 
     pub(crate) fn presurface_prefill(&self, renderer: &Renderer, f: &FrameCtx) -> bool {
-        self.has_presurface && self.msaa_prepass(renderer, f)
+        self.has_presurface
+            && renderer.prepass_msaa_pipelines.is_some()
+            && (self.msaa_prepass(renderer, f)
+                || (renderer.options.msaa == 1 && f.enhanced
+                    && (f.with_overlays || f.xr_view) && f.prepass_on))
     }
 
     /// the rain films out of the main pass: they are drawn after copying the clean picture
@@ -264,7 +268,7 @@ impl Renderer {
         let has_presurface = visible.iter().any(|&(i, _, _)| scene.instances[i].presurface);
         let mut prepass_batches: Vec<Batch> = Vec::new();
         let mut msaa_safe_batches = Vec::new();
-        let deferred = has_presurface && f.enhanced && self.options.msaa > 1;
+        let deferred = has_presurface && f.enhanced;
         let prepass_job = || { prepass_items(scene, visible, deferred) };
         // The main pass follows the authored world phases. Each phase keeps its
         // opaque/cutout draws followed by its blended draws, far to near. Transparent
@@ -513,6 +517,8 @@ impl Renderer {
             *c.entry("opaque draws").or_default() += main_draws[0] as f64;
             *c.entry("blended draws").or_default() += main_draws[1] as f64;
             *c.entry("main batches").or_default() += main_batches.len() as f64;
+            *c.entry("presurface views").or_default() += plan.has_presurface as u8 as f64;
+            *c.entry("terrain paint batches").or_default() += main_batches.iter().filter(|b| b.pipe / 4 == PIPE_TERRAIN_PAINT).count() as f64;
             // the state the main pass's bundles set (each part starts afresh), and what an
             // order by material within the opaque runs would set instead
             let (pipes, binds) = state_changes(&bundle_chunks(self.encoding_pool.as_ref(), main_batches));
