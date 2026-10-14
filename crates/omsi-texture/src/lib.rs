@@ -436,9 +436,25 @@ fn names_another_machine(name: &str) -> bool {
     false
 }
 
+/// Folders of pictures the game makes itself and hands to the scripts by their full path
+/// (the paper timetable in `~/.openomsi/cache/schedules`, see `trust_generated_dir`).
+static GENERATED_DIRS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+/// Let full paths into `dir` be opened: it holds pictures the game itself writes (the paper
+/// timetable a bus shows through its `file_schedule` string). Since textures outside the
+/// content folders are refused (a mod could otherwise read any file), the timetable sheet in
+/// every bus stayed empty (#2575, #2600, #2601).
+pub fn trust_generated_dir(dir: &Path) {
+    let mut dirs = GENERATED_DIRS.lock();
+    if !dirs.iter().any(|d| d == dir) {
+        dirs.push(dir.to_path_buf());
+    }
+}
+
 fn under_content_root(path: &Path) -> bool {
     !path.components().any(|c| matches!(c, std::path::Component::ParentDir))
-        && omsi_cfg::content_roots().iter().any(|r| path.starts_with(r))
+        && (omsi_cfg::content_roots().iter().any(|r| path.starts_with(r))
+            || GENERATED_DIRS.lock().iter().any(|d| path.starts_with(d)))
 }
 
 fn stays_inside(dir: &Path, name: &str) -> bool {
