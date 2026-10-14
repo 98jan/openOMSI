@@ -2120,7 +2120,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
     // updates from the GitHub releases: looked for when the launcher starts (and during a
     // session, said over the navigator), installed after asking (or at once); and whether
     // the game is counted on the website's "playing now"
-    for (k, d) in [("update_check", json!(true)), ("update_auto", json!(false)), ("update_notify", json!(true)), ("presence", json!(true))] {
+    for (k, d) in [("update_check", json!(true)), ("update_auto", json!(false)), ("update_notify", json!(true)), ("update_channel", json!("stable")), ("presence", json!(true))] {
         v[k] = d;
     }
     let Some(t) = text else { return v };
@@ -2164,6 +2164,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
             "ai_max_humans" => v[&k] = json!(val.parse::<f64>().map(|x| x.max(1.0) as i64).unwrap_or(200)),
             "drive_keys" | "navigator_corner" | "boarding" | "render_scale" | "pax_voices" => v[&k] = json!(val),
             "touch_door_mode" => v[&k] = json!(if val.eq_ignore_ascii_case("direct") { "direct" } else { "standard" }),
+            "update_channel" => v[&k] = json!(if val.eq_ignore_ascii_case("beta") { "beta" } else { "stable" }),
             "photo_mode" => v[&k] = json!(if val.eq_ignore_ascii_case("advanced") { "advanced" } else { "simple" }),
             "passenger_animation" => v[&k] = json!(if val.eq_ignore_ascii_case("enhanced") { "enhanced" } else { "original" }),
             "character_models" => v[&k] = json!(if val.eq_ignore_ascii_case("improved") { "improved" } else { "original" }),
@@ -2616,6 +2617,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("pad_steer_speed={}\npad_deadzone={}\npad_buttons={}\n", f("pad_steer_speed", 2.0).clamp(0.8, 5.0), f("pad_deadzone", 0.08).clamp(0.0, 0.4), b("pad_buttons", true)));
     text.push_str(&format!("pad_type={}\n", match v.get("pad_type").and_then(|x| x.as_str()).unwrap_or("auto") { t @ ("xbox" | "ps4" | "ps5") => t, _ => "auto" }));
     text.push_str(&format!("touch_door_mode={}\n", if v.get("touch_door_mode").and_then(|x| x.as_str()) == Some("direct") { "direct" } else { "standard" }));
+    text.push_str(&format!("update_channel={}\n", if v.get("update_channel").and_then(|x| x.as_str()) == Some("beta") { "beta" } else { "stable" }));
     text.push_str(&format!("arrows_switch_cams={}\n", b("arrows_switch_cams", true)));
     text.push_str(&format!("mouse_pedals={}\n", b("mouse_pedals", true)));
     text.push_str(&format!("key_pedal_speed={}\n", f("key_pedal_speed", 1.0).clamp(0.25, 2.0)));
@@ -3381,6 +3383,11 @@ mod tests {
         assert_eq!((v["update_check"].clone(), v["update_auto"].clone()), (json!(false), json!(true)));
         let text = settings_to_text(&v, None);
         assert!(text.lines().any(|l| l == "update_check=0") && text.lines().any(|l| l == "update_auto=1"), "{text}");
+        assert_eq!(d["update_channel"], json!("stable"));
+        let beta = settings_from_text(Some("update_channel=Beta\n"));
+        assert_eq!(beta["update_channel"], json!("beta"));
+        assert!(settings_to_text(&beta, None).lines().any(|l| l == "update_channel=beta"));
+        assert_eq!(settings_from_text(Some("update_channel=nightly\n"))["update_channel"], json!("stable"));
     }
 
     #[test]
