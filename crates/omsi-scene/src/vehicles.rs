@@ -613,6 +613,8 @@ impl World {
         let mut instances = Vec::new();
         let mut own_materials = Vec::new();
         let mut variants = set.variants.to_vec();
+        // (a model of its own: every vehicle's meshes stand at the origin, see begin_object)
+        renderer.begin_object(scene);
         for (mi, (id, mats)) in set.meshes.iter().enumerate() {
             let mut mats = mats.clone();
             // A switched slot ([matl_change], [texchanges], [matl_freetex]) that shows the

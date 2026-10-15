@@ -632,6 +632,9 @@ impl World {
         key: (i32, i32),
         ground_mat: MaterialId,
     ) {
+        // (its meshes are one model: a surface lying on an earlier one of it is drawn
+        // over it, see `Renderer::begin_object`)
+        renderer.begin_object(scene);
         let images: &HashMap<PathBuf, Arc<TextureData>> = &p.images;
         let PlacedObject {
             ot,

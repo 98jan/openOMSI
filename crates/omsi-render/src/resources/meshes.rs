@@ -27,6 +27,9 @@ pub struct GpuMesh {
     pub one_sided: bool,
     /// Source asset for the optional draw-cost audit.
     pub source: Option<String>,
+    /// Its flat surfaces by material slot, for the draw order's depth step of a surface
+    /// lying on another of its object (`scene::overlay`).
+    pub(crate) flats: Vec<crate::scene::overlay::Flat>,
 }
 
 /// A buffer holding `contents` - what `create_buffer_init` makes, but written through the
@@ -169,6 +172,7 @@ impl MeshPage {
             bounds_radius: radius,
             one_sided: data.one_sided,
             source: None,
+            flats: crate::scene::overlay::mesh_flats(data),
         }
     }
 }
