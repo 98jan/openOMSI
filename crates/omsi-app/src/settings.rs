@@ -150,11 +150,9 @@ pub struct Settings {
     /// (RGBA takes four to eight times the memory: the automatic texture memory then
     /// holds fewer fine mip levels.) `OMSI_NO_BC=1` turns it off as well.
     pub gpu_texture_compression: bool,
-    /// Video memory (MB) the game may hold on the graphics card all together - textures,
-    /// meshes, render targets - before far textures lose their finest mip levels; 0 =
-    /// automatic (nine tenths of the card's memory and of the driver's budget). The old
-    /// `texture_memory=` and OMSI's `[texmemlimit]` were texture budgets and are not read
-    /// into it: a 401 or a 1000 meant for the textures would bound everything on the card.
+    /// Video memory (MB) for all the game holds on the graphics card, before far textures lose
+    /// their finest mip levels; 0 = automatic (see `memory::video_memory_limit`). The old
+    /// `texture_memory=` and `[texmemlimit]` were texture budgets and are not read into it.
     pub video_memory: u32,
     /// OMSI's automatic clutch (`AutoClutch`, on unless `[no_automaticClutch]`): the
     /// manual-gearbox scripts work the clutch themselves while it is on.
@@ -901,16 +899,7 @@ impl Settings {
         self.ssao = false;
         self.shadow_size = self.shadow_size.min(2048);
         self.mirror_size = self.mirror_size.min(256);
-        // (two thirds of the video memory set, or of the card's when automatic: from a
-        // fixed 1200 MB, an 8 GB card started again with 800 MB for everything on it)
-        let vram = omsi_render::ADAPTER_VRAM_MB.load(std::sync::atomic::Ordering::Relaxed);
-        let card = (vram * 1_048_576 / 1_000_000 / 10 * 9) as u32;
-        let budget = match (self.video_memory, card) {
-            (0, 0) => 1200,
-            (0, c) => c,
-            (v, _) => v,
-        };
-        self.video_memory = (budget * 2 / 3).max(400);
+        self.video_memory = crate::memory::safe_video_memory(self.video_memory);
         if n >= 2 {
             self.shadows = false;
             self.shadow_size = 1024;

@@ -105,6 +105,20 @@ pub(crate) fn video_memory_limit(settings: &settings::Settings) -> u64 {
     mb * 1_000_000
 }
 
+/// The video memory (MB) to start with again after a lost graphics device: two thirds of what
+/// was set, or of what the card holds when automatic (from a fixed 1200 MB, an 8 GB card
+/// started again with 800 MB for everything on it); 1200 when the card's size is unknown.
+pub(crate) fn safe_video_memory(set: u32) -> u32 {
+    let vram = omsi_render::ADAPTER_VRAM_MB.load(std::sync::atomic::Ordering::Relaxed);
+    let card = ((vram << 20) / 1_000_000 / 10 * 9) as u32;
+    let budget = match (set, card) {
+        (0, 0) => 1200,
+        (0, c) => c,
+        (v, _) => v,
+    };
+    (budget * 2 / 3).max(400)
+}
+
 /// Give the heap's free pages back to the system, on a thread of its own (the allocator
 /// keeps what was freed for later, and it counts as the game's memory until then).
 pub fn release_free_memory() {
