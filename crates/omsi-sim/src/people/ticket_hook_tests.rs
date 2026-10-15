@@ -287,6 +287,9 @@ fn without_a_plugin_the_desk_asks_as_before() {
     h.people = vec![boarding(&ty, 1, Task::WalkingToBus)];
     h.new_ticket(0, TICKET_BUY, 0, 0.0, false);
     assert_eq!(h.ticket_request(h.pax(0).unwrap()), ("Fahrschein".to_string(), 2.7));
+    // somebody who validates (or has a pass) asks for nothing - reported so too
+    h.new_ticket(0, TICKET_STAMP, 0, 0.0, false);
+    assert_eq!(h.ticket_request(h.pax(0).unwrap()), (String::new(), 0.0));
     h.new_ticket(0, TICKET_BUY, 2, 1.4, false);
     assert_eq!(h.ticket_request(h.pax(0).unwrap()), ("Kurzstrecke".to_string(), 1.4));
     let zones = TicketChange { name: Some("IDOL 4001".into()), price: Some(64.0), ..Default::default() };

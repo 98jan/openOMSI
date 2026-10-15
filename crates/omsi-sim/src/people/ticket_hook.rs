@@ -139,10 +139,14 @@ impl PeopleSim {
     }
 
     /// What a passenger asks for at the desk: the pack's ticket, or what a plugin made of it
-    /// (its name, and the price a plugin set or took from the pack with the ticket).
+    /// (its name, and the price a plugin set or took from the pack with the ticket). Nothing
+    /// for somebody who neither buys nor has a ticket of the pack (a validator, a pass).
     pub fn ticket_request(&self, p: &Pax) -> (String, f32) {
-        let (name, value) = self.pack_ticket(p.ticket_id);
         let pl = p.plugin();
+        if p.ticket != TICKET_BUY && p.ticket_id == 0 && pl.by.is_none() {
+            return (String::new(), 0.0);
+        }
+        let (name, value) = self.pack_ticket(p.ticket_id);
         let name = pl.name.clone().unwrap_or(name);
         (name, if pl.by.is_some() { p.price } else { value })
     }

@@ -311,7 +311,7 @@ fn pax_ticket(h: &PeopleSim, x: &Pax) -> op::PaxTicket {
     // (what the desk asks for - for somebody with no ticket of the pack who does not buy,
     // nothing)
     let pl = x.plugin();
-    let (name, price) = if x.ticket_id > 0 || x.ticket == TICKET_BUY || pl.by.is_some() { h.ticket_request(x) } else { (String::new(), x.price) };
+    let (name, price) = h.ticket_request(x);
     // (as `PeopleSim::set_ticket` decides: on the way to the door, or in the bus before the
     // request at the desk)
     let open = (x.inside.is_none() && x.task == Task::WalkingToBus) || (x.inside.is_some() && x.task == Task::InBusToPlace && x.ticket == TICKET_BUY && x.sub < 4);
