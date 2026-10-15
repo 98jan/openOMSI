@@ -14,10 +14,14 @@ static MOUNT_FONTS: std::sync::LazyLock<Mutex<HashMap<PathBuf, SharedFonts>>> = 
 /// The fonts the bus fetched as `fp` writes its displays with: those of its own mount alone
 /// (`FontLibrary::only`), never this machine's fonts of the same names. One library a
 /// mount, shared by every vehicle made of it and built once (a flyweight): a fresh one for
-/// every remake read its fonts and built their atlases again on the frame. None when `fp`
-/// is not mounted here.
+/// every remake read its fonts and built their atlases again on the frame. Asked on the
+/// frame for a bus `Wanted::Mounted` says is mounted: its place is known without the store,
+/// whose lock an upload or a collection may hold (None when `fp` is no fingerprint).
 pub(crate) fn fonts_of(fp: &str) -> Option<SharedFonts> {
-    let at = mount(fp)?;
+    if !omsi_net::is_fingerprint(fp) {
+        return None;
+    }
+    let at = mounts()?.join(fp);
     let mut fonts = MOUNT_FONTS.lock().unwrap_or_else(|e| e.into_inner());
     Some(fonts.entry(at.clone()).or_insert_with(|| Arc::new(parking_lot::Mutex::new(omsi_sim::texttex::FontLibrary::only(&at)))).clone())
 }
