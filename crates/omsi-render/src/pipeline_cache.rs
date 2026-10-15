@@ -248,12 +248,10 @@ mod tests {
         let mut on_disk = None;
         write_if_changed(&file, &old, &mut on_disk).unwrap();
         let before = on_disk;
-        // the file cannot be replaced: a folder of that name stands where the temporary goes
-        let blocked = d.0.join("blocked.bin");
-        std::fs::create_dir_all(blocked.join("inside")).unwrap();
-        let mut other = None;
-        assert!(write_if_changed(&blocked, &[5u8; 100], &mut other).is_err());
-        assert_eq!(other, None, "a failed write must not count as saved");
+        let tmp = file.with_extension(format!("{}.tmp", std::process::id()));
+        std::fs::create_dir_all(tmp.join("inside")).unwrap();
+        assert!(write_if_changed(&file, &[5u8; 100], &mut on_disk).is_err());
+        std::fs::remove_dir_all(&tmp).unwrap();
         assert!(temporaries(&d.0).is_empty());
         assert_eq!(std::fs::read(&file).unwrap(), old);
         assert_eq!(before, on_disk);
@@ -263,8 +261,7 @@ mod tests {
     fn the_temporary_belongs_to_the_process() {
         let d = Dir::new("pid");
         let file = d.0.join("pipelines-gl-0001-0002.bin");
-        let tmp = file.with_extension(format!("{}.tmp", std::process::id()));
-        assert_ne!(tmp, file.with_extension("tmp"));
+        std::fs::create_dir_all(file.with_extension("tmp").join("reserved")).unwrap();
         // a temporary of another process is left alone by a write
         let other = d.0.join("pipelines-gl-0001-0002.1.tmp");
         std::fs::write(&other, b"someone else's").unwrap();
