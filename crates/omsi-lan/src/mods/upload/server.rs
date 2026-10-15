@@ -395,7 +395,7 @@ pub(in crate::mods) fn send_blob(out: &mut impl Write, sha: &Sha256) -> std::io:
 /// fingerprint, once it is loaded - the joining players ask this game for it as they would a
 /// server (`vehicles::fetch`). A server has no bus of its own; a joining player sends its
 /// bus to the host instead (`tick`).
-pub(crate) fn keep_own(root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) {
+pub(crate) fn keep_own(root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf> + Send + 'static) {
     uploads().keep_own(root, bus, paint, own);
 }
 
@@ -430,7 +430,7 @@ impl Uploads {
         self.came.lock().unwrap_or_else(|p| p.into_inner()).remove(bus).unwrap_or(0)
     }
 
-    pub(in crate::mods) fn keep_own(&'static self, root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) {
+    pub(in crate::mods) fn keep_own(&'static self, root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf> + Send + 'static) {
         if bus.is_empty() || !self.serving() {
             return;
         }
@@ -442,7 +442,6 @@ impl Uploads {
             }
             *k = (key.clone(), true);
         }
-        let own = own();
         let (root, bus, paint) = (root.to_path_buf(), bus.to_string(), paint.to_string());
         let spawned = std::thread::Builder::new().name("lan-keep-own".into()).spawn(move || {
             let r = match own_manifest(&root, &bus, &paint, own) {

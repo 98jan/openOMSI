@@ -439,15 +439,15 @@ fn a_bus_in_a_paint_is_one_fingerprint() {
     let bus = "Vehicles/MAN_SD200/MAN_SD77.bus";
     let paint = |i: usize| ty.paint_schemes[i].name.clone();
     let files = |i: usize| super::super::bus_files::of_parts(&root, &ty, &[], Some(i), None);
-    let (m, fp, sent) = own_manifest(&root, bus, &paint(0), files(0)).unwrap();
+    let (m, fp, sent) = own_manifest(&root, bus, &paint(0), || files(0)).unwrap();
     assert!(omsi_net::is_fingerprint(&fp));
     assert_eq!(own_fingerprint(bus, &paint(0)), fp);
     assert_eq!(m.entries.len(), sent.len());
     // worked out again from scratch: the same
     own_bus().forget();
-    assert_eq!(own_manifest(&root, bus, &paint(0), files(0)).unwrap().1, fp);
+    assert_eq!(own_manifest(&root, bus, &paint(0), || files(0)).unwrap().1, fp);
     // another paint
-    let (_, other, _) = own_manifest(&root, bus, &paint(1), files(1)).unwrap();
+    let (_, other, _) = own_manifest(&root, bus, &paint(1), || files(1)).unwrap();
     assert_ne!(other, fp);
     assert!(own_fingerprint(bus, &paint(0)).is_empty(), "the fingerprint of the paint no longer worn");
 }
@@ -633,4 +633,60 @@ fn a_manifest_answer_is_held_against_the_transfers_budget() {
     assert_eq!(&out[nl + 1..], &want[..], "the list as JSON, as before");
     assert_eq!(transfers().held(), 0, "given back once answered");
     let _ = std::fs::remove_dir_all(&store_dir);
+}
+
+/// Our bus's files are listed on the identifying thread, not the frame's; and a bus whose
+/// files make no valid list is not worked out again every frame (only when the bus or its
+/// paint changes).
+#[test]
+fn a_bus_that_makes_no_list_is_not_worked_out_every_frame() {
+    // (working our bus out stops the game's read recording: the test that records takes turns)
+    let _turn = super::super::vehicles::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let root = temp("no-list");
+    let own: &'static OwnBus = Box::leak(Box::default());
+    let frame = std::thread::current().id();
+    let listed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let lister = || {
+        let listed = listed.clone();
+        move || {
+            assert_ne!(std::thread::current().id(), frame, "listed on the frame's thread");
+            listed.fetch_add(1, Ordering::Relaxed);
+            Vec::new()
+        }
+    };
+    // (a bus path that leaves the root: no valid list)
+    let bus = "../outside.bus";
+    own.identify(&root, bus, "paint", lister());
+    let t = std::time::Instant::now();
+    while !own.has_failed(bus, "paint") && t.elapsed() < std::time::Duration::from_secs(10) {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(own.has_failed(bus, "paint"));
+    // (the thread lets go of `identifying` right after: give it the moment)
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    for _ in 0..5 {
+        own.identify(&root, bus, "paint", lister());
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    assert_eq!(listed.load(Ordering::Relaxed), 1, "listed once, not once a frame");
+    // another paint is worked out
+    own.identify(&root, bus, "another", lister());
+    let t = std::time::Instant::now();
+    while listed.load(Ordering::Relaxed) < 2 && t.elapsed() < std::time::Duration::from_secs(10) {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(listed.load(Ordering::Relaxed), 2);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// One file reached by two spellings (`ü` composed, and `u` + a combining diaeresis as macOS
+/// may give it) is listed once, by the key the list is checked by: the list stays valid.
+#[test]
+fn one_file_by_two_unicode_spellings_is_listed_once() {
+    let root = temp("spellings");
+    let composed = root.join("Vehicles/B/Bahn\u{fc}bergang.dds");
+    let decomposed = root.join("Vehicles/B/Bahnu\u{308}bergang.dds");
+    let list = listed(&root, vec![root.join("Vehicles/B/b.bus"), composed, decomposed]);
+    assert_eq!(list.len(), 2, "{list:?}");
+    let _ = std::fs::remove_dir_all(&root);
 }

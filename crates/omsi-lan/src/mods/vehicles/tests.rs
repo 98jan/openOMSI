@@ -271,3 +271,31 @@ fn what_players_send_makes_room_only_of_buses_unused_for_a_day() {
     assert_eq!(kept.collect(u64::MAX, IN_USE).buses, 1);
     let _ = std::fs::remove_dir_all(&store);
 }
+
+/// The host's frame asks which buses are in use once a minute: it never waits for the store
+/// an upload holds (writing a whole file) - it looks again next time - and, with the store
+/// free, the bus is marked in use.
+#[test]
+fn the_frame_never_waits_for_the_store_to_mark_buses_in_use() {
+    let store = temp("in-use-busy");
+    let kept = Buses::default();
+    kept.open_in(&store).unwrap();
+    let b = b"[model]\nmodel\\model.cfg\n".to_vec();
+    let e = entry("Vehicles/Busy/busy.bus", &b);
+    kept.put(&e, &b).unwrap();
+    let m = VehicleManifest { bus: "Vehicles/Busy/busy.bus".into(), entries: vec![e] }.validated().unwrap();
+    let (fp, _) = kept.commit(m).unwrap();
+    let list = store.join("vehicles").join(format!("{fp}.json"));
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(5 * 86_400);
+    std::fs::OpenOptions::new().write(true).open(&list).unwrap().set_modified(old).unwrap();
+    let modified = || std::fs::metadata(&list).unwrap().modified().unwrap();
+    {
+        // (held as an upload holds it; the same thread would wait for ever if it waited)
+        let _held = kept.lock();
+        kept.in_use([fp.as_str()].into_iter());
+        assert_eq!(modified(), old, "not marked while the store is held: next time");
+    }
+    kept.in_use([fp.as_str()].into_iter());
+    assert!(modified() > old, "marked in use with the store free");
+    let _ = std::fs::remove_dir_all(&store);
+}

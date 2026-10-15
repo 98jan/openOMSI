@@ -1056,10 +1056,15 @@ pub fn content_relative(path: &Path, root: &Path) -> String {
 /// a joining player offers it to the session's host under the loading screen
 /// (`mods::upload`), which `start_held` then shows.
 pub fn drive_started(args: &LanConfig, root: &Path, v: Option<&omsi_sim::VehicleInstance>) {
-    let Some(v) = v else { return };
+    // (no bus: nothing of ours to work out, so the reads a joining player notes for it stop
+    // being noted - they were, into a growing set, for the whole session)
+    let Some(v) = v else {
+        omsi_cfg::vfs::record_reads(false);
+        return;
+    };
     let bus = content_relative(&v.ty.def.path, root);
     let paint = current_paint(args, v);
-    crate::mods::upload::begin(root, &bus, &paint, || crate::mods::upload::own_files(root, v));
+    crate::mods::upload::begin(root, &bus, &paint, crate::mods::upload::own_files(root, Some(v)));
 }
 
 /// What of the session still holds the start once the map is there - our bus on its way to
@@ -2209,13 +2214,13 @@ pub fn tick_send(
         }
     }
     // what our bus is, by its content (`mods::identity`), for whoever draws it
-    crate::mods::upload::identify(&args.root, &mine.bus, &mine.paint, || player.as_deref().map(|v| crate::mods::upload::own_files(&args.root, v)).unwrap_or_default());
+    crate::mods::upload::identify(&args.root, &mine.bus, &mine.paint, crate::mods::upload::own_files(&args.root, player.as_deref()));
     // our bus to a server that lacks it, and the others' buses it passes on (`mods::upload`);
     // a hosting game keeps its own bus for the players who join it
     if lan.role == Role::Client {
-        crate::mods::upload::tick(&args.root, &mine.bus, &mine.paint, || player.as_deref().map(|v| crate::mods::upload::own_files(&args.root, v)).unwrap_or_default());
+        crate::mods::upload::tick(&args.root, &mine.bus, &mine.paint, crate::mods::upload::own_files(&args.root, player.as_deref()));
     } else if !args.server {
-        crate::mods::upload::keep_own(&args.root, &mine.bus, &mine.paint, || player.as_deref().map(|v| crate::mods::upload::own_files(&args.root, v)).unwrap_or_default());
+        crate::mods::upload::keep_own(&args.root, &mine.bus, &mine.paint, crate::mods::upload::own_files(&args.root, player.as_deref()));
     }
     sync_vars(lan, game, player.as_deref(), dt);
     Sent { updates, gone }

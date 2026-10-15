@@ -742,6 +742,11 @@ impl App {
         let Some(cam) = self.cam.starting.take() else {
             let Some((caption, progress)) = omsi_lan::game::start_held() else { return true };
             if let (Some(renderer), Some(scene)) = (self.renderer.take(), self.scene.take()) { self.loading_frame(renderer, scene, &caption, progress) }
+            // (--exit-after holds while the start waits - our bus on its way - as while loading)
+            if let Some(limit) = self.args.exit_after.filter(|l| self.started.elapsed().as_secs_f32() > *l) {
+                log::info!("exit after {limit} s while the start waited: {caption}");
+                crate::platform::exit(event_loop);
+            }
             return false;
         };
         let (Some(renderer), Some(mut scene)) = (self.renderer.take(), self.scene.take()) else {

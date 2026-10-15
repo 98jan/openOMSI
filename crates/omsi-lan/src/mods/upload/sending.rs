@@ -47,8 +47,9 @@ pub(in crate::mods) fn sender() -> &'static Sender {
 
 /// Our world and bus have just been made (a joining player, still under the loading screen):
 /// the bus goes to the host now, if it lacks it. `own` (the bus's files, `own_files`) is
-/// worked out only when there is a host to send to: a player alone paid for it on every start.
-pub fn begin(root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) {
+/// worked out only when there is a host to send to (a player alone paid for it on every
+/// start), and on the sending thread, not the frame's.
+pub fn begin(root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf> + Send + 'static) {
     sender().begin(root, bus, paint, own);
 }
 
@@ -69,7 +70,7 @@ pub(crate) fn knows_host(session: u64) -> bool {
 }
 
 /// Once a frame (a joining player): offer our bus to the host once it is loaded.
-pub(crate) fn tick(root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) {
+pub(crate) fn tick(root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf> + Send + 'static) {
     sender().tick(root, bus, paint, own);
 }
 
@@ -89,12 +90,11 @@ impl Sender {
         *self.at_start.lock().unwrap_or_else(|e| e.into_inner()) = since;
     }
 
-    pub(in crate::mods) fn begin(&'static self, root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) {
+    pub(in crate::mods) fn begin(&'static self, root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf> + Send + 'static) {
         let Some((host, session)) = self.host() else { return };
         if bus.is_empty() || self.refused.load(Ordering::Relaxed) || self.sending.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|s| s.busy) {
             return;
         }
-        let own = own();
         self.set_waiting(Some(Instant::now()));
         show("Preparing your bus for the other players...", 0, 0, true);
         let (root, bus, paint) = (root.to_path_buf(), bus.to_string(), paint.to_string());
@@ -153,7 +153,7 @@ impl Sender {
         *self.host.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    pub(in crate::mods) fn tick(&'static self, root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) {
+    pub(in crate::mods) fn tick(&'static self, root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf> + Send + 'static) {
         if bus.is_empty() {
             return;
         }
@@ -179,7 +179,6 @@ impl Sender {
         }
         s.busy = true;
         s.last = Some(Instant::now());
-        let own = own();
         let (root, bus, paint) = (root.to_path_buf(), bus.to_string(), paint.to_string());
         let spawned = std::thread::Builder::new().name("lan-upload".into()).spawn(move || {
             let r = match own_manifest(&root, &bus, &paint, own) {

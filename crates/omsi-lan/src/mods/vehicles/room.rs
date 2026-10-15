@@ -91,16 +91,23 @@ impl Buses {
         self.leases().contains_key(sha)
     }
 
-    /// The buses the connected players drive (their fingerprints): in use now.
+    /// The buses the connected players drive (their fingerprints): in use now. Asked from
+    /// the host's frame (once a minute), it never waits for the store: while an upload or a
+    /// collection holds it, it looks again next time. (Their lists are touched with the store
+    /// let go: a list a collection took meanwhile is simply not there.)
     pub(super) fn in_use<'a>(&self, fps: impl Iterator<Item = &'a str>) {
-        let g = self.lock();
-        let Some(v) = g.as_ref() else { return };
-        for fp in fps {
-            if v.manifests.iter().any(|(f, _)| f == fp) {
-                let file = v.dir.join(format!("{fp}.json"));
-                if let Ok(f) = std::fs::OpenOptions::new().write(true).open(&file) {
-                    let _ = f.set_modified(std::time::SystemTime::now());
-                }
+        let files: Vec<std::path::PathBuf> = {
+            let g = match self.kept.try_lock() {
+                Ok(g) => g,
+                Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) => return,
+            };
+            let Some(v) = g.as_ref() else { return };
+            fps.filter(|fp| v.manifests.iter().any(|(f, _)| f == fp)).map(|fp| v.dir.join(format!("{fp}.json"))).collect()
+        };
+        for file in files {
+            if let Ok(f) = std::fs::OpenOptions::new().write(true).open(&file) {
+                let _ = f.set_modified(std::time::SystemTime::now());
             }
         }
     }

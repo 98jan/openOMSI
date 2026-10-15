@@ -708,27 +708,27 @@ pub struct Report {
     pub bytes: u64,
     pub had: usize,
     pub refused: Vec<String>,
-    /// Files of vehicle folders this machine has of its own, left as they are here.
+    /// Files of vehicles this machine has of its own (each file it has), left as they are here.
     pub kept_own: usize,
 }
 
-/// Does `rel` lie in a vehicle folder (`Vehicles/<name>`, `Trains/<name>`) this machine has
+/// Is `rel` a file of a vehicle (`Vehicles/<name>/...`, `Trains/<name>/...`) this machine has
 /// of its own - in the original installation or its own mods, not among what a host sent?
-/// The host's map may use a bus pack the player has in another version: the host's copy of
-/// the folder put first would hide the player's paints (`.cti`) and textures of the same
-/// names for the whole session, the bus the player drives too. The player's stays; a
-/// vehicle of the map then shows in the player's version (until it goes by fingerprint).
-fn own_vehicle_folder(rel: &str, root: &Path) -> bool {
+/// The host's map may use a bus pack the player has in another version: the host's copy put
+/// first (the session's files are searched before the installation) would hide the player's
+/// paints (`.cti`) and textures of the same names for the whole session, the bus the player
+/// drives too. The player's stays; what the player lacks of the folder (an add-on repaint, a
+/// `.bus` the host's map uses) comes, and hides nothing of the player's.
+fn own_vehicle_file(rel: &str, root: &Path) -> bool {
     let comps: Vec<&str> = rel.split('/').collect();
     if comps.len() < 3 || !(comps[0].eq_ignore_ascii_case("vehicles") || comps[0].eq_ignore_ascii_case("trains")) {
         return false;
     }
-    let folder = comps[..2].join("/");
     let mut roots: Vec<PathBuf> = omsi_cfg::content_roots().into_iter().filter(|r| !omsi_cfg::is_sandbox(r)).collect();
     if !roots.iter().any(|r| r == root) {
         roots.push(root.to_path_buf());
     }
-    roots.iter().any(|r| omsi_cfg::vfs::is_dir(&omsi_cfg::resolve_path(r, &folder)))
+    roots.iter().any(|r| omsi_cfg::vfs::is_file(&omsi_cfg::resolve_path(r, rel)))
 }
 
 /// Is `rel` a script (`Scripts/...`) this machine has of its own? The host's comes only
@@ -842,7 +842,7 @@ static MOUNTED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize:
 
 /// `fetch`, or (`again`) a look at the host's list in the middle of the session: then the
 /// session's content is mounted again only when it has more files than before. `root` is
-/// the game's own root (its vehicle folders are never covered by the host's).
+/// the game's own root (its vehicles' files are never covered by the host's).
 fn fetch_with(root: &Path, map: &mut String, host: SocketAddr, session: u64, progress: &mut dyn FnMut(u64, u64, &str), again: bool) -> Result<Report, String> {
     if omsi_cfg::flags::OMSI_NO_LAN_MODS.is_set() {
         return Err("switched off (OMSI_NO_LAN_MODS)".into());
@@ -869,9 +869,9 @@ fn fetch_with(root: &Path, map: &mut String, host: SocketAddr, session: u64, pro
             report.refused.push(format!("{}: {why}", e.path));
             continue;
         }
-        // a vehicle folder this machine has of its own is never covered by the host's: its
+        // a vehicle's file this machine has of its own is never covered by the host's: its
         // paints (`.cti`) and textures stay this player's, also on the bus it drives
-        if own_vehicle_folder(&e.path, root) || own_script(&e.path) {
+        if own_vehicle_file(&e.path, root) || own_script(&e.path) {
             report.kept_own += 1;
             continue;
         }
@@ -1054,7 +1054,7 @@ fn fetch_with(root: &Path, map: &mut String, host: SocketAddr, session: u64, pro
         log::warn!("LAN mods: {} files refused: {}", report.refused.len(), report.refused.iter().take(8).cloned().collect::<Vec<_>>().join("; "));
     }
     if report.kept_own > 0 {
-        log::info!("LAN mods: {} files of vehicle folders this machine has of its own were left as they are here", report.kept_own);
+        log::info!("LAN mods: {} files of vehicles this machine has of its own were left as they are here", report.kept_own);
     }
     log::info!("LAN mods: fetched {} files ({:.1} MB), {} were here already", report.fetched, report.bytes as f64 / 1e6, report.had);
     upload::remember_host(host, session);
@@ -1199,19 +1199,23 @@ mod tests {
         assert!(err.contains("older") && err.contains("same version"), "{err}");
     }
 
-    /// A vehicle folder this machine has of its own is never covered by the host's (its
-    /// paints stay this player's); one it lacks, and everything else of the map, comes.
+    /// A vehicle's file this machine has of its own is never covered by the host's (its
+    /// paints stay this player's); what it lacks - of a vehicle it has, too - comes, and so
+    /// does everything else of the map.
     #[test]
-    fn the_hosts_vehicle_folders_never_cover_ours() {
+    fn the_hosts_vehicle_files_never_cover_ours() {
         let root = std::env::temp_dir().join(format!("openomsi-own-vehicles-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("Vehicles").join("MyBus").join("Texture")).unwrap();
         std::fs::write(root.join("Vehicles").join("MyBus").join("Texture").join("repaints.cti"), b"[item]\nMine\nx\ny.dds\n").unwrap();
-        assert!(own_vehicle_folder("Vehicles/MyBus/Texture/repaints.cti", &root));
-        assert!(own_vehicle_folder("vehicles/mybus/model/model.cfg", &root), "as Windows finds it");
-        assert!(!own_vehicle_folder("Vehicles/TheirBus/Texture/repaints.cti", &root));
-        assert!(!own_vehicle_folder("maps/Town/global.cfg", &root));
-        assert!(!own_vehicle_folder("Sceneryobjects/X/x.sco", &root));
+        assert!(own_vehicle_file("Vehicles/MyBus/Texture/repaints.cti", &root));
+        assert!(own_vehicle_file("vehicles/mybus/texture/REPAINTS.cti", &root), "as Windows finds it");
+        // what the player lacks of a bus it has: an add-on repaint, a .bus the map uses
+        assert!(!own_vehicle_file("Vehicles/MyBus/Texture/addon_repaint.dds", &root));
+        assert!(!own_vehicle_file("Vehicles/MyBus/MyBus_newer.bus", &root));
+        assert!(!own_vehicle_file("Vehicles/TheirBus/Texture/repaints.cti", &root));
+        assert!(!own_vehicle_file("maps/Town/global.cfg", &root));
+        assert!(!own_vehicle_file("Sceneryobjects/X/x.sco", &root));
         let _ = std::fs::remove_dir_all(&root);
     }
 

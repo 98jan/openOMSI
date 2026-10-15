@@ -206,10 +206,14 @@ impl Buses {
 
     pub(super) fn put_making_room(&self, e: &Entry, data: &[u8], unused_for: std::time::Duration) -> Result<(), String> {
         self.make_room(e.size, unused_for)?;
-        let mut g = self.lock();
-        let v = g.as_mut().ok_or("no store")?;
-        v.store.put(e, data).map_err(|x| x.to_string())?;
-        v.sizes.insert(e.sha256.to_ascii_lowercase(), e.size);
+        // (sealed and written with the store let go, as a piece is: a file of a GB held the
+        // store - and the host's frame asking which buses are in use, or mounting one - for
+        // the whole write. The write goes to a file of its own and is renamed into place.)
+        let store = self.lock().as_ref().ok_or("no store")?.store.clone();
+        store.put(e, data).map_err(|x| x.to_string())?;
+        if let Some(v) = self.lock().as_mut() {
+            v.sizes.insert(e.sha256.to_ascii_lowercase(), e.size);
+        }
         Ok(())
     }
 

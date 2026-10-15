@@ -24,6 +24,9 @@ pub(in crate::mods) struct OwnBus {
     /// (key, fingerprint) of `own`, for the frame: it never waits for one being worked out.
     fp: Mutex<(String, String)>,
     identifying: AtomicBool,
+    /// The bus and paint whose files made no valid list: not worked out again every frame
+    /// (only when the bus or its paint changes).
+    failed: Mutex<String>,
 }
 
 static OWN_BUS: std::sync::LazyLock<OwnBus> = std::sync::LazyLock::new(OwnBus::default);
@@ -39,14 +42,14 @@ pub(crate) fn own_fingerprint(bus: &str, paint: &str) -> String {
 }
 
 /// Once a frame: work out our bus's fingerprint in the background when the bus or its
-/// paint is new.
-pub(crate) fn identify(root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) {
+/// paint is new. `own` lists the bus's files (`own_files`): it runs on that thread too.
+pub(crate) fn identify(root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf> + Send + 'static) {
     own_bus().identify(root, bus, paint, own);
 }
 
-/// Our bus's manifest in that paint, worked out if it is not yet. None when the bus's files
-/// make no valid list.
-pub(super) fn own_manifest(root: &Path, bus: &str, paint: &str, own: Vec<PathBuf>) -> Option<OwnIdentity> {
+/// Our bus's manifest in that paint, worked out if it is not yet (only then are its files
+/// listed, `own`). None when the bus's files make no valid list.
+pub(super) fn own_manifest(root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) -> Option<OwnIdentity> {
     own_bus().manifest(root, bus, paint, own)
 }
 
@@ -60,18 +63,19 @@ impl OwnBus {
         }
     }
 
-    pub(in crate::mods) fn identify(&'static self, root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) {
+    pub(in crate::mods) fn identify(&'static self, root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf> + Send + 'static) {
         if bus.is_empty() || self.identifying.load(Ordering::Relaxed) {
             return;
         }
         let key = format!("{bus}|{paint}");
-        if self.fp.lock().unwrap_or_else(|e| e.into_inner()).0 == key {
+        if self.fp.lock().unwrap_or_else(|e| e.into_inner()).0 == key || *self.failed.lock().unwrap_or_else(|e| e.into_inner()) == key {
             return;
         }
         self.identifying.store(true, Ordering::Relaxed);
-        let (root, bus, paint, files) = (root.to_path_buf(), bus.to_string(), paint.to_string(), own());
+        let (root, bus, paint) = (root.to_path_buf(), bus.to_string(), paint.to_string());
+        // (the files are listed on the thread: `bus_files` looks up sounds, textures and fonts)
         let spawned = std::thread::Builder::new().name("bus-identity".into()).spawn(move || {
-            self.manifest(&root, &bus, &paint, files);
+            self.manifest(&root, &bus, &paint, own);
             self.identifying.store(false, Ordering::Relaxed);
         });
         if spawned.is_err() {
@@ -79,13 +83,13 @@ impl OwnBus {
         }
     }
 
-    pub(in crate::mods) fn manifest(&self, root: &Path, bus: &str, paint: &str, own: Vec<PathBuf>) -> Option<OwnIdentity> {
+    pub(in crate::mods) fn manifest(&self, root: &Path, bus: &str, paint: &str, own: impl FnOnce() -> Vec<PathBuf>) -> Option<OwnIdentity> {
         let key = format!("{bus}|{paint}");
         let mut guard = self.own.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(o) = guard.as_ref().filter(|o| o.key == key) {
             return Some((o.manifest.clone(), o.fingerprint.clone(), o.files.clone()));
         }
-        let files = chosen(root, bus, own);
+        let files = chosen(root, bus, own());
         // (what this run read was only for `chosen`'s log of what the description misses: the
         // recording stops and its set goes - it was kept, and grew, for the whole session)
         omsi_cfg::vfs::record_reads(false);
@@ -95,12 +99,14 @@ impl OwnBus {
             Ok(m) => m,
             Err(e) => {
                 log::warn!("bus identity: {bus}: {e}");
+                *self.failed.lock().unwrap_or_else(|e| e.into_inner()) = key;
                 return None;
             }
         };
         let fingerprint = manifest.fingerprint();
         log::info!("bus identity: {bus} ({paint}) is {fingerprint}: {} files, {:.1} MB", manifest.entries.len(), manifest.size() as f64 / 1e6);
         *self.fp.lock().unwrap_or_else(|e| e.into_inner()) = (key.clone(), fingerprint.clone());
+        self.failed.lock().unwrap_or_else(|e| e.into_inner()).clear();
         *guard = Some(Own { key, manifest: manifest.clone(), fingerprint: fingerprint.clone(), files: files.clone() });
         Some((manifest, fingerprint, files))
     }
@@ -109,6 +115,13 @@ impl OwnBus {
     #[cfg(test)]
     pub(in crate::mods) fn forget(&self) {
         *self.own.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        self.failed.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+
+    /// Whether the files of that bus and paint made no valid list.
+    #[cfg(test)]
+    pub(in crate::mods) fn has_failed(&self, bus: &str, paint: &str) -> bool {
+        *self.failed.lock().unwrap_or_else(|e| e.into_inner()) == format!("{bus}|{paint}")
     }
 }
 
@@ -120,21 +133,23 @@ impl OwnBus {
 /// look into.
 pub(super) fn chosen(root: &Path, bus: &str, own: Vec<PathBuf>) -> Vec<(String, PathBuf)> {
     let out = listed(root, own);
-    let named: HashSet<String> = out.iter().map(|(rel, _)| rel.to_lowercase()).collect();
-    let extra: Vec<String> = files_of(root, bus).into_iter().map(|(rel, _)| rel).filter(|rel| !named.contains(&rel.to_lowercase())).collect();
+    let named: HashSet<String> = out.iter().filter_map(|(rel, _)| crate::mods::identity::key(rel)).collect();
+    let extra: Vec<String> = files_of(root, bus).into_iter().map(|(rel, _)| rel).filter(|rel| crate::mods::identity::key(rel).is_some_and(|k| !named.contains(&k))).collect();
     if !extra.is_empty() {
         log::info!("bus identity: {bus}: {} files were read for it that its description does not name (not in its fingerprint), e.g. {}", extra.len(), extra.iter().take(8).cloned().collect::<Vec<_>>().join(", "));
     }
     out
 }
 
-/// `own` (absolute) as (path every machine knows it by, where it is), each once, in order.
+/// `own` (absolute) as (path every machine knows it by, where it is), each once, in order -
+/// once by the key the list is checked by (`identity::key`: case and Unicode form aside), so
+/// one file reached by two spellings (NFC and NFD, as macOS may give) is listed once.
 pub(crate) fn listed(root: &Path, own: Vec<PathBuf>) -> Vec<(String, PathBuf)> {
     let mut seen = HashSet::new();
     let mut out: Vec<(String, PathBuf)> = Vec::new();
     for p in own {
         if let Some(rel) = crate::mods::bus_files::relative(root, &p).filter(|r| crate::mods::refuse_path(r).is_none()) {
-            if seen.insert(rel.to_lowercase()) {
+            if crate::mods::identity::key(&rel).is_some_and(|k| seen.insert(k)) {
                 out.push((rel, p));
             }
         }
@@ -143,13 +158,21 @@ pub(crate) fn listed(root: &Path, own: Vec<PathBuf>) -> Vec<(String, PathBuf)> {
     out
 }
 
-/// The files of the bus `v` the player drives, in its paint (`bus_files`). (Not its depot
-/// file: which one a player picked is no part of the bus, and the displays' texts go along
-/// in INFO.)
-pub fn own_files(root: &Path, v: &omsi_sim::VehicleInstance) -> Vec<PathBuf> {
+/// The files of the bus `v` the player drives (None: no bus, no files), in its paint
+/// (`bus_files`), listed when the answer is called - on the thread that needs them, not the
+/// frame's: `bus_files` looks up sound configs, the textures of every material and the
+/// fonts. Taken now is only what that needs (the vehicle's types are shared, not copied).
+/// (Not its depot file: which one a player picked is no part of the bus, and the displays'
+/// texts go along in INFO.)
+pub fn own_files(root: &Path, v: Option<&omsi_sim::VehicleInstance>) -> impl FnOnce() -> Vec<PathBuf> + Send + 'static {
+    let root = root.to_path_buf();
     // (its rear sections as the vehicle has them loaded: not read from the disk again)
-    let parts: Vec<&omsi_sim::VehicleType> = v.trailers.iter().map(|t| &*t.ty).collect();
-    crate::mods::bus_files::of_parts(root, &v.ty, &parts, v.host.paint_scheme.flatten(), None)
+    let taken = v.map(|v| (v.ty.clone(), v.trailers.iter().map(|t| t.ty.clone()).collect::<Vec<_>>(), v.host.paint_scheme.flatten()));
+    move || {
+        let Some((ty, trailers, scheme)) = taken else { return Vec::new() };
+        let parts: Vec<&omsi_sim::VehicleType> = trailers.iter().map(|t| &**t).collect();
+        crate::mods::bus_files::of_parts(&root, &ty, &parts, scheme, None)
+    }
 }
 
 /// The files of ours this game has read for `bus`: its folder and the folders its texts

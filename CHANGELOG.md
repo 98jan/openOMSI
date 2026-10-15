@@ -217,7 +217,8 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   drives by the fingerprint of the files it uses, and sends a server that lacks it those files
   (the variant and paint driven, not the whole pack); a dedicated server keeps every version
   its players send (`accept_uploads`, `uploads_keep_days`) and may leave the map for the
-  players to install (`share_maps`).
+  players to install (`share_maps`: a new `server.cfg` says 0; one without the key goes on
+  passing the map on, as before).
 
 ## 0.3.0 - 2026-10-14
 
