@@ -22611,7 +22611,6 @@ _version: 2
 
 "OMSI's shadow meshes (under vehicles)":
   ca: "Malles d'ombra d'OMSI (sota els vehicles)"
-  de: OMSI's Schatten Meshes (unter Fahrzeug)
   pt: "Malhas de sombra do OMSI (sob os veículos)"
   pt-pt: "Malhas de sombra do OMSI (sob os veículos)"
   zh: "OMSI 的阴影网格(车辆下方)"
@@ -24246,7 +24245,6 @@ _version: 2
   zh-tw: "能見度"
   nl: "Zichtbaarheid"
   sv: "Sikt"
-  de: "Sichtweite"
   ru: "Видимость"
   uk: "Видимість"
   be: "Бачнасць"
@@ -24278,7 +24276,6 @@ _version: 2
 
 "Precipitation":
   ca: "Precipitació"
-  de: "Niederschlag"
   pt: "Precipitação"
   pt-pt: "Precipitação"
   zh: "降水"
@@ -24320,7 +24317,6 @@ _version: 2
 
 "Precipitation strength":
   ca: "Intensitat de la precipitació"
-  de: "Niederschlagsstärke"
   pt: "Intensidade da precipitação"
   pt-pt: "Intensidade da precipitação"
   zh: "降水强度"
@@ -24401,7 +24397,6 @@ _version: 2
 
 "Temperature":
   ca: "Temperatura"
-  de: "Temperatur"
   pt: "Temperatura"
   pt-pt: "Temperatura"
   zh: "温度"
@@ -24452,7 +24447,6 @@ _version: 2
   zh-tw: "風速"
   nl: "Windsnelheid"
   sv: "Vindhastighet"
-  de: "Windgeschwindigkeit"
   ru: "Скорость ветра"
   uk: "Швидкість вітру"
   be: "Хуткасць ветру"
@@ -24485,7 +24479,6 @@ _version: 2
 
 "Wind direction":
   ca: "Direcció del vent"
-  de: "Windrichtung"
   pt: "Direção do vento"
   pt-pt: "Direção do vento"
   zh: "风向"
@@ -24598,7 +24591,6 @@ _version: 2
 
 "Season":
   ca: "Estació de l'any"
-  de: "Jahreszeit"
   pt: "Estação"
   pt-pt: "Estação"
   zh: "季节"
@@ -25543,7 +25535,6 @@ _version: 2
   sv: "Nedre höger"
 "Cabin and outside, one key":
   ca: "Cabina i exterior, una sola tecla"
-  de: "Fahrerhaus und Außen, eine Taste"
   fr: "Cabine et extérieur, une seule touche"
   zh-tw: "駕駛室與車外，同一按鍵"
   pt: "Cabine e exterior, uma tecla"
@@ -25984,7 +25975,6 @@ _version: 2
   sv: "Behåll navigator, menyer och information på mittskärmen"
 "Latching":
   ca: "Amb enclavament"
-  de: "Rastschalter"
   fr: "Maintenu"
   zh-tw: "鎖定"
   pt: "Alternância"
@@ -26577,7 +26567,6 @@ _version: 2
   sv: "Verktyg"
 "Top left":
   ca: "Superior esquerra"
-  de: "Oben links"
   zh-tw: "左上"
   fr: "En haut à gauche"
   pt: "Superior esquerdo"
@@ -26589,7 +26578,6 @@ _version: 2
   sv: "Övre vänster"
 "Top right":
   ca: "Superior dreta"
-  de: "Oben rechts"
   zh-tw: "右上"
   fr: "En haut à droite"
   pt: "Superior direito"
@@ -26695,7 +26683,6 @@ _version: 2
   nl: "Venstergrootte"
   sv: "Fönsterstorlek"
   ru: "Размер окна"
-  de: "Fenstergröße"
   uk: "Розмір вікна"
   be: "Памер акна"
   kk: "Терезе өлшемі"
@@ -27376,7 +27363,6 @@ _version: 2
   sv: "8x MSAA"
   ca: "MSAA 8x"
   ru: "8x MSAA"
-  de: "8x MSAA"
   fr: "8x MSAA"
   uk: "8x MSAA"
   be: "8x MSAA"
@@ -27407,7 +27393,6 @@ _version: 2
   sv: "Träd som rör sig i vinden"
   ca: "Arbres al vent"
   ru: "Деревья на ветру"
-  de: "Bäume im Wind"
   uk: "Дерева на вітрі"
   be: "Дрэвы на ветры"
   kk: "Желдегі ағаштар"
@@ -27439,7 +27424,6 @@ _version: 2
   pt-pt: "Manípulo dirige como volante (volante detetado como comando)"
   fr: "Le stick dirige comme un volant (un volant vu comme une manette)"
   nl: "Stick stuurt als een stuurwiel (stuur herkend als gamepad)"
-  de: "Stick lenkt wie ein Lenkrad (als Gamepad erkanntes Lenkrad)"
   ru: "Стик рулит как руль (руль, распознанный как геймпад)"
   uk: "Стік керує як кермо (кермо, розпізнане як геймпад)"
   be: "Стык кіруе як руль (руль, распазнаны як геймпад)"
@@ -27463,12 +27447,11 @@ _version: 2
   ca: "El joystick gira com un volant (un volant detectat com a comandament)"
   sv: "Spaken styr som en ratt (en ratt som identifieras som handkontroll)"
 "Arrow keys switch the cameras with a wheel too (no glance)":
-  de: "Pfeiltasten schalten auch bei angeschlossenem Lenkrad durch die Kameras (kein Umschauen)"
+  de: "Pfeiltasten schalten auch bei angeschlossenem Lenkrad durch die Kameras (kein Umsehen)"
   pt: "Setas também trocam as câmeras ao usar volante (sem olhar para os lados)"
   pt-pt: "As setas também mudam de câmara ao usar um volante (sem olhar para os lados)"
   fr: "Les flèches changent de caméra aussi avec un volant (sans coup d'œil)"
   nl: "Pijltjestoetsen wisselen ook met een stuur tussen camera's (zonder zijwaarts kijken)"
-  de: "Pfeiltasten wechseln auch mit Lenkrad die Kameras (kein Umsehen)"
   ru: "Стрелки переключают камеры и с рулём (без взгляда в сторону)"
   uk: "Стрілки перемикають камери й з кермом (без погляду вбік)"
   be: "Стрэлкі пераключаюць камеры і з рулём (без позірку ўбок)"
@@ -28001,7 +27984,6 @@ _version: 2
 "Stick steering smoothing":
   de: "Glättung der Stick-Lenkung"
   fr: "Lissage du stick"
-  de: "Glättung der Stick-Lenkung"
   ru: "Сглаживание руления стиком"
   uk: "Згладжування кермування стіком"
   be: "Згладжванне кіравання стыкам"
@@ -28764,7 +28746,6 @@ _version: 2
   pt: "\"{name}\" salvo."
 
 "Gear {gear} (H-pattern)":
-  de: "Gang {gear} (H-pattern)"
   fr: "Rapport {gear} (grille en H)"
   de: "Gang {gear} (H-Schaltung)"
   ru: "Передача {gear} (H-образная КПП)"
