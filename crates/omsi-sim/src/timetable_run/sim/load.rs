@@ -430,7 +430,7 @@ impl ScheduleSim {
             *set = set.iter().map(|i| to.get(i).copied().unwrap_or(*i)).collect();
         };
         moved(&mut self.awaiting);
-        moved(&mut self.later_layover);
+        self.later_layover = self.later_layover.iter().map(|(i, t)| (to.get(i).copied().unwrap_or(*i), *t)).collect();
         moved(&mut self.startup);
         self.retry_at = self.retry_at.iter().map(|(i, t)| (to.get(i).copied().unwrap_or(*i), *t)).collect();
         for (&from, &j) in &to {
@@ -464,7 +464,7 @@ impl ScheduleSim {
             .iter()
             .chain(self.waiting.iter())
             .chain(self.awaiting.iter())
-            .chain(self.later_layover.iter())
+            .chain(self.later_layover.keys())
             .chain(self.car_departure.values())
             .copied()
             .collect();

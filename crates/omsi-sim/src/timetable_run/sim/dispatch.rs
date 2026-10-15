@@ -264,6 +264,9 @@ impl ScheduleSim {
             .collect();
         for i in due {
             self.departures[i].spawned = true;
+            // (a layover departure whose stand was taken comes now: kept in that set it
+            // counted as busy at midnight, was never made ready again and stopped running)
+            self.later_layover.remove(&i);
             // the tour's bus is still on its way here: it takes the trip on when it arrives
             if self.tour_prev[i].and_then(|k| self.tour_bus(k, traffic)).is_some() {
                 self.awaiting.insert(i);
@@ -292,24 +295,33 @@ impl ScheduleSim {
             if d.time > tod + TOUR_LAYOVER_MAX {
                 break;
             }
-            if d.spawned || self.later_layover.contains(&i) || !self.runs(i) {
+            if d.spawned || self.later_layover.get(&i).is_some_and(|&t| day_time < t) || !self.runs(i) {
                 continue;
             }
-            let Some(k) = self.tour_prev[i] else {
+            // (the previous trip of the tour only when it runs today: a tour's trips on other
+            // days are no trip before this one, which is then its tour's first)
+            let Some(k) = self.tour_prev[i].filter(|&k| self.runs(k)) else {
                 continue;
             };
             // only a trip with stops has a first stop to wait at: a flight (TXL.ttl, every
             // ten minutes) would take off early
-            if trip_stations(&self.data.trips[d.trip]).is_empty() {
+            if !trip_has_stations(&self.data.trips[d.trip]) {
                 continue;
             }
-            let prev_running = self.dep_time(k) + self.times_of(k).duration >= day_time || self.tour_bus(k, traffic).is_some();
+            let prev_end = self.dep_time(k) + self.times_of(k).duration;
+            // only a break the bus that drove the previous trip waits out (`may_take_on`):
+            // after a longer one that bus has gone, and an identical one stood there again
+            if self.dep_time(i) - prev_end >= TOUR_LAYOVER_MAX {
+                continue;
+            }
+            let prev_running = prev_end >= day_time || self.tour_bus(k, traffic).is_some();
             if !prev_running {
                 early.push(i);
             }
         }
         for i in early {
             self.departures[i].spawned = true;
+            self.later_layover.remove(&i);
             self.pending.push_back(i);
             if loading {
                 self.startup.insert(i);
@@ -548,11 +560,13 @@ impl ScheduleSim {
         });
     }
 
-    /// Layover departure `i` found its stand taken: it comes at its departure time.
-    pub fn stand_taken(&mut self, i: usize) {
+    /// Layover departure `i` found its stand taken at `day_time`: it tries again in a while,
+    /// and comes at its departure time at the latest. Tried only once, a busy terminus had
+    /// its buses only at their departure times (#2593).
+    pub fn stand_taken(&mut self, i: usize, day_time: f64) {
         self.departures[i].spawned = false;
         self.startup.remove(&i);
-        self.later_layover.insert(i);
+        self.later_layover.insert(i, day_time + STAND_RETRY);
     }
 
     /// Departure `i` was queued while the map loads (its bus may appear in view).

@@ -182,8 +182,9 @@ pub struct ScheduleSim {
     deactivated: Vec<(String, PathBuf)>,
     /// Departures queued while the map loads: their buses may appear in view.
     startup: std::collections::HashSet<usize>,
-    /// Layover departures whose stand was taken: they come at their departure time.
-    later_layover: std::collections::HashSet<usize>,
+    /// Layover departures whose stand was taken, with when they try for it again (they
+    /// come at their departure time at the latest).
+    later_layover: HashMap<usize, f64>,
     /// Per departure: the next departure of the same tour (its bus takes it on).
     tour_next: Vec<Option<usize>>,
     /// Departures due while their tour's bus is still on its previous trip: that bus takes
@@ -230,6 +231,9 @@ pub struct ScheduleSim {
 /// tour's bus missing on its layover (the map just loaded) stands at the next trip's
 /// first stop as long before it (#2593).
 const TOUR_LAYOVER_MAX: f64 = 30.0 * 60.0;
+
+/// A layover bus whose stand was taken tries for it again after this many seconds.
+const STAND_RETRY: f64 = 20.0;
 
 /// How far ahead (s) the departure displays look.
 const BOARD_AHEAD: f64 = 2.0 * 3600.0;
