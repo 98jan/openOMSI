@@ -127,8 +127,10 @@ fn human_type(tag: &str) -> Arc<HumanType> {
 
 /// The player's bus standing at stop 77 with its door open: one entry, one exit, a cash
 /// desk, one seat.
-fn player_bus() -> BusNow {
-    let dir = std::env::temp_dir().join(format!("omsi-ticket-hook-bus-{}", std::process::id()));
+/// (`tag`: a folder of its own - the tests run at the same time, and one removing the files
+/// another is still reading left it without a cabin)
+fn player_bus(tag: &str) -> BusNow {
+    let dir = std::env::temp_dir().join(format!("omsi-ticket-hook-bus-{tag}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("test.bus"), "[boundingbox]\n2.5\n12\n3\n0\n0\n1.5\n\n[passengercabin]\ncabin.cfg\n\n[paths]\npaths.cfg\n").unwrap();
     std::fs::write(dir.join("paths.cfg"), "[pathpnt]\n1.1\n4\n0.4\n\n[pathpnt]\n0\n4\n0.5\n\n[pathpnt]\n0\n-3\n0.5\n\n[pathpnt]\n1.1\n-3\n0.4\n\n[pathlink]\n0\n1\n\n[pathlink]\n1\n2\n\n[pathlink]\n2\n3\n").unwrap();
@@ -136,6 +138,7 @@ fn player_bus() -> BusNow {
     let def = omsi_vehicle::Vehicle::load(&dir.join("test.bus")).unwrap();
     let cabin = Arc::new(Cabin::load_train(&[(&def, Vec3::ZERO, f32::INFINITY)]).expect("cabin"));
     std::fs::remove_dir_all(&dir).ok();
+    assert!(cabin.sale.is_some(), "the cabin has its cash desk");
     BusNow {
         id: BusId::Player,
         cabin,
@@ -174,7 +177,7 @@ fn boarding_waits_in_the_doorway_until_the_plugins_had_their_frame() {
     let mut stop = h.build_pax_stop(&world, None, 77, DVec3::ZERO, 0.0, "Střížkov");
     stop.buses.push((BusId::Player, true));
     h.stops.insert(77, stop);
-    let buses = vec![player_bus()];
+    let buses = vec![player_bus("door")];
     let bus_ix: HashMap<BusId, usize> = [(BusId::Player, 0)].into_iter().collect();
     // two passengers in the open doorway, their places reserved, deciding to buy a ticket
     h.people = vec![boarding(&ty, 1, Task::WalkingToBus), boarding(&ty, 2, Task::WalkingToBus)];
@@ -248,7 +251,7 @@ fn a_buyer_always_has_a_ticket_of_the_pack() {
     let ty = human_type("buyer");
     let mut h = PeopleSim::new(Path::new("/nonexistent"), 200);
     h.tickets = Some(Arc::new(pack()));
-    h.player_cabin = Some(player_bus().cabin);
+    h.player_cabin = Some(player_bus("buyer").cabin);
     h.people = vec![boarding(&ty, 1, Task::WalkingToBus), boarding(&ty, 2, Task::WalkingToBus)];
     // a pass holder (no ticket, as `decide_pax_ticket` leaves them) made a buyer: the pack's
     // ticket for their age, with its price
