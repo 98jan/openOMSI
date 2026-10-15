@@ -20,8 +20,8 @@ Thanks for helping! A few rules keep the project healthy:
    linked in a comment, so anyone can try the change before it is merged.
 4. One maintainer other than the author approves it, and it is merged. Some parts need a
    second review: see [GOVERNANCE.md](GOVERNANCE.md).
-5. Once merged, it is in the next **beta** (a merge marked `[skip ci]` is not released), and
-   players get it with the next stable release.
+5. Once merged, it is in the next **beta** a maintainer publishes, and players get it with the
+   next stable release.
 
 ## Files and licences
 
@@ -55,7 +55,7 @@ with the English text as the key. A pull request that changes it is checked auto
   opens again by itself once it is edited into English. Logs and game text can stay as
   they are.
 * One problem or idea per issue, on the latest release. Questions go to the
-  [Discord server](https://discord.gg/VG2EKVafYG).
+  [Discord server](https://discord.gg/openomsi).
 * New issues are sorted automatically: the form's "What is it about?" becomes an `area:`
   label and the issue gets a first milestone (a regression or a crash: v0.1.x), which the
   maintainers move when it fits better elsewhere. A crash report with the same panic as an
@@ -69,8 +69,9 @@ See the layout in the [README](README.md#repository-layout) and
 
 ## Releases
 
-Every merge into `main` is published as a **beta** (a GitHub pre-release) for testers;
-players only get **stable** releases, which are betas the maintainers have tested and
-promoted, about once a week. A published release is never replaced: a fix is a new version.
-Maintainers bump `MAJOR.MINOR` in the `VERSION` file (in a pull request) and promote betas;
-everything else is automatic - see [docs/VERSIONING.md](docs/VERSIONING.md).
+A maintainer publishes `main` as a **beta** (a GitHub pre-release) for testers; players only
+get **stable** releases, which are betas the maintainers have tested and promoted, about once
+a week. A published release is never
+replaced: a fix is a new version. Maintainers bump `MAJOR.MINOR` in the `VERSION` file (in a
+pull request), publish betas and promote them; everything else is automatic - see
+[docs/VERSIONING.md](docs/VERSIONING.md).

@@ -1,4 +1,4 @@
-//! Stamps the build with its version (`MAJOR.MINOR.COMMIT`, see docs/VERSIONING.md) and the
+//! Stamps the build with its version (`MAJOR.MINOR.PATCH`, see docs/VERSIONING.md) and the
 //! commit it came from, so a screenshot or a log line says which version is running
 //! (`omsi_platform::VERSION`, `omsi_platform::BUILD`; the updater compares the version with
 //! the latest release).
@@ -21,9 +21,9 @@ fn main() {
     println!("cargo:rerun-if-changed=../../.git/index");
 }
 
-/// `MAJOR.MINOR` from the VERSION file, then the number of commits since that file last
-/// changed, not counting the never-released `[skip ci]` / `[skip actions]` ones (the CI
-/// passes the same number in `OPENOMSI_VERSION`).
+/// `MAJOR.MINOR` from the VERSION file, then the release tagged on this commit, or one more
+/// than the last release of that `MAJOR.MINOR` (as scripts/version.sh; the CI passes its
+/// result in `OPENOMSI_VERSION`).
 fn version(git: &dyn Fn(&[&str]) -> Option<String>) -> String {
     if let Ok(v) = std::env::var("OPENOMSI_VERSION") {
         if !v.trim().is_empty() {
@@ -31,9 +31,14 @@ fn version(git: &dyn Fn(&[&str]) -> Option<String>) -> String {
         }
     }
     let base = std::fs::read_to_string("../../VERSION").map(|s| s.trim().to_string()).unwrap_or_else(|_| "0.0".into());
-    let n = git(&["log", "-1", "--format=%H", "--", "VERSION"])
-        .filter(|h| !h.is_empty())
-        .and_then(|h| git(&["rev-list", "--count", "--invert-grep", "--fixed-strings", "--grep=[skip ci]", "--grep=[skip actions]", &format!("{h}..HEAD")]))
-        .unwrap_or_else(|| "0".into());
+    let prefix = format!("v{base}.");
+    let pattern = format!("{prefix}*");
+    let last = |args: &[&str]| -> Option<u64> {
+        git(args)?
+            .lines()
+            .filter_map(|t| t.strip_prefix(&prefix).filter(|n| n.bytes().all(|b| b.is_ascii_digit()))?.parse().ok())
+            .max()
+    };
+    let n = last(&["tag", "-l", "--points-at", "HEAD", &pattern]).or_else(|| last(&["tag", "-l", &pattern]).map(|n| n + 1)).unwrap_or(0);
     format!("{base}.{n}")
 }

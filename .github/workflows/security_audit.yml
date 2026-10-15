@@ -12,11 +12,13 @@ on:
     paths:
       - Cargo.lock
       - launcher/src-tauri/Cargo.lock
+      - .github/workflows/security_audit.yml
       - "**/Cargo.toml"
   pull_request:
     paths:
       - Cargo.lock
       - launcher/src-tauri/Cargo.lock
+      - .github/workflows/security_audit.yml
       - "**/Cargo.toml"
   schedule:
     - cron: "0 6 * * 1"
@@ -48,12 +50,14 @@ jobs:
           exit $failed
 
       - uses: taiki-e/install-action@v2
+        if: ${{ !cancelled() }}
         with:
           tool: cargo-audit
 
       # (the launcher is not a member of the game's workspace, so its lock file is audited
       # on its own; both run, so one advisory does not hide the other)
       - name: Audit Cargo.lock
+        if: ${{ !cancelled() }}
         run: cargo audit --file Cargo.lock
 
       - name: Audit launcher/src-tauri/Cargo.lock

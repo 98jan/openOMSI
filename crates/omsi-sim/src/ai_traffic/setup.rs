@@ -92,6 +92,7 @@ impl TrafficSim {
             lights,
             controller_of_object,
             trailer_types: HashMap::new(),
+            coupled_chains: HashMap::new(),
             root: root.to_path_buf(),
             held_at_red: 0,
             stop_wishes: None,

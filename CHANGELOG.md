@@ -1,6 +1,6 @@
 # Changelog
 
-Releases are started by hand from `main` as the beta `MAJOR.MINOR.COMMIT`, and tested betas are
+Releases are started by hand from `main` as the beta `MAJOR.MINOR.PATCH`, and tested betas are
 promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-org/openOMSI/releases) page.
 
@@ -19,6 +19,13 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   500 MB was dropped. A texture memory set before (and OMSI's `texmemlimit`) was a texture
   budget and is not carried over: the video memory starts on Automatic. After a lost graphics
   device the safer settings take two thirds of what the card holds, not a fixed 800 MB.
+
+### Multiplayer
+
+- **What another machine sends is checked for what it is** — a host's mod file a joining
+  player fetches must be what its name says (a picture of a size a texture can have, a sound,
+  a mesh the reader takes, a text), or it is left out and reported; a vehicle script that
+  would never end is cut short instead of stopping the game.
 
 ## 0.3.0 - 2026-10-14
 

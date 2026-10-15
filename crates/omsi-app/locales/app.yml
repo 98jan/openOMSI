@@ -4,6 +4,7 @@ _version: 2
 
 "Ambience volume":
   zh-tw: "環境音量"
+  pt: "Volume do ambiente"
 "Yaw sensitivity (left / right)":
   zh-tw: "水平旋轉靈敏度（左／右）"
 "Pitch sensitivity (up / down)":
@@ -4099,6 +4100,7 @@ _version: 2
   fr: "Niveau"
   nl: "Niveau"
   sv: "Nivå"
+  pt: "Nível"
 "LEVEL":
   ca: "NIVELL"
   ru: "УРОВЕНЬ"
@@ -21302,11 +21304,13 @@ _version: 2
   fr: "Force des pédales à la souris"
   nl: "Sterkte van muispedalen"
   sv: "Muspedalernas styrka"
+  pt: "Força dos pedais pelo mouse"
 "Adjust how much mouse travel is needed to reach full throttle or braking":
   zh-tw: "調整滑鼠需要移動多少距離才能達到全油門或全煞車"
   fr: "Règle la course de souris nécessaire pour atteindre l'accélération ou le freinage maximal"
   nl: "Stel in hoeveel muisbeweging nodig is om volledig gas te geven of te remmen"
   sv: "Justera hur långt musen behöver röra sig för full gas eller broms"
+  pt: "Ajusta quanto o mouse precisa se mover para chegar à aceleração ou à frenagem máxima"
 "On":
   ca: "Activat"
   ru: "Вкл."
@@ -27597,24 +27601,112 @@ _version: 2
   pt: "Um veículo ainda está carregando"
   pt-pt: "Ainda está a carregar um veículo"
   nl: "Een voertuig wordt nog geladen"
+  de: "Ein Fahrzeug wird noch geladen"
+  ru: "Транспорт ещё загружается"
+  uk: "Транспорт ще завантажується"
+  be: "Транспарт яшчэ загружаецца"
+  kk: "Көлік әлі жүктелуде"
+  pl: "Pojazd wciąż się wczytuje"
+  cs: "Vozidlo se ještě načítá"
+  hu: "Egy jármű még töltődik"
+  es: "Un vehículo todavía se está cargando"
+  it: "Un veicolo è ancora in caricamento"
+  tr: "Bir araç hâlâ yükleniyor"
+  ja: "車両をまだ読み込み中です"
+  zh-tw: "仍有車輛正在載入"
+  ko: "차량을 아직 불러오는 중입니다"
+  th: "ยังโหลดยานพาหนะอยู่"
+  vi: "Một phương tiện vẫn đang tải"
+  id: "Sebuah kendaraan masih dimuat"
+  ms: "Sebuah kenderaan masih dimuatkan"
+  tl: "May sasakyan pang naglo-load"
+  zh: "仍有车辆正在加载"
+  hi: "एक वाहन अभी लोड हो रहा है"
+  ca: "Encara s'està carregant un vehicle"
   sv: "Ett fordon laddas fortfarande"
 "Loading vehicle...":
   fr: "Chargement du véhicule..."
   pt: "Carregando veículo..."
   pt-pt: "A carregar veículo..."
   nl: "Voertuig laden..."
+  de: "Fahrzeug wird geladen..."
+  ru: "Загрузка транспорта..."
+  uk: "Завантаження транспорту..."
+  be: "Загрузка транспарту..."
+  kk: "Көлік жүктелуде..."
+  pl: "Wczytywanie pojazdu..."
+  cs: "Načítání vozidla..."
+  hu: "Jármű betöltése..."
+  es: "Cargando vehículo..."
+  it: "Caricamento veicolo..."
+  tr: "Araç yükleniyor..."
+  ja: "車両を読み込み中..."
+  zh-tw: "正在載入車輛..."
+  ko: "차량 불러오는 중..."
+  th: "กำลังโหลดยานพาหนะ..."
+  vi: "Đang tải phương tiện..."
+  id: "Memuat kendaraan..."
+  ms: "Memuatkan kenderaan..."
+  tl: "Nilo-load ang sasakyan..."
+  zh: "正在加载车辆..."
+  hi: "वाहन लोड हो रहा है..."
+  ca: "Carregant el vehicle..."
   sv: "Laddar fordon..."
 "Vehicle loading stopped unexpectedly":
   fr: "Le chargement du véhicule s'est arrêté de façon inattendue"
   pt: "O carregamento do veículo parou inesperadamente"
   pt-pt: "O carregamento do veículo parou inesperadamente"
   nl: "Laden van voertuig onverwacht gestopt"
+  de: "Laden des Fahrzeugs unerwartet abgebrochen"
+  ru: "Загрузка транспорта неожиданно прервалась"
+  uk: "Завантаження транспорту несподівано перервалося"
+  be: "Загрузка транспарту нечакана перапынілася"
+  kk: "Көлікті жүктеу күтпеген жерден тоқтады"
+  pl: "Wczytywanie pojazdu nieoczekiwanie się przerwało"
+  cs: "Načítání vozidla se nečekaně zastavilo"
+  hu: "A jármű betöltése váratlanul leállt"
+  es: "La carga del vehículo se detuvo inesperadamente"
+  it: "Il caricamento del veicolo si è interrotto inaspettatamente"
+  tr: "Araç yüklemesi beklenmedik şekilde durdu"
+  ja: "車両の読み込みが予期せず停止しました"
+  zh-tw: "車輛載入意外中止"
+  ko: "차량 불러오기가 예기치 않게 중단되었습니다"
+  th: "การโหลดยานพาหนะหยุดลงกะทันหัน"
+  vi: "Việc tải phương tiện dừng đột ngột"
+  id: "Pemuatan kendaraan berhenti secara tak terduga"
+  ms: "Pemuatan kenderaan terhenti secara tidak dijangka"
+  tl: "Biglang huminto ang pag-load ng sasakyan"
+  zh: "车辆加载意外中止"
+  hi: "वाहन लोड होना अचानक रुक गया"
+  ca: "La càrrega del vehicle s'ha aturat inesperadament"
   sv: "Fordonsinläsningen stoppades oväntat"
 "Vehicle loaded":
   fr: "Véhicule chargé"
   pt: "Veículo carregado"
   pt-pt: "Veículo carregado"
   nl: "Voertuig geladen"
+  de: "Fahrzeug geladen"
+  ru: "Транспорт загружен"
+  uk: "Транспорт завантажено"
+  be: "Транспарт загружаны"
+  kk: "Көлік жүктелді"
+  pl: "Pojazd wczytany"
+  cs: "Vozidlo načteno"
+  hu: "Jármű betöltve"
+  es: "Vehículo cargado"
+  it: "Veicolo caricato"
+  tr: "Araç yüklendi"
+  ja: "車両を読み込みました"
+  zh-tw: "車輛已載入"
+  ko: "차량을 불러왔습니다"
+  th: "โหลดยานพาหนะแล้ว"
+  vi: "Đã tải phương tiện"
+  id: "Kendaraan telah dimuat"
+  ms: "Kenderaan telah dimuatkan"
+  tl: "Na-load ang sasakyan"
+  zh: "车辆已加载"
+  hi: "वाहन लोड हो गया"
+  ca: "Vehicle carregat"
   sv: "Fordonet har laddats"
 "Cloud quality":
   ca: "Qualitat dels núvols"
@@ -27704,50 +27796,62 @@ _version: 2
 "CAVOK":
   zh-tw: "晴空"
   sv: "CAVOK"
+  pt: "CAVOK (céu aberto)"
 
 "Eiseskälte":
   zh-tw: "冰冷寒氣"
   sv: "Iskyla"
+  pt: "Frio intenso"
 
 "Starker Schneefall":
   zh-tw: "大雪"
   sv: "Kraftigt snöfall"
+  pt: "Nevasca forte"
 
 "Ueberfrierende Naesse":
   zh-tw: "結冰濕氣"
   sv: "Underkyld nederbörd"
+  pt: "Pista congelando"
 
 "Bodennebel":
   zh-tw: "地面霧"
   sv: "Markdimma"
+  pt: "Neblina rasteira"
 
 "Daemmerungsnebel":
   zh-tw: "暮霧"
   sv: "Skymningsdimma"
+  pt: "Neblina ao entardecer"
 
 "Schmuddelwetter":
   zh-tw: "陰濕天氣"
   sv: "Ruskväder"
+  pt: "Tempo feio"
 
 "Sommerlich":
   zh-tw: "夏日天氣"
   sv: "Sommarväder"
+  pt: "Clima de verão"
 
 "Sturm":
   zh-tw: "暴風雨"
   sv: "Storm"
+  pt: "Tempestade"
 
 "In a LAN session only the host can clear AI traffic":
   fr: "En réseau, seul l'hôte peut dégager la circulation IA"
   sv: "I en LAN-session får endast värden rensa AI-trafik"
+  pt: "Numa sessão LAN, só o anfitrião pode limpar o tráfego da IA"
 
 "The dispatch took the duty back: free drive":
   fr: "La régulation a repris le service : conduite libre"
   sv: "Trafikledningen drog tillbaka tjänsten: fri körning"
+  pt: "O despacho retomou a escala: direção livre"
 
 "End of the duty: the tour's last trip is done":
   fr: "Fin du service : la dernière course est terminée"
   sv: "Tjänsten är slut: omloppets sista tur är klar"
+  pt: "Fim da escala: a última viagem do serviço terminou"
 
 "Look left / right":
   fr: "Regarder à gauche / à droite"
@@ -27811,76 +27915,91 @@ _version: 2
   zh-tw: "尚未指定按鈕"
   fr: "Aucun bouton attribué"
   sv: "Inga knappar tilldelade"
+  pt: "Nenhum botão atribuído"
 
 "Press a physical button or choose its number above":
   zh-tw: "按下實體按鈕，或在上方選擇其編號"
   fr: "Appuyez sur un bouton physique ou choisissez son numéro ci-dessus"
   sv: "Tryck på en fysisk knapp eller välj dess nummer ovan"
+  pt: "Aperte um botão físico ou escolha o número dele acima"
 
 "Reload saved controllers":
   zh-tw: "重新載入已儲存的控制器"
   fr: "Recharger les manettes enregistrées"
   sv: "Läs in sparade kontroller igen"
+  pt: "Recarregar os controles salvos"
 
 "Apply saved mappings to the connected devices":
   zh-tw: "將已儲存的對應設定套用至連接的裝置"
   fr: "Appliquer les attributions enregistrées aux appareils connectés"
   sv: "Tillämpa sparade bindningar på anslutna enheter"
+  pt: "Aplicar as atribuições salvas aos dispositivos conectados"
 
 "Connected devices":
   zh-tw: "已連接的裝置"
   fr: "Appareils connectés"
   sv: "Anslutna enheter"
+  pt: "Dispositivos conectados"
 
 "Configure this wheel, pedals or gamepad":
   zh-tw: "設定此方向盤、踏板或遊戲手把"
   fr: "Configurer ce volant, ces pédales ou cette manette"
   sv: "Konfigurera denna ratt, pedaler eller handkontroll"
+  pt: "Configurar este volante, pedais ou controle"
 
 "No controller connected":
   zh-tw: "未連接控制器"
   fr: "Aucune manette connectée"
   sv: "Ingen kontroll ansluten"
+  pt: "Nenhum controle conectado"
 
 "Saved devices can still be edited below":
   zh-tw: "仍可在下方編輯已儲存的裝置"
   fr: "Les appareils enregistrés restent modifiables ci-dessous"
   sv: "Sparade enheter kan fortfarande redigeras nedan"
+  pt: "Os dispositivos salvos ainda podem ser editados abaixo"
 
 "Saved devices (disconnected)":
   zh-tw: "已儲存的裝置（未連接）"
   fr: "Appareils enregistrés (déconnectés)"
   sv: "Sparade enheter (frånkopplade)"
+  pt: "Dispositivos salvos (desconectados)"
 
 "Edit the saved configuration":
   zh-tw: "編輯已儲存的設定"
   fr: "Modifier la configuration enregistrée"
   sv: "Redigera sparad konfiguration"
+  pt: "Editar a configuração salva"
 
 "Ignore movement around the centre or at pedal rest":
   zh-tw: "忽略中心附近或踏板放開時的移動"
   fr: "Ignorer les mouvements autour du centre ou pédale relâchée"
   sv: "Ignorera rörelser kring mitten eller pedalernas viloläge"
+  pt: "Ignorar movimentos em torno do centro ou com o pedal solto"
 
 "Arrows switch the cameras":
   zh-tw: "方向鍵切換視角"
   fr: "Les flèches changent de caméra"
   sv: "Piltangenterna byter kamera"
+  pt: "As setas trocam as câmeras"
 
 "With a wheel, Left/Right change the interior camera as without one, instead of turning the head":
   zh-tw: "使用方向盤時，左右方向鍵也會切換車內視角，而非轉動頭部"
   fr: "Avec un volant, Gauche/Droite changent la caméra intérieure au lieu de tourner la tête"
   sv: "Med ratt byter vänster/höger den inre kameran som utan ratt, i stället för att vrida huvudet"
+  pt: "Com volante, Esquerda/Direita trocam a câmera interna como sem ele, em vez de virar a cabeça"
 
 "Stick steers like a wheel":
   zh-tw: "搖桿如方向盤般轉向"
   fr: "Le stick dirige comme un volant"
   sv: "Spaken styr som en ratt"
+  pt: "O analógico dirige como um volante"
 
 "The wheel where the stick points, as far at any speed: for a wheel the system calls an Xbox controller":
   zh-tw: "方向盤跟隨搖桿位置，任何速度下轉向幅度都相同：適用系統辨識為 Xbox 控制器的方向盤"
   fr: "Le volant suit le stick, même braquage à toute vitesse : pour un volant vu comme une manette Xbox"
   sv: "Ratten följer spakens läge, lika långt vid alla hastigheter: för en ratt som systemet kallar en Xbox-kontroll"
+  pt: "O volante vai até onde o analógico aponta, o mesmo em qualquer velocidade: para um volante que o sistema reconhece como controle de Xbox"
 
 "Stick steering smoothing":
   fr: "Lissage du stick"
@@ -27914,86 +28033,103 @@ _version: 2
 "Evens out a gamepad stick's small shakes (off: the stick as it reads)":
   fr: "Atténue les petits tremblements du stick d'une manette (désactivé : le stick tel qu'il est lu)"
   sv: "Jämnar ut små skakningar i handkontrollens spak (av: spakens direkta värde)"
+  pt: "Suaviza pequenos tremores do analógico do controle (desligado: o analógico como é lido)"
 
 "Your wheel's rotation from lock to lock":
   zh-tw: "方向盤從一側極限到另一側的旋轉角度"
   fr: "La rotation de votre volant d'une butée à l'autre"
   sv: "Din ratts rotation mellan ändlägena"
+  pt: "A rotação do seu volante de batente a batente"
 
 "Rotation for the bus's full lock":
   zh-tw: "達到巴士最大轉向角所需的旋轉角度"
   fr: "Rotation pour le braquage maximal du bus"
   sv: "Rotation för bussens fulla rattutslag"
+  pt: "Rotação para o esterço máximo do ônibus"
 
 "Pedal response":
   zh-tw: "踏板反應"
   fr: "Réponse des pédales"
   sv: "Pedalrespons"
+  pt: "Resposta dos pedais"
 
 "Enable steering forces and gamepad rumble":
   zh-tw: "啟用轉向力回饋與手把震動"
   fr: "Activer les forces dans le volant et les vibrations de la manette"
   sv: "Aktivera styrkrafter och handkontrollsvibrationer"
+  pt: "Ativar as forças no volante e a vibração do controle"
 
 "Device strengths":
   zh-tw: "裝置力道"
   fr: "Intensité par appareil"
   sv: "Enheternas styrkor"
+  pt: "Intensidade por dispositivo"
 
 "Select a device and open its Force feedback tab to adjust force, vibration and direction":
   zh-tw: "選擇裝置並開啟「力回饋」分頁，以調整力道、震動與方向"
   fr: "Choisissez un appareil et ouvrez son onglet Retour de force pour régler la force, la vibration et le sens"
   sv: "Välj en enhet och öppna dess flik Force feedback för att justera kraft, vibration och riktning"
+  pt: "Escolha um dispositivo e abra a aba Force feedback para ajustar força, vibração e direção"
 
 "Successful changes are saved and applied immediately":
   zh-tw: "變更成功後會立即儲存並套用"
   fr: "Les modifications réussies sont enregistrées et appliquées immédiatement"
   sv: "Lyckade ändringar sparas och tillämpas direkt"
+  pt: "As alterações bem-sucedidas são salvas e aplicadas na hora"
 
 "Enable axes and buttons":
   zh-tw: "啟用軸與按鈕"
   fr: "Activer les axes et les boutons"
   sv: "Aktivera axlar och knappar"
+  pt: "Ativar eixos e botões"
 
 "Map steering, throttle, brake and clutch":
   zh-tw: "指定轉向、油門、煞車與離合器"
   fr: "Attribuer la direction, l'accélérateur, le frein et l'embrayage"
   sv: "Tilldela styrning, gas, broms och koppling"
+  pt: "Atribuir direção, acelerador, freio e embreagem"
 
 "Assign controls and configure latching switches":
   zh-tw: "指定操作並設定固定式開關"
   fr: "Attribuer les commandes et configurer les interrupteurs maintenus"
   sv: "Tilldela kontroller och konfigurera låsande omkopplare"
+  pt: "Atribuir comandos e configurar interruptores travantes"
 
 "Adjust this device's force, vibration and direction":
   zh-tw: "調整此裝置的力道、震動與方向"
   fr: "Régler la force, la vibration et le sens de cet appareil"
   sv: "Justera denna enhets kraft, vibration och riktning"
+  pt: "Ajustar a força, a vibração e a direção deste dispositivo"
 
 "Motor direction for this device":
   zh-tw: "此裝置的馬達方向"
   fr: "Sens du moteur pour cet appareil"
   sv: "Motorriktning för denna enhet"
+  pt: "Sentido do motor para este dispositivo"
 
 "Live reading":
   zh-tw: "即時讀值"
   fr: "Valeur en direct"
   sv: "Aktuellt värde"
+  pt: "Leitura ao vivo"
 
 "Move the wheel, pedal or stick to identify this axis":
   zh-tw: "移動方向盤、踏板或搖桿以辨識此軸"
   fr: "Bougez le volant, la pédale ou le stick pour identifier cet axe"
   sv: "Rör ratten, pedalen eller spaken för att identifiera denna axel"
+  pt: "Mova o volante, o pedal ou o analógico para identificar este eixo"
 
 "Choose what this axis controls":
   zh-tw: "選擇此軸控制的功能"
   fr: "Choisir ce que commande cet axe"
   sv: "Välj vad denna axel styr"
+  pt: "Escolha o que este eixo comanda"
 
 "Reverse this axis":
   zh-tw: "反轉此軸"
   fr: "Inverser cet axe"
   sv: "Invertera denna axel"
+  pt: "Inverter este eixo"
 
 "Response curve":
   de: "Kennlinie"
@@ -28028,41 +28164,49 @@ _version: 2
   zh-tw: "選擇此軸的反應特性"
   fr: "Choisir la caractéristique de cet axe"
   sv: "Välj denna axels egenskaper"
+  pt: "Escolha a característica deste eixo"
 
 "Choose an OMSI event or game action":
   zh-tw: "選擇 OMSI 事件或遊戲動作"
   fr: "Choisir un événement OMSI ou une action du jeu"
   sv: "Välj en OMSI-händelse eller spelåtgärd"
+  pt: "Escolha um evento do OMSI ou uma ação do jogo"
 
 "Latching switch":
   zh-tw: "固定式開關"
   fr: "Interrupteur maintenu"
   sv: "Låsande omkopplare"
+  pt: "Interruptor travante"
 
 "Switch back when a physical switch is released":
   zh-tw: "實體開關放開時切換回原狀態"
   fr: "Rebasculer l'action quand l'interrupteur physique est relâché"
   sv: "Återställ när en fysisk omkopplare släpps"
+  pt: "Voltar a ação quando o interruptor físico for solto"
 
 "Clear assignment":
   zh-tw: "清除指定"
   fr: "Effacer l'attribution"
   sv: "Rensa tilldelning"
+  pt: "Limpar atribuição"
 
 "Leave this button without an action":
   zh-tw: "不為此按鈕指定動作"
   fr: "Laisser ce bouton sans action"
   sv: "Lämna denna knapp utan åtgärd"
+  pt: "Deixar este botão sem ação"
 
 "Controller configuration saved and applied":
   zh-tw: "控制器設定已儲存並套用"
   fr: "Configuration des manettes enregistrée et appliquée"
   sv: "Kontrollkonfigurationen har sparats och tillämpats"
+  pt: "Configuração dos controles salva e aplicada"
 
 "Saved controller mappings reloaded":
   zh-tw: "已重新載入控制器對應設定"
   fr: "Attributions des manettes enregistrées rechargées"
   sv: "Sparade kontrollbindningar har lästs in igen"
+  pt: "Atribuições dos controles salvas recarregadas"
 
 "Axes and pedals":
   fr: "Axes et pédales"
@@ -28126,41 +28270,49 @@ _version: 2
   zh-tw: "選擇此軸的功能、方向與反應曲線"
   fr: "Choisir la fonction, le sens et la courbe de réponse de cet axe"
   sv: "Välj denna axels funktion, riktning och responskurva"
+  pt: "Escolha a função, o sentido e a curva de resposta deste eixo"
 
 "Press a button to assign it...":
   zh-tw: "按下按鈕以指定功能……"
   fr: "Appuyez sur un bouton pour l'attribuer..."
   sv: "Tryck på en knapp för att tilldela den..."
+  pt: "Aperte um botão para atribuí-lo..."
 
 "Capture a button on this device":
   zh-tw: "偵測此裝置的按鈕"
   fr: "Capturer un bouton de cet appareil"
   sv: "Registrera en knapp på denna enhet"
+  pt: "Capturar um botão deste dispositivo"
 
 "Choose a button by number...":
   zh-tw: "依編號選擇按鈕……"
   fr: "Choisir un bouton par son numéro..."
   sv: "Välj en knapp efter nummer..."
+  pt: "Escolher um botão pelo número..."
 
 "Includes unassigned buttons and hat directions":
   zh-tw: "包含未指定按鈕與方向帽方向"
   fr: "Inclut les boutons non attribués et les directions du chapeau chinois (POV)"
   sv: "Inkluderar otilldelade knappar och styrkorsets riktningar"
+  pt: "Inclui botões sem atribuição e direções do direcional"
 
 "Assigned buttons":
   zh-tw: "已指定的按鈕"
   fr: "Boutons attribués"
   sv: "Tilldelade knappar"
+  pt: "Botões atribuídos"
 
 "Latching switch | choose its action or behaviour":
   zh-tw: "固定式開關 | 選擇動作或行為"
   fr: "Interrupteur maintenu | choisissez son action ou son comportement"
   sv: "Låsande omkopplare | välj dess åtgärd eller beteende"
+  pt: "Interruptor travante | escolha a ação ou o comportamento"
 
 "Choose its action or switch behaviour":
   zh-tw: "選擇動作或開關行為"
   fr: "Choisir son action ou son comportement d'interrupteur"
   sv: "Välj dess åtgärd eller omkopplarbeteende"
+  pt: "Escolha a ação ou o comportamento do interruptor"
 
 "The trees' leaves bend and sway in the wind and its gusts; with no wind they stand still":
   zh-tw: "樹葉會隨風與陣風彎曲搖曳；無風時保持靜止"
@@ -28195,107 +28347,132 @@ _version: 2
   zh-tw: "未操作時視角自行晃動的幅度：頭部休息時仍有細微動作，主要在巴士停站時可見"
   fr: "À quel point la vue se balance d'elle-même quand on n'y touche pas - une tête au repos n'est jamais tout à fait immobile ; cela se voit surtout quand le bus attend à un arrêt"
   sv: "Hur mycket vyn rör sig av sig själv när inget görs – ett vilande huvud är aldrig helt stilla, mest synligt när bussen väntar vid en hållplats"
+  pt: "Quanto a vista balança sozinha quando nada é feito com ela - uma cabeça em repouso nunca fica totalmente parada; nota-se mais com o ônibus parado num ponto"
 
 "How fast that sway moves (100% is the pace it is designed at)":
   zh-tw: "晃動速度（100% 為原設計速度）"
   fr: "Vitesse de ce balancement (100 % : le rythme prévu)"
   sv: "Hur snabbt rörelsen sker (100 % är den avsedda takten)"
+  pt: "A velocidade desse balanço (100% é o ritmo para o qual foi feito)"
 
 "How long the view takes to come round to where the mouse or the stick turned it (off: at once, as OMSI)":
   zh-tw: "視角跟隨滑鼠或搖桿轉動所需的時間（關閉時立即跟隨，如同 OMSI）"
   fr: "Le temps que met la vue à rejoindre là où la souris ou le stick l'a tournée (désactivé : immédiatement, comme OMSI)"
   sv: "Hur lång tid vyn tar för att nå dit musen eller spaken vridit den (av: direkt, som i OMSI)"
+  pt: "Quanto tempo a vista leva para chegar aonde o mouse ou o analógico a virou (desligado: na hora, como no OMSI)"
 
 "The mouse zoom follows the FOV curve instead of OMSI's linear way":
   zh-tw: "滑鼠縮放使用視野角度曲線，取代 OMSI 的線性方式"
   fr: "Le zoom à la souris suit la courbe du champ de vision au lieu du mode linéaire d'OMSI"
   sv: "Muszoomen följer synfältskurvan i stället för OMSI:s linjära metod"
+  pt: "O zoom do mouse segue a curva do campo de visão em vez do modo linear do OMSI"
 
 "Set the driver's neutral head tilt up or down, independent of the display setup":
   zh-tw: "設定駕駛員頭部預設的上下傾斜角度，獨立於顯示器設定"
   fr: "Régler l'inclinaison neutre de la tête du conducteur vers le haut ou le bas, indépendamment de l'affichage"
   sv: "Ställ in förarens neutrala huvudlutning uppåt eller nedåt, oberoende av skärminställningarna"
+  pt: "Ajusta a inclinação neutra da cabeça do motorista para cima ou para baixo, independente da configuração da tela"
 
 "Press a key for this action (Delete clears it, Esc cancels)":
   fr: "Appuyez sur une touche pour cette action (Suppr l'efface, Échap annule)"
   sv: "Tryck på en tangent för denna åtgärd (Delete rensar, Esc avbryter)"
+  pt: "Aperte uma tecla para esta ação (Delete apaga, Esc cancela)"
 
 "Key change cancelled":
   fr: "Changement de touche annulé"
   sv: "Tangentändringen avbröts"
+  pt: "Troca de tecla cancelada"
 
 "That key entry no longer exists":
   fr: "Cette entrée de touche n'existe plus"
   sv: "Den tangentposten finns inte längre"
+  pt: "Essa tecla não existe mais"
 
 "Add a vehicle event...":
   fr: "Ajouter un événement du véhicule..."
   sv: "Lägg till en fordonshändelse..."
+  pt: "Adicionar um evento do veículo..."
 
 "Choose a control supplied by the bus or its mods":
   fr: "Choisir une commande fournie par le bus ou ses mods"
   sv: "Välj en kontroll från bussen eller dess moddar"
+  pt: "Escolha um comando oferecido pelo ônibus ou pelos mods dele"
 
 "Enter to change; Delete clears; Esc cancels":
   fr: "Entrée pour changer ; Suppr efface ; Échap annule"
   sv: "Enter ändrar; Delete rensar; Esc avbryter"
+  pt: "Enter para trocar; Delete apaga; Esc cancela"
 
 "Driving and bus":
   fr: "Conduite et bus"
   sv: "Körning och buss"
+  pt: "Direção e ônibus"
 
 "Game and camera":
   fr: "Jeu et caméra"
   sv: "Spel och kamera"
+  pt: "Jogo e câmera"
 
 "Change driving, vehicle, game and camera key bindings":
   fr: "Changer les touches de conduite, du véhicule, du jeu et de la caméra"
   sv: "Ändra tangentbindningar för körning, fordon, spel och kamera"
+  pt: "Mudar as teclas de direção, veículo, jogo e câmera"
 
 "Configure wheels, pedals, gamepads and force feedback":
   fr: "Configurer volants, pédales, manettes et retour de force"
   sv: "Konfigurera rattar, pedaler, handkontroller och force feedback"
+  pt: "Configurar volantes, pedais, controles e force feedback"
 
 "No vehicle events were found":
   fr: "Aucun événement de véhicule trouvé"
   sv: "Inga fordonshändelser hittades"
+  pt: "Nenhum evento de veículo encontrado"
 
 "Enter sets it, Esc cancels":
   fr: "Entrée valide, Échap annule"
   sv: "Enter tillämpar, Esc avbryter"
+  pt: "Enter define, Esc cancela"
 
 "Type a route number":
   fr: "Saisissez un numéro de ligne"
   sv: "Ange ett ruttnummer"
+  pt: "Digite um número de linha"
 
 "Choose a button":
   fr: "Choisir un bouton"
   sv: "Välj en knapp"
+  pt: "Escolher um botão"
 
 "Assign a physical button":
   fr: "Attribuer un bouton physique"
   sv: "Tilldela en fysisk knapp"
+  pt: "Atribuir um botão físico"
 
 "Add event":
   fr: "Ajouter un événement"
   sv: "Lägg till händelse"
+  pt: "Adicionar evento"
 
 "Every mirror is back as the bus has it":
   fr: "Tous les rétroviseurs sont revenus au réglage d'origine du bus"
   sv: "Alla speglar har återställts till bussens ursprungliga inställningar"
+  pt: "Todos os espelhos voltaram ao que o ônibus tem"
 
 "There is no vehicle to reload: you are on foot":
   fr: "Aucun véhicule à recharger : vous êtes à pied"
   sv: "Det finns inget fordon att läsa in igen: du är till fots"
+  pt: "Não há veículo para recarregar: você está a pé"
 
 "That key has no DirectInput scan code":
   zh-tw: "此按鍵沒有 DirectInput 掃描碼"
   fr: "Cette touche n'a pas de scan code DirectInput"
   sv: "Den tangenten saknar DirectInput-skanningskod"
+  pt: "Essa tecla não tem código de varredura DirectInput"
 
 "The trip is over: no stop to skip":
   fr: "Le trajet est terminé : aucun arrêt à sauter"
   sv: "Turen är slut: ingen hållplats att hoppa över"
+  pt: "A viagem acabou: não há parada para pular"
 
 "The server offers none of the vehicles installed here":
   fr: "Le serveur ne propose aucun des véhicules installés ici"
@@ -28330,167 +28507,208 @@ _version: 2
   zh-tw: "沒有連線碼：目前未加入區域網絡遊戲或伺服器"
   fr: "Pas de code serveur : ni en session réseau, ni sur un serveur"
   sv: "Ingen serverkod: du är inte i en LAN-session eller på en server"
+  pt: "Sem código de servidor: fora de uma sessão LAN ou de um servidor"
 
 "Filter events...":
   fr: "Filtrer les événements..."
   sv: "Filtrera händelser..."
+  pt: "Filtrar eventos..."
 
 "Mirror panels on (Ctrl+M: off, Ctrl+Shift+M: edit)":
   fr: "Panneaux de rétroviseurs activés (Ctrl+M : désactiver, Ctrl+Shift+M : modifier)"
   sv: "Spegelpaneler på (Ctrl+M: av, Ctrl+Shift+M: redigera)"
+  pt: "Painéis dos espelhos ligados (Ctrl+M: desligar, Ctrl+Shift+M: editar)"
 
 "Mirror panels off (Ctrl+M)":
   fr: "Panneaux de rétroviseurs désactivés (Ctrl+M)"
   sv: "Spegelpaneler av (Ctrl+M)"
+  pt: "Painéis dos espelhos desligados (Ctrl+M)"
 
 "Mirror editor off":
   fr: "Éditeur de rétroviseurs fermé"
   sv: "Spegelredigeraren av"
+  pt: "Editor de espelhos desligado"
 
 "This bus has no mirrors to show":
   fr: "Ce bus n'a aucun rétroviseur à afficher"
   sv: "Den här bussen saknar speglar att visa"
+  pt: "Este ônibus não tem espelhos para mostrar"
 
 "Mirror editor on: its keys are listed top left":
   fr: "Éditeur de rétroviseurs ouvert : ses touches sont listées en haut à gauche"
   sv: "Spegelredigeraren på: tangenterna visas uppe till vänster"
+  pt: "Editor de espelhos ligado: as teclas dele estão no canto superior esquerdo"
 
 "Mirror editor (Ctrl+Shift+M or Esc: done)":
   fr: "Éditeur de rétroviseurs (Ctrl+Shift+M ou Échap : terminer)"
   sv: "Spegelredigerare (Ctrl+Shift+M eller Esc: klart)"
+  pt: "Editor de espelhos (Ctrl+Shift+M ou Esc: concluir)"
 
 "Not available on this system yet":
   fr: "Pas encore disponible sur ce système"
   sv: "Ännu inte tillgängligt på detta system"
+  pt: "Ainda não disponível neste sistema"
 
 "The translation model could not be downloaded":
   fr: "Le modèle de traduction n'a pas pu être téléchargé"
   sv: "Översättningsmodellen kunde inte hämtas"
+  pt: "Não foi possível baixar o modelo de tradução"
 
 "No room on the disk for the translation model":
   fr: "Pas assez de place sur le disque pour le modèle de traduction"
   sv: "Otillräckligt diskutrymme för översättningsmodellen"
+  pt: "Sem espaço no disco para o modelo de tradução"
 
 "On foot: W A S D walk, Shift runs, C kneels, F4 free camera / F1 back, G sits down (by the driver's place: back at the wheel), Ctrl+Shift+G steps out of the bus":
   fr: "À pied : W A S D pour marcher, Shift pour courir, C pour s'accroupir, F4 caméra libre / F1 retour, G pour s'asseoir (près du poste de conduite : retour au volant), Ctrl+Shift+G pour sortir du bus"
   sv: "Till fots: W A S D går, Shift springer, C hukar, F4 fri kamera / F1 tillbaka, G sätter dig (vid förarplatsen: tillbaka vid ratten), Ctrl+Shift+G går ut ur bussen"
+  pt: "A pé: W A S D andam, Shift corre, C ajoelha, F4 câmera livre / F1 volta, G senta (no lugar do motorista: de volta ao volante), Ctrl+Shift+G desce do ônibus"
 
 "Switching the vehicle off ...":
   fr: "Arrêt du véhicule ..."
   sv: "Stänger av fordonet ..."
+  pt: "Desligando o veículo ..."
 
 "No radio stations (see ~/.openomsi/radio.cfg)":
   fr: "Aucune station de radio (voir ~/.openomsi/radio.cfg)"
   sv: "Inga radiostationer (se ~/.openomsi/radio.cfg)"
+  pt: "Nenhuma estação de rádio (veja ~/.openomsi/radio.cfg)"
 
 "The bus radio is off (switch it on in the cockpit)":
   fr: "La radio du bus est éteinte (allumez-la dans le poste de conduite)"
   sv: "Bussradion är av (slå på den i förarhytten)"
+  pt: "O rádio do ônibus está desligado (ligue-o na cabine)"
 
 "No clouds":
   fr: "Aucun nuage"
   sv: "Inga moln"
+  pt: "Sem nuvens"
 
 "Graphics driver is slow ({upload:.0} MB/s): the game will stutter. Restarting the computer usually fixes it.":
   fr: "Le pilote graphique est lent ({upload:.0} Mo/s) : le jeu va saccader. Redémarrer l'ordinateur règle généralement le problème."
   sv: "Grafikdrivrutinen är långsam ({upload:.0} MB/s): spelet kommer att hacka. Att starta om datorn brukar lösa det."
+  pt: "O driver de vídeo está lento ({upload:.0} MB/s): o jogo vai travar. Reiniciar o computador costuma resolver."
 
 "Crash: {:.0} kJ":
   fr: "Choc : {:.0} kJ"
   sv: "Kollision: {:.0} kJ"
+  pt: "Batida: {:.0} kJ"
 
 "Mirror {}: field of view {:.0}° (the bus's {:.0}°)":
   fr: "Rétroviseur {} : champ de vision {:.0}° (celui du bus : {:.0}°)"
   sv: "Spegel {}: synfält {:.0}° (bussens {:.0}°)"
+  pt: "Espelho {}: campo de visão {:.0}° (o do ônibus: {:.0}°)"
 
 "Mirror {} shifted {:+.2} m across, {:+.2} m forward, {:+.2} m up":
   fr: "Rétroviseur {} décalé de {:+.2} m latéralement, {:+.2} m vers l'avant, {:+.2} m vers le haut"
   sv: "Spegel {} flyttad {:+.2} m i sidled, {:+.2} m framåt, {:+.2} m uppåt"
+  pt: "Espelho {} deslocado {:+.2} m para o lado, {:+.2} m para frente, {:+.2} m para cima"
 
 "Mirror {}: {:+.1}° across, {:+.1}° up":
   fr: "Rétroviseur {} : {:+.1}° à l'horizontale, {:+.1}° à la verticale"
   sv: "Spegel {}: {:+.1}° i sidled, {:+.1}° uppåt"
+  pt: "Espelho {}: {:+.1}° para o lado, {:+.1}° para cima"
 
 "Mirror {}: {:+.1}° across, {:+.1}° up (Ctrl+Alt+arrows)":
   fr: "Rétroviseur {} : {:+.1}° à l'horizontale, {:+.1}° à la verticale (Ctrl+Alt+flèches)"
   sv: "Spegel {}: {:+.1}° i sidled, {:+.1}° uppåt (Ctrl+Alt+piltangenter)"
+  pt: "Espelho {}: {:+.1}° para o lado, {:+.1}° para cima (Ctrl+Alt+setas)"
 
 "The engine is off  ({e} electrics, {m} starter; mod buses with an ignition key turn it with {e}: press again and hold. Shift+U does it all)":
   fr: "Le moteur est coupé  ({e} électricité, {m} démarreur ; les bus de mods avec clé de contact démarrent avec {e} : appuyez de nouveau et maintenez. Shift+U fait tout)"
   sv: "Motorn är av ({e} elsystem, {m} startmotor; moddbussar med tändningsnyckel vrider den med {e}: tryck igen och håll. Shift+U gör allt)"
+  pt: "O motor está desligado  ({e} elétrica, {m} partida; ônibus de mod com chave de ignição a giram com {e}: aperte de novo e segure. Shift+U faz tudo)"
 
 "The gearbox is in N: press {d}, or click it. Buses like the Citaro take D only with the brake held":
   fr: "La boîte est sur N : appuyez sur {d} ou cliquez dessus. Les bus comme le Citaro ne passent en D qu'avec le frein enfoncé"
   sv: "Växellådan är i N: tryck {d} eller klicka. Bussar som Citaro tillåter D endast när bromsen hålls ned"
+  pt: "O câmbio está em N: aperte {d}, ou clique nele. Ônibus como o Citaro só engatam o D com o freio pisado"
 
 "Parking brake is on  ({k} releases it)":
   fr: "Le frein de stationnement est serré  ({k} le desserre)"
   sv: "Parkeringsbromsen är på ({k} släpper den)"
+  pt: "Freio de estacionamento acionado  ({k} solta)"
 
 "The tour starts at {}: the clock was moved from {from} to {}":
   fr: "Le service commence à {} : l'horloge est passée de {from} à {}"
   sv: "Omloppet startar vid {}: klockan flyttades från {from} till {}"
+  pt: "A escala começa às {}: o relógio foi de {from} para {}"
 
 "New object {name}: taken away (Delete brings it back)":
   fr: "Nouvel objet {name} : retiré (Suppr le remet)"
   sv: "Nytt objekt {name}: borttaget (Delete återställer det)"
+  pt: "Novo objeto {name}: retirado (Delete o traz de volta)"
 
 "New object {} {name}: V for the next of its folder, C copies it again":
   fr: "Nouvel objet {} {name} : V pour le suivant de son dossier, C le copie à nouveau"
   sv: "Nytt objekt {} {name}: V för nästa i mappen, C kopierar det igen"
+  pt: "Novo objeto {} {name}: V para o próximo da pasta, C copia de novo"
 
 "Object {id} {name}: deleted (Delete brings it back)":
   fr: "Objet {id} {name} : supprimé (Suppr le remet)"
   sv: "Objekt {id} {name}: borttaget (Delete återställer det)"
+  pt: "Objeto {id} {name}: excluído (Delete o traz de volta)"
 
 "Object {id} {name}: moved {:+.2} / {:+.2} / {:+.2} m, turned {:+.1}°":
   fr: "Objet {id} {name} : déplacé de {:+.2} / {:+.2} / {:+.2} m, tourné de {:+.1}°"
   sv: "Objekt {id} {name}: flyttat {:+.2} / {:+.2} / {:+.2} m, roterat {:+.1}°"
+  pt: "Objeto {id} {name}: movido {:+.2} / {:+.2} / {:+.2} m, girado {:+.1}°"
 
 "Ground brush: {:.1} m":
   fr: "Pinceau de terrain : {:.1} m"
   sv: "Markpensel: {:.1} m"
+  pt: "Pincel de terreno: {:.1} m"
 
 "Press a button on {name} (Esc cancels)":
   zh-tw: "按下 {name} 的按鈕（Esc 取消）"
   fr: "Appuyez sur un bouton de {name} (Échap annule)"
   sv: "Tryck på en knapp på {name} (Esc avbryter)"
+  pt: "Aperte um botão em {name} (Esc cancela)"
 
 "Graphics profile \"{name}\" loaded: graphics settings apply when the game starts the next time":
   fr: "Profil graphique « {name} » chargé : les réglages graphiques s'appliquent au prochain lancement du jeu"
   sv: "Grafikprofil ”{name}” har lästs in: grafikinställningarna gäller från nästa spelstart"
+  pt: "Perfil gráfico \"{name}\" carregado: as configurações gráficas valem a partir do próximo início do jogo"
 
 "Graphics profile \"{name}\" not found":
   fr: "Profil graphique « {name} » introuvable"
   sv: "Grafikprofil ”{name}” hittades inte"
+  pt: "Perfil gráfico \"{name}\" não encontrado"
 
 "Line {line}, tour {}":
   fr: "Ligne {line}, service {}"
   sv: "Linje {line}, omlopp {}"
+  pt: "Linha {line}, escala {}"
 
 "Passenger waiting for a ticket: {name} {value:.2} - press {}":
   fr: "Passager qui attend un billet : {name} {value:.2} - appuyez sur {}"
   sv: "Passagerare väntar på en biljett: {name} {value:.2} – tryck {}"
+  pt: "Passageiro esperando o bilhete: {name} {value:.2} - aperte {}"
 
 "Mirror {} is back as the bus has it (Shift+R: every mirror)":
   fr: "Le rétroviseur {} est revenu au réglage d'origine du bus (Shift+R : tous les rétroviseurs)"
   sv: "Spegel {} har återställts till bussens ursprungliga inställning (Shift+R: alla speglar)"
+  pt: "O espelho {} voltou ao que o ônibus tem (Shift+R: todos os espelhos)"
 
 "Saved {} tile(s) to the content folder ({})":
   fr: "{} tuile(s) enregistrée(s) dans le dossier de contenu ({})"
   sv: "Sparade {} kartrutor till innehållsmappen ({})"
+  pt: "{} tile(s) salvo(s) na pasta de conteúdo ({})"
 
 "Saved as slot {n}: the launcher continues from it":
   fr: "Enregistré dans l'emplacement {n} : le lanceur reprend à partir de là"
   sv: "Sparat på plats {n}: startprogrammet fortsätter därifrån"
+  pt: "Salvo no espaço {n}: o launcher continua dele"
 
 "Host's mods: {pct}% ({:.0} of {:.0} MB) {file}":
   fr: "Mods de l'hôte : {pct} % ({:.0} sur {:.0} Mo) {file}"
   sv: "Värdens moddar: {pct}% ({:.0} av {:.0} MB) {file}"
+  pt: "Mods do anfitrião: {pct}% ({:.0} de {:.0} MB) {file}"
 
 "Host's mods: {} files ({:.0} MB) fetched (kept for the next join)":
   fr: "Mods de l'hôte : {} fichiers ({:.0} Mo) récupérés (gardés pour la prochaine fois)"
   sv: "Värdens moddar: {} filer ({:.0} MB) hämtade (behålls till nästa anslutning)"
+  pt: "Mods do anfitrião: {} arquivos ({:.0} MB) baixados (guardados para a próxima vez)"
 
 "Personnel file of {name} deleted.":
   zh-tw: "已刪除 {name} 的個人檔案。"
@@ -28498,6 +28716,7 @@ _version: 2
   de: "Personalakte von {name} gelöscht."
   ru: "Личное дело {name} удалено."
   sv: "Personalakten för {name} har tagits bort."
+  pt: "Ficha de {name} excluída."
 
 "Driver {name} created.":
   zh-tw: "已建立駕駛員 {name}。"
@@ -28505,6 +28724,7 @@ _version: 2
   de: "Fahrer {name} angelegt."
   ru: "Водитель {name} создан."
   sv: "Föraren {name} har skapats."
+  pt: "Motorista {name} criado."
 
 "Loaded \"{name}\".":
   zh-tw: "已載入「{name}」。"
@@ -28512,6 +28732,7 @@ _version: 2
   de: "„{name}“ geladen."
   ru: "Загружен «{name}»."
   sv: "Läste in ”{name}”."
+  pt: "\"{name}\" carregado."
 
 "Deleted \"{name}\".":
   zh-tw: "已刪除「{name}」。"
@@ -28519,6 +28740,7 @@ _version: 2
   de: "„{name}“ gelöscht."
   ru: "«{name}» удалён."
   sv: "Tog bort ”{name}”."
+  pt: "\"{name}\" excluído."
 
 "Saved \"{name}\".":
   zh-tw: "已儲存「{name}」。"
@@ -28526,6 +28748,7 @@ _version: 2
   de: "„{name}“ gespeichert."
   ru: "«{name}» сохранён."
   sv: "Sparade ”{name}”."
+  pt: "\"{name}\" salvo."
 
 "Gear {gear} (H-pattern)":
   fr: "Rapport {gear} (grille en H)"
@@ -28560,6 +28783,7 @@ _version: 2
   zh-tw: "駕駛按鍵：{name}（依設定）。這些按鍵用於駕駛巴士，並優先於下方清單。在此變更任何按鍵後，便會改用自訂操作配置。"
   fr: "Touches de conduite : {name} (Paramètres). Ces touches conduisent le bus et l'emportent sur la liste ci-dessous. Changez une touche ici et votre propre disposition (Commandes personnalisées) est utilisée dès lors."
   sv: "Körtangenter: {name} (Inställningar). Dessa tangenter kör bussen och har företräde framför listan nedan. Ändra en tangent här så används din egen layout (Anpassade kontroller) därefter."
+  pt: "Teclas de direção: {name} (Configurações). Essas teclas dirigem o ônibus e têm prioridade sobre a lista abaixo. Troque qualquer tecla aqui e o seu próprio esquema (Controles personalizados) passa a ser usado."
 
 "Anything put into {} is installed by itself once it has finished copying.":
   zh-tw: "放入 {} 的內容會在複製完成後自動安裝。"
@@ -28567,85 +28791,105 @@ _version: 2
   de: "Alles, was in {} gelegt wird, installiert sich von selbst, sobald es fertig kopiert ist."
   ru: "Всё, что положено в {}, устанавливается само после завершения копирования."
   sv: "Allt som placeras i {} installeras automatiskt när kopieringen är klar."
+  pt: "Tudo o que for colocado em {} é instalado sozinho quando terminar de copiar."
 
 "The server plays {}, which is not installed here: it is fetched from the server on joining.":
   zh-tw: "伺服器使用尚未在此安裝的 {}：加入時會從伺服器下載。"
   fr: "Le serveur utilise la carte {}, qui n'est pas installée ici : elle sera téléchargée depuis le serveur à la connexion."
   sv: "Servern använder {}, som inte är installerat här: det hämtas från servern vid anslutning."
+  pt: "O servidor usa {}, que não está instalado aqui: ele é baixado do servidor ao entrar."
 
 "The host drives on {name}: that map is chosen":
   fr: "L'hôte conduit sur {name} : cette carte est choisie"
   sv: "Värden kör på {name}: den kartan väljs"
+  pt: "O anfitrião dirige em {name}: esse mapa foi escolhido"
 
 "Game {pid} ended by itself.":
   fr: "Le jeu {pid} s'est terminé tout seul."
   sv: "Spel {pid} avslutades av sig självt."
+  pt: "O jogo {pid} terminou sozinho."
 
 "Game {pid} did not end by itself and was killed - this run is not saved.":
   fr: "Le jeu {pid} ne s'est pas terminé tout seul et a été arrêté de force - cette session n'est pas enregistrée."
   sv: "Spel {pid} avslutades inte av sig självt och tvångsavslutades – denna körning sparas inte."
+  pt: "O jogo {pid} não terminou sozinho e foi encerrado à força - esta sessão não foi salva."
 
 "Line {name} is there already":
   zh-tw: "路線 {name} 已存在"
   fr: "La ligne {name} existe déjà"
   sv: "Linje {name} finns redan"
+  pt: "A linha {name} já existe"
 
 "All {n} mirrors of this bus have a panel already":
   fr: "Les {n} rétroviseurs de ce bus ont déjà un panneau"
   sv: "Alla {n} speglar på denna buss har redan en panel"
+  pt: "Os {n} espelhos deste ônibus já têm um painel"
 
 "Mirror panel added ({} in all)":
   fr: "Panneau de rétroviseur ajouté ({} au total)"
   sv: "Spegelpanel tillagd ({} totalt)"
+  pt: "Painel de espelho adicionado ({} no total)"
 
 "Mirror panel removed ({} left)":
   fr: "Panneau de rétroviseur retiré (reste : {})"
   sv: "Spegelpanel borttagen ({} kvar)"
+  pt: "Painel de espelho removido (restam {})"
 
 "Panel shows mirror {} of {}":
   fr: "Le panneau montre le rétroviseur {} sur {}"
   sv: "Panelen visar spegel {} av {}"
+  pt: "O painel mostra o espelho {} de {}"
 
 "Downloading the translation model: {} %":
   fr: "Téléchargement du modèle de traduction : {} %"
   sv: "Hämtar översättningsmodellen: {} %"
+  pt: "Baixando o modelo de tradução: {} %"
 
 "paid: {paid:.2}  (change {:.2})":
   fr: "payé : {paid:.2}  (monnaie {:.2})"
   sv: "betalt: {paid:.2} (växel {:.2})"
+  pt: "pago: {paid:.2}  (troco {:.2})"
 
 "KY_{action} added. Press its key now.":
   fr: "KY_{action} ajouté. Appuyez maintenant sur la touche à lui attribuer."
   sv: "KY_{action} har lagts till. Tryck på dess tangent nu."
+  pt: "KY_{action} adicionado. Aperte a tecla dele agora."
 
 "This bus takes parts from vehicle pack(s) that are not installed: {} (install them for its displays and devices)":
   fr: "Ce bus utilise des pièces de pack(s) de véhicules non installé(s) : {} (installez-les pour que ses afficheurs et équipements fonctionnent)"
   sv: "Den här bussen använder delar från fordonspaket som inte är installerade: {} (installera dem för bussens displayer och utrustning)"
+  pt: "Este ônibus usa peças de pacote(s) de veículos que não estão instalados: {} (instale-os para os letreiros e equipamentos dele)"
 
 "openOMSI {} could not be downloaded: {e}":
   fr: "openOMSI {} n'a pas pu être téléchargé : {e}"
   sv: "openOMSI {} kunde inte hämtas: {e}"
+  pt: "Não foi possível baixar o openOMSI {}: {e}"
 
 "openOMSI was not updated to {}: the installation was cancelled.":
   fr: "openOMSI n'a pas été mis à jour vers {} : l'installation a été annulée."
   sv: "openOMSI uppdaterades inte till {}: installationen avbröts."
+  pt: "O openOMSI não foi atualizado para {}: a instalação foi cancelada."
 
 "openOMSI was not updated to {}: installing apps was not allowed for openOMSI (Settings → Apps → openOMSI → Install unknown apps).":
   fr: "openOMSI n'a pas été mis à jour vers {} : l'installation d'applications n'est pas autorisée pour openOMSI (Paramètres → Applications → openOMSI → Installer des applis inconnues)."
   sv: "openOMSI uppdaterades inte till {}: installation av appar tilläts inte för openOMSI (Inställningar → Appar → openOMSI → Installera okända appar)."
+  pt: "O openOMSI não foi atualizado para {}: a instalação de apps não foi permitida para o openOMSI (Configurações → Apps → openOMSI → Instalar apps desconhecidos)."
 
 "METAR of {} (fetched at the start)":
   zh-tw: "{} 的 METAR（啟動時取得）"
   fr: "METAR de {} (récupéré au démarrage)"
   sv: "METAR från {} (hämtas vid start)"
+  pt: "METAR de {} (baixado no início)"
 
 "the host plays on {theirs}, which is not installed here - install that map to meet the others":
   fr: "l'hôte joue sur {theirs}, qui n'est pas installée ici - installez cette carte pour retrouver les autres"
   sv: "värden spelar på {theirs}, som inte är installerad här – installera den kartan för att träffa de andra"
+  pt: "o anfitrião joga em {theirs}, que não está instalado aqui - instale esse mapa para encontrar os outros"
 
 "the host's season ({}) differs from the one loaded here ({}) - start the game again to see it":
   fr: "la saison de l'hôte ({}) diffère de celle chargée ici ({}) - relancez le jeu pour la voir"
   sv: "värdens årstid ({}) skiljer sig från den som lästs in här ({}) – starta om spelet för att se den"
+  pt: "a estação do anfitrião ({}) é diferente da carregada aqui ({}) - inicie o jogo de novo para vê-la"
 "Esc resumes  |  P pauses":
   ca: "Esc reprèn  |  P pausa"
   ru: "Esc - продолжить  |  P - пауза"
@@ -33193,6 +33437,7 @@ _version: 2
   de: "Belegung hinzufügen"
   ru: "Добавить привязку"
   sv: "Lägg till bindning"
+  pt: "Adicionar atalho"
 
 "Add \"{name}\" and give it a key":
   zh-tw: "新增「{name}」並指定按鍵"
@@ -33235,18 +33480,21 @@ _version: 2
   de: "Weitere Taste für diese Aktion"
   ru: "Добавить ещё одну клавишу для этого действия"
   sv: "Lägg till en annan tangent för denna åtgärd"
+  pt: "Adicionar outra tecla para esta ação"
 
 "Clear the key (the entry stays)":
   zh-tw: "清除按鍵（保留項目）"
   de: "Taste löschen (Eintrag bleibt)"
   ru: "Очистить клавишу (запись останется)"
   sv: "Rensa tangenten (posten behålls)"
+  pt: "Limpar a tecla (a entrada continua)"
 
 "Remove the entry":
   zh-tw: "移除項目"
   de: "Eintrag entfernen"
   ru: "Удалить запись"
   sv: "Ta bort posten"
+  pt: "Remover a entrada"
 
 "No matching actions.":
   de: "Keine passenden Aktionen."
@@ -34136,6 +34384,7 @@ _version: 2
   de: "Inhaltsordner wird gelesen..."
   ru: "Читаем папку контента..."
   sv: "Läser in innehållsmappen..."
+  pt: "Lendo a pasta de conteúdo..."
 
 "No mods yet. Choose a folder or an archive on the right, or drop one onto the window.":
   zh-tw: "尚未安裝模組。在右側選擇資料夾或壓縮檔，或將它拖放至視窗。"
@@ -34176,6 +34425,7 @@ _version: 2
   de: "Diesen Mod löschen (fragt vorher; zum Behalten ausschalten)"
   ru: "Удалить мод (с подтверждением; чтобы сохранить, отключите)"
   sv: "Ta bort denna modd (frågar först; stäng av den i stället för att behålla den)"
+  pt: "Excluir este mod (pede confirmação; desative-o para mantê-lo)"
 
 "Packs installed before the bus they belong to: they go in once it is there.":
   zh-tw: "先於所屬巴士安裝的套件：巴士安裝後會自動套用。"
@@ -34353,12 +34603,14 @@ _version: 2
   de: "Weicher"
   ru: "Мягче"
   sv: "Mjukare"
+  pt: "Mais suave"
 
 "Stronger":
   zh-tw: "較強"
   de: "Stärker"
   ru: "Сильнее"
   sv: "Starkare"
+  pt: "Mais forte"
 
 "Night brightness":
   zh-tw: "夜間亮度"
@@ -34452,6 +34704,7 @@ _version: 2
   de: "Touch-Steuerung"
   ru: "Сенсорное управление"
   sv: "Pekkontroller"
+  pt: "Controles de toque"
 
 "Door buttons":
   zh-tw: "車門按鈕"
@@ -34476,6 +34729,7 @@ _version: 2
   de: "Cursor beim Lenken mit der Maus festhalten (aus: das Fadenkreuz bleibt frei, die Fensterränder sind der Anschlag)"
   ru: "Удерживать курсор при рулении мышью (выкл.: перекрестие свободно, края окна служат упором)"
   sv: "Håll markören medan musen styr (av: hårkorset är fritt, fönstrets kanter är ändlägena)"
+  pt: "Prender o cursor enquanto o mouse esterça (desligado: a mira fica livre e as bordas da janela são o batente)"
 
 "Stick steering speed":
   de: "Lenkgeschwindigkeit des Sticks"
@@ -34610,6 +34864,7 @@ _version: 2
   de: "Umgebung (Orte, Wetter, Natur, Stadt)"
   ru: "Окружение (места, погода, природа, город)"
   sv: "Omgivningsljud (platser, väder, natur, stad)"
+  pt: "Ambiente (lugares, clima, natureza, cidade)"
 
 "Support":
   zh-tw: "支援"
@@ -35098,54 +35353,379 @@ _version: 2
 
 "End of the trip. Next: {} to {}, from {} at {} (it starts by itself a minute before)":
   fr: "Fin de la course. Suivante : {} vers {}, depuis {} à {} (elle démarre d'elle-même une minute avant)"
+  de: "Ende der Fahrt. Nächste: {} nach {}, ab {} um {} (sie startet eine Minute vorher von selbst)"
+  ru: "Рейс окончен. Следующий: {} до {}, от {} в {} (начнётся сам за минуту до отправления)"
+  uk: "Рейс завершено. Наступний: {} до {}, від {} о {} (почнеться сам за хвилину до відправлення)"
+  be: "Рэйс завершаны. Наступны: {} да {}, ад {} а {} (пачнецца сам за хвіліну да адпраўлення)"
+  kk: "Рейс аяқталды. Келесісі: {}, бағыты {}, {} аялдамасынан, уақыты {} (бір минут бұрын өздігінен басталады)"
+  pl: "Koniec kursu. Następny: {} → {}, z przystanku {} o {} (rozpocznie się sam minutę wcześniej)"
+  cs: "Konec spoje. Další: {} → {}, odjezd ze zastávky {} v {} (začne sám minutu předem)"
+  hu: "A menet véget ért. Következő: {}, cél: {}, indulás: {}, {} (egy perccel előtte magától elindul)"
+  es: "Fin del viaje. Siguiente: {} hacia {}, desde {} a las {} (se inicia automáticamente un minuto antes)"
+  pt: "Fim da viagem. Próxima: {} para {}, saindo de {} às {} (ela começa sozinha um minuto antes)"
+  pt-pt: "Fim da viagem. Próxima: {} para {}, a partir de {} às {} (começa sozinha um minuto antes)"
+  it: "Fine della corsa. Prossima: {} per {}, da {} alle {} (parte da sola un minuto prima)"
+  nl: "Einde van de rit. Volgende: {} naar {}, vanaf {} om {} (begint een minuut eerder vanzelf)"
+  tr: "Sefer bitti. Sıradaki: {}, {} yönü, kalkış: {}, saat {} (bir dakika önce kendiliğinden başlar)"
+  ja: "運行終了。次は{} {}行き、{}発 {}(1分前に自動で始まります)"
+  zh-tw: "本趟結束。下一趟：{} 往 {}，自 {} 發車，時間 {}（提前一分鐘自動開始）"
+  ko: "운행 종료. 다음: {} {}행, {}에서 {} 출발 (1분 전에 자동으로 시작됩니다)"
+  th: "จบเที่ยวแล้ว ถัดไป: {} ไป {} ออกจาก {} เวลา {} (เริ่มเองก่อนหนึ่งนาที)"
+  vi: "Hết chuyến. Chuyến sau: {} đi {}, từ {} lúc {} (tự bắt đầu trước một phút)"
+  id: "Perjalanan selesai. Berikutnya: {} ke {}, dari {} pukul {} (dimulai sendiri satu menit sebelumnya)"
+  ms: "Perjalanan tamat. Seterusnya: {} ke {}, dari {} pada {} (bermula sendiri seminit sebelumnya)"
+  tl: "Tapos na ang biyahe. Susunod: {} papuntang {}, mula {} nang {} (kusa itong magsisimula isang minuto bago ang alis)"
+  zh: "本趟结束。下一趟:{} 开往 {},从 {} 发车,时间 {}(提前一分钟自动开始)"
+  hi: "यात्रा समाप्त। अगली: {} {} की ओर, {} से {} बजे (यह एक मिनट पहले अपने-आप शुरू होगी)"
+  ca: "Fi del trajecte. Següent: {} cap a {}, des de {} a les {} (s'inicia automàticament un minut abans)"
   sv: "Turen är slut. Nästa: {} till {}, från {} kl. {} (startar automatiskt en minut före)"
 
 "line {}":
   fr: "ligne {}"
+  de: "Linie {}"
+  ru: "линия {}"
+  uk: "лінія {}"
+  be: "лінія {}"
+  kk: "{} желісі"
+  pl: "linia {}"
+  cs: "linka {}"
+  hu: "járat {}"
+  es: "línea {}"
+  pt: "linha {}"
+  pt-pt: "linha {}"
+  it: "linea {}"
+  nl: "lijn {}"
+  tr: "{} hattı"
+  ja: "{}系統"
+  zh-tw: "{} 路"
+  ko: "{}번"
+  th: "สาย {}"
+  vi: "tuyến {}"
+  id: "jalur {}"
+  ms: "laluan {}"
+  tl: "linya {}"
+  zh: "{}路"
+  hi: "लाइन {}"
+  ca: "línia {}"
   sv: "linje {}"
 
 "service trip":
   fr: "haut-le-pied"
+  de: "Betriebsfahrt"
+  ru: "служебный рейс"
+  uk: "службовий рейс"
+  be: "службовы рэйс"
+  kk: "қызметтік рейс"
+  pl: "przejazd techniczny"
+  cs: "manipulační jízda"
+  hu: "üres menet"
+  es: "trayecto en vacío"
+  pt: "viagem sem passageiros"
+  pt-pt: "viagem em vazio"
+  it: "corsa fuori servizio"
+  nl: "dienstrit"
+  tr: "boş sefer"
+  ja: "回送"
+  zh-tw: "空車調度"
+  ko: "회송 운행"
+  th: "เที่ยวรถเปล่า"
+  vi: "chuyến chạy rỗng"
+  id: "perjalanan kosong"
+  ms: "perjalanan kosong"
+  tl: "biyaheng walang pasahero"
+  zh: "空驶"
+  hi: "खाली यात्रा"
+  ca: "trajecte en buit"
   sv: "servicetur"
 
 "Placed: {} ({how} to drive it)":
   fr: "Placé : {} ({how} pour le conduire)"
+  de: "Platziert: {} ({how}, um es zu fahren)"
+  ru: "Поставлено: {} ({how}, чтобы сесть за руль)"
+  uk: "Поставлено: {} ({how}, щоб сісти за кермо)"
+  be: "Пастаўлена: {} ({how}, каб сесці за руль)"
+  kk: "Қойылды: {} (жүргізу үшін {how})"
+  pl: "Ustawiono: {} ({how}, aby nim jechać)"
+  cs: "Umístěno: {} ({how} pro jízdu)"
+  hu: "Elhelyezve: {} ({how} a vezetéshez)"
+  es: "Colocado: {} ({how} para conducirlo)"
+  pt: "Colocado: {} ({how} para dirigi-lo)"
+  pt-pt: "Colocado: {} ({how} para o conduzir)"
+  it: "Piazzato: {} ({how} per guidarlo)"
+  nl: "Geplaatst: {} ({how} om ermee te rijden)"
+  tr: "Yerleştirildi: {} (sürmek için {how})"
+  ja: "配置しました: {}(運転するには{how})"
+  zh-tw: "已放置：{}（{how} 即可駕駛）"
+  ko: "배치됨: {} (운전하려면 {how})"
+  th: "วางแล้ว: {} (ขับได้ด้วย {how})"
+  vi: "Đã đặt: {} ({how} để lái)"
+  id: "Ditempatkan: {} ({how} untuk mengendarainya)"
+  ms: "Diletakkan: {} ({how} untuk memandunya)"
+  tl: "Nailagay: {} ({how} para imaneho ito)"
+  zh: "已放置:{}({how} 即可驾驶)"
+  hi: "रखा गया: {} (चलाने के लिए {how})"
+  ca: "Col|locat: {} ({how} per conduir-lo)"
   sv: "Placerat: {} ({how} för att köra det)"
 
 "Weather: Custom weather":
   fr: "Météo : météo personnalisée"
+  de: "Wetter: Benutzerdefiniertes Wetter"
+  ru: "Погода: своя"
+  uk: "Погода: власна"
+  be: "Надвор'е: уласнае"
+  kk: "Ауа райы: реттелетін"
+  pl: "Pogoda: własna"
+  cs: "Počasí: vlastní"
+  hu: "Időjárás: egyéni"
+  es: "Clima: personalizado"
+  pt: "Clima: personalizado"
+  pt-pt: "Meteorologia: personalizada"
+  it: "Meteo: personalizzato"
+  nl: "Weer: aangepast weer"
+  tr: "Hava durumu: özel"
+  ja: "天候: カスタム"
+  zh-tw: "天氣：自訂天氣"
+  ko: "날씨: 사용자 지정"
+  th: "สภาพอากาศ: กำหนดเอง"
+  vi: "Thời tiết: tùy chỉnh"
+  id: "Cuaca: kustom"
+  ms: "Cuaca: tersuai"
+  tl: "Panahon: custom"
+  zh: "天气:自定义天气"
+  hi: "मौसम: कस्टम"
+  ca: "Temps: personalitzat"
   sv: "Väder: Anpassat väder"
 
 "Turn METAR sync off before editing its current weather":
   fr: "Désactivez la synchro METAR avant de modifier la météo actuelle"
+  de: "Schalte erst die METAR-Synchronisierung aus, bevor du das aktuelle Wetter bearbeitest"
+  ru: "Выключите синхронизацию METAR, прежде чем менять текущую погоду"
+  uk: "Вимкніть синхронізацію METAR, перш ніж змінювати поточну погоду"
+  be: "Выключыце сінхранізацыю METAR, перш чым змяняць бягучае надвор'е"
+  kk: "Ағымдағы ауа райын өзгертпес бұрын METAR синхрондауын өшіріңіз"
+  pl: "Wyłącz synchronizację METAR przed edycją bieżącej pogody"
+  cs: "Před úpravou aktuálního počasí vypněte synchronizaci METAR"
+  hu: "Az aktuális időjárás szerkesztése előtt kapcsold ki a METAR-szinkront"
+  es: "Desactiva la sincronización METAR antes de editar el clima actual"
+  pt: "Desative a sincronização METAR antes de editar o clima atual"
+  pt-pt: "Desative a sincronização METAR antes de editar a meteorologia atual"
+  it: "Disattiva la sincronizzazione METAR prima di modificare il meteo attuale"
+  nl: "Zet METAR-synchronisatie uit voordat je het huidige weer bewerkt"
+  tr: "Mevcut havayı düzenlemeden önce METAR eşitlemesini kapatın"
+  ja: "現在の天候を編集する前にMETAR同期をオフにしてください"
+  zh-tw: "編輯目前天氣前，請先關閉 METAR 同步"
+  ko: "현재 날씨를 편집하려면 먼저 METAR 동기화를 끄세요"
+  th: "ปิดการซิงก์ METAR ก่อนแก้ไขสภาพอากาศปัจจุบัน"
+  vi: "Tắt đồng bộ METAR trước khi chỉnh thời tiết hiện tại"
+  id: "Matikan sinkronisasi METAR sebelum mengubah cuaca saat ini"
+  ms: "Matikan penyegerakan METAR sebelum menyunting cuaca semasa"
+  tl: "I-off ang METAR sync bago i-edit ang kasalukuyang panahon"
+  zh: "编辑当前天气前,请先关闭 METAR 同步"
+  hi: "मौजूदा मौसम बदलने से पहले METAR सिंक बंद करें"
+  ca: "Desactiva la sincronització METAR abans d'editar el temps actual"
   sv: "Stäng av METAR-synkronisering innan du redigerar det aktuella vädret"
 
 "Weather: no METAR report could be loaded":
   fr: "Météo : aucun bulletin METAR n'a pu être chargé"
+  de: "Wetter: Es konnte kein METAR-Bericht geladen werden"
+  ru: "Погода: не удалось загрузить сводку METAR"
+  uk: "Погода: не вдалося завантажити зведення METAR"
+  be: "Надвор'е: не ўдалося загрузіць зводку METAR"
+  kk: "Ауа райы: METAR есебі жүктелмеді"
+  pl: "Pogoda: nie udało się wczytać żadnego raportu METAR"
+  cs: "Počasí: nepodařilo se načíst žádnou zprávu METAR"
+  hu: "Időjárás: nem sikerült METAR-jelentést betölteni"
+  es: "Clima: no se pudo cargar ningún informe METAR"
+  pt: "Clima: não foi possível carregar nenhum relatório METAR"
+  pt-pt: "Meteorologia: não foi possível carregar nenhum relatório METAR"
+  it: "Meteo: impossibile caricare un bollettino METAR"
+  nl: "Weer: er kon geen METAR-bericht worden geladen"
+  tr: "Hava durumu: hiçbir METAR raporu yüklenemedi"
+  ja: "天候: METARレポートを読み込めませんでした"
+  zh-tw: "天氣：無法載入任何 METAR 報告"
+  ko: "날씨: METAR 보고서를 불러올 수 없습니다"
+  th: "สภาพอากาศ: โหลดรายงาน METAR ไม่ได้"
+  vi: "Thời tiết: không tải được bản tin METAR nào"
+  id: "Cuaca: tidak ada laporan METAR yang dapat dimuat"
+  ms: "Cuaca: tiada laporan METAR yang dapat dimuatkan"
+  tl: "Panahon: walang METAR report na na-load"
+  zh: "天气:无法加载任何 METAR 报告"
+  hi: "मौसम: कोई METAR रिपोर्ट लोड नहीं हो सकी"
+  ca: "Temps: no s'ha pogut carregar cap informe METAR"
   sv: "Väder: ingen METAR-rapport kunde hämtas"
 
 "Weather: METAR request failed":
   fr: "Météo : la requête METAR a échoué"
+  de: "Wetter: METAR-Abfrage fehlgeschlagen"
+  ru: "Погода: запрос METAR не удался"
+  uk: "Погода: запит METAR не вдався"
+  be: "Надвор'е: запыт METAR не ўдаўся"
+  kk: "Ауа райы: METAR сұрауы сәтсіз аяқталды"
+  pl: "Pogoda: żądanie METAR nie powiodło się"
+  cs: "Počasí: požadavek METAR selhal"
+  hu: "Időjárás: a METAR-lekérés sikertelen"
+  es: "Clima: falló la solicitud METAR"
+  pt: "Clima: a solicitação METAR falhou"
+  pt-pt: "Meteorologia: o pedido METAR falhou"
+  it: "Meteo: richiesta METAR non riuscita"
+  nl: "Weer: METAR-aanvraag mislukt"
+  tr: "Hava durumu: METAR isteği başarısız oldu"
+  ja: "天候: METARの取得に失敗しました"
+  zh-tw: "天氣：METAR 請求失敗"
+  ko: "날씨: METAR 요청 실패"
+  th: "สภาพอากาศ: คำขอ METAR ล้มเหลว"
+  vi: "Thời tiết: yêu cầu METAR thất bại"
+  id: "Cuaca: permintaan METAR gagal"
+  ms: "Cuaca: permintaan METAR gagal"
+  tl: "Panahon: pumalya ang METAR request"
+  zh: "天气:METAR 请求失败"
+  hi: "मौसम: METAR अनुरोध विफल"
+  ca: "Temps: ha fallat la sol|licitud METAR"
   sv: "Väder: METAR-förfrågan misslyckades"
 
 "ICAO must be exactly 4 letters":
   fr: "Le code OACI doit faire exactement 4 lettres"
+  de: "Der ICAO-Code muss genau 4 Buchstaben haben"
+  ru: "Код ИКАО должен состоять ровно из 4 букв"
+  uk: "Код ІКАО має складатися рівно з 4 літер"
+  be: "Код ІКАА павінен складацца роўна з 4 літар"
+  kk: "ICAO коды дәл 4 әріптен тұруы керек"
+  pl: "Kod ICAO musi mieć dokładnie 4 litery"
+  cs: "Kód ICAO musí mít přesně 4 písmena"
+  hu: "Az ICAO-kódnak pontosan 4 betűből kell állnia"
+  es: "El código ICAO debe tener exactamente 4 letras"
+  pt: "O código ICAO deve ter exatamente 4 letras"
+  pt-pt: "O código ICAO tem de ter exatamente 4 letras"
+  it: "Il codice ICAO deve avere esattamente 4 lettere"
+  nl: "De ICAO-code moet precies 4 letters hebben"
+  tr: "ICAO kodu tam olarak 4 harf olmalıdır"
+  ja: "ICAOコードは英字4文字ちょうどで入力してください"
+  zh-tw: "ICAO 代碼必須剛好是 4 個字母"
+  ko: "ICAO 코드는 정확히 4글자여야 합니다"
+  th: "รหัส ICAO ต้องมี 4 ตัวอักษรพอดี"
+  vi: "Mã ICAO phải có đúng 4 chữ cái"
+  id: "Kode ICAO harus tepat 4 huruf"
+  ms: "Kod ICAO mesti tepat 4 huruf"
+  tl: "Dapat eksaktong 4 na letra ang ICAO"
+  zh: "ICAO 代码必须正好是 4 个字母"
+  hi: "ICAO कोड ठीक 4 अक्षरों का होना चाहिए"
+  ca: "El codi ICAO ha de tenir exactament 4 lletres"
   sv: "ICAO måste bestå av exakt 4 bokstäver"
 
 "Situation saved (quicksave): the launcher continues from it":
   fr: "Situation enregistrée (sauvegarde rapide) : le launcher reprendra à partir d'elle"
+  de: "Situation gespeichert (Schnellspeicher): Der Launcher macht dort weiter"
+  ru: "Ситуация сохранена (быстрое сохранение): лаунчер продолжит с неё"
+  uk: "Ситуацію збережено (швидке збереження): лаунчер продовжить з неї"
+  be: "Сітуацыя захавана (хуткае захаванне): лаўнчар працягне з яе"
+  kk: "Жағдай сақталды (жылдам сақтау): лаунчер осы жерден жалғастырады"
+  pl: "Sytuacja zapisana (szybki zapis): launcher wznowi grę od tego zapisu"
+  cs: "Situace uložena (rychlé uložení): launcher z ní bude pokračovat"
+  hu: "Helyzet mentve (gyorsmentés): az indító innen folytatja"
+  es: "Situación guardada (guardado rápido): el lanzador continuará desde ella"
+  pt: "Situação salva (salvamento rápido): o launcher continua a partir dela"
+  pt-pt: "Situação guardada (gravação rápida): o launcher continua a partir dela"
+  it: "Situazione salvata (salvataggio rapido): il launcher riprende da qui"
+  nl: "Situatie opgeslagen (snel opslaan): de launcher gaat vanaf hier verder"
+  tr: "Durum kaydedildi (hızlı kayıt): başlatıcı buradan devam eder"
+  ja: "シチュエーションを保存しました(クイックセーブ): ランチャーはここから続けます"
+  zh-tw: "情境已快速儲存：啟動器將從這裡繼續"
+  ko: "상황 빠른 저장 완료: 런처가 여기서부터 이어갑니다"
+  th: "บันทึกสถานการณ์ด่วนแล้ว: ตัวเปิดเกมจะเล่นต่อจากจุดนี้"
+  vi: "Đã lưu nhanh tình huống: trình khởi chạy sẽ tiếp tục từ đây"
+  id: "Situasi tersimpan (simpan cepat): peluncur melanjutkan dari sini"
+  ms: "Situasi disimpan (simpanan pantas): pelancar akan menyambung dari sini"
+  tl: "Na-quicksave ang sitwasyon: dito magpapatuloy ang launcher"
+  zh: "场景已保存(快速存档):启动器将从这里继续"
+  hi: "सिचुएशन सेव हुई (क्विकसेव): लॉन्चर यहीं से आगे बढ़ेगा"
+  ca: "Situació desada (desament ràpid): el launcher continua des d'aquí"
   sv: "Situationen har sparats (snabbsparning): startprogrammet fortsätter därifrån"
 
 "A rail vehicle cannot be moved off its track":
   fr: "Un véhicule ferroviaire ne peut pas quitter sa voie"
+  de: "Ein Schienenfahrzeug kann nicht von seinem Gleis bewegt werden"
+  ru: "Рельсовый транспорт нельзя сдвинуть с рельсов"
+  uk: "Рейковий транспорт не можна зрушити з рейок"
+  be: "Рэйкавы транспарт нельга зрушыць з рэек"
+  kk: "Рельсті көлікті жолынан шығаруға болмайды"
+  pl: "Pojazdu szynowego nie można zdjąć z jego toru"
+  cs: "Kolejové vozidlo nelze přesunout mimo jeho kolej"
+  hu: "Sínjárművet nem lehet elmozdítani a pályájáról"
+  es: "Un vehículo ferroviario no puede salir de su vía"
+  pt: "Um veículo ferroviário não pode ser tirado dos trilhos"
+  pt-pt: "Um veículo ferroviário não pode ser retirado da sua via"
+  it: "Un veicolo su rotaia non può essere spostato fuori dal suo binario"
+  nl: "Een railvoertuig kan niet van zijn spoor worden gehaald"
+  tr: "Raylı araç rayından çıkarılamaz"
+  ja: "鉄道車両は線路の外へ移動できません"
+  zh-tw: "軌道車輛無法移出其軌道"
+  ko: "궤도 차량은 선로 밖으로 옮길 수 없습니다"
+  th: "ย้ายยานพาหนะระบบรางออกจากรางไม่ได้"
+  vi: "Không thể di chuyển phương tiện đường ray ra khỏi đường ray"
+  id: "Kendaraan rel tidak dapat dipindahkan keluar dari relnya"
+  ms: "Kenderaan rel tidak boleh dialihkan keluar dari landasannya"
+  tl: "Hindi maaalis sa riles nito ang sasakyang de-riles"
+  zh: "轨道车辆不能移出轨道"
+  hi: "रेल वाहन को उसकी पटरी से हटाया नहीं जा सकता"
+  ca: "Un vehicle ferroviari no es pot treure de la seva via"
   sv: "Ett spårfordon kan inte flyttas bort från sitt spår"
 
 "Ctrl+click on the ground to move the bus there":
   fr: "Ctrl+clic sur le sol pour y déplacer le bus"
+  de: "Ctrl+Klick auf den Boden, um den Bus dorthin zu versetzen"
+  ru: "Ctrl+клик по земле, чтобы переместить туда автобус"
+  uk: "Ctrl+клік по землі, щоб перемістити туди автобус"
+  be: "Ctrl+клік па зямлі, каб перамясціць туды аўтобус"
+  kk: "Автобусты сол жерге жылжыту үшін жерді Ctrl+басыңыз"
+  pl: "Ctrl+klik na ziemi, aby przenieść tam autobus"
+  cs: "Ctrl+klik na zem přesune tam autobus"
+  hu: "Ctrl+kattintás a talajra: oda kerül a busz"
+  es: "Ctrl+clic en el suelo para mover el autobús allí"
+  pt: "Ctrl+clique no chão para mover o ônibus para lá"
+  pt-pt: "Ctrl+clique no chão para mover o autocarro para lá"
+  it: "Ctrl+clic sul terreno per spostarvi l'autobus"
+  nl: "Ctrl+klik op de grond om de bus daarheen te verplaatsen"
+  tr: "Otobüsü oraya taşımak için zemine Ctrl+tıklayın"
+  ja: "地面をCtrl+クリックするとバスをそこへ移動します"
+  zh-tw: "在地面上按 Ctrl+點擊，即可將巴士移到該處"
+  ko: "땅을 Ctrl+클릭하면 버스를 그곳으로 옮깁니다"
+  th: "Ctrl+คลิกบนพื้นเพื่อย้ายรถบัสไปที่นั่น"
+  vi: "Ctrl+nhấp lên mặt đất để đưa xe buýt tới đó"
+  id: "Ctrl+klik di tanah untuk memindahkan bus ke sana"
+  ms: "Ctrl+klik pada tanah untuk mengalihkan bas ke situ"
+  tl: "Mag-Ctrl+click sa lupa para ilipat doon ang bus"
+  zh: "按住 Ctrl 点击地面,将巴士移到那里"
+  hi: "बस को वहाँ ले जाने के लिए ज़मीन पर Ctrl+क्लिक करें"
+  ca: "Ctrl+clic a terra per moure-hi l'autobús"
   sv: "Ctrl+klicka på marken för att flytta bussen dit"
 
 "Refuelling: {now:.0} l":
   fr: "Plein en cours : {now:.0} l"
+  de: "Tanken: {now:.0} l"
+  ru: "Заправка: {now:.0} л"
+  uk: "Заправка: {now:.0} л"
+  be: "Запраўка: {now:.0} л"
+  kk: "Жанармай құйылуда: {now:.0} л"
+  pl: "Tankowanie: {now:.0} l"
+  cs: "Tankování: {now:.0} l"
+  hu: "Tankolás: {now:.0} l"
+  es: "Repostando: {now:.0} l"
+  pt: "Abastecendo: {now:.0} l"
+  pt-pt: "A abastecer: {now:.0} l"
+  it: "Rifornimento: {now:.0} l"
+  nl: "Tanken: {now:.0} l"
+  tr: "Yakıt dolduruluyor: {now:.0} l"
+  ja: "給油中: {now:.0} L"
+  zh-tw: "加油中：{now:.0} 公升"
+  ko: "주유 중: {now:.0} L"
+  th: "กำลังเติมน้ำมัน: {now:.0} ลิตร"
+  vi: "Đang đổ nhiên liệu: {now:.0} l"
+  id: "Mengisi bahan bakar: {now:.0} l"
+  ms: "Mengisi minyak: {now:.0} l"
+  tl: "Nagpapakarga ng gasolina: {now:.0} l"
+  zh: "加油中:{now:.0} 升"
+  hi: "ईंधन भरा जा रहा है: {now:.0} लीटर"
+  ca: "Repostant: {now:.0} l"
   sv: "Tankar: {now:.0} l"
 
 "{n} versions":
@@ -43435,105 +44015,134 @@ _version: 2
 
 "(the server's clock)":
   zh-tw: "（伺服器的時間）"
+  pt: "(relógio do servidor)"
 
 "the map's (the server's)":
   zh-tw: "地圖（伺服器）的"
+  pt: "o do mapa (o do servidor)"
 
 "Check now":
   zh-tw: "立即檢查"
+  pt: "Verificar agora"
 
 "Choose…":
   zh-tw: "選擇……"
 
 "Clear finished":
   zh-tw: "清除已完成項目"
+  pt: "Limpar concluídas"
 
 "Copy code":
   zh-tw: "複製連線碼"
+  pt: "Copiar código"
 
 "Copy report":
   zh-tw: "複製報告"
+  pt: "Copiar relatório"
 
 "Copy the report (the end of the game's log), or open a GitHub issue with it: it tells what went wrong on this computer.":
   zh-tw: "複製報告（遊戲記錄的末段），或附上報告在 GitHub 回報問題：報告會說明這台電腦發生的錯誤。"
+  pt: "Copie o relatório (o final do log do jogo) ou abra uma issue no GitHub com ele: mostra o que deu errado neste computador."
 
 "Install updates without asking from now on":
   zh-tw: "今後自動安裝更新"
+  pt: "Instalar atualizações sem perguntar a partir de agora"
 
 "Multiplayer: show / hide the chat":
   zh-tw: "多人遊戲：顯示／隱藏聊天"
 
 "No tour has a trip still to come that matches.":
   zh-tw: "沒有符合條件且仍有未出發行程的班次。"
+  pt: "Nenhuma escala tem uma viagem futura correspondente."
 
 "No tour left at this time: show the ended tours, or start earlier.":
   zh-tw: "此時間已無可用班次：顯示已結束班次，或提早開始。"
+  pt: "Não há mais escalas neste horário: mostre as encerradas ou comece mais cedo."
 
 "Not updated":
   zh-tw: "尚未更新"
+  pt: "Não atualizado"
 
 "Open / close the main menu":
   zh-tw: "開啟／關閉主選單"
 
 "Open on GitHub":
   zh-tw: "在 GitHub 開啟"
+  pt: "Abrir no GitHub"
 
 "Search":
   zh-tw: "搜尋"
 
 "The bus's own keys":
   zh-tw: "巴士專用按鍵"
+  pt: "Teclas do próprio ônibus"
 
 "The game closed on an error":
   zh-tw: "遊戲因錯誤而關閉"
+  pt: "O jogo fechou por causa de um erro"
 
 "The game was closed by the system":
   zh-tw: "遊戲被系統關閉"
+  pt: "O jogo foi fechado pelo sistema"
 
 "The report is copied: paste it into a GitHub issue or a message.":
   zh-tw: "報告已複製：可貼到 GitHub 問題回報或訊息中。"
+  pt: "O relatório foi copiado: cole em uma issue do GitHub ou em uma mensagem."
 
 "Tours of this line on the chosen day":
   zh-tw: "此路線在所選日期的班次"
+  pt: "Escalas desta linha no dia escolhido"
 
 "Update now":
   zh-tw: "立即更新"
+  pt: "Atualizar agora"
 
 "Use DirectX 12":
   zh-tw: "使用 DirectX 12"
+  pt: "Usar DirectX 12"
 
 "What's new":
   zh-tw: "更新內容"
+  pt: "Novidades"
 
 "Your friends paste it into Multiplayer → Connect by Code.":
   zh-tw: "朋友可將它貼到「多人遊戲 → 使用連線碼連線」。"
+  pt: "Seus amigos colam em Multijugador → Conectar por código."
 
 "stopping - saving the run...":
   zh-tw: "正在結束：儲存行程……"
+  pt: "parando: salvando o percurso..."
 
 "Android asks whether to update openOMSI: press Update there. The app then starts again by itself.":
   zh-tw: "Android 會詢問是否更新 openOMSI：請按「更新」。完成後應用程式會自動重新啟動。"
+  pt: "O Android pergunta se deseja atualizar o openOMSI: toque em Atualizar. Depois o app reinicia sozinho."
 
 "CHAT  (V in the game to write)":
   zh-tw: "聊天（遊戲中按 V 輸入）"
+  pt: "CHAT  (V no jogo para escrever)"
 
 "no key bindings":
   zh-tw: "沒有按鍵綁定"
 
 "On a server the map, the time, the date and the weather are the same for everybody: the server keeps the world's clock. You choose your bus and your duty.":
   zh-tw: "伺服器上的所有玩家共用地圖、時間、日期與天氣，由伺服器控制世界時間。你可以選擇自己的巴士與執勤班次。"
+  pt: "Em um servidor o mapa, a hora, a data e o clima são iguais para todos: o servidor mantém o relógio do mundo. Você escolhe seu ônibus e sua escala."
 
 "The Vulkan graphics driver stopped while compiling shaders. Starting the game again will switch to OpenGL (or change it in Settings → Graphics API).":
   zh-tw: "Vulkan 顯示驅動程式在編譯著色器時停止運作。重新啟動遊戲將切換至 OpenGL（也可在「設定 → 圖形 API」變更）。"
+  pt: "O driver gráfico Vulkan parou durante a compilação dos shaders. Ao iniciar o jogo novamente, ele mudará para OpenGL (ou altere em Configurações → API gráfica)."
 
 "The game draws with DirectX 12 from the next start (Settings → Graphics API to change it back).":
   zh-tw: "下次啟動遊戲時將使用 DirectX 12 繪圖（可在「設定 → 圖形 API」切換回原設定）。"
+  pt: "O jogo vai renderizar com DirectX 12 a partir da próxima inicialização (Configurações → API gráfica para voltar)."
 
 "The server ended your game. Its message:":
   zh-tw: "伺服器已結束你的遊戲。伺服器訊息："
+  pt: "O servidor encerrou sua partida. A mensagem dele:"
 
 "The system closed the game while it was running, typically because the device ran out of memory (RAM). Lowering texture resolution or reducing AI traffic in Settings helps prevent memory exhaustion.":
   zh-tw: "系統在遊戲執行期間將它關閉，通常是因為記憶體（RAM）不足。在設定中降低材質解析度或減少 AI 交通，有助於避免記憶體耗盡。"
+  pt: "O sistema fechou o jogo enquanto ele estava em execução, normalmente porque o dispositivo ficou sem memória (RAM). Reduzir a resolução das texturas ou o tráfego de IA em Configurações ajuda a evitar falta de memória."
 
 "Controls...":
   zh-tw: "操作設定……"
@@ -43823,6 +44432,7 @@ _version: 2
 
 "Clear":
   zh-tw: "清除"
+  pt: "Limpar"
 
 "Clear {}":
   zh-tw: "清除 {}"
@@ -43850,6 +44460,7 @@ _version: 2
 
 "Found by its name and USB ids":
   zh-tw: "依名稱與 USB 識別碼找到"
+  pt: "Encontrado pelo nome e pelos IDs USB"
 
 "Function":
   zh-tw: "功能"
@@ -46300,3 +46911,75 @@ _version: 2
   ms: "Lebih rendah: titik LED lebih tajam yang berkelip dari jauh; lebih tinggi: titik lebih tenang dan lembut"
   tl: "Mas mababa: mas malinaw na LED dot na kumikislap mula sa malayo; mas mataas: mas kalmado at malambot na dot"
   sv: "Lägre: skarpare LED-punkter som flimrar på avstånd; högre: lugnare, mjukare punkter"
+
+"PLAYERS":
+  pt: "JOGADORES"
+
+"The graphics driver stopped the game. Updating the graphics driver usually helps; Settings → Graphics API can switch to OpenGL.":
+  pt: "O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; em Configurações → API gráfica você pode mudar para OpenGL."
+
+"The graphics driver stopped the game. Updating the graphics driver usually helps; you can also let the game draw with DirectX 12 instead of Vulkan (the button below, or Settings → Graphics API).":
+  pt: "O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; você também pode fazer o jogo renderizar com DirectX 12 em vez de Vulkan (o botão abaixo, ou Configurações → API gráfica)."
+
+"The new version is put in place; the launcher starts again in a moment.":
+  pt: "A nova versão está no lugar; o launcher reiniciará em instantes."
+
+"connecting...":
+  pt: "conectando..."
+
+"Host's mods: looking what is needed...":
+  pt: "Mods do anfitrião: verificando o que é necessário..."
+
+"Host's mods could not be downloaded; playing with what is installed here":
+  pt: "Não foi possível baixar os mods do anfitrião; jogando com o que está instalado aqui"
+
+"Developer tools":
+  pt: "Ferramentas de desenvolvedor"
+
+"Close (Ctrl+Shift+D)":
+  pt: "Fechar (Ctrl+Shift+D)"
+
+"Nothing watched: pick variables from the list below":
+  pt: "Nada sendo observado: escolha variáveis na lista abaixo"
+
+"Stop watching":
+  pt: "Parar de observar"
+
+"Over the picture":
+  pt: "Sobre a imagem"
+
+"This bus has no mirrors":
+  pt: "Este ônibus não tem espelhos"
+
+"Copy the block":
+  pt: "Copiar o bloco"
+
+"As the bus has it":
+  pt: "Como o ônibus define"
+
+"Read a file again when it changes":
+  pt: "Reler um arquivo quando ele mudar"
+
+"Read again now":
+  pt: "Reler agora"
+
+"Open the log":
+  pt: "Abrir o log"
+
+"Last done":
+  pt: "Últimas ações"
+
+"Files looked at":
+  pt: "Arquivos consultados"
+
+"UDP needs the game's address (host or host:port), not a web link":
+  pt: "UDP precisa do endereço do jogo (host ou host:porta), não de um link da web"
+
+" - {} other game(s) keep running":
+  pt: " - {} outro(s) jogo(s) continua(m) rodando"
+
+" - tour {} of line {line} does not run that day ({})":
+  pt: " - a escala {} da linha {line} não roda nesse dia ({})"
+
+"tours":
+  pt: "escalas"
