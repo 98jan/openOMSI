@@ -238,7 +238,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_CUT_PLAIN` | bool | off | use | scene | Road-cut textures uploaded without GPU-made mipmaps. |
 | `OMSI_FIXED_SCALE` | bool | off | use | app | Keep the render scale fixed (no dynamic resolution). |
 | `OMSI_FORCE_OPAQUE` | bool | off | use | scene | Draw transmap-masked materials opaque. |
-| `OMSI_FULL_GPU` | bool | off | use | render | Keep the requested settings on a small or shared graphics chip. |
+| `OMSI_FULL_GPU` | bool | off | use | render | Keep the requested settings on a small or shared graphics chip, and 8x MSAA with Enhanced+. |
 | `OMSI_GL_TEXTURE_UNITS` | bool | off | use | render | Use the texture-unit layout of the OpenGL backend on any device. |
 | `OMSI_GPU_ARRAYS` | text | - | use | render | textures, nostorage or lighttextures: take that texture array path on any device. |
 | `OMSI_GUARD_DEADLINE` | num | 120 | use | guard | The start guard: seconds the launcher may take to its first frames before its start counts as hung (it is then ended and the guard heals the installation). |

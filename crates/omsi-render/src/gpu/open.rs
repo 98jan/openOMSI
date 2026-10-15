@@ -266,6 +266,12 @@ impl Renderer {
             }
         };
         let supported = |n: u32| targets.iter().all(|&f| takes(flags_of(f), f, n));
+        let wanted = if ray_query && wanted > 4 && !omsi_cfg::flags::OMSI_FULL_GPU.is_set() {
+            log::info!("Enhanced+: {wanted}x MSAA drawn at 4x (8x doubles the ray traced passes' cost and their targets' memory)");
+            4
+        } else {
+            wanted
+        };
         let msaa = [wanted, 8, 4, 2, 1]
             .into_iter()
             .filter(|&n| n <= wanted)
@@ -539,6 +545,7 @@ impl Renderer {
                 triple_targets: None,
                 glass_picture: None,
                 target_use: HashMap::new(),
+                evicted_at: std::time::Instant::now(),
                 hdr_targets: HashMap::new(),
                 ao: None,
                 depth: None,
