@@ -11,6 +11,7 @@
 //! are drawn and heard, and the shared world's mirror, stay in the app.
 
 pub mod admin;
+pub mod commands;
 pub mod config;
 pub mod game;
 pub mod gateway;

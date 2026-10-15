@@ -73,52 +73,43 @@ impl App {
         self.tick_voice(dt);
     }
 
-    /// A command another player's game sent ours (`LanSession::command`).
+    /// A command another player's game sent ours (`LanSession::command`): read by the session
+    /// (`omsi_lan::commands::Command`), carried out here.
     pub(crate) fn lan_command(&mut self, from: u32, text: &str) {
-        let Some(lan) = self.net.lan.as_ref() else { return };
-        let my_id = lan.my_id;
-        if let Some(ev) = text.strip_prefix("trigger ") {
-            // a switch worked by a passenger of ours: only by one who is in our bus
-            let walker = lan.peers().find(|p| p.pose.id == from).and_then(|p| p.pose.walker);
-            let aboard = walker.and_then(|w| w.aboard).filter(|a| a.owner == my_id);
-            let inside = match (aboard, self.player.as_ref()) {
-                (Some(a), Some(p)) => omsi_lan::passenger::inside(&omsi_lan::spawn::footprint_of(&p.vehicle, omsi_lan::spawn::BUS_BOX), a.local),
-                _ => false,
-            };
-            let aboard = aboard.is_some();
-            if !aboard || !inside || !omsi_lan::passenger::passenger_trigger(ev) {
-                log::info!("LAN: player {from} asked for switch {ev} of our bus from outside it, or for one only the driver works: ignored");
-                return;
-            }
-            if let Some(p) = self.player.as_mut() {
-                log::info!("LAN: player {from} works {ev} in our bus");
-                p.vehicle.trigger(ev.trim());
-            }
-            return;
-        }
-        // the voice server of the session (`voice`): asked of the host, told by it
-        if text == "voice?" {
-            if lan.role == omsi_net::Role::Host {
-                let answer = crate::voice::VoiceServer::command(crate::voice::hosted().as_ref());
-                if let Some(l) = self.net.lan.as_mut() {
-                    l.command(from, &answer);
-                }
-            }
-            return;
-        }
-        if text.starts_with("voice ") {
-            if from == 1 {
-                if let (Some(v), Some(server)) = (self.sound.voice.as_mut(), crate::voice::VoiceServer::parse_command(text)) {
-                    v.set_server(server);
-                }
-            }
-            return;
-        }
+        use omsi_lan::commands::Command;
         // a plugin's message to the same plugin here (`lan.send`)
         if self.plugin_lan_message(from, text) {
             return;
         }
-        crate::admin::command(self, from, text);
+        let Some(command) = Command::parse(from, text) else {
+            log::info!("LAN: command '{text}' from player {from} not taken");
+            return;
+        };
+        match command {
+            // a switch worked by a passenger of ours: only by one who is in our bus
+            Command::Trigger(ev) => {
+                let may = self.net.lan.as_ref().is_some_and(|l| omsi_lan::passenger::may_work(l, from, self.player.as_ref().map(|p| &p.vehicle), &ev));
+                match self.player.as_mut().filter(|_| may) {
+                    Some(p) => {
+                        log::info!("LAN: player {from} works {ev} in our bus");
+                        p.vehicle.trigger(&ev);
+                    }
+                    None => log::info!("LAN: player {from} asked for switch {ev} of our bus from outside it, or for one only the driver works: ignored"),
+                }
+            }
+            // the voice server of the session (`voice`): asked of the host, told by it
+            Command::VoiceAsked => {
+                if let Some(l) = self.net.lan.as_mut().filter(|l| l.role == omsi_net::Role::Host) {
+                    l.command(from, &crate::voice::VoiceServer::command(crate::voice::hosted().as_ref()));
+                }
+            }
+            Command::Voice(server) => {
+                if let Some(v) = self.sound.voice.as_mut() {
+                    v.set_server(server);
+                }
+            }
+            command => crate::admin::carry_out(self, from, command),
+        }
     }
 
     /// The host's world as LAN play asks for it: its clock (set or caught up with) and its
