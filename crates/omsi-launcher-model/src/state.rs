@@ -523,7 +523,7 @@ impl State {
         self.spawn(move || Msg::HofsAdded(
             core::add_hofs_to_vehicle_folders(&files).map(|_| ()).map_err(|e| {
                 core::log_to_file(&format!("HOF copy failed: {e:#}"));
-                omsi_ui::tr("HOF copy failed. Check launcher.log for details.").into_owned()
+                "HOF copy failed. Check launcher.log for details.".to_owned()
             }),
         ));
     }
@@ -1120,7 +1120,7 @@ impl State {
             Msg::HofsAdded(result) => {
                 self.mod_busy = None;
                 match result {
-                    Ok(()) => self.set_status(omsi_ui::tr("HOF files added to eligible bus folders.").into_owned(), false),
+                    Ok(()) => self.set_status("HOF files added to eligible bus folders.", false),
                     Err(e) => self.set_status(e, true),
                 }
                 self.load_mods();
