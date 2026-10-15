@@ -155,7 +155,7 @@ pub struct Pax {
     pub ticket_by: Option<String>,
     pub ticket_tag: Option<String>,
     /// Since when (`time`) the plugins have been told about this passenger's ticket and not
-    /// yet had their frame: the request at the desk waits for them (`TICKET_HOLD`).
+    /// yet had their frame: they wait for it in the doorway and at the desk (`TICKET_HOLD`).
     pub ticket_hold: Option<f64>,
     /// The entry or exit asked for (+0x640).
     pub door: Option<usize>,

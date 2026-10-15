@@ -303,14 +303,8 @@ impl PeopleSim {
                         if let Some(k) = self.reserve_place(bn.id, &bn.cabin.seats, &bn.places_off) {
                             let (tk, id) = self.decide_pax_ticket(i, bn);
                             let price = self.tickets.as_ref().and_then(|t| t.tickets.get(id.saturating_sub(1) as usize)).map(|t| t.value).unwrap_or(0.0);
-                            let pp = self.pax_mut(i).unwrap();
-                            pp.seat = Some(k);
-                            pp.ticket = tk;
-                            pp.ticket_id = id;
-                            pp.price = if id > 0 { price } else { 0.0 };
-                            if bn.id == BusId::Player {
-                                self.ask_ticket(i);
-                            }
+                            self.pax_mut(i).unwrap().seat = Some(k);
+                            self.new_ticket(i, tk, id, if id > 0 { price } else { 0.0 }, bn.id == BusId::Player);
                             self.set_task(i, Task::WalkingToBus, buses, bus_ix, world);
                         }
                     }
@@ -459,6 +453,12 @@ impl PeopleSim {
                 pp.short = !open;
                 pp.st = 1;
                 pp.pax_state = 1.0;
+                return;
+            }
+            // in the doorway, but the plugins have not had their say about the ticket yet
+            // (`TICKET_HOLD` at most): they could still make it a pass, which decides the
+            // way in
+            if self.ticket_pending(i) {
                 return;
             }
             // in the doorway: the driver is greeted (the player's bus)

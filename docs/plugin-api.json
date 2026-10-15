@@ -4412,7 +4412,7 @@
       "args": [
         "passenger"
       ],
-      "doc": "Somebody boarding the player's bus has decided about their ticket, on their way to the door - before they ask for it at the cash desk, which waits for this frame: `{id, age, kind, ticket, name, price, stop, stop_name, destination, stop_number, destination_number}` - `kind` `\"none\"`, `\"stamp\"` or `\"buy\"`, `ticket` the ticket pack's (from 1; 0 none fits their age) with its `name` and `price`, `stop` the map object id they board at and `stop_name` its timetable name, `destination` the stop they ride to, and where both are in the duty's trip (from 1, `nil` where the trip does not have them). `people.set_ticket(id, ...)` changes it.",
+      "doc": "Somebody boarding the player's bus has decided about their ticket, on their way to the door - they wait in the doorway for this frame, so it can still change before they get in and ask for it at the cash desk: `{id, age, kind, ticket, name, price, stop, stop_name, destination, stop_number, destination_number}` - `kind` `\"none\"`, `\"stamp\"` or `\"buy\"`, `ticket` the ticket pack's (from 1; 0 none fits their age) with its `name` and `price`, `stop` the map object id they board at and `stop_name` its timetable name, `destination` the stop they ride to, and where both are in the duty's trip (from 1, `nil` where the trip does not have them). `people.set_ticket(id, ...)` changes it.",
       "since": "0.3"
     },
     {

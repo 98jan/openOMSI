@@ -238,9 +238,9 @@ What a passenger asks for at the cash desk is the ticket pack's choice - unless 
 says otherwise. Everybody boarding the player's bus is reported once, on their way to the
 door, as the `passenger_ticket` event: who they are (`id`, `age`), what they do about a
 ticket (`kind`: `"none"`, `"stamp"`, `"buy"`), the pack's ticket and price, the stop they
-board at and the stop they ride to, with where both are in the duty's trip. Their request at
-the desk waits until the plugins had that frame (a second at most), so a plugin has time to
-work out a fare of its own - a tariff of zones, a table of fare units, a pass - and hand it
+board at and the stop they ride to, with where both are in the duty's trip. They wait in the
+doorway, and their request at the desk waits, until the plugins have had that frame (a
+second at most), so a plugin has time to work out a fare of its own - a tariff of zones, a table of fare units, a pass - and hand it
 over with `omsi.people.set_ticket`:
 
 ```lua
@@ -823,7 +823,7 @@ declared to call the function (a plain `.lua` file has them all).
 | `passengers` | `count`, `old` | The number of passengers aboard the player's bus changed. | 0.2.22 |
 | `passenger_board` | `count`, `stop_id` | People got into the player's bus: how many, and the stop they waited at (its map object id, `nil` when none). | 0.2.22 |
 | `passenger_alight` | `count` | People got out of the player's bus. | 0.2.22 |
-| `passenger_ticket` | `passenger` | Somebody boarding the player's bus has decided about their ticket, on their way to the door - before they ask for it at the cash desk, which waits for this frame: `{id, age, kind, ticket, name, price, stop, stop_name, destination, stop_number, destination_number}` - `kind` `"none"`, `"stamp"` or `"buy"`, `ticket` the ticket pack's (from 1; 0 none fits their age) with its `name` and `price`, `stop` the map object id they board at and `stop_name` its timetable name, `destination` the stop they ride to, and where both are in the duty's trip (from 1, `nil` where the trip does not have them). `people.set_ticket(id, ...)` changes it. | 0.3 |
+| `passenger_ticket` | `passenger` | Somebody boarding the player's bus has decided about their ticket, on their way to the door - they wait in the doorway for this frame, so it can still change before they get in and ask for it at the cash desk: `{id, age, kind, ticket, name, price, stop, stop_name, destination, stop_number, destination_number}` - `kind` `"none"`, `"stamp"` or `"buy"`, `ticket` the ticket pack's (from 1; 0 none fits their age) with its `name` and `price`, `stop` the map object id they board at and `stop_name` its timetable name, `destination` the stop they ride to, and where both are in the duty's trip (from 1, `nil` where the trip does not have them). `people.set_ticket(id, ...)` changes it. | 0.3 |
 | `stop_arrive` | `name`, `id`, `number`, `delay` | The bus came to the duty's next stop (within 25 m of it): its name, map object id, number in the trip (from 1) and the delay in seconds (late positive). | 0.2.22 |
 | `stop_depart` | `name`, `id`, `number`, `delay` | The bus left the stop it stood at (more than 35 m from it, or the duty moved on): the same values, the delay as it left. | 0.2.22 |
 | `trip_start` | `trip`, `name`, `terminus` | The duty moved on to another trip: its number in the duty (from 1), the timetable's name of the trip and its terminus. | 0.2.22 |
@@ -1039,7 +1039,7 @@ procedure AccessTicketRequest(person: Cardinal; age: Single;
 
 A library that exports this hears every passenger boarding the player's bus once, in the
 frame after they decided about their ticket (the Lua plugins' `passenger_ticket`), and may
-change what they ask for at the cash desk - which waits for that frame:
+change what they ask for at the cash desk - they wait in the doorway for that frame:
 
 * `person`: the passenger's id (as the Lua plugins' `omsi.people` know it); `age` in years.
 * `stop`, `destination`: the timetable's names of the stop they board at and the one they

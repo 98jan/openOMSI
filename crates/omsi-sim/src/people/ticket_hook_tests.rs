@@ -114,3 +114,128 @@ fn plugins_hear_of_a_ticket_and_change_it_until_it_is_asked_for() {
     h.pax_mut(0).unwrap().sub = 4;
     assert_eq!(h.set_ticket(1, &zones, "x"), Err("already asked for the ticket"));
 }
+
+fn human_type(tag: &str) -> Arc<HumanType> {
+    let dir = std::env::temp_dir().join(format!("omsi-ticket-hook-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("person.hum"), "[model]\nmodel.cfg\n").unwrap();
+    std::fs::write(dir.join("model.cfg"), "").unwrap();
+    let ty = Arc::new(HumanType::load(&dir.join("person.hum")).unwrap());
+    std::fs::remove_dir_all(&dir).unwrap();
+    ty
+}
+
+/// The player's bus standing at stop 77 with its door open: one entry, one exit, one seat.
+fn player_bus() -> BusNow {
+    let dir = std::env::temp_dir().join(format!("omsi-ticket-hook-bus-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("test.bus"), "[boundingbox]\n2.5\n12\n3\n0\n0\n1.5\n\n[passengercabin]\ncabin.cfg\n\n[paths]\npaths.cfg\n").unwrap();
+    std::fs::write(dir.join("paths.cfg"), "[pathpnt]\n1.1\n4\n0.4\n\n[pathpnt]\n0\n4\n0.5\n\n[pathpnt]\n0\n-3\n0.5\n\n[pathpnt]\n1.1\n-3\n0.4\n\n[pathlink]\n0\n1\n\n[pathlink]\n1\n2\n\n[pathlink]\n2\n3\n").unwrap();
+    std::fs::write(dir.join("cabin.cfg"), "[entry]\n0\n\n[exit]\n3\n\n[passpos]\n-0.5\n0\n0.9\n0.45\n0\n").unwrap();
+    let def = omsi_vehicle::Vehicle::load(&dir.join("test.bus")).unwrap();
+    let cabin = Arc::new(Cabin::load_train(&[(&def, Vec3::ZERO, f32::INFINITY)]).expect("cabin"));
+    std::fs::remove_dir_all(&dir).ok();
+    BusNow {
+        id: BusId::Player,
+        cabin,
+        pos: DVec3::ZERO,
+        rot: Mat4::IDENTITY,
+        heading: 0.0,
+        speed: 0.0,
+        entry_open: vec![true],
+        exit_open: vec![true],
+        walk_open: None,
+        interior: 1.0,
+        air: CabinAir::default(),
+        half: DVec2::new(1.25, 6.0),
+        centre: DVec2::ZERO,
+        accel: DVec2::ZERO,
+        trailers: Vec::new(),
+        terminus: None,
+        takes: Takes::Terminus,
+        next_stop: None,
+        places_off: Vec::new(),
+        served: Some(77),
+    }
+}
+
+/// Review of #2708: the plugins hear of a passenger in their next frame, and the people may
+/// take several steps before it. Somebody who decides right at an open door waits in the
+/// doorway until then - a plugin can still make them a pass holder - and no longer than
+/// `TICKET_HOLD`.
+#[test]
+fn boarding_waits_in_the_doorway_until_the_plugins_had_their_frame() {
+    let ty = human_type("door");
+    let world = crate::world_data::WorldData::default();
+    let mut h = PeopleSim::new(Path::new("/nonexistent"), 200);
+    h.tickets = Some(Arc::new(pack()));
+    h.ticket_hook = true;
+    let mut stop = h.build_pax_stop(&world, None, 77, DVec3::ZERO, 0.0, "Střížkov");
+    stop.buses.push((BusId::Player, true));
+    h.stops.insert(77, stop);
+    let buses = vec![player_bus()];
+    let bus_ix: HashMap<BusId, usize> = [(BusId::Player, 0)].into_iter().collect();
+    // two passengers in the open doorway, their places reserved, deciding to buy a ticket
+    h.people = vec![boarding(&ty, 1, Task::WalkingToBus), boarding(&ty, 2, Task::WalkingToBus)];
+    for i in 0..2 {
+        {
+            let p = h.pax_mut(i).unwrap();
+            p.seat = Some(0);
+            p.door = Some(0);
+            p.st = 3;
+        }
+        h.new_ticket(i, TICKET_BUY, 1, 2.7, true);
+    }
+    assert_eq!(h.take_ticket_asks().len(), 2);
+    let step = |h: &mut PeopleSim, dt: f64| {
+        h.time += dt;
+        for i in 0..2 {
+            if h.pax(i).unwrap().task == Task::WalkingToBus {
+                h.task_to_bus(i, &buses, &bus_ix, &world);
+            }
+        }
+    };
+    let task = |h: &PeopleSim, i: usize| h.pax(i).unwrap().task;
+    // ten steps of the people before the plugins' frame: nobody gets in
+    for _ in 0..10 {
+        step(&mut h, 1.0 / 60.0);
+        assert_eq!((task(&h, 0), task(&h, 1)), (Task::WalkingToBus, Task::WalkingToBus), "in before the plugins heard of them");
+    }
+    // the plugins' frame came for the first: made a pass holder in the doorway, in they go
+    let pass = TicketChange { kind: Some(TICKET_NONE), ..Default::default() };
+    assert_eq!(h.set_ticket(1, &pass, "x"), Ok(()));
+    h.ticket_asks_heard(&[1]);
+    step(&mut h, 1.0 / 60.0);
+    assert_eq!(task(&h, 0), Task::InBusToPlace);
+    assert_eq!(h.pax(0).unwrap().ticket, TICKET_NONE, "no cash desk for a pass holder");
+    // the second never heard of (plugins stopped): in after `TICKET_HOLD` all the same
+    assert_eq!(task(&h, 1), Task::WalkingToBus);
+    step(&mut h, super::ticket_hook::TICKET_HOLD);
+    assert_eq!(task(&h, 1), Task::InBusToPlace);
+}
+
+/// Review of #2708: a boarding given up (a bus pulling away, a shut door) and tried again
+/// is a new ticket: what a plugin made of the first one is gone, its tag is kept.
+#[test]
+fn a_new_boarding_forgets_the_plugins_ticket_but_not_its_tag() {
+    let ty = human_type("retry");
+    let mut h = PeopleSim::new(Path::new("/nonexistent"), 200);
+    h.tickets = Some(Arc::new(pack()));
+    h.ticket_hook = true;
+    h.people = vec![boarding(&ty, 1, Task::WalkingToBus)];
+    h.new_ticket(0, TICKET_BUY, 1, 2.7, true);
+    let zones = TicketChange { name: Some("IDOL 4001".into()), price: Some(64.0), voice: Some("Zone_4001".into()), tag: Some("telmax".into()), ..Default::default() };
+    assert_eq!(h.set_ticket(1, &zones, "telmax"), Ok(()));
+    // the boarding is given up (the bus pulls away), and at the next bus they decide again -
+    // this time the plugin leaves the ticket as it is
+    h.new_ticket(0, TICKET_BUY, 2, 1.4, true);
+    let p = h.pax(0).unwrap();
+    assert_eq!((p.ticket_id, p.price), (2, 1.4));
+    assert_eq!((p.ticket_name.as_deref(), p.ticket_voice.as_deref(), p.ticket_by.as_deref()), (None, None, None));
+    assert_eq!(p.ticket_tag.as_deref(), Some("telmax"));
+    // reported again as the pack's ticket, and held for the plugins again
+    let asks = h.take_ticket_asks();
+    assert_eq!(asks.len(), 2);
+    assert_eq!((asks[1].ticket, asks[1].name.as_str(), asks[1].price), (2, "Kurzstrecke", 1.4));
+    assert!(h.ticket_pending(0));
+}

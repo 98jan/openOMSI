@@ -6,9 +6,9 @@
 
 use super::*;
 
-/// The longest a passenger at the desk waits for the plugins to have their say (s): the
-/// report reaches them in the next frame, so this is only felt when the passenger came
-/// in at once.
+/// The longest a passenger waits - in the doorway, and at the cash desk - for the plugins
+/// to have their say (s): the report reaches them in the next frame, so this is only felt
+/// by somebody who decided right at an open door.
 pub const TICKET_HOLD: f64 = 1.0;
 
 /// The longest text a plugin may give a passenger (a name, a voice line, its tag).
@@ -66,6 +66,31 @@ fn text(s: &str) -> Option<String> {
 }
 
 impl PeopleSim {
+    /// Passenger `i` has decided about a ticket (`kind`, the pack's ticket `id` from 1, its
+    /// `price`) on their way to a bus: what a plugin made of an earlier ticket - a boarding
+    /// given up at a shut door, a bus that pulled away - is forgotten (not their tag, which
+    /// is the plugin's own), and for the player's bus the plugins hear of it.
+    pub fn new_ticket(&mut self, i: usize, kind: u8, id: u8, price: f32, player_bus: bool) {
+        let Some(p) = self.pax_mut(i) else { return };
+        p.ticket = kind;
+        p.ticket_id = id;
+        p.price = price;
+        p.ticket_name = None;
+        p.ticket_voice = None;
+        p.ticket_by = None;
+        p.ticket_hold = None;
+        if player_bus {
+            self.ask_ticket(i);
+        }
+    }
+
+    /// Passenger `i` was reported and the plugins have not had their frame yet: they wait
+    /// in the doorway and at the cash desk, `TICKET_HOLD` at most (however many steps of
+    /// the people come before that frame).
+    pub fn ticket_pending(&self, i: usize) -> bool {
+        self.pax(i).and_then(|p| p.ticket_hold).is_some_and(|t| self.time >= t && self.time - t < TICKET_HOLD)
+    }
+
     /// Report passenger `i`'s ticket for the player's bus (they have just decided about it).
     pub fn ask_ticket(&mut self, i: usize) {
         if !self.ticket_hook {

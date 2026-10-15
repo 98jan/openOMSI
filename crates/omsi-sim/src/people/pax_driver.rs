@@ -195,7 +195,7 @@ impl PeopleSim {
         let (tk_ok, wrong) = if p.sub == 5 { ticket(self) } else { (false, false) };
         if p.sub == 3 {
             // the plugins have not had their say about this ticket yet (a frame or two)
-            if p.ticket_hold.is_some_and(|t| self.time - t < super::ticket_hook::TICKET_HOLD && self.time >= t) {
+            if self.ticket_pending(i) {
                 return;
             }
             // the desk free (sub_7d1fec, +0x7a8): "Einmal ..., bitte"
