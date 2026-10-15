@@ -23,8 +23,9 @@
 use crate::App;
 use omsi_net::{LanSession, Role};
 
-pub(crate) use omsi_lan::admin::{duty_arg, parse_duty, ServerAdmin, TrafficOrder, LOCAL_ADMIN};
-use omsi_lan::admin::{answer, beside, finite, notice_targets};
+pub(crate) use omsi_lan::admin::{duty_arg, ServerAdmin, TrafficOrder, LOCAL_ADMIN};
+use omsi_lan::admin::{act_on_session, answer, beside, Action, Admin, Done, WeatherAction};
+use omsi_lan::commands::Command;
 
 /// The clock speeds offered.
 pub(crate) const SPEEDS: [f64; 6] = [1.0, 2.0, 4.0, 8.0, 15.0, 30.0];
@@ -95,151 +96,74 @@ pub(crate) fn run(app: &mut App, action: &str) {
         app.service_msg = Some((format!("Sent to the server: {action}"), 3.0));
         return;
     }
-    host_action(app, action, None);
+    host_action(app, action);
 }
 
-/// Carry out an administration action as the host of a game (`by`: the admin who asked,
-/// None: the host itself).
-fn host_action(app: &mut App, action: &str, by: Option<u32>) {
-    let (verb, arg) = action.split_once(' ').unwrap_or((action, ""));
-    let id = arg.trim().parse::<u32>().ok();
-    match verb {
-        // a notification (`notify <id|all> <notice id> <seconds> <kind> <text>`): to the other
-        // players through the session, and on the host's own screen for `all` or its own number
-        "notify" => {
-            let Some((who, rest)) = arg.trim().split_once(' ') else { return };
-            let Some((nid, n)) = crate::ui::Notice::parse(rest) else { return };
-            let mut here = false;
-            if let Some(l) = app.net.lan.as_mut() {
-                let (ids, local) = notice_targets(who, l.peers().map(|p| p.pose.id), l.my_id);
-                for id in ids {
-                    l.command(id, &format!("notify {}", rest.trim()));
-                }
-                here = local;
-            }
-            if here {
+/// Carry out an administration action as the host of a game: what it asks of the session
+/// is done as a server does it (`omsi_lan::admin::act_on_session`), what it asks of this
+/// game's own world here.
+fn host_action(app: &mut App, action: &str) {
+    let Some(action) = Action::parse(action) else {
+        log::info!("admin: unknown action '{action}'");
+        return;
+    };
+    let at = app.player.as_ref().map(|p| (p.vehicle.position, p.vehicle.heading));
+    let notice_ok = |text: &str| crate::ui::Notice::parse(text).is_some();
+    let admin = Admin { id: None, at, sent_away: "sent away by the host", notice_ok: &notice_ok };
+    let Some(done) = app.net.lan.as_mut().map(|l| act_on_session(l, &action, &admin)) else { return };
+    match (action, done) {
+        (Action::Notify { notice, .. }, Done::AlsoHere) => {
+            if let Some((nid, n)) = crate::ui::Notice::parse(&notice) {
                 log::info!("LAN: the server's notice {nid}: {}", n.text);
                 crate::ui::push_notice(&mut app.menus.notices, n);
             }
         }
-        "kick" | "ban" => {
-            if let (Some(l), Some(id)) = (app.net.lan.as_mut(), id) {
-                l.kick(id, if verb == "ban" { "sent away for this session" } else { "sent away by the host" }, verb == "ban");
+        // (everybody's bus: the host's own too)
+        (Action::Service { kind, .. }, Done::AlsoHere) => app.run_service(&kind, "player"),
+        (Action::Goto(id), _) => match app.net.remotes.remotes.get(&id).map(|r| (r.vehicle().position, r.vehicle().heading)) {
+            Some((pos, heading)) => {
+                teleport_beside(app, pos, heading);
+                app.service_event("teleport", "player", None);
             }
-        }
-        "goto" => {
-            let at = app.net.remotes.remotes.get(&id.unwrap_or(0)).map(|r| (r.vehicle().position, r.vehicle().heading));
-            match (at, by) {
-                (Some((pos, heading)), None) => {
-                    teleport_beside(app, pos, heading);
-                    app.service_event("teleport", "player", None);
-                }
-                _ => app.service_msg = Some(("That player has no bus to go to".into(), 3.0)),
-            }
-        }
-        "bring" => {
-            // beside the host's bus (or the admin's), told to that player's game
-            let here = match by {
-                None => app.player.as_ref().map(|p| (p.vehicle.position, p.vehicle.heading)),
-                Some(a) => app.net.remotes.remotes.get(&a).map(|r| (r.vehicle().position, r.vehicle().heading)),
-            };
-            if let (Some((pos, h)), Some(id), Some(l)) = (here, id, app.net.lan.as_mut()) {
-                let (x, y) = beside(pos, h, 8.0);
-                l.command(id, &format!("teleport {x:.2} {y:.2} {:.2} {h:.1}", pos.z));
-            }
-        }
-        "time" => {
-            if let Some(s) = finite(arg) {
-                app.shift_clock(s.clamp(-86400.0, 86400.0));
-            }
-        }
-        "speed" => {
-            if app.real_time_locked() {
-                app.service_msg = Some(("The time speed is fixed while the real-time sync is on".into(), 3.0));
-            } else if let Some(s) = finite(arg) {
-                let s = s.clamp(1.0, 30.0);
-                if let Some(l) = app.net.lan.as_mut() {
-                    l.clock_speed = s;
-                }
-                app.service_msg = Some((format!("Time speed x{s}"), 3.0));
-            }
-        }
-        "weather" => match arg.trim().split_once(' ').map(|(a, b)| (a, b.trim())).unwrap_or((arg.trim(), "")) {
-            ("cycle", _) => {
-                if app.session.weather_cycle.take().is_none() {
-                    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(7);
-                    let mut c = crate::weather_cycle::Cycle::new(seed);
-                    // (the first change soon, not in an hour)
-                    c.next_in = 60.0;
-                    app.session.weather_cycle = Some(c);
-                }
-                let on = app.session.weather_cycle.is_some();
-                app.service_msg = Some((format!("Weather cycle {}", if on { "on" } else { "off" }), 3.0));
-            }
-            // (only an installed weather file: the name comes from the admin's game)
-            ("set", file) if !file.contains("..") && file.to_ascii_lowercase().starts_with("weather/") && file.to_ascii_lowercase().ends_with(".owt") => {
-                app.change_weather(Some(file.to_string()), true, 1.0);
-            }
-            _ => app.next_weather(),
+            None => app.service_msg = Some(("That player has no bus to go to".into(), 3.0)),
         },
-        "say" => {
+        (Action::Time(s), _) => app.shift_clock(s),
+        (Action::Speed(_), _) if app.real_time_locked() => app.service_msg = Some(("The time speed is fixed while the real-time sync is on".into(), 3.0)),
+        (Action::Speed(s), _) => {
             if let Some(l) = app.net.lan.as_mut() {
-                let _ = l.say(arg);
+                l.clock_speed = s;
             }
+            app.service_msg = Some((format!("Time speed x{s}"), 3.0));
         }
-        // everybody beside the host's bus (or the admin's), one behind the other
-        "bringall" => {
-            let here = match by {
-                None => app.player.as_ref().map(|p| (p.vehicle.position, p.vehicle.heading)),
-                Some(a) => app.net.remotes.remotes.get(&a).map(|r| (r.vehicle().position, r.vehicle().heading)),
-            };
-            if let (Some((pos, h)), Some(l)) = (here, app.net.lan.as_mut()) {
-                let ids: Vec<u32> = l.peers().map(|p| p.pose.id).filter(|id| *id != l.my_id && Some(*id) != by).collect();
-                for (k, id) in ids.iter().enumerate() {
-                    let (x, y) = beside(pos, h, 5.0 * (k as f64 + 1.0));
-                    l.command(*id, &format!("teleport {x:.2} {y:.2} {:.2} {h:.1}", pos.z));
-                }
-                app.service_msg = Some((format!("{} player(s) brought here", ids.len()), 3.0));
-            }
+        (Action::Clock(s), _) => {
+            let d = (s - app.clock.time + 43_200.0).rem_euclid(86_400.0) - 43_200.0;
+            app.shift_clock(d);
         }
-        // a service for one player's bus (or everybody's, the host's own too)
-        "service" => {
-            let (kind, who) = arg.split_once(' ').unwrap_or((arg, "all"));
-            if !matches!(kind, "repair" | "refuel" | "wash") {
-                return;
+        (Action::Weather(WeatherAction::Cycle), _) => {
+            if app.session.weather_cycle.take().is_none() {
+                let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(7);
+                let mut c = crate::weather_cycle::Cycle::new(seed);
+                // (the first change soon, not in an hour)
+                c.next_in = 60.0;
+                app.session.weather_cycle = Some(c);
             }
-            if let Some(l) = app.net.lan.as_mut() {
-                let ids: Vec<u32> = if who == "all" { l.peers().map(|p| p.pose.id).filter(|id| *id != l.my_id).collect() } else { who.trim().parse::<u32>().ok().into_iter().collect() };
-                for id in &ids {
-                    l.command(*id, &format!("service {kind}"));
-                }
-            }
-            if who == "all" {
-                app.run_service(kind, if by.is_some() { "host" } else { "player" });
-            }
+            let on = app.session.weather_cycle.is_some();
+            app.service_msg = Some((format!("Weather cycle {}", if on { "on" } else { "off" }), 3.0));
         }
-        "unstick" => {
-            if let (Some(l), Some(id)) = (app.net.lan.as_mut(), who_id(arg)) {
-                l.command(id, "unstick");
-            }
+        // (only an installed weather file: the name comes from the admin's game)
+        (Action::Weather(WeatherAction::Set(file)), _) if !file.contains("..") && file.to_ascii_lowercase().starts_with("weather/") && file.to_ascii_lowercase().ends_with(".owt") => {
+            app.change_weather(Some(file), true, 1.0);
         }
-        "clock" => {
-            if let Some(s) = finite(arg) {
-                let d = (s.rem_euclid(86400.0) - app.clock.time + 43_200.0).rem_euclid(86_400.0) - 43_200.0;
-                app.shift_clock(d);
-            }
-        }
-        "traffic" if arg.trim() == "clear" => {
-            clear_ai_traffic(app);
-        }
-        "traffic" => {
+        (Action::Weather(_), _) => app.next_weather(),
+        (Action::Traffic(arg), _) if arg == "clear" => clear_ai_traffic(app),
+        (Action::Traffic(_), _) => {
             if let Some(t) = app.session.traffic.as_mut() {
                 t.target = crate::game_lists::next_step(&crate::game_lists::TRAFFIC, t.target);
                 app.args.traffic = t.target;
                 app.service_msg = Some((format!("Traffic: {}", t.target), 3.0));
             }
         }
-        _ => log::info!("admin: unknown action '{action}'"),
+        _ => {}
     }
 }
 
@@ -255,11 +179,6 @@ pub(crate) fn clear_ai_traffic(app: &mut App) {
         crate::view_sync::apply_traffic(t, &mut app.gfx.sim_view.traffic, w, r, scene);
         app.service_msg = Some((format!("{removed} AI vehicles taken off the road"), 3.0));
     }
-}
-
-/// A player's id (the argument of an action).
-fn who_id(arg: &str) -> Option<u32> {
-    arg.trim().parse::<u32>().ok()
 }
 
 /// The own bus (or the walker) put beside another vehicle.
@@ -306,61 +225,45 @@ pub(crate) fn teleport(app: &mut App, at: glam::DVec3, heading: f64) {
     }
 }
 
-/// A command from another game (the host's, or an admin's to the host).
-pub(crate) fn command(app: &mut App, from: u32, text: &str) {
-    let (verb, arg) = text.split_once(' ').unwrap_or((text, ""));
-    match verb {
+/// What another game's command asks of ours (`omsi_lan::commands::Command`, read there),
+/// carried out here: our bus, our world, our screen - and the answers the session expects.
+pub(crate) fn carry_out(app: &mut App, from: u32, command: Command) {
+    match command {
         // (host → us) put our bus there
-        "teleport" if from == 1 => {
-            let v: Vec<f64> = arg.split_whitespace().filter_map(|x| x.parse().ok()).collect();
-            if v.len() == 4 {
-                teleport(app, glam::DVec3::new(v[0], v[1], v[2]), v[3]);
-                app.service_msg = Some(("The host brought you to them".into(), 4.0));
-                app.service_event("teleport", "host", None);
-            }
+        Command::Teleport { at, heading } => {
+            teleport(app, at, heading);
+            app.service_msg = Some(("The host brought you to them".into(), 4.0));
+            app.service_event("teleport", "host", None);
         }
         // (host → us) the host's object editor: a map object moved, turned or deleted…
-        "objedit" if from == 1 => {
-            let v: Vec<f64> = arg.split_whitespace().filter_map(|x| x.parse().ok()).collect();
-            if v.len() == 6 {
-                let id = v[0] as i64;
-                let e = crate::scene::ObjectEdit { moved: glam::DVec3::new(v[1], v[2], v[3]), turned: v[4], deleted: v[5] > 0.5 };
-                let same = app.world.as_ref().and_then(|w| w.object_edits.lock().get(&id).copied()) == Some(e);
-                if let (false, Some(w), Some(r), Some(scene)) = (same, app.world.clone(), app.renderer.as_ref(), app.scene.as_mut()) {
-                    log::info!("LAN: the host's editor moved object {id} by ({:.2}, {:.2}, {:.2}), turned {:.1}, deleted {}", e.moved.x, e.moved.y, e.moved.z, e.turned, e.deleted);
-                    w.apply_object_edit(r, scene, id, e);
-                }
+        Command::ObjectEdit { id, moved, turned, deleted } => {
+            let e = crate::scene::ObjectEdit { moved, turned, deleted };
+            let same = app.world.as_ref().and_then(|w| w.object_edits.lock().get(&id).copied()) == Some(e);
+            if let (false, Some(w), Some(r), Some(scene)) = (same, app.world.clone(), app.renderer.as_ref(), app.scene.as_mut()) {
+                log::info!("LAN: the host's editor moved object {id} by ({:.2}, {:.2}, {:.2}), turned {:.1}, deleted {}", e.moved.x, e.moved.y, e.moved.z, e.turned, e.deleted);
+                w.apply_object_edit(r, scene, id, e);
             }
         }
         // … or a new object (a copy), where it stands now
-        "objadd" if from == 1 => {
-            let mut it = arg.splitn(7, ' ');
-            let nums: Vec<f64> = (0..6).filter_map(|_| it.next().and_then(|x| x.parse().ok())).collect();
-            let rel = it.next().unwrap_or("").trim().to_string();
-            if nums.len() == 6 && !rel.is_empty() {
-                let id = nums[0] as i64;
-                if let (Some(w), Some(r), Some(scene)) = (app.world.clone(), app.renderer.as_ref(), app.scene.as_mut()) {
-                    if let Some(g) = app.menus.remote_added.remove(&id) {
-                        w.remove_helper_object(r, scene, g);
-                    }
-                    if nums[5] < 0.5 {
-                        let path = app.args.root.join(&rel);
-                        if let Some(g) = w.add_helper_object(r, scene, &path.to_string_lossy(), glam::DVec3::new(nums[1], nums[2], nums[3]), nums[4], &[]) {
-                            app.menus.remote_added.insert(id, g);
-                        }
+        Command::ObjectAdd { id, at, heading, removed, file } => {
+            if let (Some(w), Some(r), Some(scene)) = (app.world.clone(), app.renderer.as_ref(), app.scene.as_mut()) {
+                if let Some(g) = app.menus.remote_added.remove(&id) {
+                    w.remove_helper_object(r, scene, g);
+                }
+                if !removed {
+                    let path = app.args.root.join(&file);
+                    if let Some(g) = w.add_helper_object(r, scene, &path.to_string_lossy(), at, heading, &[]) {
+                        app.menus.remote_added.insert(id, g);
                     }
                 }
             }
         }
         // (host → us) a service for our bus, or our bus back on its wheels
-        "service" if from == 1 => {
-            let kind = arg.trim();
-            if matches!(kind, "repair" | "refuel" | "wash") {
-                app.run_service(kind, "host");
-                app.service_msg = Some((format!("The host: {kind}"), 3.0));
-            }
+        Command::Service(kind) => {
+            app.run_service(&kind, "host");
+            app.service_msg = Some((format!("The host: {kind}"), 3.0));
         }
-        "unstick" if from == 1 => {
+        Command::Unstick => {
             if let Some(p) = app.player.as_ref() {
                 let (at, heading) = (p.vehicle.position, p.vehicle.heading);
                 teleport(app, at, heading);
@@ -368,24 +271,23 @@ pub(crate) fn command(app: &mut App, from: u32, text: &str) {
                 app.service_event("reset", "host", None);
             }
         }
-        // (server → us) the password was right: the menu is ours
         // (server → us) prove the password without sending it
-        "admin-challenge" if from == 1 => {
+        Command::AdminChallenge(challenge) => {
             let pw = app.net.remotes.admin_password.take();
             if let (Some(pw), Some(l)) = (pw, app.net.lan.as_mut()) {
-                match answer(arg, &pw) {
+                match answer(&challenge, &pw) {
                     Some(a) => l.command(1, &format!("auth {a}")),
                     None => log::warn!("LAN: the server's admin challenge is not one this game answers (an older or a foreign server)"),
                 }
             }
         }
-        // (host → us) a duty given by the server's dispatch: `duty <line> <tour> <trip> <stop>`
-        // - that trip of the tour (by its place among the tour's trips, as the tour list counts
-        // them), from that stop (its number among the trip's stations; a stop the trip does not
-        // serve: the next one it serves), as the tour list's start button does: the bus stays
-        // where it is. The host hears `duty-ok <line> <tour> <trip> <stop>` or `duty-no <why>`.
-        "duty" if from == 1 => {
-            let reply = match parse_duty(arg) {
+        // (host → us) a duty given by the server's dispatch: that trip of the tour (by its place
+        // among the tour's trips, as the tour list counts them), from that stop (its number
+        // among the trip's stations; a stop the trip does not serve: the next one it serves),
+        // as the tour list's start button does: the bus stays where it is. The host hears
+        // `duty-ok <line> <tour> <trip> <stop>` or `duty-no <why>`.
+        Command::Duty(duty) => {
+            let reply = match duty {
                 None => "duty-no malformed".to_string(),
                 Some((line, tour, trip, station)) => {
                     let stops = app.session.schedule.as_ref().map(|s| s.tour_trip_stops(&line, &tour, trip)).unwrap_or_default();
@@ -408,12 +310,11 @@ pub(crate) fn command(app: &mut App, from: u32, text: &str) {
                 l.command(1, &reply);
             }
         }
-        // (host → us) a notification over the navigator for a few seconds: `notify <id>
-        // <seconds> <info|warn|alert> <text>`; the host hears that it was shown (`notify-seen
-        // <id>`): a game that does not know `notify` stays silent, and the host can say it in
-        // the chat instead
-        "notify" if from == 1 => {
-            if let Some((id, n)) = crate::ui::Notice::parse(arg) {
+        // (host → us) a notification over the navigator for a few seconds; the host hears that
+        // it was shown (`notify-seen <id>`): a game that does not know `notify` stays silent,
+        // and the host can say it in the chat instead
+        Command::Notify(text) => {
+            if let Some((id, n)) = crate::ui::Notice::parse(&text) {
                 log::info!("LAN: the server's notice {id}: {}", n.text);
                 crate::ui::push_notice(&mut app.menus.notices, n);
                 if let Some(l) = app.net.lan.as_mut() {
@@ -423,7 +324,7 @@ pub(crate) fn command(app: &mut App, from: u32, text: &str) {
         }
         // (host → us) the server's dispatch takes the duty back: free drive, as the game menu's
         // "end the duty"; the host hears `duty-off-ok` (there was one) or `duty-off-none`
-        "duty-off" if from == 1 => {
+        Command::DutyOff => {
             let had = app.session.duty.take().map(|d| format!("{} {}", d.line, d.tour));
             // (the bus's own timetable with it, as "end the duty" clears it, #1317)
             if let Some(p) = app.player.as_mut() {
@@ -437,16 +338,17 @@ pub(crate) fn command(app: &mut App, from: u32, text: &str) {
                 l.command(1, if had.is_some() { "duty-off-ok" } else { "duty-off-none" });
             }
         }
-        "admin-locked" if from == 1 => app.service_msg = Some(("Too many wrong admin passwords: try again later".into(), 4.0)),
-        "admin-ok" if from == 1 => {
+        Command::AdminLocked => app.service_msg = Some(("Too many wrong admin passwords: try again later".into(), 4.0)),
+        // (server → us) the password was right: the menu is ours
+        Command::AdminOk => {
             app.net.is_admin = true;
             app.service_msg = Some(("You administer this server now: Esc menu, Administration".into(), 6.0));
         }
-        "admin-no" if from == 1 => app.service_msg = Some(("Wrong admin password".into(), 4.0)),
+        Command::AdminNo => app.service_msg = Some(("Wrong admin password".into(), 4.0)),
         // (a game hosting by code sent a notice: the player's game showed it)
-        "notify-seen" => log::info!("LAN: player {from} saw notice {}", arg.trim()),
-        // (host by code: only the host administers its own game)
-        _ => log::info!("LAN: command '{text}' from player {from} not taken"),
+        Command::NotifySeen(id) => log::info!("LAN: player {from} saw notice {id}"),
+        // (the session's own: `lan_command`)
+        Command::Trigger(_) | Command::VoiceAsked | Command::Voice(_) => {}
     }
 }
 

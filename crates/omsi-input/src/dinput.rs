@@ -91,6 +91,8 @@ pub struct Device {
     retry_at: Option<Instant>,
     /// The slots the device has (an axis it lacks is not in the list).
     has_axis: [bool; 8],
+    /// Per slot the range the driver reports for the axis (asked for -RANGE..RANGE).
+    ranges: [(i32, i32); 8],
     /// Hardware capability, also needed by the launcher which does not create effects.
     ff_capable: bool,
     /// Offset of the axis that can receive forces in our data format.
@@ -185,14 +187,24 @@ fn invalidate_state(
     *valid = false;
 }
 
-fn state_axes(state: &RawState, valid: bool, has_axis: &[bool; 8]) -> Vec<(usize, f32)> {
+fn state_axes(state: &RawState, valid: bool, has_axis: &[bool; 8], ranges: &[(i32, i32); 8]) -> Vec<(usize, f32)> {
     if !valid {
         return Vec::new();
     }
     (0..8)
         .filter(|k| has_axis[*k])
-        .map(|k| (k, state.axes[k] as f32 / RANGE as f32))
+        .map(|k| (k, axis_value(state.axes[k], ranges[k])))
         .collect()
+}
+
+/// An axis' raw value on -1..1 from the range the driver reports for it. Asked for
+/// -RANGE..RANGE, a driver may keep a range of its own for some axes (Fanatec's pedals read
+/// 0..RANGE: released, the pedal stood at half travel and went on to full, #521).
+fn axis_value(raw: i32, (min, max): (i32, i32)) -> f32 {
+    if max <= min {
+        return (raw as f32 / RANGE as f32).clamp(-1.0, 1.0);
+    }
+    ((raw as f64 - min as f64) / (max as f64 - min as f64) * 2.0 - 1.0).clamp(-1.0, 1.0) as f32
 }
 
 impl Device {
@@ -210,7 +222,7 @@ impl Device {
 
     /// The axes the device has: (slot, value -1..1).
     pub fn axes(&self) -> Vec<(usize, f32)> {
-        state_axes(&self.state, self.valid, &self.has_axis)
+        state_axes(&self.state, self.valid, &self.has_axis, &self.ranges)
     }
 
     pub fn has_ff(&self) -> bool {
@@ -674,6 +686,14 @@ impl DirectInput {
             let started = Instant::now();
             // (a device plugged in raises several notifications: look once they settle)
             let mut pending: Option<Instant> = None;
+            // Some computers announce a device every few seconds without anything plugged in
+            // or out (a laptop's power-managed USB hub, a virtual or Bluetooth device): each
+            // notification was a full enumeration, which holds up the whole process, so the
+            // game hitched every few seconds for the whole session (#2213, #2246, #2388).
+            // An enumeration that finds just the devices of the last one makes the next
+            // one wait longer (up to half a minute); a change in the list brings the wait back.
+            let mut last_names: Option<Vec<String>> = None;
+            let mut quiet_for = Duration::from_millis(300);
             loop {
                 loop {
                     match requests.try_recv() {
@@ -712,12 +732,20 @@ impl DirectInput {
                     // enumeration of DirectInput holds up the whole process (#2213).
                     pending = Some(Instant::now() - Duration::from_secs(1));
                 }
-                if pending.is_some_and(|t| t.elapsed() > Duration::from_millis(300)) {
+                if pending.is_some_and(|t| t.elapsed() > Duration::from_millis(300) && last.elapsed() >= quiet_for) {
                     pending = None;
                     last = Instant::now();
                     let v = list(&di);
                     empty = v.is_empty();
-                    log::info!("game controllers found: {}", v.iter().map(|d| d.1.as_str()).collect::<Vec<_>>().join(", "));
+                    let names: Vec<String> = v.iter().map(|d| d.1.clone()).collect();
+                    if last_names.as_ref() == Some(&names) {
+                        quiet_for = (quiet_for * 2).clamp(Duration::from_secs(5), Duration::from_secs(30));
+                        log::debug!("game controllers unchanged: {} (the next look in {} s at the soonest)", names.join(", "), quiet_for.as_secs());
+                    } else {
+                        quiet_for = Duration::from_millis(300);
+                        log::info!("game controllers found: {}", names.join(", "));
+                    }
+                    last_names = Some(names);
                     let mut found = f2.lock().unwrap();
                     // A second enumeration must not overwrite a removal before poll consumes it.
                     let mut removed_paths = found.take().map(|r| r.removed_paths).unwrap_or_default();
@@ -921,6 +949,26 @@ impl DirectInput {
                 lMax: RANGE,
             };
             let _ = dev.SetProperty(prop(4), &mut range.diph);
+            // and axis by axis, reading back what each one took: a driver that keeps its own
+            // range for an axis is read in that range (#521)
+            let mut ranges = [(-RANGE, RANGE); 8];
+            for k in (0..8).filter(|k| has_axis[*k]) {
+                let header = DIPROPHEADER {
+                    dwSize: std::mem::size_of::<DIPROPRANGE>() as u32,
+                    dwHeaderSize: std::mem::size_of::<DIPROPHEADER>() as u32,
+                    dwObj: (k * 4) as u32,
+                    dwHow: DIPH_BYOFFSET,
+                };
+                let mut asked = DIPROPRANGE { diph: header, lMin: -RANGE, lMax: RANGE };
+                let _ = dev.SetProperty(prop(4), &mut asked.diph);
+                let mut took = DIPROPRANGE { diph: header, lMin: 0, lMax: 0 };
+                if dev.GetProperty(prop(4), &mut took.diph).is_ok() && took.lMax > took.lMin {
+                    ranges[k] = (took.lMin, took.lMax);
+                    if ranges[k] != (-RANGE, RANGE) {
+                        log::info!("{name}: axis {k} keeps the driver's range {}..{}: read in it", took.lMin, took.lMax);
+                    }
+                }
+            }
             // no dead zone and no saturation of the driver's own (DIPROP_DEADZONE 5,
             // DIPROP_SATURATION 6): some wheels' drivers set one - a PXN V99 lost 30 % of
             // its turn round the middle - and OMSI clears them as well; the settings'
@@ -1023,6 +1071,7 @@ impl DirectInput {
                 path,
                 retry_at: None,
                 has_axis,
+                ranges,
                 ff_capable,
                 ff_axis,
                 state: RawState::default(),

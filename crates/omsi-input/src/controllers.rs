@@ -238,18 +238,29 @@ const CENTRE_SNAP: f32 = 0.03;
 /// How far the X axis of a device nobody set up must leave its centre before it steers.
 const FREE_AXIS_MOVED: f32 = 0.15;
 
-/// Whether the X axis (at `x`) of a device nobody set up steers: once it has left its
-/// centre, and from then on (`moved` keeps the devices that have).
-fn free_axis_steers(moved: &mut Vec<String>, name: &str, x: f32) -> bool {
+/// Whether the X axis (at `x`) of a device nobody set up steers: once it has left where it
+/// rests (`rest`, None until known) round the centre, and from then on (`moved` keeps the
+/// devices that have). An X axis resting at an end is no steering: a pedal, or a stray axis
+/// of a macro keypad, which held the bus at full lock from the start (#868).
+fn free_axis_steers(moved: &mut Vec<String>, name: &str, x: f32, rest: Option<f32>) -> bool {
     if moved.iter().any(|n| n == name) {
         return true;
     }
-    if x.abs() < FREE_AXIS_MOVED {
+    let Some(rest) = rest.filter(|r| r.abs() < crate::auto_setup::PEDAL_REST) else {
+        return false;
+    };
+    if x.abs() < FREE_AXIS_MOVED || (x - rest).abs() < FREE_AXIS_MOVED {
         return false;
     }
     log::info!("game controller {name}: its X axis moved, it steers now");
     moved.push(name.to_string());
     true
+}
+
+/// The X axis of a device nobody set up as it steers: from where it rests (`rest`). One
+/// resting off its centre held the bus that far off straight ahead (#868).
+fn free_axis_from_rest(x: f32, rest: Option<f32>) -> f32 {
+    (x - rest.unwrap_or(0.0)).clamp(-1.0, 1.0)
 }
 
 /// Whether a pad's left stick at `x` steers, given what steers already (`current`) and whether
@@ -1413,14 +1424,17 @@ impl Controllers {
                         self.notice = Some(format!("{} is not set up: it steers; set up its pedals and buttons in the launcher (Controls → Game controllers)", c.name));
                     }
                     if let Some((_, v)) = c.axes.iter().find(|(k, _)| *k == 0) {
-                        if !free_axis_steers(&mut self.moved, &c.name, *v) {
+                        let rest = self.rests.of(&c.name).and_then(|r| r.iter().find(|(k, _)| *k == 0).map(|(_, v)| *v));
+                        if !free_axis_steers(&mut self.moved, &c.name, *v, rest) {
                             continue;
                         }
                         // (a joystick's centre is slack, so it gets a little dead zone; a
                         // force-feedback wheel's is not: 2 % of it held a 1080° wheel's
                         // picture 11° behind the rim, #866)
                         let dz_free = if c.ff_capable { dz } else { dz.max(0.02) };
-                        let (steering, position) = wheel_steering(*v, false, 0, dz_free, self.steer_gain);
+                        // (the forces keep the axis' place itself)
+                        let (steering, _) = wheel_steering(free_axis_from_rest(*v, rest), false, 0, dz_free, self.steer_gain);
+                        let position = v.clamp(-1.0, 1.0);
                         out.steering.get_or_insert(steering);
                         if takes_feedback(&steer, c.ff) {
                             steer = Some((c.name.clone(), position, c.ff));
@@ -1751,9 +1765,9 @@ fn wheel_force(f: &FfInput, x: f32, x0: f32, t: &mut f32, k_springs: f32, k_effe
     // a smooth extra torque, tapered away at larger angles. It crosses zero
     // continuously so there is no fixed kick when the wheel passes the centre.
     let centre_return = 0.025 * x / (x * x + 0.004 * 0.004).sqrt() / (1.0 + (x / 0.12).powi(4));
-    // A physical wheel needs a middle even when parked: half the centring is there at a
-    // standstill, the rest builds up as the bus rolls.
-    let spring = -(spring_strength * x / (0.5 + 1.15 * x.abs()) + centre_return) * (0.5 + 0.5 * rolling);
+    // The tyre cannot self-align the steering while the bus is stationary. Preserve
+    // parking drag against wheel movement, and bring the spring back as it rolls.
+    let spring = -(spring_strength * x / (0.5 + 1.15 * x.abs()) + centre_return) * rolling;
     let road_align = -(f.lateral_accel / 9.81).clamp(-0.45, 0.45) * 0.25 * (v / 5.0).clamp(0.0, 1.0) * rolling;
     // Assisted steering should not demand ever more hand force near full lock.
     let lock_assist = 1.0 / (1.0 + 0.55 * x * x);
@@ -1832,6 +1846,9 @@ pub fn di_slots(axes: &[(u32, f32)]) -> Vec<(usize, f32)> {
     let mut out: Vec<(usize, f32)> = Vec::new();
     let mut rest = Vec::new();
     for (c, v) in sorted {
+        if cfg!(target_os = "linux") && !controller_abs(c) {
+            continue;
+        }
         // (a second slider of the same usage is DirectInput's slider 1)
         let k = known(c).map(|k| if used[k] && k == 6 && !used[7] && cfg!(target_os = "macos") && c == 0x10036 { 7 } else { k });
         match k.filter(|k| !used[*k]) {
@@ -1849,6 +1866,16 @@ pub fn di_slots(axes: &[(u32, f32)]) -> Vec<(usize, f32)> {
         }
     }
     out
+}
+
+/// Linux: whether an evdev ABS code is a controller's axis. A hat (ABS_HAT0X..3Y) is read
+/// as its buttons; a keyboard's or a macro keypad's volume knob (ABS_VOLUME, ABS_PROFILE),
+/// a tablet's pressure, distance and tilt and the touch codes are no axes at all - taking
+/// the first free slot, X, the stray axis of a macro keypad steered the bus (#868).
+/// ABS_MISC and the codes after it are kept: Linux puts a device's vendor-defined analog
+/// axes there.
+fn controller_abs(code: u32) -> bool {
+    matches!(code & 0xFFFF, 0x00..=0x0F | 0x28..=0x2E)
 }
 
 /// OMSI stores DirectInput's product name; the system's may differ in spacing and case.
@@ -2225,6 +2252,23 @@ mod slot_tests {
         }
     }
 
+    /// Linux: a macro keypad's volume knob, a tablet's or a touch code or a hat takes no slot - the stray axis
+    /// was X and steered the bus (#868). ABS_WHEEL still takes a free one.
+    #[test]
+    fn no_controller_axis_takes_no_slot_on_linux() {
+        assert!(controller_abs(0x3_0000) && controller_abs(0x3_0008) && controller_abs(0x3_000A));
+        // (ABS_MISC and on: a device's vendor-defined axes)
+        assert!(controller_abs(0x3_0028) && controller_abs(0x3_002E));
+        for code in [0x3_0010, 0x3_0017, 0x3_0018, 0x3_001C, 0x3_0020, 0x3_0021, 0x3_002F, 0x3_0035] {
+            assert!(!controller_abs(code), "{code:#x}");
+        }
+        if cfg!(target_os = "linux") {
+            assert!(di_slots(&[(0x3_0021, -1.0), (0x3_0020, 0.3), (0x3_0010, 1.0)]).is_empty());
+            assert_eq!(di_slots(&[(0x3_0008, 0.2), (0x3_0020, -1.0)]), [(0, 0.2)]);
+            assert_eq!(di_slots(&[(0x3_0028, 0.5)]), [(0, 0.5)]);
+        }
+    }
+
     #[test]
     fn two_devices_merge_by_the_larger_movement() {
         let mut s = None;
@@ -2404,7 +2448,7 @@ mod button_tests {
     }
 
     #[test]
-    fn a_parked_wheel_has_a_gentle_middle() {
+    fn a_parked_wheel_has_no_self_centering_force() {
         let mut t = 0.0;
         for kmh in [-0.5, -0.1, 0.0, 0.1, 0.5] {
             // Residual lateral acceleration from the body's suspension is no force when parked.
@@ -2413,7 +2457,7 @@ mod button_tests {
             for x in [0.2, 0.5, 1.0] {
                 let right = super::wheel_force(&f, x, x, &mut t, 1.0, 0.0);
                 let left = super::wheel_force(&f, -x, -x, &mut t, 1.0, 0.0);
-                assert!(right < -0.02 && right > -0.2, "kmh={kmh}, steering={x}: {right}");
+                assert_eq!(right, 0.0, "kmh={kmh}, steering={x}: {right}");
                 assert_eq!(right, -left, "kmh={kmh}, steering={x}");
             }
         }
@@ -2426,7 +2470,7 @@ mod button_tests {
         for x in [-0.5, 0.5] {
             let right = super::wheel_force(&f, x, x - 0.01, &mut t, 1.0, 0.0);
             let left = super::wheel_force(&f, x, x + 0.01, &mut t, 1.0, 0.0);
-            // (the parked centring adds the same pull to both)
+            // The drag opposes wheel motion in either direction.
             assert!(right < left, "{right} {left}");
         }
     }

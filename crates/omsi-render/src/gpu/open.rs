@@ -2,6 +2,9 @@
 
 use crate::*;
 
+/// The chosen MSAA is being tried again after a remembered fallback (see `build_with_fallbacks`).
+static MSAA_RETRY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 impl Renderer {
     /// Create a renderer with the default options. `surface` is used to pick a compatible
     /// adapter and format.
@@ -80,7 +83,7 @@ impl Renderer {
         let vram = adapter_vram_mb(&adapter, &info, mem.as_ref());
         let guess_mb = gpu_memory::texture_allowance_mb(&info, vram, mem.as_ref());
         ADAPTER_TEXTURE_MB.store(guess_mb, std::sync::atomic::Ordering::Relaxed);
-        let discrete_vram = vram.filter(|_| info.device_type == wgpu::DeviceType::DiscreteGpu).unwrap_or(0);
+        let discrete_vram = gpu_memory::own_card_vram_mb(&info, vram);
         ADAPTER_VRAM_MB.store(discrete_vram, std::sync::atomic::Ordering::Relaxed);
         *ADAPTER_INFO.lock().unwrap_or_else(|e| e.into_inner()) = Some(info.clone());
         log::info!("graphics adapter: {} ({:?}, {:?}{}), texture memory taken for it: {guess_mb} MB", info.name, info.device_type, info.backend, vram.map(|v| format!(", {v} MB of its own")).unwrap_or_default());
@@ -343,7 +346,12 @@ impl Opened {
     /// lost meanwhile, see below).
     pub async fn finish(self) -> Result<Renderer> {
         let Opened { adapter, info, device, queue, format, options, asked_options, mesh_pages, name } = self;
-        let made = Renderer::build_with_fallbacks(&device, &queue, &info, &name, format, options, mesh_pages).await;
+        let mut made = Renderer::build_with_fallbacks(&device, &queue, &info, &name, format, options, mesh_pages).await;
+        // (its own adapter, asked what the game holds on it: with several renderers in one
+        // process a shared one asked another's)
+        if let Ok(r) = made.as_mut() {
+            r.adapter = Some(adapter.clone());
+        }
         // A driver whose shader compiler fails on a pipeline answers "out of memory" or an
         // unknown error, and wgpu takes that as the device lost: on phones (Adreno, Mali)
         // one of 0.2's new pipelines did so, the renderer was made all the same and every
@@ -360,6 +368,13 @@ impl Opened {
         if let Some(why) = made.as_ref().ok().and_then(|r| r.device_lost()) {
             drop(made);
             pipeline_cache::close(&device);
+            // (lost while the chosen MSAA was tried again: what worked before is written down
+            // for this version already, and the device opened again keeps to it - not to the
+            // basic pipelines at 1x, which it never needed)
+            if MSAA_RETRY.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                log::warn!("{}: the graphics device was lost while the chosen MSAA was tried again ({why}); keeping to what worked before", info.name);
+                return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
+            }
             if basic_pipelines() {
                 return Err(anyhow!("the graphics device was lost while the pipelines were made: {why}"));
             }
@@ -370,6 +385,8 @@ impl Opened {
             // (the format chosen for the window before: the same the surface would give)
             return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
         }
+        // (the retry is over; a device lost later in the run takes the usual way)
+        MSAA_RETRY.store(false, std::sync::atomic::Ordering::Relaxed);
         match &made {
             Ok(_) => pipeline_cache::save(),
             Err(_) => pipeline_cache::close(&device),
@@ -402,6 +419,18 @@ impl Renderer {
             // took the snowfall off DirectX 12 for ever; a phone keeps to what worked, its
             // second build took long enough for Android to close the app, #1708)
             Some((m, true, false)) if !cfg!(any(target_os = "android", target_os = "ios")) => vec![(m.min(options.msaa).max(1), false), (m.min(options.msaa).max(1), true), (1, true)],
+            // (and the multisampling chosen: one failure of it - a driver of the time, a
+            // device lost while building - kept a computer at 1x MSAA for good, whatever the
+            // options said, #2597)
+            // What worked is written down with this version first, so that the retry is made
+            // once per version whatever comes of it: failed, it is not made again at every
+            // start; crashing the driver or losing the device, the next start keeps to what
+            // worked (see the device-lost path in `new_on`).
+            Some((m, b, false)) if !cfg!(any(target_os = "android", target_os = "ios")) && m < options.msaa => {
+                fallback_store(name, Some((m, b)));
+                MSAA_RETRY.store(true, std::sync::atomic::Ordering::Relaxed);
+                vec![(options.msaa, b), (m.max(1), b), (1, true)]
+            }
             Some((m, b, _)) => vec![(m.min(options.msaa).max(1), b), (1, true)],
             // (a phone starts with the basic set: the full one failed on Adreno and the
             // second build after it took long enough for Android to close the app)
@@ -426,18 +455,18 @@ impl Renderer {
                 let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
                 let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
                 let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
-                let renderer = Self::build(device.clone(), queue.clone(), name.to_string(), format, RenderOptions { msaa, ..options });
+                let (renderer, caught) = pipelines::parallel::catching(|| Self::build(device.clone(), queue.clone(), name.to_string(), format, RenderOptions { msaa, ..options }));
                 // (test hook: OMSI_FAKE_GPU_ERROR=pipeline fails a pipeline until the basic ones)
                 #[cfg(feature = "test-hooks")]
                 if !basic && omsi_cfg::flags::OMSI_FAKE_GPU_ERROR.var() == Some("pipeline") {
                     let _ = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("test"), source: wgpu::ShaderSource::Wgsl("fn broken( {".into()) });
                 }
-                (renderer, [validation.pop(), memory.pop(), internal.pop()])
+                (renderer, [validation.pop(), memory.pop(), internal.pop()], caught)
             };
-            let (renderer, scopes) = if is_angle(info) { angle::compile(device, build) } else { build() };
+            let (renderer, scopes, caught) = if is_angle(info) { angle::compile(device, build) } else { build() };
             let [validation, memory, internal] = scopes;
             let errors = [validation.await, memory.await, internal.await];
-            match errors.iter().flatten().next() {
+            match errors.iter().flatten().chain(&caught).next() {
                 None => {
                     if msaa != options.msaa || basic {
                         log::warn!("{}: drawing with {}x MSAA{}", info.name, msaa, if basic { ", without the snowfall, the lamps in the fog and the street lamps' shadows" } else { "" });
@@ -491,7 +520,7 @@ impl Renderer {
         let gl = GL_BACKEND.load(std::sync::atomic::Ordering::Relaxed);
         let ssao = ssao::ssao(&device, gl);
         let fog_lamps = ssao::fog_lamps(&device, &scene.camera_layout, hdr_format, gl);
-        let prepass = scene::prepass(&device, &scene, msaa);
+        let prepass = scene::prepass(&device, &scene, msaa, !leave_out_enhanced);
         let mip = mip::build(&device);
         let post = post::build(&device, format, hdr_format, &defaults.white_texture);
         let enhanced = enhanced::build(&device, &queue, hdr_format, &defaults.camera_buf, &sky, !leave_out_enhanced);
@@ -568,6 +597,7 @@ impl Renderer {
                 adapt_bg: post.adapt_bg,
                 adapt_front: 0,
                 exposure_log: ExposureLog::new(&device),
+                lamp_sight: LampSight::new(&device, leave_out_enhanced),
                 enh_buf: enhanced.enh_buf,
                 lin_sampler: enhanced.lin_sampler,
                 probe: enhanced.probe,
@@ -614,6 +644,8 @@ impl Renderer {
             puddles,
             texture_aspect: None,
             last_frame: None,
+            adapter: None,
+            gpu_memory_seen: Default::default(),
             instant_exposure: false,
             depth_readback: false,
             overlay_pipeline_1x,

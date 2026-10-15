@@ -21,6 +21,7 @@ pub mod clouds;
 mod cookies;
 pub use cookies::{Cookie, COOKIE_LAYERS};
 mod gpu_memory;
+pub use gpu_memory::GpuMemory;
 mod passes;
 mod device_selection;
 use passes::{Encoders, FrameArgs, FrameEnv, PassTimers, StageClock};
@@ -123,7 +124,7 @@ pub struct Renderer {
     /// Plain opaque, alpha-tested, and the opaque portions of blended transmap materials;
     /// each has a two-sided and a culled variant.
     prepass_pipelines: [wgpu::RenderPipeline; 6],
-    /// The same, multisampled, drawn inside the enhanced main pass (colour writes off):
+    /// The same, at the main pass's sample count (colour writes off):
     /// its own depth laid first (see `encode_prefill`), so that its costly shading runs
     /// once per visible surface.
     prepass_msaa_pipelines: Option<[wgpu::RenderPipeline; 6]>,
@@ -138,6 +139,10 @@ pub struct Renderer {
     /// `render_to_texture`), whatever the texture's own shape.
     texture_aspect: Option<f32>,
     last_frame: Option<std::time::Instant>,
+    /// The adapter the device was opened on, and what its driver last said the game holds
+    /// on the card (see `gpu_memory`).
+    adapter: Option<wgpu::Adapter>,
+    gpu_memory_seen: std::cell::RefCell<gpu_memory::Seen>,
     /// The next frame stands alone (an offscreen picture): the exposure is there at once.
     pub instant_exposure: bool,
     /// The next picture keeps its depth to be read back (`render_to_image_with_depth`): the

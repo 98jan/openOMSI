@@ -260,7 +260,7 @@ pub(super) fn select_options(key: &str) -> Vec<(&'static str, &'static str)> {
         "mirror_size" => vec![("0", "Off"), ("128", "Low (128)"), ("256", "Normal (256)"), ("512", "High (512)"), ("1024", "Very high (1024)")],
         "mirror_refresh" => vec![("off", "None (frozen picture)"), ("eco", "Economical"), ("full", "Full"), ("every", "Every frame (smoothest)")],
         "mirror_quality" => vec![("standard", "Standard"), ("enhanced", "As the picture (Enhanced)")],
-        "texture_memory" => vec![("0", "Automatic"), ("500", "500 MB"), ("1000", "1 GB"), ("1500", "1.5 GB"), ("2000", "2 GB"), ("3000", "3 GB"), ("4000", "4 GB"), ("6000", "6 GB")],
+        "video_memory" => vec![("0", "Automatic"), ("1000", "1 GB"), ("1500", "1.5 GB"), ("2000", "2 GB"), ("3000", "3 GB"), ("4000", "4 GB"), ("6000", "6 GB"), ("8000", "8 GB"), ("12000", "12 GB")],
         "drive_keys" => vec![("omsi", "Custom controls (Controls page)"), ("simple", "W A S D + arrows"), ("wasd", "W A S D only"), ("arrows", "Arrow keys only")],
         "resolution" => vec![("auto", "Automatic"), ("1280x720", "1280 x 720"), ("1280x800", "1280 x 800 (Steam Deck)"), ("1366x768", "1366 x 768"), ("1600x900", "1600 x 900"), ("1920x1080", "1920 x 1080"), ("1920x1200", "1920 x 1200"), ("2560x1440", "2560 x 1440"), ("3840x2160", "3840 x 2160")],
         "navigator_corner" => vec![("top-left", "Top left"), ("top-right", "Top right"), ("bottom-left", "Bottom left"), ("bottom-right", "Bottom right")],
@@ -330,11 +330,45 @@ pub(super) fn store_with(app: &mut App, change: impl FnOnce(&mut serde_json::Val
 pub(super) fn reload_settings(app: &mut App) {
     flush_settings(true);
     // (the seat is the bus's, see `bus_seats`: it is read again for the bus)
-    app.settings = crate::settings::Settings::load();
+    app.settings = settings_in_mode(session_mode(app));
     app.session.seat_bus.clear();
     crate::ui_language(&app.settings.language);
     crate::units::Units::from_setting(&app.settings.units).set();
     sync_live(app);
+}
+
+pub(super) fn session_mode(app: &App) -> &'static str {
+    mode_of_session(&app.args.session_settings, &app.settings.graphics)
+}
+
+pub(super) fn mode_of_session(session: &crate::startup::SessionSettings, graphics: &str) -> &'static str {
+    let traced = crate::settings::graphics_mode(graphics) == "enhanced_plus";
+    if session.enhanced_plus || (session.enhanced && traced) {
+        "enhanced_plus"
+    } else if session.enhanced {
+        "enhanced"
+    } else if session.classic {
+        "vanilla"
+    } else {
+        "vanilla_plus"
+    }
+}
+
+fn settings_in_mode(mode: &str) -> crate::settings::Settings {
+    let s = crate::settings::Settings::load();
+    if s.graphics == mode {
+        return s;
+    }
+    let text = crate::settings::Settings::path().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_default();
+    let mut s = text_in_mode(&text, mode);
+    if let Some(n) = omsi_cfg::flags::OMSI_SAFE_GPU.parse::<u32>().filter(|n| *n > 0) {
+        s.apply_safe_gpu(n);
+    }
+    s
+}
+
+pub(super) fn text_in_mode(text: &str, mode: &str) -> crate::settings::Settings {
+    crate::settings::Settings::from_text(&format!("{text}\ngraphics={mode}\n"))
 }
 
 pub(super) fn sync_live(app: &mut App) {

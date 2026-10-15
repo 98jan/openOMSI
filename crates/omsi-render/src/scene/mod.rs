@@ -4,6 +4,7 @@
 use crate::*;
 
 mod instances;
+pub(crate) mod overlay;
 mod upload;
 
 #[derive(Clone, Copy, Default)]
@@ -166,6 +167,9 @@ pub struct Instance {
     /// `[matl_alpha] 2` listed before its interior hides the interior as in the original,
     /// instead of showing it through the paint's alpha).
     pub ordered: bool,
+    /// The draw order's depth step of each material slot (see `draw_order_level`): above 0
+    /// only for a slot lying on an earlier surface of the same object (`overlay`).
+    pub(crate) slot_levels: Vec<u8>,
 }
 
 pub struct Scene {
@@ -224,6 +228,8 @@ pub struct Scene {
     /// are appended to the buffers instead of rebuilding them, as long as they fit.
     pub(crate) uploaded_instances: usize,
     pub(crate) next_instance_order: u64,
+    /// The object whose meshes are being added, for `Instance::slot_levels`.
+    pub(crate) object_run: overlay::ObjectRun,
     pub(crate) uploaded_entries: u32,
     /// Instances whose transform or parameters changed since the last `prepare`: only
     /// their entries are rewritten. Rebuilding the whole per-draw buffer for 17 000 objects
@@ -335,7 +341,7 @@ impl Scene {
 
     /// Bytes the meshes' pages take on the GPU, each page once, whatever share of it is in use.
     pub fn mesh_page_bytes(&self) -> u64 {
-        let shared: u64 = self.mesh_pages.iter().map(|p| p.vertex.size() + p.index.size()).sum();
+        let shared: u64 = self.mesh_pages.iter().map(|p| p.vertex_cap + p.index_cap).sum();
         // (a set: without base vertices every mesh has buffers of its own, thousands of them)
         let mut own: std::collections::HashSet<&wgpu::Buffer> = std::collections::HashSet::new();
         for m in self.meshes.iter().filter(|m| m.page == u32::MAX && !m.ranges.is_empty()) {

@@ -460,6 +460,7 @@ pub fn read_tile(path: &Path, chrono_dirs: &[PathBuf]) -> Option<Tile> {
             return None;
         }
     };
+    chain_linked_splines(&mut tile);
     if let Some(name) = path.file_name() {
         for c in chrono_dirs {
             let p = omsi_cfg::resolve_path(c, &name.to_string_lossy());
@@ -467,7 +468,9 @@ pub fn read_tile(path: &Path, chrono_dirs: &[PathBuf]) -> Option<Tile> {
                 continue;
             }
             match Tile::load(&p) {
-                Ok(patch) => {
+                Ok(mut patch) => {
+                    // (a chrono patch of an old map links its splines as the tile does)
+                    chain_linked_splines(&mut patch);
                     // (a chrono event that reshapes the ground - a cutting, a tunnel's
                     // portal, a lake let down for a new road - saves the tile's terrain and
                     // water with its patch: read from the map's own files, the old ground
@@ -494,6 +497,28 @@ pub fn read_tile(path: &Path, chrono_dirs: &[PathBuf]) -> Option<Tile> {
         }
     }
     Some(tile)
+}
+
+/// Where the linked splines of a tile older than version 11 lie. Such a tile links a spline
+/// to the one written before it (`[spline]`'s fourth line: 0, or -1 for none) and leaves its
+/// place out: x, height, y and heading are all 0, and the spline goes on from the end of the
+/// one before, at its height and in its direction. Read where they are written, every linked
+/// spline of a map from OMSI 1 lay in the south-west corner of its tile, heading north -
+/// Great Grundorf 2 is built that way (3326 of its 4558 splines), and most of its roads were
+/// missing from the map and from the navigator. Newer tiles name both neighbours and keep
+/// every spline's own place.
+fn chain_linked_splines(tile: &mut Tile) {
+    for i in 1..tile.splines.len() {
+        let (before, after) = tile.splines.split_at_mut(i);
+        let (prev, s) = (&before[i - 1], &mut after[0]);
+        if !s.linked {
+            continue;
+        }
+        let c = SplineCurve::from_map(prev, DVec2::ZERO);
+        let end = c.end_point();
+        s.pos = [end.x, end.y, end.z];
+        s.heading = c.heading_at(c.length).rem_euclid(360.0);
+    }
 }
 
 /// The `.terrain` file of a tile read by [`read_tile`] from `path`: an active chrono
@@ -812,6 +837,34 @@ mod tests {
         let chain = if version >= 11 { format!("0\n0\n{offset}\n") } else { String::new() };
         let turn = if version >= 12 { "0\n0\n0\n10\n0\n0\n" } else { "0\n10\n0\n" };
         format!("[version]\n{version}\n\n[spline]\n0\nsynthetic.sli\n10\n{links}0\n0\n0\n0\n50\n0\n0\n0\n0\n0\n{chain}\n[splineAttachement]\n0\nsynthetic-stop.sco\n{stop}\n{spline_index}\n0\n0\n{distance}\n{turn}0\n")
+    }
+
+    /// Great Grundorf 2 (tile version 10): a linked spline is written at x, height, y and
+    /// heading 0 and goes on from the end of the spline before it - a 40 m right-hand curve
+    /// of radius 300 here, climbing at 2 %, whose IDCode is 0; one written with -1 keeps its
+    /// own place.
+    #[test]
+    fn old_linked_splines_go_on_from_the_one_before() {
+        let text = "[version]\n10\n\n\
+[spline]\n0\nSplines\\road.sli\n0\n-1\n180\n5\n170\n10\n40\n300\n2\n2\n0\n0\n\n\
+[spline]\n0\nSplines\\road.sli\n2\n0\n0\n0\n0\n0\n50\n50\n0\n8\n0\n0\n\n\
+[spline]\n0\nSplines\\road.sli\n3\n-1\n0\n0\n0\n0\n20\n0\n0\n0\n0\n0\n";
+        let mut tile = Tile::parse(&omsi_cfg::CfgFile::from_str("tile_0_0.map", text));
+        chain_linked_splines(&mut tile);
+        let first = SplineCurve::from_map(&tile.splines[0], DVec2::ZERO);
+        let (end, heading) = (first.end_point(), first.heading_at(40.0));
+        let b = &tile.splines[1];
+        assert!((DVec3::from_array(b.pos) - end).length() < 1e-9, "{:?} vs {end:?}", b.pos);
+        assert!((b.heading - heading).abs() < 1e-9 && (heading - (10.0 + (40.0f64 / 300.0).to_degrees())).abs() < 1e-9);
+        assert!((b.pos[2] - 5.8).abs() < 1e-9, "the height at the end of a 2 % climb of 40 m");
+        // (unlinked: its own place, even the corner)
+        assert_eq!((tile.splines[2].pos, tile.splines[2].heading), ([0.0; 3], 0.0));
+        // a version 11 tile names the neighbours and keeps every place as written
+        let newer = text.replace("[version]\n10", "[version]\n11");
+        let mut tile = Tile::parse(&omsi_cfg::CfgFile::from_str("tile_0_0.map", &newer));
+        let before = tile.splines.iter().map(|s| s.pos).collect::<Vec<_>>();
+        chain_linked_splines(&mut tile);
+        assert_eq!(tile.splines.iter().map(|s| s.pos).collect::<Vec<_>>(), before);
     }
 
     #[test]

@@ -61,6 +61,14 @@ pub struct TrailerPart {
     pub(super) coupling_back: Vec3,
     pub(super) axle_long: f32,
     pub(super) axle_count: usize,
+    /// The curvature (1/m, positive to the right) the part's turning line runs on: Omsi.exe's
+    /// inverse turning radius of a coupled section, worked out of the part in front's and
+    /// the joint angle (see [`coupled_curvature`]), which steers each of its axles (see
+    /// `axle_steer`).
+    pub(super) kappa: f32,
+    /// The part in front's curvature (1/m) and where its turning line lies along it (m, in
+    /// its frame), set by the vehicle before each step (`VehicleInstance::turning`).
+    pub(super) lead_turn: (f32, f32),
     /// First axle index of this part in the train's `Wheel_*` variables.
     pub(super) first_axle: usize,
     pub(super) wheel_radius: f32,
@@ -120,6 +128,8 @@ pub(super) struct AxleVarIds {
     pub(super) rotation_speed: Vec<[Option<omsi_script::VarId>; 2]>,
     /// `Axle_Suspension_<n>_L/R`.
     pub(super) suspension: Vec<[Option<omsi_script::VarId>; 2]>,
+    /// `Axle_Steering_<n>_L/R`.
+    pub(super) steering: Vec<[Option<omsi_script::VarId>; 2]>,
     /// `Axle_Springfactor_<n>_L`.
     pub(super) spring_factor: Vec<Option<omsi_script::VarId>>,
 }
@@ -138,9 +148,25 @@ impl AxleVarIds {
         self.rotation = n.clone().map(|k| sides(&|side| p.var(&format!("Wheel_Rotation_{k}_{side}")))).collect();
         self.rotation_speed = n.clone().map(|k| sides(&|side| p.var(&format!("Wheel_RotationSpeed_{k}_{side}")))).collect();
         self.suspension = n.clone().map(|k| sides(&|side| p.var(&format!("Axle_Suspension_{k}_{side}")))).collect();
+        self.steering = n.clone().map(|k| sides(&|side| p.var(&format!("Axle_Steering_{k}_{side}")))).collect();
         self.spring_factor = n.map(|k| main.var_slot(&format!("Axle_Springfactor_{k}_L")).map(|i| i as omsi_script::VarId)).collect();
         self.made_for = Some(key);
     }
+}
+
+/// The curvature (1/m, positive to the right) a coupled part's turning line runs on, as
+/// Omsi.exe 0x7e0f44-0x7e0fc0 works out the section's inverse turning radius: the joint
+/// moves at atan(`lead_arm` x `k_lead`) to the part in front's heading (`lead_arm`: how far
+/// the joint lies ahead of that part's turning line), so at that plus the joint angle
+/// `alpha` (rad, the part in front turned to the right of this one) to this part's, and
+/// the tangent of that over `arm` (how far the joint lies ahead of this part's turning line)
+/// is the curvature that has it move so. A joint on the turning line turns nothing.
+pub(super) fn coupled_curvature(k_lead: f32, lead_arm: f32, alpha: f32, arm: f32) -> f32 {
+    if arm.abs() < 0.1 || !(k_lead.is_finite() && alpha.is_finite()) {
+        return 0.0;
+    }
+    let at_joint = ((lead_arm * k_lead).atan() + alpha).clamp(-1.4, 1.4);
+    (at_joint.tan() / arm).clamp(-1.0, 1.0)
 }
 
 /// The weight (N) a road part on a single axle hangs on the coupling in front of it, the
@@ -216,14 +242,20 @@ impl TrailerPart {
         let axle_long = if let Some(r) = turning_line {
             r
         } else if let Some(b) = ty.def.boogies {
-            // Rail vehicle with [boogies]: turning pivot is at the rear bogie (-b.abs() * 0.5)
-            // clamped so it doesn't fall behind the rear coupling
-            let rear_bogie = -b.abs() * 0.5;
-            rear_bogie.max(coupling_back.y)
+            // a rail car's rear bogie: `[boogies]` is how far each bogie stands from the
+            // origin (see `rail_ends`), at the model's back - its front where it is turned
+            // round. (Half as far out, and kept from going past the coupling of the car in
+            // front instead of its own, the bogie of a car turned round lay ahead of its
+            // front coupling.)
+            if body_reversed(&ty.def, reversed) {
+                b.abs()
+            } else {
+                -b.abs()
+            }
         } else if ty.def.is_rail() {
-            // Rail vehicle without [boogies] (e.g. hanging bridge section):
-            // pivot is at rear coupling
-            coupling_back.y
+            // Rail vehicle without [boogies] (e.g. hanging bridge section): pivot is at
+            // its own rear coupling (`coupling_back` is the one of the part in front)
+            declared_coupling(&ty.def, reversed).y
         } else if body_reversed(&ty.def, reversed) {
             let a = ty.def.axles.iter().map(|a| a.long).fold(f32::MIN, f32::max);
             if a == f32::MIN {
@@ -242,7 +274,7 @@ impl TrailerPart {
         let length = if ty.def.is_rail() {
             let len = (coupling_front.y - axle_long).abs();
             if len < 0.1 {
-                (coupling_front.y - coupling_back.y).abs().max(0.5)
+                (coupling_front.y - declared_coupling(&ty.def, reversed).y).abs().max(0.5)
             } else {
                 len
             }
@@ -309,6 +341,8 @@ impl TrailerPart {
             coupling_back,
             axle_long,
             axle_count: ty.def.axles.len().max(1),
+            kappa: 0.0,
+            lead_turn: (0.0, 0.0),
             first_axle,
             wheel_radius,
             odometer: 0.0,
@@ -421,6 +455,8 @@ impl TrailerPart {
         let h = heading.to_radians();
         self.pivot = Some(c - DVec3::new(h.sin(), h.cos(), 0.0) * self.length as f64);
         self.position = position;
+        // (its wheels straight again: the bend it was in is no longer known)
+        self.kappa = 0.0;
     }
 
     /// `set_pose` for a part another game drives (LAN), which sends where the part is and
@@ -441,6 +477,7 @@ impl TrailerPart {
         self.pivot = None;
         self.axle_z = None;
         self.track = None;
+        self.kappa = 0.0;
     }
 
     /// Where this part couples to the part in front of it, in the world, with the leading
@@ -467,6 +504,92 @@ impl TrailerPart {
     pub fn place_on_track(&mut self, p: DVec3) {
         self.pivot = Some(p);
         self.track = Some(p);
+    }
+
+    /// Its springs: an AI copy sits `[ai_deltaheight]` low like its tractor; a driven one
+    /// as far down as the scripts' `Axle_Springfactor` lets the load press it. Writes each
+    /// axle's `Axle_Suspension_*` and returns how far the part's origin stands above the
+    /// ground under its axles (m).
+    fn rest_springs(&self, main: &mut VehicleInstance) -> f64 {
+        let ai = main.ev(Ev::Ai).map(|v| v > 0.5).unwrap_or(false);
+        let shows = !self.ty.suspension_axles.is_empty();
+        let mut sag = Vec::with_capacity(self.rest.len());
+        for (a, (offset, load, k)) in self.rest.iter().enumerate() {
+            let axle = self.first_axle + a;
+            let compression = if ai {
+                if shows {
+                    -self.ty.def.ai_delta_height
+                } else {
+                    0.0
+                }
+            } else if self.ty.suspension_axles.contains(&axle) {
+                let factor = self.axle_ids.spring_factor[a]
+                    .map(|i| main.state.vars[i as usize])
+                    .unwrap_or(1.0)
+                    .max(0.05);
+                (load / (k * factor)).min(crate::rigid::BUMP)
+            } else {
+                0.0
+            };
+            for id in self.axle_ids.suspension[a].into_iter().flatten() {
+                main.state.vars[id as usize] = -compression;
+            }
+            sag.push(offset - compression);
+        }
+        sag.iter().sum::<f32>() as f64 / sag.len().max(1) as f64
+    }
+
+    /// Where the part runs on the track, in the frame of its travel (m forward of its
+    /// origin): its two bogies (`[boogies]` is how far each stands from the origin - the
+    /// A3's axles at ±2.835 and ±4.735 m are its 3.785), else its first and last axle, else
+    /// its front coupling and the point it was towed by behind it.
+    pub(super) fn rail_ends(&self) -> (f32, f32) {
+        if let Some(b) = self.ty.def.boogies.map(f32::abs).filter(|b| *b > 0.05) {
+            return (b, -b);
+        }
+        let turn = if body_reversed(&self.ty.def, self.reversed) { -1.0 } else { 1.0 };
+        let longs = self.ty.def.axles.iter().map(|a| a.long * turn);
+        let (lo, hi) = longs.fold((f32::MAX, f32::MIN), |(lo, hi), y| (lo.min(y), hi.max(y)));
+        if hi - lo > 0.5 {
+            return (hi, lo);
+        }
+        let front = self.coupling_front.y * turn;
+        (front, front - self.length.max(0.5))
+    }
+
+    /// Stand the part on the track (`VehicleInstance::retrail`): `front` and `back` are the
+    /// track's points under its running ends (`rail_ends`, `y_front` and `y_back` metres
+    /// forward of its origin). It takes the track's heading and grade between them, at
+    /// the track's height, as the vehicle it is coupled to does (`AiBody::ride`).
+    pub(super) fn place_on_rails(
+        &mut self,
+        main: &mut VehicleInstance,
+        dt: f32,
+        lead: Option<(DVec3, Mat4, f64)>,
+        (front, y_front): (DVec3, f32),
+        (back, y_back): (DVec3, f32),
+    ) {
+        self.axle_ids.refresh(main, self.first_axle, self.axle_count.max(self.rest.len()));
+        let d = front - back;
+        let run = d.truncate().length();
+        if run > 1e-3 {
+            self.heading = d.x.atan2(d.y).to_degrees().rem_euclid(360.0);
+            self.pitch = ((d.z / run).atan().to_degrees() as f32).clamp(-30.0, 30.0);
+        }
+        let span = (y_front - y_back).max(0.1) as f64;
+        self.position = back + d * ((0.0 - y_back) as f64 / span);
+        self.bank = main.bank;
+        // (its wheels roll as far as its rear end moved)
+        if let Some(p) = self.pivot {
+            let ds = (back - p).truncate().length() as f32;
+            self.odometer += ds * (main.physics.velocity_kmh().signum().max(0.0) * 2.0 - 1.0).max(-1.0);
+        }
+        self.pivot = Some(back);
+        self.track = Some(back);
+        self.axle_z = Some(back.z);
+        self.axle_vz = 0.0;
+        self.ground_lift = self.rest_springs(main) as f32;
+        self.update_visuals_only(main, dt, lead);
     }
 
     pub(super) fn update(&mut self, main: &mut VehicleInstance, dt: f32, lead: Option<(DVec3, Mat4, f64)>) {
@@ -517,38 +640,21 @@ impl TrailerPart {
             }
         }
         self.heading = heading;
+        // the bend the part's turning line runs on, from the part in front's and the joint
+        // angle as they stand (no difference between frames, which a creeping bus or the
+        // joint at its stop made jump)
+        if !self.ty.def.is_rail() && !self.reversed {
+            let (k_lead, line_lead) = self.lead_turn;
+            let alpha = (((lead_heading - heading + 540.0).rem_euclid(360.0) - 180.0) as f32).to_radians();
+            self.kappa = coupled_curvature(k_lead, self.coupling_back.y - line_lead, alpha, self.coupling_front.y - self.axle_long);
+        }
         let new_pivot = c - DVec3::new(dir.x, dir.y, 0.0) * self.length as f64;
         let ds = (new_pivot - pivot).truncate().length() as f32;
         self.odometer += ds * (main.physics.velocity_kmh().signum().max(0.0) * 2.0 - 1.0).max(-1.0);
         self.pivot = Some(new_pivot);
-        // Its springs: an AI copy sits `[ai_deltaheight]` low like its tractor; a driven one
-        // as far down as the scripts' `Axle_Springfactor` lets the load press it.
         let ai = main.ev(Ev::Ai).map(|v| v > 0.5).unwrap_or(false);
         let shows = !self.ty.suspension_axles.is_empty();
-        let mut sag = Vec::with_capacity(self.rest.len());
-        for (a, (offset, load, k)) in self.rest.iter().enumerate() {
-            let axle = self.first_axle + a;
-            let compression = if ai {
-                if shows {
-                    -self.ty.def.ai_delta_height
-                } else {
-                    0.0
-                }
-            } else if self.ty.suspension_axles.contains(&axle) {
-                let factor = self.axle_ids.spring_factor[a]
-                    .map(|i| main.state.vars[i as usize])
-                    .unwrap_or(1.0)
-                    .max(0.05);
-                (load / (k * factor)).min(crate::rigid::BUMP)
-            } else {
-                0.0
-            };
-            for id in self.axle_ids.suspension[a].into_iter().flatten() {
-                main.state.vars[id as usize] = -compression;
-            }
-            sag.push(offset - compression);
-        }
-        let lift = sag.iter().sum::<f32>() as f64 / sag.len().max(1) as f64;
+        let lift = self.rest_springs(main);
         self.ground_lift = lift as f32;
         // On rails: the track's height where it was put on it (self.track is set by
         // retrail; we don't reject it with a distance threshold on curves).
@@ -657,9 +763,8 @@ impl TrailerPart {
         }
         if omsi_cfg::flags::OMSI_DEBUG_TRAILER.is_set() {
             log::info!(
-                "trailer: rest {:?} sag {:?} lift {lift:.3} ground {ground_z:?} z {:.3}",
+                "trailer: rest {:?} lift {lift:.3} ground {ground_z:?} z {:.3}",
                 self.rest,
-                sag,
                 self.position.z
             );
             for (i, m) in self.ty.meshes.iter().enumerate() {
@@ -674,7 +779,6 @@ impl TrailerPart {
             }
         }
         self.update_visuals_only(main, dt, lead);
-        let _ = self.axle_long;
     }
 
     pub(super) fn update_visuals_only(&mut self, main: &mut VehicleInstance, dt: f32, lead: Option<(DVec3, Mat4, f64)>) {
@@ -700,7 +804,11 @@ impl TrailerPart {
                 * 60.0;
         let rot = (self.odometer / self.wheel_radius).rem_euclid(std::f32::consts::TAU);
         for a in 0..self.axle_count {
+            let steer = self.axle_steer(a);
             for side in 0..2 {
+                if let (Some(Some(id)), Some(s)) = (self.axle_ids.steering.get(a).map(|s| s[side]), steer) {
+                    main.state.vars[id as usize] = s;
+                }
                 if let Some(id) = self.axle_ids.rotation[a][side] {
                     main.state.vars[id as usize] = rot;
                 }
@@ -720,6 +828,21 @@ impl TrailerPart {
 }
 
 impl TrailerPart {
+    /// Road axle `a`'s steering angle (rad, positive to the right), what Omsi.exe hands the
+    /// scripts as the part's `Axle_Steering_<n>_L/R`: atan((axle long - turning line) x
+    /// curvature), every axle pointed at the centre of the bend on the part's
+    /// `[rot_pnt_long]` line (0x7e303d, as the front section's at 0x7df3ac). An axle on that
+    /// line (the GN92's) stays straight; the Van Hool AG300's, behind it, turns against the
+    /// bend. (No coupled part's axle had the variable set at all, #322.) Rail cars and parts
+    /// running backwards steer none.
+    pub(super) fn axle_steer(&self, a: usize) -> Option<f32> {
+        if self.ty.def.is_rail() || self.reversed {
+            return None;
+        }
+        let axle = self.ty.def.axles.get(a)?;
+        Some(((axle.long - self.axle_long) * self.kappa).atan().clamp(-1.05, 1.05))
+    }
+
     /// `Axle_Suspension_*` of the part's sprung axles from the ground under each wheel, the
     /// body standing at `self.position` turned by `rot` (see `update`).
     pub(super) fn spring_wheels(&self, main: &mut VehicleInstance, rot: Mat4) {

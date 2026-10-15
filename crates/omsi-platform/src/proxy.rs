@@ -11,7 +11,7 @@ pub fn system_proxy() -> Option<String> {
         .get_or_init(|| {
             let found = from_env().or_else(from_system);
             if let Some(p) = &found {
-                log::info!("network: through the proxy {p}");
+                log::info!("network: through the proxy {}", redact(p));
             }
             found
         })
@@ -95,6 +95,31 @@ fn scutil_proxy(text: &str) -> Option<String> {
     })
 }
 
+/// Hide proxy credentials, including ambiguous malformed addresses, before logging.
+pub fn redact(proxy: &str) -> String {
+    let proxy = proxy.trim();
+    let (scheme, rest) = match proxy.split_once("://") {
+        Some((scheme, rest)) if !scheme.is_empty() && scheme.bytes().all(|b| b.is_ascii_alphanumeric() || b"+.-".contains(&b)) => (Some(scheme), rest),
+        _ => (None, proxy),
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    // A separator before the last @ may belong to an unescaped password, or to a
+    // path after the host. Neither interpretation is safe to print as an address.
+    if rest.rfind('@').is_some_and(|at| at >= end) {
+        return scheme.map_or_else(|| "***".into(), |s| format!("{s}://***"));
+    }
+    let rest = &rest[..end];
+    let (login, host) = match rest.rsplit_once('@') {
+        Some((_, host)) => (true, host),
+        None => (false, rest),
+    };
+    let login = if login { "***@" } else { "" };
+    match scheme {
+        Some(scheme) => format!("{scheme}://{login}{host}"),
+        None => format!("{login}{host}"),
+    }
+}
+
 /// A proxy written without its protocol is an HTTP one.
 fn with_scheme(s: &str) -> String {
     if s.contains("://") {
@@ -115,6 +140,46 @@ mod tests {
         assert_eq!(windows_server("http=10.0.0.1:80").as_deref(), Some("http://10.0.0.1:80"));
         assert_eq!(windows_server("socks=127.0.0.1:1080"), None);
         assert_eq!(windows_server(""), None);
+    }
+
+    #[test]
+    fn redact_hides_the_login_and_keeps_the_address() {
+        assert_eq!(redact("http://127.0.0.1:7890"), "http://127.0.0.1:7890");
+        assert_eq!(redact("http://user:secret@proxy.example:3128"), "http://***@proxy.example:3128");
+        assert_eq!(redact("socks5://user@proxy.example:1080/"), "socks5://***@proxy.example:1080");
+        assert_eq!(redact("http://user:p%40ss%2Fword@proxy.example:3128"), "http://***@proxy.example:3128");
+        assert_eq!(redact("http://user:p@ss/wo:rd#x@proxy.example:3128"), "http://***");
+        assert_eq!(redact("user:secret@proxy.example:3128"), "***@proxy.example:3128");
+        assert_eq!(redact("  http://u:s@proxy.example:3128/path?token=abc#f "), "http://***@proxy.example:3128");
+        assert_eq!(redact("proxy.example:3128"), "proxy.example:3128");
+        assert_eq!(redact("http://u:s@[::1]:8080"), "http://***@[::1]:8080");
+    }
+
+    #[test]
+    fn redact_of_malformed_addresses_never_shows_the_password() {
+        for bad in ["", "://", "http://", "http://:secret@", "http://user:secret@", "@", "user:secret@", "http://user:secret@/x"] {
+            let shown = redact(bad);
+            assert!(!shown.contains("secret"), "{bad:?} -> {shown:?}");
+        }
+        assert_eq!(redact(""), "");
+    }
+
+    #[test]
+    fn a_scheme_separator_inside_a_password_never_becomes_a_logged_scheme() {
+        for address in ["user:secret://word@proxy:3128", "http://user:secret://word@proxy:3128", "u:secret+.-://w@proxy"] {
+            let shown = redact(address);
+            assert!(!shown.contains("secret") && !shown.contains("word") && !shown.contains("user"), "{shown}");
+        }
+        assert_eq!(redact("user:p://w@proxy:3128"), "***");
+    }
+
+    #[test]
+    fn an_at_sign_after_a_path_separator_does_not_become_a_host() {
+        for tail in ["/a@b", "?a@b", "#a@b"] {
+            assert_eq!(redact(&format!("http://proxy:3128{tail}")), "http://***");
+            assert_eq!(redact(&format!("http://u:s@proxy:3128{tail}")), "http://***");
+        }
+        assert_eq!(redact("http://proxy:3128/a?b#c"), "http://proxy:3128");
     }
 
     #[test]

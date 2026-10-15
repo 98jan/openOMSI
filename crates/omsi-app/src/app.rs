@@ -434,10 +434,13 @@ impl App {
                         .unwrap_or(1200.0)
                         .max(omsi_map::tile_size());
                     w.set_fast_texture_loads(true);
-                    w.set_texture_budget(texture_budget(&self.settings));
+                    let (textures, video) = (texture_budget(), video_memory_limit(&self.settings));
+                    w.set_texture_budget(textures);
+                    w.set_video_memory_limit(video);
                     log::info!(
-                        "texture budget: {:.0} MB",
-                        texture_budget(&self.settings) as f64 / 1e6
+                        "texture budget: {:.0} MB, video memory: {:.0} MB (0 = the driver's budget)",
+                        textures as f64 / 1e6,
+                        video as f64 / 1e6
                     );
                     self.gfx.streamer = Some(tiles::Streamer::new(
                         w.clone(),
@@ -768,6 +771,14 @@ impl App {
             self.start_world(w, cam, &renderer, &mut scene);
             self.renderer = Some(renderer);
             self.scene = Some(scene);
+            // Started again after the graphics card was lost (`restart_after_device_loss`):
+            // said on the screen. The restart with lighter graphics, and on Windows another
+            // graphics interface, was silent, and players took the blurred picture and the
+            // lower frame rate it left for a slower game, never for a crash of the driver.
+            if let Some(n) = omsi_cfg::flags::OMSI_SAFE_GPU.parse::<u32>().filter(|n| *n > 0) {
+                log::warn!("this run was started again after the graphics device was lost ({n}): lighter graphics for this run");
+                self.service_msg = Some(("The graphics driver reset the card: the game started again with lighter graphics for this drive. Settings → Graphics keeps yours for the next start.".into(), 12.0));
+            }
             return true;
         };
         let name = self

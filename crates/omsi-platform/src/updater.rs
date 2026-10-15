@@ -1,7 +1,7 @@
 //! Updates from the project's GitHub releases (github.com/openOMSI-org/openOMSI).
 //!
-//! Every push to main publishes a release `v<MAJOR.MINOR.COMMIT>` with one archive per
-//! platform (see .github/workflows/release.yml). The launcher asks the GitHub API for the
+//! A release a maintainer starts from main publishes `v<MAJOR.MINOR.PATCH>` with one archive
+//! per platform (see .github/workflows/release.yml). The launcher asks the GitHub API for the
 //! latest release when it starts (setting `update_check`), and when it is newer than this
 //! build it offers it - or, with `update_auto`, installs it at once:
 //!
@@ -46,7 +46,9 @@ use std::sync::{Arc, Mutex};
 pub const REPO: &str = "openOMSI-org/openOMSI";
 pub const REPO_URL: &str = "https://github.com/openOMSI-org/openOMSI";
 const LATEST_API: &str = "https://api.github.com/repos/openOMSI-org/openOMSI/releases/latest";
-const RELEASES_API: &str = "https://api.github.com/repos/openOMSI-org/openOMSI/releases?per_page=50";
+const RELEASES_API: &str = "https://api.github.com/repos/openOMSI-org/openOMSI/releases?per_page=100";
+const RELEASE_PAGES: u32 = 5;
+const NEWEST_API: &str = "https://api.github.com/repos/openOMSI-org/openOMSI/releases?per_page=10";
 pub const FIRST_SELF_TESTED: &str = "0.2.32";
 
 /// A build the App Store delivers (every iPhone and iPad build, and a Mac build made with
@@ -107,11 +109,13 @@ pub struct Updater {
     pub dismissed_version: Option<String>,
     /// A game ran last frame (the launcher installs once it has ended).
     pub game_was_running: bool,
+    checked_beta: Option<bool>,
+    check_generation: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl Default for Updater {
     fn default() -> Self {
-        Updater { status: Arc::new(Mutex::new(Status::Idle)), dismissed: false, checked_once: false, auto_started: false, relaunched: false, updated: None, last_check: None, dismissed_version: None, game_was_running: false }
+        Updater { status: Arc::new(Mutex::new(Status::Idle)), dismissed: false, checked_once: false, auto_started: false, relaunched: false, updated: None, last_check: None, dismissed_version: None, game_was_running: false, checked_beta: None, check_generation: Arc::default() }
     }
 }
 
@@ -132,14 +136,18 @@ impl Updater {
     pub fn check(&mut self) {
         self.checked_once = true;
         self.last_check = Some(std::time::Instant::now());
-        if matches!(self.status(), Status::Checking | Status::Downloading { .. } | Status::Downloaded(_) | Status::Installing(_) | Status::WaitingForInstaller(_) | Status::Restarting(_)) {
+        let beta = beta_channel();
+        let switched = self.checked_beta.is_some_and(|b| b != beta);
+        if check_waits(&self.status(), switched) {
             return;
         }
+        self.checked_beta = Some(beta);
         self.dismissed = false;
-        self.set(Status::Checking);
         let status = self.status.clone();
+        let generation = self.check_generation.clone();
+        let mine = start_check(&status, &generation);
         std::thread::spawn(move || {
-            let s = match latest() {
+            let s = match latest_on(beta) {
                 Ok(Some(r)) => Status::Available(r),
                 Ok(None) => Status::UpToDate,
                 Err(e) => {
@@ -147,8 +155,12 @@ impl Updater {
                     Status::Failed(format!("Could not check for updates: {e}"))
                 }
             };
-            log::info!("update check: {s:?}");
-            *lock(&status) = s;
+            let said = format!("{s:?}");
+            if finish_check(&status, &generation, mine, s) {
+                log::info!("update check: {said}");
+            } else {
+                log::info!("update check: a newer look replaced this one ({said})");
+            }
         });
     }
 
@@ -282,7 +294,7 @@ pub fn agent() -> ureq::Agent {
         .timeout_read(std::time::Duration::from_secs(30))
         .user_agent(&format!("openOMSI/{} (updater)", current_version()));
     // (through the proxy the system is set to use, #1000)
-    match crate::proxy::system_proxy().and_then(|p| ureq::Proxy::new(&p).map_err(|e| log::warn!("network: the proxy {p} cannot be used: {e}")).ok()) {
+    match crate::proxy::system_proxy().and_then(|p| ureq::Proxy::new(&p).map_err(|e| log::warn!("network: the proxy {} cannot be used: {e}", crate::proxy::redact(&p))).ok()) {
         Some(proxy) => b.proxy(proxy).build(),
         None => b.build(),
     }
@@ -344,12 +356,48 @@ fn short_error(e: &ureq::Error) -> String {
 
 /// The latest release when it is newer than this build and has a file for this platform.
 pub fn latest() -> anyhow::Result<Option<Release>> {
+    latest_on(beta_channel())
+}
+
+fn start_check(status: &Mutex<Status>, generation: &std::sync::atomic::AtomicU64) -> u64 {
+    let mut s = lock(status);
+    *s = Status::Checking;
+    generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+}
+
+fn finish_check(status: &Mutex<Status>, generation: &std::sync::atomic::AtomicU64, mine: u64, result: Status) -> bool {
+    let mut s = lock(status);
+    let newest = generation.load(std::sync::atomic::Ordering::SeqCst) == mine && matches!(*s, Status::Checking);
+    if newest {
+        *s = result;
+    }
+    newest
+}
+
+fn check_waits(status: &Status, switched: bool) -> bool {
+    match status {
+        Status::Downloading { .. } | Status::Installing(_) | Status::WaitingForInstaller(_) | Status::Restarting(_) => true,
+        Status::Checking | Status::Downloaded(_) => !switched,
+        _ => false,
+    }
+}
+
+fn latest_on(beta: bool) -> anyhow::Result<Option<Release>> {
     if STORE_BUILD {
         return Ok(None);
     }
     let url = omsi_cfg::flags::OMSI_UPDATE_URL.var().map(str::to_string).unwrap_or_else(|| LATEST_API.to_string());
+    if url == LATEST_API && beta {
+        return match fetch_text(NEWEST_API).and_then(|t| Ok(serde_json::from_str::<serde_json::Value>(&t)?)) {
+            Ok(v) => newest_of(&v, current_version(), &crate::recovery::listed_broken()),
+            Err(e) => {
+                log::info!("update check (beta): the GitHub API: {e:#} - asking github.com for the stable release");
+                latest_from_site().map_err(|e2| anyhow::anyhow!("{e} (and github.com: {e2})"))
+            }
+        };
+    }
     match fetch_text(&url).and_then(|t| Ok(serde_json::from_str::<serde_json::Value>(&t)?)) {
-        Ok(v) => parse_release(&v, current_version()),
+        Ok(v) => parse_release(&v, current_version(), false),
         // (the API: an address over its limit gets 403 for an hour, and some networks reach
         // github.com but not api.github.com - github.com says the latest tag as well)
         Err(e) if url == LATEST_API => {
@@ -385,15 +433,38 @@ fn latest_from_site() -> anyhow::Result<Option<Release>> {
     Ok(Some(Release { version, page: format!("{REPO_URL}/releases/tag/{tag}"), notes: String::new(), asset_name: name, asset_url: url, size, sha256: None }))
 }
 
+pub fn beta_channel() -> bool {
+    let text = std::fs::read_to_string(omsi_launcher_lib::data_dir().join("settings.cfg")).ok();
+    omsi_launcher_lib::settings_from_text(text.as_deref())["update_channel"] == "beta"
+}
+
+fn newest_of(v: &serde_json::Value, current: &str, broken: &[String]) -> anyhow::Result<Option<Release>> {
+    let tag = |r: &serde_json::Value| r["tag_name"].as_str().unwrap_or("").to_string();
+    let mut list: Vec<&serde_json::Value> = v
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("GitHub listed no releases"))?
+        .iter()
+        .filter(|r| r["draft"].as_bool() != Some(true) && !version_parts(&tag(r)).is_empty())
+        .filter(|r| !broken.iter().any(|b| compare(b, &tag(r)).is_eq()))
+        .collect();
+    list.sort_by(|a, b| compare(&tag(b), &tag(a)));
+    for r in list {
+        if let Some(found) = parse_release(r, current, true)? {
+            return Ok(Some(found));
+        }
+    }
+    Ok(None)
+}
+
 /// A release described as the GitHub API does, when newer than `current`.
-fn parse_release(v: &serde_json::Value, current: &str) -> anyhow::Result<Option<Release>> {
+fn parse_release(v: &serde_json::Value, current: &str, beta: bool) -> anyhow::Result<Option<Release>> {
     let tag = v["tag_name"].as_str().ok_or_else(|| anyhow::anyhow!("the release has no tag"))?;
     let version = tag.trim_start_matches(['v', 'V']).to_string();
     if is_test_build(current) {
         log::info!("update check: {current} is a pull request's test build, {version} is not offered");
         return Ok(None);
     }
-    if v["draft"].as_bool() == Some(true) || v["prerelease"].as_bool() == Some(true) || !newer(&version, current) {
+    if v["draft"].as_bool() == Some(true) || (!beta && v["prerelease"].as_bool() == Some(true)) || !newer(&version, current) {
         return Ok(None);
     }
     // (a release that failed to start here, or would not even run its self-test, is not
@@ -430,26 +501,44 @@ fn release_of(v: &serde_json::Value) -> anyhow::Result<Option<Release>> {
 pub struct Listed {
     pub release: Release,
     pub published: String,
+    pub beta: bool,
 }
 
 pub fn releases() -> anyhow::Result<Vec<Listed>> {
     if STORE_BUILD {
         return Ok(Vec::new());
     }
-    let text = fetch_text(RELEASES_API)?;
-    Ok(releases_of(&serde_json::from_str(&text)?))
+    releases_paged(|page| fetch_text(&format!("{RELEASES_API}&page={page}")), beta_channel())
 }
 
-fn releases_of(v: &serde_json::Value) -> Vec<Listed> {
+fn releases_paged(fetch: impl Fn(u32) -> anyhow::Result<String>, beta: bool) -> anyhow::Result<Vec<Listed>> {
+    let mut all = Vec::new();
+    for page in 1..=RELEASE_PAGES {
+        let items = match fetch(page).and_then(|t| Ok(serde_json::from_str::<serde_json::Value>(&t)?)) {
+            Ok(serde_json::Value::Array(items)) => items,
+            Err(e) if page == 1 => return Err(e),
+            _ => break,
+        };
+        let full = items.len() == 100;
+        let too_old = items.iter().filter_map(|r| r["tag_name"].as_str()).any(|t| newer(FIRST_SELF_TESTED, t.trim_start_matches(['v', 'V'])));
+        all.extend(items);
+        if !full || too_old {
+            break;
+        }
+    }
+    Ok(releases_of(&serde_json::Value::Array(all), beta))
+}
+
+fn releases_of(v: &serde_json::Value, beta: bool) -> Vec<Listed> {
     let mut list: Vec<Listed> = v
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|r| r["draft"].as_bool() != Some(true) && r["prerelease"].as_bool() != Some(true))
+        .filter(|r| r["draft"].as_bool() != Some(true) && (beta || r["prerelease"].as_bool() != Some(true)))
         .filter_map(|r| {
             let release = release_of(r).ok().flatten()?;
             let published = r["published_at"].as_str().and_then(|d| d.get(..10)).unwrap_or("").to_string();
-            Some(Listed { release, published })
+            Some(Listed { release, published, beta: r["prerelease"].as_bool() == Some(true) })
         })
         .filter(|l| !is_test_build(&l.release.version) && !newer(FIRST_SELF_TESTED, &l.release.version))
         .collect();
@@ -1055,18 +1144,18 @@ mod tests {
                 {"name": name, "browser_download_url": "https://x/mine", "size": 42, "digest": "sha256:ABCDEF"}
             ]
         });
-        let r = parse_release(&v, "0.1.7").unwrap().unwrap();
+        let r = parse_release(&v, "0.1.7", false).unwrap().unwrap();
         assert_eq!((r.version.as_str(), r.asset_url.as_str(), r.size, r.sha256.as_deref()), ("0.1.9", "https://x/mine", 42, Some("abcdef")));
         // not newer, a draft, or without this platform's file: nothing to offer
-        assert!(parse_release(&v, "0.1.9").unwrap().is_none());
+        assert!(parse_release(&v, "0.1.9", false).unwrap().is_none());
         let mut d = v.clone();
         d["draft"] = serde_json::json!(true);
-        assert!(parse_release(&d, "0.1.7").unwrap().is_none());
+        assert!(parse_release(&d, "0.1.7", false).unwrap().is_none());
         let mut n = v.clone();
         n["assets"] = serde_json::json!([]);
-        assert!(parse_release(&n, "0.1.7").unwrap().is_none());
+        assert!(parse_release(&n, "0.1.7", false).unwrap().is_none());
         // a pull request's test build keeps itself, however new the release
-        assert!(parse_release(&v, "0.1.7-pr12").unwrap().is_none());
+        assert!(parse_release(&v, "0.1.7-pr12", false).unwrap().is_none());
         assert!(is_test_build("0.1.1313-pr1192") && !is_test_build("0.1.1313"));
     }
 
@@ -1099,12 +1188,121 @@ mod tests {
             {"tag_name": "v0.2.36-pr12", "assets": []},
             {"name": "no tag"}
         ]);
-        let list = releases_of(&v);
+        let list = releases_of(&v, false);
         let versions: Vec<&str> = list.iter().map(|l| l.release.version.as_str()).collect();
         assert_eq!(versions, ["0.2.38", "0.2.37", "0.2.33", "0.2.32"]);
         assert_eq!(list[0].published, "2026-10-12");
         assert_eq!((list[0].release.asset_url.as_str(), list[0].release.size), ("https://x/v0.2.38.zip", 7));
-        assert!(releases_of(&serde_json::json!({"message": "rate limited"})).is_empty());
+        assert!(releases_of(&serde_json::json!({"message": "rate limited"}), false).is_empty());
+    }
+
+    #[test]
+    fn stable_releases_behind_a_page_of_betas_are_found() {
+        let release_of_minor = |minor: u32, n: u32, prerelease: bool| {
+            let tag = format!("v0.{minor}.{n}");
+            serde_json::json!({
+                "tag_name": tag, "prerelease": prerelease, "published_at": "2026-10-20T00:00:00Z",
+                "assets": [{"name": asset_name(&tag[1..]).unwrap(), "browser_download_url": format!("https://x/{tag}.zip"), "size": 7}]
+            })
+        };
+        let release = |n: u32, prerelease: bool| release_of_minor(3, n, prerelease);
+        let pages = std::cell::Cell::new(0);
+        let fetch = |page: u32| {
+            pages.set(pages.get() + 1);
+            let list: Vec<_> = match page {
+                1 => (100..200).rev().map(|n| release(n, n != 150)).collect(),
+                2 => (40..100).rev().map(|n| release(n, n % 10 != 0)).collect(),
+                _ => panic!("page {page} asked after a short page"),
+            };
+            Ok(serde_json::Value::Array(list).to_string())
+        };
+        let versions: Vec<String> = releases_paged(fetch, false).unwrap().into_iter().map(|l| l.release.version).collect();
+        assert_eq!(versions, ["0.3.150", "0.3.90", "0.3.80", "0.3.70", "0.3.60", "0.3.50", "0.3.40"]);
+        assert_eq!(pages.get(), 2);
+
+        let rate_limited = |page: u32| if page == 1 { Ok(r#"{"message": "rate limited"}"#.to_string()) } else { anyhow::bail!("offline") };
+        assert!(releases_paged(rate_limited, false).unwrap().is_empty());
+        let page_two_fails = |page: u32| if page == 1 { Ok(serde_json::Value::Array((0..100).map(|n| release(n, n != 7)).collect()).to_string()) } else { anyhow::bail!("offline") };
+        assert_eq!(releases_paged(page_two_fails, false).unwrap().len(), 1);
+        assert!(releases_paged(|_| anyhow::bail!("offline"), false).is_err());
+
+        let pages = std::cell::Cell::new(0);
+        let reaches_unlisted = |page: u32| {
+            pages.set(pages.get() + 1);
+            let list: Vec<_> = match page {
+                1 => (100..200).rev().map(|n| release(n, true)).collect(),
+                2 => (0..100).rev().map(|n| release_of_minor(2, n, false)).collect(),
+                _ => panic!("page {page} asked after releases too old to list"),
+            };
+            Ok(serde_json::Value::Array(list).to_string())
+        };
+        let found = releases_paged(reaches_unlisted, false).unwrap();
+        assert_eq!((found.first().map(|l| l.release.version.as_str()), found.len()), (Some("0.2.99"), 68));
+        assert_eq!(pages.get(), 2);
+    }
+
+    #[test]
+    fn the_beta_channel_takes_the_newest_release_betas_included() {
+        let release = |tag: &str, prerelease: bool, draft: bool| {
+            let version = tag.trim_start_matches('v');
+            let asset = asset_name(version).unwrap_or_default();
+            serde_json::json!({
+                "tag_name": tag, "prerelease": prerelease, "draft": draft, "published_at": "2026-10-20T00:00:00Z",
+                "assets": [{"name": asset, "browser_download_url": format!("https://x/{tag}.zip"), "size": 7}]
+            })
+        };
+        let beta = release("v0.3.7", true, false);
+        assert!(parse_release(&beta, "0.3.5", false).unwrap().is_none());
+        assert_eq!(parse_release(&beta, "0.3.5", true).unwrap().map(|r| r.version), Some("0.3.7".into()));
+
+        let list = serde_json::json!([
+            release("v0.3.9", false, true),
+            {"tag_name": "avatars-1", "prerelease": true, "assets": []},
+            release("v0.3.7", true, false),
+            release("v0.3.5", false, false),
+            release("v0.3.6", true, false),
+        ]);
+        assert_eq!(newest_of(&list, "0.3.5", &[]).unwrap().map(|r| r.version), Some("0.3.7".into()));
+        assert!(newest_of(&list, "0.3.7", &[]).unwrap().is_none());
+        assert!(newest_of(&list, "0.3.8", &[]).unwrap().is_none());
+        assert!(newest_of(&serde_json::json!({"message": "rate limited"}), "0.3.5", &[]).is_err());
+        assert_eq!(newest_of(&list, "0.3.4", &["0.3.7".into()]).unwrap().map(|r| r.version), Some("0.3.6".into()));
+        let mut one_platform = release("v0.3.8", true, false);
+        one_platform["assets"] = serde_json::json!([{"name": "openOMSI-0.3.8-some-other-platform.zip", "browser_download_url": "https://x/o.zip", "size": 7}]);
+        let with_one_platform = serde_json::json!([one_platform, release("v0.3.7", true, false), release("v0.3.5", false, false)]);
+        assert_eq!(newest_of(&with_one_platform, "0.3.5", &[]).unwrap().map(|r| r.version), Some("0.3.7".into()));
+
+        let stable_only: Vec<(String, bool)> = releases_of(&list, false).into_iter().map(|l| (l.release.version, l.beta)).collect();
+        assert_eq!(stable_only, [("0.3.5".to_string(), false)]);
+        let with_betas: Vec<(String, bool)> = releases_of(&list, true).into_iter().map(|l| (l.release.version, l.beta)).collect();
+        assert_eq!(with_betas, [("0.3.7".to_string(), true), ("0.3.6".to_string(), true), ("0.3.5".to_string(), false)]);
+    }
+
+    #[test]
+    fn a_look_waits_for_the_one_running_unless_the_channel_changed() {
+        let r = Release { version: "0.3.7".into(), page: String::new(), notes: String::new(), asset_name: String::new(), asset_url: String::new(), size: 0, sha256: None };
+        for switched in [false, true] {
+            assert!(check_waits(&Status::Downloading { release: r.clone(), done: 0, total: 1 }, switched));
+            assert!(check_waits(&Status::Installing(r.clone()), switched));
+            assert!(!check_waits(&Status::Idle, switched));
+            assert!(!check_waits(&Status::UpToDate, switched));
+            assert!(!check_waits(&Status::Available(r.clone()), switched));
+        }
+        assert!(check_waits(&Status::Checking, false));
+        assert!(check_waits(&Status::Downloaded(r.clone()), false));
+        assert!(!check_waits(&Status::Checking, true));
+        assert!(!check_waits(&Status::Downloaded(r.clone()), true));
+
+        let status = Mutex::new(Status::Idle);
+        let generation = std::sync::atomic::AtomicU64::new(0);
+        let old = start_check(&status, &generation);
+        let new = start_check(&status, &generation);
+        assert!(!finish_check(&status, &generation, old, Status::Available(r.clone())));
+        assert_eq!(lock(&status).clone(), Status::Checking);
+        assert!(finish_check(&status, &generation, new, Status::UpToDate));
+        assert_eq!(lock(&status).clone(), Status::UpToDate);
+        assert!(!finish_check(&status, &generation, new, Status::Available(r)));
+        assert_eq!(lock(&status).clone(), Status::UpToDate);
     }
 
     #[test]

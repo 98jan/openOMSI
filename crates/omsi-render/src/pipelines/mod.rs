@@ -8,6 +8,7 @@ pub(crate) mod enhanced;
 pub(crate) mod errors;
 pub(crate) mod mip;
 pub(crate) mod overlays;
+pub(crate) mod parallel;
 pub(crate) mod passes;
 pub(crate) mod post;
 pub(crate) mod scene;

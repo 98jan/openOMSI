@@ -91,8 +91,43 @@ impl TrafficSim {
     }
 }
 
+/// Of the lights ahead within their approach distance (`near`: controller, light, the path's
+/// turn mark, how far ahead), the ones a vehicle indicating `blinker` asks: a path marked with
+/// a turn (1 left, 2 right) only with that indicator, and an unmarked one unless a path marked
+/// for the indicator shown starts within a junction's length of it (`SAME_JUNCTION`), on its
+/// controller or another one. Every stage of a junction whose paths are marked left,
+/// straight and right got its approach request at once, whichever way the bus indicated
+/// (#2532); unmarked lights elsewhere are asked as before, indicator or not.
+pub fn indicated_requests(near: &[(usize, usize, i32, f32)], blinker: u8) -> Vec<(usize, usize)> {
+    const SAME_JUNCTION: f32 = 30.0;
+    let marked = |turn: i32| matches!(turn, 1 | 2);
+    let shown = |turn: i32| marked(turn) && matches!(blinker, 1 | 2) && turn == blinker as i32;
+    near.iter()
+        .filter(|&&(_, _, turn, d)| if marked(turn) { shown(turn) } else { !near.iter().any(|&(_, _, t, e)| shown(t) && (e - d).abs() <= SAME_JUNCTION) })
+        .map(|&(ci, li, _, _)| (ci, li))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
+    use super::indicated_requests;
+
+    /// Left, straight and right marked on one controller or on three: the indicator picks
+    /// one; unmarked straight steps aside only for a marked path at the same junction (#2532).
+    #[test]
+    fn the_indicator_picks_the_stage_it_asks() {
+        for (left, straight, right) in [((0, 0), (0, 1), (0, 2)), ((0, 0), (1, 0), (2, 0))] {
+            let near = [(left.0, left.1, 1, 40.0), (straight.0, straight.1, 0, 41.0), (right.0, right.1, 2, 40.5)];
+            assert_eq!(indicated_requests(&near, 1), vec![left]);
+            assert_eq!(indicated_requests(&near, 2), vec![right]);
+            assert_eq!(indicated_requests(&near, 0), vec![straight]);
+        }
+        // an unmarked light at the next junction is asked whatever the indicator
+        let near = [(0, 0, 1, 40.0), (5, 0, 0, 160.0)];
+        assert_eq!(indicated_requests(&near, 1), vec![(0, 0), (5, 0)]);
+        assert_eq!(indicated_requests(&near, 0), vec![(5, 0)]);
+    }
+
     use super::*;
     use crate::traffic::{Lane, LaneBuilder};
 

@@ -613,6 +613,8 @@ impl World {
         let mut instances = Vec::new();
         let mut own_materials = Vec::new();
         let mut variants = set.variants.to_vec();
+        // (a model of its own: every vehicle's meshes stand at the origin, see begin_object)
+        renderer.begin_shared_object(scene, (&vt.def.path, set.meshes.iter().map(|m| m.0).collect::<Vec<_>>()));
         for (mi, (id, mats)) in set.meshes.iter().enumerate() {
             let mut mats = mats.clone();
             // A switched slot ([matl_change], [texchanges], [matl_freetex]) that shows the
@@ -851,7 +853,7 @@ impl World {
         // (the scheme's pictures come named in full by the substitutions; its folder is
         // not searched for the model's other textures, see `scheme_substitutions`)
         let (subst, _scheme_dir) = match scheme {
-            Some(i) => vt.scheme_substitutions(i),
+            Some(i) => vt.scheme_substitutions(i, omsi_texture::find_texture),
             None => (vt.default_substitutions(&self.root), None),
         };
         let dirs_ref: Vec<&Path> = dirs.iter().map(|p| p.as_path()).collect();

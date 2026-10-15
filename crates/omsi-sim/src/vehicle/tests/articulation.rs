@@ -228,6 +228,79 @@ fn rear_section_turns_about_its_rot_pnt_long() {
     assert!((steered.pivot_length() - (4.169 - 1.0)).abs() < 1e-3, "{}", steered.pivot_length());
 }
 
+/// A rear section's axle behind its `[rot_pnt_long]` line turns against the bend, as far
+/// as points it at the bend's centre on that line (Omsi.exe 0x7e303d); the stock GN92's,
+/// on its line, stays straight (#322).
+#[test]
+#[ignore = "needs the original OMSI 2 install (OMSI_ROOT)"]
+fn rear_section_axle_behind_its_turning_line_steers() {
+    let root = original_root();
+    let bus = root.join("Vehicles/MAN_NL_NG/MAN_GN92_main.bus");
+    let trail = root.join("Vehicles/MAN_NL_NG/MAN_GN92_trail.bus");
+    require_content(&[&bus, &trail]);
+    let ty = Arc::new(VehicleType::load(&root, &bus).expect("GN92"));
+    // the front section driving a right-hand bend: a degree every 0.2 m
+    let steer = |line: Option<f32>| -> (f32, f32) {
+        let mut tt = VehicleType::load(&root, &trail).expect("GN92 trail");
+        if let Some(l) = line {
+            tt.def.rot_pnt_long = l;
+        }
+        let mut v = VehicleInstance::new(ty.clone(), VehicleHost::new(crate::SimClock::default()));
+        v.attach_trailer_ex(Arc::new(tt), false);
+        for _ in 0..200 {
+            let h = v.heading.to_radians();
+            v.position += DVec3::new(h.sin(), h.cos(), 0.0) * 0.2;
+            v.heading += 1.0;
+            v.update_visuals(0.02);
+        }
+        (v.var("Axle_Steering_2_L").unwrap(), v.trailers[0].kappa)
+    };
+    let (stock, kappa) = steer(None);
+    assert!(stock.abs() < 1e-4, "the GN92's axle steered {stock}");
+    assert!(kappa > 0.01, "a right-hand bend is {kappa}");
+    let (steered, kappa) = steer(Some(1.0));
+    let want = (-(1.0 + 0.387) * kappa).atan();
+    assert!(steered < -0.05 && (steered - want).abs() < 1e-4, "{steered} for {want}");
+}
+
+/// A rear section whose turning line lies ahead of its axle, coupled behind a front section
+/// driving a steady right-hand bend: its curvature, worked out of the front's and the joint
+/// angle as Omsi.exe 0x7e0f44 does, comes to the bend its turning line really runs on, and
+/// its axle turns against the bend; put somewhere else, its wheels stand straight (#322).
+#[test]
+fn a_rear_sections_bend_follows_from_the_joint() {
+    let front = coupling_test_type(None);
+    let mut rear = (*coupling_test_type(None)).clone();
+    rear.def.axles = vec![omsi_vehicle::Axle { long: -3.0, ..Default::default() }];
+    rear.def.rot_pnt_long = -1.0;
+    let mut v = VehicleInstance::new(front, VehicleHost::new(Default::default()));
+    v.attach_trailer(Arc::new(rear));
+    // the front turns about its origin's line (axles at -3 and 3): a bend of 15 m for its
+    // origin, the wheel angle of a 3 m wheelbase
+    let r = 15.0f64;
+    v.physics.steer_deg = (3.0 / r).atan().to_degrees() as f32;
+    let at = |h: f64| DVec3::new(r - r * h.cos(), r * h.sin(), 0.0);
+    for i in 0..3000 {
+        let h = i as f64 * 0.1 / r;
+        v.position = at(h);
+        v.heading = h.to_degrees();
+        v.update_trailers(1.0 / 60.0);
+    }
+    let t = &v.trailers[0];
+    // the joint 5 m behind the front's line, 6 m ahead of the rear's
+    let want = 1.0 / (r * r + 25.0 - 36.0).sqrt() as f32;
+    assert!((t.kappa - want).abs() < 2e-3, "curvature {} for {want}", t.kappa);
+    let steer = t.axle_steer(0).unwrap();
+    assert!((steer - (-2.0 * t.kappa).atan()).abs() < 1e-6 && steer < -0.1, "{steer}");
+    // straight on: straight wheels
+    assert_eq!(super::super::trailer::coupled_curvature(0.0, -5.0, 0.0, 6.0), 0.0);
+    // a joint on the turning line turns nothing
+    assert_eq!(super::super::trailer::coupled_curvature(0.1, -5.0, 0.3, 0.0), 0.0);
+    let t = &mut v.trailers[0];
+    t.realign();
+    assert_eq!(t.axle_steer(0), Some(0.0));
+}
+
 /// The rear section of an articulated bus on a viaduct stays on the deck: one frame with
 /// no deck under its axle (a gap at a joint) does not drop it onto the road below, and
 /// one that had sunk under the deck finds it again (#135).

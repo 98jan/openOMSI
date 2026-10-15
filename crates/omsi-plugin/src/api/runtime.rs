@@ -421,6 +421,11 @@ pub fn frame(ctx: &mut Ctx<'_>) {
             return;
         }
     }
+    for a in ctx.io().ticket_asks() {
+        if !unit(ctx, |c| dispatch(c, "passenger_ticket", vec![super::fns::traffic::ticket_ask(a)])) {
+            return;
+        }
+    }
     let name = ctx_name(ctx);
     let direct: Vec<(&'static str, Vec<Value>)> = {
         let hub = ctx.state().hub.clone();

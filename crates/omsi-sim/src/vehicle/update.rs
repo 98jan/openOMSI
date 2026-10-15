@@ -7,11 +7,15 @@ impl VehicleInstance {
     /// `Driver_Seat_VertTransl`: the sprung driver's seat, as OMSI moves it:
     /// the body's vertical acceleration and its roll and pitch at the seat's place (the
     /// driver's camera) push a spring (3000) and damper (2000) on 150 kg; ±10 cm at most.
+    /// (Omsi.exe 0x7e2110 keeps it at +0x510, hands it to the scripts at 0x7cffb8 and lifts
+    /// the driver's camera by the same amount, 0x7e24b2: see [`Self::driver_seat_travel`];
+    /// worked out for a model whose scripts do not read it as well.)
     pub(super) fn update_driver_seat(&mut self, dt: f32) {
-        let Some(id) = self.program_ids().driver_seat else { return };
         if dt <= 0.0 {
             return;
         }
+        // (the lever is the first driver camera, whichever one is chosen: 0x7e21a0 and
+        // 0x7e21c7 read Cameras_driver[0]'s position for the roll's and the pitch's share)
         let seat = self.ty.def.cameras_driver.first().map(|c| c.pos).unwrap_or([0.0; 3]);
         let (acc_z, omega) = match &self.rigid {
             Some(rb) => (rb.accel_body.z - 9.81, rb.omega),
@@ -31,7 +35,15 @@ impl VehicleInstance {
             v = 0.0;
         }
         self.seat = (x, v, omega);
-        self.state.vars[id as usize] = x;
+        if let Some(id) = self.program_ids().driver_seat {
+            self.state.vars[id as usize] = x;
+        }
+    }
+
+    /// How far the sprung driver's seat stands above its rest (m, ±0.1): the driver's eye
+    /// rides on it, as the seat mesh does with `Driver_Seat_VertTransl` (#2550).
+    pub fn driver_seat_travel(&self) -> f32 {
+        self.seat.0
     }
 
     /// Dirt and spray. OMSI writes three engine variables every frame and the bus scripts
@@ -368,7 +380,9 @@ impl VehicleInstance {
             self.update_visuals(dt);
         } else {
             // the coupled parts follow all the same (other cars keep clear of them)
-            self.update_trailers(dt);
+            if !std::mem::take(&mut self.trailers_stepped) {
+                self.update_trailers(dt);
+            }
             self.ai_visuals_missed = (self.ai_visuals_missed + dt).min(10.0);
         }
     }
@@ -381,6 +395,15 @@ impl VehicleInstance {
             .unwrap_or(true)
     }
 
+    /// An AI vehicle's coupled parts moved on with its body in every step of the traffic,
+    /// while its scripts and animations run once a frame (`TrafficSim::scripts_due`): an
+    /// articulated bus's rear section followed only the frame's last step, and below 50
+    /// fps it stood a step or more behind the front, the joint open between them.
+    pub fn step_ai_trailers(&mut self, dt: f32) {
+        self.update_trailers(dt);
+        self.trailers_stepped = true;
+    }
+
     /// Coupled vehicles follow and animate from this vehicle's variables.
     pub(super) fn update_trailers(&mut self, dt: f32) {
         if self.ty.def.is_rail() && self.trailers.iter().any(|t| t.track.is_some()) {
@@ -388,16 +411,30 @@ impl VehicleInstance {
         }
         let mut trailers = std::mem::take(&mut self.trailers);
         let mut lead: Option<(DVec3, Mat4, f64)> = None;
+        let mut turn = self.turning();
         for t in &mut trailers {
+            t.lead_turn = turn;
             t.update(self, dt, lead);
             lead = Some((t.position, t.body_rotation(), t.heading));
+            turn = (t.kappa, t.axle_long);
         }
         self.trailers = trailers;
     }
 
+    /// The curvature (1/m, positive to the right) the vehicle turns on and where its turning
+    /// line lies along it (m): the steering's, on the `[rot_pnt_long]` line every axle is
+    /// pointed at (`RigidBody::steer_axles`), or an AI vehicle's bicycle model's.
+    pub(super) fn turning(&self) -> (f32, f32) {
+        if let Some(rb) = &self.rigid {
+            return (rb.kappa, rb.rot_pnt_long);
+        }
+        let (rot, wheelbase) = crate::ai_motion::rotation_point(&self.ty.def);
+        (self.physics.steer_deg.to_radians().tan() / wheelbase, rot)
+    }
+
     /// Put the coupled parts on a track: `at_behind(d)` is the point of the track `d` metres
-    /// behind the vehicle's origin (None: not known, the part follows as it does on a road).
-    /// Each part's turning axle is placed there, and the part follows its coupling.
+    /// behind the vehicle's origin (negative: ahead of it; None: not known, the part follows
+    /// as it does on a road).
     pub fn retrail(&mut self, dt: f32, at_behind: &dyn Fn(f64) -> Option<DVec3>) {
         // a single railcar has nothing coupled behind it (Thüringer Wald's AI trains, #2259)
         if self.trailers.is_empty() {
@@ -405,39 +442,56 @@ impl VehicleInstance {
         }
         let mut trailers = std::mem::take(&mut self.trailers);
         let mut lead: Option<(DVec3, Mat4, f64)> = None;
-        // Cumulative distance along the track behind the vehicle's front origin
-        let mut lead_coupling_behind = if self.ty.def.is_rail() {
-            // Front vehicle origin to its rear coupling
-            let (back, _) = coupling_points(&self.ty, false, &trailers[0].ty, false);
-            back.y.abs() as f64
-        } else {
-            0.0f64
-        };
-        let mut prev_c = self.position;
-        let mut b_prev = 0.0f64;
-
-        for (_i, t) in trailers.iter_mut().enumerate() {
-            let (lp, lr) = lead.map(|(p, r, _)| (p, r)).unwrap_or((self.position, self.body_rotation()));
-            let c = t.coupling_point(lp, lr);
-            if self.ty.def.is_rail() {
-                // Distance along the track to this unit's turning axle/pivot:
-                let pivot_dist = lead_coupling_behind + t.pivot_length() as f64;
-                if let Some(p) = at_behind(pivot_dist) {
-                    t.place_on_track(p);
+        let mut turn = self.turning();
+        if self.ty.def.is_rail() {
+            // A train's cars as Omsi.exe lays them: one after the other along the track, each
+            // part's origin as far behind the joint in front of it as its declared front
+            // coupling says, and the part standing on the track with both of its bogies. The
+            // couplings are distances along the track and nothing more - the stock Berlin
+            // S-Bahn (BR481) couples its bogie frames behind the last car with
+            // `[coupling_front] 0 -34.35`, which puts each one back under the car it belongs
+            // to. Towed at the coupling like a road trailer instead, with its axle at the
+            // sum of distances of a frame mixed up with the car in front of it (the lead's
+            // rear coupling taken for the part's own) and a bogie half as far out as the file
+            // says, the axle's track point fell short of the coupling or ahead of it: the
+            // car stood up at the steepest pitch allowed and turned about on the track
+            // (#533, #2069, #2415).
+            // (a coupling's y in the frame of the travel: the model's, turned with the body)
+            let travel = |turned: bool, y: f32| if turned { -y as f64 } else { y as f64 };
+            // how far the joint in front of the part lies behind this vehicle's origin
+            let mut joint = -travel(body_reversed(&self.ty.def, false), trailers[0].coupling_back.y);
+            for i in 0..trailers.len() {
+                // (the part's rear coupling is the one the next part hangs on, in this part's frame)
+                let rear = trailers.get(i + 1).map(|n| n.coupling_back.y);
+                let t = &mut trailers[i];
+                let turned = body_reversed(&t.ty.def, t.reversed);
+                let origin = joint + travel(turned, t.coupling_front.y);
+                let (y_front, y_rear) = t.rail_ends();
+                match (at_behind(origin - y_front as f64), at_behind(origin - y_rear as f64)) {
+                    (Some(front), Some(back)) => t.place_on_rails(self, dt, lead, (front, y_front), (back, y_rear)),
+                    _ => t.update(self, dt, lead),
                 }
-                // Advance lead_coupling_behind by this unit's length between its couplings
-                let unit_coupling_span = (t.coupling_front.y - t.coupling_back.y).abs() as f64;
-                lead_coupling_behind += unit_coupling_span;
-            } else {
+                if let Some(y) = rear {
+                    joint = origin - travel(turned, y);
+                }
+                lead = Some((t.position, t.body_rotation(), t.heading));
+            }
+        } else {
+            let (mut prev_c, mut b_prev) = (self.position, 0.0f64);
+            for t in &mut trailers {
+                let (lp, lr) = lead.map(|(p, r, _)| (p, r)).unwrap_or((self.position, self.body_rotation()));
+                let c = t.coupling_point(lp, lr);
                 let b_c = b_prev + (c - prev_c).truncate().length();
                 if let Some(p) = at_behind(b_c + t.pivot_length() as f64) {
                     t.place_on_track(p);
                 }
                 b_prev = b_c;
                 prev_c = c;
+                t.lead_turn = turn;
+                t.update(self, dt, lead);
+                lead = Some((t.position, t.body_rotation(), t.heading));
+                turn = (t.kappa, t.axle_long);
             }
-            t.update(self, dt, lead);
-            lead = Some((t.position, t.body_rotation(), t.heading));
         }
         self.trailers = trailers;
     }

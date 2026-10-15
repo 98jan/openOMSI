@@ -65,6 +65,9 @@ pub(crate) struct Integrations {
     pub(crate) plugin_events: Vec<omsi_plugin::GameEvent>,
     /// The same for events whose values are tables (see `plugins::queue_event_ex`).
     pub(crate) plugin_events_ex: Vec<(&'static str, Vec<omsi_plugin::api::Value>)>,
+    /// The passengers who decided about their ticket since the plugins' last frame (the
+    /// `passenger_ticket` event, `AccessTicketRequest`).
+    pub(crate) plugin_ticket_asks: Vec<omsi_plugin::TicketAsk>,
     /// The mouse on the script textures `.opl` plugins draw (clicked like a bus's pages).
     pub(crate) plugin_pointer: omsi_plugin::TexturePointer,
     /// The plugins' sounds playing, and whether each moves with the player's bus.
@@ -134,7 +137,10 @@ pub(crate) struct PerfState {
     /// since then (s), for the exit summary's percentiles (see `perf_report`).
     pub(crate) profile_mark: Option<crate::perf_report::ProfileMark>,
     pub(crate) frame_times: Vec<f32>,
+    /// Each kept frame's stage times, `ProfKey::ALL` in order (seconds; OMSI_PROFILE only).
+    pub(crate) frame_stages: Vec<f32>,
     pub(crate) overlay: crate::perf_overlay::PerfOverlay,
+    pub(crate) texture_cut_at: Option<Instant>,
 }
 
 /// The drawing around the renderer: the wgpu instance and surface, the tile streaming, the

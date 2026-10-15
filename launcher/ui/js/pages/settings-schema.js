@@ -3,7 +3,7 @@
 // translation keys, so they stay word for word as they were.
 //
 // A row is one of:
-//   { type: 'select', key, label, options, raw?, help? }   options: [value, label] pairs, or (s, boot) => pairs
+//   { type: 'select', key, label, options, raw?, help?, recheckUpdates? }   options: [value, label] pairs, or (s, boot) => pairs
 //   { type: 'toggle', key, label, help? }
 //   { type: 'slider', key, label, min, max, step, def, format, store?, also? }
 //   { type: 'section', title }        { type: 'note', text }
@@ -42,6 +42,7 @@ const snap = (step) => (v) => Number((Math.round(v / step) * step).toFixed(4));
 const mode = (s) => s.graphics || 'vanilla_plus';
 const classic = (s) => mode(s) === 'vanilla';
 const traced = (s) => mode(s) === 'enhanced_plus';
+const enhanced = (s) => mode(s) === 'enhanced' || traced(s);
 const mobile = (s, p) => p === 'android' || p === 'ios';
 const windows = (s, p) => p === 'windows';
 const tripleOn = (s) => !!s.triple_screen;
@@ -53,17 +54,13 @@ export const RESOLUTIONS = [
   ['1600x900', '1600 x 900'], ['1920x1080', '1920 x 1080'], ['1920x1200', '1920 x 1200'], ['2560x1440', '2560 x 1440'], ['3840x2160', '3840 x 2160'],
 ];
 
-/** MB as the texture memory's choices write it. */
-const mb = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)} GB` : `${v} MB`);
-
-/** The texture memory's choices; "Automatic" says what that comes to on this machine. */
-function textureMemory(s) {
-  const auto = Number(s.texture_memory_auto) || 0;
-  return [
-    ['0', auto > 0 ? t('Automatic ({size} here)', { size: mb(auto) }) : 'Automatic'],
-    ['500', '500 MB'], ['1000', '1 GB'], ['1500', '1.5 GB'], ['2000', '2 GB'], ['3000', '3 GB'], ['4000', '4 GB'], ['6000', '6 GB'],
-  ];
-}
+/** The video memory's choices: all the game holds on the graphics card (textures, meshes,
+ * render targets). "Automatic" is nine tenths of the card's own memory and the driver's
+ * budget, which the launcher does not know. */
+const videoMemory = [
+  ['0', 'Automatic'],
+  ['1000', '1 GB'], ['1500', '1.5 GB'], ['2000', '2 GB'], ['3000', '3 GB'], ['4000', '4 GB'], ['6000', '6 GB'], ['8000', '8 GB'], ['12000', '12 GB'],
+];
 
 /** The pedals' response: softer below 1, stronger above. */
 const pedal = (v) => (Math.abs(v - 1) < 0.01 ? t('Normal') : v < 1 ? `${t('Softer')} x${v.toFixed(2)}` : `${t('Stronger')} x${v.toFixed(2)}`);
@@ -95,15 +92,15 @@ const graphics = {
         { type: 'toggle', key: 'shadows', label: 'Sun shadows', when: (s) => !classic(s) && !traced(s) },
         { type: 'select', key: 'shadow_casters', label: 'Shadows cast by', options: [['all', 'Every solid mesh'], ['omsi', '[shadow] meshes, as OMSI']], when: (s) => !classic(s) },
         { type: 'toggle', key: 'detail_textures', label: 'Detail texturing up close', when: (s) => !classic(s) },
-        { type: 'slider', key: 'night_brightness', label: 'Night brightness', min: 0, max: 3, step: 0.25, def: 0, format: (v) => (v < 0.01 ? t('Off') : `+${v.toFixed(2)}`), store: snap(0.25), when: (s) => !classic(s) },
-        { type: 'slider', key: 'led_glow', label: 'LED glow', min: 0, max: 15, step: 1, def: 6, format: (v) => (v < 0.5 ? t('Off') : String(Math.trunc(v))), store: round, when: (s) => !classic(s) },
-        { type: 'slider', key: 'led_mips', label: 'LED mip strength', min: 0, max: 4, step: 0.05, def: 1.3, format: (v) => (v < 0.005 ? t('Off') : v.toFixed(2)), store: snap(0.05), when: (s) => !classic(s) },
+        { type: 'slider', key: 'night_brightness', label: 'Night brightness', min: 0, max: 3, step: 0.25, def: 0, format: (v) => (v < 0.01 ? t('Off') : `+${v.toFixed(2)}`), store: snap(0.25), when: enhanced },
+        { type: 'slider', key: 'led_glow', label: 'LED glow', min: 0, max: 15, step: 1, def: 6, format: (v) => (v < 0.5 ? t('Off') : String(Math.trunc(v))), store: round, when: enhanced },
+        { type: 'slider', key: 'led_mips', label: 'LED mip strength', min: 0, max: 4, step: 0.05, def: 1.3, format: (v) => (v < 0.005 ? t('Off') : v.toFixed(2)), store: snap(0.05), when: enhanced },
         // (the `[isshadow]` blob under a vehicle is drawn in every mode, the vanilla one included)
         { type: 'toggle', key: 'shadow_blobs', label: "OMSI's shadow meshes (under vehicles)" },
         { type: 'toggle', key: 'reflections', label: 'Reflection maps (paint, chrome, glass)', when: (s) => !traced(s) },
         { type: 'toggle', key: 'clouds', label: 'Clouds' },
         // (only the enhanced modes march volumetric clouds; the vanilla ones are a texture)
-        { type: 'select', key: 'cloud_quality', label: 'Cloud quality', options: [['high', 'High'], ['low', 'Low']], when: (s) => (mode(s) === 'enhanced' || mode(s) === 'enhanced_plus') && s.clouds !== false },
+        { type: 'select', key: 'cloud_quality', label: 'Cloud quality', options: [['high', 'High'], ['low', 'Low']], when: (s) => enhanced(s) && s.clouds !== false },
         { type: 'select', key: 'rain_quality', label: 'Rain quality', options: [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']] },
         { type: 'toggle', key: 'windy_trees', label: 'Windy trees' },
       ],
@@ -123,10 +120,10 @@ const graphics = {
         { type: 'select', key: 'max_obj_dist', label: 'Object distance', options: [['auto', 'Automatic'], ['500', '500 m'], ['750', '750 m'], ['900', '900 m'], ['1500', '1500 m'], ['3000', '3000 m']] },
         { type: 'select', key: 'min_obj_size', label: 'Small objects', options: [['0.005', 'All'], ['0.013', 'Normal'], ['0.02', 'Fewer (faster)'], ['0.03', 'Few (fastest)']] },
         { type: 'select', key: 'mirror_size', label: 'Mirrors', options: [['0', 'Off'], ['128', 'Low (128)'], ['256', 'Normal (256)'], ['512', 'High (512)'], ['1024', 'Very high (1024)']] },
-        { type: 'select', key: 'mirror_refresh', label: 'Real-time reflections', options: [['off', 'None (frozen picture)'], ['eco', 'Economical'], ['full', 'Full'], ['every', 'Every frame (smoothest)']] },
-        { type: 'select', key: 'mirror_quality', label: 'Mirror quality', options: [['standard', 'Standard'], ['enhanced', 'As the picture (Enhanced)']] },
+        { type: 'select', key: 'mirror_refresh', label: 'Bus mirror refresh', options: [['off', 'None (frozen picture)'], ['eco', 'Economical'], ['full', 'Full'], ['every', 'Every frame (smoothest)']] },
+        { type: 'select', key: 'mirror_quality', label: 'Mirror quality', options: [['standard', 'Standard'], ['enhanced', 'As the picture (Enhanced)']], when: enhanced },
         { type: 'toggle', key: 'mirror_hud_every_frame', label: 'Mirror panels every frame' },
-        { type: 'select', key: 'texture_memory', label: 'Texture memory', options: textureMemory },
+        { type: 'select', key: 'video_memory', label: 'Video memory', options: videoMemory, help: 'Everything the game keeps on the graphics card: textures, models and the picture itself. Automatic is nine tenths of the card.' },
         { type: 'toggle', key: 'texture_compression', label: 'Compress textures on loading' },
         // (off: block formats decoded on loading, for a driver that mishandles them)
         { type: 'toggle', key: 'gpu_texture_compression', label: 'DXT/BC textures stay compressed on the GPU' },
@@ -324,7 +321,7 @@ const gameplay = {
       rows: [
         { type: 'select', key: 'boarding', label: 'Boarding', options: [['auto', 'Pay and take the ticket'], ['pay', 'The driver sells the ticket'], ['walk', 'Just walk in']] },
         { type: 'select', key: 'standing_chance', label: 'Standing passengers', options: [['0', 'Never'], ['5', '5%'], ['10', '10%'], ['25', '25%'], ['50', '50%'], ['100', 'Always']] },
-        { type: 'select', key: 'passenger_animation', label: 'Passenger animations', options: [['enhanced', 'Natural (procedural)'], ['original', 'Original OMSI']] },
+        { type: 'select', key: 'passenger_animation', label: 'Passenger animations', options: [['original', 'Original OMSI'], ['enhanced', 'Natural (procedural)']] },
         // (drawn on this computer only; the avatars are downloaded once, about 310 MB)
         { type: 'select', key: 'character_models', label: 'Character models', options: [['original', 'Original'], ['improved', 'High quality (improved)']], help: 'High quality draws the people with the Microsoft Rocketbox avatars and their living faces, on this computer only: servers and other players keep their own. They are downloaded once (about 310 MB).' },
         { type: 'toggle', key: 'exact_fare', label: 'Passengers pay the exact fare' },
@@ -405,6 +402,7 @@ const general = {
       title: 'Updates',
       rows: [
         { type: 'toggle', key: 'update_check', label: 'Look for updates when the launcher starts' },
+        { type: 'select', key: 'update_channel', label: 'Update channel', options: [['stable', 'Stable'], ['beta', 'Beta (for testers)']], help: 'Beta: every new version as soon as it is built, before it is tested. Back on Stable, the beta you have stays until a newer stable version comes out.', recheckUpdates: true },
         { type: 'toggle', key: 'update_auto', label: 'Install updates without asking' },
         { type: 'toggle', key: 'update_notify', label: 'Tell me about a new version during a session' },
         { type: 'toggle', key: 'presence', label: 'Count me in the website\'s "playing now" (anonymous)' },
@@ -423,6 +421,6 @@ export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, genera
 
 /** The settings a saved graphics profile holds (`GRAPHICS_PROFILE_KEYS`). */
 export const GRAPHICS_PROFILE_KEYS = [
-  'graphics', 'msaa', 'render_scale', 'anisotropy', 'shadow_size', 'ssao', 'shadows', 'shadow_casters', 'detail_textures', 'led_glow', 'led_mips', 'reflections', 'clouds', 'cloud_quality', 'rain_quality', 'windy_trees',
-  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_quality', 'mirror_hud_every_frame', 'texture_memory', 'texture_compression',
+  'graphics', 'msaa', 'render_scale', 'anisotropy', 'shadow_size', 'ssao', 'shadows', 'shadow_casters', 'detail_textures', 'night_brightness', 'led_glow', 'led_mips', 'shadow_blobs', 'reflections', 'clouds', 'cloud_quality', 'rain_quality', 'windy_trees',
+  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_quality', 'mirror_hud_every_frame', 'video_memory', 'texture_compression', 'gpu_texture_compression',
 ];

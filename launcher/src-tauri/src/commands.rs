@@ -155,7 +155,8 @@ fn fit_zoom(window: tauri::WebviewWindow, size: f64) -> Answer {
     let dpi = window.scale_factor().map_err(err)?;
     let inner = window.inner_size().map_err(err)?;
     let (w, h) = (inner.width as f64 / dpi, inner.height as f64 / dpi);
-    let zoom = (w / 1440.0).min(h / 820.0).clamp(1.0, 2.2) * size.clamp(0.8, 1.5);
+    let fit = (w / 1440.0).min(h / 820.0).max(1.0);
+    let zoom = (0.9 * fit.powf(0.7)).min(1.8) * size.clamp(0.8, 1.5);
     window.set_zoom(zoom).map_err(err)?;
     Ok(json!(zoom))
 }
