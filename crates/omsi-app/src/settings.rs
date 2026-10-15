@@ -899,15 +899,13 @@ impl Settings {
         self.ssao = false;
         self.shadow_size = self.shadow_size.min(2048);
         self.mirror_size = self.mirror_size.min(256);
-        self.video_memory = crate::memory::safe_video_memory(self.video_memory);
         if n >= 2 {
             self.shadows = false;
             self.shadow_size = 1024;
             self.render_scale = if self.render_scale > 0.0 { self.render_scale.min(0.75) } else { 0.75 };
-            self.video_memory = (self.video_memory * 3 / 4).max(400);
             self.mirror_size = self.mirror_size.min(128);
         }
-        log::warn!("safer graphics after a lost graphics device ({n}): msaa 1, SSAO off, shadows {} ({}), video memory {} MB, render scale {}", self.shadows, self.shadow_size, self.video_memory, self.render_scale_text());
+        log::warn!("safer graphics after a lost graphics device ({n}): msaa 1, SSAO off, shadows {} ({}), video memory {} of its limit, render scale {}", self.shadows, self.shadow_size, if n >= 2 { "half" } else { "two thirds" }, self.render_scale_text());
     }
 
     pub fn render_options(&self) -> omsi_render::RenderOptions {

@@ -94,29 +94,29 @@ pub(crate) fn video_memory_limit(settings: &settings::Settings) -> u64 {
     let card = card / 10 * 9;
     let mb = omsi_cfg::flags::OMSI_VIDEO_MEMORY.parse::<u64>()
         .unwrap_or(settings.video_memory as u64);
-    if mb == 0 {
-        return card;
-    }
-    if card > 0 && mb * 1_000_000 > card {
+    let limit = if mb == 0 {
+        card
+    } else if card > 0 && mb * 1_000_000 > card {
         // (the "8 GB" choice on an 8 GB card: what it can hold, which is what was meant)
         log::info!("video memory {mb} MB is more than the graphics card holds: {:.0} MB", card as f64 / 1e6);
-        return card;
+        card
+    } else {
+        mb * 1_000_000
+    };
+    match omsi_cfg::flags::OMSI_SAFE_GPU.parse::<u32>().filter(|n| *n > 0) {
+        Some(n) => safe_video_memory(limit, n),
+        None => limit,
     }
-    mb * 1_000_000
 }
 
-/// The video memory (MB) to start with again after a lost graphics device: two thirds of what
-/// was set, or of what the card holds when automatic (from a fixed 1200 MB, an 8 GB card
-/// started again with 800 MB for everything on it); 1200 when the card's size is unknown.
-pub(crate) fn safe_video_memory(set: u32) -> u32 {
-    let vram = omsi_render::ADAPTER_VRAM_MB.load(std::sync::atomic::Ordering::Relaxed);
-    let card = ((vram << 20) / 1_000_000 / 10 * 9) as u32;
-    let budget = match (set, card) {
-        (0, 0) => 1200,
-        (0, c) => c,
-        (v, _) => v,
-    };
-    (budget * 2 / 3).max(400)
+/// The video memory (bytes) to start with again after the graphics device was lost `n`
+/// times: two thirds of the limit, or of what the card holds when automatic (from a fixed
+/// 1200 MB, an 8 GB card started again with 800 MB for everything on it), three quarters of
+/// that after a second loss; 1200 MB when the card's size is unknown.
+pub(crate) fn safe_video_memory(limit: u64, n: u32) -> u64 {
+    let base = if limit == 0 { 1_200_000_000 } else { limit };
+    let safe = if n >= 2 { base * 2 / 3 * 3 / 4 } else { base * 2 / 3 };
+    safe.max(400_000_000)
 }
 
 /// Give the heap's free pages back to the system, on a thread of its own (the allocator
@@ -141,5 +141,18 @@ pub fn release_free_memory() {
                     );
                 }
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn video_memory_after_a_lost_device_is_taken_from_the_card() {
+        let card = (8192u64 << 20) / 10 * 9;
+        assert_eq!(super::safe_video_memory(card, 1), card * 2 / 3);
+        assert_eq!(super::safe_video_memory(card, 2), card * 2 / 3 * 3 / 4);
+        assert_eq!(super::safe_video_memory(0, 1), 800_000_000);
+        assert_eq!(super::safe_video_memory(0, 2), 600_000_000);
+        assert_eq!(super::safe_video_memory(500_000_000, 1), 400_000_000);
     }
 }
