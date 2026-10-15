@@ -335,7 +335,7 @@ impl Scene {
 
     /// Bytes the meshes' pages take on the GPU, each page once, whatever share of it is in use.
     pub fn mesh_page_bytes(&self) -> u64 {
-        let shared: u64 = self.mesh_pages.iter().map(|p| p.vertex.size() + p.index.size()).sum();
+        let shared: u64 = self.mesh_pages.iter().map(|p| p.vertex_cap + p.index_cap).sum();
         // (a set: without base vertices every mesh has buffers of its own, thousands of them)
         let mut own: std::collections::HashSet<&wgpu::Buffer> = std::collections::HashSet::new();
         for m in self.meshes.iter().filter(|m| m.page == u32::MAX && !m.ranges.is_empty()) {
