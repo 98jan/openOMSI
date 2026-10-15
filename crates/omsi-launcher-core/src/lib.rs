@@ -179,9 +179,8 @@ pub fn omsi_options(root: &Path) -> Option<OmsiOptions> {
     if let Some(af) = o.values.get("texfilter").and_then(|x| x.get(1)).and_then(|x| x.trim().parse::<i64>().ok()) {
         v["anisotropy"] = json!(af.clamp(1, 16));
     }
-    if let Some(x) = num("texmemlimit").filter(|x| *x > 0.0) {
-        v["texture_memory"] = json!(x as i64);
-    }
+    // (`texmemlimit`, OMSI's texture budget, is not taken: openOMSI's video memory bounds
+    // everything on the card, and the stock 401 would leave it 401 MB)
     if let Some(x) = num("performance_refltexsize") {
         v["mirror_size"] = json!(1i64 << (x as i64).clamp(6, 11));
     }
@@ -1872,16 +1871,20 @@ pub fn get_settings() -> Result<Value> {
             v["imported_from_omsi"] = json!(true);
         }
     }
-    // what "automatic" texture memory is on this machine (the game takes an eighth of it)
-    v["texture_memory_auto"] = json!(physical_memory().map(|m| m / 8 / 1_000_000).unwrap_or(2000));
     Ok(v)
 }
 
 /// Other spellings the game reads for a key the launcher writes: they are read here too and
 /// dropped when the file is written again (the game takes the last line of them, so a kept
-/// `texmemlimit=` would undo the page's `texture_memory=`).
+/// `lang=` would undo the page's `language=`).
 // (`navigator_opacity`: the opacity was the navigator's before it was the whole interface's)
 const SETTING_ALIASES: &[(&str, &str)] = &[("af", "anisotropy"), ("ambient_occlusion", "ssao"), ("fractal", "detail_textures"), ("lang", "language"), ("texmemlimit", "texture_memory"), ("navigator_opacity", "ui_opacity"), ("gear_buttons_hold", "momentary_gears")];
+
+/// Keys of before that are dropped when the file is written again: `texture_memory=` (and
+/// OMSI's `texmemlimit=`, its alias) was the textures' budget, which `video_memory=` - all
+/// the game holds on the card - replaced; kept, a 401 or a 1000 meant for the textures would
+/// be taken for something else by whoever reads it next.
+const RETIRED_SETTINGS: &[&str] = &["texture_memory"];
 
 /// A window size as the settings keep it: "WxH" in pixels (each 320..16384), else "auto".
 pub fn resolution_text(v: &str) -> String {
@@ -2007,7 +2010,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
 }
 
 pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
-    let mut v = json!({ "msaa": 4, "anisotropy": 8, "ssao": true, "shadows": true, "shadow_size": 2048, "navigator": true, "ui_opacity": 0.85, "navigator_corner": "bottom-left", "boarding": "auto", "detail_textures": true, "exact_fare": true, "enhanced": false, "graphics": "vanilla_plus", "fullscreen": false, "vsync": true, "volume": 0.6, "drive_keys": "simple", "render_scale": "auto", "view_distance": "auto", "language": "ENG", "texture_memory": 0, "texture_compression": true, "gpu_texture_compression": true, "chat": true, "tooltips": true, "name_tags": true, "show_fps": false, "clouds": true, "cloud_quality": "high", "rain_quality": "high", "pax_density": 1.0, "vol_ai": 1.0, "vol_scenery": 1.0, "ambient": true, "vol_ambient": 0.8, "mirror_size": 256, "doppler": true, "driver": true, "max_fps": 0, "min_obj_size": 0.013, "max_obj_dist": "auto" });
+    let mut v = json!({ "msaa": 4, "anisotropy": 8, "ssao": true, "shadows": true, "shadow_size": 2048, "navigator": true, "ui_opacity": 0.85, "navigator_corner": "bottom-left", "boarding": "auto", "detail_textures": true, "exact_fare": true, "enhanced": false, "graphics": "vanilla_plus", "fullscreen": false, "vsync": true, "volume": 0.6, "drive_keys": "simple", "render_scale": "auto", "view_distance": "auto", "language": "ENG", "video_memory": 0, "texture_compression": true, "gpu_texture_compression": true, "chat": true, "tooltips": true, "name_tags": true, "show_fps": false, "clouds": true, "cloud_quality": "high", "rain_quality": "high", "pax_density": 1.0, "vol_ai": 1.0, "vol_scenery": 1.0, "ambient": true, "vol_ambient": 0.8, "mirror_size": 256, "doppler": true, "driver": true, "max_fps": 0, "min_obj_size": 0.013, "max_obj_dist": "auto" });
     if phone {
         for (k, d) in [("msaa", json!(2)), ("anisotropy", json!(4)), ("ssao", json!(false)), ("shadow_size", json!(1024)), ("mirror_size", json!(128)), ("max_fps", json!(60)), ("max_obj_dist", json!("900")), ("pax_density", json!(0.7)), ("navigator_corner", json!("top-center"))] {
             v[k] = d;
@@ -2191,7 +2194,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
                 }
             }
             // MB, 0 = automatic (a fraction written by hand is cut, as the game does)
-            "texture_memory" => {
+            "video_memory" => {
                 if let Ok(mb) = val.parse::<f64>() {
                     v[&k] = json!(mb.max(0.0) as i64);
                 }
@@ -2305,10 +2308,6 @@ pub fn option_presets() -> Vec<(String, Value)> {
         if let Some(af) = o.values.get("texfilter").and_then(|x| x.get(1)).and_then(|x| x.parse::<i64>().ok()) {
             v["anisotropy"] = json!(af.clamp(1, 16));
         }
-        let mem = o.f32("texmemlimit", 0.0);
-        if mem > 0.0 {
-            v["texture_memory"] = json!(mem as i64);
-        }
         let refl = o.i32("performance_refltexsize", 8);
         v["mirror_size"] = json!(1i64 << refl.clamp(6, 11));
         if let Some(x) = o.str("performance_realreflexions") {
@@ -2317,19 +2316,6 @@ pub fn option_presets() -> Vec<(String, Value)> {
         out.push((name, v));
     }
     out
-}
-
-/// The machine's memory in bytes.
-#[cfg(unix)]
-fn physical_memory() -> Option<u64> {
-    // SAFETY: sysconf only reads system values
-    let (pages, size) = unsafe { (libc::sysconf(libc::_SC_PHYS_PAGES), libc::sysconf(libc::_SC_PAGESIZE)) };
-    (pages > 0 && size > 0).then(|| pages as u64 * size as u64)
-}
-
-#[cfg(not(unix))]
-fn physical_memory() -> Option<u64> {
-    None
 }
 
 pub fn save_settings(v: &Value) -> Result<()> {
@@ -2343,7 +2329,7 @@ pub fn save_settings(v: &Value) -> Result<()> {
 /// own (fullscreen, graphics API).
 pub const GRAPHICS_PROFILE_KEYS: [&str; 30] = [
     "graphics", "msaa", "render_scale", "anisotropy", "shadow_size", "ssao", "shadows", "shadow_casters", "detail_textures", "night_brightness", "led_glow", "led_mips", "shadow_blobs", "reflections", "clouds", "cloud_quality", "rain_quality", "windy_trees",
-    "vsync", "max_fps", "view_distance", "max_obj_dist", "min_obj_size", "mirror_size", "mirror_refresh", "mirror_quality", "mirror_hud_every_frame", "texture_memory", "texture_compression", "gpu_texture_compression",
+    "vsync", "max_fps", "view_distance", "max_obj_dist", "min_obj_size", "mirror_size", "mirror_refresh", "mirror_quality", "mirror_hud_every_frame", "video_memory", "texture_compression", "gpu_texture_compression",
 ];
 
 fn graphics_profiles_path() -> PathBuf {
@@ -2408,7 +2394,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     let n = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64().or_else(|| x.as_f64().or_else(|| x.as_str().and_then(|s| s.trim().parse::<f64>().ok())).map(|f| f as i64))).unwrap_or(d);
     let f = |k: &str, d: f64| v.get(k).and_then(|x| x.as_f64()).unwrap_or(d);
     let text = format!(
-        "# openOMSI settings (written by the launcher)\nversion=4\nmsaa={}\nanisotropy={}\nssao={}\nshadows={}\nshadow_size={}\nnavigator={}\nui_opacity={}\nnavigator_corner={}\nboarding={}\ndetail_textures={}\nexact_fare={}\nenhanced={}\ngraphics={}\nfullscreen={}\nvsync={}\nvolume={}\ndrive_keys={}\nrender_scale={}\nview_distance={}\nlanguage={}\ntexture_memory={}\ntexture_compression={}\nchat={}\ntooltips={}\nname_tags={}\nshow_fps={}\nclouds={}\npax_density={}\nvol_ai={}\nvol_scenery={}\nmirror_size={}\ndoppler={}\ndriver={}\nmax_fps={}\nmin_obj_size={}\nmax_obj_dist={}\n",
+        "# openOMSI settings (written by the launcher)\nversion=4\nmsaa={}\nanisotropy={}\nssao={}\nshadows={}\nshadow_size={}\nnavigator={}\nui_opacity={}\nnavigator_corner={}\nboarding={}\ndetail_textures={}\nexact_fare={}\nenhanced={}\ngraphics={}\nfullscreen={}\nvsync={}\nvolume={}\ndrive_keys={}\nrender_scale={}\nview_distance={}\nlanguage={}\nvideo_memory={}\ntexture_compression={}\nchat={}\ntooltips={}\nname_tags={}\nshow_fps={}\nclouds={}\npax_density={}\nvol_ai={}\nvol_scenery={}\nmirror_size={}\ndoppler={}\ndriver={}\nmax_fps={}\nmin_obj_size={}\nmax_obj_dist={}\n",
         n("msaa", 4),
         n("anisotropy", 8),
         b("ssao", true),
@@ -2439,7 +2425,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
             _ => "auto".to_string(),
         },
         language_code(v.get("language").and_then(|x| x.as_str()).unwrap_or("ENG")),
-        n("texture_memory", 0).max(0),
+        n("video_memory", 0).max(0),
         b("texture_compression", true),
         b("chat", true),
         b("tooltips", true),
@@ -2611,7 +2597,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
             continue;
         }
         match t.split_once('=') {
-            Some((k, _)) if !written.contains(&setting_key(k)) => {
+            Some((k, _)) if !written.contains(&setting_key(k)) && !RETIRED_SETTINGS.contains(&setting_key(k).as_str()) => {
                 text.push_str(t);
                 text.push('\n');
             }

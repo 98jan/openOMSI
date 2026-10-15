@@ -331,22 +331,23 @@ fn settings_keep_what_the_page_does_not_manage() {
     assert_eq!(v["msaa"], 1);
     assert_eq!(v["view_distance"], "1500");
     assert_eq!(v["language"], "DEU");
-    assert_eq!(v["texture_memory"], 401);
+    // (OMSI's texture budget is not the video memory: Automatic)
+    assert_eq!(v["video_memory"], 0);
+    assert!(v.get("texture_memory").is_none());
     assert_eq!(v["texture_compression"], true);
     assert_eq!(v["detail_textures"], false);
     // the page changes a few things (its selects give strings) and saves
     let mut page = v.clone();
     page["view_distance"] = json!("2000");
     page["language"] = json!("FRA");
-    page["texture_memory"] = json!("3000");
+    page["video_memory"] = json!("3000");
     page["texture_compression"] = json!(false);
-    page["texture_memory_auto"] = json!(2000);
     let text = settings_to_text(&page, Some(old));
-    for line in ["view_distance=2000", "language=FRA", "texture_memory=3000", "texture_compression=0", "detail_textures=0", "future_switch=7", "OMSI_Thing = on"] {
+    for line in ["view_distance=2000", "language=FRA", "video_memory=3000", "texture_compression=0", "detail_textures=0", "future_switch=7", "OMSI_Thing = on"] {
         assert!(text.lines().any(|l| l == line), "{line} missing in\n{text}");
     }
     // the old spellings would override what was just written: gone, and nothing twice
-    for gone in ["lang=", "texmemlimit=", "fractal=", "texture_memory_auto", "view_distance=1500"] {
+    for gone in ["lang=", "texmemlimit=", "texture_memory=", "fractal=", "view_distance=1500"] {
         assert!(!text.contains(gone), "{gone} kept in\n{text}");
     }
     let keys: Vec<&str> = text.lines().filter_map(|l| l.split_once('=')).map(|(k, _)| k.trim()).collect();
@@ -358,7 +359,7 @@ fn settings_keep_what_the_page_does_not_manage() {
     let back = settings_from_text(Some(&text));
     assert_eq!(back["view_distance"], "2000");
     assert_eq!(back["language"], "FRA");
-    assert_eq!(back["texture_memory"], 3000);
+    assert_eq!(back["video_memory"], 3000);
     assert_eq!(back["texture_compression"], false);
 }
 
@@ -384,17 +385,15 @@ fn settings_defaults_and_automatic_values() {
     let v = settings_from_text(None);
     assert_eq!(v["view_distance"], "auto");
     assert_eq!(v["language"], "ENG");
-    assert_eq!(v["texture_memory"], 0);
+    assert_eq!(v["video_memory"], 0);
     let text = settings_to_text(&v, None);
-    for line in ["view_distance=auto", "language=ENG", "texture_memory=0", "texture_compression=1", "render_scale=auto"] {
+    for line in ["view_distance=auto", "language=ENG", "video_memory=0", "texture_compression=1", "render_scale=auto"] {
         assert!(text.lines().any(|l| l == line), "{line} missing in\n{text}");
     }
     // nonsense from a hand-edited file falls back to the defaults
-    let v = settings_from_text(Some("view_distance=far\nview_distance=-5\nlanguage=Klingon\ntexture_memory=lots\n"));
-    assert_eq!((v["view_distance"].as_str(), v["language"].as_str(), v["texture_memory"].as_i64()), (Some("auto"), Some("ENG"), Some(0)));
+    let v = settings_from_text(Some("view_distance=far\nview_distance=-5\nlanguage=Klingon\nvideo_memory=lots\n"));
+    assert_eq!((v["view_distance"].as_str(), v["language"].as_str(), v["video_memory"].as_i64()), (Some("auto"), Some("ENG"), Some(0)));
     // a number from a script instead of the select's string
-    let text = settings_to_text(&json!({ "view_distance": 900, "texture_memory": 1500.0 }), None);
-    assert!(text.contains("\nview_distance=900\n") && text.contains("\ntexture_memory=1500\n"), "{text}");
-    #[cfg(unix)]
-    assert!(physical_memory().unwrap_or(0) > 256_000_000, "the machine's memory is read");
+    let text = settings_to_text(&json!({ "view_distance": 900, "video_memory": 1500.0 }), None);
+    assert!(text.contains("\nview_distance=900\n") && text.contains("\nvideo_memory=1500\n"), "{text}");
 }

@@ -50,6 +50,17 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 **Graphics and sound**
 
+- **The video memory setting is kept:** "Texture memory" is now "Video memory", and it bounds
+  everything the game holds on the graphics card - textures, meshes, render targets and shadow
+  maps, the driver's own - not the textures alone. The game took gigabytes more than it was
+  set to, and an 8 GB card could page to the system's memory and drop to a fraction of its
+  frame rate. Where the driver says how much it really hands out (DirectX 12, Vulkan, Metal),
+  the game stays under that as well, whatever the setting; when it is over, the farthest
+  textures give up their finest levels first, and come back when there is room again.
+  "Automatic" is nine tenths of the card's own memory. Choices of 8 and 12 GB were added,
+  500 MB was dropped. A texture memory set before (and OMSI's `texmemlimit`) was a texture
+  budget and is not carried over: the video memory starts on Automatic. After a lost graphics
+  device the safer settings take two thirds of what the card holds, not a fixed 800 MB.
 - A remembered MSAA fallback is tried at the chosen MSAA again once with each new version
   (written down before the try, so a failing or crashing retry is not repeated at every
   start), instead of keeping a computer at 1x for good ([#2597](https://github.com/openOMSI-org/openOMSI/issues/2597)).
