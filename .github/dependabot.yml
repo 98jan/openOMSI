@@ -42,6 +42,9 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "jni"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # glow is the one wgpu's GL backend uses (the ANGLE setup hands it wgpu-hal's context)
+      - dependency-name: "glow"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   - package-ecosystem: github-actions
     directory: /
