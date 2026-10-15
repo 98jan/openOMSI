@@ -6,6 +6,59 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 ## Unreleased
 
+### Fixes
+
+**Traffic and timetable**
+
+- Timetable buses appear when their tour runs, as in OMSI 2: the first trip of a tour comes
+  at its departure instead of a quarter of an hour early at its first stop, and a tour under
+  way has its bus waiting at the first stop between trips, at stops other lines use too
+  ([#2595](https://github.com/openOMSI-org/openOMSI/issues/2595), [#2593](https://github.com/openOMSI-org/openOMSI/issues/2593)).
+- An AI bus that served a stop from behind the bus in front pulls up and boards again once
+  the stop is free, instead of standing back until its departure ([#2591](https://github.com/openOMSI-org/openOMSI/issues/2591)).
+- A traffic light's approach request follows the indicator: a path marked left or right asks
+  only with that indicator, so a junction no longer requests every stage at once ([#2532](https://github.com/openOMSI-org/openOMSI/issues/2532)).
+- Chrono scenarios switch the money system, the AI lists and the parking lists as in OMSI 2:
+  a scenario's full AI list replaces the map's, an update replaces only the groups it names,
+  and parking lists come from the newest scenario that has them ([#2315](https://github.com/openOMSI-org/openOMSI/issues/2315)).
+
+- Departure displays at the stops show their buses again (HafenCity Hamburg's HVV boards
+  stayed empty under the stop name and headings since 0.2.39), and other scripted scenery
+  objects near the camera no longer miss their texts, sounds and animations while an object
+  farther away is out of range ([#2619](https://github.com/openOMSI-org/openOMSI/issues/2619)).
+
+**Vehicles and cameras**
+
+- The rear axle of articulated buses with a steered rear section (Van Hool AG300, Ikarus
+  280) steers, and its scripts get its steering angle ([#322](https://github.com/openOMSI-org/openOMSI/issues/322)).
+- The rear section's driver camera comes after the front's first and last cab views, as in
+  OMSI 2, instead of one key press away from the standard view ([#2503](https://github.com/openOMSI-org/openOMSI/issues/2503)).
+- The driver's eye moves with the seat's suspension, one movement as in OMSI 2; the camera
+  had a spring of its own that dipped the other way under braking ([#2550](https://github.com/openOMSI-org/openOMSI/issues/2550)).
+- GetTicketName gives the ticket's display string, what ticket printers print ([#2483](https://github.com/openOMSI-org/openOMSI/issues/2483)).
+
+**Controls**
+
+- Another add-on's key in keyboard.cfg no longer takes Ctrl+Shift+M (mirror editor) and
+  similar game shortcuts from buses that have no use for that key ([#2577](https://github.com/openOMSI-org/openOMSI/issues/2577)).
+- Windows: Num4 and the Left arrow held together (Num Lock off) no longer leave the steering
+  stuck ([#1830](https://github.com/openOMSI-org/openOMSI/issues/1830)).
+- DirectInput axes are scaled from the range the driver really gives them, and an axis with
+  its own range is logged (Fanatec pedals reading 50-100 %, [#521](https://github.com/openOMSI-org/openOMSI/issues/521)).
+- Linux: only real controller axes are used, and a free X axis steers counted from where it
+  rests, so a macro keypad's knob no longer steers the bus ([#868](https://github.com/openOMSI-org/openOMSI/issues/868)).
+
+**Graphics and sound**
+
+- A remembered MSAA fallback is tried at the chosen MSAA again once with each new version
+  (written down before the try, so a failing or crashing retry is not repeated at every
+  start), instead of keeping a computer at 1x for good ([#2597](https://github.com/openOMSI-org/openOMSI/issues/2597)).
+- The paper timetable keeps Courier New's spacing whatever font draws it, and Linux finds
+  Courier-compatible fonts (Liberation Mono, Cousine, Nimbus Mono) ([#1878](https://github.com/openOMSI-org/openOMSI/issues/1878)).
+- Scenery sounds carry as far as their range lets them, up to the 800 m within which scenery
+  objects run, and fade out over the last part instead of stopping dead at 300 m ([#2534](https://github.com/openOMSI-org/openOMSI/issues/2534)).
+- Shader tests cover OpenGL ES 3.1/3.2 per entry point and catch the nested constant-array
+  lookups the Adreno 710 refused ([#2009](https://github.com/openOMSI-org/openOMSI/issues/2009)).
 ### Multiplayer
 
 - **What another machine sends is checked for what it is** — a host's mod file a joining

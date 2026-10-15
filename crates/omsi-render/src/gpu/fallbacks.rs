@@ -35,8 +35,8 @@ pub(crate) fn optional_pipeline<T>(device: &wgpu::Device, what: &str, make: impl
     }
 }
 /// The file that remembers, per graphics adapter, the reduced renderer that worked there
-/// (`~/.openomsi/gpu-fallback.cfg`, lines `adapter|msaa|basic`; basic `1@<version>`: the
-/// game's version that found the full set failing, see `build_with_fallbacks`).
+/// (`~/.openomsi/gpu-fallback.cfg`, lines `adapter|msaa|basic@<version>`: the game's version
+/// that found the full set failing, see `build_with_fallbacks`; older lines have no version).
 pub(crate) fn fallback_path() -> Option<std::path::PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
     Some(std::path::PathBuf::from(home).join(".openomsi").join("gpu-fallback.cfg"))
@@ -60,7 +60,7 @@ pub(crate) fn game_version() -> &'static str {
 }
 
 /// The reduced renderer (MSAA, basic pipelines) that worked on adapter `name` before, and
-/// whether the basic one was found by this version of the game.
+/// whether it was found by this version of the game.
 pub(crate) fn fallback_load(name: &str) -> Option<(u32, bool, bool)> {
     let text = std::fs::read_to_string(fallback_path()?).ok()?;
     parse_fallbacks(&text).into_iter().find(|e| e.0 == name).map(|e| (e.1, e.2, e.3 == game_version()))
@@ -72,9 +72,9 @@ pub(crate) fn fallback_store(name: &str, what: Option<(u32, bool)>) {
     let mut all = std::fs::read_to_string(&path).map(|t| parse_fallbacks(&t)).unwrap_or_default();
     all.retain(|e| e.0 != name);
     if let Some((m, b)) = what {
-        all.push((name.to_string(), m, b, if b { game_version().to_string() } else { String::new() }));
+        all.push((name.to_string(), m, b, game_version().to_string()));
     }
-    let text: String = all.iter().map(|(n, m, b, v)| if *b && !v.is_empty() { format!("{n}|{m}|1@{v}\n") } else { format!("{n}|{m}|{}\n", *b as u8) }).collect();
+    let text: String = all.iter().map(|(n, m, b, v)| if v.is_empty() { format!("{n}|{m}|{}\n", *b as u8) } else { format!("{n}|{m}|{}@{v}\n", *b as u8) }).collect();
     if let Some(d) = path.parent() {
         let _ = std::fs::create_dir_all(d);
     }
@@ -91,5 +91,7 @@ pub(crate) mod fallback_tests {
             ("NVIDIA | odd (Vulkan)".to_string(), 4, false, String::new()),
             ("Radeon (Dx12)".to_string(), 4, true, "0.2.27".to_string()),
         ]);
+        // (a multisampling fallback carries the version that found it too)
+        assert_eq!(super::parse_fallbacks("NVIDIA GeForce RTX 3060 (Vulkan)|1|0@0.3.1\n"), vec![("NVIDIA GeForce RTX 3060 (Vulkan)".to_string(), 1, false, "0.3.1".to_string())]);
     }
 }

@@ -64,14 +64,35 @@ fn hot_reload_keeps_device_owner_and_ffb_runtime_state() {
 #[test]
 fn a_device_nobody_set_up_steers_only_once_its_axis_moved() {
     let mut moved = Vec::new();
+    let j = "4 axes, 25 buttons, joystick";
     // idle at its centre (or a little off it): it does not steer, so the arrow keys
     // switch the interior camera as with no device at all
-    assert!(!free_axis_steers(&mut moved, "4 axes, 25 buttons, joystick", 0.0));
-    assert!(!free_axis_steers(&mut moved, "4 axes, 25 buttons, joystick", -0.1));
+    assert!(!free_axis_steers(&mut moved, j, 0.0, Some(0.0)));
+    assert!(!free_axis_steers(&mut moved, j, -0.1, Some(0.0)));
+    // (not before it is known where it rests)
+    assert!(!free_axis_steers(&mut moved, j, 0.4, None));
     // turned: it steers, also when back at the centre
-    assert!(free_axis_steers(&mut moved, "4 axes, 25 buttons, joystick", 0.4));
-    assert!(free_axis_steers(&mut moved, "4 axes, 25 buttons, joystick", 0.0));
-    assert!(!free_axis_steers(&mut moved, "another joystick", 0.0));
+    assert!(free_axis_steers(&mut moved, j, 0.4, Some(0.0)));
+    assert!(free_axis_steers(&mut moved, j, 0.0, Some(0.0)));
+    assert!(!free_axis_steers(&mut moved, "another joystick", 0.0, Some(0.0)));
+}
+
+/// An X axis resting at an end (a pedal, a macro keypad's stray axis) never steers (#868).
+#[test]
+fn an_x_axis_resting_at_an_end_does_not_steer() {
+    let mut moved = Vec::new();
+    assert!(!free_axis_steers(&mut moved, "ps2avrGB", -1.0, Some(-1.0)));
+    assert!(!free_axis_steers(&mut moved, "ps2avrGB", 0.5, Some(-1.0)));
+    assert!(moved.is_empty());
+}
+
+/// Steering from where the axis rests: one resting at 0.4 is straight ahead there (#868).
+#[test]
+fn a_free_axis_steers_from_where_it_rests() {
+    assert_eq!(free_axis_from_rest(0.4, Some(0.4)), 0.0);
+    assert!((free_axis_from_rest(0.9, Some(0.4)) - 0.5).abs() < 1e-6);
+    assert_eq!(free_axis_from_rest(-1.0, Some(0.4)), -1.0);
+    assert_eq!(free_axis_from_rest(0.3, None), 0.3);
 }
 
 #[test]

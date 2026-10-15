@@ -81,8 +81,16 @@ impl World {
                 .and_then(|p| omsi_cfg::CfgFile::read(&p).ok())
             {
                 let cc = omsi_map::ailists::parse_chrono_cfg(&cfg);
-                if let Some(t) = cc.ticket_pack {
+                // the newest active scenario that names a ticket pack or money system has
+                // it, else the map's own: the currency changes from DM to Euro on the
+                // scenario's date (Omsi.exe 0x785f98 after "TMap.loadGlobalFile - 154":
+                // active chrono entries from the last back, +0x30 money system then
+                // +0x2c ticket pack, the map's own last, #2315)
+                if let Some(t) = cc.ticket_pack.filter(|t| !t.trim().is_empty()) {
                     ticket_pack = t;
+                }
+                if let Some(m) = cc.money_system.filter(|m| !m.trim().is_empty()) {
+                    global.money_system = m.trim().to_string();
                 }
             }
         }
