@@ -5,6 +5,9 @@
 
 use omsi_net::LanSession;
 
+mod action;
+pub use action::{act_on_session, Action, Admin, Done, WeatherAction, Whom};
+
 /// What of the game a dedicated server's administration goes by.
 pub struct ServerRules<'a> {
     /// The server's clock follows the real time: no admin moves it or changes its speed.
@@ -236,122 +239,34 @@ pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut Ser
             }
         }
         "admin" if adm.admins.contains(&from) => {
-            let (v, a) = arg.split_once(' ').unwrap_or((arg, ""));
-            let id = a.trim().parse::<u32>().ok();
             log::info!("server: admin {from}: {arg}");
-            match v {
-                "kick" | "ban" => {
-                    // (`kick <id> [reason]`: the reason is what the player reads when the game closes)
-                    let why = a.trim().split_once(' ').map(|x| x.1.trim()).filter(|r| !r.is_empty());
-                    if let Some(id) = a.trim().split(' ').next().and_then(|x| x.parse::<u32>().ok()) {
-                        lan.kick(id, why.unwrap_or(if v == "ban" { "sent away for this session" } else { "sent away by an admin" }), v == "ban");
-                    }
-                }
-                "bring" => {
-                    if let (Some(id), Some((pos, h))) = (id, positions(from)) {
-                        let (x, y) = beside(pos, h, 8.0);
-                        lan.command(id, &format!("teleport {x:.2} {y:.2} {:.2} {h:.1}", pos.z));
-                    }
-                }
-                "goto" => {
-                    if let Some((pos, h)) = id.and_then(positions) {
+            let Some(action) = Action::parse(arg) else { return };
+            // (what the action asks of the session: the same as in a hosting game's menu)
+            let admin = Admin { id: Some(from), at: positions(from), sent_away: "sent away by an admin", notice_ok: rules.notice_ok };
+            if act_on_session(lan, &action, &admin) != Done::World {
+                return;
+            }
+            // the server's own world: it goes to a player for its admin, and keeps its
+            // clock and speed while on the real time
+            match action {
+                Action::Goto(id) => {
+                    if let Some((pos, h)) = positions(id) {
                         let (x, y) = beside(pos, h, 8.0);
                         lan.command(from, &format!("teleport {x:.2} {y:.2} {:.2} {h:.1}", pos.z));
                     }
                 }
-                // (a server on the real time keeps its clock and its speed)
-                "time" if !rules.real_time => {
-                    if let Some(s) = finite(a) {
-                        adm.shift += s.clamp(-86400.0, 86400.0);
-                    }
-                }
-                "speed" if !rules.real_time => {
-                    if let Some(s) = finite(a) {
-                        lan.clock_speed = s.clamp(1.0, 30.0);
-                    }
-                }
-                // the menu offers "weather next" and "weather set <file>" for each installed
-                // weather; a server took every one of them for "next"
-                "weather" => match a.trim().split_once(' ').map(|(k, f)| (k, f.trim())) {
-                    Some(("set", file)) if weather_file_ok(file) => adm.set_weather = Some(file.replace('\\', "/")),
-                    _ => adm.next_weather = true,
-                },
-                "say" => {
-                    let _ = lan.say(a);
-                }
-                // a word for one player only: `tell <id> <text>`, a chat line from "Admin
-                // (private)" that the others do not get
-                "tell" => {
-                    if let Some((who, msg)) = a.trim().split_once(' ') {
-                        if let Ok(id) = who.parse::<u32>() {
-                            if let Err(e) = lan.say_to(id, "Admin (private)", msg.trim()) {
-                                log::info!("server: tell {id}: {e}");
-                            }
-                        }
-                    }
-                }
-                // a duty for one player: `duty <id> <line> <tour> <trip> <stop>` (see `command`)
-                "duty" => {
-                    if let Some((who, rest)) = a.trim().split_once(' ') {
-                        if let (Ok(id), Some(_)) = (who.parse::<u32>(), parse_duty(rest)) {
-                            lan.command(id, &format!("duty {}", rest.trim()));
-                        }
-                    }
-                }
-                // a notification on one player's screen, or everybody's: `notify <id|all> <notice
-                // id> <seconds> <info|warn|alert> <text>` (a game that shows it answers
-                // `notify-seen <notice id>`)
-                // (a dedicated server has no screen: its own number is nobody's)
-                "notify" => {
-                    if let Some((who, rest)) = a.trim().split_once(' ') {
-                        if (rules.notice_ok)(rest) {
-                            let (ids, _) = notice_targets(who, lan.peers().map(|p| p.pose.id), lan.my_id);
-                            for id in ids {
-                                lan.command(id, &format!("notify {}", rest.trim()));
-                            }
-                        }
-                    }
-                }
-                // the duty taken back from a player: `duty-off <id>` (see `command`)
-                "duty-off" => {
-                    if let Some(id) = id {
-                        lan.command(id, "duty-off");
-                    }
-                }
+                Action::Time(s) if !rules.real_time => adm.shift += s,
+                Action::Speed(s) if !rules.real_time => lan.clock_speed = s,
+                Action::Clock(s) if !rules.real_time => adm.set_clock = Some(s),
+                // (the menu offers "weather next" and "weather set <file>" for each installed
+                // weather; a server took every one of them for "next")
+                Action::Weather(WeatherAction::Set(file)) if weather_file_ok(&file) => adm.set_weather = Some(file.replace('\\', "/")),
+                Action::Weather(_) => adm.next_weather = true,
                 // the AI traffic: `traffic <density>` (as server.cfg's `traffic`) or `traffic
                 // clear` (every AI car off the road, a jam; the timetable's buses stay)
-                "traffic" => {
-                    if let Some(o) = TrafficOrder::parse(a, rules.traffic_max) {
+                Action::Traffic(arg) => {
+                    if let Some(o) = TrafficOrder::parse(&arg, rules.traffic_max) {
                         adm.traffic = Some(o);
-                    }
-                }
-                "bringall" => {
-                    if let Some((pos, h)) = positions(from) {
-                        let ids: Vec<u32> = lan.peers().map(|p| p.pose.id).filter(|id| *id != from && *id != lan.my_id).collect();
-                        for (k, id) in ids.iter().enumerate() {
-                            let (x, y) = beside(pos, h, 5.0 * (k as f64 + 1.0));
-                            lan.command(*id, &format!("teleport {x:.2} {y:.2} {:.2} {h:.1}", pos.z));
-                        }
-                    }
-                }
-                "service" => {
-                    let (kind, who) = a.split_once(' ').unwrap_or((a, "all"));
-                    if matches!(kind, "repair" | "refuel" | "wash") {
-                        let ids: Vec<u32> = if who == "all" { lan.peers().map(|p| p.pose.id).filter(|id| *id != lan.my_id).collect() } else { who.trim().parse::<u32>().ok().into_iter().collect() };
-                        for id in ids {
-                            lan.command(id, &format!("service {kind}"));
-                        }
-                    }
-                }
-                "unstick" => {
-                    if let Some(id) = id {
-                        lan.command(id, "unstick");
-                    }
-                }
-                "clock" if !rules.real_time => {
-                    // (the server's clock is the session's: moved by the difference)
-                    if let Some(s) = finite(a) {
-                        adm.set_clock = Some(s.rem_euclid(86400.0));
                     }
                 }
                 _ => {}

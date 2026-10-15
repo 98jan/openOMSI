@@ -2,7 +2,8 @@
 //! lists `[varlist] 1 throttle`, `[stringvarlist] 1 note`, `[systemvarlist] 1 Time` and
 //! `[triggers] 1 horn`: it doubles `throttle`, writes "seen at <Time>" into `note`,
 //! remembers `Time` as it last saw it, and holds `horn` down on odd whole seconds. With
-//! `[scripttexturelist]` it paints the first entry (see `AccessScriptTexture`).
+//! `[scripttexturelist]` it paints the first entry (see `AccessScriptTexture`), and it
+//! prices the passengers' tickets by the stops they ride (see `AccessTicketRequest`).
 use std::sync::atomic::{AtomicU32, Ordering};
 
 static TIME: AtomicU32 = AtomicU32::new(0);
@@ -103,6 +104,53 @@ pub unsafe extern "system" fn AccessScriptTexture(index: u16, width: i32, height
     if p[3] == 1 && px.len() >= 8 {
         px[4..8].copy_from_slice(&p);
     }
+    *write = 1;
+}
+
+/// openOMSI's `AccessTicketRequest`: a child (under 15) needs no ticket; a ride of `n`
+/// stops of the trip costs `n` x 10, is called "<destination>, <n> stops" and asked for
+/// with the voice line `Zone_<n>`; a ride the trip does not know is left as it is.
+///
+/// # Safety
+/// `stop` and `destination` are zero-terminated wide texts; `name` and `voice` buffers of
+/// 256 wide characters; the rest point to an Integer, a Single and a Boolean.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "system" fn AccessTicketRequest(
+    _person: u32,
+    age: f32,
+    _stop: *const u16,
+    destination: *const u16,
+    stop_number: i32,
+    destination_number: i32,
+    kind: *mut i32,
+    _ticket: *mut i32,
+    price: *mut f32,
+    name: *mut u16,
+    voice: *mut u16,
+    write: *mut u8,
+) {
+    if age < 15.0 {
+        *kind = 0;
+        *write = 1;
+        return;
+    }
+    if stop_number <= 0 || destination_number <= stop_number {
+        return;
+    }
+    let mut len = 0;
+    while *destination.add(len) != 0 {
+        len += 1;
+    }
+    let dest = String::from_utf16_lossy(std::slice::from_raw_parts(destination, len));
+    let n = destination_number - stop_number;
+    *price = n as f32 * 10.0;
+    let put = |buf: *mut u16, text: &str| {
+        let t: Vec<u16> = text.encode_utf16().take(255).chain(std::iter::once(0)).collect();
+        std::ptr::copy_nonoverlapping(t.as_ptr(), buf, t.len());
+    };
+    put(name, &format!("{dest}, {n} stops"));
+    put(voice, &format!("Zone_{n}"));
     *write = 1;
 }
 

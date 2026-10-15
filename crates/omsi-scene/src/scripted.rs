@@ -65,6 +65,10 @@ pub struct ScriptedView {
     pub mesh_visible: Vec<bool>,
 }
 
+pub(crate) fn view_of(views: &[ScriptedView], key: u64) -> Option<usize> {
+    views.binary_search_by_key(&key, |v| v.key).ok()
+}
+
 impl ScriptedSet {
     /// A placed object: its script goes to the simulation (through the inbox), the rest
     /// stays here.
@@ -136,7 +140,7 @@ impl ScriptedSet {
 
     /// The view of the object of `key`.
     pub fn get_mut(&mut self, key: u64) -> Option<&mut ScriptedView> {
-        let i = self.views.binary_search_by_key(&key, |v| v.key).ok()?;
+        let i = view_of(&self.views, key)?;
         Some(&mut self.views[i])
     }
 
@@ -659,19 +663,11 @@ impl World {
         let mut scripted = self.scripted.lock();
         let views = &mut scripted.views;
         let omsi_sim::scenery::SceneryOutputs { cmds, vars, transforms, visible, .. } = out;
-        // (the commands and the views are both in key order: one pass, from where the last
-        // one was found)
-        let mut from = 0;
-        let mut view_of = |key: u64, views: &mut [ScriptedView]| -> Option<usize> {
-            let i = from + views[from..].partition_point(|v| v.key < key);
-            from = i;
-            (views.get(i).map(|v| v.key) == Some(key)).then_some(i)
-        };
         for cmd in cmds.iter_mut() {
             let s = match cmd {
                 omsi_sim::scenery::SceneryCmd::Silence(key) => {
                     // (an object whose tile went since has stopped already)
-                    if let Some(i) = view_of(*key, views) {
+                    if let Some(i) = view_of(views, *key) {
                         if let (Some(a), Some(mut ss)) = (audio, views[i].sounds.take()) {
                             ss.stop_all(a);
                         }
@@ -680,7 +676,7 @@ impl World {
                 }
                 omsi_sim::scenery::SceneryCmd::Show(s) => s,
             };
-            let Some(i) = view_of(s.key, views) else { continue };
+            let Some(i) = view_of(views, s.key) else { continue };
             let v = &mut views[i];
             let (dist, nightlight) = (s.dist, s.nightlight);
             let vars = &vars[s.vars.0 as usize..s.vars.1 as usize];

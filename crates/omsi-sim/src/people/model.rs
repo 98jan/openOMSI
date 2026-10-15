@@ -294,6 +294,13 @@ pub struct PeopleSim {
     pub ticket_cash: f32,
     /// The tickets sold since the last `take_sales`: name and value.
     pub sales: Vec<(String, f32)>,
+    /// A plugin listens to the passengers' tickets (set by the app): who boards the
+    /// player's bus is reported (`ticket_asks`) and asks at the desk only once the plugins
+    /// had their say (`ticket_hook`).
+    pub ticket_hook: bool,
+    /// Passengers who decided on their ticket for the player's bus since the app last
+    /// looked (`take_ticket_asks`).
+    pub ticket_asks: Vec<crate::people::ticket_hook::TicketAsk>,
     /// Passengers that reached the cash desk, and those the driver served there.
     pub boarded: u32,
     pub served: u32,
