@@ -127,14 +127,55 @@ pub(crate) fn page_give(free: &mut Vec<(u64, u64)>, top: &mut u64, at: u64, len:
     }
 }
 
+pub(crate) static MESH_OUT_OF_MEMORY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub(crate) fn try_create_buffer(device: &wgpu::Device, desc: &wgpu::BufferDescriptor) -> Option<wgpu::Buffer> {
+    let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+    let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let buffer = device.create_buffer(desc);
+    let invalid = pollster::block_on(validation.pop());
+    let out_of_memory = pollster::block_on(memory.pop());
+    if out_of_memory.is_some() {
+        MESH_OUT_OF_MEMORY.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    let Some(e) = out_of_memory.or(invalid) else {
+        return Some(buffer);
+    };
+    static FAILED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = FAILED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if n < 5 || n.is_multiple_of(1000) {
+        log::warn!("mesh buffer of {:.1} MB could not be made, its meshes go into smaller ones or are left out (#{}): {}", desc.size as f64 / 1e6, n + 1, crate::gpu_error_text(&e));
+    }
+    None
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static REFUSE_MESH_PAGES_OVER: std::cell::Cell<u64> = const { std::cell::Cell::new(u64::MAX) };
+}
+
+fn page_refused(real: bool, bytes: u64) -> bool {
+    let _ = (real, bytes);
+    #[cfg(test)]
+    if bytes > REFUSE_MESH_PAGES_OVER.with(std::cell::Cell::get) {
+        return true;
+    }
+    #[cfg(feature = "test-hooks")]
+    if real && omsi_cfg::flags::OMSI_FAKE_GPU_ERROR.var() == Some("mesh") {
+        return true;
+    }
+    false
+}
+
 impl MeshPage {
-    pub(crate) fn new(device: &wgpu::Device, vertex_bytes: u64, index_bytes: u64) -> MeshPage {
+    pub(crate) fn new(device: &wgpu::Device, vertex_bytes: u64, index_bytes: u64) -> Option<MeshPage> {
         let blas = if RT_BUFFERS.load(std::sync::atomic::Ordering::Relaxed) { wgpu::BufferUsages::BLAS_INPUT | wgpu::BufferUsages::STORAGE } else { wgpu::BufferUsages::empty() };
         let real = !no_device(device);
-        let buffer = |size: u64, usage| device.create_buffer(&wgpu::BufferDescriptor { label: Some("mesh page"), size: if real { size.max(32) } else { 32 }, usage: usage | wgpu::BufferUsages::COPY_DST | blas, mapped_at_creation: false });
-        MeshPage {
-            vertex: buffer(vertex_bytes, wgpu::BufferUsages::VERTEX),
-            index: buffer(index_bytes, wgpu::BufferUsages::INDEX),
+        let size = |bytes: u64| if page_refused(real, bytes) { device.limits().max_buffer_size + wgpu::COPY_BUFFER_ALIGNMENT } else if real { bytes.max(32) } else { 32 };
+        let buffer = |bytes: u64, usage| try_create_buffer(device, &wgpu::BufferDescriptor { label: Some("mesh page"), size: size(bytes), usage: usage | wgpu::BufferUsages::COPY_DST | blas, mapped_at_creation: false });
+        Some(MeshPage {
+            vertex: buffer(vertex_bytes, wgpu::BufferUsages::VERTEX)?,
+            index: buffer(index_bytes, wgpu::BufferUsages::INDEX)?,
             vertex_cap: vertex_bytes.max(32),
             index_cap: index_bytes.max(32),
             real,
@@ -142,7 +183,7 @@ impl MeshPage {
             index_top: 0,
             vertex_free: Vec::new(),
             index_free: Vec::new(),
-        }
+        })
     }
 
     /// Room for a mesh of these sizes: its vertex and index offsets.
@@ -194,6 +235,29 @@ impl MeshPage {
     }
 }
 
+impl GpuMesh {
+    pub(crate) fn left_out(vertex_buf: wgpu::Buffer, index_buf: wgpu::Buffer) -> GpuMesh {
+        GpuMesh {
+            vertex_buf,
+            index_buf,
+            page: u32::MAX,
+            base_vertex: 0,
+            first_index: 0,
+            vertex_offset: 0,
+            vertex_bytes: 0,
+            index_bytes: 0,
+            gen: next_gen(),
+            pose: 0,
+            ranges: Vec::new(),
+            bounds_center: Vec3::ZERO,
+            bounds_radius: 0.0,
+            one_sided: false,
+            source: None,
+            flats: Vec::new(),
+        }
+    }
+}
+
 pub(crate) fn mesh_vertices(data: &MeshData) -> Vec<Vertex> {
     data.positions
         .iter()
@@ -236,7 +300,13 @@ pub(crate) fn make_meshes(device: &wgpu::Device, queue: &wgpu::Queue, data: &[&M
         return data.iter().map(|d| make_meshes(device, queue, &[d], true).pop().expect("one mesh")).collect();
     }
     let sizes: Vec<(u64, u64)> = data.iter().map(|d| mesh_page_bytes(d)).collect();
-    let page = MeshPage::new(device, sizes.iter().map(|s| s.0).sum(), sizes.iter().map(|s| s.1).sum());
+    let Some(page) = MeshPage::new(device, sizes.iter().map(|s| s.0).sum(), sizes.iter().map(|s| s.1).sum()) else {
+        if data.len() > 1 {
+            return data.iter().map(|d| make_meshes(device, queue, &[d], true).pop().expect("one mesh")).collect();
+        }
+        let stand_in = device.create_buffer(&wgpu::BufferDescriptor { label: Some("left out mesh"), size: 32, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::INDEX, mapped_at_creation: false });
+        return vec![GpuMesh::left_out(stand_in.clone(), stand_in)];
+    };
     let mut at = (0, 0);
     data.iter().zip(&sizes).map(|(d, s)| {
         let m = page.place(queue, d, u32::MAX, at);
@@ -345,13 +415,16 @@ impl Renderer {
             make_meshes(&self.device, &self.queue, &[data], true).pop().expect("one mesh")
         } else {
             let found = scene.mesh_pages.iter_mut().enumerate().find_map(|(k, p)| p.take(vb, ib).map(|at| (k, at)));
-            let (k, at) = found.unwrap_or_else(|| {
-                let mut page = MeshPage::new(&self.device, MESH_PAGE_VERTEX_BYTES, MESH_PAGE_INDEX_BYTES);
+            let placed = found.or_else(|| {
+                let mut page = MeshPage::new(&self.device, MESH_PAGE_VERTEX_BYTES, MESH_PAGE_INDEX_BYTES)?;
                 let at = page.take(vb, ib).expect("a new page holds a mesh a quarter its size");
                 scene.mesh_pages.push(page);
-                (scene.mesh_pages.len() - 1, at)
+                Some((scene.mesh_pages.len() - 1, at))
             });
-            scene.mesh_pages[k].place(&self.queue, data, k as u32, at)
+            match placed {
+                Some((k, at)) => scene.mesh_pages[k].place(&self.queue, data, k as u32, at),
+                None => make_meshes(&self.device, &self.queue, &[data], true).pop().expect("one mesh"),
+            }
         };
         scene.meshes.push(mesh);
         scene.meshes.len() - 1

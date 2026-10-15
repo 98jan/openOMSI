@@ -1280,3 +1280,82 @@ fn a_lamp_behind_a_wall_does_not_dazzle_and_one_in_view_still_does() {
     assert!(sight.seen(in_view) > 0.9, "a lamp in plain view: {}", sight.seen(in_view));
     assert!(sight.seen(behind) < 0.1, "a lamp behind the wall: {}", sight.seen(behind));
 }
+
+#[test]
+fn a_mesh_page_the_card_refuses_is_made_mesh_by_mesh_or_left_out() {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::NOOP;
+    descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
+    let instance = wgpu::Instance::new(descriptor);
+    let renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, render_scale: 1.0, ..Default::default() },
+    )).expect("noop renderer");
+    let mesh = |n: usize| {
+        let positions: Vec<Vec3> = (0..n).map(|i| Vec3::new(i as f32, 0.0, 0.0)).collect();
+        let indices: Vec<u32> = (0..n as u32 / 3 * 3).collect();
+        MeshData { normals: vec![Vec3::Z; n], uvs: vec![glam::Vec2::ZERO; n], ranges: vec![(0, indices.len() as u32, 0)], positions, indices, ..Default::default() }
+    };
+    let _ = renderer.take_out_of_memory();
+    let mut scene = renderer.new_scene();
+    let scope = renderer.device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let one = mesh_page_bytes(&mesh(300)).0;
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(one));
+    let alone = renderer.add_mesh(&mut scene, &mesh(300));
+    let pair = prepare_meshes(&renderer.device, &renderer.queue, &[&mesh(300), &mesh(300)], renderer.mesh_pages());
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(0));
+    let refused = renderer.add_mesh(&mut scene, &mesh(300));
+    let refused_pair = prepare_meshes(&renderer.device, &renderer.queue, &[&mesh(300), &mesh(300)], renderer.mesh_pages());
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(u64::MAX));
+    let pair: Vec<MeshId> = pair.into_iter().map(|m| renderer.add_prepared_mesh(&mut scene, m)).collect();
+    let refused_pair: Vec<MeshId> = refused_pair.into_iter().map(|m| renderer.add_prepared_mesh(&mut scene, m)).collect();
+    assert!(scene.mesh_pages.is_empty());
+    assert!(scene.meshes[pair[0]].vertex_buf != scene.meshes[pair[1]].vertex_buf, "the refused pair split into pages of their own");
+    for id in [alone, pair[0], pair[1]] {
+        let m = &scene.meshes[id];
+        assert_eq!((m.page, m.vertex_bytes, m.ranges.len()), (u32::MAX, one, 1), "made in a page of its own");
+    }
+    for id in [refused, refused_pair[0], refused_pair[1]] {
+        let m = &scene.meshes[id];
+        assert!(m.ranges.is_empty() && m.vertex_bytes == 0 && m.bounds_radius == 0.0, "left out");
+        let mat = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [1.0; 4], true);
+        renderer.add_instance(&mut scene, id, DVec3::ZERO, Mat4::IDENTITY, vec![mat]);
+        renderer.free_mesh(&mut scene, id);
+    }
+    assert!(pollster::block_on(scope.pop()).is_none(), "nothing invalid reached the device");
+    assert!(!renderer.take_out_of_memory(), "a refused buffer is no shortage of graphics memory");
+}
+
+#[test]
+#[ignore = "requires a graphics adapter; run with --ignored on a GPU host"]
+fn a_mesh_left_out_for_want_of_a_page_draws_nothing_and_the_rest_of_the_picture_is_drawn() {
+    let camera = Camera { position: DVec3::new(0.0, 0.0, 5.0), yaw: 0.0, pitch: -90.0, roll: 0.0, fov_deg: 60.0, near: 0.1, far: 100.0 };
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, fxaa: false, shadow_size: 1024, render_scale: 1.0, ..Default::default() },
+    )).expect("test renderer");
+    let mut scene = renderer.new_scene();
+    let quad = |z: f32| MeshData {
+        positions: vec![Vec3::new(-4.0, -4.0, z), Vec3::new(4.0, -4.0, z), Vec3::new(4.0, 4.0, z), Vec3::new(-4.0, 4.0, z)],
+        normals: vec![Vec3::Z; 4],
+        uvs: vec![glam::Vec2::ZERO; 4],
+        indices: vec![0, 1, 2, 0, 2, 3],
+        ranges: vec![(0, 6, 0)],
+        one_sided: false,
+    };
+    let red = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [1.0, 0.0, 0.0, 1.0], true);
+    let blue = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [0.0, 0.0, 1.0, 1.0], true);
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(0));
+    let left_out = renderer.add_mesh(&mut scene, &quad(1.0));
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(u64::MAX));
+    renderer.add_instance(&mut scene, left_out, DVec3::ZERO, Mat4::IDENTITY, vec![blue]);
+    let drawn = renderer.add_mesh(&mut scene, &quad(0.0));
+    renderer.add_instance(&mut scene, drawn, DVec3::ZERO, Mat4::IDENTITY, vec![red]);
+    let lighting = Lighting { fog_density: 0.0, ..Default::default() };
+    let scope = renderer.device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let image = renderer.render_to_image(&mut scene, 64, 64, &camera, &lighting).unwrap();
+    assert!(pollster::block_on(scope.pop()).is_none(), "the frame reached the device whole");
+    let centre = (32 * 64 + 32) * 4;
+    assert!(image[centre] > 2 * image[centre + 1].max(image[centre + 2]).max(8), "the red quad is drawn, the left out one is not: {:?}", &image[centre..centre + 4]);
+}
