@@ -283,7 +283,7 @@ flags! {
     OMSI_FULL_GPU: Bool, Switch, Use, "off", "Keep the requested settings on a small or shared graphics chip.";
     OMSI_GLASS_WIND: Num, Test, Use, "-", "Offscreen: the rain on the glass as met at this speed in m/s.";
     OMSI_GL_TEXTURE_UNITS: Bool, Switch, Use, "off", "Use the texture-unit layout of the OpenGL backend on any device.";
-    OMSI_GPU_ARRAYS: Text, Switch, Use, "-", "textures or nostorage: take that texture array path on any device.";
+    OMSI_GPU_ARRAYS: Text, Switch, Use, "-", "textures, nostorage or lighttextures: take that texture array path on any device.";
     OMSI_GPU_LIMITS: Text, Test, Use, "-", "default or downlevel: request only the WebGPU default (or downlevel) limits. Set by the small_chip test.";
     OMSI_GPU_TIMERS: Bool, Debug, Use, "off", "Measure GPU time per pass with timestamp queries.";
     OMSI_GPU_TIMERS_RAW: Bool, Debug, Use, "off", "With OMSI_GPU_TIMERS: the passes in the order the GPU finished them.";

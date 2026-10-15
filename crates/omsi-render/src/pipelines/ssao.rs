@@ -56,7 +56,7 @@ pub(crate) fn fog_lamps(device: &wgpu::Device, camera_layout: &wgpu::BindGroupLa
     // prepass depth, added onto the high-range picture
     let fog_lamps_layout = depth_reading_layout(device, "fog lamps");
     let fog_lamps_buf = uniform_buffer(device, "fog lamps params", std::mem::size_of::<FogLampUniform>() as u64);
-    let fog_lamps_pipeline = (!gl && array_path() != ArrayPath::NoStorage && !basic_pipelines()).then(|| optional_pipeline(device, "the lamps in the fog", || {
+    let fog_lamps_pipeline = (!gl && !array_path().no_storage() && !basic_pipelines()).then(|| optional_pipeline(device, "the lamps in the fog", || {
         log::info!("renderer: compiling the lamps in the fog shaders");
         let module = compile_shader(device, wgpu::ShaderModuleDescriptor {
             label: Some("fog lamps"),

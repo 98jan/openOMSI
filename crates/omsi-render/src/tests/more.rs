@@ -783,6 +783,7 @@ fn the_scene_shader_reads_its_arrays_from_textures_without_vertex_storage() {
     for (path, versions) in [
         (ArrayPath::VertexTextures, [glsl::Version::Embedded { version: 310, is_webgl: false }, glsl::Version::Desktop(430)]),
         (ArrayPath::NoStorage, [glsl::Version::Embedded { version: 300, is_webgl: false }, glsl::Version::Desktop(330)]),
+        (ArrayPath::LightTextures, [glsl::Version::Embedded { version: 300, is_webgl: false }, glsl::Version::Desktop(330)]),
     ] {
         let src = scene_shader_for(true, path);
         assert!(!src.contains("models[") && !src.contains("inst_params[") && !src.contains("draw_list["));
@@ -802,10 +803,10 @@ fn the_scene_shader_reads_its_arrays_from_textures_without_vertex_storage() {
                     .and_then(|mut w| w.write())
                     .unwrap_or_else(|e| panic!("{path:?} {version:?} {}: {e:?}", entry.name));
                 let vertex = entry.stage == naga::ShaderStage::Vertex;
-                if vertex || path == ArrayPath::NoStorage {
+                if vertex || path.no_storage() {
                     assert!(!out.contains(" buffer "), "{path:?} {version:?} {}: a storage block", entry.name);
                 }
-                if path == ArrayPath::NoStorage {
+                if path.no_storage() {
                     assert!(!out.contains("textureGather"), "{path:?} {version:?} {}: textureGather", entry.name);
                 }
             }
@@ -829,6 +830,13 @@ fn the_scene_groups_fit_the_sixteen_texture_units_of_opengl() {
         let n = textures(&camera_layout_entries(path, sixteen)) + material;
         assert!(n <= 16, "{path:?}: {n} textures");
     }
+    let lamps = textures(&camera_layout_entries(ArrayPath::LightTextures, true)) + material;
+    assert_eq!(lamps, 18);
+    let sixteen = wgpu::DownlevelLimits { max_sampled_textures_per_pipeline_layout: 16, ..Default::default() };
+    let angle = wgpu::DownlevelLimits { max_sampled_textures_per_pipeline_layout: 32, ..Default::default() };
+    let gles = wgpu::Limits::downlevel_webgl2_defaults();
+    assert!(!crate::device_selection::lamps_fit(&sixteen, &gles));
+    assert!(crate::device_selection::lamps_fit(&angle, &gles));
     // (and nothing is left out where storage buffers carry the arrays)
     assert_eq!(textures(&camera_layout_entries(ArrayPath::Storage, false)) + material, 16);
     // the entry points that read a texture left out are the enhanced path's, the
@@ -849,7 +857,7 @@ fn the_scene_groups_fit_the_sixteen_texture_units_of_opengl() {
         out
     };
     let only_enhanced = |name: &str| name.contains("enhanced") || name.contains("probe") || name.contains("puddle") || name.contains("reflections") || name == "fs_sky_cube";
-    for path in [ArrayPath::VertexTextures, ArrayPath::NoStorage] {
+    for path in [ArrayPath::VertexTextures, ArrayPath::NoStorage, ArrayPath::LightTextures] {
         let scene = arrays_as_textures(&scene_shader_text(true), path);
         for src in [scene, sky_shader_source(), corona_shader_source()] {
             for name in left_out(&src) {
@@ -1167,4 +1175,25 @@ fn a_texture_the_card_refuses_is_drawn_plain_without_cutting_the_texture_budget(
     let _ = renderer.add_material(&mut scene, Some(id), AlphaMode::Opaque, [1.0; 4], true);
     assert!(pollster::block_on(scope.pop()).is_none(), "nothing invalid reached the device");
     assert!(!renderer.take_out_of_memory(), "a refused texture is no shortage of graphics memory");
+}
+
+#[test]
+fn the_lamps_light_the_scene_from_textures_where_storage_buffers_carry_nothing() {
+    let storage = scene_shader_for(false, ArrayPath::Storage);
+    assert_eq!(storage, scene_shader_text(false));
+    assert_eq!(scene_shader_for(true, ArrayPath::Storage), scene_shader_text(true));
+    let lamps = scene_shader_for(true, ArrayPath::LightTextures);
+    let none = scene_shader_for(true, ArrayPath::NoStorage);
+    assert!(lamps.contains("@group(0) @binding(3) var lights_tex: texture_2d<f32>;"));
+    assert!(lamps.contains("@group(0) @binding(4) var grid_tex: texture_2d<u32>;"));
+    assert!(!lamps.contains("lights[") && !lamps.contains("grid[") && !lamps.contains("var<storage"));
+    assert!(none.contains("return 0xffffffffu;") && !none.contains("lights_tex"));
+    assert_eq!(lamps.matches("lights_at(").count(), none.matches("lights_at(").count());
+    assert_eq!(lamps.matches("grid_at(").count(), none.matches("grid_at(").count());
+    let entries = camera_layout_entries(ArrayPath::LightTextures, true);
+    for (binding, sample_type) in [(3, wgpu::TextureSampleType::Float { filterable: false }), (4, wgpu::TextureSampleType::Uint)] {
+        let e = entries.iter().find(|e| e.binding == binding).expect("lights binding");
+        assert_eq!(e.visibility, wgpu::ShaderStages::FRAGMENT);
+        assert!(matches!(e.ty, wgpu::BindingType::Texture { sample_type: t, .. } if t == sample_type));
+    }
 }
