@@ -205,6 +205,7 @@ impl Sync {
     pub fn retain_peers(&mut self, peers: &[u32]) {
         self.tx.retain(|id, _| peers.contains(id));
         self.rx.retain(|id, _| peers.contains(id));
+        self.incoming.retain(|s| peers.contains(&s.owner));
     }
     pub fn tick(&mut self, proto: u8, me: u32, dt: f32) -> Vec<Vec<u8>> {
         let mut out = Vec::new();

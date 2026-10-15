@@ -12,6 +12,9 @@ impl App {
             // (the session is over: the plugin is told so)
             self.sound.voice = None;
             if let Some(p) = self.player.as_mut() {
+                for texture in &mut p.vehicle.host.script_textures {
+                    texture.disable_network_snapshot();
+                }
                 p.vehicle.host.capture_sound_triggers = false;
                 p.vehicle.host.network_sound_triggers.clear();
             }

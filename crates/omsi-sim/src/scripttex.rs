@@ -16,6 +16,7 @@ pub struct ScriptTexture {
     /// before the renderer runs (the Atron AFR4 keeps its drawing buffer locked).
     pending: Option<Vec<u8>>,
     /// Latest released image, independent of the renderer consuming its upload.
+    network_snapshot: bool,
     released: Option<(u32, u32, bool, Arc<Vec<u8>>)>,
     /// `STFilter` was called after this texture was unlocked. OMSI then generates a mip
     /// chain, which keeps a distant matrix or IBIS screen stable instead of sampling its
@@ -38,6 +39,7 @@ impl ScriptTexture {
             dirty: true,
             locked: false,
             pending: None,
+            network_snapshot: false,
             released: None,
             mipmaps: false,
             color: [255, 255, 255, 255],
@@ -99,7 +101,7 @@ impl ScriptTexture {
         }
         // Plugins release a complete image even while the script's drawing buffer stays
         // locked. Keep it independently of the renderer consuming `pending`.
-        if !self.released.as_ref().is_some_and(|(w, h, mips, image)|
+        if self.network_snapshot && !self.released.as_ref().is_some_and(|(w, h, mips, image)|
             (*w, *h, *mips) == (width, height, self.mipmaps) && image.as_slice() == rgba)
         {
             self.released = Some((width, height, self.mipmaps, Arc::new(rgba.to_vec())));
@@ -113,12 +115,25 @@ impl ScriptTexture {
     }
 
     fn publish(&mut self) {
+        if !self.network_snapshot { return; }
         if self.released.as_ref().is_some_and(|(w, h, mips, rgba)| (*w, *h, *mips) == (self.width, self.height, self.mipmaps) && **rgba == self.rgba) { return; }
         self.released = Some((self.width, self.height, self.mipmaps, Arc::new(self.rgba.clone())));
     }
 
-    /// Network readers see only a released image, even if drawing resumed before upload.
+    /// Stop retaining the extra network snapshot when leaving LAN play.
+    pub fn disable_network_snapshot(&mut self) {
+        self.network_snapshot = false;
+        self.released = None;
+    }
+
+    /// Network readers opt into retaining released images, independent of GPU uploads.
     pub fn released_image(&mut self) -> Option<(u32, u32, bool, Arc<Vec<u8>>)> {
+        self.network_snapshot = true;
+        if self.released.is_none() {
+            if let Some(pending) = &self.pending {
+                self.released = Some((self.width, self.height, self.mipmaps, Arc::new(pending.clone())));
+            }
+        }
         if !self.locked && (self.dirty || self.released.is_none()) {
             self.publish();
         }
@@ -291,8 +306,29 @@ pub struct FontTable {
 mod tests {
 
     #[test]
+    fn ordinary_uploads_do_not_retain_a_network_snapshot() {
+        let mut t = ScriptTexture::new(2, 2);
+        for _ in 0..3 {
+            t.put(0, 0, [1; 4]);
+            t.unlock();
+            assert!(t.take_upload().is_some());
+            assert!(t.released.is_none());
+        }
+        t.replace(2, 2, &[2; 16]);
+        assert!(t.released.is_none());
+        t.released_image();
+        assert!(t.released.is_some());
+        t.disable_network_snapshot();
+        t.put(0, 0, [3; 4]);
+        t.unlock();
+        t.take_upload();
+        assert!(t.released.is_none());
+    }
+
+    #[test]
     fn networking_keeps_the_last_released_image_after_upload_and_during_locked_drawing() {
         let mut t = ScriptTexture::new(1, 1);
+        t.released_image();
         t.put(0, 0, [1, 2, 3, 4]);
         t.unlock();
         assert_eq!(t.take_upload(), Some(vec![1, 2, 3, 4]));

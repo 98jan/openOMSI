@@ -57,3 +57,40 @@ updates:
       actions:
         patterns:
           - "*"
+
+  - package-ecosystem: cargo
+    directory: /launcher/src-tauri
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    groups:
+      launcher-crates:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tauri"
+      - dependency-name: "tauri-*"
+      - dependency-name: "glib"
+      - dependency-name: "glib-*"
+      - dependency-name: "gio"
+      - dependency-name: "gio-*"
+      - dependency-name: "gtk"
+      - dependency-name: "gtk-*"
+      - dependency-name: "gtk3-*"
+      - dependency-name: "gdk*"
+      - dependency-name: "atk"
+      - dependency-name: "atk-*"
+      - dependency-name: "pango"
+      - dependency-name: "pango-*"
+      - dependency-name: "cairo-*"
+      - dependency-name: "soup3"
+      - dependency-name: "soup3-*"
+      - dependency-name: "webkit2gtk"
+      - dependency-name: "webkit2gtk-*"
+      - dependency-name: "javascriptcore-*"
+      - dependency-name: "glam"

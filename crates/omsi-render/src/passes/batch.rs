@@ -39,9 +39,10 @@ impl DrawPlan {
         let remaining = if self.has_presurface { &self.main_batches[self.presurface_batch_end..] } else { &self.main_batches };
         let needs = !cfg!(target_vendor = "apple") || remaining.iter().chain(&self.cab_batches)
             .any(|b| matches!(b.pipe / 4, PIPE_ALPHA_TEST | PIPE_BLEND | PIPE_BLEND_NO_WRITE));
+        let single = renderer.options.msaa <= 1;
         renderer.prepass_msaa_pipelines.is_some()
-            && f.enhanced && (f.with_overlays || f.xr_view) && renderer.options.msaa > 1
-            && (!self.has_presurface || self.msaa_safe_batches.iter().any(|b| b.pipe / 2 != PIPE_ALPHA_TEST))
+            && f.enhanced && (f.with_overlays || f.xr_view) && (!single || self.has_presurface)
+            && (!self.has_presurface || self.msaa_safe_batches.iter().any(|b| single || b.pipe / 2 != PIPE_ALPHA_TEST))
             && f.prepass_on && needs && !f.env.no_msaa_prepass
     }
 
@@ -70,18 +71,22 @@ fn prepass_items(scene: &Scene, visible: &[(usize, f32, bool)], deferred: bool) 
     let mut safe_batches = Vec::new();
     for &(i, _, _) in visible {
         let inst = &scene.instances[i];
-        // A model drawn in its own order has no depth before it is drawn: an opaque part
-        // that a depth-writing pane before it hides (a scroll box's line under its invisible
-        // cover) put its depth here, kept the wall behind it from being drawn, and then
-        // failed against the pane itself - a hole of the clear colour (#2059).
-        if inst.ordered {
-            continue;
-        }
         let cull = culls_back_faces(scene, inst);
         for (ri, (_, _, slot)) in scene.meshes[inst.mesh].ranges.iter().enumerate() {
             let mat_id = inst.materials.get(*slot as usize).copied().unwrap_or(0);
             let mat = &scene.materials[mat_id];
             let kind = kind_of(mat.alpha);
+            // A model drawn in its own order: an opaque part that a depth-writing pane
+            // before it hides (a scroll box's line under its invisible cover) put its depth
+            // here, kept the wall behind it from being drawn, and then failed against the
+            // pane itself - a hole of the clear colour (#2059). So its parts after the first
+            // such pane stay out of the prepass; the ones before it go in as any model's.
+            // (0.2.46 left the whole model out: a bus with its glass listed early lost its
+            // body from the depth that the ambient occlusion and the sun's glare read - no
+            // contact shadow under it, the glare and the passengers through its roof.)
+            if inst.ordered && kind == PIPE_BLEND && mat.writes_depth {
+                break;
+            }
             // Ground blends compose before they may occlude later scenery.
             // The transmap body prepass is for ordinary meshes, not these
             // authored surface layers (including their terrain brush masks).
@@ -264,7 +269,7 @@ impl Renderer {
         let has_presurface = visible.iter().any(|&(i, _, _)| scene.instances[i].presurface);
         let mut prepass_batches: Vec<Batch> = Vec::new();
         let mut msaa_safe_batches = Vec::new();
-        let deferred = has_presurface && f.enhanced && self.options.msaa > 1;
+        let deferred = has_presurface && f.enhanced;
         let prepass_job = || { prepass_items(scene, visible, deferred) };
         // The main pass follows the authored world phases. Each phase keeps its
         // opaque/cutout draws followed by its blended draws, far to near. Transparent
@@ -513,6 +518,8 @@ impl Renderer {
             *c.entry("opaque draws").or_default() += main_draws[0] as f64;
             *c.entry("blended draws").or_default() += main_draws[1] as f64;
             *c.entry("main batches").or_default() += main_batches.len() as f64;
+            *c.entry("presurface views").or_default() += plan.has_presurface as u8 as f64;
+            *c.entry("terrain paint batches").or_default() += main_batches.iter().filter(|b| b.pipe / 4 == PIPE_TERRAIN_PAINT).count() as f64;
             // the state the main pass's bundles set (each part starts afresh), and what an
             // order by material within the opaque runs would set instead
             let (pipes, binds) = state_changes(&bundle_chunks(self.encoding_pool.as_ref(), main_batches));

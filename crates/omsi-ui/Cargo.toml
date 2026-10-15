@@ -6,6 +6,7 @@ license.workspace = true
 description = "Interface drawing shared by the game's navigator and the launcher: Inter text, Material Symbols icons, anti-aliased shapes and a wgpu pipeline for them"
 
 [dependencies]
+omsi-cfg = { path = "../omsi-cfg" }
 wgpu.workspace = true
 bytemuck.workspace = true
 glam.workspace = true

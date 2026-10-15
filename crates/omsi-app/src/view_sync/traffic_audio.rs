@@ -125,7 +125,7 @@ impl Traffic {
                 };
                 ss.update_fired(audio, &var, &xf, &c.fired, &at_fire);
                 let parts = frame.parts(c);
-                ss.update_parts(audio, &var, &|i| parts.get(i).copied(), &c.fired);
+                ss.update_parts(audio, &var, &|i| parts.get(i).copied(), &c.fired, &at_fire);
                 for (t, f) in &c.fired_files {
                     ss.play_file_trigger(audio, t, f, &var, &xf);
                 }

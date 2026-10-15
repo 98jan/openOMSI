@@ -357,3 +357,93 @@ fn sound_events_relay_between_clients_and_host_ai_without_echo_or_spoofing() {
     pump(&mut [&mut host, &mut a, &mut b], &poses, 10, |_| false);
     assert!(host.take_sounds().is_empty()); assert!(a.take_sounds().is_empty()); assert!(b.take_sounds().is_empty());
 }
+
+#[test]
+fn restarting_host_replaces_retained_versions_and_rejects_old_session_packets() {
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let addr = SocketAddr::from(([127, 0, 0, 1], host.local_addr().unwrap().port()));
+    let mut client = LanSession::join_addr(vec![addr], None, "client", world("m")).unwrap();
+    let poses = [pose(100.0), pose(200.0)];
+    pump(&mut [&mut host, &mut client], &poses, 100, |s| s[1].connected && s[1].peers.contains_key(&1));
+    let old_secret = client.rebind_secret.unwrap();
+    let old_welcome = format!("WELCOME|{PROTOCOL}|{}|{}|host|{}|2|{}|{:016x}", client.my_id,
+        session_hex(host.session), host.world.fields(), admission::secret_hex(&old_secret), client.nonce);
+    let sound = |trigger: &str| sounds::Event { ai: 0, bus: "Vehicles/x.bus".into(),
+        trigger: trigger.into(), file: None, values: vec![] };
+    host.publish_sound(sound("old"));
+    let old_sound = host.sounds.tick(PROTOCOL as u8, 1, 0.2).remove(0);
+    pump(&mut [&mut host, &mut client], &poses, 40, |_| false);
+    assert_eq!(client.take_sounds().len(), 1);
+    // Seed versions beyond what a fresh process will initially send.
+    for n in 0..10 {
+        host.send_vars(99, &[], &[], &[0], &[format!("old {n}")], 0.2);
+        host.send_var_schema(99, &format!("old schema {n}"), 0.2);
+        client.tick(0.1, &poses[1]);
+    }
+    let mut old_tx = vars::VarSender::default();
+    let old_packet = old_tx.tick(PROTOCOL as u8, 1, 99, &[], &[], &[0], &["stale".into()], 0.2).remove(0);
+    drop(host);
+    // Keep peer 1: deliberately do not tick long enough for retention to expire.
+    let mut host = LanSession::host(addr.port(), "host", world("m"), false).unwrap();
+    client.connected = false;
+    client.hello_acc = 10.0;
+    pump(&mut [&mut host, &mut client], &poses, 150, |s| s[1].connected && s[1].peers.contains_key(&1) && s[1].rebind_secret != Some(old_secret));
+    assert!(client.connected);
+    assert_ne!(client.rebind_secret, Some(old_secret));
+    client.on_welcome(&old_welcome.split('|').collect::<Vec<_>>(), addr);
+    assert_ne!(client.rebind_secret, Some(old_secret), "delayed welcome must not restore the old session");
+    client.take_vars(); client.take_var_schemas();
+    let mut stale = vec![0xEA]; stale.extend_from_slice(&old_secret); stale.extend_from_slice(&old_packet);
+    host.socket.send_to(&stale, to_client(&client)).unwrap();
+    let mut stale_sound = vec![0xEA]; stale_sound.extend_from_slice(&old_secret); stale_sound.extend_from_slice(&old_sound);
+    host.socket.send_to(&stale_sound, to_client(&client)).unwrap();
+    // The same obsolete connection credential is rejected in the reverse direction.
+    client.socket.send_to(&stale, addr).unwrap();
+    host.publish_sound(sound("fresh"));
+    host.send_vars(99, &[], &[], &[0], &["fresh".into()], 0.2);
+    host.send_var_schema(99, "fresh schema", 0.2);
+    client.tick(0.1, &poses[1]); host.tick(0.1, &poses[0]);
+    assert!(client.take_vars().iter().any(|v| v.strings == vec![(0, "fresh".into())]));
+    assert!(client.take_var_schemas().iter().any(|v| v.strings == vec![(0, "fresh schema".into())]));
+    assert!(host.take_vars().is_empty());
+    pump(&mut [&mut host, &mut client], &poses, 30, |_| false);
+    let sounds = client.take_sounds();
+    assert_eq!(sounds.len(), 1);
+    assert_eq!(sounds[0].event.trigger, "fresh");
+}
+
+#[test]
+fn restarting_client_on_the_same_socket_invalidates_host_receive_state() {
+    let mut host = LanSession::host(0, "host", world("m"), true).unwrap();
+    let addr = SocketAddr::from(([127, 0, 0, 1], host.local_addr().unwrap().port()));
+    let mut client = LanSession::join_addr(vec![addr], None, "client", world("m")).unwrap();
+    let poses = [pose(100.0), pose(200.0)];
+    pump(&mut [&mut host, &mut client], &poses, 100, |s| s[1].connected && s[0].peers.values().any(|p| p.has_pose));
+    let id = client.my_id;
+    let old_nonce = client.nonce;
+    let old_secret = client.rebind_secret.unwrap();
+    for n in 0..5 {
+        client.send_vars(99, &[], &[], &[0], &[format!("old {n}")], 0.2);
+        client.send_var_schema(99, &format!("schema {n}"), 0.2);
+        host.tick(0.1, &poses[0]);
+    }
+    host.take_vars(); host.take_var_schemas();
+    client.nonce = random_session_id();
+    client.rebind_secret = None;
+    client.connected = false;
+    client.var_sender = vars::VarSender::default();
+    client.schema_sender = vars::VarSender::default();
+    client.hello_acc = 10.0;
+    pump(&mut [&mut host, &mut client], &poses, 100, |s| s[1].connected && s[1].rebind_secret != Some(old_secret));
+    assert_eq!(client.my_id, id);
+    assert_ne!(client.rebind_secret, Some(old_secret));
+    // A late old HELLO must not change the credential back or reset the new stream.
+    let hello = format!("HELLO|{PROTOCOL}|-|client||{}|{old_nonce:016X}", client.world.fields());
+    host.on_hello(&hello.split('|').collect::<Vec<_>>(), to_client(&client));
+    assert_eq!(host.peers[&id].nonce, Some(client.nonce));
+    client.send_vars(99, &[], &[], &[0], &["new".into()], 0.2);
+    client.send_var_schema(99, "new schema", 0.2);
+    host.tick(0.1, &poses[0]);
+    assert!(host.take_vars().iter().any(|v| v.strings == vec![(0, "new".into())]));
+    assert!(host.take_var_schemas().iter().any(|v| v.strings == vec![(0, "new schema".into())]));
+}

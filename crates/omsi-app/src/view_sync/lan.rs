@@ -232,7 +232,7 @@ fn sound_remote(
     for ss in view.sounds.iter_mut() {
         ss.set_muffled(muffled);
         ss.update_fired(audio, &|n| v.var(n), &xf, &fired, &at_fire);
-        ss.update_parts(audio, &|n| v.var(n), &|i| v.trailers.get(i).map(|t| t.world_transform()), &fired);
+        ss.update_parts(audio, &|n| v.var(n), &|i| v.trailers.get(i).map(|t| t.world_transform()), &fired, &at_fire);
         for (t, f) in &fired_files {
             ss.play_file_trigger(audio, t, f, &|n| v.var(n), &xf);
         }

@@ -27,7 +27,7 @@
 //! ```text
 //! HELLO|<proto>|<session or ->|<name>|<bus>|<map>|<date>|<time>|<weather>|<season>|<nonce>|<challenge>|<proof>
 //!                                                client → host (every second until answered)
-//! WELCOME|<proto>|<id>|<session>|<host name>|<map>|<date>|<time>|<weather>|<season>|<players>|<secret>
+//! WELCOME|<proto>|<id>|<session>|<host name>|<map>|<date>|<time>|<weather>|<season>|<players>|<secret>|<nonce>
 //!                                                host → client
 //! CHALLENGE|<challenge>                          host → client (a known nonce from a new address)
 //! REJECT|<proto>|<reason>                        host → client
@@ -123,7 +123,8 @@ pub use wire::{
 /// 11: reliable, ordered owner-authored T.L and T.F sound events.
 /// 12: timestamped complete model animation samples on the owner's pose clock.
 /// 13: upstream 0.2.47 admission proofs and signed host identity for shared mods.
-pub const PROTOCOL: u32 = 13;
+/// 14: session-bound variable/schema/sound packets and acknowledged long strings.
+pub const PROTOCOL: u32 = 14;
 /// (omsi-plugin's `MULTIPLAYER_PORTS` keeps `omsi.send` off this one and the `PORT_RANGE` after it.)
 pub const DEFAULT_PORT: u16 = 27015;
 /// Ports a host tries after the default one when that is taken (a second session on the
@@ -1397,6 +1398,8 @@ pub struct LanSession {
     confirm: bool,
     rebind: admission::Rebind,
     rebind_secret: Option<[u8; 16]>,
+    retired_secrets: Vec<[u8; 16]>,
+    retired_nonces: std::collections::HashSet<u64>,
     answer: Option<u64>,
     pub my_id: u32,
     pub my_name: String,
@@ -1538,6 +1541,8 @@ impl LanSession {
             confirm: false,
             rebind: admission::Rebind::new(),
             rebind_secret: None,
+            retired_secrets: Vec::new(),
+            retired_nonces: Default::default(),
             answer: None,
             my_id: if role == Role::Host { 1 } else { 0 },
             my_name: clean_text(name, MAX_NAME),
@@ -2027,12 +2032,6 @@ impl LanSession {
         Ok(())
     }
 
-    fn send(&self, data: &[u8], to: SocketAddr) {
-        if self.socket.send_to(data, to).is_ok() {
-            self.sent.set(self.sent.get() + data.len() as u64);
-        }
-    }
-
     /// To every player (host), but `except`.
     fn broadcast(&self, data: &[u8], except: Option<u32>) {
         for (id, peer) in &self.peers {
@@ -2239,30 +2238,6 @@ impl LanSession {
         for h in to {
             self.send(msg.as_bytes(), h);
         }
-    }
-
-    fn welcome_session(&self, to: SocketAddr, named: bool) -> String {
-        if named || self.strangers_told || addrs::is_local_peer(to) {
-            session_hex(self.session)
-        } else {
-            "-".to_string()
-        }
-    }
-
-    fn send_welcome(&self, id: u32, to: SocketAddr, named: bool) {
-        let session = self.welcome_session(to, named);
-        let msg = format!(
-            "WELCOME|{PROTOCOL}|{id}|{}|{}|{}|{}",
-            session,
-            self.my_name,
-            self.world.fields(),
-            self.peers.len() + 1
-        );
-        let msg = match self.peers.get(&id) {
-            Some(p) if p.home == Some(to) => format!("{msg}|{}", admission::secret_hex(&p.secret)),
-            _ => msg,
-        };
-        self.send(msg.as_bytes(), to);
     }
 
     fn on_challenge(&mut self, parts: &[&str]) {
@@ -2630,7 +2605,20 @@ impl LanSession {
             if n == 0 || n > MAX_DATAGRAM {
                 continue;
             }
-            let data = self.buf[..n].to_vec();
+            let mut data = self.buf[..n].to_vec();
+            if data[0] == 0xEA {
+                let expected = match self.role {
+                    Role::Client => self.rebind_secret,
+                    Role::Host => self.peers.values().find(|p| p.addr == Some(from)).map(|p| p.secret),
+                };
+                if expected.is_none() || data.get(1..17) != expected.as_ref().map(|s| s.as_slice()) { continue; }
+                data.drain(..17);
+                if !session_sync::session_bound(&data) { continue; }
+            } else if session_sync::session_bound(&data) { continue; }
+            if data[0] == 0xEB {
+                self.on_string_ack(&data, from);
+                continue;
+            }
             if data[0] == ai_context::MAGIC {
                 if self.role == Role::Client && self.connected && self.ai_context_in.len() < 1024 {
                     self.ai_context_in.push(data);
@@ -3114,6 +3102,7 @@ impl LanSession {
         let bus = vehicle_path(field(parts, 4)).unwrap_or_default();
         let world = WorldInfo::from_fields(parts, 5);
         let nonce = u64::from_str_radix(field(parts, 10), 16).ok();
+        if nonce.is_some_and(|n| self.retired_nonces.contains(&n)) { return; }
         // a returning client keeps its id; so does one that tried several of our addresses
         // at once, and the address its latest hello came from is the one it has chosen
         let same = |p: &Peer| p.addr == Some(from) || (nonce.is_some() && p.nonce == nonce);
@@ -3230,6 +3219,13 @@ impl LanSession {
                 (id, Some(here.join(", ")))
             }
         };
+        if self.peers.get(&id).is_some_and(|p| p.nonce != nonce) {
+            if let Some(old) = self.peers.get(&id).and_then(|p| p.nonce) { self.retired_nonces.insert(old); }
+            self.reset_peer_sync(id);
+            let mut peer = Peer::new(Some(from), Pose::placeholder(id, &name, &bus));
+            peer.nonce = nonce;
+            self.peers.insert(id, peer);
+        }
         if let Some(p) = self.peers.get_mut(&id) {
             p.last_seen = Instant::now();
         }
@@ -3281,6 +3277,21 @@ impl LanSession {
                 session_hex(self.session)
             ));
             return;
+        }
+        if let Some(secret) = admission::parse_secret(field(parts, 11)) {
+            if u64::from_str_radix(field(parts, 12), 16).ok() != Some(self.nonce)
+                || self.retired_secrets.contains(&secret) { return; }
+            if self.rebind_secret.is_some_and(|old| old != secret) {
+                self.retired_secrets.push(self.rebind_secret.unwrap());
+                self.peers.clear();
+                self.vars_in.clear();
+                self.schemas_in.clear();
+                self.sounds = sounds::Sync::default();
+                self.var_receiver = vars::VarReceiver::default();
+                self.schema_receiver = vars::VarReceiver::default();
+                self.reset_peer_sync(1);
+                self.connected = false;
+            }
         }
         let host_name = clean_text(field(parts, 4), MAX_NAME);
         let world = WorldInfo::from_fields(parts, 5);

@@ -94,6 +94,7 @@ impl LanSession {
     /// every frame; it sends what is due.
     #[allow(clippy::too_many_arguments)]
     pub fn send_vars(&mut self, table: u32, float_ids: &[u16], floats: &[f32], string_ids: &[u16], strings: &[String], dt: f32) {
+        self.var_sender.subscribers(&self.peers.keys().copied().collect::<Vec<_>>());
         let msgs = self.var_sender.tick(PROTOCOL as u8, self.my_id, table, float_ids, floats, string_ids, strings, dt);
         for m in msgs {
             match self.role {
@@ -120,6 +121,7 @@ impl LanSession {
 
     /// Repeat the name manifest using independently recovered string fragments.
     pub fn send_var_schema(&mut self, table: u32, schema: &str, dt: f32) {
+        self.schema_sender.subscribers(&self.peers.keys().copied().collect::<Vec<_>>());
         let texts = [schema.to_owned()];
         for mut packet in self.schema_sender.tick(PROTOCOL as u8, self.my_id, table, &[], &[], &[0], &texts, dt) {
             packet[0] = var_schema::MAGIC;
@@ -181,6 +183,16 @@ impl LanSession {
         }
         let receiver = if schema { &mut self.schema_receiver } else { &mut self.var_receiver };
         let Some(v) = receiver.receive(data, PROTOCOL as u8) else { return };
+        if let Some((index, version)) = receiver.completed_fragment(data) {
+            let mut ack = vec![0xEB, PROTOCOL as u8];
+            ack.extend_from_slice(&self.my_id.to_le_bytes());
+            ack.extend_from_slice(&v.id.to_le_bytes());
+            ack.extend_from_slice(&v.table.to_le_bytes());
+            ack.extend_from_slice(&index.to_le_bytes());
+            ack.extend_from_slice(&version.to_le_bytes());
+            ack.push(schema as u8);
+            self.route_string_ack(&ack, v.id);
+        }
         if schema {
             if self.schemas_in.len() < 128 && !v.strings.is_empty() { self.schemas_in.push(v); }
             return;
@@ -189,6 +201,102 @@ impl LanSession {
         if self.vars_in.len() < 1024 {
             self.vars_in.push(v);
         }
+    }
+
+}
+
+/// Bind versioned traffic to the freshly issued connection secret. Relays unwrap and
+/// rewrap for the destination, so old sessions cannot poison a retained peer's state.
+pub(super) fn session_bound(data: &[u8]) -> bool {
+    data.first().is_some_and(|b| [sounds::MAGIC, vars::VARS_MAGIC, var_schema::MAGIC, 0xEB].contains(b))
+}
+
+impl LanSession {
+    pub(super) fn reset_peer_sync(&mut self, id: u32) {
+        let keep: Vec<_> = self.peers.keys().copied().filter(|p| *p != id).collect();
+        self.sounds.retain_peers(&keep);
+        self.var_receiver.retain_peers(&keep);
+        self.schema_receiver.retain_peers(&keep);
+        self.vars_in.retain(|v| v.id != id);
+        self.schemas_in.retain(|v| v.id != id);
+        if self.role == Role::Client {
+            self.var_sender = vars::VarSender::default();
+            self.schema_sender = vars::VarSender::default();
+            self.animation_sender = vars::AnimationSender::default();
+        }
+    }
+}
+
+impl LanSession {
+    fn route_string_ack(&self, data: &[u8], to: u32) {
+        let addr = match self.role {
+            Role::Host => self.peers.get(&to).and_then(|p| p.addr),
+            Role::Client => self.host,
+        };
+        if let Some(addr) = addr { self.send(data, addr); }
+    }
+
+    pub(super) fn on_string_ack(&mut self, data: &[u8], from: SocketAddr) {
+        if data.len() != 25 || data[1] != PROTOCOL as u8 || data[24] > 1 { return; }
+        let sender = u32::from_le_bytes(data[2..6].try_into().unwrap());
+        let to = u32::from_le_bytes(data[6..10].try_into().unwrap());
+        if self.role == Role::Host && self.checked_peer(sender, from, VAR_RATE, PeerTraffic::Variables).is_none() { return; }
+        if to != self.my_id {
+            if self.role == Role::Host { self.route_string_ack(data, to); }
+            return;
+        }
+        let table = u32::from_le_bytes(data[10..14].try_into().unwrap());
+        let index = u16::from_le_bytes(data[14..16].try_into().unwrap());
+        let version = u64::from_le_bytes(data[16..24].try_into().unwrap());
+        let tx = if data[24] == 1 { &mut self.schema_sender } else { &mut self.var_sender };
+        tx.acknowledge(sender, table, index, version);
+    }
+}
+
+impl LanSession {
+    pub(super) fn send(&self, data: &[u8], to: SocketAddr) {
+        let mut framed = Vec::new();
+        if session_sync::session_bound(data) {
+            let secret = match self.role {
+                Role::Client => self.rebind_secret,
+                Role::Host => self.peers.values().find(|p| p.addr == Some(to)).map(|p| p.secret),
+            };
+            let Some(secret) = secret else { return; };
+            framed.push(0xEA);
+            framed.extend_from_slice(&secret);
+            framed.extend_from_slice(data);
+        }
+        let data = if framed.is_empty() { data } else { &framed };
+        if self.socket.send_to(data, to).is_ok() {
+            self.sent.set(self.sent.get() + data.len() as u64);
+        }
+    }
+
+}
+
+impl LanSession {
+    pub(super) fn welcome_session(&self, to: SocketAddr, named: bool) -> String {
+        if named || self.strangers_told || addrs::is_local_peer(to) {
+            session_hex(self.session)
+        } else {
+            "-".to_string()
+        }
+    }
+
+    pub(super) fn send_welcome(&self, id: u32, to: SocketAddr, named: bool) {
+        let session = self.welcome_session(to, named);
+        let msg = format!(
+            "WELCOME|{PROTOCOL}|{id}|{}|{}|{}|{}",
+            session,
+            self.my_name,
+            self.world.fields(),
+            self.peers.len() + 1
+        );
+        let msg = match self.peers.get(&id) {
+            Some(p) if p.home == Some(to) => format!("{msg}|{}|{:016x}", admission::secret_hex(&p.secret), p.nonce.unwrap_or(0)),
+            _ => msg,
+        };
+        self.send(msg.as_bytes(), to);
     }
 
 }

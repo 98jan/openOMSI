@@ -357,10 +357,11 @@ impl SoundSet {
         var: &dyn Fn(&str) -> Option<f32>,
         part_to_world: &dyn Fn(usize) -> Option<Mat4>,
         triggers: &[String],
+        at_fire: &dyn Fn(&str, &str) -> Option<f32>,
     ) {
         for (i, p) in &mut self.parts {
             match part_to_world(*i) {
-                Some(xf) => p.update(engine, var, &xf, triggers),
+                Some(xf) => p.update_fired(engine, var, &xf, triggers, at_fire),
                 None => p.stop_all(engine),
             }
         }
@@ -836,21 +837,23 @@ impl Ctx {
         // [werden] nur einmalig beim Abspielstart zugewiesen"): the door hits of the SD200/
         // SD202 and of Kajosoft's buses read `doorSpeed_<n>`, which is 0 once the leaf has
         // stopped, and were cut to a short click a frame after they started (#611, #1268).
-        // Where it is and how far away still change while it plays.
-        let curves = match s.fired_curves.filter(|_| triggered) {
-            Some(c) => c,
-            None => {
-                let mut c = 1.0;
-                for (k, (vc, &kind)) in def.vol_curves.iter().zip(&s.curve_inputs).enumerate() {
-                    if let Some(x) = SoundSet::curve_input_as(kind, vc, s.ix.curves.get(k).copied().unwrap_or(0), var, active, facing) {
-                        c *= curve(&vc.points, x);
-                    }
-                }
-                if triggered {
-                    s.fired_curves = Some(c);
-                }
-                c
+        // Where it is and how far away still change while it plays. What it keeps is the
+        // loudest its curves have given since it fired: a sound fired while its variable is
+        // still at rest and rising right after (the Thüringer Wald buses' steering pump,
+        // whose start reads the steering's speed) was held at the silence of the moment it
+        // fired, from 0.2.46 on, and never heard (#2552).
+        let mut now = 1.0;
+        for (k, (vc, &kind)) in def.vol_curves.iter().zip(&s.curve_inputs).enumerate() {
+            if let Some(x) = SoundSet::curve_input_as(kind, vc, s.ix.curves.get(k).copied().unwrap_or(0), var, active, facing) {
+                now *= curve(&vc.points, x);
             }
+        }
+        let curves = if triggered {
+            let c = s.fired_curves.map_or(now, |kept| kept.max(now));
+            s.fired_curves = Some(c);
+            c
+        } else {
+            now
         };
         vol *= curves;
         // `[3d]`: full up to the range, then range / distance
@@ -1200,6 +1203,28 @@ mod tests {
 
     /// The door hit keeps the volume it fired with to its end, though `doorSpeed_0` is 0
     /// from the next frame on (#611, #1268); fired again, it reads the curves anew.
+    #[test]
+    fn articulated_parts_use_trigger_time_curves_and_keep_them() {
+        let _g = globals();
+        let engine = AudioEngine::capture(48_000);
+        let clip = Arc::new(Clip { sample_rate: 48_000, channels: 1, samples: vec![1000; 4800] });
+        let entry = SoundEntry {
+            volume: 1.0, triggers: vec!["door_hit".into()],
+            vol_curves: vec![VolCurve { variable: "door_speed".into(), points: vec![(-1.0, 1.0), (0.0, 0.0)] }],
+            ..Default::default()
+        };
+        let make = || SoundSet { sounds: vec![RuntimeSound::new(entry.clone(), Some(clip.clone()))], master: 1.0,
+            dir: Default::default(), inside: false, amount: 0.0, ai: false, listener_vehicle: false,
+            muffled: false, parts: Vec::new(), vars: None };
+        let mut set = make();
+        set.add_part(0, make());
+        set.update_parts(&engine, &|_| Some(0.0), &|_| Some(Mat4::IDENTITY),
+            &["door_hit".into()], &|t, n| (t == "door_hit" && n == "door_speed").then_some(-1.0));
+        assert_eq!(set.parts[0].1.sounds[0].fired_curves, Some(1.0));
+        set.update_parts(&engine, &|_| Some(0.0), &|_| Some(Mat4::IDENTITY), &[], &|_, _| None);
+        assert_eq!(set.parts[0].1.sounds[0].fired_curves, Some(1.0));
+    }
+
     #[test]
     fn a_triggered_sound_keeps_the_volume_it_started_with() {
         let _g = globals();

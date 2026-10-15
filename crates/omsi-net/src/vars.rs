@@ -47,6 +47,7 @@ struct PendingString {
     version: u64,
     value: String,
     offset: usize,
+    awaiting: Vec<u32>,
 }
 
 /// Variables of a player's vehicle as they came (`LanSession::take_vars`).
@@ -78,6 +79,7 @@ pub struct VarSender {
     versions: Vec<u64>,
     sequence: u64,
     pending: Option<PendingString>,
+    subscribers: Vec<u32>,
 }
 
 fn header(protocol: u8, id: u32, table: u32, kind: u8) -> Vec<u8> {
@@ -133,14 +135,27 @@ impl AnimationSender {
 }
 
 impl VarSender {
+    pub fn subscribers(&mut self, peers: &[u32]) {
+        self.subscribers = peers.to_vec();
+        if let Some(p) = &mut self.pending { p.awaiting.retain(|id| peers.contains(id)); }
+    }
+
+    pub fn acknowledge(&mut self, peer: u32, table: u32, index: u16, version: u64) {
+        if self.table != table { return; }
+        if let Some(p) = &mut self.pending {
+            if p.index == index && p.version == version { p.awaiting.retain(|id| *id != peer); }
+        }
+    }
+
     /// Our vehicle's variables (`ids[k]` holds `values[k]`, the same for strings) for this
     /// frame: the datagrams due now (none most frames).
     #[allow(clippy::too_many_arguments)]
     pub fn tick(&mut self, protocol: u8, id: u32, table: u32, float_ids: &[u16], floats: &[f32], string_ids: &[u16], strings: &[String], dt: f32) -> Vec<Vec<u8>> {
         if table != self.table || self.floats.len() != floats.len() || self.strings.len() != strings.len() {
             // another vehicle (or another table): everything is new
+            let subscribers = self.subscribers.clone();
             let sequence = self.sequence;
-            *self = VarSender { sequence, versions: vec![0; strings.len()], table, floats: vec![f32::NAN; floats.len()], strings: vec!["\u{0}".into(); strings.len()], acc: EVERY, ..VarSender::default() };
+            *self = VarSender { sequence, subscribers, versions: vec![0; strings.len()], table, floats: vec![f32::NAN; floats.len()], strings: vec!["\u{0}".into(); strings.len()], acc: EVERY, ..VarSender::default() };
         }
         self.acc += dt;
         if self.acc < EVERY {
@@ -255,6 +270,11 @@ impl VarSender {
                 out.push(d);
             }
         }
+        // An inline replacement supersedes an obsolete long transfer immediately.
+        if self.pending.as_ref().is_some_and(|p| string_ids.iter().position(|id| *id == p.index)
+            .is_some_and(|k| strings.get(k).is_some_and(|s| s.len() <= MAX_INLINE))) {
+            self.pending = None;
+        }
         // Finish a selected snapshot even when its source changes every frame. Recovery
         // uses the same version, so fragments lost on one pass fill in on the next pass.
         if self.ticks % STRINGS_KEY_EVERY == 0 { self.long_key_due = true; }
@@ -269,7 +289,7 @@ impl VarSender {
                         self.versions[k] = self.sequence;
                         self.strings[k].clone_from(value);
                     }
-                    self.pending = Some(PendingString { index: string_ids[k], version: self.versions[k], value: value.clone(), offset: 0 });
+                    self.pending = Some(PendingString { index: string_ids[k], version: self.versions[k], value: value.clone(), offset: 0, awaiting: self.subscribers.clone() });
                     k = (k + 1) % m;
                     break;
                 }
@@ -287,7 +307,10 @@ impl VarSender {
             d.extend_from_slice(&pending.value.as_bytes()[pending.offset..end]);
             pending.offset = end;
             out.push(d);
-            if end == pending.value.len() { self.pending = None; }
+            if end == pending.value.len() {
+                if pending.awaiting.is_empty() { self.pending = None; }
+                else { pending.offset = 0; }
+            }
         }
         out
     }
@@ -370,6 +393,15 @@ struct ReceivedString {
 }
 
 impl VarReceiver {
+    pub fn completed_fragment(&self, data: &[u8]) -> Option<(u16, u64)> {
+        if *data.get(10)? != 3 { return None; }
+        let id = u32::from_le_bytes(data.get(2..6)?.try_into().ok()?);
+        let index = u16::from_le_bytes(data.get(HEADER..HEADER + 2)?.try_into().ok()?);
+        let version = u64::from_le_bytes(data.get(HEADER + 2..HEADER + 10)?.try_into().ok()?);
+        let state = self.peers.get(&id)?.1.get(&index)?;
+        (state.complete && state.version == version).then_some((index, version))
+    }
+
     pub fn retain_peers(&mut self, peers: &[u32]) {
         self.peers.retain(|id, _| peers.contains(id));
     }
@@ -427,6 +459,32 @@ impl VarReceiver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn changing_long_strings_recover_loss_before_advancing_the_snapshot() {
+        let mut tx = VarSender::default();
+        let mut rx = VarReceiver::default();
+        let mut seen = std::collections::HashSet::new();
+        for tick in 0..300 {
+            tx.subscribers(&[9]);
+            let texts = [format!("{tick}:{}", "ő".repeat(3000)), "other".repeat(900)];
+            for packet in tx.tick(14, 7, 99, &[], &[], &[0, 1], &texts, 0.1) {
+                // Lose fragments and acknowledgements while both fields keep getting turns.
+                if tick % 7 == 1 { continue; }
+                for (index, value) in rx.receive(&packet, 14).unwrap().strings {
+                    assert!(value == texts[1] || value.ends_with(&"ő".repeat(3000)));
+                    seen.insert(index);
+                }
+                if tick % 5 != 0 {
+                    if let Some((index, version)) = rx.completed_fragment(&packet) {
+                        tx.acknowledge(9, 99, index, version);
+                    }
+                }
+            }
+        }
+        assert_eq!(seen.len(), 2);
+        assert!(tx.sequence > 5, "continuous changes must advance after recovery");
+    }
 
     #[test]
     fn animation_snapshots_keep_timestamps_and_unchanged_values() {

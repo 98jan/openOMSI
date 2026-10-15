@@ -396,6 +396,20 @@ impl App {
         let vr_active = self.xr.vr.is_some();
         #[cfg(not(windows))]
         let vr_active = false;
+        let mirrors_shown = self.settings.mirror_size != 0
+            && self.settings.mirror_refresh != "off"
+            && (self.cam.in_cab || self.player.as_ref().is_some_and(|p| (p.vehicle.position - cam.position).length() < 12.0));
+        self.gfx.sim_view.people.mirror_hz = if vr_active {
+            None
+        } else if !mirrors_shown {
+            Some(0.0)
+        } else if self.settings.mirror_refresh == "every" || (self.settings.mirror_hud_every_frame && self.gfx.mirror_hud.active()) {
+            None
+        } else if self.settings.mirror_refresh == "full" {
+            Some(MIRROR_MAX_HZ_FULL)
+        } else {
+            Some(MIRROR_MAX_HZ_ECO)
+        };
         // With `mirror_hud_every_frame` the mirror panels in the cab (Ctrl+M) are drawn every
         // frame, whatever the refresh setting, seen in the glass or not: a driving aid on the
         // screen, not a small picture far off. The other mirrors take their turns below without
@@ -717,19 +731,23 @@ impl App {
     }
 }
 
-/// Waits for the next frame's deadline (see [`next_deadline`]). The last moment is spun,
-/// not slept: a sleep may wake a millisecond late.
+/// Waits for the next frame's deadline (see [`next_deadline`]).
 fn pace_until(frame_start: Instant, period: std::time::Duration) {
     use std::time::Duration;
     static NEXT: parking_lot::Mutex<Option<(Instant, Duration)>> = parking_lot::Mutex::new(None);
+    static LATE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1_000_000);
     let mut next = NEXT.lock();
     let deadline = next_deadline(*next, frame_start, Instant::now(), period);
     *next = Some((deadline, period));
     drop(next);
-    const SPIN: Duration = Duration::from_millis(1);
+    let late = LATE_NS.load(std::sync::atomic::Ordering::Relaxed);
+    let margin = Duration::from_nanos(late.min(1_000_000));
     if let Some(rest) = deadline.checked_duration_since(Instant::now()) {
-        if rest > SPIN {
-            std::thread::sleep(rest - SPIN);
+        if rest > margin {
+            let wake = Instant::now() + (rest - margin);
+            std::thread::sleep(rest - margin);
+            let seen = Instant::now().saturating_duration_since(wake).as_nanos() as u64;
+            LATE_NS.store((seen * 3 / 2).max(late - late / 8), std::sync::atomic::Ordering::Relaxed);
         }
     }
     while Instant::now() < deadline {

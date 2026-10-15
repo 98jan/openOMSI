@@ -1081,6 +1081,7 @@ impl Player {
                 &|n| v.var(n),
                 &|i| v.trailers.get(i).map(|t| t.world_transform()),
                 &fired,
+                &at_fire,
             );
             for (t, f) in &fired_files {
                 ss.play_file_trigger(a, t, f, &|n| v.var(n), &xf);
