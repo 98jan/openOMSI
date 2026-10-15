@@ -69,6 +69,7 @@ fn dedicated_vram_mb(info: &wgpu::AdapterInfo) -> Option<u64> {
     }
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn angle_device_id(name: &str) -> Option<u32> {
     name.split("(0x").nth(1).and_then(|s| s.split(')').next()).and_then(|s| u32::from_str_radix(s, 16).ok())
 }
@@ -80,6 +81,7 @@ fn chip_name(name: &str) -> &str {
     name.split('/').next().unwrap_or(name).trim()
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn dxgi_names_card(name: &str, gl_vendor: u32, dxgi_name: &str, vendor: u32, device: u32) -> bool {
     if dxgi_name.is_empty() || (gl_vendor != 0 && gl_vendor != vendor) {
         return false;
@@ -92,6 +94,7 @@ fn dxgi_names_card(name: &str, gl_vendor: u32, dxgi_name: &str, vendor: u32, dev
     !chip.is_empty() && (dxgi == chip || dxgi.ends_with(&format!(" {chip}")))
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn one_card(named: &[(u32, u32, u64)]) -> Option<u64> {
     let (first, rest) = named.split_first()?;
     rest.iter().all(|c| c == first).then_some(first.2)
