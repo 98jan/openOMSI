@@ -143,7 +143,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         pick("mirror_refresh", "Bus mirror refresh", "How often the mirrors are drawn: every frame, the street moves through them as smoothly as through the windscreen"),
         pick("mirror_quality", "Mirror quality", "In Enhanced and Enhanced+: the mirrors shaded as the picture is, with its light and its sky, instead of the plain light").filter(|_| shown("mirror_quality")),
         switch_row(app, "mirror_hud_every_frame", "Mirror panels every frame", "The mirror panels in the cab (Ctrl+M) are drawn every frame, as in ETS2, instead of taking turns with the other mirrors"),
-        pick("texture_memory", "Texture memory", later),
+        pick("texture_memory", "Video memory", later),
         switch_row(app, "texture_compression", "Compress textures on loading", later),
         (!omsi_launcher_lib::graphics_profiles().is_empty()).then(|| opens("Load graphics profile", "Applies a graphics profile saved in the launcher", "gfxprofile")),
     ])

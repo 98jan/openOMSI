@@ -54,17 +54,13 @@ export const RESOLUTIONS = [
   ['1600x900', '1600 x 900'], ['1920x1080', '1920 x 1080'], ['1920x1200', '1920 x 1200'], ['2560x1440', '2560 x 1440'], ['3840x2160', '3840 x 2160'],
 ];
 
-/** MB as the texture memory's choices write it. */
-const mb = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)} GB` : `${v} MB`);
-
-/** The texture memory's choices; "Automatic" says what that comes to on this machine. */
-function textureMemory(s) {
-  const auto = Number(s.texture_memory_auto) || 0;
-  return [
-    ['0', auto > 0 ? t('Automatic ({size} here)', { size: mb(auto) }) : 'Automatic'],
-    ['500', '500 MB'], ['1000', '1 GB'], ['1500', '1.5 GB'], ['2000', '2 GB'], ['3000', '3 GB'], ['4000', '4 GB'], ['6000', '6 GB'],
-  ];
-}
+/** The video memory's choices: all the game holds on the graphics card (textures, meshes,
+ * render targets). "Automatic" is nine tenths of the card's own memory and the driver's
+ * budget, which the launcher does not know. */
+const videoMemory = [
+  ['0', 'Automatic'],
+  ['1000', '1 GB'], ['1500', '1.5 GB'], ['2000', '2 GB'], ['3000', '3 GB'], ['4000', '4 GB'], ['6000', '6 GB'], ['8000', '8 GB'], ['12000', '12 GB'],
+];
 
 /** The pedals' response: softer below 1, stronger above. */
 const pedal = (v) => (Math.abs(v - 1) < 0.01 ? t('Normal') : v < 1 ? `${t('Softer')} x${v.toFixed(2)}` : `${t('Stronger')} x${v.toFixed(2)}`);
@@ -127,7 +123,7 @@ const graphics = {
         { type: 'select', key: 'mirror_refresh', label: 'Bus mirror refresh', options: [['off', 'None (frozen picture)'], ['eco', 'Economical'], ['full', 'Full'], ['every', 'Every frame (smoothest)']] },
         { type: 'select', key: 'mirror_quality', label: 'Mirror quality', options: [['standard', 'Standard'], ['enhanced', 'As the picture (Enhanced)']], when: enhanced },
         { type: 'toggle', key: 'mirror_hud_every_frame', label: 'Mirror panels every frame' },
-        { type: 'select', key: 'texture_memory', label: 'Texture memory', options: textureMemory },
+        { type: 'select', key: 'texture_memory', label: 'Video memory', options: videoMemory },
         { type: 'toggle', key: 'texture_compression', label: 'Compress textures on loading' },
         // (off: block formats decoded on loading, for a driver that mishandles them)
         { type: 'toggle', key: 'gpu_texture_compression', label: 'DXT/BC textures stay compressed on the GPU' },

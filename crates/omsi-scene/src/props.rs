@@ -833,6 +833,14 @@ impl World {
             .store(bytes, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// What the game may hold on the graphics card all together (bytes; 0 = no more than
+    /// the driver's budget): over it, the textures give way as over their own budget (see
+    /// [`World::update_texture_budget`]), since they are what can.
+    pub fn set_video_memory_limit(&self, bytes: u64) {
+        self.video_memory_limit
+            .store(bytes, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// The textures' budget now (bytes, 0 = none).
     pub fn texture_budget_bytes(&self) -> u64 {
         self.texture_limit.load(std::sync::atomic::Ordering::Relaxed)
@@ -882,9 +890,12 @@ impl World {
         let limit = self
             .texture_limit
             .load(std::sync::atomic::Ordering::Relaxed);
-        if limit == 0 || centers.is_empty() {
+        let video_limit = self.video_memory_limit.load(std::sync::atomic::Ordering::Relaxed);
+        if (limit == 0 && video_limit == 0) || centers.is_empty() {
             return 0;
         }
+        // (no texture budget of their own: the card's alone bounds them)
+        let limit = if limit == 0 { u64::MAX / 4 } else { limit };
         let mut memo = self.budget_checked.lock();
         {
             let since = memo.checked.map(|t| t.elapsed().as_secs_f32()).unwrap_or(f32::MAX);
@@ -920,6 +931,15 @@ impl World {
         // 4000 MB budget the textures grew to 5.4 GB over a drive; with the picture's targets
         // the card paged to the system's memory and the frame rate fell from 140 to 25 (#2295).
         let usage = scenery_bytes + vehicle_bytes + texture_overdraft(renderer.texture_bytes(scene));
+        // And everything the game holds on the card - the meshes, the render targets and
+        // shadow maps, the driver's own - stays within the video memory setting and the
+        // driver's budget: the textures counted against their budget alone, the game took
+        // gigabytes more than it was set to, and an 8 GB card paged to the system's memory
+        // past its budget. What is over goes from the textures, the only part that can give.
+        let card = renderer.gpu_memory(scene);
+        let card_cap = card.cap(video_limit);
+        let card_over = if card_cap > 0 { card.total().saturating_sub(card_cap) } else { 0 };
+        let usage = if card_over > 0 { usage.max(limit.saturating_add(card_over)) } else { usage };
         if pass == BudgetPass::AfterStreaming && usage <= limit && !memo.resume {
             // (the bytes are all a forced look is for: the restores wait for the second's)
             return 0;
@@ -1085,6 +1105,10 @@ impl World {
             // 150-400 m went back and forth as the tiles around came and went).
             entries.sort_by(|a, b| a.0.total_cmp(&b.0));
             let mut room = (limit - limit / 100 * 15).saturating_sub(usage);
+            // (and a tenth of the card's bound kept free)
+            if card_cap > 0 {
+                room = room.min((card_cap - card_cap / 10).saturating_sub(card.total()));
+            }
             let pending = self.upgrades_pending.lock();
             for (d, p) in &entries {
                 if *d > RESTORE || restoring >= 16 {
@@ -1117,7 +1141,7 @@ impl World {
         drop(memo);
         let rebound = renderer.rebind_textures(scene, &shrunk);
         if omsi_cfg::flags::OMSI_PROFILE.is_set() {
-            log::info!("texture budget: {:.0} of {:.0} MB in use, {} textures lost a level ({} materials rebound), {} coming back{}, in {:.1} ms", usage as f64 / 1e6, limit as f64 / 1e6, shrunk_n, rebound, restoring, if cut_short { ", more next frame" } else { "" }, t0.elapsed().as_secs_f64() * 1000.0);
+            log::info!("texture budget: {:.0} of {:.0} MB in use; on the card {:.0} of {:.0} MB (textures {:.0}, meshes {:.0}, the rest {:.0}{}); {} textures lost a level ({} materials rebound), {} coming back{}, in {:.1} ms", usage as f64 / 1e6, limit as f64 / 1e6, card.total() as f64 / 1e6, card_cap as f64 / 1e6, card.textures as f64 / 1e6, card.meshes as f64 / 1e6, card.other as f64 / 1e6, if card.measured { " as the driver counts" } else { " worked out" }, shrunk_n, rebound, restoring, if cut_short { ", more next frame" } else { "" }, t0.elapsed().as_secs_f64() * 1000.0);
         }
         shrunk_n + restoring
     }

@@ -375,8 +375,10 @@ stop it serves, as in OMSI),
 `boarding`, `detail_textures`, `exact_fare`, `enhanced`, `fullscreen`, `vsync`, `volume`
 and `drive_keys`, plus `render_scale` (`auto` or a fraction: the picture is drawn smaller
 and upscaled), `post_aa` (`fxaa`, the enhanced renderer's, or `off`), `view_distance` (m,
-how far the tiles are kept loaded), `texture_memory` (MB - OMSI's `texmemlimit` is read
-under that name too; an eighth of the machine's memory when unset), `texture_compression`
+how far the tiles are kept loaded), `texture_memory` ("Video memory", MB: all the game holds
+on the graphics card - textures, meshes, render targets, the driver's own; OMSI's `texmemlimit`
+is read under that name too; when unset, nine tenths of a discrete card's memory, and never
+more than the driver's budget), `texture_compression`
 (loose pictures compressed to BC1-BC3 on loading, on by default), `gpu_texture_compression`
 (DXT/BC textures kept compressed on the GPU, on by default; off decodes them to RGBA, for a
 driver that mishandles block formats, at four to eight times the memory - as

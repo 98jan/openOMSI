@@ -459,6 +459,7 @@ flags! {
     OMSI_TYRE_SUSPENSION: Bool, Switch, Once, "off", "The old suspension with wheel mass, tyre and bump stops (A/B).";
     OMSI_UI_PREVIEW: Text, Test, Use, "target/ui-preview.png", "Plugin UI preview test: the picture's path.";
     OMSI_UPDATE_URL: Text, Setup, Use, "built-in", "Another release description (URL or file:///...json) for the update check.";
+    OMSI_VIDEO_MEMORY: Num, Tuning, Use, "settings", "What the game may hold on the graphics card all together (textures, meshes, render targets), in MB.";
     OMSI_WARM_FRAMES: Num, Test, Use, "0", "Offscreen: frames drawn before the picture.";
     OMSI_WATCH_VARS: Text, Debug, Use, "-", "a,b: log every change of these variables of the player's bus.";
     OMSI_WETNESS: Num, Test, Use, "weather", "Ground wetness the picture is drawn with.";

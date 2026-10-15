@@ -83,6 +83,7 @@ impl Renderer {
         let discrete_vram = vram.filter(|_| info.device_type == wgpu::DeviceType::DiscreteGpu).unwrap_or(0);
         ADAPTER_VRAM_MB.store(discrete_vram, std::sync::atomic::Ordering::Relaxed);
         *ADAPTER_INFO.lock().unwrap_or_else(|e| e.into_inner()) = Some(info.clone());
+        *ADAPTER.lock().unwrap_or_else(|e| e.into_inner()) = Some(adapter.clone());
         log::info!("graphics adapter: {} ({:?}, {:?}{}), texture memory taken for it: {guess_mb} MB", info.name, info.device_type, info.backend, vram.map(|v| format!(", {v} MB of its own")).unwrap_or_default());
         if let Some(m) = mem {
             let mb = |b: Option<u64>| b.map_or_else(|| "-".to_string(), |b| format!("{} MB", b >> 20));
@@ -614,6 +615,7 @@ impl Renderer {
             puddles,
             texture_aspect: None,
             last_frame: None,
+            gpu_memory_seen: Default::default(),
             instant_exposure: false,
             depth_readback: false,
             overlay_pipeline_1x,

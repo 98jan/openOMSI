@@ -163,6 +163,14 @@ budget.
   texels a side); with a tenth of the budget free, those within 400 m are read again on a
   worker and swapped back. Offscreen, `OMSI_BUDGET_FROM=x,y[,MB]` meets the budget from
   another place first (and raises it) to check the way back.
+* The video memory: everything the game holds on the card - all textures, the meshes, and
+  the rest (render targets, shadow maps, buffers, the driver's own), which the driver counts
+  on DirectX 12, Vulkan (VK_EXT_memory_budget) and Metal, asked once a second
+  (`Renderer::gpu_memory`; the rest is the least of the last three counts, as freed textures
+  leave the driver's count late) and is worked out from the targets' sizes on OpenGL - stays
+  within the "Video memory" setting (`texture_memory=`, `OMSI_VIDEO_MEMORY`; nine tenths of a
+  discrete card's memory when unset) and nine tenths of the driver's budget. What is over
+  is taken from the textures in the same pass as their own budget.
 * Freed scene slots are handed out lowest first, and after unloads a free tail of the
   scene's arrays is cut off (`World::compact_slots`; a few live entries at the end keep the
   arrays long - moving live entries is not done).

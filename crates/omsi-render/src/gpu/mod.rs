@@ -20,6 +20,10 @@ pub static ADAPTER_VRAM_MB: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 /// The adapter the device was opened on (its name, ids, backend and driver), see `Renderer::new`.
 pub static ADAPTER_INFO: std::sync::Mutex<Option<wgpu::AdapterInfo>> = std::sync::Mutex::new(None);
 
+/// The adapter the device was opened on, asked how much memory the game holds on it (see
+/// `Renderer::gpu_memory`).
+pub(crate) static ADAPTER: std::sync::Mutex<Option<wgpu::Adapter>> = std::sync::Mutex::new(None);
+
 /// The device runs on OpenGL (set in `Renderer::new`).
 pub(crate) static GL_BACKEND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 

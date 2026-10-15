@@ -84,6 +84,25 @@ pub(crate) fn texture_budget(settings: &settings::Settings) -> u64 {
     }
 }
 
+/// What the game may hold on the graphics card all together, in bytes (0 = only the driver's
+/// budget bounds it): `OMSI_VIDEO_MEMORY` (MB), else the "Video memory" setting - textures,
+/// meshes, render targets and the driver's own, not the textures alone as it was - else nine
+/// tenths of a discrete card's own memory. The driver's budget, where it tells one, bounds
+/// it further at every look (see `World::update_texture_budget`).
+pub(crate) fn video_memory_limit(settings: &settings::Settings) -> u64 {
+    let vram = omsi_render::ADAPTER_VRAM_MB.load(std::sync::atomic::Ordering::Relaxed);
+    let mb = omsi_cfg::flags::OMSI_VIDEO_MEMORY.parse::<u64>()
+        .unwrap_or(settings.texture_memory as u64);
+    if mb == 0 {
+        return vram * 1_000_000 / 10 * 9;
+    }
+    if vram > 0 && mb > vram / 10 * 9 {
+        log::warn!("video memory {mb} MB is more than the graphics card has: {} MB", vram / 10 * 9);
+        return vram * 1_000_000 / 10 * 9;
+    }
+    mb * 1_000_000
+}
+
 /// Give the heap's free pages back to the system, on a thread of its own (the allocator
 /// keeps what was freed for later, and it counts as the game's memory until then).
 pub fn release_free_memory() {

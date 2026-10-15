@@ -4,6 +4,19 @@ Releases are started by hand from `main` as the beta `MAJOR.MINOR.COMMIT`, and t
 promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-org/openOMSI/releases) page.
 
+## Unreleased
+
+### Graphics
+
+- **The video memory setting is kept:** "Texture memory" is now "Video memory", and it bounds
+  everything the game holds on the graphics card - textures, meshes, render targets and shadow
+  maps, the driver's own - not the textures alone. The game took gigabytes more than it was
+  set to, and an 8 GB card could page to the system's memory and drop to a fraction of its
+  frame rate. Where the driver says how much it really hands out (DirectX 12, Vulkan, Metal),
+  the game stays under that as well, whatever the setting; when it is over, the farthest
+  textures give up their finest levels first. "Automatic" is nine tenths of the card's own
+  memory. Choices of 8 and 12 GB were added, 500 MB was dropped.
+
 ## 0.3.0 - 2026-10-14
 
 A stabilization release: the slowdowns and breakages that came with the updates since 0.2.20,

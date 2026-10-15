@@ -132,6 +132,7 @@ impl World {
             upgrades_done: Default::default(),
             freetex_upgrades: Default::default(),
             texture_limit: Default::default(),
+            video_memory_limit: Default::default(),
             budget_checked: Default::default(),
             traffic_inbox: Default::default(),
             controller_of_object: Mutex::new(HashMap::new()),
