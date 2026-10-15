@@ -13,7 +13,7 @@ fn wait_for_welcome(session: &mut LanSession, planned: &Pose, wait: Duration) {
 
 /// An explicit UDP selection passes no fallback. Never switch transport after a
 /// welcome or a server rejection, and never rediscover a gateway during this join.
-pub(crate) fn connect(direct: &str, fallback: Option<&str>, name: &str, world: WorldInfo, planned: &Pose, wait: Duration) -> Result<LanSession, String> {
+pub(crate) fn connect(target: &str, direct: &str, fallback: Option<&str>, name: &str, world: WorldInfo, planned: &Pose, wait: Duration) -> Result<LanSession, String> {
     let initial = LanSession::join(direct, name, world.clone(), Duration::from_secs(3))
         .map(|mut session| {
             wait_for_welcome(&mut session, planned, wait);
@@ -23,7 +23,7 @@ pub(crate) fn connect(direct: &str, fallback: Option<&str>, name: &str, world: W
         Ok(session) => !session.connected && session.welcome.is_none() && session.turned_away.is_none(),
         Err(_) => true,
     };
-    let Some(gateway) = fallback.filter(|_| needs_fallback && omsi_net::ws::ws_url(direct).is_none()) else {
+    let Some(gateway) = fallback.filter(|_| needs_fallback && omsi_net::ws::ws_url(target).is_none()) else {
         return initial;
     };
     let Some(url) = omsi_net::ws::ws_url(gateway) else {
@@ -70,12 +70,18 @@ mod tests {
         let silent_at = silent.local_addr().unwrap().to_string();
 
         // Explicit UDP has no fallback even though a working gateway exists.
-        let forced = connect(&silent_at, None, "forced", world.clone(), &planned, Duration::from_millis(100)).unwrap();
+        let forced = connect(&silent_at, &silent_at, None, "forced", world.clone(), &planned, Duration::from_millis(100)).unwrap();
         assert!(!forced.connected);
         assert_eq!(gateway.connected.load(Ordering::Relaxed), 0);
 
+        // A web target has already become a local UDP bridge. Even if it is
+        // unanswered and a fallback was supplied, never switch gateways.
+        let web = connect(&fallback, &silent_at, Some(&fallback), "web", world.clone(), &planned, Duration::from_millis(100)).unwrap();
+        assert!(!web.connected);
+        assert_eq!(gateway.connected.load(Ordering::Relaxed), 0);
+
         // A successful UDP join does not open a WebSocket.
-        let direct = connect(&at.to_string(), Some(&fallback), "direct", world.clone(), &planned, Duration::from_secs(2)).unwrap();
+        let direct = connect(&at.to_string(), &at.to_string(), Some(&fallback), "direct", world.clone(), &planned, Duration::from_secs(2)).unwrap();
         assert!(direct.connected);
         assert_eq!(gateway.connected.load(Ordering::Relaxed), 0);
 
@@ -87,14 +93,14 @@ mod tests {
             let (_, from) = refusing.recv_from(&mut [0u8; 4096]).unwrap();
             refusing.send_to(format!("REJECT|{}|server full", omsi_net::PROTOCOL).as_bytes(), from).unwrap();
         });
-        let rejected = connect(&refusing_at, Some(&fallback), "rejected", world.clone(), &planned, Duration::from_secs(2)).unwrap();
+        let rejected = connect(&refusing_at, &refusing_at, Some(&fallback), "rejected", world.clone(), &planned, Duration::from_secs(2)).unwrap();
         refusal.join().unwrap();
         assert_eq!(rejected.turned_away.as_deref(), Some("server full"));
         assert_eq!(gateway.connected.load(Ordering::Relaxed), 0);
 
         // Use the exact gateway on its arbitrary port, rather than deriving a
         // gateway address from the silent UDP endpoint.
-        let fallback_join = connect(&silent_at, Some(&fallback), "auto", world, &planned, Duration::from_secs(2)).unwrap();
+        let fallback_join = connect(&silent_at, &silent_at, Some(&fallback), "auto", world, &planned, Duration::from_secs(2)).unwrap();
         assert!(fallback_join.connected);
         assert_eq!(gateway.connected.load(Ordering::Relaxed), 1);
         drop(fallback_join);

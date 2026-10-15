@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { serverJoinSettings } from './server-join.js';
+import { serverJoinSettings, serverJoinProtocol } from './server-join.js';
 
 const serverJoinAddress = (...args) => serverJoinSettings(...args).lan_addr;
 
@@ -51,5 +51,22 @@ test('only Auto UDP joins carry the discovered gateway as a fallback', () => {
   }
   for (const address of ['play.example.org', 'https://play.example.org:27015', 'openomsi']) {
     assert.equal(serverJoinSettings(address, 'auto', info).lan_ws_fallback, null);
+  }
+});
+
+test('Auto uses the typed port immediately when it answered HTTP status', () => {
+  for (const address of ['play.example.org:27025', '192.168.1.4:47025', '[::1]:27025', '  play.example.org:27025  ']) {
+    const target = address.trim();
+    const status = { reached_at: `http://${target}` };
+    assert.equal(serverJoinProtocol(address, 'auto', status), 'websocket');
+    assert.deepEqual(serverJoinSettings(address, 'auto', status), {
+      lan_addr: status.reached_at, lan_ws_fallback: null,
+    });
+    assert.equal(serverJoinProtocol(address, 'udp', status), 'udp');
+    assert.deepEqual(serverJoinSettings(address, 'udp', status), {
+      lan_addr: target, lan_ws_fallback: null,
+    });
+    assert.equal(serverJoinAddress(address, 'websocket', status), status.reached_at);
+    assert.equal(serverJoinProtocol(address, 'auto', info), 'udp');
   }
 });

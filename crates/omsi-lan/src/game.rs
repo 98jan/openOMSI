@@ -428,7 +428,7 @@ pub fn start(args: &LanConfig, host: &dyn LanHost) -> Option<LanSession> {
                     target.clone()
                 }
             };
-            match crate::join::connect(&direct, args.lan_ws_fallback.as_deref(), &player_name(args), world, &planned, HOST_ANSWER_WAIT) {
+            match crate::join::connect(target, &direct, args.lan_ws_fallback.as_deref(), &player_name(args), world, &planned, HOST_ANSWER_WAIT) {
                 Ok(s) => Some(s),
                 Err(e) => {
                     log::warn!("LAN: cannot join '{target}': {e}");

@@ -56,18 +56,19 @@ pub struct ServerEntry {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum JoinProto {
-    /// UDP for bare addresses with an explicit port, falling back to the discovered
-    /// WebSocket gateway; otherwise WebSocket immediately.
-    #[default]
-    Auto,
     /// Straight to the game port over UDP (gateway status still required).
     Udp,
     /// Through the server's web gateway (a WebSocket).
     WebSocket,
+    /// UDP for bare addresses with an explicit game port, falling back to the discovered
+    /// WebSocket gateway; a port that answered status uses WebSocket immediately.
+    #[default]
+    #[serde(other)]
+    Auto,
 }
 
 /// Select the gameplay address only after a gateway has answered. A bare explicit
-/// port in Auto names the game port; a web link always names the gateway.
+/// port in Auto names the game port unless that exact HTTP endpoint answered status.
 fn server_join_address(address: &str, proto: JoinProto, info: Option<&omsi_net::ws::ServerInfo>) -> Result<(String, JoinProto), &'static str> {
     let address = address.trim();
     let is_web = omsi_net::ws::ws_url(address).is_some() || omsi_net::official::is_alias(address);
@@ -79,7 +80,8 @@ fn server_join_address(address: &str, proto: JoinProto, info: Option<&omsi_net::
             && port.parse::<u16>().is_ok()
     });
     let proto = match proto {
-        JoinProto::Auto if !is_web && explicit_port => JoinProto::Udp,
+        JoinProto::Auto if !is_web && explicit_port
+            && !info.is_some_and(|i| i.reached_at == format!("http://{address}")) => JoinProto::Udp,
         JoinProto::Auto => JoinProto::WebSocket,
         p => p,
     };
@@ -594,7 +596,7 @@ impl State {
 
     /// The Drive page joins `address`: the server's map is the map, the session is joined.
     /// `proto` says how: over UDP straight to the game port, over the server's web gateway
-    /// (a WebSocket), or `Auto` (UDP for bare addresses with a port, else WebSocket).
+    /// (a WebSocket), or `Auto` (UDP for bare game ports; WebSocket for responding web ports).
     /// Every selection requires a successful gateway status response; Auto UDP keeps
     /// that gateway as a fallback if the initial handshake gets no answer.
     pub fn join_server(&mut self, address: &str, proto: JoinProto) {
@@ -1362,6 +1364,37 @@ mod choice_tests {
             assert_eq!(server_join_address(address, JoinProto::Auto, Some(&info)).unwrap().1, JoinProto::WebSocket);
         }
         assert_eq!(server_join_address("  play.example.org:27015  ", JoinProto::Auto, Some(&info)).unwrap().0, "play.example.org:27015");
+    }
+
+    #[test]
+    fn auto_uses_the_typed_port_when_it_answered_status() {
+        use super::{server_join_address, JoinProto};
+        for address in ["play.example.org:27025", "192.168.1.4:47025", "[::1]:27025", "  play.example.org:27025  "] {
+            let info = omsi_net::ws::ServerInfo {
+                reached_at: format!("http://{}", address.trim()), ..Default::default()
+            };
+            let (target, protocol) = server_join_address(address, JoinProto::Auto, Some(&info)).unwrap();
+            assert_eq!(protocol, JoinProto::WebSocket);
+            assert_eq!(target, info.reached_at);
+            // The game uses this same predicate to select the server menu.
+            assert!(omsi_net::ws::ws_url(&target).is_some());
+            assert_eq!(server_join_address(address, JoinProto::Udp, Some(&info)).unwrap(), (address.trim().into(), JoinProto::Udp));
+            assert_eq!(server_join_address(address, JoinProto::WebSocket, Some(&info)).unwrap(), (target, JoinProto::WebSocket));
+        }
+    }
+
+    #[test]
+    fn unknown_saved_protocol_preserves_the_server_list() {
+        let servers: Vec<super::ServerEntry> = serde_json::from_str(r#"[
+            {"address":"old.example.org"},
+            {"address":"auto.example.org","protocol":"auto"},
+            {"address":"udp.example.org","protocol":"udp"},
+            {"address":"ws.example.org","protocol":"websocket"},
+            {"address":"future.example.org","protocol":"future"}
+        ]"#).unwrap();
+        use super::JoinProto::*;
+        assert_eq!(servers.iter().map(|s| s.protocol).collect::<Vec<_>>(), [Auto, Auto, Udp, WebSocket, Auto]);
+        assert_eq!(servers[4].address, "future.example.org");
     }
 
     #[test]

@@ -138,7 +138,7 @@ function Servers() {
         : list.map((x) => {
             const st = info[x.address] || {};
             const i = st.ok;
-            const autoLabel = i ? `${t('Auto')} (${serverJoinProtocol(x.address) === 'udp' ? 'UDP' : 'WS'})` : t('Auto');
+            const autoLabel = i ? `${t('Auto')} (${serverJoinProtocol(x.address, 'auto', i) === 'udp' ? 'UDP' : 'WS'})` : t('Auto');
             return html`<${Card} body=${false}><div class="card-body row" style="align-items:flex-start;gap:14px">
               ${i?.icon ? html`<img src=${i.icon} width="48" height="48" style="border-radius:8px" />` : html`<div class="avatar" style="width:48px;height:48px;border-radius:8px"><${Icon} name="globe" /></div>`}
               <div class="grow stack" style="gap:4px;min-width:0">
