@@ -7,14 +7,14 @@
 //! 200 ms of it, so a hitch does not jump to the end.
 
 /// How much of the way is left after `dt` seconds (one frame, at most `MAX_DT` of it).
-pub(crate) fn left_after(dt: f32) -> f32 {
+pub fn left_after(dt: f32) -> f32 {
     (-PER_MS * dt.clamp(0.0, MAX_DT) * 1000.0).exp()
 }
 
 /// Omsi.exe's rate: the share of the way left over falls by e every 200 ms.
-pub(crate) const PER_MS: f32 = 0.005;
+pub const PER_MS: f32 = 0.005;
 /// The longest frame the glide counts (seconds).
-pub(crate) const MAX_DT: f32 = 0.2;
+pub const MAX_DT: f32 = 0.2;
 
 fn wrap_deg(a: f32) -> f32 {
     (a + 180.0).rem_euclid(360.0) - 180.0
@@ -23,10 +23,10 @@ fn wrap_deg(a: f32) -> f32 {
 /// `cur` one frame of `dt` seconds closer to `target`, value by value (both cameras fixed in
 /// the bus's frame; the bus's motion and the head go on top afterwards). The view turns the
 /// short way round.
-pub(crate) fn approach(cur: &omsi_vehicle::Camera, target: &omsi_vehicle::Camera, dt: f32) -> omsi_vehicle::Camera {
+pub fn approach(cur: &crate::Camera, target: &crate::Camera, dt: f32) -> crate::Camera {
     let rest = left_after(dt);
     let l = |x: f32, y: f32| y - (y - x) * rest;
-    omsi_vehicle::Camera {
+    crate::Camera {
         pos: [l(cur.pos[0], target.pos[0]), l(cur.pos[1], target.pos[1]), l(cur.pos[2], target.pos[2])],
         dist: l(cur.dist, target.dist),
         fov: l(cur.fov, target.fov),
@@ -39,9 +39,9 @@ pub(crate) fn approach(cur: &omsi_vehicle::Camera, target: &omsi_vehicle::Camera
 
 /// Whether `cur` is as good as `target`: under a millimetre, a hundredth of a degree and a
 /// hundredth of the field of view away - what is left goes to the hand-over's carry.
-pub(crate) fn settled(cur: &omsi_vehicle::Camera, target: &omsi_vehicle::Camera) -> bool {
-    let d = glam::Vec3::from_array(cur.pos) - glam::Vec3::from_array(target.pos);
-    d.length() < 1e-3
+pub fn settled(cur: &crate::Camera, target: &crate::Camera) -> bool {
+    let [x, y, z] = [0, 1, 2].map(|i| cur.pos[i] - target.pos[i]);
+    (x * x + y * y + z * z).sqrt() < 1e-3
         && (cur.dist - target.dist).abs() < 1e-3
         && (cur.fov - target.fov).abs() < 0.01
         && wrap_deg(cur.yaw - target.yaw).abs() < 0.01
@@ -51,7 +51,7 @@ pub(crate) fn settled(cur: &omsi_vehicle::Camera, target: &omsi_vehicle::Camera)
 /// The F1 / Space return of the head's turn and the zoom, on the same curve: `t` the glide's
 /// time so far (each frame's share capped at `MAX_DT`, see `step`); the look, the zoom and
 /// whether it has arrived.
-pub(crate) fn home(look_from: (f32, f32), zoom_from: f32, t: f32) -> ((f32, f32), f32, bool) {
+pub fn home(look_from: (f32, f32), zoom_from: f32, t: f32) -> ((f32, f32), f32, bool) {
     let rest = (-PER_MS * t.max(0.0) * 1000.0).exp();
     let look = (look_from.0 * rest, look_from.1 * rest);
     let zoom = 1.0 + (zoom_from - 1.0) * rest;
@@ -64,7 +64,7 @@ pub(crate) fn home(look_from: (f32, f32), zoom_from: f32, t: f32) -> ((f32, f32)
 }
 
 /// The time a frame of `dt` seconds adds to `home`'s glide.
-pub(crate) fn step(dt: f32) -> f32 {
+pub fn step(dt: f32) -> f32 {
     dt.clamp(0.0, MAX_DT)
 }
 
@@ -72,8 +72,8 @@ pub(crate) fn step(dt: f32) -> f32 {
 mod tests {
     use super::*;
 
-    fn cam(x: f32, yaw: f32, fov: f32) -> omsi_vehicle::Camera {
-        omsi_vehicle::Camera { pos: [x, 0.0, 1.8], dist: 0.0, fov, yaw, pitch: 0.0, extra: None, fixed: false }
+    fn cam(x: f32, yaw: f32, fov: f32) -> crate::Camera {
+        crate::Camera { pos: [x, 0.0, 1.8], dist: 0.0, fov, yaw, pitch: 0.0, extra: None, fixed: false }
     }
 
     #[test]
