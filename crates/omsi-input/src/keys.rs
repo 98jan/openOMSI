@@ -2,6 +2,12 @@
 
 use winit::keyboard::KeyCode;
 
+/// Shift, Ctrl, Alt and the system key, either side: the keys `ModifiersChanged` keeps.
+pub fn is_modifier(code: KeyCode) -> bool {
+    matches!(code, KeyCode::ShiftLeft | KeyCode::ShiftRight | KeyCode::ControlLeft | KeyCode::ControlRight
+        | KeyCode::AltLeft | KeyCode::AltRight | KeyCode::SuperLeft | KeyCode::SuperRight)
+}
+
 /// DIK_* scan code for a winit key, if known.
 pub fn dik_code(key: KeyCode) -> Option<i32> {
     use KeyCode::*;
@@ -174,6 +180,19 @@ pub fn key_repeat(key: KeyCode, pressed: bool, repeat: bool, windows: bool, held
 mod vk_twin_tests {
     use super::*;
     use winit::keyboard::KeyCode::*;
+
+    /// The modifier key-ups the window drops once `ModifiersChanged` has let them go (Windows
+    /// reports the state first): the eight modifier keys, nothing else.
+    #[test]
+    fn only_the_modifier_keys_count_as_modifiers() {
+        for code in [KeyCode::ShiftLeft, KeyCode::ShiftRight, KeyCode::ControlLeft, KeyCode::ControlRight,
+            KeyCode::AltLeft, KeyCode::AltRight, KeyCode::SuperLeft, KeyCode::SuperRight] {
+            assert!(is_modifier(code), "{code:?}");
+        }
+        for code in [KeyCode::KeyW, KeyCode::CapsLock, KeyCode::Escape, KeyCode::Digit1] {
+            assert!(!is_modifier(code), "{code:?}");
+        }
+    }
 
     #[test]
     fn twins() {
