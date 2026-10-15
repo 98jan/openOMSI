@@ -263,6 +263,44 @@ fn rear_section_axle_behind_its_turning_line_steers() {
     assert!(steered < -0.05 && (steered - want).abs() < 1e-4, "{steered} for {want}");
 }
 
+/// A rear section whose turning line lies ahead of its axle, coupled behind a front section
+/// driving a steady right-hand bend: its curvature, worked out of the front's and the joint
+/// angle as Omsi.exe 0x7e0f44 does, comes to the bend its turning line really runs on, and
+/// its axle turns against the bend; put somewhere else, its wheels stand straight (#322).
+#[test]
+fn a_rear_sections_bend_follows_from_the_joint() {
+    let front = coupling_test_type(None);
+    let mut rear = (*coupling_test_type(None)).clone();
+    rear.def.axles = vec![omsi_vehicle::Axle { long: -3.0, ..Default::default() }];
+    rear.def.rot_pnt_long = -1.0;
+    let mut v = VehicleInstance::new(front, VehicleHost::new(Default::default()));
+    v.attach_trailer(Arc::new(rear));
+    // the front turns about its origin's line (axles at -3 and 3): a bend of 15 m for its
+    // origin, the wheel angle of a 3 m wheelbase
+    let r = 15.0f64;
+    v.physics.steer_deg = (3.0 / r).atan().to_degrees() as f32;
+    let at = |h: f64| DVec3::new(r - r * h.cos(), r * h.sin(), 0.0);
+    for i in 0..3000 {
+        let h = i as f64 * 0.1 / r;
+        v.position = at(h);
+        v.heading = h.to_degrees();
+        v.update_trailers(1.0 / 60.0);
+    }
+    let t = &v.trailers[0];
+    // the joint 5 m behind the front's line, 6 m ahead of the rear's
+    let want = 1.0 / (r * r + 25.0 - 36.0).sqrt() as f32;
+    assert!((t.kappa - want).abs() < 2e-3, "curvature {} for {want}", t.kappa);
+    let steer = t.axle_steer(0).unwrap();
+    assert!((steer - (-2.0 * t.kappa).atan()).abs() < 1e-6 && steer < -0.1, "{steer}");
+    // straight on: straight wheels
+    assert_eq!(super::super::trailer::coupled_curvature(0.0, -5.0, 0.0, 6.0), 0.0);
+    // a joint on the turning line turns nothing
+    assert_eq!(super::super::trailer::coupled_curvature(0.1, -5.0, 0.3, 0.0), 0.0);
+    let t = &mut v.trailers[0];
+    t.realign();
+    assert_eq!(t.axle_steer(0), Some(0.0));
+}
+
 /// The rear section of an articulated bus on a viaduct stays on the deck: one frame with
 /// no deck under its axle (a gap at a joint) does not drop it onto the road below, and
 /// one that had sunk under the deck finds it again (#135).

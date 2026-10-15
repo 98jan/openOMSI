@@ -880,8 +880,21 @@ impl Player {
         // +0x510; 0x7e24b2 and 0x7e24e0 put it in the camera's translation). A spring of the
         // camera's own, kicked by the body's pitching with the opposite sign to the seat's,
         // moved the view against the seat when the bus dipped under the brakes (#2550).
-        self.head.z = self.vehicle.driver_seat_travel();
-        self.head_vel.z = 0.0;
+        // (A vehicle without the wheel physics keeps the camera's spring and the eye height
+        // it has always had there: it gives no seat travel to ride on.)
+        if self.vehicle.rigid.is_some() {
+            self.head.z = self.vehicle.driver_seat_travel();
+            self.head_vel.z = 0.0;
+        } else {
+            let kick = -(a.z - 9.81) * dt + dw.y * eye.x + dw.x * eye.y;
+            let (mut p, mut v) = spring(self.head.z, self.head_vel.z, kick, 3000.0 / 150.0, 2000.0 / 150.0);
+            if p.abs() > 0.1 {
+                p = p.clamp(-0.1, 0.1);
+                v = 0.0;
+            }
+            self.head.z = p;
+            self.head_vel.z = v;
+        }
         if enabled {
             let moving = self.vehicle.physics.speed.abs().min(1.0);
             let kx = (-a.x * dt + dw.y * eye.z - dw.z * eye.y) * moving;

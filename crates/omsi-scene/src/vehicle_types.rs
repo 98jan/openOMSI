@@ -711,10 +711,8 @@ pub(super) fn vehicle_bump_names(
 
 /// The lamps (indices into the model's `[interiorlight]`s) a mesh's or a seat's
 /// `[illumination_interior]` names: those that exist, each once, as many as a mesh may have.
-/// A negative number lights nothing, as in Omsi.exe: 0x5fa8f0 skips it (a signed byte below
-/// 0) before it hands the next Direct3D light, 4 + those set so far, a lamp with SetLight,
-/// and 0x5ef42c enables lights 4..7 only up to that count - no light of a default kind
-/// takes its place (#797).
+/// A negative number is left out, as Omsi.exe's mesh lamps do: 0x5fa8f0 skips a byte
+/// below 0 and sets Direct3D lights only for the lamps it keeps.
 pub fn lamp_set(indices: &[i32], n: usize) -> Vec<usize> {
     let mut set: Vec<usize> = Vec::new();
     for &k in indices {
