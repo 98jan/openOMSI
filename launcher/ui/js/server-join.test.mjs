@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { serverJoinAddress } from './server-join.js';
+import { serverJoinSettings } from './server-join.js';
+
+const serverJoinAddress = (...args) => serverJoinSettings(...args).lan_addr;
 
 const info = { reached_at: 'https://gateway.example.org' };
 
@@ -36,5 +38,18 @@ test('all selections require gateway status', () => {
         assert.throws(() => serverJoinAddress(address, protocol, status));
       }
     }
+  }
+});
+
+
+test('only Auto UDP joins carry the discovered gateway as a fallback', () => {
+  assert.deepEqual(serverJoinSettings('play.example.org:27015', 'auto', info), {
+    lan_addr: 'play.example.org:27015', lan_ws_fallback: info.reached_at,
+  });
+  for (const protocol of ['udp', 'websocket']) {
+    assert.equal(serverJoinSettings('play.example.org:27015', protocol, info).lan_ws_fallback, null);
+  }
+  for (const address of ['play.example.org', 'https://play.example.org:27015', 'openomsi']) {
+    assert.equal(serverJoinSettings(address, 'auto', info).lan_ws_fallback, null);
   }
 });

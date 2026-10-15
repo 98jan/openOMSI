@@ -2689,6 +2689,8 @@ pub struct Duty {
     pub lan: Option<String>,
     /// The name the other LAN players see (default: the profile).
     pub lan_name: Option<String>,
+    /// Discovered web gateway to try if the initial UDP join gets no answer (Auto only).
+    pub lan_ws_fallback: Option<String>,
     /// Season override: spring / summer / autumn / winter, with a phase `-early` / `-late`
     /// (`autumn-late`; none = the middle; empty = by date).
     pub season: Option<String>,
@@ -2949,6 +2951,7 @@ fn duty_args_for_root(d: &Duty, root: &Path) -> Result<Vec<String>> {
             let target = target.trim();
             omsi_net::describe_join(target).map_err(|e| anyhow!("LAN join: {e}"))?;
             a.extend(["--lan-join".into(), if target.is_empty() { "auto".into() } else { target.to_string() }]);
+            if let Some(url) = d.lan_ws_fallback.as_deref().filter(|url| !url.is_empty()) { a.extend(["--lan-ws-fallback".into(), url.to_string()]); }
         } else {
             return Err(anyhow!("LAN play: '{lan}' is neither host nor join:<code or address>"));
         }
@@ -3258,6 +3261,7 @@ mod tests {
         assert!(!alone.iter().any(|x| x == "--whole-tour"));
     }
 
+    include!("lan_join_tests.rs");
     #[test]
     fn a_duty_keeps_its_plate_and_older_files_load_without_one() {
         let old: Duty = serde_json::from_str(r#"{"map":"maps/x/global.cfg","bus":"Vehicles/x.bus","time":"09:00"}"#).unwrap();

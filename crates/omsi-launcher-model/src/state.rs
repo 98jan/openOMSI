@@ -56,7 +56,8 @@ pub struct ServerEntry {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum JoinProto {
-    /// UDP for bare addresses with an explicit port, otherwise WebSocket.
+    /// UDP for bare addresses with an explicit port, falling back to the discovered
+    /// WebSocket gateway; otherwise WebSocket immediately.
     #[default]
     Auto,
     /// Straight to the game port over UDP (gateway status still required).
@@ -160,6 +161,8 @@ pub struct Choice {
     /// off, host, join
     pub lan_mode: String,
     pub lan_addr: String,
+    /// Discovered gateway to try if an Auto UDP join gets no answer.
+    pub lan_ws_fallback: Option<String>,
     /// 2: `entry` may be -1 (automatic); older files had a fixed entry point there.
     pub version: u32,
 }
@@ -192,6 +195,7 @@ impl Default for Choice {
             on_foot: false,
             lan_mode: "off".into(),
             lan_addr: String::new(),
+            lan_ws_fallback: None,
             version: 2,
         }
     }
@@ -214,6 +218,7 @@ impl Choice {
         // the Drive page ("Leave Server" is only there for a server joined since the launch).
         if c.lan_mode == "join" {
             c.lan_mode = "off".into();
+            c.lan_ws_fallback = None;
         }
         if c.version < 2 {
             // the start was always the map's first entry point: now it is automatic
@@ -590,9 +595,11 @@ impl State {
     /// The Drive page joins `address`: the server's map is the map, the session is joined.
     /// `proto` says how: over UDP straight to the game port, over the server's web gateway
     /// (a WebSocket), or `Auto` (UDP for bare addresses with a port, else WebSocket).
-    /// Every selection requires a successful gateway status response.
+    /// Every selection requires a successful gateway status response; Auto UDP keeps
+    /// that gateway as a fallback if the initial handshake gets no answer.
     pub fn join_server(&mut self, address: &str, proto: JoinProto) {
         let info = self.server_info.get(address).cloned().and_then(|(_, r)| r.ok());
+        let auto = proto == JoinProto::Auto;
         let (lan_addr, proto) = match server_join_address(address, proto, info.as_ref()) {
             Ok(join) => join,
             Err(message) => {
@@ -613,6 +620,8 @@ impl State {
         }
         self.choice.lan_mode = "join".into();
         self.choice.lan_addr = lan_addr;
+        self.choice.lan_ws_fallback = info.as_ref().filter(|_| auto && proto == JoinProto::Udp)
+            .map(|i| i.reached_at.clone()).filter(|url| !url.is_empty());
         self.joined_server = Some(address.to_string());
         let name = info.as_ref().map(|i| i.name.clone()).unwrap_or_else(|| address.to_string());
         self.join = (true, format!("the server {name}"));
@@ -626,6 +635,7 @@ impl State {
     pub fn leave_server(&mut self) {
         self.joined_server = None;
         self.choice.lan_mode = "off".into();
+        self.choice.lan_ws_fallback = None;
         self.touched();
     }
 
@@ -706,6 +716,7 @@ impl State {
             on_foot: Some(c.on_foot),
             profile: Some(self.config.profile.clone()).filter(|p| !p.is_empty()),
             lan: Some(lan),
+            lan_ws_fallback: c.lan_ws_fallback.clone().filter(|_| c.lan_mode == "join" && self.joined_server.as_deref() == Some(c.lan_addr.as_str())),
             lan_name: None,
             season: Some(c.season.clone()).filter(|s| s != "auto").map(|s| super::season::launcher_choice(&s, &c.phase).map(|x| x.word()).unwrap_or(s)),
             tutorial: None,

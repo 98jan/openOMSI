@@ -12,7 +12,7 @@ export const CHOICE_DEFAULTS = {
   time: 9 * 60, start_trip: null, date: '1989-05-30',
   season: 'auto', phase: 'mid', own_date: null,
   weather: '', traffic: 30, passengers: true, schedule: true, autostart: false, on_foot: false,
-  lan_mode: 'off', lan_addr: '', version: 2,
+  lan_mode: 'off', lan_addr: '', lan_ws_fallback: null, version: 2,
 };
 
 export async function boot() {
@@ -20,7 +20,7 @@ export async function boot() {
   await setLanguage(b.language);
   const choice = { ...CHOICE_DEFAULTS, ...(b.choice || {}) };
   // (a server joined in an earlier session is not joined again by itself)
-  if (choice.lan_mode === 'join') choice.lan_mode = 'off';
+  if (choice.lan_mode === 'join') Object.assign(choice, { lan_mode: 'off', lan_ws_fallback: null });
   if (choice.version < 2) Object.assign(choice, { entry: -1, version: 2 });
   Object.assign(choice, clockPatch(choice, b.settings));
   set({ boot: b, settings: b.settings, config: b.config, choice, favourites: b.favourites || [], ready: true, page: b.root ? 'drive' : 'setup' });
@@ -357,6 +357,7 @@ export async function duty(extra = {}) {
     profile: S.config?.profile || null,
     lan: c.lan_mode === 'host' ? 'host' : c.lan_mode === 'join' ? `join:${c.lan_addr.trim()}` : 'off',
     lan_name: null,
+    lan_ws_fallback: c.lan_mode === 'join' ? c.lan_ws_fallback || null : null,
     season: seasonWord || null,
     tutorial: null,
     situation: null,

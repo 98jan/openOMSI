@@ -6,7 +6,7 @@ import { S, useStore, set, toast } from '../store.js';
 import { t } from '../i18n.js';
 import { call } from '../api.js';
 import { Icon } from '../icons.js';
-import { serverJoinAddress } from '../server-join.js';
+import { serverJoinSettings } from '../server-join.js';
 import { Button, Card, Field, Input, Empty, PageHead, Spinner, Tabs, Select, Toggle, Notice, Tag } from '../ui.js';
 import { choose, cached, serverJoined, allowedBus } from '../data.js';
 
@@ -41,7 +41,7 @@ function ByCode() {
     if (!code.trim()) return toast(t('Paste a session code first'), 'error');
     const known = host?.code === code.trim() ? host : null;
     if (known?.map && S.maps?.some((m) => m.file.toLowerCase() === known.map.replace(/\\/g, '/').toLowerCase())) choose({ map: known.map.replace(/\\/g, '/') });
-    choose({ lan_mode: 'join', lan_addr: code.trim(), lan_map: known?.map || '', ...serverJoined(known) });
+    choose({ lan_mode: 'join', lan_addr: code.trim(), lan_ws_fallback: null, lan_map: known?.map || '', ...serverJoined(known) });
     choose(allowedBus());
     set({ page: 'drive' });
   };
@@ -109,16 +109,16 @@ function Servers() {
   };
   const join = (x) => {
     const i = info[x.address]?.ok;
-    let lan_addr;
+    let connection;
     try {
-      lan_addr = serverJoinAddress(x.address, x.protocol || 'auto', i);
+      connection = serverJoinSettings(x.address, x.protocol || 'auto', i);
     } catch (error) {
       return toast(t(error.message), 'error');
     }
     const map = (i?.map || '').replace(/\\/g, '/');
     if (map && s.maps?.some((m) => m.file.toLowerCase() === map.toLowerCase())) choose({ map });
     else if (map) toast(t('The server plays {}, which is not installed here: it is fetched from the server on joining.', [map]));
-    choose({ lan_mode: 'join', lan_addr, lan_map: i?.map || '', ...serverJoined(i ? { ...i, name: x.name || i.name } : null) });
+    choose({ lan_mode: 'join', ...connection, lan_map: i?.map || '', ...serverJoined(i ? { ...i, name: x.name || i.name } : null) });
     choose(allowedBus());
     toast(t('Joined {} - choose your bus and duty, then Start the duty', [x.name || i?.name || x.address]), 'ok');
     set({ page: 'drive' });
