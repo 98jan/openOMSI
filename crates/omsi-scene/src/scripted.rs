@@ -834,17 +834,18 @@ impl World {
         fired: &[String],
     ) {
         // read once per file, the clips in the background (see AudioEngine::clips_ready)
-        let cfg = self
-            .sound_cfgs
-            .lock()
-            .entry(path.to_path_buf())
-            .or_insert_with(|| {
-                omsi_vehicle::SoundCfg::load(path)
-                    .map_err(|e| log::warn!("{e}"))
-                    .ok()
-                    .map(Arc::new)
-            })
-            .clone();
+        // (looked up before anything is allocated: this runs every frame for every object
+        // that sounds within reach)
+        let known = self.sound_cfgs.lock().get(path).cloned();
+        let cfg = match known {
+            Some(c) => c,
+            None => self
+                .sound_cfgs
+                .lock()
+                .entry(path.to_path_buf())
+                .or_insert_with(|| omsi_vehicle::SoundCfg::load(path).map_err(|e| log::warn!("{e}")).ok().map(Arc::new))
+                .clone(),
+        };
         let reach = cfg.as_deref().map_or(SOUND_REACH_MIN, sound_reach);
         if dist >= reach as f64 {
             if let Some(mut ss) = sounds.take() {
@@ -878,9 +879,11 @@ impl World {
 /// How far a scenery object's sounds carry: Omsi.exe lowers a `[3d]` sound by its range over
 /// the distance and never cuts it off (`omsi_audio::distance_gain`). Played within 300 m
 /// only, a sound cube's loud sound stopped dead at that line, still well audible (#2534).
-/// It is kept now until its loudest sound is 40 dB down (a hundredth), between 300 m and 2 km.
+/// It is kept now until its loudest sound is 40 dB down (a hundredth), from 300 m up to the
+/// distance the scenery scripts run within (`SCRIPT_RANGE`, beyond which their objects fall
+/// silent), and faded out over the last fifth of that.
 const SOUND_REACH_MIN: f32 = 300.0;
-const SOUND_REACH_MAX: f32 = 2000.0;
+const SOUND_REACH_MAX: f32 = omsi_sim::scenery::SCRIPT_RANGE as f32;
 fn sound_reach(cfg: &omsi_vehicle::SoundCfg) -> f32 {
     let range = cfg.sounds.iter().map(|s| s.range).fold(0.0f32, f32::max);
     (range * 100.0).clamp(SOUND_REACH_MIN, SOUND_REACH_MAX)

@@ -45,12 +45,13 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 **Graphics and sound**
 
-- A remembered MSAA fallback is tried at the chosen MSAA again once with each new version,
-  instead of keeping a computer at 1x for good ([#2597](https://github.com/openOMSI-org/openOMSI/issues/2597)).
+- A remembered MSAA fallback is tried at the chosen MSAA again once with each new version
+  (written down before the try, so a failing or crashing retry is not repeated at every
+  start), instead of keeping a computer at 1x for good ([#2597](https://github.com/openOMSI-org/openOMSI/issues/2597)).
 - The paper timetable keeps Courier New's spacing whatever font draws it, and Linux finds
   Courier-compatible fonts (Liberation Mono, Cousine, Nimbus Mono) ([#1878](https://github.com/openOMSI-org/openOMSI/issues/1878)).
-- Scenery sounds carry as far as their range lets them (up to 2 km) and fade out instead of
-  stopping at 300 m ([#2534](https://github.com/openOMSI-org/openOMSI/issues/2534)).
+- Scenery sounds carry as far as their range lets them, up to the 800 m within which scenery
+  objects run, and fade out over the last part instead of stopping dead at 300 m ([#2534](https://github.com/openOMSI-org/openOMSI/issues/2534)).
 - Shader tests cover OpenGL ES 3.1/3.2 per entry point and catch the nested constant-array
   lookups the Adreno 710 refused ([#2009](https://github.com/openOMSI-org/openOMSI/issues/2009)).
 
