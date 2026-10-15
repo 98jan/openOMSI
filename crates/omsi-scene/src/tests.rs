@@ -734,6 +734,27 @@ fn a_car_park_picks_its_parklist_by_its_first_string() {
     assert_eq!(parklist_index(&s(&["Taxi"])), 0);
 }
 
+/// A chrono scenario's `parklist_p.txt` stands in for the map's on its dates; a list the
+/// scenario does not have still comes from the map, and the newest scenario wins (#2315).
+#[test]
+fn the_newest_chrono_with_a_parking_list_gives_it() {
+    let map = std::env::temp_dir().join(format!("omsi-scene-parklist-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&map);
+    let (old, euro) = (map.join("Chrono").join("A"), map.join("Chrono").join("B"));
+    for d in [&old, &euro] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    for d in [&map, &old, &euro] {
+        std::fs::write(d.join("parklist_p.txt"), "x.sco\n").unwrap();
+    }
+    std::fs::write(map.join("parklist_p_1.txt"), "y.sco\n").unwrap();
+    let dirs = vec![old.clone(), euro.clone()];
+    assert_eq!(parklist_file(&map, &dirs, "parklist_p.txt"), Some(euro.join("parklist_p.txt")));
+    assert_eq!(parklist_file(&map, &dirs, "parklist_p_1.txt"), Some(map.join("parklist_p_1.txt")));
+    assert_eq!(parklist_file(&map, &[], "parklist_p.txt"), Some(map.join("parklist_p.txt")));
+    let _ = std::fs::remove_dir_all(&map);
+}
+
 /// A `[terrainmapping]` slot (TH_Wald's Fels01: rock in slot 0, grass top in slot 1)
 /// leaves the object's own mesh and comes back in tile space, where the ground under the
 /// placed object is: turned a quarter, 10 m into a tile whose corner is at 300/600.

@@ -84,6 +84,9 @@ impl AiLists {
         let mut r = f.reader().with_rule(omsi_cfg::KeywordRule::AnyCase);
         // the old format's list (`[ailist]`): (default group, vehicles)
         let mut legacy: Option<(i32, Vec<String>)> = None;
+        // the group the type groups that follow belong to: only a depot takes them (Omsi.exe
+        // 0x780a58 logs "No [aigroup_depot_typgroup] allowed after ..." for any other)
+        let mut depot: Option<usize> = None;
         while let Some(k) = r.next_keyword() {
             match k.as_str() {
                 // the original: a line it passes over, the default group's index, a
@@ -123,11 +126,13 @@ impl AiLists {
                         g.vehicles.push(AiVehicleEntry { file, weight: w, number: None, registration: None });
                     }
                     a.groups.push(g);
+                    depot = None;
                 }
                 "aigroup_depot" => {
                     let name = r.str().to_string();
                     let hof = r.str().to_string();
                     a.groups.push(AiGroup { name, hof: Some(hof), is_depot: true, ..Default::default() });
+                    depot = Some(a.groups.len() - 1);
                 }
                 "aigroup_depot_typgroup" | "aigroup_depot_typgroup_2" => {
                     let file = r.str().to_string();
@@ -143,7 +148,7 @@ impl AiLists {
                             DepotEntry { number: l.trim().to_string(), paint: l.trim().to_string(), ..Default::default() }
                         });
                     }
-                    if let Some(g) = a.groups.last_mut() {
+                    if let Some(g) = depot.and_then(|i| a.groups.get_mut(i)) {
                         g.typgroups.push(tg);
                     }
                 }
@@ -169,6 +174,21 @@ impl AiLists {
             }
         }
         a
+    }
+
+    /// The groups of a later file (a chrono's update) read on top of these: a group of a
+    /// name these have (any case, the same kind - car group or depot) starts over in its
+    /// place with the update's depot line and list, else it is added. Omsi.exe 0x780a58
+    /// looks the name up in the groups it has and empties that group's list - a chrono's
+    /// `ailists_#upd.cfg` lists a group's whole new set of cars and buses (#2315).
+    pub fn update(&mut self, later: AiLists) {
+        for g in later.groups {
+            let same = |x: &AiGroup| x.is_depot == g.is_depot && x.name.trim().eq_ignore_ascii_case(g.name.trim());
+            match self.groups.iter().position(same) {
+                Some(i) => self.groups[i] = g,
+                None => self.groups.push(g),
+            }
+        }
     }
 }
 
@@ -317,29 +337,40 @@ pub fn chrono_deactivated_lines(chrono_dirs: &[PathBuf]) -> Vec<(String, PathBuf
     out
 }
 
-/// The map's `ailists.cfg` with the updates of the given (active) chrono folders
-/// (`ailists_#upd.cfg`, else a full `ailists.cfg` of the scenario): a group of the same name
-/// gets the new vehicles, and a depot the depot file (`.hof`) the scenario names - Berlin's
-/// buses change to "Spandau 1994" on 29 May 1994.
+/// The map's `ailists.cfg` with the updates of the given (active) chrono folders. As
+/// Omsi.exe 0x785f98 (0x78a1df..0x78a510): from the newest scenario back to the map, a
+/// folder's own `ailists.cfg` is a whole new list that ends the search, else its
+/// `ailists_#upd.cfg` is an update; the files are then read oldest first (0x780a58), each
+/// group of an update replacing the group of that name. A scenario with a full list no
+/// longer mixes in the map's old cars (#2315); Berlin's buses change to "Spandau 1994" on
+/// 29 May 1994.
 pub fn ailists_with_chrono(map_dir: &Path, chrono_dirs: &[PathBuf]) -> AiLists {
-    let mut ailists = AiLists::load(&omsi_cfg::resolve_path(map_dir, "ailists.cfg")).unwrap_or_default();
-    for c in chrono_dirs {
-        for name in ["ailists_#upd.cfg", "ailists.cfg"] {
-            if let Ok(extra) = AiLists::load(&c.join(name)) {
-                for g in extra.groups {
-                    match ailists.groups.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&g.name) && x.is_depot == g.is_depot) {
-                        Some(base) => {
-                            base.vehicles.extend(g.vehicles);
-                            base.typgroups.extend(g.typgroups);
-                            if g.hof.is_some() {
-                                base.hof = g.hof;
-                            }
-                        }
-                        None => ailists.groups.push(g),
-                    }
-                }
-                break;
-            }
+    let mut files = Vec::new();
+    for dir in chrono_dirs.iter().rev().map(|d| d.as_path()).chain(std::iter::once(map_dir)) {
+        let full = omsi_cfg::resolve_path(dir, "ailists.cfg");
+        if omsi_cfg::vfs::is_file(&full) {
+            files.push(full);
+            break;
+        }
+        let update = omsi_cfg::resolve_path(dir, "ailists_#upd.cfg");
+        if omsi_cfg::vfs::is_file(&update) {
+            files.push(update);
+        }
+    }
+    let mut files = files.into_iter().rev();
+    let map_list = omsi_cfg::resolve_path(map_dir, "ailists.cfg");
+    let mut ailists = match files.next() {
+        Some(base) => AiLists::load(&base).unwrap_or_else(|e| {
+            // (a scenario's list that cannot be read left the map without any traffic)
+            log::warn!("AI lists: {} cannot be read ({e}), the map's own list is used", base.display());
+            if base != map_list { AiLists::load(&map_list).unwrap_or_default() } else { AiLists::default() }
+        }),
+        None => AiLists::default(),
+    };
+    for f in files {
+        match AiLists::load(&f) {
+            Ok(l) => ailists.update(l),
+            Err(e) => log::warn!("AI lists: the update {} cannot be read ({e})", f.display()),
         }
     }
     ailists
@@ -504,5 +535,77 @@ mod chrono_hof_tests {
         assert_eq!(at(19940601), "Spandau 1994");
         assert_ne!(at(19870101), "Spandau 1994");
         assert_eq!(at(19891201), "Spandau 1989-12");
+    }
+}
+
+#[cfg(test)]
+mod chrono_list_tests {
+    use super::*;
+
+    fn dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("omsi-map-chrono-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    const MAP: &str = "[aigroup_2]\nNormalCars\n\nold\\golf.bus\t7\nold\\bx.ovh\t4\n[end]\n[aigroup_2]\nTrucks\n\nold\\f90.bus\n[end]\n\
+        [aigroup_depot]\nBusses\nGrundorf\n[aigroup_depot_typgroup_2]\nold\\sd77.bus\n2701\n[end]\n";
+
+    /// An update lists a group's whole new set: the group of that name starts over with it, in
+    /// its place, and the groups it does not name stay.
+    #[test]
+    fn an_update_replaces_the_groups_it_names() {
+        let mut a = AiLists::parse(&CfgFile::from_str("ailists.cfg", MAP));
+        let upd = "[aigroup_2]\nnormalcars\n\nnew\\golf.bus\t3\n[end]\n[aigroup_depot]\nBusses\nGrundorf 2002\n[aigroup_depot_typgroup_2]\nnew\\c2.bus\n2530\n[end]\n";
+        a.update(AiLists::parse(&CfgFile::from_str("ailists_#upd.cfg", upd)));
+        assert_eq!(a.groups.len(), 3);
+        assert_eq!(a.groups[0].vehicles.iter().map(|v| v.file.as_str()).collect::<Vec<_>>(), ["new\\golf.bus"]);
+        assert_eq!(a.groups[1].name, "Trucks");
+        assert_eq!(a.groups[2].hof.as_deref(), Some("Grundorf 2002"));
+        assert_eq!(a.groups[2].typgroups.len(), 1);
+        assert_eq!(a.groups[2].typgroups[0].file, "new\\c2.bus");
+    }
+
+    /// Within one file two groups of a name stay two groups, and across files a car group
+    /// never replaces a depot of its name (nor a depot a car group).
+    #[test]
+    fn groups_replace_only_across_files_and_of_their_kind() {
+        let twice = "[aigroup_2]\nCars\n\na.bus\n[end]\n[aigroup_2]\nCars\n\nb.bus\n[end]\n";
+        assert_eq!(AiLists::parse(&CfgFile::from_str("ailists.cfg", twice)).groups.len(), 2);
+        let mut a = AiLists::parse(&CfgFile::from_str("ailists.cfg", MAP));
+        a.update(AiLists::parse(&CfgFile::from_str("ailists_#upd.cfg", "[aigroup_2]\nBusses\n\nnew\\car.bus\n[end]\n")));
+        assert_eq!(a.groups.len(), 4);
+        assert!(a.groups[2].is_depot && a.groups[2].typgroups.len() == 1);
+        assert!(!a.groups[3].is_depot && a.groups[3].name == "Busses");
+    }
+
+    /// A type group after a car group belongs to no depot (the original logs it and skips it).
+    #[test]
+    fn a_type_group_needs_a_depot_before_it() {
+        let f = "[aigroup_depot]\nBusses\nGrundorf\n[aigroup_2]\nRegionalbahn\n\n[aigroup_depot_typgroup_2]\ntrains\\628.zug\n[end]\n";
+        let a = AiLists::parse(&CfgFile::from_str("ailists.cfg", f));
+        assert!(a.groups.iter().all(|g| g.typgroups.is_empty()), "{a:?}");
+    }
+
+    /// A scenario's own `ailists.cfg` is the whole list on its dates: none of the map's cars
+    /// stay mixed in, and a later scenario's update still goes on top (#2315).
+    #[test]
+    fn a_scenario_with_a_full_list_replaces_the_map_list() {
+        let map = dir("map");
+        std::fs::write(map.join("ailists.cfg"), MAP).unwrap();
+        let euro = map.join("Chrono").join("20020101_EURO");
+        std::fs::create_dir_all(&euro).unwrap();
+        std::fs::write(euro.join("ailists.cfg"), "[aigroup_2]\nNormalCars\n\nnew\\kipkw1.bus\t25\n[end]\n").unwrap();
+        let later = map.join("Chrono").join("20050101");
+        std::fs::create_dir_all(&later).unwrap();
+        std::fs::write(later.join("ailists_#upd.cfg"), "[aigroup_2]\nTaxis\n\nnew\\taxi.bus\n[end]\n").unwrap();
+        let a = ailists_with_chrono(&map, &[euro.clone(), later.clone()]);
+        assert_eq!(a.groups.iter().map(|g| g.name.as_str()).collect::<Vec<_>>(), ["NormalCars", "Taxis"]);
+        assert_eq!(a.groups[0].vehicles.len(), 1);
+        // only the update: the map's list with the update's group added
+        let b = ailists_with_chrono(&map, &[later]);
+        assert_eq!(b.groups.len(), 4);
+        let _ = std::fs::remove_dir_all(&map);
     }
 }

@@ -2,6 +2,11 @@
 
 use super::*;
 
+/// A bus slower than this (m/s) within this far (m) of a layover bus's stand, on the
+/// stand's lanes, has the stand.
+const STAND_STILL: f32 = 0.5;
+const STAND_REACH: f64 = 30.0;
+
 impl Schedule {
     /// Put departure `i` on the road where its bus is at `day_time`: on the part of the route
     /// the loaded tiles have, which is carried on as more tiles come.
@@ -174,20 +179,25 @@ impl Schedule {
             log::debug!("trip {trip_name}: a vehicle stands where the bus would appear");
             return Placed::Busy;
         }
-        // A bus on its layover waits at the stand only when no other bus stands there or
-        // pulls in; otherwise it comes at its departure time. (A stand shared by four lines
-        // had five buses queueing in the road for a quarter of an hour, and every bus
-        // serving the stop and every car behind them waiting as well.)
+        // A bus on its layover waits at the stand only when no other bus stands there;
+        // otherwise it tries again in a while, and comes at its departure time at the latest.
+        // (A stand shared by four lines had five buses queueing in the road for a quarter of
+        // an hour, and every bus serving the stop and every car behind them waiting as
+        // well.) Only a bus standing at the stand counts - on the stand's own lanes, at a
+        // standstill - not one driving past or one on the other side of the road: with
+        // those counted a busy terminus never had its buses before they left (#2593).
+        let near_lanes = &section[start_index.saturating_sub(1)..(start_index + 3).min(section.len())];
         if departure > day_time + 30.0
-            && traffic
-            .cars
-            .iter()
-            .any(|c| c.is_bus() && !c.gone && (c.vehicle.position - at_pos).length() < 50.0)
+            && traffic.cars.iter().any(|c| {
+                c.is_bus()
+                    && !c.gone
+                    && c.state.speed.abs() < STAND_STILL
+                    && near_lanes.contains(&c.state.lane)
+                    && (c.vehicle.position - at_pos).length() < STAND_REACH
+            })
         {
-            log::debug!(
-                "trip {trip_name}: its stand is taken, the bus comes at its departure time"
-            );
-            self.sim.stand_taken(i);
+            log::debug!("trip {trip_name}: a bus stands at its stand, it tries again in a while");
+            self.sim.stand_taken(i, day_time);
             return Placed::Drop;
         }
         // nobody may see a bus appear (except while the map loads)

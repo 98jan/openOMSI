@@ -141,7 +141,13 @@ impl VehicleHost {
                 let number = self.number_var.and_then(|i| state.str_vars.get(i as usize)).cloned().unwrap_or_default();
                 stacks.push(omsi_vehicle::sound::spec_random(&number, n));
             }
-            Some(Cb::GetTicketName) | Some(Cb::GetTTicketName) => {
+            // GetTicketName is what the ticket printers print: the ticket's display string,
+            // as in OMSI, not the name its menu lists it by (#2483)
+            Some(Cb::GetTicketName) => {
+                let i = arg_i32(stacks.pop());
+                stacks.push_str(self.tickets.as_ref().and_then(|t| t.tickets.get(usize::try_from(i).unwrap_or(usize::MAX))).map(|t| t.display_string.clone()).unwrap_or_default());
+            }
+            Some(Cb::GetTTicketName) => {
                 let i = arg_i32(stacks.pop());
                 stacks.push_str(self.tickets.as_ref().and_then(|t| t.tickets.get(usize::try_from(i).unwrap_or(usize::MAX))).map(|t| t.name.clone()).unwrap_or_default());
             }
