@@ -139,7 +139,9 @@ pub struct Renderer {
     /// `render_to_texture`), whatever the texture's own shape.
     texture_aspect: Option<f32>,
     last_frame: Option<std::time::Instant>,
-    /// What the driver last said the game holds on the card (see `gpu_memory`).
+    /// The adapter the device was opened on, and what its driver last said the game holds
+    /// on the card (see `gpu_memory`).
+    adapter: Option<wgpu::Adapter>,
     gpu_memory_seen: std::cell::RefCell<gpu_memory::Seen>,
     /// The next frame stands alone (an offscreen picture): the exposure is there at once.
     pub instant_exposure: bool,

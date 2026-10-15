@@ -179,9 +179,8 @@ pub fn omsi_options(root: &Path) -> Option<OmsiOptions> {
     if let Some(af) = o.values.get("texfilter").and_then(|x| x.get(1)).and_then(|x| x.trim().parse::<i64>().ok()) {
         v["anisotropy"] = json!(af.clamp(1, 16));
     }
-    if let Some(x) = num("texmemlimit").filter(|x| *x > 0.0) {
-        v["texture_memory"] = json!(x as i64);
-    }
+    // (`texmemlimit`, OMSI's texture budget, is not taken: openOMSI's video memory bounds
+    // everything on the card, and the stock 401 would leave it 401 MB)
     if let Some(x) = num("performance_refltexsize") {
         v["mirror_size"] = json!(1i64 << (x as i64).clamp(6, 11));
     }
@@ -1862,16 +1861,20 @@ pub fn get_settings() -> Result<Value> {
             v["imported_from_omsi"] = json!(true);
         }
     }
-    // what "automatic" texture memory is on this machine (the game takes an eighth of it)
-    v["texture_memory_auto"] = json!(physical_memory().map(|m| m / 8 / 1_000_000).unwrap_or(2000));
     Ok(v)
 }
 
 /// Other spellings the game reads for a key the launcher writes: they are read here too and
 /// dropped when the file is written again (the game takes the last line of them, so a kept
-/// `texmemlimit=` would undo the page's `texture_memory=`).
+/// `lang=` would undo the page's `language=`).
 // (`navigator_opacity`: the opacity was the navigator's before it was the whole interface's)
 const SETTING_ALIASES: &[(&str, &str)] = &[("af", "anisotropy"), ("ambient_occlusion", "ssao"), ("fractal", "detail_textures"), ("lang", "language"), ("texmemlimit", "texture_memory"), ("navigator_opacity", "ui_opacity"), ("gear_buttons_hold", "momentary_gears")];
+
+/// Keys of before that are dropped when the file is written again: `texture_memory=` (and
+/// OMSI's `texmemlimit=`, its alias) was the textures' budget, which `video_memory=` - all
+/// the game holds on the card - replaced; kept, a 401 or a 1000 meant for the textures would
+/// be taken for something else by whoever reads it next.
+const RETIRED_SETTINGS: &[&str] = &["texture_memory"];
 
 /// A window size as the settings keep it: "WxH" in pixels (each 320..16384), else "auto".
 pub fn resolution_text(v: &str) -> String {
@@ -1997,7 +2000,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
 }
 
 pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
-    let mut v = json!({ "msaa": 4, "anisotropy": 8, "ssao": true, "shadows": true, "shadow_size": 2048, "navigator": true, "ui_opacity": 0.85, "navigator_corner": "bottom-left", "boarding": "auto", "detail_textures": true, "exact_fare": true, "enhanced": false, "graphics": "vanilla_plus", "fullscreen": false, "vsync": true, "volume": 0.6, "drive_keys": "simple", "render_scale": "auto", "view_distance": "auto", "language": "ENG", "texture_memory": 0, "texture_compression": true, "gpu_texture_compression": true, "chat": true, "tooltips": true, "name_tags": true, "show_fps": false, "clouds": true, "cloud_quality": "high", "rain_quality": "high", "pax_density": 1.0, "vol_ai": 1.0, "vol_scenery": 1.0, "ambient": true, "vol_ambient": 0.8, "mirror_size": 256, "doppler": true, "driver": true, "max_fps": 0, "min_obj_size": 0.013, "max_obj_dist": "auto" });
+    let mut v = json!({ "msaa": 4, "anisotropy": 8, "ssao": true, "shadows": true, "shadow_size": 2048, "navigator": true, "ui_opacity": 0.85, "navigator_corner": "bottom-left", "boarding": "auto", "detail_textures": true, "exact_fare": true, "enhanced": false, "graphics": "vanilla_plus", "fullscreen": false, "vsync": true, "volume": 0.6, "drive_keys": "simple", "render_scale": "auto", "view_distance": "auto", "language": "ENG", "video_memory": 0, "texture_compression": true, "gpu_texture_compression": true, "chat": true, "tooltips": true, "name_tags": true, "show_fps": false, "clouds": true, "cloud_quality": "high", "rain_quality": "high", "pax_density": 1.0, "vol_ai": 1.0, "vol_scenery": 1.0, "ambient": true, "vol_ambient": 0.8, "mirror_size": 256, "doppler": true, "driver": true, "max_fps": 0, "min_obj_size": 0.013, "max_obj_dist": "auto" });
     if phone {
         for (k, d) in [("msaa", json!(2)), ("anisotropy", json!(4)), ("ssao", json!(false)), ("shadow_size", json!(1024)), ("mirror_size", json!(128)), ("max_fps", json!(60)), ("max_obj_dist", json!("900")), ("pax_density", json!(0.7)), ("navigator_corner", json!("top-center"))] {
             v[k] = d;
@@ -2181,7 +2184,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
                 }
             }
             // MB, 0 = automatic (a fraction written by hand is cut, as the game does)
-            "texture_memory" => {
+            "video_memory" => {
                 if let Ok(mb) = val.parse::<f64>() {
                     v[&k] = json!(mb.max(0.0) as i64);
                 }
@@ -2295,10 +2298,6 @@ pub fn option_presets() -> Vec<(String, Value)> {
         if let Some(af) = o.values.get("texfilter").and_then(|x| x.get(1)).and_then(|x| x.parse::<i64>().ok()) {
             v["anisotropy"] = json!(af.clamp(1, 16));
         }
-        let mem = o.f32("texmemlimit", 0.0);
-        if mem > 0.0 {
-            v["texture_memory"] = json!(mem as i64);
-        }
         let refl = o.i32("performance_refltexsize", 8);
         v["mirror_size"] = json!(1i64 << refl.clamp(6, 11));
         if let Some(x) = o.str("performance_realreflexions") {
@@ -2307,19 +2306,6 @@ pub fn option_presets() -> Vec<(String, Value)> {
         out.push((name, v));
     }
     out
-}
-
-/// The machine's memory in bytes.
-#[cfg(unix)]
-fn physical_memory() -> Option<u64> {
-    // SAFETY: sysconf only reads system values
-    let (pages, size) = unsafe { (libc::sysconf(libc::_SC_PHYS_PAGES), libc::sysconf(libc::_SC_PAGESIZE)) };
-    (pages > 0 && size > 0).then(|| pages as u64 * size as u64)
-}
-
-#[cfg(not(unix))]
-fn physical_memory() -> Option<u64> {
-    None
 }
 
 pub fn save_settings(v: &Value) -> Result<()> {
@@ -2333,7 +2319,7 @@ pub fn save_settings(v: &Value) -> Result<()> {
 /// own (fullscreen, graphics API).
 pub const GRAPHICS_PROFILE_KEYS: [&str; 30] = [
     "graphics", "msaa", "render_scale", "anisotropy", "shadow_size", "ssao", "shadows", "shadow_casters", "detail_textures", "night_brightness", "led_glow", "led_mips", "shadow_blobs", "reflections", "clouds", "cloud_quality", "rain_quality", "windy_trees",
-    "vsync", "max_fps", "view_distance", "max_obj_dist", "min_obj_size", "mirror_size", "mirror_refresh", "mirror_quality", "mirror_hud_every_frame", "texture_memory", "texture_compression", "gpu_texture_compression",
+    "vsync", "max_fps", "view_distance", "max_obj_dist", "min_obj_size", "mirror_size", "mirror_refresh", "mirror_quality", "mirror_hud_every_frame", "video_memory", "texture_compression", "gpu_texture_compression",
 ];
 
 fn graphics_profiles_path() -> PathBuf {
@@ -2398,7 +2384,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     let n = |k: &str, d: i64| v.get(k).and_then(|x| x.as_i64().or_else(|| x.as_f64().or_else(|| x.as_str().and_then(|s| s.trim().parse::<f64>().ok())).map(|f| f as i64))).unwrap_or(d);
     let f = |k: &str, d: f64| v.get(k).and_then(|x| x.as_f64()).unwrap_or(d);
     let text = format!(
-        "# openOMSI settings (written by the launcher)\nversion=4\nmsaa={}\nanisotropy={}\nssao={}\nshadows={}\nshadow_size={}\nnavigator={}\nui_opacity={}\nnavigator_corner={}\nboarding={}\ndetail_textures={}\nexact_fare={}\nenhanced={}\ngraphics={}\nfullscreen={}\nvsync={}\nvolume={}\ndrive_keys={}\nrender_scale={}\nview_distance={}\nlanguage={}\ntexture_memory={}\ntexture_compression={}\nchat={}\ntooltips={}\nname_tags={}\nshow_fps={}\nclouds={}\npax_density={}\nvol_ai={}\nvol_scenery={}\nmirror_size={}\ndoppler={}\ndriver={}\nmax_fps={}\nmin_obj_size={}\nmax_obj_dist={}\n",
+        "# openOMSI settings (written by the launcher)\nversion=4\nmsaa={}\nanisotropy={}\nssao={}\nshadows={}\nshadow_size={}\nnavigator={}\nui_opacity={}\nnavigator_corner={}\nboarding={}\ndetail_textures={}\nexact_fare={}\nenhanced={}\ngraphics={}\nfullscreen={}\nvsync={}\nvolume={}\ndrive_keys={}\nrender_scale={}\nview_distance={}\nlanguage={}\nvideo_memory={}\ntexture_compression={}\nchat={}\ntooltips={}\nname_tags={}\nshow_fps={}\nclouds={}\npax_density={}\nvol_ai={}\nvol_scenery={}\nmirror_size={}\ndoppler={}\ndriver={}\nmax_fps={}\nmin_obj_size={}\nmax_obj_dist={}\n",
         n("msaa", 4),
         n("anisotropy", 8),
         b("ssao", true),
@@ -2429,7 +2415,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
             _ => "auto".to_string(),
         },
         language_code(v.get("language").and_then(|x| x.as_str()).unwrap_or("ENG")),
-        n("texture_memory", 0).max(0),
+        n("video_memory", 0).max(0),
         b("texture_compression", true),
         b("chat", true),
         b("tooltips", true),
@@ -2601,7 +2587,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
             continue;
         }
         match t.split_once('=') {
-            Some((k, _)) if !written.contains(&setting_key(k)) => {
+            Some((k, _)) if !written.contains(&setting_key(k)) && !RETIRED_SETTINGS.contains(&setting_key(k).as_str()) => {
                 text.push_str(t);
                 text.push('\n');
             }
@@ -3488,22 +3474,23 @@ mod tests {
         assert_eq!(v["msaa"], 1);
         assert_eq!(v["view_distance"], "1500");
         assert_eq!(v["language"], "DEU");
-        assert_eq!(v["texture_memory"], 401);
+        // (OMSI's texture budget is not the video memory: Automatic)
+        assert_eq!(v["video_memory"], 0);
+        assert!(v.get("texture_memory").is_none());
         assert_eq!(v["texture_compression"], true);
         assert_eq!(v["detail_textures"], false);
         // the page changes a few things (its selects give strings) and saves
         let mut page = v.clone();
         page["view_distance"] = json!("2000");
         page["language"] = json!("FRA");
-        page["texture_memory"] = json!("3000");
+        page["video_memory"] = json!("3000");
         page["texture_compression"] = json!(false);
-        page["texture_memory_auto"] = json!(2000);
         let text = settings_to_text(&page, Some(old));
-        for line in ["view_distance=2000", "language=FRA", "texture_memory=3000", "texture_compression=0", "detail_textures=0", "future_switch=7", "OMSI_Thing = on"] {
+        for line in ["view_distance=2000", "language=FRA", "video_memory=3000", "texture_compression=0", "detail_textures=0", "future_switch=7", "OMSI_Thing = on"] {
             assert!(text.lines().any(|l| l == line), "{line} missing in\n{text}");
         }
         // the old spellings would override what was just written: gone, and nothing twice
-        for gone in ["lang=", "texmemlimit=", "fractal=", "texture_memory_auto", "view_distance=1500"] {
+        for gone in ["lang=", "texmemlimit=", "texture_memory=", "fractal=", "view_distance=1500"] {
             assert!(!text.contains(gone), "{gone} kept in\n{text}");
         }
         let keys: Vec<&str> = text.lines().filter_map(|l| l.split_once('=')).map(|(k, _)| k.trim()).collect();
@@ -3515,7 +3502,7 @@ mod tests {
         let back = settings_from_text(Some(&text));
         assert_eq!(back["view_distance"], "2000");
         assert_eq!(back["language"], "FRA");
-        assert_eq!(back["texture_memory"], 3000);
+        assert_eq!(back["video_memory"], 3000);
         assert_eq!(back["texture_compression"], false);
     }
 
@@ -3541,19 +3528,17 @@ mod tests {
         let v = settings_from_text(None);
         assert_eq!(v["view_distance"], "auto");
         assert_eq!(v["language"], "ENG");
-        assert_eq!(v["texture_memory"], 0);
+        assert_eq!(v["video_memory"], 0);
         let text = settings_to_text(&v, None);
-        for line in ["view_distance=auto", "language=ENG", "texture_memory=0", "texture_compression=1", "render_scale=auto"] {
+        for line in ["view_distance=auto", "language=ENG", "video_memory=0", "texture_compression=1", "render_scale=auto"] {
             assert!(text.lines().any(|l| l == line), "{line} missing in\n{text}");
         }
         // nonsense from a hand-edited file falls back to the defaults
-        let v = settings_from_text(Some("view_distance=far\nview_distance=-5\nlanguage=Klingon\ntexture_memory=lots\n"));
-        assert_eq!((v["view_distance"].as_str(), v["language"].as_str(), v["texture_memory"].as_i64()), (Some("auto"), Some("ENG"), Some(0)));
+        let v = settings_from_text(Some("view_distance=far\nview_distance=-5\nlanguage=Klingon\nvideo_memory=lots\n"));
+        assert_eq!((v["view_distance"].as_str(), v["language"].as_str(), v["video_memory"].as_i64()), (Some("auto"), Some("ENG"), Some(0)));
         // a number from a script instead of the select's string
-        let text = settings_to_text(&json!({ "view_distance": 900, "texture_memory": 1500.0 }), None);
-        assert!(text.contains("\nview_distance=900\n") && text.contains("\ntexture_memory=1500\n"), "{text}");
-        #[cfg(unix)]
-        assert!(physical_memory().unwrap_or(0) > 256_000_000, "the machine's memory is read");
+        let text = settings_to_text(&json!({ "view_distance": 900, "video_memory": 1500.0 }), None);
+        assert!(text.contains("\nview_distance=900\n") && text.contains("\nvideo_memory=1500\n"), "{text}");
     }
 }
 

@@ -123,7 +123,7 @@ const graphics = {
         { type: 'select', key: 'mirror_refresh', label: 'Bus mirror refresh', options: [['off', 'None (frozen picture)'], ['eco', 'Economical'], ['full', 'Full'], ['every', 'Every frame (smoothest)']] },
         { type: 'select', key: 'mirror_quality', label: 'Mirror quality', options: [['standard', 'Standard'], ['enhanced', 'As the picture (Enhanced)']], when: enhanced },
         { type: 'toggle', key: 'mirror_hud_every_frame', label: 'Mirror panels every frame' },
-        { type: 'select', key: 'texture_memory', label: 'Video memory', options: videoMemory },
+        { type: 'select', key: 'video_memory', label: 'Video memory', options: videoMemory, help: 'Everything the game keeps on the graphics card: textures, models and the picture itself. Automatic is nine tenths of the card.' },
         { type: 'toggle', key: 'texture_compression', label: 'Compress textures on loading' },
         // (off: block formats decoded on loading, for a driver that mishandles them)
         { type: 'toggle', key: 'gpu_texture_compression', label: 'DXT/BC textures stay compressed on the GPU' },
@@ -422,5 +422,5 @@ export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, genera
 /** The settings a saved graphics profile holds (`GRAPHICS_PROFILE_KEYS`). */
 export const GRAPHICS_PROFILE_KEYS = [
   'graphics', 'msaa', 'render_scale', 'anisotropy', 'shadow_size', 'ssao', 'shadows', 'shadow_casters', 'detail_textures', 'night_brightness', 'led_glow', 'led_mips', 'shadow_blobs', 'reflections', 'clouds', 'cloud_quality', 'rain_quality', 'windy_trees',
-  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_quality', 'mirror_hud_every_frame', 'texture_memory', 'texture_compression', 'gpu_texture_compression',
+  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_quality', 'mirror_hud_every_frame', 'video_memory', 'texture_compression', 'gpu_texture_compression',
 ];

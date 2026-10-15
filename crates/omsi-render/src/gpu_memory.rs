@@ -234,6 +234,13 @@ impl GpuMemory {
     }
 }
 
+/// What the driver counts on the card beyond the textures and meshes: its count less the room
+/// the allocator holds free in its blocks (which the driver counts as used) and less what the
+/// game counts itself.
+fn rest_of_card(used: u64, free_in_blocks: u64, counted: u64) -> u64 {
+    used.saturating_sub(free_in_blocks).saturating_sub(counted)
+}
+
 /// The driver's last counts (see [`Renderer::gpu_memory`]).
 #[derive(Default)]
 pub(crate) struct Seen {
@@ -242,9 +249,33 @@ pub(crate) struct Seen {
     other: Vec<u64>,
     budget: Option<u64>,
     measured: bool,
+    /// The allocator's free room in its blocks as last counted, on a worker: its report
+    /// lists every allocation, milliseconds with thousands of textures, which once a second
+    /// on the frame's thread would be a hitch.
+    free_in_blocks: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    counting: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Seen {
+    /// The allocator's free room as last counted, and a new count started on a worker (none
+    /// while one runs).
+    fn free_in_blocks(&self, device: &wgpu::Device) -> u64 {
+        use std::sync::atomic::Ordering::Relaxed;
+        if !self.counting.swap(true, Relaxed) {
+            let (device, free, counting) = (device.clone(), self.free_in_blocks.clone(), self.counting.clone());
+            // (a thread of its own, not the shared pool whose workers the frame waits for)
+            let spawned = std::thread::Builder::new().name("gpu memory count".into()).spawn(move || {
+                let room = device.generate_allocator_report().map_or(0, |r| r.total_reserved_bytes.saturating_sub(r.total_allocated_bytes));
+                free.store(room, Relaxed);
+                counting.store(false, Relaxed);
+            });
+            if spawned.is_err() {
+                self.counting.store(false, Relaxed);
+            }
+        }
+        self.free_in_blocks.load(Relaxed)
+    }
+
     fn note(&mut self, other: u64) {
         if self.other.len() == 3 {
             self.other.remove(0);
@@ -256,9 +287,12 @@ impl Seen {
 impl Renderer {
     /// What the game holds on the graphics card now: the textures and meshes as counted, and
     /// the rest as the driver tells it (DirectX 12, Vulkan with VK_EXT_memory_budget, Metal),
-    /// asked at most once a second. The rest is the least of the last three seconds' counts:
-    /// a texture made smaller is out of the count at once but out of the driver's only once
-    /// the GPU let it go, and the difference would read as more of the rest for a moment.
+    /// asked at most once a second, less the room wgpu's allocator holds free in its blocks:
+    /// DirectX 12 and Vulkan suballocate from blocks of 128-256 MB and give a block back only
+    /// once it is empty, so a texture made smaller leaves a hole the driver still counts - it
+    /// read as more of the rest, kept the total over the bound and the far textures small for
+    /// good. The rest is the least of the last three seconds' counts: a texture made smaller
+    /// is out of the count at once but out of the driver's only once the GPU let it go.
     /// Where the driver tells nothing (OpenGL), the render targets and shadow maps are
     /// worked out from their sizes.
     pub fn gpu_memory(&self, scene: &Scene) -> GpuMemory {
@@ -267,12 +301,13 @@ impl Renderer {
         let mut seen = self.gpu_memory_seen.borrow_mut();
         if seen.at.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(1)) {
             seen.at = Some(std::time::Instant::now());
-            let info = ADAPTER.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|a| a.memory_info());
+            let info = self.adapter.as_ref().and_then(|a| a.memory_info());
             seen.budget = info.and_then(|m| m.budget_bytes).filter(|b| *b > 0);
             match info.and_then(|m| m.usage_bytes).filter(|u| *u > 0) {
                 Some(used) => {
                     seen.measured = true;
-                    seen.note(used.saturating_sub(textures + meshes));
+                    let free_in_blocks = seen.free_in_blocks(&self.device);
+                    seen.note(rest_of_card(used, free_in_blocks, textures + meshes));
                 }
                 None => {
                     seen.measured = false;
@@ -318,7 +353,7 @@ impl Renderer {
 
 #[cfg(all(test, not(target_os = "android")))]
 mod tests {
-    use super::{picture, GpuMemory, Picture};
+    use super::{picture, rest_of_card, GpuMemory, Picture};
     use wgpu::{Backend, DeviceType};
 
     /// The game's bound on the card: the setting and nine tenths of the driver's budget,
@@ -331,6 +366,20 @@ mod tests {
         assert_eq!(m(Some(10_000)).cap(0), 9_000);
         assert_eq!(m(Some(10_000)).cap(4_000), 4_000);
         assert_eq!(m(Some(4_000)).cap(8_000), 3_600);
+    }
+
+    /// A texture made smaller on DirectX 12 or Vulkan leaves a hole in the allocator's
+    /// block: the driver's count stays, the game's falls, the hole is the allocator's free
+    /// room - the rest of the card stays what it was, not what the texture gave up.
+    #[test]
+    fn a_hole_in_an_allocator_block_is_not_taken_for_more_of_the_rest() {
+        let rest = 1_000;
+        assert_eq!(rest_of_card(6_000, 0, 5_000), rest);
+        // 800 of textures freed into a block that stays: the driver still says 6000
+        assert_eq!(rest_of_card(6_000, 800, 4_200), rest);
+        // the block given back: the driver's count falls as well
+        assert_eq!(rest_of_card(5_200, 0, 4_200), rest);
+        assert_eq!(rest_of_card(100, 500, 4_200), 0);
     }
 
     /// OpenGL and ANGLE report a discrete card as "other": its memory, once DXGI tells

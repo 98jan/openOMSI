@@ -121,7 +121,7 @@ struct SettingsPage: View {
             SettingSelect(label: "Small objects", key: "min_obj_size", options: [("0.005", "All"), ("0.013", "Normal"), ("0.02", "Fewer (faster)"), ("0.03", "Few (fastest)")])
             SettingSelect(label: "Mirrors", key: "mirror_size", options: [("0", "Off"), ("128", "Low (128)"), ("256", "Normal (256)"), ("512", "High (512)"), ("1024", "Very high (1024)")])
             SettingSelect(label: "Bus mirror refresh", key: "mirror_refresh", options: [("off", "None (frozen picture)"), ("eco", "Economical"), ("full", "Full")])
-            SettingSelect(label: "Video memory", key: "texture_memory", options: [("0", "Automatic"), ("1000", "1 GB"), ("1500", "1.5 GB"), ("2000", "2 GB"), ("3000", "3 GB"), ("4000", "4 GB"), ("6000", "6 GB"), ("8000", "8 GB"), ("12000", "12 GB")])
+            SettingSelect(label: "Video memory", key: "video_memory", options: [("0", "Automatic"), ("1000", "1 GB"), ("1500", "1.5 GB"), ("2000", "2 GB"), ("3000", "3 GB"), ("4000", "4 GB"), ("6000", "6 GB"), ("8000", "8 GB"), ("12000", "12 GB")])
             SettingToggle(label: "Compress textures on loading", key: "texture_compression", fallback: true)
             SettingToggle(label: "DXT/BC textures stay compressed on the GPU", key: "gpu_texture_compression", fallback: true)
             SectionTitle("Profiles").padding(.top, 8)

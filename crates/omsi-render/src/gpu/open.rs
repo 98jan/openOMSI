@@ -83,7 +83,6 @@ impl Renderer {
         let discrete_vram = vram.filter(|_| info.device_type == wgpu::DeviceType::DiscreteGpu).unwrap_or(0);
         ADAPTER_VRAM_MB.store(discrete_vram, std::sync::atomic::Ordering::Relaxed);
         *ADAPTER_INFO.lock().unwrap_or_else(|e| e.into_inner()) = Some(info.clone());
-        *ADAPTER.lock().unwrap_or_else(|e| e.into_inner()) = Some(adapter.clone());
         log::info!("graphics adapter: {} ({:?}, {:?}{}), texture memory taken for it: {guess_mb} MB", info.name, info.device_type, info.backend, vram.map(|v| format!(", {v} MB of its own")).unwrap_or_default());
         if let Some(m) = mem {
             let mb = |b: Option<u64>| b.map_or_else(|| "-".to_string(), |b| format!("{} MB", b >> 20));
@@ -344,7 +343,12 @@ impl Opened {
     /// lost meanwhile, see below).
     pub async fn finish(self) -> Result<Renderer> {
         let Opened { adapter, info, device, queue, format, options, asked_options, mesh_pages, name } = self;
-        let made = Renderer::build_with_fallbacks(&device, &queue, &info, &name, format, options, mesh_pages).await;
+        let mut made = Renderer::build_with_fallbacks(&device, &queue, &info, &name, format, options, mesh_pages).await;
+        // (its own adapter, asked what the game holds on it: with several renderers in one
+        // process a shared one asked another's)
+        if let Ok(r) = made.as_mut() {
+            r.adapter = Some(adapter.clone());
+        }
         // A driver whose shader compiler fails on a pipeline answers "out of memory" or an
         // unknown error, and wgpu takes that as the device lost: on phones (Adreno, Mali)
         // one of 0.2's new pipelines did so, the renderer was made all the same and every
@@ -615,6 +619,7 @@ impl Renderer {
             puddles,
             texture_aspect: None,
             last_frame: None,
+            adapter: None,
             gpu_memory_seen: Default::default(),
             instant_exposure: false,
             depth_readback: false,

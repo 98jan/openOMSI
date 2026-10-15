@@ -375,10 +375,10 @@ stop it serves, as in OMSI),
 `boarding`, `detail_textures`, `exact_fare`, `enhanced`, `fullscreen`, `vsync`, `volume`
 and `drive_keys`, plus `render_scale` (`auto` or a fraction: the picture is drawn smaller
 and upscaled), `post_aa` (`fxaa`, the enhanced renderer's, or `off`), `view_distance` (m,
-how far the tiles are kept loaded), `texture_memory` ("Video memory", MB: all the game holds
-on the graphics card - textures, meshes, render targets, the driver's own; OMSI's `texmemlimit`
-is read under that name too; when unset, nine tenths of a discrete card's memory, and never
-more than the driver's budget), `texture_compression`
+how far the tiles are kept loaded), `video_memory` ("Video memory", MB: all the game holds
+on the graphics card - textures, meshes, render targets, the driver's own; when unset, nine
+tenths of a discrete card's memory, and never more than the driver's budget; the old
+`texture_memory=` and OMSI's `texmemlimit` were texture budgets and are dropped), `texture_compression`
 (loose pictures compressed to BC1-BC3 on loading, on by default), `gpu_texture_compression`
 (DXT/BC textures kept compressed on the GPU, on by default; off decodes them to RGBA, for a
 driver that mishandles block formats, at four to eight times the memory - as
@@ -745,7 +745,7 @@ scripts run in parallel. Spandau with traffic, passengers and a storm: 14 → 69
 M4, no frame over 50 ms after start-up.
 
 Big maps are kept within memory by compressed textures, a texture budget
-(`texture_memory`), a timetable fleet read ahead and trimmed again, and tiles that give
+and the video memory (`video_memory`), a timetable fleet read ahead and trimmed again, and tiles that give
 everything back when they unload: Ahlheim V5 at its main station with traffic, passengers
 and the timetable peaks at 1.93 GB instead of 8.75 GB (see `docs/ARCHITECTURE.md`,
 *Memory*). The game's log is `~/.openomsi/game.log` (the launcher's `launcher.log`

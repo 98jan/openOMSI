@@ -50,9 +50,9 @@ OMSI 2 reads the first four and skips the rest. A model may declare any number o
   `.ktx2`, `.ktx`, `.qoi`, `.hdr`, `.exr` and `.pnm`.
 - There is no 2 GB address-space limit: openOMSI is a 64-bit program.
 - A texture keeps its full resolution within 150 m of the camera, so a bus's own 4K
-  textures always stay sharp. Far scenery gives up detail only when the texture memory
-  (`texture_memory` in the settings, or `OMSI_TEXTURE_MEMORY`, in MB) runs out, as OMSI's
-  `[texmemlimit]` does.
+  textures always stay sharp. Far scenery gives up detail only when the texture budget
+  (`OMSI_TEXTURE_MEMORY`, in MB) or the video memory (`video_memory` in the settings, all
+  the game holds on the card) runs out, as with OMSI's `[texmemlimit]`.
 - `[scripttexture]`, `[htmltexture]` and `[texttexture]` / `[texttexture_enh]` can be any size the card
   takes.
 

@@ -51,12 +51,11 @@ pub(crate) fn physical_memory() -> Option<u64> {
     }
 }
 
-/// The texture budget in bytes: `OMSI_TEXTURE_MEMORY` (MB), else the setting, else an
-/// eighth of the machine's memory (2 GB on a 16 GB Mac - Ahlheim's main station needs
-/// about 1.5).
-pub(crate) fn texture_budget(settings: &settings::Settings) -> u64 {
-    let mb = omsi_cfg::flags::OMSI_TEXTURE_MEMORY.parse::<u64>()
-        .unwrap_or(settings.texture_memory as u64);
+/// The textures' own budget in bytes: `OMSI_TEXTURE_MEMORY` (MB), else an eighth of the
+/// machine's memory (2 GB on a 16 GB Mac - Ahlheim's main station needs about 1.5). The
+/// setting is the video memory now, everything on the card (see [`video_memory_limit`]).
+pub(crate) fn texture_budget() -> u64 {
+    let mb = omsi_cfg::flags::OMSI_TEXTURE_MEMORY.parse::<u64>().unwrap_or(0);
     if mb > 0 {
         // (a budget the graphics card cannot hold is taken down to what it can: the
         // settings offer up to 6 GB, and a 2 GB card lost its device at the first frames,
@@ -76,7 +75,7 @@ pub(crate) fn texture_budget(settings: &settings::Settings) -> u64 {
     // the card ran out of memory)
     // (and no more than 2.5 GB: since Windows reads its memory as well - 0.1.237 - a PC
     // with 32 or 64 GB let the textures grow to 4-8 GB, the game took 9 GB at the start and
-    // ran at single-digit frame rates, #277; the setting still gives more when asked)
+    // ran at single-digit frame rates, #277; OMSI_TEXTURE_MEMORY still gives more)
     let ram = physical_memory().map(|m| m / 8).unwrap_or(2_000_000_000).min(2_500_000_000);
     match omsi_render::ADAPTER_TEXTURE_MB.load(std::sync::atomic::Ordering::Relaxed) {
         0 => ram.min(1_600_000_000),
@@ -90,15 +89,18 @@ pub(crate) fn texture_budget(settings: &settings::Settings) -> u64 {
 /// tenths of a discrete card's own memory. The driver's budget, where it tells one, bounds
 /// it further at every look (see `World::update_texture_budget`).
 pub(crate) fn video_memory_limit(settings: &settings::Settings) -> u64 {
-    let vram = omsi_render::ADAPTER_VRAM_MB.load(std::sync::atomic::Ordering::Relaxed);
+    // (the card's memory is told in MiB)
+    let card = omsi_render::ADAPTER_VRAM_MB.load(std::sync::atomic::Ordering::Relaxed) << 20;
+    let card = card / 10 * 9;
     let mb = omsi_cfg::flags::OMSI_VIDEO_MEMORY.parse::<u64>()
-        .unwrap_or(settings.texture_memory as u64);
+        .unwrap_or(settings.video_memory as u64);
     if mb == 0 {
-        return vram * 1_000_000 / 10 * 9;
+        return card;
     }
-    if vram > 0 && mb > vram / 10 * 9 {
-        log::warn!("video memory {mb} MB is more than the graphics card has: {} MB", vram / 10 * 9);
-        return vram * 1_000_000 / 10 * 9;
+    if card > 0 && mb * 1_000_000 > card {
+        // (the "8 GB" choice on an 8 GB card: what it can hold, which is what was meant)
+        log::info!("video memory {mb} MB is more than the graphics card holds: {:.0} MB", card as f64 / 1e6);
+        return card;
     }
     mb * 1_000_000
 }

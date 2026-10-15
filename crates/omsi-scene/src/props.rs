@@ -938,7 +938,11 @@ impl World {
         // past its budget. What is over goes from the textures, the only part that can give.
         let card = renderer.gpu_memory(scene);
         let card_cap = card.cap(video_limit);
-        let card_over = if card_cap > 0 { card.total().saturating_sub(card_cap) } else { 0 };
+        // (in steps of 32 MiB: the driver's count wanders by a few MB from second to second,
+        // and every step up failed the idle look's check - the whole scan and its sort every
+        // second while over)
+        const STEP: u64 = 32 << 20;
+        let card_over = if card_cap > 0 { card.total().saturating_sub(card_cap) / STEP * STEP } else { 0 };
         let usage = if card_over > 0 { usage.max(limit.saturating_add(card_over)) } else { usage };
         if pass == BudgetPass::AfterStreaming && usage <= limit && !memo.resume {
             // (the bytes are all a forced look is for: the restores wait for the second's)

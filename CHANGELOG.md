@@ -14,8 +14,11 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   set to, and an 8 GB card could page to the system's memory and drop to a fraction of its
   frame rate. Where the driver says how much it really hands out (DirectX 12, Vulkan, Metal),
   the game stays under that as well, whatever the setting; when it is over, the farthest
-  textures give up their finest levels first. "Automatic" is nine tenths of the card's own
-  memory. Choices of 8 and 12 GB were added, 500 MB was dropped.
+  textures give up their finest levels first, and come back when there is room again.
+  "Automatic" is nine tenths of the card's own memory. Choices of 8 and 12 GB were added,
+  500 MB was dropped. A texture memory set before (and OMSI's `texmemlimit`) was a texture
+  budget and is not carried over: the video memory starts on Automatic. After a lost graphics
+  device the safer settings take two thirds of what the card holds, not a fixed 800 MB.
 
 ## 0.3.0 - 2026-10-14
 

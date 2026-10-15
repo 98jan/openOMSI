@@ -434,12 +434,13 @@ impl App {
                         .unwrap_or(1200.0)
                         .max(omsi_map::tile_size());
                     w.set_fast_texture_loads(true);
-                    w.set_texture_budget(texture_budget(&self.settings));
-                    w.set_video_memory_limit(video_memory_limit(&self.settings));
+                    let (textures, video) = (texture_budget(), video_memory_limit(&self.settings));
+                    w.set_texture_budget(textures);
+                    w.set_video_memory_limit(video);
                     log::info!(
                         "texture budget: {:.0} MB, video memory: {:.0} MB (0 = the driver's budget)",
-                        texture_budget(&self.settings) as f64 / 1e6,
-                        video_memory_limit(&self.settings) as f64 / 1e6
+                        textures as f64 / 1e6,
+                        video as f64 / 1e6
                     );
                     self.gfx.streamer = Some(tiles::Streamer::new(
                         w.clone(),
