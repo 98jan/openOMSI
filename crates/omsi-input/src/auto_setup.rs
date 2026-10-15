@@ -13,7 +13,7 @@ use crate::controllers::{Connected, DeviceCfg, Func};
 
 /// How far from its centre an axis at rest must lie to be a pedal (a pedal's spring holds it
 /// at its very end; a stick or a wheel rests in the middle).
-const PEDAL_REST: f32 = 0.9;
+pub(crate) const PEDAL_REST: f32 = 0.9;
 /// How near its centre the Y axis must rest to drive as a combined throttle and brake.
 const CENTRE_REST: f32 = 0.2;
 

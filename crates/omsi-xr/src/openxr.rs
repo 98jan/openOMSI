@@ -587,13 +587,12 @@ impl Vr {
                 .end(frame.predicted_display_time, self.blend, &[])?;
             bail!("OpenXR stopped providing stereo views");
         }
-        // A runtime may supply placeholder poses before tracking is ready.
-        // Never use those poses as the seated origin (which would add room height).
+        // Valid poses may be inferred even when active tracking is unavailable.
+        // Input focus must not gate rendering: VISIBLE sessions should continue
+        // submitting layers, including underneath runtime overlays. Refocusing
+        // still recenters the seated origin in poll().
         let valid = xr::ViewStateFlags::POSITION_VALID | xr::ViewStateFlags::ORIENTATION_VALID;
-        let tracked = xr::ViewStateFlags::POSITION_TRACKED | xr::ViewStateFlags::ORIENTATION_TRACKED;
-        if !view_state.contains(valid)
-            || (self.origin.is_none() && (!self.focused || !view_state.contains(tracked)))
-        {
+        if !view_state.contains(valid) {
             self.frame_stream.end(frame.predicted_display_time, self.blend, &[])?;
             return Ok(false);
         }
