@@ -95,23 +95,24 @@ fn scutil_proxy(text: &str) -> Option<String> {
     })
 }
 
-/// A proxy address as it may go to a log: `scheme://host:port`, the login of
-/// `scheme://user:password@host:port` hidden. The password is often written with characters
-/// a URL does not allow (`@`, `/`, `:` unescaped, as people type them into `HTTPS_PROXY`), so
-/// the host starts after the *last* `@`, not the first; and an address that is no URL at all
-/// still never shows more than its host part. Query and fragment are dropped.
+/// Hide proxy credentials, including ambiguous malformed addresses, before logging.
 pub fn redact(proxy: &str) -> String {
     let proxy = proxy.trim();
     let (scheme, rest) = match proxy.split_once("://") {
-        Some((scheme, rest)) => (Some(scheme), rest),
-        None => (None, proxy),
+        Some((scheme, rest)) if !scheme.is_empty() && scheme.bytes().all(|b| b.is_ascii_alphanumeric() || b"+.-".contains(&b)) => (Some(scheme), rest),
+        _ => (None, proxy),
     };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    // A separator before the last @ may belong to an unescaped password, or to a
+    // path after the host. Neither interpretation is safe to print as an address.
+    if rest.rfind('@').is_some_and(|at| at >= end) {
+        return scheme.map_or_else(|| "***".into(), |s| format!("{s}://***"));
+    }
+    let rest = &rest[..end];
     let (login, host) = match rest.rsplit_once('@') {
         Some((_, host)) => (true, host),
         None => (false, rest),
     };
-    // (what follows the host: a path, a query, a fragment)
-    let host = host.split(['/', '?', '#']).next().unwrap_or("");
     let login = if login { "***@" } else { "" };
     match scheme {
         Some(scheme) => format!("{scheme}://{login}{host}"),
@@ -146,14 +147,11 @@ mod tests {
         assert_eq!(redact("http://127.0.0.1:7890"), "http://127.0.0.1:7890");
         assert_eq!(redact("http://user:secret@proxy.example:3128"), "http://***@proxy.example:3128");
         assert_eq!(redact("socks5://user@proxy.example:1080/"), "socks5://***@proxy.example:1080");
-        // percent-encoded, and not encoded at all: a password with '@', '/', ':' and '#' in it
         assert_eq!(redact("http://user:p%40ss%2Fword@proxy.example:3128"), "http://***@proxy.example:3128");
-        assert_eq!(redact("http://user:p@ss/wo:rd#x@proxy.example:3128"), "http://***@proxy.example:3128");
-        // no scheme, a path or query after the host, surrounding blanks
+        assert_eq!(redact("http://user:p@ss/wo:rd#x@proxy.example:3128"), "http://***");
         assert_eq!(redact("user:secret@proxy.example:3128"), "***@proxy.example:3128");
         assert_eq!(redact("  http://u:s@proxy.example:3128/path?token=abc#f "), "http://***@proxy.example:3128");
         assert_eq!(redact("proxy.example:3128"), "proxy.example:3128");
-        // IPv6 host keeps its brackets
         assert_eq!(redact("http://u:s@[::1]:8080"), "http://***@[::1]:8080");
     }
 
@@ -164,6 +162,24 @@ mod tests {
             assert!(!shown.contains("secret"), "{bad:?} -> {shown:?}");
         }
         assert_eq!(redact(""), "");
+    }
+
+    #[test]
+    fn a_scheme_separator_inside_a_password_never_becomes_a_logged_scheme() {
+        for address in ["user:secret://word@proxy:3128", "http://user:secret://word@proxy:3128", "u:secret+.-://w@proxy"] {
+            let shown = redact(address);
+            assert!(!shown.contains("secret") && !shown.contains("word") && !shown.contains("user"), "{shown}");
+        }
+        assert_eq!(redact("user:p://w@proxy:3128"), "***");
+    }
+
+    #[test]
+    fn an_at_sign_after_a_path_separator_does_not_become_a_host() {
+        for tail in ["/a@b", "?a@b", "#a@b"] {
+            assert_eq!(redact(&format!("http://proxy:3128{tail}")), "http://***");
+            assert_eq!(redact(&format!("http://u:s@proxy:3128{tail}")), "http://***");
+        }
+        assert_eq!(redact("http://proxy:3128/a?b#c"), "http://proxy:3128");
     }
 
     #[test]
