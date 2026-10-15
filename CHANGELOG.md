@@ -22,6 +22,11 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   a scenario's full AI list replaces the map's, an update replaces only the groups it names,
   and parking lists come from the newest scenario that has them ([#2315](https://github.com/openOMSI-org/openOMSI/issues/2315)).
 
+- Departure displays at the stops show their buses again (HafenCity Hamburg's HVV boards
+  stayed empty under the stop name and headings since 0.2.39), and other scripted scenery
+  objects near the camera no longer miss their texts, sounds and animations while an object
+  farther away is out of range ([#2619](https://github.com/openOMSI-org/openOMSI/issues/2619)).
+
 **Vehicles and cameras**
 
 - The rear axle of articulated buses with a steered rear section (Van Hool AG300, Ikarus
