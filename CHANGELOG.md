@@ -1,6 +1,6 @@
 # Changelog
 
-Releases are started by hand from `main` as the beta `MAJOR.MINOR.COMMIT`, and tested betas are
+Releases are started by hand from `main` as the beta `MAJOR.MINOR.PATCH`, and tested betas are
 promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-org/openOMSI/releases) page.
 
