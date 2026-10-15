@@ -382,8 +382,8 @@ tenths of a discrete card's memory, and never more than the driver's budget; the
 (loose pictures compressed to BC1-BC3 on loading, on by default), `gpu_texture_compression`
 (DXT/BC textures kept compressed on the GPU, on by default; off decodes them to RGBA, for a
 driver that mishandles block formats, at four to eight times the memory - as
-`OMSI_NO_BC=1`), `reflections` (the materials' reflection maps,
-`[matl_envmap]` - off, paint, chrome and glass mirror nothing), `led_glow` (0..15: how
+`OMSI_NO_BC=1`), `reflections` (0..1, how strongly the materials' reflection maps,
+`[matl_envmap]`, show on paint, chrome and glass; 0 = off, they mirror nothing), `led_glow` (0..15: how
 bright an LED destination matrix's dots burn in the enhanced picture, 0 = off - they are
 the panel's own light, and the glow draws a halo around them), `led_mips` (0..4, 0.05 steps,
 1.3 by default: how much of the mip chain an LED matrix is held at - its picture and its
@@ -499,7 +499,7 @@ vignette.
 `crates/omsi-render/src/rt.rs`) shows its buffers.
 
 Vanilla, Vanilla+ and Enhanced reflect buses, buildings and scenery in wet road puddles
-when `reflections=1`, each using its own lighting. Depth-aware filtering softens the image;
+when `reflections` is above 0, each using its own lighting. Depth-aware filtering softens the image;
 Enhanced also shades shallow rain ripples.
 The player's nearby bus and up to three coupled sections use one local geometry capture,
 mirrored around the actual road face's height and slope. Its windows are shaded from the

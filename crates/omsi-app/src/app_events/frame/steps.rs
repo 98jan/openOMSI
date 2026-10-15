@@ -476,6 +476,7 @@ pub(crate) fn dress_lighting(
     lighting.detail = settings.detail_textures;
     lighting.windy_trees = settings.windy_trees();
     lighting.night_brightness = settings.night_brightness;
+    lighting.reflection_strength = settings.reflections;
 }
 
 /// The time of day and the departure displays' boards (without a timetable only the clock).

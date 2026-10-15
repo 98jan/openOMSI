@@ -708,6 +708,7 @@ fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather, sky: &cra
     l.wetness = 0.0;
     l.snow = 0.0;
     l.fog_density = 0.0;
+    l.reflection_strength = crate::settings::Settings::load().reflections;
     l
 }
 
