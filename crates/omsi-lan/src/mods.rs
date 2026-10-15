@@ -36,6 +36,7 @@
 //! vehicle, and a run of one is cut short when it would not end (`omsi_script`'s budget).
 //! No plugin is ever loaded from the session folder (`omsi_cfg::mark_sandbox`).
 
+mod budget;
 mod bus_files;
 mod channel;
 pub(crate) mod failure;

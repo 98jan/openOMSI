@@ -58,8 +58,12 @@ pub(in crate::mods) fn commit(m: VehicleManifest) -> Result<(String, bool), Stri
     buses().commit(m)
 }
 
-pub(in crate::mods) fn wait_for(fp: &str, wait: std::time::Duration) -> Option<VehicleManifest> {
+pub(in crate::mods) fn wait_for(fp: &str, wait: std::time::Duration) -> bool {
     buses().wait_for(fp, wait)
+}
+
+pub(in crate::mods) fn list_memory(fp: &str) -> Option<u64> {
+    buses().list_memory(fp)
 }
 
 pub(crate) fn announce<'a>(fps: impl Iterator<Item = &'a str>) {
@@ -75,6 +79,11 @@ pub(super) fn held_key(e: &Entry) -> String {
     let ext = name.rsplit_once('.').map(|(_, x)| x.to_ascii_lowercase()).unwrap_or_default();
     format!("{}.{ext}", e.sha256.to_ascii_lowercase())
 }
+
+/// How long putting a file together waits for room in the transfers' budget
+/// (`budget::transfers`); past it the file is left in its pieces and its last piece is asked
+/// for again (`missing_pieces`).
+pub(super) const FINISH_WAIT: std::time::Duration = std::time::Duration::from_secs(if cfg!(test) { 1 } else { 60 });
 
 /// At most this many bytes of the files served last are kept unsealed (`served`).
 pub(super) const SERVED_BYTES: usize = 512 << 20;
@@ -151,6 +160,17 @@ impl Buses {
     /// The manifest of the bus `fp`, if it is kept here.
     pub(super) fn manifest(&self, fp: &str) -> Option<VehicleManifest> {
         self.lock().as_ref()?.manifests.iter().find(|(f, _)| f == fp).map(|(_, m)| m.clone())
+    }
+
+    /// Roughly the memory the list of the kept bus `fp` takes (`VehicleManifest::memory`),
+    /// worked out without a copy of it.
+    pub(super) fn list_memory(&self, fp: &str) -> Option<u64> {
+        self.lock().as_ref()?.manifests.iter().find(|(f, _)| f == fp).map(|(_, m)| m.memory())
+    }
+
+    /// Is the bus `fp` kept here?
+    fn is_kept(&self, fp: &str) -> bool {
+        self.lock().as_ref().is_some_and(|v| v.manifests.iter().any(|(f, _)| f == fp))
     }
 
     /// Which files of `m` are not kept here (their index in the list) - but for those refused
@@ -244,7 +264,14 @@ impl Buses {
         if v.store.has(e).is_some() || v.withheld.contains_key(&held_key(e)) {
             return Vec::new();
         }
-        (0..pieces::count(e.size)).filter(|i| !v.store.has_piece(&e.sha256, *i, pieces::span(e.size, *i).1)).collect()
+        let count = pieces::count(e.size);
+        let missing: Vec<u64> = (0..count).filter(|i| !v.store.has_piece(&e.sha256, *i, pieces::span(e.size, *i).1)).collect();
+        // (every piece here, the file never put together - no room for it in the budget then:
+        // its last piece is asked for again, and the file is put together when it comes)
+        if missing.is_empty() && count > 0 {
+            return vec![count - 1];
+        }
+        missing
     }
 
     /// `put_piece` for a piece a player sent: room only of buses unused for a day (`put_sent`).
@@ -277,12 +304,19 @@ impl Buses {
             if (0..count).any(|i| !store.has_piece(&e.sha256, i, pieces::span(e.size, i).1)) {
                 return Ok(false);
             }
+            // (the whole file in memory while it is checked and kept: held against the
+            // transfers' budget, as a file sent whole is; with no room before `FINISH_WAIT` the
+            // pieces stay and the sender is told to come back)
+            let Some(held) = crate::mods::budget::transfers().hold_waiting(e.size, FINISH_WAIT) else {
+                return Err(crate::mods::failure::says::BUSY.to_string());
+            };
             let mut data = Vec::with_capacity(e.size as usize);
             for i in 0..count {
                 data.extend(store.piece(&e.sha256, i, pieces::span(e.size, i).1).map_err(|x| format!("{}: {x}", e.path))?);
             }
-            data
+            (data, held)
         };
+        let (data, _held) = data;
         let drop_pieces = || {
             if let Some(v) = self.lock().as_ref() {
                 v.store.remove_pieces(&e.sha256, count);
@@ -348,7 +382,8 @@ impl Buses {
         Ok((fp, true))
     }
 
-    /// The manifest of `fp`, waiting for it up to `wait` when it is not kept yet - a bus
+    /// Is `fp` kept here, waiting for it up to `wait` when it is not yet (no copy of its list
+    /// taken meanwhile: `manifest` takes one once the answer is held against the budget)? A bus
     /// asked for by another player is most likely on its way here from its own (it sends it
     /// under its loading screen): the answer goes the moment it is kept, not when the asker
     /// asks again.
@@ -356,21 +391,23 @@ impl Buses {
     /// Only a bus on its way is waited for (`on_its_way`): one a player of the session
     /// announces, or one being sent. A player who announced a new made-up fingerprint every
     /// second had every other game wait 90 s for each, a connection held here for each.
-    pub(super) fn wait_for(&self, fp: &str, wait: std::time::Duration) -> Option<VehicleManifest> {
+    pub(super) fn wait_for(&self, fp: &str, wait: std::time::Duration) -> bool {
         let t0 = std::time::Instant::now();
         let until = t0 + wait;
         let (count, arrived) = &self.arrived;
         let mut seen = count.lock().unwrap_or_else(|e| e.into_inner());
         loop {
-            if let Some(m) = self.manifest(fp) {
-                return Some(m);
+            if self.is_kept(fp) {
+                return true;
             }
             // (a moment's grace: the server says its players' buses every second, and a game
             // may ask for one it heard of a moment before that)
             if !self.on_its_way(fp) && t0.elapsed() >= ANNOUNCE_GRACE {
-                return None;
+                return false;
             }
-            let left = until.checked_duration_since(std::time::Instant::now())?;
+            let Some(left) = until.checked_duration_since(std::time::Instant::now()) else {
+                return false;
+            };
             seen = arrived.wait_timeout(seen, left.min(std::time::Duration::from_secs(1))).unwrap_or_else(|e| e.into_inner()).0;
         }
     }

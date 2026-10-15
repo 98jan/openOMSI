@@ -2,18 +2,18 @@
 //! player's game hosting a session, which keeps its own bus for the others the same way.
 
 use super::*;
+use crate::mods::budget::{kept_lists, transfers, Held};
 use crate::mods::failure::says;
 
-/// The server's side of the players' buses: whether it takes them, what the uploads hold in
-/// memory now, the files that came in pieces, and the bus a hosting game keeps for the
-/// others. The game has one (`uploads`, behind this module's functions).
+/// The server's side of the players' buses: whether it takes them, the files that came in
+/// pieces, and the bus a hosting game keeps for the others. The game has one (`uploads`,
+/// behind this module's functions). What they hold in memory is held against
+/// `mods::budget`.
 #[derive(Default)]
 pub(in crate::mods) struct Uploads {
     accept: AtomicBool,
     /// This game is the server its players send their buses to (not one that joined).
     serving: AtomicBool,
-    /// Bytes of `UPLOAD_MEMORY` held now.
-    held: std::sync::atomic::AtomicU64,
     /// Files of a bus that came whole in pieces (`PUTPIECE`), by the bus: its pieces come
     /// over several connections, its DONE on another.
     came: Mutex<HashMap<String, usize>>,
@@ -40,21 +40,6 @@ pub fn accepting() -> bool {
 /// The server starts: the buses players sent before are opened (`vehicles`).
 pub(in crate::mods) fn open() {
     uploads().open();
-}
-
-/// What the uploads of every connection may hold in memory at once (a list, a file sent
-/// whole): a hundred connections each announcing a list of 256 MB, or a file of a GB, took
-/// the server's memory. One that would pass it is told `ERR busy` and comes back; one larger
-/// than all of it (no size is refused) comes when nothing else is held.
-pub(super) const UPLOAD_MEMORY: u64 = 512 << 20;
-
-/// Bytes of `UPLOAD_MEMORY` held by one request, given back when it is done.
-pub(super) struct Held<'a>(&'a std::sync::atomic::AtomicU64, u64);
-
-impl Drop for Held<'_> {
-    fn drop(&mut self) {
-        self.0.fetch_sub(self.1, Ordering::AcqRel);
-    }
 }
 
 /// `len` bytes of the request read and let go (an answer that refuses it keeps the stream in step).
@@ -84,18 +69,14 @@ pub(in crate::mods) struct Incoming {
     offer: Option<VehicleManifest>,
     /// Its files, held against a collection while they come (`vehicles::lease`).
     lease: Option<crate::mods::vehicles::Lease<'static>>,
-    /// The memory the kept offer and lease take, held against `UPLOAD_MEMORY` for the
-    /// connection's life, so a hundred connections each holding a huge list cannot pass the
-    /// budget (one more is told `ERR busy` and comes back).
+    /// The memory the kept offer and lease take, held against the kept lists' budget
+    /// (`budget::kept_lists`) for the connection's life, so a hundred connections each
+    /// holding a huge list cannot pass it (one more is told `ERR busy` and comes back). Apart
+    /// from the transfers' budget: a connection's own list never stands in the way of the
+    /// files it sends.
     held: Option<Held<'static>>,
     wanted: HashSet<usize>,
     got: usize,
-}
-
-/// Roughly the memory a manifest's entries take (each: its path, a 64-char hash, a size, and
-/// the per-entry overhead of the Vec, the lease and the `wanted` set).
-fn offer_memory(m: &VehicleManifest) -> u64 {
-    m.entries.iter().map(|e| e.path.len() as u64 + 160).sum()
 }
 
 impl Incoming {
@@ -129,7 +110,7 @@ impl Incoming {
         // MB of up to `MAX_FILE` across up to `MAX_FILES` files) no longer grows the server's
         // memory and CPU unbounded. One that would pass the budget is told `ERR busy`.
         let plan_memory: u64 = wanted.iter().map(|k| 32 + crate::mods::pieces::count(m.entries[*k].size) * 16).sum();
-        let Some(_held) = uploads().hold(plan_memory.max(1)) else {
+        let Some(_held) = transfers().hold(plan_memory.max(1)) else {
             return writeln!(out, "ERR {}", says::BUSY);
         };
         let plan: Vec<(usize, Vec<u64>)> = wanted.iter().map(|k| (*k, crate::mods::vehicles::missing_pieces(&m.entries[*k]))).collect();
@@ -146,7 +127,7 @@ impl Incoming {
             skip(input, len)?;
             return Ok(Err(says::TAKES_NO_UPLOADS.into()));
         }
-        let Some(_held) = uploads().hold(len) else {
+        let Some(_held) = transfers().hold(len) else {
             skip(input, len)?;
             return Ok(Err(says::BUSY.into()));
         };
@@ -177,9 +158,9 @@ impl Incoming {
         if let Some(bad) = m.entries.iter().find(|e| crate::mods::refuse_path(&e.path).is_some() || e.size > crate::mods::MAX_FILE) {
             return Ok(Err(format!("{}: {}", bad.path, crate::mods::refuse_path(&bad.path).unwrap_or_else(|| "too large".into()))));
         }
-        // (the kept offer and lease are held against the budget for the connection's life;
-        // the body's own hold above is given back when this returns)
-        let Some(held) = uploads().hold(offer_memory(&m)) else {
+        // (the kept offer and lease are held against the kept lists' budget for the
+        // connection's life; the body's own hold above is given back when this returns)
+        let Some(held) = kept_lists().hold(m.memory()) else {
             return Ok(Err(says::BUSY.into()));
         };
         self.held = Some(held);
@@ -258,7 +239,9 @@ impl Incoming {
         let Some(e) = entry.filter(|e| e.size == len) else {
             return Err(std::io::Error::other("a file that was not asked for"));
         };
-        let Some(_held) = uploads().hold(len) else {
+        // (against the transfers' budget alone: the offer this connection keeps is not in it,
+        // so a file larger than all of it still comes - alone - while the offer is kept)
+        let Some(_held) = transfers().hold(len) else {
             skip(input, len)?;
             return writeln!(out, "ERR {}", says::BUSY);
         };
@@ -311,34 +294,55 @@ impl Incoming {
 /// How long a `MANIFEST` asked for a bus not kept yet waits for it to come.
 pub(in crate::mods) const MANIFEST_WAIT: Duration = Duration::from_secs(if cfg!(test) { 2 } else { 90 });
 
-/// `MANIFEST <fp>`: the list of a kept bus - one on its way is waited for (`MANIFEST_WAIT`).
+/// `MANIFEST <fp>`: the list of a kept bus - one on its way is waited for (`MANIFEST_WAIT`,
+/// with nothing held meanwhile). The copy of the list taken from the store is held against
+/// the transfers' budget while it is answered (a hundred answers at once to a list of
+/// 100 000 files are a hundred copies of it); one that would pass it is told `ERR busy`
+/// and asks again in a moment. The answer goes straight to the connection, its length
+/// counted first (`send_json`): no second copy of it as bytes.
 pub(in crate::mods) fn send_manifest(out: &mut impl Write, fp: &Fingerprint) -> std::io::Result<()> {
     let fp = fp.as_str();
-    match crate::mods::vehicles::wait_for(fp, MANIFEST_WAIT) {
-        Some(m) => {
-            // The list serialised straight to bytes - not through a `serde_json::Value` tree
-            // (~1 KB an entry), so a big manifest does not cost the server that much memory
-            // per request. The common case (no withheld files) serialises the manifest on its
-            // own; only when a bus is kept without some file (rare) is it joined with the
-            // "withheld" list it is drawn without (a game before them reads the list alone,
-            // asks for those too and draws a box, as before).
-            let withheld = crate::mods::vehicles::withheld_of(fp);
-            let body = if withheld.is_empty() {
-                serde_json::to_vec(&m).unwrap_or_default()
-            } else {
-                #[derive(serde::Serialize)]
-                struct Manifest<'a> {
-                    #[serde(flatten)]
-                    m: &'a VehicleManifest,
-                    withheld: Vec<crate::mods::vehicles::Withheld>,
-                }
-                serde_json::to_vec(&Manifest { m: &m, withheld }).unwrap_or_default()
-            };
-            writeln!(out, "OK {}", body.len())?;
-            out.write_all(&body)
-        }
-        None => writeln!(out, "ERR {}", says::NO_SUCH_BUS),
+    if !crate::mods::vehicles::wait_for(fp, MANIFEST_WAIT) {
+        return writeln!(out, "ERR {}", says::NO_SUCH_BUS);
     }
+    let Some(memory) = crate::mods::vehicles::list_memory(fp) else {
+        return writeln!(out, "ERR {}", says::NO_SUCH_BUS);
+    };
+    let Some(_held) = transfers().hold(memory) else {
+        return writeln!(out, "ERR {}", says::BUSY);
+    };
+    let Some(m) = crate::mods::vehicles::manifest(fp) else {
+        return writeln!(out, "ERR {}", says::NO_SUCH_BUS);
+    };
+    // (the "withheld" list beside it only when a bus is kept without some file - rare; a
+    // game before them reads the list alone, asks for those too and draws a box, as before)
+    #[derive(serde::Serialize)]
+    struct Answer<'a> {
+        #[serde(flatten)]
+        m: &'a VehicleManifest,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        withheld: Vec<crate::mods::vehicles::Withheld>,
+    }
+    send_json(out, &Answer { m: &m, withheld: crate::mods::vehicles::withheld_of(fp) })
+}
+
+/// `OK <len>` and `value` as JSON, written straight to `out`: its length counted by writing
+/// it to nothing first, so the answer is never held in memory as a whole.
+pub(super) fn send_json(out: &mut impl Write, value: &impl serde::Serialize) -> std::io::Result<()> {
+    struct Count(u64);
+    impl Write for Count {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.0 += b.len() as u64;
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut count = Count(0);
+    serde_json::to_writer(&mut count, value).map_err(std::io::Error::other)?;
+    writeln!(out, "OK {}", count.0)?;
+    serde_json::to_writer(&mut *out, value).map_err(std::io::Error::other)
 }
 
 /// `BLOB <sha256>`: one kept file, by its content.
@@ -414,12 +418,6 @@ impl Uploads {
 
     pub(in crate::mods) fn serving(&self) -> bool {
         self.serving.load(Ordering::Relaxed)
-    }
-
-    /// `n` bytes of `UPLOAD_MEMORY` for one request, if they are free (or nothing is held:
-    /// a request larger than all of it comes alone).
-    pub(super) fn hold(&self, n: u64) -> Option<Held<'_>> {
-        self.held.fetch_update(Ordering::AcqRel, Ordering::Acquire, |h| (h + n <= UPLOAD_MEMORY || h == 0).then_some(h + n)).ok().map(|_| Held(&self.held, n))
     }
 
     /// One more file of `bus` came whole in pieces.

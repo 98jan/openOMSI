@@ -64,6 +64,13 @@ pub fn key(path: &str) -> Option<String> {
 }
 
 impl VehicleManifest {
+    /// Roughly the memory the list takes in this game, or written out as JSON: each entry its
+    /// path, a 64-char hash and a size, and the overhead around them (the Vec's, and a kept
+    /// offer's lease and `wanted` set).
+    pub(crate) fn memory(&self) -> u64 {
+        self.entries.iter().map(|e| e.path.len() as u64 + 160).sum()
+    }
+
     /// The list checked and put in order: every path a key, no two the same file, the hashes
     /// 64 hex digits, the bus file among the entries.
     pub fn validated(mut self) -> Result<VehicleManifest, String> {

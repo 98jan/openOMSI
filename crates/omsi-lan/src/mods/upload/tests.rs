@@ -1,5 +1,6 @@
 use super::super::Manifest;
 use super::*;
+use crate::mods::budget::{kept_lists, transfers, TRANSFER_MEMORY};
 use std::net::TcpListener;
 use std::sync::Arc;
 
@@ -497,18 +498,8 @@ fn folders_of_a_bus_and_what_it_points_into() {
 }
 
 #[test]
-fn the_uploads_hold_so_much_memory_at_most() {
-    let _turn = super::super::vehicles::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    // (a budget of its own: nothing shared with the other tests)
-    let u = Uploads::default();
-    let all = u.hold(UPLOAD_MEMORY).unwrap();
-    assert!(u.hold(1).is_none(), "one more is told: busy");
-    drop(all);
-    assert!(u.hold(1).is_some());
-    // a file larger than all of it comes alone
-    let big = u.hold(2 * UPLOAD_MEMORY).unwrap();
-    assert!(u.hold(1).is_none());
-    drop(big);
+fn a_request_refused_is_read_past_and_never_kept() {
+    // (the budgets themselves: `budget::tests`)
     // a request refused is read past (the stream stays in step), never kept
     let mut input: &[u8] = b"0123456789NEXT";
     skip(&mut input, 10).unwrap();
@@ -553,17 +544,18 @@ fn an_offer_and_its_plan_are_held_against_the_memory_budget() {
     let m = VehicleManifest { bus: "Vehicles/Budget/b.bus".into(), entries };
     let body = serde_json::to_vec(&m).unwrap();
     let busy = format!("ERR {}", crate::mods::failure::says::BUSY);
-    // a connection with its offer kept: the budget is not all free while it lives
+    // a connection with its offer kept: held against the kept lists' budget while it lives
     let mut inc = Incoming::default();
     let mut out = Vec::new();
     inc.offer(&mut &body[..], &mut out, body.len() as u64).unwrap();
     assert!(out.starts_with(b"OK"), "{}", String::from_utf8_lossy(&out));
-    assert!(uploads().hold(UPLOAD_MEMORY).is_none(), "the kept offer is held against the budget");
+    assert_eq!(kept_lists().held(), m.memory(), "the kept offer is held against the kept lists' budget");
+    assert_eq!(transfers().held(), 0, "and not against the transfers'");
     drop(inc);
-    drop(uploads().hold(UPLOAD_MEMORY).expect("all of it back once the connection is gone"));
-    // the budget nearly all taken: an OFFER2 whose plan (ten files of a GB, 10 240 pieces)
-    // would pass it is told busy instead of being built
-    let most = uploads().hold(UPLOAD_MEMORY - (64 << 10)).unwrap();
+    assert_eq!(kept_lists().held(), 0, "all of it back once the connection is gone");
+    // the transfers' budget nearly all taken: an OFFER2 whose plan (ten files of a GB,
+    // 10 240 pieces) would pass it is told busy instead of being built
+    let most = transfers().hold(TRANSFER_MEMORY - (64 << 10)).unwrap();
     let mut inc = Incoming::default();
     let mut out = Vec::new();
     inc.offer_pieces(&mut &body[..], &mut out, body.len() as u64).unwrap();
@@ -576,5 +568,69 @@ fn an_offer_and_its_plan_are_held_against_the_memory_budget() {
     inc.offer_pieces(&mut &body[..], &mut out, body.len() as u64).unwrap();
     assert!(out.starts_with(b"OK"), "{}", String::from_utf8_lossy(&out));
     drop(inc);
+    let _ = std::fs::remove_dir_all(&store_dir);
+}
+
+/// Review of #2564 (P2): the offer a connection keeps is held apart from its transfers. A
+/// file sent whole on that connection is admitted against the transfers' budget alone - with
+/// that budget all but this file's bytes taken (the kept offer used to tip it over: `busy`
+/// for good, as retrying cannot free the connection's own offer), and a file larger than the
+/// whole budget still comes alone while the offer is kept.
+#[test]
+fn a_connection_keeping_its_offer_still_sends_its_files_whole() {
+    let _turn = super::super::vehicles::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let store_dir = temp("kept-offer-put");
+    super::super::vehicles::open_for_test(&store_dir);
+    accept(true);
+    let data = b"a texture sent whole".to_vec();
+    let bus = b"[model]\nmodel.cfg\n".to_vec();
+    let m = VehicleManifest { bus: "Vehicles/Whole/b.bus".into(), entries: vec![entry("Vehicles/Whole/b.bus", &bus), entry("Vehicles/Whole/t.dat", &data)] };
+    let body = serde_json::to_vec(&m).unwrap();
+    let mut inc = Incoming::default();
+    let mut out = Vec::new();
+    inc.offer(&mut &body[..], &mut out, body.len() as u64).unwrap();
+    let wanted: Vec<usize> = serde_json::from_slice(&out[out.iter().position(|b| *b == b'\n').unwrap() + 1..]).unwrap();
+    let idx = m.entries.iter().position(|e| e.path.ends_with("t.dat")).unwrap();
+    assert!(wanted.contains(&idx));
+    assert!(kept_lists().held() > 0, "the offer is kept");
+    // a file larger than the whole transfers' budget comes alone, the offer kept beside it
+    drop(transfers().hold(2 * TRANSFER_MEMORY).expect("admitted alone"));
+    // with all but this file's bytes taken, it is admitted all the same
+    let most = transfers().hold(TRANSFER_MEMORY - data.len() as u64).unwrap();
+    let mut out = Vec::new();
+    inc.put(&mut &data[..], &mut out, idx, data.len() as u64).unwrap();
+    assert_eq!(String::from_utf8_lossy(&out), "OK\n");
+    drop(most);
+    drop(inc);
+    assert_eq!((kept_lists().held(), transfers().held()), (0, 0));
+    let _ = std::fs::remove_dir_all(&store_dir);
+}
+
+/// Review of #2564 (P1): the copy of a list a `MANIFEST` answer takes is held against the
+/// transfers' budget while it is answered (`ERR busy` when there is no room), and the answer
+/// goes straight to the connection - the same bytes as the list written as JSON.
+#[test]
+fn a_manifest_answer_is_held_against_the_transfers_budget() {
+    let _turn = super::super::vehicles::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let store_dir = temp("manifest-budget");
+    super::super::vehicles::open_for_test(&store_dir);
+    accept(true);
+    let bus = b"[model]\nmodel.cfg\n".to_vec();
+    let m = VehicleManifest { bus: "Vehicles/Listed/b.bus".into(), entries: vec![entry("Vehicles/Listed/b.bus", &bus)] }.validated().unwrap();
+    super::super::vehicles::put(&m.entries[0], &bus).unwrap();
+    let (fp, _) = super::super::vehicles::commit(m.clone()).unwrap();
+    let fp = Fingerprint::parse(&fp).unwrap();
+    let all = transfers().hold(TRANSFER_MEMORY).unwrap();
+    let mut out = Vec::new();
+    send_manifest(&mut out, &fp).unwrap();
+    assert_eq!(String::from_utf8_lossy(&out), format!("ERR {}\n", crate::mods::failure::says::BUSY));
+    drop(all);
+    let mut out = Vec::new();
+    send_manifest(&mut out, &fp).unwrap();
+    let nl = out.iter().position(|b| *b == b'\n').unwrap();
+    let want = serde_json::to_vec(&m).unwrap();
+    assert_eq!(String::from_utf8_lossy(&out[..nl]), format!("OK {}", want.len()));
+    assert_eq!(&out[nl + 1..], &want[..], "the list as JSON, as before");
+    assert_eq!(transfers().held(), 0, "given back once answered");
     let _ = std::fs::remove_dir_all(&store_dir);
 }

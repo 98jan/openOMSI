@@ -196,6 +196,40 @@ fn the_same_bytes_refused_under_another_name_do_not_cost_a_bus_its_own_file() {
     let _ = std::fs::remove_dir_all(&store);
 }
 
+/// Review of #2564 (P1): a file put together from its pieces is held against the transfers'
+/// budget while it is in memory. With no room it waits (`FINISH_WAIT`); past that its pieces
+/// stay, its sender is told `busy`, and its last piece is asked for again - which puts it
+/// together once there is room.
+#[test]
+fn putting_a_file_together_waits_for_room_in_the_transfers_budget() {
+    use crate::mods::budget::{transfers, TRANSFER_MEMORY};
+    let _turn = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let store = temp("finish-budget");
+    let kept = Buses::default();
+    kept.open_in(&store).unwrap();
+    let data = b"a file in one piece".to_vec();
+    let e = entry("Vehicles/Pieces/t.dat", &data);
+    // no room, ever: told busy after the wait, the piece kept, the last piece asked again
+    let all = transfers().hold(TRANSFER_MEMORY).unwrap();
+    let t0 = std::time::Instant::now();
+    assert_eq!(kept.put_piece_sent(&e, 0, &data), Err(crate::mods::failure::says::BUSY.to_string()));
+    assert!(t0.elapsed() >= FINISH_WAIT, "{:?}", t0.elapsed());
+    assert_eq!(kept.missing_pieces(&e), vec![0], "the last piece asked for again");
+    assert!(kept.blob(&e.sha256).is_none());
+    // room comes while it waits: put together then
+    std::thread::scope(|s| {
+        s.spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            drop(all);
+        });
+        assert_eq!(kept.put_piece_sent(&e, 0, &data), Ok(true));
+    });
+    assert_eq!(kept.blob(&e.sha256).as_deref(), Some(&data[..]));
+    assert!(kept.missing_pieces(&e).is_empty());
+    assert_eq!(transfers().held(), 0);
+    let _ = std::fs::remove_dir_all(&store);
+}
+
 #[test]
 fn only_a_bus_on_its_way_is_waited_for() {
     // (a store of its own, never opened: nothing is kept, the waiting is all there is)
@@ -203,10 +237,10 @@ fn only_a_bus_on_its_way_is_waited_for() {
     let (announced, made_up) = ("v1-announced", "v1-made-up");
     kept.announce([announced].into_iter());
     let t0 = std::time::Instant::now();
-    assert!(kept.wait_for(made_up, std::time::Duration::from_secs(30)).is_none());
+    assert!(!kept.wait_for(made_up, std::time::Duration::from_secs(30)));
     assert!(t0.elapsed() < ANNOUNCE_GRACE + std::time::Duration::from_millis(1500), "a made-up bus is not waited for");
     let t0 = std::time::Instant::now();
-    assert!(kept.wait_for(announced, std::time::Duration::from_secs(4)).is_none());
+    assert!(!kept.wait_for(announced, std::time::Duration::from_secs(4)));
     assert!(t0.elapsed() >= std::time::Duration::from_millis(3900), "an announced one is");
     // one being sent is waited for too
     let b = b"[model]\nm.cfg\n".to_vec();
