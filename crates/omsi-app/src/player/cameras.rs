@@ -38,8 +38,7 @@ impl Player {
             return None;
         }
         let def = &self.vehicle.ty.def;
-        let n = def.cameras_driver.len().max(1);
-        let c = def.cameras_driver.get((def.camera_std + self.cam_choice.0) % n).or(def.cameras_driver.first())?;
+        let c = def.cameras_driver.get(self.driver_camera_slot()).or(def.cameras_driver.first())?;
         Some(omsi_vehicle::Camera {
             yaw: c.yaw + look.0 + self.steer_look,
             pitch: (c.pitch + look.1).clamp(-89.0, 89.0),
@@ -126,11 +125,22 @@ impl Player {
         self.vehicle.ty.def.cameras_driver.len() + self.vehicle.trailers.iter().map(|t| t.ty.def.cameras_driver.len()).sum::<usize>()
     }
 
+    /// The chosen driver camera's place among all of the bus's (the front's from its first,
+    /// then each coupled part's): the choice counts from the front's `[set_camera_std]`, and
+    /// the keys only go on into the next part past the front's last camera and back from
+    /// its first, as Omsi.exe's `view_interiorcam_plus/minus` do (0x706278 @0x706802 steps
+    /// the vehicle's own index and crosses to the coupled one only below 0 or past its
+    /// last). Counted from the standard camera over the whole bus, the key to the left of
+    /// the Urbino IV's standard camera took the rear section's camera first (#2503).
+    pub(crate) fn driver_camera_slot(&self) -> usize {
+        driver_camera_slot(self.vehicle.ty.def.camera_std, self.vehicle.ty.def.cameras_driver.len(), self.cam_choice.0, self.driver_camera_count())
+    }
+
     /// The driver camera chosen past the front's own: the coupled part it is on and the
     /// camera (None while one of the front's is chosen).
     pub(crate) fn trailer_driver_camera(&self) -> Option<(&omsi_sim::vehicle::TrailerPart, &omsi_vehicle::Camera)> {
         let front = self.vehicle.ty.def.cameras_driver.len();
-        let mut k = self.cam_choice.0 % self.driver_camera_count().max(1);
+        let mut k = self.driver_camera_slot();
         if k < front {
             return None;
         }
@@ -164,9 +174,8 @@ impl Player {
                     let (eye, yaw, pitch, roll) = t.camera_world_full(&turned);
                     return Camera { position: eye, yaw, pitch: pitch.clamp(-89.0, 89.0), roll, fov_deg: c.fov, near: 0.1, far: 6000.0 };
                 }
-                let n = def.cameras_driver.len().max(1);
                 def.cameras_driver
-                    .get((def.camera_std + self.cam_choice.0) % n)
+                    .get(self.driver_camera_slot())
                     .or(def.cameras_driver.first())
             }
             "pax" => {
@@ -339,4 +348,31 @@ pub(crate) fn sync_vehicle_transforms(
         scene::sync_vehicle_part(renderer, scene, &vehicle, t, r);
     }
     vehicle.trailers = trailers;
+}
+
+/// The place among all `total` driver cameras of the bus (the front's `front` first) of the
+/// choice `choice` counted from the front's standard camera `std` (see
+/// [`Player::driver_camera_slot`]).
+fn driver_camera_slot(std: usize, front: usize, choice: usize, total: usize) -> usize {
+    (std % front.max(1) + choice) % total.max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::driver_camera_slot;
+
+    /// An articulated bus with eleven cameras in front, the standard one the second, and one
+    /// in the rear section (as the Urbino IV's). The key to the left of the standard camera takes the front's
+    /// first; only the one after that goes back round into the rear section's (#2503).
+    #[test]
+    fn the_rear_sections_camera_comes_after_the_fronts_first() {
+        let slot = |choice| driver_camera_slot(1, 11, choice, 12);
+        assert_eq!(slot(0), 1);
+        assert_eq!(slot(11), 0, "one to the left");
+        assert_eq!(slot(10), 11, "two to the left: the rear section's");
+        assert_eq!(slot(1), 2, "one to the right");
+        // a bus on its own as before: counted round its own cameras
+        assert_eq!(driver_camera_slot(3, 5, 4, 5), 2);
+        assert_eq!(driver_camera_slot(0, 0, 0, 0), 0);
+    }
 }

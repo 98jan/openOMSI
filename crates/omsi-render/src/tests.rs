@@ -23,15 +23,16 @@ fn the_night_meter_sees_a_lamp_lit_lot_from_above() {
     }
     let cam = Camera { position: DVec3::new(0.0, -35.0, 30.0), yaw: 0.0, pitch: -40.0, roll: 0.0, fov_deg: 60.0, near: 0.1, far: 1000.0 };
     let cam_rel = cam.position.as_vec3();
-    let seen = view_lamp_light(&lights, DVec3::ZERO, cam_rel, &cam, 16.0 / 9.0, Some(0.0));
-    let in_air = view_lamp_light(&lights, DVec3::ZERO, cam_rel, &cam, 16.0 / 9.0, None);
+    let seen = view_lamp_light(&lights, DVec3::ZERO, cam_rel, &cam, 16.0 / 9.0, Some(0.0), &|_| 1.0);
+    let in_air = view_lamp_light(&lights, DVec3::ZERO, cam_rel, &cam, 16.0 / 9.0, None, &|_| 1.0);
     // (the lot's ground: some 10-30 lux under the lamps, 1e-3 .. 3e-3, less between and
     // round them - a log-average of some 10 lux; a moonless night is 2e-6)
     assert!(seen > 5e-5, "{seen}");
     assert!(in_air < seen * 0.2, "{in_air} vs {seen}");
     // and the lamps seen from beside the lot, at eye height, veil the eye as well
     let eye = Camera { position: DVec3::new(0.0, -40.0, 1.7), pitch: 0.0, ..cam };
-    assert!(glare_veil(&lights, DVec3::ZERO, eye.position.as_vec3(), eye.forward()) > 1e-5);
+    assert!(glare_veil(&lights, DVec3::ZERO, eye.position.as_vec3(), eye.forward(), &|_| 1.0) > 1e-5);
+    assert_eq!(glare_veil(&lights, DVec3::ZERO, eye.position.as_vec3(), eye.forward(), &|_| 0.0), 0.0);
 }
 
 /// A textured material can have black diffuse but white ambient (depot interiors).
@@ -325,7 +326,7 @@ fn enhanced_masked_and_uncut_ground_share_lighting() {
     for (name, lighting) in [("sun", &day), ("lamp", &night)] {
         scene.lights = if name == "lamp" {
             vec![PointLight {
-                position: DVec3::new(0.0, 0.0, 4.0),
+                position: DVec3::new(0.0, 0.0, 7.0),
                 radius: 20.0,
                 core: 10.0,
                 intensity: 1.0,
@@ -362,6 +363,9 @@ fn enhanced_masked_and_uncut_ground_share_lighting() {
     renderer.set_material(&mut scene, ground, 0, masked);
     renderer.set_material(&mut scene, mapped, 0, foliage);
     scene.lights[0].position.z = -4.0;
+    renderer
+        .render_to_image(&mut scene, 64, 64, &camera, &night)
+        .unwrap();
     let rgba = renderer
         .render_to_image(&mut scene, 64, 64, &camera, &night)
         .unwrap();
@@ -398,6 +402,46 @@ fn a_mesh_page_hands_freed_space_to_the_next_mesh_and_joins_its_holes() {
     page_give(&mut free, &mut top, c, 300);
     assert_eq!((free.len(), top), (0, 0));
     assert_eq!(page_take(&mut free, &mut top, 1000, 1001), None);
+}
+
+/// A dedicated server's renderer (wgpu's no-op device): its meshes take their place in the
+/// pages as on a GPU, with their bounds, but the pages hold no bytes of them.
+#[test]
+fn on_no_device_the_mesh_pages_hold_places_but_no_bytes() {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::NOOP;
+    descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
+    let instance = wgpu::Instance::new(descriptor);
+    let renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, shadow_size: 1024, ..Default::default() },
+    )).expect("no-op renderer");
+    let mut scene = renderer.new_scene();
+    let mesh = |n: usize, x: f32| {
+        let positions: Vec<Vec3> = (0..n).map(|i| Vec3::new(x + i as f32, 0.0, 0.0)).collect();
+        let indices: Vec<u32> = (0..n as u32 / 3 * 3).collect();
+        MeshData { normals: vec![Vec3::Z; n], uvs: vec![glam::Vec2::ZERO; n], ranges: vec![(0, indices.len() as u32, 0)], positions, indices, ..Default::default() }
+    };
+    let ids: Vec<MeshId> = (0..2000).map(|k| renderer.add_mesh(&mut scene, &mesh(300, k as f32))).collect();
+    let big = renderer.add_mesh(&mut scene, &mesh(400_000, 0.0));
+    let pages: Vec<PreparedMesh> = prepare_meshes(&renderer.device, &renderer.queue, &[&mesh(900, 0.0), &mesh(600, 0.0)], renderer.mesh_pages());
+    for m in pages {
+        renderer.add_prepared_mesh(&mut scene, m);
+    }
+    // every mesh in its own place, with its own bounds
+    let m0 = &scene.meshes[ids[0]];
+    let m1 = &scene.meshes[ids[1]];
+    assert!(m0.page != m1.page || m0.vertex_offset + m0.vertex_bytes <= m1.vertex_offset);
+    assert_eq!(m1.vertex_bytes, 300 * std::mem::size_of::<Vertex>() as u64);
+    assert!((m1.bounds_center.x - (1.0 + 149.5)).abs() < 1e-3);
+    // and the buffers a token: 2000 meshes of 300 vertices did not take 19 MB
+    assert!(scene.mesh_pages.iter().all(|p| p.vertex.size() == 32 && p.index.size() == 32));
+    assert_eq!(scene.meshes[big].vertex_buf.size(), 32);
+    // a freed mesh's place is taken by the next
+    let at = (scene.meshes[ids[5]].page, scene.meshes[ids[5]].vertex_offset);
+    renderer.free_mesh(&mut scene, ids[5]);
+    let again = renderer.add_mesh(&mut scene, &mesh(300, 0.0));
+    assert_eq!((scene.meshes[again].page, scene.meshes[again].vertex_offset), at);
 }
 
 #[test]

@@ -108,6 +108,11 @@ pub struct TicketBlocks {
 }
 
 impl TicketBlocks {
+    /// Allow photo shutter samples to move the blocks with the bus.
+    pub fn instances(&self) -> impl Iterator<Item = usize> + '_ {
+        self.blocks.iter().map(|b| b.0)
+    }
+
     pub fn new(world: &World, renderer: &Renderer, scene: &mut Scene, bus: &VehicleInstance, pack: &Path) -> TicketBlocks {
         let dir = pack.parent().map(Path::to_path_buf).unwrap_or_default();
         let mut blocks = Vec::new();

@@ -852,9 +852,8 @@ impl Player {
     /// The driver's head follows the bus's accelerations a little late, as a body does:
     /// forward when braking, out of a bend, down over a bump (OMSI's head movement).
     /// The driver's head on its neck, as Omsi.exe moves the driver's view (0x7e2110): a mass
-    /// on a spring, thrown by what the body does where the eye is - up and down always
-    /// (spring 3000/150, damper 2000/150 per second, a kick of the heave's acceleration and
-    /// of the pitch and roll rates' change times the eye's lever), sideways and fore and aft
+    /// on a spring, thrown by what the body does where the eye is - up and down always, with
+    /// the sprung seat (`VehicleInstance::driver_seat_travel`), sideways and fore and aft
     /// with `[driverview_moving]` (3000/100 and 2000/100, and only once the bus is moving),
     /// never further than 10 cm up or down (0x7e2256). (A lag of our own towards a point a
     /// hundredth of the acceleration off - a third of what the original throws the head -
@@ -869,23 +868,33 @@ impl Player {
             return;
         }
         let def = &self.vehicle.ty.def;
-        let n = def.cameras_driver.len().max(1);
-        let eye = def.cameras_driver.get((def.camera_std + self.cam_choice.0) % n).map(|c| Vec3::new(c.pos[0], c.pos[1], c.pos[2])).unwrap_or(Vec3::ZERO);
+        let eye = def.cameras_driver.get(self.driver_camera_slot()).map(|c| Vec3::new(c.pos[0], c.pos[1], c.pos[2])).unwrap_or(Vec3::ZERO);
         // (1 unless a frame is longer than 1/15 s)
         let stab = (1.0 / (15.0 * dt)).min(1.0);
         let spring = |p: f32, v: f32, kick: f32, k: f32, c: f32| -> (f32, f32) {
             let v = v + kick + (-k * p - c * v) * stab * dt;
             (p + v * dt, v)
         };
-        // up and down: the heave's acceleration, and the roll and pitch rates' change at the eye
-        let kick = -(a.z - 9.81) * dt + dw.y * eye.x + dw.x * eye.y;
-        let (mut p, mut v) = spring(self.head.z, self.head_vel.z, kick, 3000.0 / 150.0, 2000.0 / 150.0);
-        if p.abs() > 0.1 {
-            p = p.clamp(-0.1, 0.1);
-            v = 0.0;
+        // up and down: the sprung driver's seat (`Driver_Seat_VertTransl`), the one value
+        // Omsi.exe moves the seat mesh and lifts the driver's camera by (0x7e2110 keeps it at
+        // +0x510; 0x7e24b2 and 0x7e24e0 put it in the camera's translation). A spring of the
+        // camera's own, kicked by the body's pitching with the opposite sign to the seat's,
+        // moved the view against the seat when the bus dipped under the brakes (#2550).
+        // (A vehicle without the wheel physics keeps the camera's spring and the eye height
+        // it has always had there: it gives no seat travel to ride on.)
+        if self.vehicle.rigid.is_some() {
+            self.head.z = self.vehicle.driver_seat_travel();
+            self.head_vel.z = 0.0;
+        } else {
+            let kick = -(a.z - 9.81) * dt + dw.y * eye.x + dw.x * eye.y;
+            let (mut p, mut v) = spring(self.head.z, self.head_vel.z, kick, 3000.0 / 150.0, 2000.0 / 150.0);
+            if p.abs() > 0.1 {
+                p = p.clamp(-0.1, 0.1);
+                v = 0.0;
+            }
+            self.head.z = p;
+            self.head_vel.z = v;
         }
-        self.head.z = p;
-        self.head_vel.z = v;
         if enabled {
             let moving = self.vehicle.physics.speed.abs().min(1.0);
             let kx = (-a.x * dt + dw.y * eye.z - dw.z * eye.y) * moving;

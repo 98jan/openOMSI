@@ -49,7 +49,7 @@ impl DiskCache {
             dir,
             cap,
             budget: Mutex::new(Budget::default()),
-            started: SystemTime::now(),
+            started: SystemTime::now() - Duration::from_secs(2),
             full: AtomicBool::new(false),
             #[cfg(test)]
             hold_after_admission: None,

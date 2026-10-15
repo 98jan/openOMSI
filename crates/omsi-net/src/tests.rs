@@ -1511,3 +1511,5 @@ fn a_player_without_a_bus_sends_a_heartbeat() {
 }
 
 mod connections;
+
+mod lifecycle;

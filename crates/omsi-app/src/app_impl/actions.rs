@@ -186,8 +186,10 @@ impl App {
                     let def = &p.vehicle.ty.def;
                     let cam = if schedule { def.view_schedule } else { def.view_ticketselling };
                     let n = def.cameras_driver.len().max(1);
-                    // (the choice counts from the standard camera)
-                    if let Some(c) = cam.filter(|c| *c < def.cameras_driver.len()).map(|c| (c + n - def.camera_std % n) % n) {
+                    let all = p.driver_camera_count().max(1);
+                    // (the choice counts from the standard camera, over the coupled parts'
+                    // cameras as well: `Player::driver_camera_slot`)
+                    if let Some(c) = cam.filter(|c| *c < def.cameras_driver.len()).map(|c| (c + all - def.camera_std % n) % all) {
                         let back = p.cam_before_special.take();
                         if self.view == "driver" && p.cam_choice.0 == c {
                             p.cam_choice.0 = back.unwrap_or(0);

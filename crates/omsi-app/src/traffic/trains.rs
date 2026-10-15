@@ -145,6 +145,10 @@ impl Traffic {
     /// See [`Traffic::trailer_chain`]: from `ty` (turned round: `rev`) towards the back of
     /// the train, or towards its front, the nearest first.
     pub(crate) fn coupled_chain(&mut self, ty: &Arc<VehicleType>, rev: bool, toward_back: bool) -> Vec<(Arc<VehicleType>, bool)> {
+        let key = (ty.def.path.clone(), rev, toward_back);
+        if let Some(chain) = self.sim.coupled_chains.get(&key) {
+            return chain.clone();
+        }
         let mut out = Vec::new();
         let (mut lead, mut lead_rev) = (ty.clone(), rev);
         let mut seen = vec![lead.def.path.clone()];
@@ -173,6 +177,7 @@ impl Traffic {
             lead = t;
             lead_rev = r;
         }
+        self.sim.coupled_chains.insert(key, out.clone());
         out
     }
 }

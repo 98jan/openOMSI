@@ -161,31 +161,28 @@ impl SceneBase {
         })
     }
 
-    /// One pipeline per `pipe_code`: the kind decides blending and the depth write.
-    pub(crate) fn pipelines(&self, device: &wgpu::Device, f: wgpu::TextureFormat, fs: &str, samples: u32) -> Vec<wgpu::RenderPipeline> {
-        let mut out = Vec::with_capacity(PIPE_KINDS as usize * 4);
-        for kind in 0..PIPE_KINDS {
-            let blend = matches!(kind, PIPE_BLEND | PIPE_BLEND_NO_WRITE | PIPE_TERRAIN_PAINT)
-                .then_some(wgpu::BlendState::ALPHA_BLENDING);
-            let depth_write = kind != PIPE_BLEND_NO_WRITE && kind != PIPE_TERRAIN_PAINT;
-            for cull in [false, true] {
-                for surface in [false, true] {
-                    out.push(self.pipeline(
-                        device,
-                        f,
-                        if kind == PIPE_SURFACE_DEPTH { "fs_surface_depth" } else { fs },
-                        blend,
-                        depth_write,
-                        cull,
-                        if surface { self.bias } else { 0 },
-                        kind == PIPE_ALPHA_TEST,
-                        kind == PIPE_TERRAIN_PAINT && fs == "fs_enhanced",
-                        samples,
-                    ));
-                }
-            }
-        }
-        out
+    pub(crate) const PIPELINES: usize = PIPE_KINDS as usize * 4;
+
+    /// The pipeline at `index` of the ones per `pipe_code` (kind, then culled, then surface
+    /// bias): the kind decides blending and the depth write.
+    pub(crate) fn pipeline_at(&self, device: &wgpu::Device, f: wgpu::TextureFormat, fs: &str, samples: u32, index: usize) -> wgpu::RenderPipeline {
+        let kind = (index / 4) as u8;
+        let (cull, surface) = (index & 2 != 0, index & 1 != 0);
+        let blend = matches!(kind, PIPE_BLEND | PIPE_BLEND_NO_WRITE | PIPE_TERRAIN_PAINT)
+            .then_some(wgpu::BlendState::ALPHA_BLENDING);
+        let depth_write = kind != PIPE_BLEND_NO_WRITE && kind != PIPE_TERRAIN_PAINT;
+        self.pipeline(
+            device,
+            f,
+            if kind == PIPE_SURFACE_DEPTH { "fs_surface_depth" } else { fs },
+            blend,
+            depth_write,
+            cull,
+            if surface { self.bias } else { 0 },
+            kind == PIPE_ALPHA_TEST,
+            kind == PIPE_TERRAIN_PAINT && fs == "fs_enhanced",
+            samples,
+        )
     }
 }
 

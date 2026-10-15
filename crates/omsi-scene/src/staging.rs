@@ -63,16 +63,23 @@ pub struct DynamicTextureGroup {
 
 impl World {
     /// The map's indexed parking lists: index 0 is `parklist_p.txt`, and an
-    /// editor caption of 1 selects `parklist_p_1.txt` for that parking space.
+    /// editor caption of 1 selects `parklist_p_1.txt` for that parking space. The newest
+    /// active chrono scenario that has the file gives it, else the map: the parked cars
+    /// change with the scenario's date (Omsi.exe 0x785f98 after "Registrations loaded":
+    /// active chrono entries from the last back, then the map folder, each list taken from
+    /// the first folder that has it, #2315).
     pub fn parked_car_types(&self, index: usize) -> Vec<String> {
+        if let Some(list) = self.parklist.lock().get(&index) {
+            return list.clone();
+        }
+        let chrono_dirs = self.chrono_dirs();
         let mut g = self.parklist.lock();
         if !g.contains_key(&index) {
             let filename = if index == 0 { "parklist_p.txt".to_string() } else { format!("parklist_p_{index}.txt") };
-            let text =
-                omsi_cfg::vfs::read(&omsi_cfg::resolve_path(&self.map_dir, &filename))
-                    .ok()
-                    .map(|b| omsi_cfg::decode_text(&b))
-                    .unwrap_or_default();
+            let text = parklist_file(&self.map_dir, &chrono_dirs, &filename)
+                .and_then(|p| omsi_cfg::vfs::read(&p).ok())
+                .map(|b| omsi_cfg::decode_text(&b))
+                .unwrap_or_default();
             let list: Vec<String> = text
                 .lines()
                 .map(|l| l.trim().to_string())
@@ -816,6 +823,18 @@ pub(super) fn scenery_render_phase(kind: omsi_scenery::sco::RenderType) -> Rende
 /// Does every profile of the spline hang `SPLINE_OVERHEAD` or more over its line?
 pub(super) fn overhead_only(def: &omsi_scenery::sli::Spline) -> bool {
     !def.profiles.is_empty() && def.profiles.iter().all(|p| !p.points.is_empty() && p.points.iter().all(|q| q.z >= SPLINE_OVERHEAD))
+}
+
+/// Where parking list `filename` is read from: the newest of the active chrono folders
+/// that has it, else the map's folder (see `World::parked_car_types`).
+pub(super) fn parklist_file(map_dir: &Path, chrono_dirs: &[PathBuf], filename: &str) -> Option<PathBuf> {
+    chrono_dirs
+        .iter()
+        .rev()
+        .map(|d| d.as_path())
+        .chain(std::iter::once(map_dir))
+        .map(|d| omsi_cfg::resolve_path(d, filename))
+        .find(|p| omsi_cfg::vfs::is_file(p))
 }
 
 /// Which `parklist_p` a car park draws from: its first map string, as a number (Omsi.exe

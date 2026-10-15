@@ -160,11 +160,7 @@ fn typewriter_font(lines: &[String]) -> Option<FontAtlas> {
                 "/System/Library/Fonts/Supplemental/Courier New Bold.ttf",
             )];
             #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-            let paths = [
-                PathBuf::from("/usr/share/fonts/truetype/liberation2/LiberationMono-Bold.ttf"),
-                PathBuf::from("/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf"),
-                PathBuf::from("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"),
-            ];
+            let paths = linux_typewriter_fonts();
             paths
                 .iter()
                 .find_map(|path| FontVec::try_from_vec(std::fs::read(path).ok()?).ok())
@@ -174,12 +170,16 @@ fn typewriter_font(lines: &[String]) -> Option<FontAtlas> {
     let units = font.units_per_em().unwrap_or(2048.0);
     let px = PxScale::from(FONT_EM * font.height_unscaled() / units);
     let scaled = font.as_scaled(px);
-    // a line is the font's height as GDI makes it, the ascent and the descent each rounded
-    // to whole pixels (Courier New bold at 16 pt: 17.5 + 6.3 = 17 + 6 = 23 pixels), the
-    // baseline at the ascent. The sum rounded made it 24, and the rows ran down past the
-    // paper's lines, one pixel more with every row (#629)
-    let line_height = gdi_line_height(scaled.ascent(), scaled.descent());
-    let cell_width = scaled.h_advance(scaled.glyph_id('M')).round().max(1.0) as u32;
+    // a line is Courier New's height as GDI makes it, the ascent and the descent each
+    // rounded to whole pixels (bold at 16 pt: 17.5 + 6.3 = 17 + 6 = 23 pixels), the baseline
+    // at the ascent. The sum rounded made it 24, and the rows ran down past the paper's
+    // lines, one pixel more with every row (#629). The cells are Courier New's too, whatever
+    // face draws the letters: a Linux without it took DejaVu Sans Mono's taller lines and
+    // the rows ran off the paper (#1878).
+    let k = FONT_EM / COURIER_UNITS;
+    let line_height = gdi_line_height(COURIER_ASCENT * k, -COURIER_DESCENT * k);
+    let cell_width = (COURIER_ADVANCE * k).round().max(1.0) as u32;
+    let baseline = (COURIER_ASCENT * k).round();
     let mut characters: Vec<char> = (32u8..=126).map(char::from).collect();
     for line in lines {
         characters.extend(line.chars());
@@ -200,7 +200,7 @@ fn typewriter_font(lines: &[String]) -> Option<FontAtlas> {
         });
         let glyph = scaled
             .glyph_id(ch)
-            .with_scale_and_position(px, ab_glyph::point(0.0, scaled.ascent().round()));
+            .with_scale_and_position(px, ab_glyph::point(0.0, baseline));
         if let Some(outline) = font.outline_glyph(glyph) {
             let bounds = outline.px_bounds();
             outline.draw(|px, py, coverage| {
@@ -227,6 +227,54 @@ fn typewriter_font(lines: &[String]) -> Option<FontAtlas> {
         vec![0; alpha.len()],
         alpha,
     ))
+}
+
+/// Courier New Bold's metrics in its own units: the em, the ascent, the descent and every
+/// letter's advance (a typewriter face: all alike).
+const COURIER_UNITS: f32 = 2048.0;
+const COURIER_ASCENT: f32 = 1705.0;
+const COURIER_DESCENT: f32 = 615.0;
+const COURIER_ADVANCE: f32 = 1229.0;
+
+/// Where a Linux keeps a bold typewriter face, best first: Courier New itself (the Microsoft
+/// core fonts), then the faces drawn to its measures (Liberation Mono, Cousine, Nimbus Mono),
+/// then any bold monospace one. Distributions file them under different folders, and the
+/// player's own fonts count too: looked up by file name in the usual font folders.
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn linux_typewriter_fonts() -> Vec<PathBuf> {
+    const NAMES: [&str; 9] = [
+        "courbd.ttf",
+        "courier new bold.ttf",
+        "courier_new_bold.ttf",
+        "liberationmono-bold.ttf",
+        "cousine-bold.ttf",
+        "nimbusmonops-bold.otf",
+        "nimbusmonl-bold.otf",
+        "freemonobold.ttf",
+        "dejavusansmono-bold.ttf",
+    ];
+    let mut dirs = vec![PathBuf::from("/usr/share/fonts"), PathBuf::from("/usr/local/share/fonts")];
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        dirs.push(home.join(".local/share/fonts"));
+        dirs.push(home.join(".fonts"));
+    }
+    let mut found: Vec<(usize, PathBuf)> = Vec::new();
+    let mut stack: Vec<(PathBuf, u32)> = dirs.into_iter().map(|d| (d, 0)).collect();
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for e in entries.flatten() {
+            let path = e.path();
+            if path.is_dir() {
+                if depth < 4 {
+                    stack.push((path, depth + 1));
+                }
+            } else if let Some(rank) = path.file_name().and_then(|n| n.to_str()).and_then(|n| NAMES.iter().position(|w| n.eq_ignore_ascii_case(w))) {
+                found.push((rank, path));
+            }
+        }
+    }
+    found.sort();
+    found.into_iter().map(|(_, p)| p).collect()
 }
 
 /// GDI's `tmHeight` from a font's ascent and (negative) descent in pixels: each is rounded

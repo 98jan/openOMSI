@@ -7,11 +7,15 @@ impl VehicleInstance {
     /// `Driver_Seat_VertTransl`: the sprung driver's seat, as OMSI moves it:
     /// the body's vertical acceleration and its roll and pitch at the seat's place (the
     /// driver's camera) push a spring (3000) and damper (2000) on 150 kg; ±10 cm at most.
+    /// (Omsi.exe 0x7e2110 keeps it at +0x510, hands it to the scripts at 0x7cffb8 and lifts
+    /// the driver's camera by the same amount, 0x7e24b2: see [`Self::driver_seat_travel`];
+    /// worked out for a model whose scripts do not read it as well.)
     pub(super) fn update_driver_seat(&mut self, dt: f32) {
-        let Some(id) = self.program_ids().driver_seat else { return };
         if dt <= 0.0 {
             return;
         }
+        // (the lever is the first driver camera, whichever one is chosen: 0x7e21a0 and
+        // 0x7e21c7 read Cameras_driver[0]'s position for the roll's and the pitch's share)
         let seat = self.ty.def.cameras_driver.first().map(|c| c.pos).unwrap_or([0.0; 3]);
         let (acc_z, omega) = match &self.rigid {
             Some(rb) => (rb.accel_body.z - 9.81, rb.omega),
@@ -31,7 +35,15 @@ impl VehicleInstance {
             v = 0.0;
         }
         self.seat = (x, v, omega);
-        self.state.vars[id as usize] = x;
+        if let Some(id) = self.program_ids().driver_seat {
+            self.state.vars[id as usize] = x;
+        }
+    }
+
+    /// How far the sprung driver's seat stands above its rest (m, ±0.1): the driver's eye
+    /// rides on it, as the seat mesh does with `Driver_Seat_VertTransl` (#2550).
+    pub fn driver_seat_travel(&self) -> f32 {
+        self.seat.0
     }
 
     /// Dirt and spray. OMSI writes three engine variables every frame and the bus scripts
@@ -431,11 +443,25 @@ impl VehicleInstance {
         }
         let mut trailers = std::mem::take(&mut self.trailers);
         let mut lead: Option<(DVec3, Mat4, f64)> = None;
+        let mut turn = self.turning();
         for t in &mut trailers {
+            t.lead_turn = turn;
             t.update(self, dt, lead);
             lead = Some((t.position, t.body_rotation(), t.heading));
+            turn = (t.kappa, t.axle_long);
         }
         self.trailers = trailers;
+    }
+
+    /// The curvature (1/m, positive to the right) the vehicle turns on and where its turning
+    /// line lies along it (m): the steering's, on the `[rot_pnt_long]` line every axle is
+    /// pointed at (`RigidBody::steer_axles`), or an AI vehicle's bicycle model's.
+    pub(super) fn turning(&self) -> (f32, f32) {
+        if let Some(rb) = &self.rigid {
+            return (rb.kappa, rb.rot_pnt_long);
+        }
+        let (rot, wheelbase) = crate::ai_motion::rotation_point(&self.ty.def);
+        (self.physics.steer_deg.to_radians().tan() / wheelbase, rot)
     }
 
     /// Put the coupled parts on a track: `at_behind(d)` is the point of the track `d` metres
@@ -448,6 +474,7 @@ impl VehicleInstance {
         }
         let mut trailers = std::mem::take(&mut self.trailers);
         let mut lead: Option<(DVec3, Mat4, f64)> = None;
+        let mut turn = self.turning();
         if self.ty.def.is_rail() {
             // A train's cars as Omsi.exe lays them: one after the other along the track, each
             // part's origin as far behind the joint in front of it as its declared front
@@ -492,8 +519,10 @@ impl VehicleInstance {
                 }
                 b_prev = b_c;
                 prev_c = c;
+                t.lead_turn = turn;
                 t.update(self, dt, lead);
                 lead = Some((t.position, t.body_rotation(), t.heading));
+                turn = (t.kappa, t.axle_long);
             }
         }
         self.trailers = trailers;

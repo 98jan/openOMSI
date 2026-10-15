@@ -79,6 +79,13 @@ impl App {
         let profiling = omsi_cfg::flags::OMSI_PROFILE.is_set();
         if profiling && self.perf.profile_mark.is_some() && self.perf.frame_times.len() < crate::perf_report::MAX_FRAMES {
             self.perf.frame_times.push(raw_dt);
+            if self.perf.frame_times.len() <= crate::perf_report::STAGE_FRAMES {
+                let keys = crate::profile_keys::ProfKey::ALL;
+                if self.perf.frame_stages.is_empty() {
+                    self.perf.frame_stages.reserve_exact(crate::perf_report::STAGE_FRAMES * keys.len());
+                }
+                self.perf.frame_stages.extend(keys.iter().map(|&k| (self.perf.profile.get(k) - self.perf.profile_prev.get(k)) as f32));
+            }
         }
         let waited: f64 = [crate::profile_keys::ProfKey::Acquire, crate::profile_keys::ProfKey::Present, crate::profile_keys::ProfKey::Gpu].iter()
             .map(|&k| self.perf.profile.get(k))

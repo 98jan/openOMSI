@@ -624,7 +624,7 @@ impl World {
             let Some(path) = lamp.sound.as_ref() else { continue };
             let Some(script) = lamp.script.and_then(|k| lamps.get_mut(k)) else { continue };
             let dist = (lamp.pos - center).length();
-            if dist >= 300.0 {
+            if dist >= SOUND_REACH_MAX as f64 {
                 if let (Some(a), Some(mut ss)) = (audio, lamp.sounds.lock().take()) {
                     ss.stop_all(a);
                 }
@@ -717,7 +717,7 @@ impl World {
             let fired: Vec<String> = std::mem::take(&mut s.fired);
             // (out of earshot with nothing playing: nothing to do - finding the sound file
             // for each of a city's scripted objects every frame took 1.8 ms)
-            let near = dist < 300.0 || v.sounds.is_some();
+            let near = dist < SOUND_REACH_MAX as f64 || v.sounds.is_some();
             if let (Some(a), true) = (audio, near) {
                 let ty = v.ty.clone();
                 let path = ty.sound_path.get_or_init(|| {
@@ -818,7 +818,8 @@ impl World {
     }
 
     /// Play a scenery object's `[sound]` (the config at `path`) while the listener is within
-    /// 300 m: loaded when it comes near, stopped when it goes.
+    /// its reach (`sound_reach`): loaded when it comes near, faded out and stopped when it
+    /// goes.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn object_sounds(
         &self,
@@ -832,25 +833,27 @@ impl World {
         var: &dyn Fn(&str) -> Option<f32>,
         fired: &[String],
     ) {
-        if dist >= 300.0 {
+        // read once per file, the clips in the background (see AudioEngine::clips_ready)
+        // (looked up before anything is allocated: this runs every frame for every object
+        // that sounds within reach)
+        let known = self.sound_cfgs.lock().get(path).cloned();
+        let cfg = match known {
+            Some(c) => c,
+            None => self
+                .sound_cfgs
+                .lock()
+                .entry(path.to_path_buf())
+                .or_insert_with(|| omsi_vehicle::SoundCfg::load(path).map_err(|e| log::warn!("{e}")).ok().map(Arc::new))
+                .clone(),
+        };
+        let reach = cfg.as_deref().map_or(SOUND_REACH_MIN, sound_reach);
+        if dist >= reach as f64 {
             if let Some(mut ss) = sounds.take() {
                 ss.stop_all(a);
             }
             return;
         }
         if sounds.is_none() {
-            // read once per file, the clips in the background (see AudioEngine::clips_ready)
-            let cfg = self
-                .sound_cfgs
-                .lock()
-                .entry(path.to_path_buf())
-                .or_insert_with(|| {
-                    omsi_vehicle::SoundCfg::load(path)
-                        .map_err(|e| log::warn!("{e}"))
-                        .ok()
-                        .map(Arc::new)
-                })
-                .clone();
             if let Some(cfg) = cfg {
                 let sdir = path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
                 if a.clips_ready(&omsi_audio::SoundSet::clip_paths(&cfg, &sdir)) {
@@ -862,6 +865,8 @@ impl World {
             }
         }
         if let Some(ss) = sounds.as_mut() {
+            // (the last fifth of the reach fades it out, so that it never stops at once)
+            ss.master = self.settings.sound_scenery() * ((reach - dist as f32) / (0.2 * reach)).clamp(0.0, 1.0);
             // scenery (a fountain, machinery, a level crossing bell): heard through the
             // player's own bodywork and glass just like any other sound from outside the cabin
             ss.set_muffled(muffled);
@@ -869,4 +874,17 @@ impl World {
             ss.update(a, var, &xf, fired);
         }
     }
+}
+
+/// How far a scenery object's sounds carry: Omsi.exe lowers a `[3d]` sound by its range over
+/// the distance and never cuts it off (`omsi_audio::distance_gain`). Played within 300 m
+/// only, a sound cube's loud sound stopped dead at that line, still well audible (#2534).
+/// It is kept now until its loudest sound is 40 dB down (a hundredth), from 300 m up to the
+/// distance the scenery scripts run within (`SCRIPT_RANGE`, beyond which their objects fall
+/// silent), and faded out over the last fifth of that.
+const SOUND_REACH_MIN: f32 = 300.0;
+const SOUND_REACH_MAX: f32 = omsi_sim::scenery::SCRIPT_RANGE as f32;
+fn sound_reach(cfg: &omsi_vehicle::SoundCfg) -> f32 {
+    let range = cfg.sounds.iter().map(|s| s.range).fold(0.0f32, f32::max);
+    (range * 100.0).clamp(SOUND_REACH_MIN, SOUND_REACH_MAX)
 }

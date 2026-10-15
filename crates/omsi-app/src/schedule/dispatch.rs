@@ -75,7 +75,7 @@ impl Schedule {
     }
 
     /// Spawn buses whose departure time has come (or passed within `window` seconds), and
-    /// the layover buses of the next quarter of an hour: [`Schedule::tick_due`], the vehicle
+    /// the layover buses of tours under way: [`Schedule::tick_due`], the vehicle
     /// sets read ahead (`fleet`), [`Schedule::tick_spawn`].
     ///
     /// The renders of the buses it puts on the road or takes off follow at once

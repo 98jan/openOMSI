@@ -25,9 +25,9 @@ profile="${OPENOMSI_RUST_PROFILE:-release}"
 version="${OPENOMSI_VERSION:-$(sh "$root/scripts/version.sh" 2>/dev/null || echo 0.0.0)}"
 export OPENOMSI_VERSION="$version"
 # the store wants numbers only (a test build's -pr<number> left out); the build number is the
-# commit count part
+# commit count, as every upload needs a higher one
 marketing="${version%%-*}"
-build_number="$(echo "$marketing" | awk -F. '{ print ($3 == "" ? 1 : $3) }')"
+build_number="$(git -C "$root" rev-list --count HEAD 2>/dev/null || echo 1)"
 team="${OPENOMSI_TEAM_ID:-}"
 dist="$root/dist/apple"
 apple="$root/apple"
