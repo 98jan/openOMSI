@@ -1,4 +1,5 @@
 use super::*;
+use anyhow::bail;
 
 /// Copy each installed mod map's depot file into vehicle folders that already contain a
 /// vehicle-local HOF. OMSI expects that copy next to every bus; openOMSI keeps it in its
@@ -176,7 +177,7 @@ pub(super) fn sync_map_hofs_to_vehicle_folders() {
 
 /// Copy player-selected depot files into vehicle folders that already have local HOFs.
 /// Only the writable openOMSI content folder is changed; existing files are left alone.
-pub(super) fn add_hofs_to_vehicle_folders(files: &[PathBuf]) -> Result<String> {
+pub fn add_hofs_to_vehicle_folders(files: &[PathBuf]) -> Result<String> {
     let content = content_dir().ok_or_else(|| anyhow!("no game content folder is configured"))?;
     let original = root()?;
     let canonical_content = std::fs::canonicalize(&content).unwrap_or_else(|_| content.clone());

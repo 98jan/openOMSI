@@ -1117,15 +1117,7 @@ impl State {
                 self.mods = Some(m);
             }
             Msg::Mods(Err(e)) => self.set_status(e, true),
-            Msg::HofsAdded(result) => {
-                self.mod_busy = None;
-                match result {
-                    Ok(()) => self.set_status("HOF files added to eligible bus folders.", false),
-                    Err(e) => self.set_status(e, true),
-                }
-                self.load_mods();
-                self.load_content();
-            }
+            Msg::HofsAdded(result) => self.handle_hofs_added(result),
             Msg::ModChanged { result, done } => {
                 self.mod_busy = None;
                 match result {
@@ -1159,6 +1151,16 @@ impl State {
                 self.join = (ok, text);
             }
         }
+    }
+
+    fn handle_hofs_added(&mut self, result: Result<(), String>) {
+        self.mod_busy = None;
+        match result {
+            Ok(()) => self.set_status("HOF files added to eligible bus folders.", false),
+            Err(e) => self.set_status(e, true),
+        }
+        self.load_mods();
+        self.load_content();
     }
 
     // --- helpers for the pages -------------------------------------------------------------

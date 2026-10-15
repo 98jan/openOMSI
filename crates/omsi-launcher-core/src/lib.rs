@@ -13,8 +13,12 @@ pub mod install;
 pub mod instances;
 pub mod mods;
 mod hof_sync;
+mod file_dialog;
 
-use anyhow::{anyhow, bail, Context, Result};
+pub use file_dialog::{pick_file, pick_folder, pick_hofs, pick_mod};
+pub use hof_sync::add_hofs_to_vehicle_folders;
+
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -789,10 +793,6 @@ pub fn list_maps() -> Result<Vec<MapInfo>> {
         log_empty("maps", "global.cfg");
     }
     Ok(out)
-}
-
-pub fn add_hofs_to_vehicle_folders(files: &[PathBuf]) -> Result<String> {
-    hof_sync::add_hofs_to_vehicle_folders(files)
 }
 
 /// Say in launcher.log where a list that came out empty was looked for: each folder of
@@ -3027,61 +3027,6 @@ pub fn cleanup() {
     for line in install::cleanup_stale(&data_dir(), content_dir().as_deref()) {
         log_to_file(&format!("cleanup: {line}"));
     }
-}
-
-/// Native folder / file picker (Finder, Explorer, the GTK dialog) for a mod. Must run on
-/// the main thread. (None on a phone: the launcher browses the storage itself there, and on an iPhone or an iPad
-/// the system's document picker of the Swift launcher hands the path over.)
-pub fn pick_mod(zip: bool) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        if zip {
-            rfd::FileDialog::new().set_title("Choose a mod archive").add_filter("Mod archive", &["zip", "7z", "rar"]).pick_file()
-        } else {
-            rfd::FileDialog::new().set_title("Choose the mod folder").pick_folder()
-        }
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = zip;
-        None
-    }
-}
-
-/// Folder picker (Setup: the OMSI 2 folder).
-pub fn pick_folder(title: &str) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        rfd::FileDialog::new().set_title(title).pick_folder()
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = title;
-        None
-    }
-}
-
-/// File picker (Setup: the game program).
-pub fn pick_file(title: &str) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        rfd::FileDialog::new().set_title(title).pick_file()
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = title;
-        None
-    }
-}
-
-/// Native multi-file picker for depot files (unavailable on mobile; the platform UI handles it).
-pub fn pick_hofs(title: &str, filter: &str) -> Option<Vec<PathBuf>> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        rfd::FileDialog::new().set_title(title).add_filter(filter, &["hof"]).pick_files()
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    { let _ = (title, filter); None }
 }
 
 /// A phone runs one program: the launcher hands the game's command line over here and the
