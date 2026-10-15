@@ -59,7 +59,7 @@ export const RESOLUTIONS = [
  * budget, which the launcher does not know. */
 const videoMemory = [
   ['0', 'Automatic'],
-  ['1000', '1 GB'], ['1500', '1.5 GB'], ['2000', '2 GB'], ['3000', '3 GB'], ['4000', '4 GB'], ['6000', '6 GB'], ['8000', '8 GB'], ['12000', '12 GB'],
+  ['1000', '1 GB'], ['1500', '1.5 GB'], ['2000', '2 GB'], ['3000', '3 GB'], ['4000', '4 GB'], ['6000', '6 GB'], ['8000', '8 GB'], ['12000', '12 GB'], ['16000', '16 GB'],
 ];
 
 /** The pedals' response: softer below 1, stronger above. */

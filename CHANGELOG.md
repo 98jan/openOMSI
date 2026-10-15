@@ -61,6 +61,17 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   500 MB was dropped. A texture memory set before (and OMSI's `texmemlimit`) was a texture
   budget and is not carried over: the video memory starts on Automatic. After a lost graphics
   device the safer settings take two thirds of what the card holds, not a fixed 800 MB.
+- **Rain on the windows costs less:** the drops on the cab's panes are painted beside the
+  frame instead of while it waits, and only the rows that changed go to the graphics card (12
+  panes sent a megabyte each, 30 times a second). In heavy rain in the cab, on a Radeon 680M,
+  the panes' share of the frame went from 10.3 to 3.3 ms with Enhanced+ and from 2.3 to 0.7 ms
+  with Vanilla+ (152 to 179 fps). The drops show one frame later ([#2490](https://github.com/openOMSI-org/openOMSI/issues/2490)).
+- **Enhanced+ draws 8x MSAA at 4x:** 8x doubled the ray traced passes' cost (2.4 ms a frame on
+  an RTX 4050) and their multisampled targets' memory for little to see; `OMSI_FULL_GPU=1`
+  keeps 8x ([#2228](https://github.com/openOMSI-org/openOMSI/issues/2228)).
+- A video memory of 16 GB can be chosen, for cards with more than 16 GB of their own.
+- Render targets of a size not drawn for 5 s are let go: those of a photo taken at a large size
+  stayed on the graphics card until the window changed size.
 - A remembered MSAA fallback is tried at the chosen MSAA again once with each new version
   (written down before the try, so a failing or crashing retry is not repeated at every
   start), instead of keeping a computer at 1x for good ([#2597](https://github.com/openOMSI-org/openOMSI/issues/2597)).

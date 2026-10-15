@@ -789,6 +789,32 @@ impl Renderer {
         );
     }
 
+    pub fn update_texture_rect(&self, scene: &Scene, id: TextureId, img: &omsi_texture::Image, [x, y, w, h]: [u32; 4]) {
+        let Some(gt) = scene.textures.get(id) else { return };
+        if (img.width, img.height) != gt.size || x + w > img.width || y + h > img.height || img.rgba.len() < (img.width * img.height * 4) as usize {
+            return;
+        }
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &gt.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &img.rgba[((y * img.width + x) * 4) as usize..],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(img.width * 4),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
     /// Replace the top pixels of a dynamic texture and rebuild its mip chain. Returns true
     /// when the texture had to be recreated (and its materials therefore need rebinding).
     /// This is used for OMSI script textures after `STFilter`.
