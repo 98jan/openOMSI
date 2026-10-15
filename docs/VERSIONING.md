@@ -1,17 +1,17 @@
 # Versioning and releases
 
-## The version number: `MAJOR.MINOR.COMMIT`
+## The version number: `MAJOR.MINOR.PATCH`
 
 | Part | Where it comes from | Example |
 | --- | --- | --- |
 | `MAJOR` | the first number in the [`VERSION`](../VERSION) file, changed by hand | `1` |
 | `MINOR` | the second number in `VERSION`, changed by hand | `1.2` |
-| `COMMIT` | counted automatically: commits on `main` since `VERSION` last changed (not counting those marked `[skip ci]` or `[skip actions]`, which are never released) | `1.2.17` |
+| `PATCH` | counted automatically: one more than the last release `v<MAJOR.MINOR>.*` (its tag), or `0` when there is none yet | `1.2.17` |
 
-Commits pushed between two releases still count, so the version of a release skips the
-numbers of the commits that were never released on their own.
-`COMMIT` restarts from `0` whenever `VERSION` changes: after `1.1.23`, a commit that sets
-`VERSION` to `1.2` is released as `1.2.0`, and the next one as `1.2.1`.
+Releases follow each other without gaps, however many commits come in between: after
+`1.2.16`, the next release is `1.2.17`. A commit that already has a release keeps its version.
+`PATCH` restarts from `0` whenever `VERSION` changes: after `1.1.23`, the first release with
+`VERSION` set to `1.2` is `1.2.0`, and the next one `1.2.1`.
 
 To start a new version, change that one line in a pull request like any other change:
 
@@ -22,7 +22,8 @@ git commit -am "Version 1.2" && git push -u origin version-1.2
 
 `scripts/version.sh` prints the version of the checked-out commit; the game shows it in the
 launcher's side bar, in its log and in `openomsi --version` (baked in by
-`crates/omsi-app/build.rs`, which uses the same rule).
+`crates/omsi-platform/build.rs`, which uses the same rule). A build of a commit that has no
+release shows the number of the next release, whichever commit that release comes from.
 
 ## Releases: beta, then stable
 
@@ -73,8 +74,10 @@ can be promoted. The workflow runs from `main` only and reads `release/health.js
 ### A published release never changes
 
 A version is published once. The release job refuses to publish a version that already
-exists, or whose tag names another commit; it never moves a tag nor replaces a file. A
-mistake in a release is fixed by a new commit, hence a new version. With the repository's
+exists, whose tag names another commit, or whose commit is older than the last release; it
+never moves a tag nor replaces a file. A release's tag is never deleted either: the next
+version is counted from the tags. A mistake in a release is fixed by a new commit, hence a
+new version. With the repository's
 *immutable releases* setting on, GitHub enforces it too.
 
 The `SHA256SUMS` of a release checks a download by hand:
@@ -135,3 +138,7 @@ and never offered again.
 the Markdown files of `docs/` to GitHub Pages
 (https://openomsi.org/) whenever they change on `main`. The site renders
 the Markdown in the browser, so a documentation change is one edit in `docs/`.
+The Download page offers the latest stable release. Beta downloads have a separate page
+with the same platform cards and installation instructions; when no beta is newer than
+stable, it links back to stable instead of offering an older build. The release history
+has separate Stable and Betas lists. Auxiliary asset packs are kept out of both lists.

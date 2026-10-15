@@ -283,7 +283,7 @@ flags! {
     OMSI_FULL_GPU: Bool, Switch, Use, "off", "Keep the requested settings on a small or shared graphics chip.";
     OMSI_GLASS_WIND: Num, Test, Use, "-", "Offscreen: the rain on the glass as met at this speed in m/s.";
     OMSI_GL_TEXTURE_UNITS: Bool, Switch, Use, "off", "Use the texture-unit layout of the OpenGL backend on any device.";
-    OMSI_GPU_ARRAYS: Text, Switch, Use, "-", "textures or nostorage: take that texture array path on any device.";
+    OMSI_GPU_ARRAYS: Text, Switch, Use, "-", "textures, nostorage or lighttextures: take that texture array path on any device.";
     OMSI_GPU_LIMITS: Text, Test, Use, "-", "default or downlevel: request only the WebGPU default (or downlevel) limits. Set by the small_chip test.";
     OMSI_GPU_TIMERS: Bool, Debug, Use, "off", "Measure GPU time per pass with timestamp queries.";
     OMSI_GPU_TIMERS_RAW: Bool, Debug, Use, "off", "With OMSI_GPU_TIMERS: the passes in the order the GPU finished them.";
@@ -351,6 +351,7 @@ flags! {
     OMSI_NO_GROUND_SPLINE_BATCHING: Bool, Switch, Use, "off", "No batching of ground splines.";
     OMSI_NO_GUARD: Bool, Switch, Use, "off", "No start guard: a start that crashes or hangs is not healed by an update or by going back to the version before.";
     OMSI_NO_INTERP: Bool, Switch, Once, "off", "The old way without interpolation, for comparing.";
+    OMSI_NO_LAMP_SIGHT: Bool, Switch, Use, "off", "Enhanced by night: every lamp near the line of sight dazzles, hidden or not.";
     OMSI_NO_LAN_MODS: Bool, Switch, Use, "off", "LAN: do not exchange mods.";
     OMSI_NO_LIGHT_MAP: Bool, Switch, Use, "off", "No night light maps on the tiles (A/B).";
     OMSI_NO_MAIN_SPLIT: Bool, Switch, Frame, "off", "Do not split the main pass's bundles in two.";
@@ -377,6 +378,7 @@ flags! {
     OMSI_NO_SPRAY: Bool, Switch, Use, "off", "No tyre spray.";
     OMSI_NO_SURF: Bool, Switch, Once, "off", "Every road as smooth as before (no surface texture) (A/B).";
     OMSI_NO_TEXCOMPRESS: Bool, Switch, Use, "off", "No runtime texture compression.";
+    OMSI_NO_TEXTURE_CACHE: Bool, Switch, Once, "off", "Compress every texture at each start (no ~/.openomsi/cache/textures).";
     OMSI_NO_TUNNEL: Bool, Switch, Use, "off", "LAN: no tunnel.";
     OMSI_NO_UPDATE: Bool, Switch, Use, "off", "No update check.";
     OMSI_NO_VAR_SYNC: Bool, Switch, Use, "off", "LAN: no variable sync.";
@@ -425,6 +427,7 @@ flags! {
     OMSI_SCENE_DIGEST: Bool, Test, Use, "off", "Log a hash of the renderer's scene (its instances in order, their places, materials and parameters) before each offscreen picture: two runs whose renderers saw the same calls log the same digests.";
     OMSI_SCREEN_AT: Text, Setup, Once, "-", "x,y: the screen (a point on the desktop, pixels) the game window opens on; the launcher sets it to where it stands.";
     OMSI_SEED: Num, Test, Use, "random", "Seed of the scripts' random numbers (repeat a session).";
+    OMSI_SERIAL_PIPELINES: Bool, Switch, Use, "off", "Compile the renderer's pipelines one after the other on one thread, as before (A/B).";
     OMSI_SHADOW_FAR_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the far shadow map every frame.";
     OMSI_SHADOW_NEAR_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the near shadow map every frame.";
     OMSI_SIM_THREAD: Bool, Switch, Use, "off", "Window: the AI traffic's, the people's and the scenery scripts' steps run on a thread of its own while the picture is drawn (one frame later); the offscreen run ignores it.";
@@ -438,6 +441,7 @@ flags! {
     OMSI_TERRAIN_ALIGN: Bool, Switch, Use, "off", "Align the terrain to the splines again at load (A/B; Omsi.exe does not).";
     OMSI_TEST_AVATAR: Text, Test, Test, "-", "Test only: an avatar FBX for the avatar loading test (`cargo test -p omsi-sim a_rocketbox_avatar_loads -- --ignored`).";
     OMSI_TEST_CONTENT: Text, Test, Test, "-", "Content root for tests that need real OMSI content.";
+    OMSI_TEST_PACKAGE_MAP: Text, Test, Test, "-", "Test only: the global.cfg of a map that carries a package, for the launcher route map test (`cargo test -p omsi-launcher-model the_package_of_a_real_map_is_exported -- --ignored`).";
     OMSI_TEST_WINE_DIR: Text, Test, Test, "-", "Plugin demo test: folder holding omsi-plugin-host.exe for Wine.";
     OMSI_TEXTURE_MEMORY: Num, Tuning, Use, "settings", "Texture budget in MB.";
     OMSI_TEXTURE_RAIN: Bool, Switch, Use, "off", "OMSI 2's own texture rain on the glass instead of the drops.";

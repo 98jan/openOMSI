@@ -2,6 +2,12 @@
 
 use winit::keyboard::KeyCode;
 
+/// Shift, Ctrl, Alt and the system key, either side: the keys `ModifiersChanged` keeps.
+pub fn is_modifier(code: KeyCode) -> bool {
+    matches!(code, KeyCode::ShiftLeft | KeyCode::ShiftRight | KeyCode::ControlLeft | KeyCode::ControlRight
+        | KeyCode::AltLeft | KeyCode::AltRight | KeyCode::SuperLeft | KeyCode::SuperRight)
+}
+
 /// DIK_* scan code for a winit key, if known.
 pub fn dik_code(key: KeyCode) -> Option<i32> {
     use KeyCode::*;
@@ -129,6 +135,97 @@ pub fn both_code(key: KeyCode) -> Option<i32> {
         ControlLeft | ControlRight => Some(CTRL_BOTH),
         AltLeft | AltRight => Some(ALT_BOTH),
         _ => None,
+    }
+}
+
+/// The other key Windows takes for the same virtual key: with Num Lock off (or Shift held
+/// with it on) a numpad key is its grey twin (Num4 is VK_LEFT, the Left arrow's key), and
+/// both Enters are VK_RETURN. Windows keeps one up/down state per virtual key.
+pub fn vk_twin(key: KeyCode) -> Option<KeyCode> {
+    use KeyCode::*;
+    const PAIRS: &[(KeyCode, KeyCode)] = &[
+        (Numpad0, Insert),
+        (NumpadDecimal, Delete),
+        (Numpad1, End),
+        (Numpad2, ArrowDown),
+        (Numpad3, PageDown),
+        (Numpad4, ArrowLeft),
+        (Numpad6, ArrowRight),
+        (Numpad7, Home),
+        (Numpad8, ArrowUp),
+        (Numpad9, PageUp),
+        (NumpadEnter, Enter),
+    ];
+    PAIRS.iter().find_map(|&(a, b)| if a == key { Some(b) } else if b == key { Some(a) } else { None })
+}
+
+/// A press of `key` that came flagged as a repeat while `key` itself is not held (`held`)
+/// but its twin (see [`vk_twin`]) is: its first press. Windows flags it so because the
+/// virtual key the two share is down already; taken for a repeat, the Left arrow pressed
+/// with Num4 held did nothing (#1830).
+pub fn twin_first_press(key: KeyCode, held: impl Fn(KeyCode) -> bool) -> bool {
+    !held(key) && vk_twin(key).is_some_and(held)
+}
+
+/// Whether a key event of the window (`repeat` as the system flags it) is a repeat. A release
+/// never is: Windows flags the second release of two keys sharing one virtual key as one
+/// (its key was up already), and a release taken for a repeat went nowhere - with Num4 held
+/// and Left tapped, Num4's release was lost and the wheel stayed at full lock until Num4 was
+/// pressed again (#1830). On Windows (`windows`) a twin's first press is no repeat either.
+pub fn key_repeat(key: KeyCode, pressed: bool, repeat: bool, windows: bool, held: impl Fn(KeyCode) -> bool) -> bool {
+    pressed && repeat && !(windows && twin_first_press(key, held))
+}
+
+#[cfg(test)]
+mod vk_twin_tests {
+    use super::*;
+    use winit::keyboard::KeyCode::*;
+
+    /// The modifier key-ups the window drops once `ModifiersChanged` has let them go (Windows
+    /// reports the state first): the eight modifier keys, nothing else.
+    #[test]
+    fn only_the_modifier_keys_count_as_modifiers() {
+        for code in [KeyCode::ShiftLeft, KeyCode::ShiftRight, KeyCode::ControlLeft, KeyCode::ControlRight,
+            KeyCode::AltLeft, KeyCode::AltRight, KeyCode::SuperLeft, KeyCode::SuperRight] {
+            assert!(is_modifier(code), "{code:?}");
+        }
+        for code in [KeyCode::KeyW, KeyCode::CapsLock, KeyCode::Escape, KeyCode::Digit1] {
+            assert!(!is_modifier(code), "{code:?}");
+        }
+    }
+
+    #[test]
+    fn twins() {
+        assert_eq!(vk_twin(Numpad4), Some(ArrowLeft));
+        assert_eq!(vk_twin(ArrowLeft), Some(Numpad4));
+        assert_eq!(vk_twin(Enter), Some(NumpadEnter));
+        assert_eq!(vk_twin(Numpad5), None);
+        assert_eq!(vk_twin(KeyA), None);
+    }
+
+    /// Num4 held, Left pressed (flagged as a repeat): Left's first press (#1830).
+    #[test]
+    fn numpad_and_arrow_held_together() {
+        assert!(twin_first_press(ArrowLeft, |k| k == Numpad4));
+        assert!(twin_first_press(Numpad4, |k| k == ArrowLeft));
+        // a real repeat of a key held, or a repeat with no twin held, stays a repeat
+        assert!(!twin_first_press(ArrowLeft, |k| k == ArrowLeft || k == Numpad4));
+        assert!(!twin_first_press(ArrowRight, |k| k == Numpad4));
+        assert!(!twin_first_press(KeyA, |_| false));
+    }
+
+    /// Num4 held, Left tapped, Left and then Num4 let go, as Windows flags the events: the
+    /// Left press is a press, and both releases are releases (#1830).
+    #[test]
+    fn a_release_is_never_a_repeat() {
+        assert!(!key_repeat(Numpad4, true, false, true, |_| false));
+        assert!(!key_repeat(ArrowLeft, true, true, true, |k| k == Numpad4));
+        assert!(key_repeat(ArrowLeft, true, true, true, |k| k == Numpad4 || k == ArrowLeft));
+        assert!(!key_repeat(ArrowLeft, false, false, true, |k| k == Numpad4 || k == ArrowLeft));
+        assert!(!key_repeat(Numpad4, false, true, true, |k| k == Numpad4));
+        // elsewhere keys are told apart by themselves: a repeat stays one
+        assert!(key_repeat(ArrowLeft, true, true, false, |k| k == Numpad4));
+        assert!(key_repeat(KeyW, true, true, true, |k| k == KeyW));
     }
 }
 

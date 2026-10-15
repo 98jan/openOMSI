@@ -43,7 +43,7 @@ use omsi_soundscape::ambience;
 mod soundscape;
 use omsi_scene::wheel_surface;
 use omsi_scene::camera_arm;
-mod cam_approach;
+use omsi_vehicle::cam_approach;
 use omsi_career::career;
 use omsi_input::describe;
 mod editor;
@@ -73,7 +73,7 @@ use omsi_scene::money;
 mod radio;
 
 use omsi_scene::puddles;
-mod quit;
+use omsi_platform::quit;
 use omsi_weather::condensation;
 use omsi_scene::{rain, window_wipers};
 mod scene;
@@ -104,7 +104,7 @@ mod cli;
 mod diagnostics;
 mod perf_overlay;
 mod perf_report;
-mod profile_keys;
+pub(crate) use omsi_cfg::profile_keys;
 mod frame_stages;
 mod support_bundle;
 mod duty_start;
@@ -713,7 +713,9 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             instructions_mark: None,
             profile_mark: None,
             frame_times: Vec::new(),
+            frame_stages: Vec::new(),
             overlay: Default::default(),
+            texture_cut_at: None,
         },
         sound: SoundState {
             radio,

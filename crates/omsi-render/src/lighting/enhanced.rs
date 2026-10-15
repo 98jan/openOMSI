@@ -193,7 +193,7 @@ pub(crate) fn lamp_sky_glow(scene: &Scene, cam_rel: Vec3) -> f32 {
 /// the sides of a narrow view - the meter read a moonless night while the picture was full
 /// of lit streets, and the eye's adaptation to that dark lifted every lamp's light to
 /// white (the modded maps' lamps, spaced and placed differently from the stock ones, most).
-pub(crate) fn view_lamp_light(lights: &[PointLight], ro: DVec3, cam_rel: Vec3, camera: &Camera, aspect: f32, ground: Option<f32>) -> f32 {
+pub(crate) fn view_lamp_light(lights: &[PointLight], ro: DVec3, cam_rel: Vec3, camera: &Camera, aspect: f32, ground: Option<f32>, seen: &dyn Fn(DVec3) -> f32) -> f32 {
     let ground = ground.filter(|g| g.is_finite() && *g < cam_rel.z - 0.3).unwrap_or(cam_rel.z - 1.6);
     let (f, r, u) = (camera.forward(), camera.right(), camera.up());
     let ty = (camera.fov_deg.to_radians() * 0.5).tan();
@@ -267,7 +267,7 @@ pub(crate) fn view_lamp_light(lights: &[PointLight], ro: DVec3, cam_rel: Vec3, c
     // floor is a moonless night's light, which every point has.
     let floor = 2e-6f32;
     let log_sum: f32 = per_point.iter().map(|v| (v + floor).ln()).sum();
-    (log_sum / per_point.len() as f32).exp() - floor + glare_veil(lights, ro, cam_rel, camera.forward())
+    (log_sum / per_point.len() as f32).exp() - floor + glare_veil(lights, ro, cam_rel, camera.forward(), seen)
 }
 
 /// The lamps' and headlights' glare in view as the illuminance whose mid grey has the same
@@ -277,9 +277,15 @@ pub(crate) fn view_lamp_light(lights: &[PointLight], ro: DVec3, cam_rel: Vec3, c
 /// off the line of sight squared (degrees), summed over the sources (CIE 146). Metered on
 /// the ground between the lamps alone, a village full of street lamps in view read as a
 /// moonless night, and the eye's adaptation to that dark lifted every lamp's light to white.
-pub(crate) fn glare_veil(lights: &[PointLight], ro: DVec3, cam_rel: Vec3, forward: Vec3) -> f32 {
+pub(crate) fn glare_veil(lights: &[PointLight], ro: DVec3, cam_rel: Vec3, forward: Vec3, seen: &dyn Fn(DVec3) -> f32) -> f32 {
+    let veil: f32 = glare_sources(lights, ro, cam_rel, forward).into_iter().map(|(at, v)| v * seen(at)).sum();
+    // (the luminance of a mid-grey surface, 18 %, under this illuminance)
+    veil * std::f32::consts::PI / 0.18 / 1e4
+}
+
+pub(crate) fn glare_sources(lights: &[PointLight], ro: DVec3, cam_rel: Vec3, forward: Vec3) -> Vec<(DVec3, f32)> {
     let f = forward.normalize_or(Vec3::Y);
-    let mut veil = 0.0f32; // cd/m²
+    let mut sources = Vec::new();
     for l in lights {
         if l.intensity <= 0.0 || l.mode == LightMode::Vanilla {
             continue;
@@ -312,10 +318,9 @@ pub(crate) fn glare_veil(lights: &[PointLight], ro: DVec3, cam_rel: Vec3, forwar
         // the lamp's illuminance at the eye (lux): its core's level, falling off with the
         // square of the distance as on the street
         let e_eye = LAMP_E * 1e4 * l.intensity * lum * k * core * core / d2;
-        veil += 10.0 * e_eye / theta.max(1.5).powi(2);
+        sources.push((l.position, 10.0 * e_eye / theta.max(1.5).powi(2)));
     }
-    // (the luminance of a mid-grey surface, 18 %, under this illuminance)
-    veil * std::f32::consts::PI / 0.18 / 1e4
+    sources
 }
 
 /// A headlamp's intensity towards `t` (unit, from the lamp): lamp_air.wgsl `headlamp`.

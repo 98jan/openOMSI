@@ -31,10 +31,17 @@ impl<T: Clone> OnceByKey<T> {
 
 impl World {
     pub fn open(root: &Path, global_cfg: &Path, date: i32) -> Result<World> {
-        let global = GlobalCfg::load(global_cfg)
+        let mut global = GlobalCfg::load(global_cfg)
             .with_context(|| format!("loading {}", global_cfg.display()))?;
         let map_dir = global.dir().to_path_buf();
         omsi_map::configure_grid(&global);
+        // a map from OMSI 1 lists no entry points: the entry objects of its tiles are its
+        // entry points, as Omsi.exe adds them when it opens a map (only then: the launcher's
+        // list shows the same ones, and a map that lists its own opens no slower)
+        if global.entry_points.is_empty() {
+            let added = global.add_object_entry_points();
+            log::info!("entry points: {added} from the tiles' entry objects");
+        }
         omsi_sim::people::LEFT_HAND.store(global.left_hand_traffic, std::sync::atomic::Ordering::Relaxed);
         log::info!(
             "tile size {:.1} m ({})",
@@ -74,8 +81,16 @@ impl World {
                 .and_then(|p| omsi_cfg::CfgFile::read(&p).ok())
             {
                 let cc = omsi_map::ailists::parse_chrono_cfg(&cfg);
-                if let Some(t) = cc.ticket_pack {
+                // the newest active scenario that names a ticket pack or money system has
+                // it, else the map's own: the currency changes from DM to Euro on the
+                // scenario's date (Omsi.exe 0x785f98 after "TMap.loadGlobalFile - 154":
+                // active chrono entries from the last back, +0x30 money system then
+                // +0x2c ticket pack, the map's own last, #2315)
+                if let Some(t) = cc.ticket_pack.filter(|t| !t.trim().is_empty()) {
                     ticket_pack = t;
+                }
+                if let Some(m) = cc.money_system.filter(|m| !m.trim().is_empty()) {
+                    global.money_system = m.trim().to_string();
                 }
             }
         }

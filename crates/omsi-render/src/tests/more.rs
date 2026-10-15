@@ -331,6 +331,40 @@ fn excavation_keeps_ordinary_depth_prefilling_without_a_gpu() {
 }
 
 #[test]
+fn an_excavation_is_prefilled_at_1x_only_on_apple_graphics() {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::NOOP;
+    descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
+    let instance = wgpu::Instance::new(descriptor);
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: true, render_scale: 1.0, ..Default::default() },
+    )).expect("noop renderer");
+    renderer.profiling = true;
+    let mut scene = renderer.new_scene();
+    let material = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [1.0; 4], true);
+    let mesh = renderer.add_mesh(&mut scene, &MeshData {
+        positions: vec![Vec3::new(-2.0, 4.0, -2.0), Vec3::new(2.0, 4.0, -2.0),
+            Vec3::new(2.0, 4.0, 2.0), Vec3::new(-2.0, 4.0, 2.0)],
+        normals: vec![-Vec3::Y; 4], uvs: vec![glam::Vec2::ZERO; 4],
+        indices: vec![0, 1, 2, 0, 2, 3], ranges: vec![(0, 6, 0)],
+        ..Default::default()
+    });
+    let floor = renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![material]);
+    scene.instances[floor].presurface = true;
+    let glass_material = renderer.add_material(&mut scene, None, AlphaMode::Blend, [1.0, 1.0, 1.0, 0.25], true);
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![glass_material]);
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![material]);
+    let camera = Camera { position: DVec3::ZERO, yaw: 0.0, pitch: 0.0, roll: 0.0,
+        fov_deg: 90.0, near: 0.1, far: 100.0 };
+    let lighting = Lighting { enhanced: true, shadows: false, fog_density: 0.0, ..Default::default() };
+    renderer.counts.borrow_mut().clear();
+    renderer.render_to_image(&mut scene, 16, 16, &camera, &lighting).unwrap();
+    let prefilled = renderer.counts.borrow().get("presurface prepass batches").is_some_and(|n| *n > 0.0);
+    assert_eq!(prefilled, cfg!(target_vendor = "apple"));
+}
+
+#[test]
 fn declared_transmap_ignores_slot_alpha() {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::NOOP;
@@ -570,6 +604,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("upscale", include_str!("../upscale.wgsl").to_string()),
         ("mip", include_str!("../mip.wgsl").to_string()),
         ("xr_ui", include_str!("../xr_ui.wgsl").to_string()),
+        ("lamp sight", include_str!("../lamp_sight.wgsl").to_string()),
         // Enhanced+: the scene's pass with its reflection targets, the ray tracing
         ("scene (Enhanced+)", scene_shader_source(false).replace("//RT ", "")),
         ("ray-traced lighting", rt::lighting_source()),
@@ -583,6 +618,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("FogLampParams", std::mem::size_of::<FogLampUniform>()),
         ("SnowParams", std::mem::size_of::<SnowUniform>()),
         ("PuddleParams", std::mem::size_of::<puddles::Uniform>()),
+        ("Sight", std::mem::size_of::<SightUniform>()),
         ("VehicleReflection", std::mem::size_of::<puddles::VehicleUniform>()),
         ("PointLight", std::mem::size_of::<GpuPointLight>()),
         ("Camera", std::mem::size_of::<CameraUniform>()),
@@ -670,37 +706,78 @@ fn shaders_validate_and_match_the_uniforms() {
     assert_eq!(checked.len(), sizes.len(), "structs checked: {checked:?}");
 }
 
-/// The scene module as the OpenGL backend gets it translates to GLSL ES 3.10 and desktop
-/// GLSL 4.30 for every entry point, with no `invariant gl_FragCoord` (rejected by AMD's
-/// desktop GL and by GLES) and no texture read through two samplers (#617, #610).
+/// The scene module as the OpenGL backend gets it translates to GLSL ES 3.10 and 3.20 and
+/// desktop GLSL 4.30 for every entry point, the reduced module of the basic pipelines too,
+/// with no `invariant gl_FragCoord` (rejected by AMD's desktop GL and by GLES), no texture
+/// read through two samplers and no constant array indexed by an element of another
+/// (#617, #610, #2009).
 #[test]
 fn the_scene_shader_translates_to_glsl() {
     use wgpu::naga;
     use wgpu::naga::back::glsl;
-    let src = scene_shader_source(true);
-    let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{}", e.emit_to_string(&src)));
-    let info = naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all())
-        .validate(&module)
-        .expect("validate");
-    let constants = [("ALPHA_TEST".into(), 0.0), ("TERRAIN_PAINT".into(), 1.0)]
-        .into_iter().collect();
-    let (module, info) =
-        naga::back::pipeline_constants::process_overrides(&module, &info, None, &constants).expect("overrides");
-    for version in [glsl::Version::Embedded { version: 310, is_webgl: false }, glsl::Version::Desktop(430)] {
-        let options = glsl::Options { version, ..Default::default() };
-        for entry in &module.entry_points {
-            let pipeline = glsl::PipelineOptions {
-                shader_stage: entry.stage,
-                entry_point: entry.name.clone(),
-                multiview: None,
-            };
-            let mut out = String::new();
-            glsl::Writer::new(&mut out, &module, &info, &options, &pipeline, Default::default())
-                .and_then(|mut w| w.write())
-                .unwrap_or_else(|e| panic!("{version:?} {}: {e:?}", entry.name));
-            assert!(!out.contains("invariant gl_FragCoord"), "{version:?} {}", entry.name);
+    for (basic, src) in [(false, scene_shader_source(true)), (true, lean_scene(scene_shader_source(true)))] {
+        let module = naga::front::wgsl::parse_str(&src).unwrap_or_else(|e| panic!("{}", e.emit_to_string(&src)));
+        let info = naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all())
+            .validate(&module)
+            .expect("validate");
+        let constants = [("ALPHA_TEST".into(), 0.0), ("TERRAIN_PAINT".into(), 1.0)]
+            .into_iter().collect();
+        let versions = [
+            glsl::Version::Embedded { version: 310, is_webgl: false },
+            glsl::Version::Embedded { version: 320, is_webgl: false },
+            glsl::Version::Desktop(430),
+        ];
+        for version in versions {
+            let options = glsl::Options { version, ..Default::default() };
+            for entry in &module.entry_points {
+                // (as wgpu's OpenGL backend does it: the module cut down to the one entry point)
+                let (module, info) = naga::back::pipeline_constants::process_overrides(
+                    &module, &info, Some((entry.stage, &entry.name)), &constants,
+                )
+                .expect("overrides");
+                let pipeline = glsl::PipelineOptions {
+                    shader_stage: entry.stage,
+                    entry_point: entry.name.clone(),
+                    multiview: None,
+                };
+                let mut out = String::new();
+                glsl::Writer::new(&mut out, &module, &info, &options, &pipeline, Default::default())
+                    .and_then(|mut w| w.write())
+                    .unwrap_or_else(|e| panic!("basic {basic} {version:?} {}: {e:?}", entry.name));
+                assert!(!out.contains("invariant gl_FragCoord"), "basic {basic} {version:?} {}", entry.name);
+                assert_eq!(const_array_in_const_array(&out), None, "basic {basic} {version:?} {}", entry.name);
+            }
         }
     }
+    // the check finds the lookup Adreno rejected (0.2.20's sun shadow kernel)
+    let old = "const int SHADOW_CORNERS[5] = int[5](5, 1, 7, 12, 15);\n\
+        const vec2 SHADOW_OFFSETS[16] = vec2[16](vec2(0.0));\n\
+        vec2 o_2 = ((SHADOW_OFFSETS[SHADOW_CORNERS[_e17]] * texel) * spread);";
+    assert_eq!(const_array_in_const_array(old).as_deref(), Some("SHADOW_OFFSETS[SHADOW_CORNERS["));
+    assert_eq!(const_array_in_const_array("const int A[2] = int[2](0, 1);\nfloat x = b[A[i]];"), None);
+}
+
+/// A GLSL constant array indexed by an element of another (`A[B[i]]`, both declared
+/// `const`), if any. Adreno's GLES compiler (Adreno 710 among them) takes the inner lookup
+/// for a constant it cannot fold and rejects the shader ("array field selection out of
+/// range '-1'"): 0.2.20's sun shadow kernel did this and the scene pipelines failed on
+/// OpenGL there (#2009).
+fn const_array_in_const_array(glsl: &str) -> Option<String> {
+    let names: Vec<&str> = glsl
+        .lines()
+        .filter_map(|l| {
+            let rest = l.trim_start().strip_prefix("const ")?;
+            let decl = rest.split('=').next()?;
+            let name = decl.split_whitespace().nth(1)?;
+            name.split_once('[').map(|(n, _)| n)
+        })
+        .collect();
+    names.iter().flat_map(|a| names.iter().map(move |b| format!("{a}[{b}["))).find(|p| {
+        // (the whole word: not `MY_A[` for `A[`)
+        glsl.match_indices(p.as_str()).any(|(at, _)| {
+            !glsl[..at].chars().next_back().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+    })
 }
 
 /// The corona and smoke module (its smoke branch with the fade into the ground among
@@ -749,6 +826,7 @@ fn the_scene_shader_reads_its_arrays_from_textures_without_vertex_storage() {
     for (path, versions) in [
         (ArrayPath::VertexTextures, [glsl::Version::Embedded { version: 310, is_webgl: false }, glsl::Version::Desktop(430)]),
         (ArrayPath::NoStorage, [glsl::Version::Embedded { version: 300, is_webgl: false }, glsl::Version::Desktop(330)]),
+        (ArrayPath::LightTextures, [glsl::Version::Embedded { version: 300, is_webgl: false }, glsl::Version::Desktop(330)]),
     ] {
         let src = scene_shader_for(true, path);
         assert!(!src.contains("models[") && !src.contains("inst_params[") && !src.contains("draw_list["));
@@ -768,12 +846,13 @@ fn the_scene_shader_reads_its_arrays_from_textures_without_vertex_storage() {
                     .and_then(|mut w| w.write())
                     .unwrap_or_else(|e| panic!("{path:?} {version:?} {}: {e:?}", entry.name));
                 let vertex = entry.stage == naga::ShaderStage::Vertex;
-                if vertex || path == ArrayPath::NoStorage {
+                if vertex || path.no_storage() {
                     assert!(!out.contains(" buffer "), "{path:?} {version:?} {}: a storage block", entry.name);
                 }
-                if path == ArrayPath::NoStorage {
+                if path.no_storage() {
                     assert!(!out.contains("textureGather"), "{path:?} {version:?} {}: textureGather", entry.name);
                 }
+                assert_eq!(const_array_in_const_array(&out), None, "{path:?} {version:?} {}", entry.name);
             }
         }
     }
@@ -795,6 +874,13 @@ fn the_scene_groups_fit_the_sixteen_texture_units_of_opengl() {
         let n = textures(&camera_layout_entries(path, sixteen)) + material;
         assert!(n <= 16, "{path:?}: {n} textures");
     }
+    let lamps = textures(&camera_layout_entries(ArrayPath::LightTextures, true)) + material;
+    assert_eq!(lamps, 18);
+    let sixteen = wgpu::DownlevelLimits { max_sampled_textures_per_pipeline_layout: 16, ..Default::default() };
+    let angle = wgpu::DownlevelLimits { max_sampled_textures_per_pipeline_layout: 32, ..Default::default() };
+    let gles = wgpu::Limits::downlevel_webgl2_defaults();
+    assert!(!crate::device_selection::lamps_fit(&sixteen, &gles));
+    assert!(crate::device_selection::lamps_fit(&angle, &gles));
     // (and nothing is left out where storage buffers carry the arrays)
     assert_eq!(textures(&camera_layout_entries(ArrayPath::Storage, false)) + material, 16);
     // the entry points that read a texture left out are the enhanced path's, the
@@ -815,7 +901,7 @@ fn the_scene_groups_fit_the_sixteen_texture_units_of_opengl() {
         out
     };
     let only_enhanced = |name: &str| name.contains("enhanced") || name.contains("probe") || name.contains("puddle") || name.contains("reflections") || name == "fs_sky_cube";
-    for path in [ArrayPath::VertexTextures, ArrayPath::NoStorage] {
+    for path in [ArrayPath::VertexTextures, ArrayPath::NoStorage, ArrayPath::LightTextures] {
         let scene = arrays_as_textures(&scene_shader_text(true), path);
         for src in [scene, sky_shader_source(), corona_shader_source()] {
             for name in left_out(&src) {
@@ -1099,7 +1185,7 @@ fn display_behind_a_pane_keeps_its_pixel_contrast() {
 }
 
 #[test]
-fn a_texture_the_card_cannot_make_is_drawn_plain_and_asks_for_fewer_textures() {
+fn a_texture_the_card_refuses_is_drawn_plain_without_cutting_the_texture_budget() {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::NOOP;
     descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
@@ -1109,7 +1195,6 @@ fn a_texture_the_card_cannot_make_is_drawn_plain_and_asks_for_fewer_textures() {
         RenderOptions { msaa: 1, ssao: false, render_scale: 1.0, ..Default::default() },
     )).expect("noop renderer");
     let _ = renderer.take_out_of_memory();
-    // (one the device refuses stands for one it has no memory for)
     let too_big = renderer.device.limits().max_texture_dimension_2d + 1;
     let desc = wgpu::TextureDescriptor {
         label: None,
@@ -1123,6 +1208,8 @@ fn a_texture_the_card_cannot_make_is_drawn_plain_and_asks_for_fewer_textures() {
     };
     let scope = renderer.device.push_error_scope(wgpu::ErrorFilter::Validation);
     assert!(crate::resources::try_create_texture(&renderer.device, &desc).is_none());
+    let empty = wgpu::TextureDescriptor { size: wgpu::Extent3d { width: 1, height: 0, depth_or_array_layers: 1 }, ..desc.clone() };
+    assert!(crate::resources::try_create_texture(&renderer.device, &empty).is_none());
     // the stand-in is a valid texture: a material made with it is no device error
     let mut scene = renderer.new_scene();
     let t = crate::resources::stand_in_texture(&renderer.device, &renderer.queue);
@@ -1131,6 +1218,65 @@ fn a_texture_the_card_cannot_make_is_drawn_plain_and_asks_for_fewer_textures() {
     let id = scene.textures.len() - 1;
     let _ = renderer.add_material(&mut scene, Some(id), AlphaMode::Opaque, [1.0; 4], true);
     assert!(pollster::block_on(scope.pop()).is_none(), "nothing invalid reached the device");
-    assert!(renderer.take_out_of_memory(), "the game is told to keep fewer textures");
-    assert!(!renderer.take_out_of_memory());
+    assert!(!renderer.take_out_of_memory(), "a refused texture is no shortage of graphics memory");
+}
+
+#[test]
+fn the_lamps_light_the_scene_from_textures_where_storage_buffers_carry_nothing() {
+    let storage = scene_shader_for(false, ArrayPath::Storage);
+    assert_eq!(storage, scene_shader_text(false));
+    assert_eq!(scene_shader_for(true, ArrayPath::Storage), scene_shader_text(true));
+    let lamps = scene_shader_for(true, ArrayPath::LightTextures);
+    let none = scene_shader_for(true, ArrayPath::NoStorage);
+    assert!(lamps.contains("@group(0) @binding(3) var lights_tex: texture_2d<f32>;"));
+    assert!(lamps.contains("@group(0) @binding(4) var grid_tex: texture_2d<u32>;"));
+    assert!(!lamps.contains("lights[") && !lamps.contains("grid[") && !lamps.contains("var<storage"));
+    assert!(none.contains("return 0xffffffffu;") && !none.contains("lights_tex"));
+    assert_eq!(lamps.matches("lights_at(").count(), none.matches("lights_at(").count());
+    assert_eq!(lamps.matches("grid_at(").count(), none.matches("grid_at(").count());
+    let entries = camera_layout_entries(ArrayPath::LightTextures, true);
+    for (binding, sample_type) in [(3, wgpu::TextureSampleType::Float { filterable: false }), (4, wgpu::TextureSampleType::Uint)] {
+        let e = entries.iter().find(|e| e.binding == binding).expect("lights binding");
+        assert_eq!(e.visibility, wgpu::ShaderStages::FRAGMENT);
+        assert!(matches!(e.ty, wgpu::BindingType::Texture { sample_type: t, .. } if t == sample_type));
+    }
+}
+
+#[test]
+#[ignore = "requires a graphics adapter; run with --ignored on a GPU host"]
+fn a_lamp_behind_a_wall_does_not_dazzle_and_one_in_view_still_does() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance,
+        None,
+        Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, shadow_size: 1024, fxaa: false, render_scale: 1.0, ..Default::default() },
+    ))
+    .expect("test renderer");
+    let mut scene = renderer.new_scene();
+    let wall = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [0.5, 0.5, 0.5, 1.0], true);
+    let mesh = renderer.add_mesh(
+        &mut scene,
+        &MeshData {
+            positions: vec![Vec3::new(-6.0, -5.0, -1.0), Vec3::new(6.0, -5.0, -1.0), Vec3::new(6.0, 5.0, -1.0), Vec3::new(-6.0, 5.0, -1.0)],
+            normals: vec![Vec3::Z; 4],
+            uvs: vec![glam::Vec2::splat(0.5); 4],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            ranges: vec![(0, 6, 0)],
+            one_sided: false,
+        },
+    );
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![wall]);
+    let (in_view, behind) = (DVec3::new(2.0, 0.0, 3.0), DVec3::new(-2.0, 0.0, -4.0));
+    scene.lights = [in_view, behind]
+        .map(|position| PointLight { position, radius: 20.0, core: 10.0, intensity: 1.0, ..Default::default() })
+        .to_vec();
+    let camera = Camera { position: DVec3::new(0.0, -0.105, 6.0), yaw: 0.0, pitch: -89.0, roll: 0.0, fov_deg: 90.0, near: 0.1, far: 100.0 };
+    let night = Lighting { enhanced: true, sun_dir: -Vec3::Z, sun_intensity: 0.0, night: 1.0, shadows: false, detail: false, fog_density: 0.0, ..Default::default() };
+    for _ in 0..2 {
+        renderer.render_to_image(&mut scene, 64, 64, &camera, &night).unwrap();
+    }
+    let sight = renderer.tone.lamp_sight.as_ref().expect("lamp sight");
+    assert!(sight.seen(in_view) > 0.9, "a lamp in plain view: {}", sight.seen(in_view));
+    assert!(sight.seen(behind) < 0.1, "a lamp behind the wall: {}", sight.seen(behind));
 }

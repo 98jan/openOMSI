@@ -254,6 +254,20 @@ impl Lane {
         }
     }
 
+    pub fn heading_ext(&self, s: f32) -> f32 {
+        if s < 0.0 {
+            self.start_heading()
+        } else if s > self.length() {
+            self.end_heading()
+        } else if self.points.len() < 2 {
+            self.headings.first().copied().unwrap_or(0.0)
+        } else {
+            let (i, t) = self.locate(s);
+            let (h0, h1) = (self.headings[i], self.headings[i + 1]);
+            h0 + wrap_deg(h1 - h0) * t
+        }
+    }
+
     /// Curvature at `s` (1/m, positive = right).
     pub fn curvature_at(&self, s: f32) -> f32 {
         if self.points.len() < 2 || self.curvature.len() != self.points.len() {

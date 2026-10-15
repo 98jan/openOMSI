@@ -227,11 +227,6 @@ impl ScheduleSim {
         }
         let today = departures.iter().filter(|d| d.mask & day_bit != 0 && d.mask & school_bit != 0).count();
         log::info!("timetable: {} lines, {} trips, {} tracks, {} departures today (weekday {weekday}, holiday {holiday}, school holidays {school_holiday}; {skipped_tours} tours not today), {} depot groups", data.lines.len(), data.trips.len(), data.tracks.len(), today, depots.len());
-        let served = data
-            .trips
-            .iter()
-            .flat_map(|t| trip_stations(t).into_iter().skip(1))
-            .collect();
         let mut s = ScheduleSim {
             data,
             departures,
@@ -258,8 +253,6 @@ impl ScheduleSim {
             lan_tours: HashSet::new(),
             last_tod: 0.0,
             deactivated,
-            served,
-            shared_stand: HashMap::new(),
             startup: Default::default(),
             later_layover: Default::default(),
             tour_next,
@@ -437,7 +430,7 @@ impl ScheduleSim {
             *set = set.iter().map(|i| to.get(i).copied().unwrap_or(*i)).collect();
         };
         moved(&mut self.awaiting);
-        moved(&mut self.later_layover);
+        self.later_layover = self.later_layover.iter().map(|(i, t)| (to.get(i).copied().unwrap_or(*i), *t)).collect();
         moved(&mut self.startup);
         self.retry_at = self.retry_at.iter().map(|(i, t)| (to.get(i).copied().unwrap_or(*i), *t)).collect();
         for (&from, &j) in &to {
@@ -471,7 +464,7 @@ impl ScheduleSim {
             .iter()
             .chain(self.waiting.iter())
             .chain(self.awaiting.iter())
-            .chain(self.later_layover.iter())
+            .chain(self.later_layover.keys())
             .chain(self.car_departure.values())
             .copied()
             .collect();

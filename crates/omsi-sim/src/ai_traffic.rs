@@ -139,6 +139,7 @@ pub struct TrafficSim {
     pub controller_of_object: HashMap<i64, usize>,
     /// Coupled vehicle types by file.
     pub trailer_types: HashMap<std::path::PathBuf, Option<Arc<VehicleType>>>,
+    pub coupled_chains: HashMap<(std::path::PathBuf, bool, bool), Vec<(Arc<VehicleType>, bool)>>,
     pub root: std::path::PathBuf,
     /// Car-frames spent waiting for a red light (statistics).
     pub held_at_red: usize,

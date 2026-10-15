@@ -1,6 +1,6 @@
 # Building from source
 
-Releases (betas of every commit, and the stable releases) are on the
+Releases (betas and stable releases) are on the
 [Releases](https://github.com/openOMSI-org/openOMSI/releases) page; build from source only to
 work on openOMSI itself.
 

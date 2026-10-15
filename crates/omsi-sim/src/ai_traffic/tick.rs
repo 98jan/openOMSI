@@ -370,16 +370,21 @@ impl TrafficSim {
                 }
             }
         }
-        for (pos, heading) in askers {
+        // the lights ahead within their approach distance, asked as the indicator says
+        // (`indicated_requests`, #2532)
+        let blinkers: Vec<u8> = player.iter().map(|_| self.player_blinker).chain(self.others.iter().map(|(id, _)| self.other_blinkers.get(id).copied().unwrap_or(0))).collect();
+        for ((pos, heading), blinker) in askers.into_iter().zip(blinkers) {
+            let mut near: Vec<(usize, usize, i32, f32)> = Vec::new();
             for (l, d) in self.lanes_ahead_of(pos, heading, reach) {
                 if let Some((ci, li)) = self.net.lanes[l].traffic_light {
-                    if let Some(ctl) = self.lights.get_mut(ci) {
-                        if d <= ctl.approach_dist(li) {
-                            if let Some(r) = ctl.request.get_mut(li) {
-                                *r = true;
-                            }
-                        }
+                    if self.lights.get(ci).is_some_and(|ctl| d <= ctl.approach_dist(li)) {
+                        near.push((ci, li, self.net.lanes[l].turn, d));
                     }
+                }
+            }
+            for (ci, li) in light_paths::indicated_requests(&near, blinker) {
+                if let Some(r) = self.lights.get_mut(ci).and_then(|c| c.request.get_mut(li)) {
+                    *r = true;
                 }
             }
         }

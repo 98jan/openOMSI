@@ -264,6 +264,9 @@ impl ScheduleSim {
             .collect();
         for i in due {
             self.departures[i].spawned = true;
+            // (a layover departure whose stand was taken comes now: kept in that set it
+            // counted as busy at midnight, was never made ready again and stopped running)
+            self.later_layover.remove(&i);
             // the tour's bus is still on its way here: it takes the trip on when it arrives
             if self.tour_prev[i].and_then(|k| self.tour_bus(k, traffic)).is_some() {
                 self.awaiting.insert(i);
@@ -274,71 +277,51 @@ impl ScheduleSim {
                 self.startup.insert(i);
             }
         }
-        // Buses on their layover: a trip that leaves within the next quarter of an hour,
-        // whose tour's previous trip is already over, stands at its first stop with the
-        // doors shut until its departure. Without this a map with one bus per line
-        // showed no bus at all for most of the hour - it only existed while driving.
+        // Buses on their layover: a tour under way has its bus. A trip whose tour's previous
+        // trip is over, with no bus of the tour on the road (the map just loaded, the bus
+        // left the loaded tiles), stands at its first stop with the doors shut until its
+        // departure, whether other lines stop there or not - for as long as a bus
+        // that drove the previous trip would wait there (TOUR_LAYOVER_MAX). The first trip
+        // of a tour has no bus before it leaves: Omsi.exe 0x73bc00 (called with no lead by
+        // the loader 0x709274 and the thread 0x6fdef4) puts a tour's bus out only from its
+        // first trip's departure to its last trip's end, and 0x73a700 places it on the last
+        // trip that has begun. Buses appeared a quarter of an hour early at their first
+        // stop (#2595), and at a stop other lines use only a minute before leaving (#2593).
         let mut early: Vec<usize> = Vec::new();
-        // departures are sorted by time: only the ones in the next quarter of an hour
+        // departures are sorted by time: only the ones within a layover from now
         let start = self.departures.partition_point(|d| d.time <= tod);
         for i in start..self.departures.len() {
             let d = &self.departures[i];
-            if d.time > tod + LAYOVER {
+            if d.time > tod + TOUR_LAYOVER_MAX {
                 break;
             }
-            if d.spawned || self.later_layover.contains(&i) || !self.runs(i) {
+            if d.spawned || self.later_layover.get(&i).is_some_and(|&t| day_time < t) || !self.runs(i) {
                 continue;
             }
-            // only a trip with stops has a first stop to wait at: a flight (TXL.ttl, every
-            // ten minutes) would take off a quarter of an hour early
-            let Some(first) = trip_stations(&self.data.trips[d.trip]).first().copied() else {
+            // (the previous trip of the tour only when it runs today: a tour's trips on other
+            // days are no trip before this one, which is then its tour's first)
+            let Some(k) = self.tour_prev[i].filter(|&k| self.runs(k)) else {
                 continue;
             };
-            if d.time > tod + LAYOVER_SHARED {
-                let shared = match self.shared_stand.get(&first) {
-                    Some(&v) => v,
-                    None => {
-                        let positions = world.object_positions();
-                        let Some(&(here, _)) = positions.get(&first) else {
-                            continue;
-                        };
-                        let v = self.served.contains(&first)
-                            || self.served.iter().any(|sid| {
-                            positions
-                                .get(sid)
-                                .map(|p| (p.0 - here).length() < 30.0)
-                                .unwrap_or(false)
-                        });
-                        if omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set() {
-                            let nearest = self
-                                .served
-                                .iter()
-                                .filter_map(|sid| {
-                                    positions.get(sid).map(|p| ((p.0 - here).length(), *sid))
-                                })
-                                .fold((f64::MAX, 0), |a, b| if b.0 < a.0 { b } else { a });
-                            log::info!("layover stand {first} at ({:.0}, {:.0}): shared {v}, nearest served station {} at {:.0} m", here.x, here.y, nearest.1, nearest.0);
-                        }
-                        self.shared_stand.insert(first, v);
-                        v
-                    }
-                };
-                if shared {
-                    continue;
-                }
+            // only a trip with stops has a first stop to wait at: a flight (TXL.ttl, every
+            // ten minutes) would take off early
+            if !trip_has_stations(&self.data.trips[d.trip]) {
+                continue;
             }
-            let prev_running = self.tour_prev[i]
-                .map(|k| {
-                    self.dep_time(k) + self.times_of(k).duration >= day_time
-                        || self.tour_bus(k, traffic).is_some()
-                })
-                .unwrap_or(false);
+            let prev_end = self.dep_time(k) + self.times_of(k).duration;
+            // only a break the bus that drove the previous trip waits out (`may_take_on`):
+            // after a longer one that bus has gone, and an identical one stood there again
+            if self.dep_time(i) - prev_end >= TOUR_LAYOVER_MAX {
+                continue;
+            }
+            let prev_running = prev_end >= day_time || self.tour_bus(k, traffic).is_some();
             if !prev_running {
                 early.push(i);
             }
         }
         for i in early {
             self.departures[i].spawned = true;
+            self.later_layover.remove(&i);
             self.pending.push_back(i);
             if loading {
                 self.startup.insert(i);
@@ -577,11 +560,13 @@ impl ScheduleSim {
         });
     }
 
-    /// Layover departure `i` found its stand taken: it comes at its departure time.
-    pub fn stand_taken(&mut self, i: usize) {
+    /// Layover departure `i` found its stand taken at `day_time`: it tries again in a while,
+    /// and comes at its departure time at the latest. Tried only once, a busy terminus had
+    /// its buses only at their departure times (#2593).
+    pub fn stand_taken(&mut self, i: usize, day_time: f64) {
         self.departures[i].spawned = false;
         self.startup.remove(&i);
-        self.later_layover.insert(i);
+        self.later_layover.insert(i, day_time + STAND_RETRY);
     }
 
     /// Departure `i` was queued while the map loads (its bus may appear in view).

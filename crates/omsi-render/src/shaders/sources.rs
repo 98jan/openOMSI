@@ -15,7 +15,7 @@ pub(crate) fn scene_shader_source(gl: bool) -> String {
 
 pub(crate) fn scene_shader_for(gl: bool, path: ArrayPath) -> String {
     let src = arrays_as_textures(&scene_shader_text(gl), path);
-    if gl && path == ArrayPath::NoStorage { compares_without_gather(&src) } else { src }
+    if gl && path.no_storage() { compares_without_gather(&src) } else { src }
 }
 
 /// The sun's shadow tent with each gather of four depth comparisons taken as four single
@@ -38,7 +38,7 @@ pub(crate) fn compares_without_gather(src: &str) -> String {
 
 /// The scene module with its arrays read as `path` has them (see `ArrayPath`): each
 /// storage array the device cannot read becomes a texture and its `name[i]` a function
-/// that loads texel `i`; without storage at all the point lights are none.
+/// that loads texel `i`; without storage at all the point lights are textures or none.
 pub(crate) fn arrays_as_textures(src: &str, path: ArrayPath) -> String {
     if path == ArrayPath::Storage {
         return src.to_string();
@@ -59,6 +59,13 @@ pub(crate) fn arrays_as_textures(src: &str, path: ArrayPath) -> String {
     swap("var<storage, read> models: array<vec4<f32>>;", load("models", "f32", ""), "models", "models_at");
     swap("var<storage, read> inst_params: array<vec4<f32>>;", load("inst_params", "f32", ""), "inst_params", "inst_params_at");
     swap("var<storage, read> draw_list: array<u32>;", load("draw_list", "u32", ".x"), "draw_list", "draw_list_at");
+    if path == ArrayPath::LightTextures {
+        let lights = format!(
+            "var lights_tex: texture_2d<f32>;\nfn lights_texel(t: u32) -> vec4<f32> {{ return textureLoad(lights_tex, vec2<u32>(t % {w}u, t / {w}u), 0); }}\nfn lights_at(i: u32) -> PointLight {{ return PointLight(lights_texel(i * 4u), lights_texel(i * 4u + 1u), lights_texel(i * 4u + 2u), lights_texel(i * 4u + 3u)); }}"
+        );
+        swap("var<storage, read> lights: array<PointLight>;", lights, "lights", "lights_at");
+        swap("var<storage, read> grid: array<u32>;", load("grid", "u32", ".x"), "grid", "grid_at");
+    }
     if path == ArrayPath::NoStorage {
         swap(
             "@group(0) @binding(3) var<storage, read> lights: array<PointLight>;",
@@ -183,7 +190,7 @@ pub(crate) fn snow_shader_source() -> String {
         include_str!("../lamp_air.wgsl"),
     ]
     .join("\n");
-    if array_path() == ArrayPath::NoStorage {
+    if array_path().no_storage() {
         let src = src
             .replace("@group(0) @binding(3) var<storage, read> lights: array<PointLight>;", "fn lights_at(i: u32) -> PointLight { return PointLight(vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0)); }")
             .replace("@group(0) @binding(4) var<storage, read> grid: array<u32>;", "fn grid_at(i: u32) -> u32 { return 0xffffffffu; }");
@@ -250,7 +257,7 @@ pub(crate) fn corona_shader_source() -> String {
         src
     };
     // (without storage buffers the precipitation has no lamps to be lit by)
-    if array_path() == ArrayPath::NoStorage {
+    if array_path().no_storage() {
         let src = src
             .replace("@group(0) @binding(3) var<storage, read> lights: array<PointLight>;", "fn lights_at(i: u32) -> PointLight { return PointLight(vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0)); }")
             .replace("@group(0) @binding(4) var<storage, read> grid: array<u32>;", "fn grid_at(i: u32) -> u32 { return 0xffffffffu; }");
