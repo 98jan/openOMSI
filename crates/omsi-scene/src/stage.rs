@@ -145,6 +145,8 @@ impl World {
             }
         }
         self.data.update(|d| Arc::make_mut(&mut d.map).chrono_dirs = new);
+        // (the parking lists may come from another scenario now: read again when asked)
+        self.parklist.lock().clear();
         // (the index is built again when next asked; the simulation keeps the old one's stops
         // until then)
         *self.index.lock() = None;

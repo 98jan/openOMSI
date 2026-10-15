@@ -78,8 +78,8 @@ impl World {
             let filename = if index == 0 { "parklist_p.txt".to_string() } else { format!("parklist_p_{index}.txt") };
             let text = parklist_file(&self.map_dir, &chrono_dirs, &filename)
                 .and_then(|p| omsi_cfg::vfs::read(&p).ok())
-                    .map(|b| omsi_cfg::decode_text(&b))
-                    .unwrap_or_default();
+                .map(|b| omsi_cfg::decode_text(&b))
+                .unwrap_or_default();
             let list: Vec<String> = text
                 .lines()
                 .map(|l| l.trim().to_string())

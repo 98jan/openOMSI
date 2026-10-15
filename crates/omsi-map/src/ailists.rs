@@ -125,13 +125,14 @@ impl AiLists {
                         };
                         g.vehicles.push(AiVehicleEntry { file, weight: w, number: None, registration: None });
                     }
-                    a.put_group(g);
+                    a.groups.push(g);
                     depot = None;
                 }
                 "aigroup_depot" => {
                     let name = r.str().to_string();
                     let hof = r.str().to_string();
-                    depot = Some(a.put_group(AiGroup { name, hof: Some(hof), is_depot: true, ..Default::default() }));
+                    a.groups.push(AiGroup { name, hof: Some(hof), is_depot: true, ..Default::default() });
+                    depot = Some(a.groups.len() - 1);
                 }
                 "aigroup_depot_typgroup" | "aigroup_depot_typgroup_2" => {
                     let file = r.str().to_string();
@@ -175,27 +176,18 @@ impl AiLists {
         a
     }
 
-    /// A group header: a group of a name already read (any kind, any case) starts over in
-    /// its place with the new depot line and list, else the group is added. Omsi.exe
-    /// 0x780a58 looks the name up in the groups it has and empties that group's list - a
-    /// chrono's `ailists_#upd.cfg` lists a group's whole new set of cars and buses (#2315).
-    fn put_group(&mut self, g: AiGroup) -> usize {
-        match self.groups.iter().position(|x| x.name.trim().eq_ignore_ascii_case(g.name.trim())) {
-            Some(i) => {
-                self.groups[i] = g;
-                i
-            }
-            None => {
-                self.groups.push(g);
-                self.groups.len() - 1
-            }
-        }
-    }
-
-    /// The groups of a later file (a chrono's update) read on top of these.
+    /// The groups of a later file (a chrono's update) read on top of these: a group of a
+    /// name these have (any case, the same kind - car group or depot) starts over in its
+    /// place with the update's depot line and list, else it is added. Omsi.exe 0x780a58
+    /// looks the name up in the groups it has and empties that group's list - a chrono's
+    /// `ailists_#upd.cfg` lists a group's whole new set of cars and buses (#2315).
     pub fn update(&mut self, later: AiLists) {
         for g in later.groups {
-            self.put_group(g);
+            let same = |x: &AiGroup| x.is_depot == g.is_depot && x.name.trim().eq_ignore_ascii_case(g.name.trim());
+            match self.groups.iter().position(same) {
+                Some(i) => self.groups[i] = g,
+                None => self.groups.push(g),
+            }
         }
     }
 }
@@ -365,13 +357,20 @@ pub fn ailists_with_chrono(map_dir: &Path, chrono_dirs: &[PathBuf]) -> AiLists {
             files.push(update);
         }
     }
-    let mut ailists = AiLists::default();
-    for (i, f) in files.iter().rev().enumerate() {
-        let Ok(l) = AiLists::load(f) else { continue };
-        if i == 0 {
-            ailists = l;
-        } else {
-            ailists.update(l);
+    let mut files = files.into_iter().rev();
+    let map_list = omsi_cfg::resolve_path(map_dir, "ailists.cfg");
+    let mut ailists = match files.next() {
+        Some(base) => AiLists::load(&base).unwrap_or_else(|e| {
+            // (a scenario's list that cannot be read left the map without any traffic)
+            log::warn!("AI lists: {} cannot be read ({e}), the map's own list is used", base.display());
+            if base != map_list { AiLists::load(&map_list).unwrap_or_default() } else { AiLists::default() }
+        }),
+        None => AiLists::default(),
+    };
+    for f in files {
+        match AiLists::load(&f) {
+            Ok(l) => ailists.update(l),
+            Err(e) => log::warn!("AI lists: the update {} cannot be read ({e})", f.display()),
         }
     }
     ailists
@@ -566,6 +565,19 @@ mod chrono_list_tests {
         assert_eq!(a.groups[2].hof.as_deref(), Some("Grundorf 2002"));
         assert_eq!(a.groups[2].typgroups.len(), 1);
         assert_eq!(a.groups[2].typgroups[0].file, "new\\c2.bus");
+    }
+
+    /// Within one file two groups of a name stay two groups, and across files a car group
+    /// never replaces a depot of its name (nor a depot a car group).
+    #[test]
+    fn groups_replace_only_across_files_and_of_their_kind() {
+        let twice = "[aigroup_2]\nCars\n\na.bus\n[end]\n[aigroup_2]\nCars\n\nb.bus\n[end]\n";
+        assert_eq!(AiLists::parse(&CfgFile::from_str("ailists.cfg", twice)).groups.len(), 2);
+        let mut a = AiLists::parse(&CfgFile::from_str("ailists.cfg", MAP));
+        a.update(AiLists::parse(&CfgFile::from_str("ailists_#upd.cfg", "[aigroup_2]\nBusses\n\nnew\\car.bus\n[end]\n")));
+        assert_eq!(a.groups.len(), 4);
+        assert!(a.groups[2].is_depot && a.groups[2].typgroups.len() == 1);
+        assert!(!a.groups[3].is_depot && a.groups[3].name == "Busses");
     }
 
     /// A type group after a car group belongs to no depot (the original logs it and skips it).
