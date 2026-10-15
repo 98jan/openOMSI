@@ -25,12 +25,15 @@ pub trait LanHost {
     /// makes its vehicles (fonts, text textures, coupled rear sections), on `clock`; and
     /// the depot file its destination display is set from. Set the owner-only script texture
     /// and sound flags on its host before running its init scripts.
+    /// `fonts_at`: a bus fetched by its
+    /// content (`mods::vehicles`) writes its displays with the fonts of its own mount.
     fn remote_vehicle(
         &self,
         cfg: &LanConfig,
         ty: Arc<omsi_sim::VehicleType>,
         scheme: Option<usize>,
         clock: omsi_sim::SimClock,
+        fonts_at: Option<&std::path::Path>,
     ) -> (omsi_sim::VehicleInstance, Option<Arc<omsi_vehicle::Hof>>);
     /// Set a vehicle's line and destination displays as the timetable sets an AI bus's.
     fn set_destination(&self, v: &mut omsi_sim::VehicleInstance, hof: Option<&omsi_vehicle::Hof>, line: &str, destination: &str);

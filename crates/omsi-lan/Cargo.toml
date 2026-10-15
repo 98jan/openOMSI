@@ -40,5 +40,7 @@ libc.workspace = true
 windows = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography"] }
 
 [dev-dependencies]
-# `mods::quarantine`'s scan of a mod archive, read in place as the game reads one
+# the tests: the box's picture, and `mods::quarantine`'s scan of a mod archive, read in place
+# as the game reads one
+image.workspace = true
 zip.workspace = true

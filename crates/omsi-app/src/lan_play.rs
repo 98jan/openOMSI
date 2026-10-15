@@ -109,8 +109,14 @@ pub(crate) fn name_tags(
             _ => String::new(),
         };
         if d > 25.0 {
-            let dist = crate::units::Units::now().distance(d as f64);
+            let dist = crate::units::Units::now().distance(d);
             sub = if sub.is_empty() { dist } else { format!("{sub} | {dist}") };
+        }
+        // (a box standing for their bus says how far the bus has come; another bus standing
+        // for it says it is another)
+        if r.stand_in || r.fallback {
+            let state = omsi_ui::tr(&omsi_lan::game::placeholder_state(r)).into_owned();
+            sub = if sub.is_empty() { state } else { format!("{state} | {sub}") };
         }
         if radio {
             sub = if sub.is_empty() { omsi_ui::tr("radio").into_owned() } else { format!("{} | {sub}", omsi_ui::tr("radio")) };

@@ -3642,6 +3642,7 @@ dependencies = [
  "flate2",
  "glam",
  "hashbrown 0.17.1",
+ "image",
  "libc",
  "log",
  "omsi-cfg",
