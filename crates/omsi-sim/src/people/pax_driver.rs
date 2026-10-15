@@ -156,13 +156,8 @@ impl PeopleSim {
         // the game plays the driver in `auto` boarding (a setting; OMSI has no such mode)
         let auto = self.boarding.eq_ignore_ascii_case("auto");
         let id = p.ticket_id as usize;
-        // (the pack's ticket, or what a plugin made of it: `price` is the pack's value
-        // unless a plugin changed it)
-        let name = match &p.ticket_name {
-            Some(n) => n.clone(),
-            None => self.tickets.as_ref().and_then(|t| t.tickets.get(id.saturating_sub(1))).map(|t| t.name.clone()).unwrap_or_default(),
-        };
-        let value = p.price;
+        // (the pack's ticket, or what a plugin made of it)
+        let (name, value) = self.ticket_request(&p);
         let tol = self.money.as_ref().map(|m| m.smallest_value()).unwrap_or(0.01) / 2.0;
         let owed = p.paid - p.price;
         // the change on the tray (sub_7e8900): enough of it, too much, too many coins
@@ -203,7 +198,7 @@ impl PeopleSim {
                 return;
             }
             let k = 1 + self.rand() % 2;
-            self.say_ticket(i, id, k, p.ticket_voice.as_deref());
+            self.say_ticket(i, id, k, p.plugin().voice.as_deref());
             self.ticket_requests += 1;
             self.request = Some((name, value));
             self.desk_busy = Some(self.people[i].id);

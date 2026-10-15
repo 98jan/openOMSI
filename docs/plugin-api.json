@@ -2401,7 +2401,7 @@
       "name": "people.set_ticket",
       "group": "people",
       "since": "0.3",
-      "doc": "Changes the ticket of a passenger boarding the player's bus (the `passenger_ticket` event names them): `{kind, ticket, name, price, voice, tag}`, each optional. `kind` (`\"none\"`: a pass, `\"stamp\"`, `\"buy\"`) only until they are in the bus; `ticket` another ticket of the pack (from 1, its name and price with it), `name` and `price` what they ask for and pay, `voice` a line of their voice folder said instead of `Ticket_<n>_<k>` (`\"Zone_4\"`: `Zone_4.wav`; where it is missing the usual line, `\"\"` back to it) - until they have asked at the cash desk. `tag` is a text of the plugin's own kept with the person (`people.get`), at any time. `false` and the reason when nothing changed.",
+      "doc": "Changes the ticket of a passenger boarding the player's bus (the `passenger_ticket` event names them): `{kind, ticket, name, price, voice, tag}`, each optional. `kind` (`\"none\"`: a pass, `\"stamp\"`, `\"buy\"`) only until they are in the bus; `ticket` another ticket of the pack (from 1, its name and price with it; a buyer always has one: 0 is refused for them, and somebody made a buyer without `ticket` gets the pack's ticket for their age), `name` and `price` what they ask for and pay, `voice` a line of their voice folder said instead of `Ticket_<n>_<k>` (`\"Zone_4\"`: `Zone_4.wav`; where it is missing the usual line, `\"\"` back to it) - until they have asked at the cash desk. `tag` is a text of the plugin's own kept with the person (`people.get`), at any time. `false` and the reason when nothing changed.",
       "params": [
         {
           "name": "id",
@@ -4412,7 +4412,7 @@
       "args": [
         "passenger"
       ],
-      "doc": "Somebody boarding the player's bus has decided about their ticket, on their way to the door - they wait in the doorway for this frame, so it can still change before they get in and ask for it at the cash desk: `{id, age, kind, ticket, name, price, stop, stop_name, destination, stop_number, destination_number}` - `kind` `\"none\"`, `\"stamp\"` or `\"buy\"`, `ticket` the ticket pack's (from 1; 0 none fits their age) with its `name` and `price`, `stop` the map object id they board at and `stop_name` its timetable name, `destination` the stop they ride to, and where both are in the duty's trip (from 1, `nil` where the trip does not have them). `people.set_ticket(id, ...)` changes it.",
+      "doc": "Somebody boarding the player's bus has decided about their ticket, on their way to the door - they wait in the doorway for this frame, so it can still change before they get in and ask for it at the cash desk: `{id, age, kind, ticket, name, price, stop, stop_name, destination, stop_number, destination_number}` - `kind` `\"none\"`, `\"stamp\"` or `\"buy\"`, `ticket` the ticket pack's (from 1; 0 none fits their age - the desk then asks for the pack's first) with the `name` and `price` they will ask for, `stop` the map object id they board at and `stop_name` its timetable name, `destination` the stop they ride to, and where both are in the duty's trip (from 1, `nil` where the trip does not have them). `people.set_ticket(id, ...)` changes it.",
       "since": "0.3"
     },
     {

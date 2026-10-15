@@ -293,20 +293,12 @@ pub(crate) fn people(app: &App) -> Vec<op::Person> {
                 age: p.age,
                 model: p.ty.def.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
                 voice: p.ty.def.voice.trim().to_string(),
-                stop_name: pax.and_then(|x| x.stop).and_then(|s| stop_name(h, s)),
+                stop_name: pax.and_then(|x| x.stop).and_then(|s| h.stop_name(s)),
                 pax_ticket: ticket,
-                tag: pax.and_then(|x| x.ticket_tag.clone()),
+                tag: pax.and_then(|x| x.plugin().tag.clone()),
             }
         })
         .collect()
-}
-
-/// A stop's name as the timetable has it (the passengers' destinations are made of these),
-/// else the object's.
-fn stop_name(h: &PeopleSim, stop: i64) -> Option<String> {
-    let timetable = h.stop_names.as_ref().and_then(|n| n.get(&stop)).cloned();
-    let own = || h.stops.get(&stop).map(|s| if s.alias.trim().is_empty() { s.name.clone() } else { s.alias.clone() });
-    timetable.or_else(own).map(|n| n.trim().to_string())
 }
 
 /// A passenger's ticket now: the pack's, or what a plugin made of it.
@@ -316,17 +308,20 @@ fn pax_ticket(h: &PeopleSim, x: &Pax) -> op::PaxTicket {
         TICKET_STAMP => op::TicketKind::Stamp,
         _ => op::TicketKind::None,
     };
-    let pack = h.tickets.as_ref().and_then(|t| t.tickets.get((x.ticket_id as usize).wrapping_sub(1))).map(|t| t.name.trim().to_string());
+    // (what the desk asks for - for somebody with no ticket of the pack who does not buy,
+    // nothing)
+    let pl = x.plugin();
+    let (name, price) = if x.ticket_id > 0 || x.ticket == TICKET_BUY || pl.by.is_some() { h.ticket_request(x) } else { (String::new(), x.price) };
     // (as `PeopleSim::set_ticket` decides: on the way to the door, or in the bus before the
     // request at the desk)
     let open = (x.inside.is_none() && x.task == Task::WalkingToBus) || (x.inside.is_some() && x.task == Task::InBusToPlace && x.ticket == TICKET_BUY && x.sub < 4);
     op::PaxTicket {
         kind,
         index: x.ticket_id,
-        name: x.ticket_name.clone().or(pack).unwrap_or_default(),
-        price: x.price,
-        voice: x.ticket_voice.clone(),
-        by: x.ticket_by.clone(),
+        name: name.trim().to_string(),
+        price,
+        voice: pl.voice.clone(),
+        by: pl.by.clone(),
         asked: x.inside.is_some() && !open,
     }
 }

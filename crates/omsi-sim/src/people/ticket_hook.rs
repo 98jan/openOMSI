@@ -7,9 +7,14 @@
 use super::*;
 
 /// The longest a passenger waits - in the doorway, and at the cash desk - for the plugins
-/// to have their say (s): the report reaches them in the next frame, so this is only felt
-/// by somebody who decided right at an open door.
-pub const TICKET_HOLD: f64 = 1.0;
+/// to have their say (s of game time). The wait normally ends when the plugins have heard
+/// of them, in the next frame (`ticket_asks_heard`); this only bounds it for a frame that
+/// never comes (the plugins gone), and leaves room for heavy time acceleration.
+pub const TICKET_HOLD: f64 = 5.0;
+
+/// The most passengers reported between two plugin frames (the rest are not reported, and
+/// do not wait).
+const MAX_ASKS: usize = 256;
 
 /// The longest text a plugin may give a passenger (a name, a voice line, its tag).
 const MAX_TEXT: usize = 256;
@@ -22,8 +27,8 @@ pub struct TicketAsk {
     pub age: f32,
     /// `TICKET_NONE` (nothing to do), `TICKET_STAMP` (a ticket to validate) or `TICKET_BUY`.
     pub kind: u8,
-    /// The ticket of the pack they ask for (from 1; 0: none fits their age) and its name
-    /// and price.
+    /// The ticket of the pack (from 1; 0: none fits their age) and the name and price they
+    /// ask for at the desk (for 0 the pack's first ticket's, as in OMSI).
     pub ticket: u8,
     pub name: String,
     pub price: f32,
@@ -42,7 +47,8 @@ pub struct TicketAsk {
 pub struct TicketChange {
     /// `TICKET_NONE`, `TICKET_STAMP` or `TICKET_BUY`: only before they are in the bus.
     pub kind: Option<u8>,
-    /// Another ticket of the pack (from 1; 0: none): its name and price with it.
+    /// Another ticket of the pack (from 1): its name and price with it. A buyer always has
+    /// one (0 is refused for them).
     pub ticket: Option<u8>,
     /// The name and price asked for, instead of the pack's.
     pub name: Option<String>,
@@ -57,6 +63,40 @@ pub struct TicketChange {
 impl TicketChange {
     fn changes_ticket(&self) -> bool {
         self.kind.is_some() || self.ticket.is_some() || self.name.is_some() || self.price.is_some() || self.voice.is_some()
+    }
+}
+
+/// What a plugin made of a passenger's ticket (`Pax::plugin`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PluginTicket {
+    /// The name asked for instead of the pack's (the price is then `Pax::price`).
+    pub name: Option<String>,
+    /// The voice line said at the desk instead of `Ticket_<n>_<k>`.
+    pub voice: Option<String>,
+    /// The plugin that changed the ticket: its name and `Pax::price` are asked for.
+    pub by: Option<String>,
+    /// A text of the plugin's own, kept with the passenger (a new ticket keeps it).
+    pub tag: Option<String>,
+}
+
+/// A passenger nobody changed.
+static NO_PLUGIN: PluginTicket = PluginTicket { name: None, voice: None, by: None, tag: None };
+
+impl Pax {
+    /// What a plugin made of the ticket (nothing for most passengers).
+    pub fn plugin(&self) -> &PluginTicket {
+        self.plugin.as_deref().unwrap_or(&NO_PLUGIN)
+    }
+
+    fn plugin_mut(&mut self) -> &mut PluginTicket {
+        self.plugin.get_or_insert_with(Default::default)
+    }
+
+    /// Back to no box once nothing is left in it.
+    fn tidy_plugin(&mut self) {
+        if self.plugin.as_deref().is_some_and(|p| *p == NO_PLUGIN) {
+            self.plugin = None;
+        }
     }
 }
 
@@ -75,32 +115,53 @@ impl PeopleSim {
         p.ticket = kind;
         p.ticket_id = id;
         p.price = price;
-        p.ticket_name = None;
-        p.ticket_voice = None;
-        p.ticket_by = None;
         p.ticket_hold = None;
+        if let Some(pl) = p.plugin.as_deref_mut() {
+            (pl.name, pl.voice, pl.by) = (None, None, None);
+        }
+        p.tidy_plugin();
         if player_bus {
             self.ask_ticket(i);
         }
     }
 
     /// Passenger `i` was reported and the plugins have not had their frame yet: they wait
-    /// in the doorway and at the cash desk, `TICKET_HOLD` at most (however many steps of
-    /// the people come before that frame).
+    /// in the doorway and at the cash desk - however many steps of the people come before
+    /// that frame - `TICKET_HOLD` at most, and not at all once no plugin listens.
     pub fn ticket_pending(&self, i: usize) -> bool {
-        self.pax(i).and_then(|p| p.ticket_hold).is_some_and(|t| self.time >= t && self.time - t < TICKET_HOLD)
+        self.ticket_hook && self.pax(i).and_then(|p| p.ticket_hold).is_some_and(|t| self.time >= t && self.time - t < TICKET_HOLD)
+    }
+
+    /// The pack's ticket `id` (from 1) as the desk asks for it: its name and value; for 0
+    /// the first ticket's, as Omsi.exe asked.
+    pub fn pack_ticket(&self, id: u8) -> (String, f32) {
+        self.tickets.as_ref().and_then(|t| t.tickets.get((id as usize).saturating_sub(1))).map(|t| (t.name.clone(), t.value)).unwrap_or_default()
+    }
+
+    /// What a passenger asks for at the desk: the pack's ticket, or what a plugin made of it
+    /// (its name, and the price a plugin set or took from the pack with the ticket).
+    pub fn ticket_request(&self, p: &Pax) -> (String, f32) {
+        let (name, value) = self.pack_ticket(p.ticket_id);
+        let pl = p.plugin();
+        let name = pl.name.clone().unwrap_or(name);
+        (name, if pl.by.is_some() { p.price } else { value })
+    }
+
+    /// A stop's name as the timetable has it (what the passengers' destinations are made
+    /// of), else the stop object's.
+    pub fn stop_name(&self, stop: i64) -> Option<String> {
+        let timetable = self.stop_names.as_ref().and_then(|n| n.get(&stop)).cloned();
+        let own = || self.stops.get(&stop).map(|s| if s.alias.trim().is_empty() { s.name.clone() } else { s.alias.clone() });
+        timetable.or_else(own).map(|n| n.trim().to_string())
     }
 
     /// Report passenger `i`'s ticket for the player's bus (they have just decided about it).
     pub fn ask_ticket(&mut self, i: usize) {
-        if !self.ticket_hook {
+        if !self.ticket_hook || self.ticket_asks.len() >= MAX_ASKS {
             return;
         }
         let Some(p) = self.pax(i) else { return };
         let stop = p.stop;
-        let stop_name = stop.and_then(|s| {
-            self.stop_names.as_ref().and_then(|n| n.get(&s).cloned()).or_else(|| self.stops.get(&s).map(|x| if x.alias.trim().is_empty() { x.name.clone() } else { x.alias.clone() }))
-        });
         let destination = p.dest.as_ref().map(|d| d.trim().to_string());
         let (mut stop_index, mut destination_index) = (None, None);
         if let Some((trip, _, _)) = &self.duty {
@@ -110,37 +171,37 @@ impl PeopleSim {
                 destination_index = trip.stops.iter().enumerate().skip(from).find(|(_, (_, n, _))| n.trim() == d.as_str()).map(|(k, _)| k);
             }
         }
-        let ticket = p.ticket_id;
-        let name = self.tickets.as_ref().and_then(|t| t.tickets.get((ticket as usize).wrapping_sub(1))).map(|t| t.name.trim().to_string()).unwrap_or_default();
+        let (name, price) = self.ticket_request(p);
         let ask = TicketAsk {
             person: self.people[i].id,
             age: self.people[i].age,
             kind: p.ticket,
-            ticket,
-            name,
-            price: p.price,
+            ticket: p.ticket_id,
+            name: name.trim().to_string(),
+            price,
             stop,
-            stop_name: stop_name.map(|n| n.trim().to_string()),
+            stop_name: stop.and_then(|s| self.stop_name(s)),
             destination,
             stop_index,
             destination_index,
         };
         let now = self.time;
         self.pax_mut(i).unwrap().ticket_hold = Some(now);
-        // (a game whose plugins stopped looking must not pile them up)
-        if self.ticket_asks.len() < 256 {
-            self.ticket_asks.push(ask);
-        }
+        self.ticket_asks.push(ask);
     }
 
     /// The passengers who decided about their ticket for the player's bus since the last
-    /// call. Their requests at the desk wait (a second at most) for `ticket_asks_heard`.
+    /// call. They wait (`ticket_pending`) until `ticket_asks_heard`.
     pub fn take_ticket_asks(&mut self) -> Vec<TicketAsk> {
         std::mem::take(&mut self.ticket_asks)
     }
 
-    /// The plugins have had their frame with these passengers: they ask at the desk now.
+    /// The plugins have had their frame with these passengers (or never will: reports the
+    /// game dropped): they go on now.
     pub fn ticket_asks_heard(&mut self, people: &[u32]) {
+        if people.is_empty() {
+            return;
+        }
         for i in 0..self.people.len() {
             if people.contains(&self.people[i].id) {
                 if let Some(p) = self.pax_mut(i) {
@@ -152,18 +213,23 @@ impl PeopleSim {
 
     /// Change passenger `person`'s ticket (`by`: the plugin). The kind changes only while
     /// they have not got in yet, the ticket only until they have asked for it at the desk;
-    /// the tag always. The reason when nothing was changed.
+    /// the tag always. A buyer always has a ticket of the pack: `ticket` 0 is refused for
+    /// them, and one made a buyer without a ticket gets the pack's ticket for their age. The
+    /// reason when nothing was changed.
     pub fn set_ticket(&mut self, person: u32, c: &TicketChange, by: &str) -> Result<(), &'static str> {
         let Some(i) = self.people.iter().position(|p| p.id == person) else { return Err("no such person") };
         let pack_len = self.tickets.as_ref().map_or(0, |t| t.tickets.len());
         let (has_sale, has_stamper) = self.player_cabin.as_ref().map_or((false, false), |c| (c.sale.is_some(), !c.stampers.is_empty()));
         let walk = self.boarding.eq_ignore_ascii_case("walk");
+        let age = self.people[i].age;
         let Some(p) = self.pax(i) else { return Err("not a passenger") };
+        let mut ticket = c.ticket;
+        let mut pick = false;
         if c.changes_ticket() {
             if p.bus != Some(BusId::Player) {
                 return Err("not a passenger of the player's bus");
             }
-            // (they decide on their way to the door: `ask_ticket`)
+            // (they decide on their way to the door: `new_ticket`)
             let outside = p.inside.is_none() && p.task == Task::WalkingToBus;
             let at_desk_yet = p.inside.is_some() && p.task == Task::InBusToPlace && p.ticket == TICKET_BUY && p.sub < 4;
             if !outside && !at_desk_yet {
@@ -183,33 +249,51 @@ impl PeopleSim {
             if c.ticket.is_some_and(|t| t as usize > pack_len) {
                 return Err("no such ticket");
             }
+            // a buyer without a ticket of the pack would wait at the desk for a ticket the
+            // driver cannot give
+            if c.kind.unwrap_or(p.ticket) == TICKET_BUY {
+                if c.ticket == Some(0) {
+                    return Err("a buyer needs a ticket of the pack (from 1)");
+                }
+                pick = ticket.unwrap_or(p.ticket_id) == 0;
+            }
         }
-        let pack = self.tickets.clone();
+        if pick {
+            match self.pick_ticket(age) {
+                Some(t) => ticket = Some((t + 1).min(255) as u8),
+                None => return Err("no ticket of the pack is for their age: give one with `ticket`"),
+            }
+        }
+        let pack_price = ticket.map(|t| self.pack_ticket(t).1);
         let p = self.pax_mut(i).unwrap();
         if c.changes_ticket() {
             if let Some(k) = c.kind {
                 p.ticket = k;
             }
-            if let Some(t) = c.ticket {
+            if let (Some(t), Some(v)) = (ticket, pack_price) {
                 p.ticket_id = t;
-                p.price = pack.as_ref().and_then(|pk| pk.tickets.get((t as usize).wrapping_sub(1))).map_or(0.0, |x| x.value);
-                p.ticket_name = None;
-            }
-            if let Some(n) = &c.name {
-                p.ticket_name = text(n);
+                p.price = v;
             }
             if let Some(v) = c.price {
                 p.price = if v.is_finite() { v.max(0.0) } else { 0.0 };
             }
-            if let Some(v) = &c.voice {
-                p.ticket_voice = text(v);
-            }
-            p.ticket_by = text(by);
             p.ticket_hold = None;
+            let pl = p.plugin_mut();
+            if ticket.is_some() {
+                pl.name = None;
+            }
+            if let Some(n) = &c.name {
+                pl.name = text(n);
+            }
+            if let Some(v) = &c.voice {
+                pl.voice = text(v);
+            }
+            pl.by = text(by);
         }
         if let Some(t) = &c.tag {
-            p.ticket_tag = text(t);
+            p.plugin_mut().tag = text(t);
         }
+        p.tidy_plugin();
         Ok(())
     }
 

@@ -114,11 +114,16 @@ impl App {
         if let Some(h) = self.session.humans.as_mut() {
             h.ticket_hook = hear_tickets;
             let asks = &mut self.integrations.plugin_ticket_asks;
+            // (the plugins hear of 256 at most a frame; whoever is left out does not wait)
+            let mut dropped = Vec::new();
             for a in h.take_ticket_asks() {
                 if asks.len() < 256 {
                     asks.push(crate::plugin_io::bus::ticket_ask(a));
+                } else {
+                    dropped.push(a.person);
                 }
             }
+            h.ticket_asks_heard(&dropped);
         }
         if let (Some(h), Some(p)) = (self.session.humans.as_mut(), self.player.as_ref()) {
             let hurt = steps::people_in_career(&mut self.session.career, h, p, self.settings.collision_pedestrians);

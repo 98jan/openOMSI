@@ -81,19 +81,19 @@ fn plugins_hear_of_a_ticket_and_change_it_until_it_is_asked_for() {
     let zones = TicketChange { name: Some("IDOL 4001".into()), price: Some(64.0), voice: Some("Zone_4001".into()), tag: Some("telmax".into()), ..Default::default() };
     assert_eq!(h.set_ticket(1, &zones, "telmax"), Ok(()));
     let p = h.pax(0).unwrap();
-    assert_eq!((p.ticket_name.as_deref(), p.price, p.ticket_voice.as_deref()), (Some("IDOL 4001"), 64.0, Some("Zone_4001")));
-    assert_eq!((p.ticket_by.as_deref(), p.ticket_tag.as_deref(), p.ticket_id), (Some("telmax"), Some("telmax"), 1));
+    assert_eq!((p.plugin().name.as_deref(), p.price, p.plugin().voice.as_deref()), (Some("IDOL 4001"), 64.0, Some("Zone_4001")));
+    assert_eq!((p.plugin().by.as_deref(), p.plugin().tag.as_deref(), p.ticket_id), (Some("telmax"), Some("telmax"), 1));
     // another ticket of the pack brings its own name and price
     assert_eq!(h.set_ticket(1, &TicketChange { ticket: Some(2), ..Default::default() }, "telmax"), Ok(()));
     let p = h.pax(0).unwrap();
-    assert_eq!((p.ticket_id, p.ticket_name.as_deref(), p.price), (2, None, 1.4));
+    assert_eq!((p.ticket_id, p.plugin().name.as_deref(), p.price), (2, None, 1.4));
     assert_eq!(h.set_ticket(1, &TicketChange { ticket: Some(9), ..Default::default() }, "x"), Err("no such ticket"));
     assert_eq!(h.set_ticket(42, &zones, "x"), Err("no such person"));
 
     // somebody still waiting has decided nothing yet; a tag is kept all the same
     assert_eq!(h.set_ticket(2, &zones, "x"), Err("not boarding the bus yet"));
     assert_eq!(h.set_ticket(2, &TicketChange { tag: Some("seen".into()), ..Default::default() }, "x"), Ok(()));
-    assert_eq!(h.pax(1).unwrap().ticket_tag.as_deref(), Some("seen"));
+    assert_eq!(h.pax(1).unwrap().plugin().tag.as_deref(), Some("seen"));
 
     // a pass instead of a ticket, before they are in; buying needs a cash desk
     let pass = TicketChange { kind: Some(TICKET_NONE), ..Default::default() };
@@ -125,13 +125,14 @@ fn human_type(tag: &str) -> Arc<HumanType> {
     ty
 }
 
-/// The player's bus standing at stop 77 with its door open: one entry, one exit, one seat.
+/// The player's bus standing at stop 77 with its door open: one entry, one exit, a cash
+/// desk, one seat.
 fn player_bus() -> BusNow {
     let dir = std::env::temp_dir().join(format!("omsi-ticket-hook-bus-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("test.bus"), "[boundingbox]\n2.5\n12\n3\n0\n0\n1.5\n\n[passengercabin]\ncabin.cfg\n\n[paths]\npaths.cfg\n").unwrap();
     std::fs::write(dir.join("paths.cfg"), "[pathpnt]\n1.1\n4\n0.4\n\n[pathpnt]\n0\n4\n0.5\n\n[pathpnt]\n0\n-3\n0.5\n\n[pathpnt]\n1.1\n-3\n0.4\n\n[pathlink]\n0\n1\n\n[pathlink]\n1\n2\n\n[pathlink]\n2\n3\n").unwrap();
-    std::fs::write(dir.join("cabin.cfg"), "[entry]\n0\n\n[exit]\n3\n\n[passpos]\n-0.5\n0\n0.9\n0.45\n0\n").unwrap();
+    std::fs::write(dir.join("cabin.cfg"), "[entry]\n0\n\n[exit]\n3\n\n[ticket_sale]\n1\n0\n4\n1\n\n[passpos]\n-0.5\n0\n0.9\n0.45\n0\n").unwrap();
     let def = omsi_vehicle::Vehicle::load(&dir.join("test.bus")).unwrap();
     let cabin = Arc::new(Cabin::load_train(&[(&def, Vec3::ZERO, f32::INFINITY)]).expect("cabin"));
     std::fs::remove_dir_all(&dir).ok();
@@ -231,11 +232,69 @@ fn a_new_boarding_forgets_the_plugins_ticket_but_not_its_tag() {
     h.new_ticket(0, TICKET_BUY, 2, 1.4, true);
     let p = h.pax(0).unwrap();
     assert_eq!((p.ticket_id, p.price), (2, 1.4));
-    assert_eq!((p.ticket_name.as_deref(), p.ticket_voice.as_deref(), p.ticket_by.as_deref()), (None, None, None));
-    assert_eq!(p.ticket_tag.as_deref(), Some("telmax"));
+    assert_eq!((p.plugin().name.as_deref(), p.plugin().voice.as_deref(), p.plugin().by.as_deref()), (None, None, None));
+    assert_eq!(p.plugin().tag.as_deref(), Some("telmax"));
     // reported again as the pack's ticket, and held for the plugins again
     let asks = h.take_ticket_asks();
     assert_eq!(asks.len(), 2);
     assert_eq!((asks[1].ticket, asks[1].name.as_str(), asks[1].price), (2, "Kurzstrecke", 1.4));
     assert!(h.ticket_pending(0));
+}
+
+/// Review of #2708: a buyer always has a ticket of the pack the driver can give - else they
+/// wait at the desk for a ticket that cannot be given.
+#[test]
+fn a_buyer_always_has_a_ticket_of_the_pack() {
+    let ty = human_type("buyer");
+    let mut h = PeopleSim::new(Path::new("/nonexistent"), 200);
+    h.tickets = Some(Arc::new(pack()));
+    h.player_cabin = Some(player_bus().cabin);
+    h.people = vec![boarding(&ty, 1, Task::WalkingToBus), boarding(&ty, 2, Task::WalkingToBus)];
+    // a pass holder (no ticket, as `decide_pax_ticket` leaves them) made a buyer: the pack's
+    // ticket for their age, with its price
+    h.new_ticket(0, TICKET_NONE, 0, 0.0, false);
+    let buy = TicketChange { kind: Some(TICKET_BUY), ..Default::default() };
+    assert_eq!(h.set_ticket(1, &buy, "x"), Ok(()));
+    let p = h.pax(0).unwrap();
+    assert_eq!(p.ticket, TICKET_BUY);
+    assert!((1..=2).contains(&p.ticket_id), "ticket {}", p.ticket_id);
+    assert_eq!(p.price, [2.7, 1.4][p.ticket_id as usize - 1]);
+    // ticket 0 for a buyer: refused, also together with the kind
+    let none = TicketChange { ticket: Some(0), ..Default::default() };
+    assert_eq!(h.set_ticket(1, &none, "x"), Err("a buyer needs a ticket of the pack (from 1)"));
+    assert_eq!(h.set_ticket(1, &TicketChange { kind: Some(TICKET_BUY), ..none.clone() }, "x"), Err("a buyer needs a ticket of the pack (from 1)"));
+    // a child no ticket of the pack is for: buying only with a ticket given
+    h.people[1].age = 8.0;
+    h.new_ticket(1, TICKET_NONE, 0, 0.0, false);
+    assert_eq!(h.set_ticket(2, &buy, "x"), Err("no ticket of the pack is for their age: give one with `ticket`"));
+    assert_eq!(h.pax(1).unwrap().ticket, TICKET_NONE, "nothing changed");
+    assert_eq!(h.set_ticket(2, &TicketChange { ticket: Some(2), ..buy.clone() }, "x"), Ok(()));
+    let p = h.pax(1).unwrap();
+    assert_eq!((p.ticket, p.ticket_id, p.price), (TICKET_BUY, 2, 1.4));
+}
+
+/// Review of #2708: with no plugin the desk asks for what it always asked for - for a buyer
+/// no ticket fits (0), the pack's first at its value; a plugin's price only once it set one.
+/// And nobody waits for plugins that are gone.
+#[test]
+fn without_a_plugin_the_desk_asks_as_before() {
+    let ty = human_type("asbefore");
+    let mut h = PeopleSim::new(Path::new("/nonexistent"), 200);
+    h.tickets = Some(Arc::new(pack()));
+    h.people = vec![boarding(&ty, 1, Task::WalkingToBus)];
+    h.new_ticket(0, TICKET_BUY, 0, 0.0, false);
+    assert_eq!(h.ticket_request(h.pax(0).unwrap()), ("Fahrschein".to_string(), 2.7));
+    h.new_ticket(0, TICKET_BUY, 2, 1.4, false);
+    assert_eq!(h.ticket_request(h.pax(0).unwrap()), ("Kurzstrecke".to_string(), 1.4));
+    let zones = TicketChange { name: Some("IDOL 4001".into()), price: Some(64.0), ..Default::default() };
+    assert_eq!(h.set_ticket(1, &zones, "telmax"), Ok(()));
+    assert_eq!(h.ticket_request(h.pax(0).unwrap()), ("IDOL 4001".to_string(), 64.0));
+    // reported and waiting - until no plugin listens any more
+    h.ticket_hook = true;
+    h.new_ticket(0, TICKET_BUY, 1, 2.7, true);
+    assert!(h.ticket_pending(0));
+    h.ticket_hook = false;
+    assert!(!h.ticket_pending(0));
+    // a passenger nobody changed carries no plugin record (`Pax` stays small)
+    assert!(h.pax(0).unwrap().plugin.is_none());
 }

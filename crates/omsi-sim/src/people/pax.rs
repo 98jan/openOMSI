@@ -147,13 +147,9 @@ pub struct Pax {
     pub paid: f32,
     pub bad_change: bool,
     pub sub: u8,
-    /// A plugin's say in the ticket (`ticket_hook`): the name asked for instead of the
-    /// pack's (the price is `price`), the voice line said instead of `Ticket_<n>_<k>`, who
-    /// changed it and a text of the plugin's own kept with the passenger.
-    pub ticket_name: Option<String>,
-    pub ticket_voice: Option<String>,
-    pub ticket_by: Option<String>,
-    pub ticket_tag: Option<String>,
+    /// A plugin's say in the ticket (`ticket_hook`), boxed: most passengers have none, and a
+    /// `Pax` is cloned several times a frame.
+    pub plugin: Option<Box<super::ticket_hook::PluginTicket>>,
     /// Since when (`time`) the plugins have been told about this passenger's ticket and not
     /// yet had their frame: they wait for it in the doorway and at the desk (`TICKET_HOLD`).
     pub ticket_hold: Option<f64>,
@@ -241,10 +237,7 @@ impl Pax {
             paid: 0.0,
             bad_change: false,
             sub: 0,
-            ticket_name: None,
-            ticket_voice: None,
-            ticket_by: None,
-            ticket_tag: None,
+            plugin: None,
             ticket_hold: None,
             door: None,
             stamper: None,
