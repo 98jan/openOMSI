@@ -1359,3 +1359,41 @@ fn a_mesh_left_out_for_want_of_a_page_draws_nothing_and_the_rest_of_the_picture_
     let centre = (32 * 64 + 32) * 4;
     assert!(image[centre] > 2 * image[centre + 1].max(image[centre + 2]).max(8), "the red quad is drawn, the left out one is not: {:?}", &image[centre..centre + 4]);
 }
+
+#[test]
+#[ignore = "requires a graphics adapter; run with --ignored on a GPU host"]
+fn the_reflection_strength_scales_what_an_envmapped_surface_mirrors() {
+    let camera = Camera { position: DVec3::ZERO, yaw: 0.0, pitch: 0.0, roll: 0.0, fov_deg: 60.0, near: 0.1, far: 100.0 };
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, shadow_size: 1024, fxaa: false, render_scale: 1.0, ..Default::default() },
+    )).expect("test renderer");
+    let mut scene = renderer.new_scene();
+    let red = renderer.add_texture(&mut scene, &omsi_texture::Image { width: 4, height: 4, rgba: [255, 0, 0, 255].repeat(16), has_alpha: false }, false);
+    let grey = renderer.add_texture(&mut scene, &omsi_texture::Image { width: 1, height: 1, rgba: vec![60, 60, 60, 255], has_alpha: false }, false);
+    let paint = renderer.add_material_env(&mut scene, Some(grey), AlphaMode::Opaque, [1.0; 4], false, None, None, None, Some((red, 1.0)));
+    let mesh = renderer.add_mesh(&mut scene, &MeshData {
+        positions: vec![Vec3::new(-3.0, 5.0, -3.0), Vec3::new(3.0, 5.0, -3.0), Vec3::new(3.0, 5.0, 3.0), Vec3::new(-3.0, 5.0, 3.0)],
+        normals: vec![-Vec3::Y; 4],
+        uvs: vec![glam::Vec2::splat(0.5); 4],
+        ranges: vec![(0, 6, 0)],
+        indices: vec![0, 1, 2, 0, 2, 3],
+        one_sided: false,
+    });
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![paint]);
+    for (mode, classic, enhanced) in [("vanilla", true, false), ("vanilla+", false, false), ("enhanced", false, true)] {
+        let mut centre = |strength: f32| {
+            let lighting = Lighting { shadows: false, fog_density: 0.0, classic, enhanced, reflection_strength: strength, ..Default::default() };
+            let rgba = renderer.render_to_image(&mut scene, 64, 64, &camera, &lighting).unwrap();
+            [0, 1, 2].map(|c| rgba[(32 * 64 + 32) * 4 + c] as i32)
+        };
+        let off = centre(0.0);
+        let away = |p: [i32; 3]| (0..3).map(|c| (p[c] - off[c]).abs()).sum::<i32>();
+        let (full, half) = (away(centre(1.0)), away(centre(0.5)));
+        assert!(full > half + 4 && half > 2, "{mode}: change from 0 % at 100 / 50 %: {full} {half} (0 %: {off:?})");
+        if !enhanced {
+            assert!((off[0] - off[1]).abs() <= 2, "{mode}: nothing mirrored at 0 %: {off:?}");
+        }
+    }
+}
