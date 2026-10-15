@@ -41,7 +41,7 @@ impl DrawPlan {
             .any(|b| matches!(b.pipe / 4, PIPE_ALPHA_TEST | PIPE_BLEND | PIPE_BLEND_NO_WRITE));
         let single = renderer.options.msaa <= 1;
         renderer.prepass_msaa_pipelines.is_some()
-            && f.enhanced && (f.with_overlays || f.xr_view) && (!single || self.has_presurface)
+            && f.enhanced && (f.with_overlays || f.xr_view) && (!single || (self.has_presurface && cfg!(target_vendor = "apple")))
             && (!self.has_presurface || self.msaa_safe_batches.iter().any(|b| single || b.pipe / 2 != PIPE_ALPHA_TEST))
             && f.prepass_on && needs && !f.env.no_msaa_prepass
     }

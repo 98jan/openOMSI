@@ -59,6 +59,10 @@ pub(crate) static TEXTURE_OUT_OF_MEMORY: std::sync::atomic::AtomicBool = std::sy
 /// the menus went on (#2472). A texture that cannot be made is drawn as a plain stand-in
 /// instead, and when memory ran short the game keeps fewer textures from then on.
 pub(crate) fn try_create_texture(device: &wgpu::Device, desc: &wgpu::TextureDescriptor) -> Option<wgpu::Texture> {
+    if desc.size.width == 0 || desc.size.height == 0 {
+        log::warn!("texture {}x{}: drawn plain instead", desc.size.width, desc.size.height);
+        return None;
+    }
     let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
     let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let texture = device.create_texture(desc);

@@ -713,6 +713,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             instructions_mark: None,
             profile_mark: None,
             frame_times: Vec::new(),
+            frame_stages: Vec::new(),
             overlay: Default::default(),
             texture_cut_at: None,
         },
