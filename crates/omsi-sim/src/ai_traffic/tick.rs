@@ -370,28 +370,21 @@ impl TrafficSim {
                 }
             }
         }
-        // The lights ahead within their approach distance. A light path marked with a turn
-        // asks only for the indicator it is marked with, and of a junction that has one for
-        // the indicator shown the unmarked paths do not ask either: every stage of a junction
-        // whose paths are marked left, straight and right got its approach request at once,
-        // whichever way the bus was indicating (#2532). Unmarked paths ask as before.
+        // the lights ahead within their approach distance, asked as the indicator says
+        // (`indicated_requests`, #2532)
         let blinkers: Vec<u8> = player.iter().map(|_| self.player_blinker).chain(self.others.iter().map(|(id, _)| self.other_blinkers.get(id).copied().unwrap_or(0))).collect();
         for ((pos, heading), blinker) in askers.into_iter().zip(blinkers) {
-            let mut near: Vec<(usize, usize, i32)> = Vec::new();
+            let mut near: Vec<(usize, usize, i32, f32)> = Vec::new();
             for (l, d) in self.lanes_ahead_of(pos, heading, reach) {
                 if let Some((ci, li)) = self.net.lanes[l].traffic_light {
                     if self.lights.get(ci).is_some_and(|ctl| d <= ctl.approach_dist(li)) {
-                        near.push((ci, li, self.net.lanes[l].turn));
+                        near.push((ci, li, self.net.lanes[l].turn, d));
                     }
                 }
             }
-            let marked_for = |ci: usize| near.iter().any(|&(c, _, turn)| c == ci && matches!(blinker, 1 | 2) && turn == blinker as i32);
-            for &(ci, li, turn) in &near {
-                let asks = if matches!(turn, 1 | 2) { turn == blinker as i32 } else { !marked_for(ci) };
-                if asks {
-                    if let Some(r) = self.lights.get_mut(ci).and_then(|c| c.request.get_mut(li)) {
-                        *r = true;
-                    }
+            for (ci, li) in light_paths::indicated_requests(&near, blinker) {
+                if let Some(r) = self.lights.get_mut(ci).and_then(|c| c.request.get_mut(li)) {
+                    *r = true;
                 }
             }
         }
