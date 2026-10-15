@@ -3045,13 +3045,13 @@ pub fn pick_file(title: &str) -> Option<PathBuf> {
     }
 }
 
-/// Native multi-file picker for depot files (None on Android; the storage browser is used there).
+/// Native multi-file picker for depot files (unavailable on mobile; the platform UI handles it).
 pub fn pick_hofs(title: &str, filter: &str) -> Option<Vec<PathBuf>> {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         rfd::FileDialog::new().set_title(title).add_filter(filter, &["hof"]).pick_files()
     }
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "ios"))]
     { let _ = (title, filter); None }
 }
 
