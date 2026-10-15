@@ -466,6 +466,18 @@ fn busy_crossroads(f: &Fixture, order: &[usize]) -> TrafficSim {
 }
 
 #[test]
+fn a_lane_heading_alone_is_the_heading_of_its_point() {
+    for (radius, heading) in [(0.0, 33.0), (25.0, 0.0), (40.0, 90.0), (12.0, 271.0)] {
+        let lane = LaneBuilder::arc(DVec3::new(5.0, -3.0, 1.0), heading, 120.0, radius, 0.0, LaneKind::Street, 3.0);
+        let mut s = -15.0f32;
+        while s < lane.length() + 15.0 {
+            assert_eq!(lane.heading_ext(s).to_bits(), lane.at_ext(s).1.to_bits(), "radius {radius} at {s}");
+            s += 0.37;
+        }
+    }
+}
+
+#[test]
 fn the_same_scene_drives_the_same_at_any_frame_rate() {
     let f = Fixture::new();
     let run_at = |fps: f32| {

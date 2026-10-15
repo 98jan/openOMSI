@@ -774,7 +774,7 @@ pub fn list_maps() -> Result<Vec<MapInfo>> {
         stamped.extend(dsc_candidates(&d.join("global.cfg"), lang));
         let stamp = index::files_stamp(&stamped);
         keys.push(key.clone());
-        let info: Option<MapInfo> = index::cached(&key, stamp, || (read_map(&d, &folder, lang), Vec::new()));
+        let info: Option<MapInfo> = index::cached(&key, stamp, || read_map(&d, &folder, lang));
         out.extend(info);
     }
     index::save("map|", Some(&keys));
@@ -800,14 +800,24 @@ fn log_empty(rel: &str, what: &str) {
     log_line(&format!("{rel}: nothing with a {what} found in {}", if places.is_empty() { "no folder (no OMSI 2 folder and no content folder)".to_string() } else { places.join(", ") }));
 }
 
-fn read_map(d: &Path, folder: &str, lang: &str) -> Option<MapInfo> {
-    let g = match omsi_map::GlobalCfg::load(&d.join("global.cfg")) {
+/// The map in `d` and the files its entry is read from beyond the stamped ones (the tiles,
+/// when their entry objects are its entry points).
+fn read_map(d: &Path, folder: &str, lang: &str) -> (Option<MapInfo>, Vec<PathBuf>) {
+    let mut g = match omsi_map::GlobalCfg::load(&d.join("global.cfg")) {
         Ok(g) => g,
         Err(e) => {
             log_line(&format!("maps: {} cannot be read ({e:#}) - not listed", d.join("global.cfg").display()));
-            return None;
+            return (None, Vec::new());
         }
     };
+    // A map from OMSI 1 lists no entry points in global.cfg: the game takes them from the
+    // entry objects of its tiles (`GlobalCfg::add_object_entry_points`). Only then are the
+    // tiles read here - the list of maps stays quick.
+    let mut deps = Vec::new();
+    if g.entry_points.is_empty() {
+        g.add_object_entry_points();
+        deps = g.tiles.iter().map(|t| omsi_cfg::resolve_path(g.dir(), &t.file)).collect();
+    }
     // `global_ENG.dsc` (the language of the settings) names and describes the map
     let dsc = find_dsc(&d.join("global.cfg"), lang);
     let friendly = dsc.as_ref().and_then(|x| x.name.first().cloned()).unwrap_or_else(|| g.friendly_name.trim().to_string());
@@ -830,7 +840,7 @@ fn read_map(d: &Path, folder: &str, lang: &str) -> Option<MapInfo> {
     }
     // (the depot groups' first: a plain car group's name line is no depot)
     let hof = omsi_map::ailists::AiLists::load(&d.join("ailists.cfg")).ok().and_then(|l| l.groups.iter().filter(|g| g.is_depot).chain(l.groups.iter()).find_map(|g| g.hof.clone())).unwrap_or_default();
-    Some(MapInfo { name: if g.name.trim().is_empty() { folder.to_string() } else { g.name.trim().to_string() }, friendly, file: format!("maps/{folder}/global.cfg"), description, entry_points: entries, hof, installed: in_content(d) })
+    (Some(MapInfo { name: if g.name.trim().is_empty() { folder.to_string() } else { g.name.trim().to_string() }, friendly, file: format!("maps/{folder}/global.cfg"), description, entry_points: entries, hof, installed: in_content(d) }), deps)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

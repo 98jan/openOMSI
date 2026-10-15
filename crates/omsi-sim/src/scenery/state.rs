@@ -20,6 +20,8 @@ pub const SCRIPT_RANGE: f64 = 800.0;
 /// anywhere in its cell.
 const CELL: f64 = 50.0;
 
+const SCRIPTS_SECS_PER_HELPER: f64 = 0.25e-3;
+
 /// A placed scenery object with a running script: what the simulation keeps of it (its
 /// render side, materials and sounds stay with the view, under the same key).
 pub struct SceneryObject {
@@ -259,9 +261,8 @@ pub struct SceneryState {
     cell: Option<(i64, i64)>,
     jobs: Vec<JobBuf>,
     out: SceneryOutputs,
-    /// What the scripts took last frame, to give the next frame's run as many helpers as
-    /// that work is worth.
-    scripts_last: f64,
+    /// The scripts' time last frame on all the threads that ran them.
+    scripts_work: f64,
     /// Counts up whenever objects come or go.
     generation: u64,
     /// The map ids whose variables the particle emitters read (sorted).
@@ -449,11 +450,13 @@ impl SceneryState {
         // the frame waited on a latch for busy or unscheduled workers - 20-70 ms frames
         // standing still on a city map - for 4 ms of scripts)
         let clock = inputs.clock;
-        omsi_cfg::par::frame_each(&mut jobs, omsi_cfg::par::helpers_for(self.scripts_last, 0.0005), |(o, vars, _, _)| {
+        let helpers = omsi_cfg::par::helpers_for(self.scripts_work, SCRIPTS_SECS_PER_HELPER).min(jobs.len().saturating_sub(1));
+        omsi_cfg::par::frame_each(&mut jobs, helpers, |(o, vars, _, _)| {
             o.inst.update_on(dt, vars, clock);
         });
-        self.scripts_last = t.elapsed().as_secs_f64();
-        times.scripts += self.scripts_last;
+        let elapsed = t.elapsed().as_secs_f64();
+        self.scripts_work = elapsed * (helpers + 1) as f64;
+        times.scripts += elapsed;
         let t = std::time::Instant::now();
         for (o, vars, dist, _) in jobs.iter_mut() {
             // `Refresh_Strings` is cleared and the texts read (the view drew them before the
