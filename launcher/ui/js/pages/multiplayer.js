@@ -6,6 +6,7 @@ import { S, useStore, set, toast } from '../store.js';
 import { t } from '../i18n.js';
 import { call } from '../api.js';
 import { Icon } from '../icons.js';
+import { serverJoinAddress } from '../server-join.js';
 import { Button, Card, Field, Input, Empty, PageHead, Spinner, Tabs, Select, Toggle, Notice, Tag } from '../ui.js';
 import { choose, cached, serverJoined, allowedBus } from '../data.js';
 
@@ -108,14 +109,16 @@ function Servers() {
   };
   const join = (x) => {
     const i = info[x.address]?.ok;
-    const web = /^(https?|wss?):\/\//.test(x.address) || x.address === 'openomsi' || x.address.includes('.trycloudflare.com');
-    const udp = x.protocol === 'udp' || ((x.protocol || 'auto') === 'auto' && !web);
-    if (udp && web) return toast(t("UDP needs the game's address (host or host:port), not a web link"), 'error');
-    if (!udp && !i) return toast(t('The server has not answered yet (is its address right? is it running?)'), 'error');
+    let lan_addr;
+    try {
+      lan_addr = serverJoinAddress(x.address, x.protocol || 'auto', i);
+    } catch (error) {
+      return toast(t(error.message), 'error');
+    }
     const map = (i?.map || '').replace(/\\/g, '/');
     if (map && s.maps?.some((m) => m.file.toLowerCase() === map.toLowerCase())) choose({ map });
     else if (map) toast(t('The server plays {}, which is not installed here: it is fetched from the server on joining.', [map]));
-    choose({ lan_mode: 'join', lan_addr: !udp && !web && i?.reached_at ? i.reached_at : x.address, lan_map: i?.map || '', ...serverJoined(i ? { ...i, name: x.name || i.name } : null) });
+    choose({ lan_mode: 'join', lan_addr, lan_map: i?.map || '', ...serverJoined(i ? { ...i, name: x.name || i.name } : null) });
     choose(allowedBus());
     toast(t('Joined {} - choose your bus and duty, then Start the duty', [x.name || i?.name || x.address]), 'ok');
     set({ page: 'drive' });
@@ -147,7 +150,7 @@ function Servers() {
               <div style="width:130px"><${Select} value=${x.protocol || 'auto'} options=${[['auto', 'Auto'], ['udp', 'UDP'], ['websocket', 'WebSocket']]} onChange=${(protocol) => save(list.map((y) => y === x ? { ...y, protocol } : y))} /></div>
               <${Button} small kind="ghost" icon="refresh" title="Refresh" onClick=${() => ask(x.address)} />
               ${x.address !== 'openomsi' && html`<${Button} small kind="ghost" icon="trash" title="Remove from the list" onClick=${() => save(list.filter((y) => y !== x))} />`}
-              <${Button} kind="primary" icon="play" label="Join" onClick=${() => join(x)} />
+              <${Button} kind="primary" icon="play" label="Join" disabled=${!i} onClick=${() => join(x)} />
             </div></${Card}>`;
           })}
   </div>`;

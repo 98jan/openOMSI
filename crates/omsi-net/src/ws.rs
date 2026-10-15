@@ -44,8 +44,8 @@ pub struct ServerInfo {
     /// The buses that may be driven there (vehicle files, `Vehicles/…/….bus`): what the
     /// host has installed, or a server's own list. Empty: not said (an older game).
     pub vehicles: Vec<String>,
-    /// Where it answered (`http(s)://…`), set by `query`: a server added by its bare
-    /// address (`1.2.3.4`, `host:27025`) is joined there.
+    /// Where it answered (`http(s)://…`), set by `query`: when using WebSocket, a
+    /// server added by its bare address (`1.2.3.4`, `host:27025`) is joined there.
     pub reached_at: String,
     /// `GET /players` answers (the server shares its players' positions); otherwise 404.
     pub players_public: bool,
@@ -258,7 +258,8 @@ pub fn http_base(target: &str) -> Option<String> {
 /// The web addresses a server may answer at, for whatever address a player gave: a web
 /// address as it is; a bare `host` or `host:port` (an IP, a domain) at the
 /// port ten above it (the game's port was given: a server's web port is its game port + 10
-/// unless `web_port` says otherwise), at the servers' default 27025, and over https. For an explicit port, try port + 10 then HTTPS first.
+/// unless `web_port` says otherwise), at the servers' default 27025, and over https.
+/// An explicitly typed port is tried first, before port + 10 and HTTPS.
 pub fn web_bases(target: &str) -> Vec<String> {
     if let Some(b) = http_base(target) {
         return vec![b];
@@ -284,11 +285,11 @@ pub fn web_bases(target: &str) -> Vec<String> {
         }
     };
     if let Some(p) = port {
+        add(format!("http://{host}:{p}"));
         if p <= 65525 {
             add(format!("http://{host}:{}", p + 10));
         }
         add(format!("https://{host}"));
-        add(format!("http://{host}:{p}"));
     }
     add(format!("http://{host}:27025"));
     if port.is_none() {
@@ -969,12 +970,14 @@ mod tests {
         assert_eq!(ws_url("http://10.0.0.2:27025/").as_deref(), Some("ws://10.0.0.2:27025/ws"));
         assert_eq!(ws_url("192.168.1.4:27015"), None);
         assert_eq!(http_base("https://abc.trycloudflare.com").as_deref(), Some("https://abc.trycloudflare.com"));
-        assert_eq!(web_bases("192.168.1.4:27015"), ["http://192.168.1.4:27025", "https://192.168.1.4", "http://192.168.1.4:27015"]);
+        assert_eq!(web_bases("192.168.1.4:27015"), ["http://192.168.1.4:27015", "http://192.168.1.4:27025", "https://192.168.1.4"]);
         assert_eq!(web_bases("play.example.org"), ["http://play.example.org:27025", "https://play.example.org", "http://play.example.org"]);
-        assert_eq!(web_bases("play.example.org:47015"), ["http://play.example.org:47025", "https://play.example.org", "http://play.example.org:47015", "http://play.example.org:27025"]);
+        assert_eq!(web_bases("play.example.org:47015"), ["http://play.example.org:47015", "http://play.example.org:47025", "https://play.example.org", "http://play.example.org:27025"]);
+        assert_eq!(web_bases("play.example.org:65535"), ["http://play.example.org:65535", "https://play.example.org", "http://play.example.org:27025"]);
+        assert_eq!(web_bases("http://play.example.org:47015"), ["http://play.example.org:47015"]);
         assert_eq!(web_bases("https://play.example.org"), ["https://play.example.org"]);
         assert_eq!(web_bases("::1")[0], "http://[::1]:27025");
-        assert_eq!(web_bases("[::1]:27025"), ["http://[::1]:27035", "https://[::1]", "http://[::1]:27025"]);
+        assert_eq!(web_bases("[::1]:27025"), ["http://[::1]:27025", "http://[::1]:27035", "https://[::1]"]);
     }
 
     #[test]
@@ -1180,6 +1183,9 @@ mod tests {
         assert!(ok, "the datagram came back through the WebSocket");
         let st = query(&format!("http://{}", gw.addr), false).unwrap();
         assert_eq!(st.name, "t");
+        let st = query(&gw.addr.to_string(), false).unwrap();
+        assert_eq!(st.name, "t");
+        assert_eq!(st.reached_at, format!("http://{}", gw.addr));
         // the admin door over a real connection: a body sent after the head is read too
         gw.info.lock().unwrap().local_admin_password = "pw".into();
         let mut s = TcpStream::connect(gw.addr).unwrap();

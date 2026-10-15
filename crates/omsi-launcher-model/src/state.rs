@@ -56,13 +56,42 @@ pub struct ServerEntry {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum JoinProto {
-    /// UDP for game addresses, WebSocket for web links.
+    /// UDP for bare addresses with an explicit port, otherwise WebSocket.
     #[default]
     Auto,
-    /// Straight to the game port over UDP (no status needed).
+    /// Straight to the game port over UDP (gateway status still required).
     Udp,
     /// Through the server's web gateway (a WebSocket).
     WebSocket,
+}
+
+/// Select the gameplay address only after a gateway has answered. A bare explicit
+/// port in Auto names the game port; a web link always names the gateway.
+fn server_join_address(address: &str, proto: JoinProto, info: Option<&omsi_net::ws::ServerInfo>) -> Result<(String, JoinProto), &'static str> {
+    let address = address.trim();
+    let is_web = omsi_net::ws::ws_url(address).is_some() || omsi_net::official::is_alias(address);
+    let explicit_port = address.rsplit_once(':').is_some_and(|(host, port)| {
+        !host.is_empty()
+            && (!host.contains(':') || (host.starts_with('[') && host.ends_with(']')))
+            && !host.contains('/') && !host.contains(char::is_whitespace)
+            && !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit())
+            && port.parse::<u16>().is_ok()
+    });
+    let proto = match proto {
+        JoinProto::Auto if !is_web && explicit_port => JoinProto::Udp,
+        JoinProto::Auto => JoinProto::WebSocket,
+        p => p,
+    };
+    if proto == JoinProto::Udp && is_web {
+        return Err("UDP needs the game's address (host or host:port), not a web link");
+    }
+    let info = info.ok_or("The server has not answered yet (is its address right? is it running?)")?;
+    let target = if proto == JoinProto::WebSocket && !is_web && !info.reached_at.is_empty() {
+        info.reached_at.clone()
+    } else {
+        address.to_string()
+    };
+    Ok((target, proto))
 }
 
 /// A code host's status page (its gateway is the session's port + 10).
@@ -560,30 +589,15 @@ impl State {
 
     /// The Drive page joins `address`: the server's map is the map, the session is joined.
     /// `proto` says how: over UDP straight to the game port, over the server's web gateway
-    /// (a WebSocket), or `Auto` (UDP for game addresses, WebSocket for web links).
+    /// (a WebSocket), or `Auto` (UDP for bare addresses with a port, else WebSocket).
+    /// Every selection requires a successful gateway status response.
     pub fn join_server(&mut self, address: &str, proto: JoinProto) {
         let info = self.server_info.get(address).cloned().and_then(|(_, r)| r.ok());
-        let is_web = omsi_net::ws::ws_url(address).is_some() || omsi_net::official::is_alias(address);
-        let proto = match (proto, &info) {
-            (JoinProto::Auto, _) if !is_web => JoinProto::Udp,
-            (JoinProto::Auto, _) => JoinProto::WebSocket,
-            (p, _) => p,
-        };
-        let lan_addr = match proto {
-            JoinProto::Udp => {
-                if is_web {
-                    self.set_status("UDP needs the game's address (host or host:port), not a web link", true);
-                    return;
-                }
-                address.to_string()
-            }
-            _ => {
-                let Some(info) = info.as_ref() else {
-                    self.set_status("The server has not answered yet (is its address right? is it running?)", true);
-                    return;
-                };
-                // (a server added by its bare address is joined where it answered: its web gateway)
-                if !is_web && !info.reached_at.is_empty() { info.reached_at.clone() } else { address.to_string() }
+        let (lan_addr, proto) = match server_join_address(address, proto, info.as_ref()) {
+            Ok(join) => join,
+            Err(message) => {
+                self.set_status(message, true);
+                return;
             }
         };
         if let Some(info) = info.as_ref() {
@@ -1312,6 +1326,42 @@ pub fn root_problem(root: &str) -> String {
 
 #[cfg(test)]
 mod choice_tests {
+    #[test]
+    fn server_join_protocol_matrix() {
+        use super::{server_join_address, JoinProto};
+        let info = omsi_net::ws::ServerInfo { reached_at: "https://gateway.example.org".into(), ..Default::default() };
+        for address in ["play.example.org", "192.168.1.4", "::1", "[::1]"] {
+            assert_eq!(server_join_address(address, JoinProto::Auto, Some(&info)).unwrap(), (info.reached_at.clone(), JoinProto::WebSocket));
+            assert_eq!(server_join_address(address, JoinProto::Udp, Some(&info)).unwrap(), (address.into(), JoinProto::Udp));
+            assert_eq!(server_join_address(address, JoinProto::WebSocket, Some(&info)).unwrap().0, info.reached_at);
+        }
+        for address in ["play.example.org:27015", "play.example.org:27025", "192.168.1.4:47015", "[::1]:27015", "play.example.org:65535"] {
+            for protocol in [JoinProto::Auto, JoinProto::Udp] {
+                assert_eq!(server_join_address(address, protocol, Some(&info)).unwrap(), (address.into(), JoinProto::Udp));
+            }
+            assert_eq!(server_join_address(address, JoinProto::WebSocket, Some(&info)).unwrap().0, info.reached_at);
+        }
+        for address in ["https://play.example.org", "http://play.example.org:27025", "https://play.example.org:27015", "ws://play.example.org/ws", "wss://play.example.org/ws", "openomsi", "OpenOMSI", "abc.trycloudflare.com", "abc.trycloudflare.com/ws"] {
+            for protocol in [JoinProto::Auto, JoinProto::WebSocket] {
+                assert_eq!(server_join_address(address, protocol, Some(&info)).unwrap(), (address.into(), JoinProto::WebSocket));
+            }
+            assert_eq!(server_join_address(address, JoinProto::Udp, Some(&info)).unwrap_err(), "UDP needs the game's address (host or host:port), not a web link");
+        }
+        for address in ["play.example.org:65536", "play.example.org:notaport", "2001:db8::27015"] {
+            assert_eq!(server_join_address(address, JoinProto::Auto, Some(&info)).unwrap().1, JoinProto::WebSocket);
+        }
+        assert_eq!(server_join_address("  play.example.org:27015  ", JoinProto::Auto, Some(&info)).unwrap().0, "play.example.org:27015");
+    }
+
+    #[test]
+    fn every_server_protocol_requires_gateway_status() {
+        for address in ["play.example.org", "play.example.org:27015", "https://play.example.org"] {
+            for protocol in [super::JoinProto::Auto, super::JoinProto::Udp, super::JoinProto::WebSocket] {
+                assert!(super::server_join_address(address, protocol, None).is_err());
+            }
+        }
+    }
+
     #[test]
     fn server_protocol_defaults_to_auto_and_survives_saving() {
         let old: super::ServerEntry = serde_json::from_str(r#"{"name":"Example","address":"play.example.org:47015"}"#).unwrap();
