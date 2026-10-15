@@ -2,6 +2,9 @@
 
 use crate::*;
 
+/// The chosen MSAA is being tried again after a remembered fallback (see `build_with_fallbacks`).
+static MSAA_RETRY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 impl Renderer {
     /// Create a renderer with the default options. `surface` is used to pick a compatible
     /// adapter and format.
@@ -365,6 +368,13 @@ impl Opened {
         if let Some(why) = made.as_ref().ok().and_then(|r| r.device_lost()) {
             drop(made);
             pipeline_cache::close(&device);
+            // (lost while the chosen MSAA was tried again: what worked before is written down
+            // for this version already, and the device opened again keeps to it - not to the
+            // basic pipelines at 1x, which it never needed)
+            if MSAA_RETRY.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                log::warn!("{}: the graphics device was lost while the chosen MSAA was tried again ({why}); keeping to what worked before", info.name);
+                return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
+            }
             if basic_pipelines() {
                 return Err(anyhow!("the graphics device was lost while the pipelines were made: {why}"));
             }
@@ -375,6 +385,8 @@ impl Opened {
             // (the format chosen for the window before: the same the surface would give)
             return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
         }
+        // (the retry is over; a device lost later in the run takes the usual way)
+        MSAA_RETRY.store(false, std::sync::atomic::Ordering::Relaxed);
         match &made {
             Ok(_) => pipeline_cache::save(),
             Err(_) => pipeline_cache::close(&device),
@@ -407,6 +419,18 @@ impl Renderer {
             // took the snowfall off DirectX 12 for ever; a phone keeps to what worked, its
             // second build took long enough for Android to close the app, #1708)
             Some((m, true, false)) if !cfg!(any(target_os = "android", target_os = "ios")) => vec![(m.min(options.msaa).max(1), false), (m.min(options.msaa).max(1), true), (1, true)],
+            // (and the multisampling chosen: one failure of it - a driver of the time, a
+            // device lost while building - kept a computer at 1x MSAA for good, whatever the
+            // options said, #2597)
+            // What worked is written down with this version first, so that the retry is made
+            // once per version whatever comes of it: failed, it is not made again at every
+            // start; crashing the driver or losing the device, the next start keeps to what
+            // worked (see the device-lost path in `new_on`).
+            Some((m, b, false)) if !cfg!(any(target_os = "android", target_os = "ios")) && m < options.msaa => {
+                fallback_store(name, Some((m, b)));
+                MSAA_RETRY.store(true, std::sync::atomic::Ordering::Relaxed);
+                vec![(options.msaa, b), (m.max(1), b), (1, true)]
+            }
             Some((m, b, _)) => vec![(m.min(options.msaa).max(1), b), (1, true)],
             // (a phone starts with the basic set: the full one failed on Adreno and the
             // second build after it took long enough for Android to close the app)
@@ -573,6 +597,7 @@ impl Renderer {
                 adapt_bg: post.adapt_bg,
                 adapt_front: 0,
                 exposure_log: ExposureLog::new(&device),
+                lamp_sight: LampSight::new(&device, leave_out_enhanced),
                 enh_buf: enhanced.enh_buf,
                 lin_sampler: enhanced.lin_sampler,
                 probe: enhanced.probe,

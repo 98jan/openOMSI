@@ -13,6 +13,18 @@ pub fn passenger_trigger(name: &str) -> bool {
     n.starts_with("int_") || n.contains("haltewunsch") || n.contains("kinderwagenwunsch")
 }
 
+/// May player `from` work switch `ev` of our bus `bus` (`lan`: our session)? Only a passenger
+/// aboard our bus, inside it, and only a switch passengers work (`passenger_trigger`).
+pub fn may_work(lan: &omsi_net::LanSession, from: u32, bus: Option<&omsi_sim::VehicleInstance>, ev: &str) -> bool {
+    let walker = lan.peers().find(|p| p.pose.id == from).and_then(|p| p.pose.walker);
+    let aboard = walker.and_then(|w| w.aboard).filter(|a| a.owner == lan.my_id);
+    let inside = match (aboard, bus) {
+        (Some(a), Some(v)) => inside(&crate::spawn::footprint_of(v, crate::spawn::BUS_BOX), a.local),
+        _ => false,
+    };
+    aboard.is_some() && inside && passenger_trigger(ev)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

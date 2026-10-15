@@ -687,6 +687,11 @@ impl Renderer {
         self.encode_shadow_maps(&mut enc.shadow, scene, &sh, &shadow_batches, &mut timers);
         self.encode_lamp_shadows(&mut enc.shadow, scene, &f, &shadow_batches, &mut timers);
         self.encode_depth_prepass(&mut enc.prepass, scene, &f, &plan.prepass_batches, &mut timers);
+        if f.enhanced && f.lead_view && f.prepass_on && self.device_lost().is_none() {
+            if let (Some(s), Some(ao)) = (self.tone.lamp_sight.as_mut(), self.targets.ao.as_ref()) {
+                s.encode(&self.device, &self.queue, &mut enc.prepass, &ao.depth_view, vp_mat, f.ro, f.cam_rel);
+            }
+        }
         if f.rt_frame {
             self.encode_ray_tracing(&mut enc.prepass, scene, timers.set.as_ref(), &mut timers.timed);
         }
@@ -889,6 +894,7 @@ pub(crate) struct ToneMapping {
     pub(crate) adapt_front: usize,
     /// OMSI_DEBUG_EXPOSURE: the adapted metering read back now and then, and logged.
     pub(crate) exposure_log: Option<ExposureLog>,
+    pub(crate) lamp_sight: Option<LampSight>,
     /// Enhanced lighting: its uniform, the sky table, the sampler both use, the reflection
     /// probe, the sky last computed and the exposure as it follows it.
     pub(crate) enh_buf: wgpu::Buffer,

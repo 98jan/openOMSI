@@ -42,6 +42,9 @@ struct Game {
     fired: Vec<(String, bool)>,
     /// The vehicle's script textures: (width, height, RGBA).
     textures: Vec<(u32, u32, Vec<u8>)>,
+    /// The passengers of this frame and the tickets the plugin changed: (person, change, by).
+    asks: Vec<omsi_plugin::TicketAsk>,
+    changed: Vec<(u32, omsi_plugin::TicketChange, String)>,
 }
 
 impl PluginIo for Game {
@@ -79,6 +82,13 @@ impl PluginIo for Game {
             _ => false,
         }
     }
+    fn ticket_asks(&self) -> Vec<omsi_plugin::TicketAsk> {
+        self.asks.clone()
+    }
+    fn people_set_ticket(&mut self, id: u32, change: &omsi_plugin::TicketChange, by: &str) -> Result<(), String> {
+        self.changed.push((id, change.clone(), by.to_string()));
+        Ok(())
+    }
 }
 
 fn run(plugins: &mut Plugins) -> Game {
@@ -94,10 +104,22 @@ fn run(plugins: &mut Plugins) -> Game {
         // demo's entry 1 ignores)
         if t == 1.0 {
             plugins.pointer = vec![(2, omsi_plugin::POINTER_DOWN, 0.5, 0.5), (0, omsi_plugin::POINTER_DOWN, 0.1, 0.1)];
+            // and two passengers boarding: one rides from stop 2 to 5 of the trip, one is
+            // a child; a third rides where the trip does not go (left as it is)
+            let ask = |person: u32, age: f32, dest: Option<usize>| omsi_plugin::TicketAsk { person, age, kind: omsi_plugin::TicketKind::Buy, ticket: 1, name: "Full fare".into(), price: 20.0, stop_index: Some(1), destination: Some("Nový Bor".into()), destination_index: dest, ..Default::default() };
+            g.asks = vec![ask(5, 40.0, Some(4)), ask(6, 8.0, Some(4)), ask(7, 40.0, None)];
         }
         plugins.frame(&mut g);
+        g.asks.clear();
     }
     g
+}
+
+/// The tickets the demo changed: the ride priced by its stops, the child's ticket gone.
+fn check_tickets(g: &Game) {
+    let ride = omsi_plugin::TicketChange { price: Some(30.0), name: Some("Nový Bor, 3 stops".into()), voice: Some("Zone_3".into()), ..Default::default() };
+    let child = omsi_plugin::TicketChange { kind: Some(omsi_plugin::TicketKind::None), ..Default::default() };
+    assert_eq!(g.changed, [(5, ride, "DEMO".to_string()), (6, child, "DEMO".to_string())]);
 }
 
 /// What the demo drew after four frames: the third texture (number 2 of the vehicle)
@@ -129,6 +151,7 @@ fn in_process() {
     // (odd), still down at 1.5 s, up at 2 s
     assert_eq!(g.fired, [("horn".to_string(), true), ("horn".to_string(), false)]);
     check_textures(&g);
+    check_tickets(&g);
     plugins.finalize();
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -139,7 +162,7 @@ fn through_the_host() {
     let dll = dir.join("Demo/demo.dll");
     let host = Path::new(env!("CARGO_BIN_EXE_omsi-plugin-host"));
     let r = Remote::spawn(None, host, &dll).expect("host starts");
-    assert!(r.procs().variable && r.procs().trigger && r.procs().system && r.procs().string && r.procs().texture && r.procs().pointer);
+    assert!(r.procs().variable && r.procs().trigger && r.procs().system && r.procs().string && r.procs().texture && r.procs().pointer && r.procs().ticket);
     drop(r);
     // the same frames through a plugin whose library will not load here: force the host
     let hosts = HostConfig { host32: Some(host.to_path_buf()), runner: None };
@@ -155,7 +178,12 @@ fn host_frames() {
     let dir = plugins_dir("frames");
     let host = Path::new(env!("CARGO_BIN_EXE_omsi-plugin-host"));
     let mut r = Remote::spawn(None, host, &dir.join("Demo/demo.dll")).unwrap();
-    let f = omsi_plugin::Frame { system: vec![(0, 3.0)], vars: vec![(0, 1.5)], strings: vec![(0, "0123456789ab".into())], triggers: vec![0], textures: vec![(0, 3, 2), (1, 2, 2)], pointer: vec![(0, omsi_plugin::POINTER_UP, 2.0, 1.0)] };
+    let tickets = vec![
+        omsi_plugin::TicketCall { person: 1, age: 40.0, stop: "Střížkov".into(), destination: "Nový Bor".into(), stop_number: 2, destination_number: 5, kind: 2, ticket: 1, price: 20.0, name: "Full fare".into() },
+        omsi_plugin::TicketCall { person: 2, age: 9.0, kind: 2, ticket: 2, ..Default::default() },
+        omsi_plugin::TicketCall { person: 3, age: 40.0, kind: 2, ticket: 1, ..Default::default() },
+    ];
+    let f = omsi_plugin::Frame { system: vec![(0, 3.0)], vars: vec![(0, 1.5)], strings: vec![(0, "0123456789ab".into())], triggers: vec![0], textures: vec![(0, 3, 2), (1, 2, 2)], pointer: vec![(0, omsi_plugin::POINTER_UP, 2.0, 1.0)], tickets };
     let reply = r.frame(&f).unwrap();
     assert_eq!(reply.system, [None]);
     assert_eq!(reply.vars, [Some(3.0)]);
@@ -168,6 +196,9 @@ fn host_frames() {
     // the release went through the host before the picture was drawn
     assert_eq!(&px[4..8], &[2, 1, omsi_plugin::POINTER_UP, 1]);
     assert_eq!(reply.textures[1], None);
+    // the passengers' tickets went through the host and back
+    let full = omsi_plugin::TicketAnswer { kind: 2, ticket: 1, price: 30.0, name: "Nový Bor, 3 stops".into(), voice: "Zone_3".into() };
+    assert_eq!(reply.tickets, [Some(full), Some(omsi_plugin::TicketAnswer { kind: 0, ticket: 2, ..Default::default() }), None]);
     // the host keeps the buffer: the second frame counts on from the first
     let reply = r.frame(&f).unwrap();
     assert_eq!(reply.textures[0].as_ref().unwrap()[3], 2);

@@ -5,8 +5,8 @@ use super::*;
 use omsi_render::{Renderer, Scene};
 
 /// How far ahead (s) the timetable reads and uploads the vehicles of its next departures: a
-/// layover bus stands at its first stop a quarter of an hour early.
-pub(super) const FLEET_AHEAD: f64 = 25.0 * 60.0;
+/// tour's bus missing on its layover stands at its first stop up to half an hour early.
+pub(super) const FLEET_AHEAD: f64 = 35.0 * 60.0;
 
 /// [`FLEET_AHEAD`], or `OMSI_FLEET_AHEAD` minutes (for tests).
 pub(super) fn fleet_ahead() -> f64 {

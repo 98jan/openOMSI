@@ -32,7 +32,11 @@
 //! and calls it before `AccessScriptTexture` in the next frame, once per press (kind 0),
 //! move while pressed (1) and release (2), with `x`/`y` in the texture's pixels from its
 //! top left (the game gathers the events in a `TexturePointer`). OMSI skips the unknown tag and never asks for the
-//! procedure, so one DLL and `.opl` serve both games. (OMSI 2 itself never gave plugins
+//! procedure, so one DLL and `.opl` serve both games.
+//!
+//! A third, `AccessTicketRequest` (see [`TicketCall`]), hears each passenger boarding the
+//! player's bus once, as they decided about their ticket, and may change it before they ask
+//! for it at the cash desk (the Lua plugins' `passenger_ticket` and `people.set_ticket`). (OMSI 2 itself never gave plugins
 //! the script textures: tools like OmsiHook reach them in Omsi.exe's memory, which does not
 //! exist here.)
 //!
@@ -150,6 +154,83 @@ pub struct Frame {
     /// `[scripttexturelist]`, kind - [`POINTER_DOWN`], [`POINTER_MOVE`], [`POINTER_UP`] -,
     /// x, y in the texture's pixels from its top left).
     pub pointer: Vec<(u16, u8, f32, f32)>,
+    /// The passengers who decided about their ticket since the last frame
+    /// (`AccessTicketRequest`).
+    pub tickets: Vec<TicketCall>,
+}
+
+/// One call of `AccessTicketRequest` (openOMSI only):
+///
+/// ```pascal
+/// procedure AccessTicketRequest(person: Cardinal; age: Single;
+///   stop, destination: PWideChar; stopNumber, destinationNumber: Integer;
+///   var kind, ticket: Integer; var price: Single; name, voice: PWideChar;
+///   var write: Boolean); stdcall;
+/// ```
+///
+/// `stop` and `destination` are the timetable's names of the stop they board at and the one
+/// they ride to ("" when not known), the numbers where those are in the duty's trip (from 1;
+/// 0 not in it). `kind` 0 nothing (a pass), 1 stamp, 2 buy; `ticket` the ticket pack's (from
+/// 1; 0 none); `name` a buffer of [`TICKET_TEXT`] wide characters holding the ticket's name,
+/// `voice` one as long, empty: a line of the passenger's voice folder said at the desk
+/// instead of `Ticket_<n>_<k>`. With `write` set, what the plugin changed of them is taken
+/// (the kind only before the passenger is in the bus).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TicketCall {
+    pub person: u32,
+    pub age: f32,
+    pub stop: String,
+    pub destination: String,
+    pub stop_number: i32,
+    pub destination_number: i32,
+    pub kind: i32,
+    pub ticket: i32,
+    pub price: f32,
+    pub name: String,
+}
+
+/// What a plugin wrote back to `AccessTicketRequest`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TicketAnswer {
+    pub kind: i32,
+    pub ticket: i32,
+    pub price: f32,
+    pub name: String,
+    pub voice: String,
+}
+
+/// Wide characters of `AccessTicketRequest`'s `name` and `voice` buffers, the terminating
+/// zero included.
+pub const TICKET_TEXT: usize = 256;
+
+impl TicketCall {
+    pub fn of(a: &TicketAsk) -> TicketCall {
+        let number = |k: Option<usize>| k.map_or(0, |k| i32::try_from(k + 1).unwrap_or(0));
+        TicketCall {
+            person: a.person,
+            age: a.age,
+            stop: a.stop_name.clone().unwrap_or_default(),
+            destination: a.destination.clone().unwrap_or_default(),
+            stop_number: number(a.stop_index),
+            destination_number: number(a.destination_index),
+            kind: a.kind.code(),
+            ticket: a.ticket as i32,
+            price: a.price,
+            name: a.name.clone(),
+        }
+    }
+
+    /// What the answer changes: only what differs from the call (a voice when one is given).
+    pub fn change(&self, a: &TicketAnswer) -> TicketChange {
+        TicketChange {
+            kind: (a.kind != self.kind).then(|| TicketKind::from_code(a.kind)).flatten(),
+            ticket: (a.ticket != self.ticket).then(|| u8::try_from(a.ticket).ok()).flatten(),
+            name: (a.name != self.name).then(|| a.name.clone()),
+            price: (a.price.to_bits() != self.price.to_bits() && a.price.is_finite()).then_some(a.price.max(0.0)),
+            voice: (!a.voice.trim().is_empty()).then(|| a.voice.clone()),
+            tag: None,
+        }
+    }
 }
 
 /// `AccessScriptTexturePointer`'s `kind`: the button went down on the texture.
@@ -195,6 +276,8 @@ pub struct Reply {
     pub triggers_active: Vec<bool>,
     /// Per entry of `Frame::textures`: the picture the plugin wrote (width x height RGBA).
     pub textures: Vec<Option<Vec<u8>>>,
+    /// Per entry of `Frame::tickets`: what the plugin wrote back.
+    pub tickets: Vec<Option<TicketAnswer>>,
 }
 
 /// Which of the optional procedures the library has.
@@ -208,16 +291,18 @@ pub struct Procs {
     pub texture: bool,
     /// `AccessScriptTexturePointer` (openOMSI only).
     pub pointer: bool,
+    /// `AccessTicketRequest` (openOMSI only).
+    pub ticket: bool,
 }
 
 impl Procs {
     /// As the host reports them after `START`.
     pub fn flags(&self) -> u8 {
-        self.variable as u8 | (self.trigger as u8) << 1 | (self.system as u8) << 2 | (self.string as u8) << 3 | (self.texture as u8) << 4 | (self.pointer as u8) << 5
+        self.variable as u8 | (self.trigger as u8) << 1 | (self.system as u8) << 2 | (self.string as u8) << 3 | (self.texture as u8) << 4 | (self.pointer as u8) << 5 | (self.ticket as u8) << 6
     }
 
     pub fn from_flags(flags: u8) -> Procs {
-        Procs { variable: flags & 1 != 0, trigger: flags & 2 != 0, system: flags & 4 != 0, string: flags & 8 != 0, texture: flags & 16 != 0, pointer: flags & 32 != 0 }
+        Procs { variable: flags & 1 != 0, trigger: flags & 2 != 0, system: flags & 4 != 0, string: flags & 8 != 0, texture: flags & 16 != 0, pointer: flags & 32 != 0, ticket: flags & 64 != 0 }
     }
 }
 
@@ -228,6 +313,7 @@ type AccessStringFn = unsafe extern "system" fn(u16, *mut u16, *mut u8);
 type AccessTriggerFn = unsafe extern "system" fn(u16, *mut u8);
 type AccessTextureFn = unsafe extern "system" fn(u16, i32, i32, *mut u8, *mut u8);
 type AccessPointerFn = unsafe extern "system" fn(u16, i32, f32, f32);
+type AccessTicketFn = unsafe extern "system" fn(u32, f32, *const u16, *const u16, i32, i32, *mut i32, *mut i32, *mut f32, *mut u16, *mut u16, *mut u8);
 
 /// The largest script texture side handed to a plugin (a bad size must not allocate
 /// gigabytes, here or in the host).
@@ -244,6 +330,7 @@ pub struct Library {
     string: Option<AccessStringFn>,
     texture: Option<AccessTextureFn>,
     pointer: Option<AccessPointerFn>,
+    ticket: Option<AccessTicketFn>,
     /// One drawing buffer per `[scripttexturelist]` entry, kept from frame to frame.
     buffers: Vec<Vec<u8>>,
 }
@@ -269,12 +356,13 @@ impl Library {
             let string = lib.get::<AccessStringFn>(b"AccessStringVariable\0").ok().map(|s| *s);
             let texture = lib.get::<AccessTextureFn>(b"AccessScriptTexture\0").ok().map(|s| *s);
             let pointer = lib.get::<AccessPointerFn>(b"AccessScriptTexturePointer\0").ok().map(|s| *s);
-            Ok(Library { _lib: lib, start, finalize, variable, trigger, system, string, texture, pointer, buffers: Vec::new() })
+            let ticket = lib.get::<AccessTicketFn>(b"AccessTicketRequest\0").ok().map(|s| *s);
+            Ok(Library { _lib: lib, start, finalize, variable, trigger, system, string, texture, pointer, ticket, buffers: Vec::new() })
         }
     }
 
     pub fn procs(&self) -> Procs {
-        Procs { variable: self.variable.is_some(), trigger: self.trigger.is_some(), system: self.system.is_some(), string: self.string.is_some(), texture: self.texture.is_some(), pointer: self.pointer.is_some() }
+        Procs { variable: self.variable.is_some(), trigger: self.trigger.is_some(), system: self.system.is_some(), string: self.string.is_some(), texture: self.texture.is_some(), pointer: self.pointer.is_some(), ticket: self.ticket.is_some() }
     }
 
     /// `PluginStart(AOwner)`; there is no Delphi application to own the plugin's forms here.
@@ -362,8 +450,29 @@ impl Library {
                 (write != 0).then(|| buf.clone())
             })
             .collect();
+        r.tickets = f.tickets.iter().map(|t| self.ticket.and_then(|func| call_ticket(func, t))).collect();
         r
     }
+}
+
+/// One `AccessTicketRequest`: the texts as zero-terminated wide strings, the name and voice
+/// in buffers of [`TICKET_TEXT`] characters (read back up to their first zero).
+fn call_ticket(func: AccessTicketFn, t: &TicketCall) -> Option<TicketAnswer> {
+    let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+    let buffer = |s: &str| -> Vec<u16> {
+        let mut b: Vec<u16> = s.encode_utf16().take(TICKET_TEXT - 1).collect();
+        b.resize(TICKET_TEXT, 0);
+        b
+    };
+    let read = |b: &[u16]| String::from_utf16_lossy(&b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())]);
+    let (stop, dest) = (wide(&t.stop), wide(&t.destination));
+    let (mut name, mut voice) = (buffer(&t.name), buffer(""));
+    let (mut kind, mut ticket, mut price, mut write) = (t.kind, t.ticket, t.price, 0u8);
+    unsafe { func(t.person, t.age, stop.as_ptr(), dest.as_ptr(), t.stop_number, t.destination_number, &mut kind, &mut ticket, &mut price, name.as_mut_ptr(), voice.as_mut_ptr(), &mut write) };
+    // (the last character stays the terminating zero whatever the plugin wrote)
+    name[TICKET_TEXT - 1] = 0;
+    voice[TICKET_TEXT - 1] = 0;
+    (write != 0).then(|| TicketAnswer { kind, ticket, price, name: read(&name), voice: read(&voice) })
 }
 
 /// Wide characters a plugin's string variable buffer has at least (see `frame`).
@@ -526,6 +635,73 @@ pub mod wire {
         Ok(())
     }
 
+    /// The frame's passengers (`Frame::tickets`), after the frame, only for a library with
+    /// `AccessTicketRequest` (a host from before it never sees them).
+    pub fn put_tickets(w: &mut impl Write, t: &[TicketCall]) -> std::io::Result<()> {
+        put_u16(w, t.len().min(u16::MAX as usize) as u16)?;
+        for c in t.iter().take(u16::MAX as usize) {
+            put_u32(w, c.person)?;
+            put_f32(w, c.age)?;
+            put_str(w, &c.stop)?;
+            put_str(w, &c.destination)?;
+            put_u32(w, c.stop_number as u32)?;
+            put_u32(w, c.destination_number as u32)?;
+            put_u32(w, c.kind as u32)?;
+            put_u32(w, c.ticket as u32)?;
+            put_f32(w, c.price)?;
+            put_str(w, &c.name)?;
+        }
+        Ok(())
+    }
+
+    pub fn get_tickets(r: &mut impl Read) -> std::io::Result<Vec<TicketCall>> {
+        (0..get_u16(r)?)
+            .map(|_| {
+                Ok(TicketCall {
+                    person: get_u32(r)?,
+                    age: get_f32(r)?,
+                    stop: get_str(r)?,
+                    destination: get_str(r)?,
+                    stop_number: get_u32(r)? as i32,
+                    destination_number: get_u32(r)? as i32,
+                    kind: get_u32(r)? as i32,
+                    ticket: get_u32(r)? as i32,
+                    price: get_f32(r)?,
+                    name: get_str(r)?,
+                })
+            })
+            .collect()
+    }
+
+    /// The answers, one per passenger of the frame, after the reply.
+    pub fn put_ticket_answers(w: &mut impl Write, a: &[Option<TicketAnswer>]) -> std::io::Result<()> {
+        for t in a {
+            match t {
+                Some(t) => {
+                    put_u8(w, 1)?;
+                    put_u32(w, t.kind as u32)?;
+                    put_u32(w, t.ticket as u32)?;
+                    put_f32(w, t.price)?;
+                    put_str(w, &t.name)?;
+                    put_str(w, &t.voice)?;
+                }
+                None => put_u8(w, 0)?,
+            }
+        }
+        Ok(())
+    }
+
+    pub fn get_ticket_answers(r: &mut impl Read, n: usize) -> std::io::Result<Vec<Option<TicketAnswer>>> {
+        (0..n)
+            .map(|_| {
+                if get_u8(r)? == 0 {
+                    return Ok(None);
+                }
+                Ok(Some(TicketAnswer { kind: get_u32(r)? as i32, ticket: get_u32(r)? as i32, price: get_f32(r)?, name: get_str(r)?, voice: get_str(r)? }))
+            })
+            .collect()
+    }
+
     pub fn get_reply(rd: &mut impl Read, f: &Frame, textures: bool) -> std::io::Result<Reply> {
         let mut r = Reply::default();
         let mut float = |n: usize| -> std::io::Result<Vec<Option<f32>>> {
@@ -619,8 +795,15 @@ impl Remote {
         wire::put_u8(&mut self.to, wire::FRAME)?;
         let textures = self.procs.texture;
         wire::put_frame(&mut self.to, f, textures, self.procs.pointer)?;
+        if self.procs.ticket {
+            wire::put_tickets(&mut self.to, &f.tickets)?;
+        }
         self.to.flush()?;
-        wire::get_reply(&mut self.from, f, textures)
+        let mut reply = wire::get_reply(&mut self.from, f, textures)?;
+        if self.procs.ticket {
+            reply.tickets = wire::get_ticket_answers(&mut self.from, f.tickets.len())?;
+        }
+        Ok(reply)
     }
 
     pub fn finalize(&mut self) {
@@ -807,6 +990,9 @@ impl Plugin {
                     }
                 }
             }
+            if self.procs.ticket {
+                f.tickets = io.ticket_asks().iter().map(TicketCall::of).collect();
+            }
         }
         let reply = match &mut self.backend {
             Backend::Local(lib) => lib.frame(&f),
@@ -843,6 +1029,13 @@ impl Plugin {
         for ((&tex, &(_, w, h)), px) in tex_idx.iter().zip(&f.textures).zip(&reply.textures) {
             if let Some(px) = px {
                 io.set_script_texture(tex, w, h, px);
+            }
+        }
+        for (call, answer) in f.tickets.iter().zip(&reply.tickets) {
+            let Some(answer) = answer else { continue };
+            let by = Path::new(&self.opl.dll.replace('\\', "/")).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            if let Err(why) = io.people_set_ticket(call.person, &call.change(answer), &by) {
+                log::info!("plugin {}: the ticket of passenger {} was not changed: {why}", self.opl.dll, call.person);
             }
         }
     }
@@ -888,7 +1081,7 @@ impl Plugins {
                 }
                 match Plugin::load(&opl, dir, hosts) {
                     Ok(p) => {
-                        log::info!("plugin {} loaded ({} variables, {} strings, {} system variables, {} triggers, {} script textures)", p.opl.dll, p.opl.vars.len(), p.opl.string_vars.len(), p.opl.system_vars.len(), p.opl.triggers.len(), if p.procs.texture { p.opl.script_textures.len() } else { 0 });
+                        log::info!("plugin {} loaded ({} variables, {} strings, {} system variables, {} triggers, {} script textures{})", p.opl.dll, p.opl.vars.len(), p.opl.string_vars.len(), p.opl.system_vars.len(), p.opl.triggers.len(), if p.procs.texture { p.opl.script_textures.len() } else { 0 }, if p.procs.ticket { ", passengers' tickets" } else { "" });
                         loaded.push(p);
                     }
                     Err(e) => log::warn!("Could not load plugin {}: {e}", opl.display()),
@@ -984,6 +1177,12 @@ impl Plugins {
         self.lua.iter().any(|p| p.hears(event)) || self.wasm.iter().any(|p| p.hears(event))
     }
 
+    /// Whether a plugin hears of the passengers' tickets (`passenger_ticket`, or an `.opl`'s
+    /// `AccessTicketRequest`): only then do the passengers report them and wait for it.
+    pub fn hear_tickets(&self) -> bool {
+        self.hears("passenger_ticket") || self.loaded.iter().any(|p| p.procs.ticket && !p.failed)
+    }
+
     /// The player's vehicle's script textures the `.opl` plugins draw or hear the mouse on
     /// (`[scripttexturelist]` of a library with `AccessScriptTexturePointer`): a click there
     /// is theirs, as a click on a `[htmltexture]` is its page's.
@@ -1047,7 +1246,7 @@ mod tests {
         let mut buf = Vec::new();
         wire::put_frame(&mut buf, &f, false, false).unwrap();
         assert_eq!(wire::get_frame(&mut buf.as_slice(), false, false).unwrap(), f);
-        let r = Reply { system: vec![None], vars: vec![Some(3.0), None], strings: vec![Some("ab".into())], triggers_active: vec![true, false], textures: vec![] };
+        let r = Reply { system: vec![None], vars: vec![Some(3.0), None], strings: vec![Some("ab".into())], triggers_active: vec![true, false], textures: vec![], tickets: vec![] };
         let mut buf = Vec::new();
         wire::put_reply(&mut buf, &r, false).unwrap();
         assert_eq!(wire::get_reply(&mut buf.as_slice(), &f, false).unwrap(), r);
@@ -1087,8 +1286,40 @@ mod tests {
     }
 
     #[test]
+    fn wire_round_trip_tickets() {
+        let calls = vec![
+            TicketCall { person: 7, age: 34.0, stop: "Střížkov".into(), destination: "Nový Bor, aut.st.".into(), stop_number: 1, destination_number: 12, kind: 2, ticket: 1, price: 30.0, name: "Plnocenná".into() },
+            TicketCall { person: 9, age: 10.0, ..Default::default() },
+        ];
+        let mut buf = Vec::new();
+        wire::put_tickets(&mut buf, &calls).unwrap();
+        assert_eq!(wire::get_tickets(&mut buf.as_slice()).unwrap(), calls);
+        let answers = vec![Some(TicketAnswer { kind: 2, ticket: 1, price: 64.0, name: "IDOL 4001".into(), voice: "Zone_4001".into() }), None];
+        let mut buf = Vec::new();
+        wire::put_ticket_answers(&mut buf, &answers).unwrap();
+        assert_eq!(wire::get_ticket_answers(&mut buf.as_slice(), 2).unwrap(), answers);
+    }
+
+    #[test]
+    fn ticket_answer_changes_only_what_differs() {
+        let call = TicketCall { person: 7, kind: 2, ticket: 1, price: 30.0, name: "Plnocenná".into(), ..Default::default() };
+        let same = TicketAnswer { kind: 2, ticket: 1, price: 30.0, name: "Plnocenná".into(), voice: String::new() };
+        assert_eq!(call.change(&same), TicketChange::default());
+        let other = TicketAnswer { kind: 0, ticket: 3, price: 64.0, name: "IDOL".into(), voice: "Zone_4001".into() };
+        let c = call.change(&other);
+        assert_eq!(c.kind, Some(TicketKind::None));
+        assert_eq!(c.ticket, Some(3));
+        assert_eq!(c.price, Some(64.0));
+        assert_eq!(c.name.as_deref(), Some("IDOL"));
+        assert_eq!(c.voice.as_deref(), Some("Zone_4001"));
+        // (a kind or ticket number out of range is left as it was)
+        let bad = TicketAnswer { kind: 7, ticket: -1, ..same };
+        assert_eq!(call.change(&bad), TicketChange::default());
+    }
+
+    #[test]
     fn procs_flags() {
-        for flags in 0..64u8 {
+        for flags in 0..128u8 {
             assert_eq!(Procs::from_flags(flags).flags(), flags);
         }
     }

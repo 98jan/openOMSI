@@ -521,4 +521,110 @@ mod tests {
         assert_eq!(sim.dep_time(0), DAY + 1800.0, "the same moment as before midnight");
     }
 
+    fn no_traffic() -> crate::ai_traffic::TrafficSim {
+        crate::ai_traffic::TrafficSim::assemble(
+            Path::new(""),
+            Default::default(),
+            crate::ai_traffic::setup::RandomTypes { types: Vec::new(), groups: Vec::new(), group_curves: false, group_uvg: Vec::new(), uvg_defaults: Vec::new() },
+            Vec::new(),
+            Default::default(),
+            (Vec::new(), Vec::new()),
+            Vec::new(),
+            (1.0, 0),
+            0,
+        )
+    }
+
+    fn no_world() -> EmptyWorld {
+        EmptyWorld { path: std::env::temp_dir(), ai: Default::default(), positions: Default::default() }
+    }
+
+    /// One trip of two stations, 10 minutes long, and departures (time, tour, previous of
+    /// the tour) all running today and not yet out.
+    fn tours(sim: &mut ScheduleSim, deps: &[(f64, &str, Option<usize>)]) {
+        sim.data.trips.push(omsi_timetable::Trip { terminus: "Bahnhof".into(), line: "1".into(), stations: vec![42, 43], ..Default::default() });
+        sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0), (600.0, 600.0)], stops: vec![true, true], duration: 600.0, ..Default::default() }]];
+        let mask = sim.day_bits.0 | sim.day_bits.1;
+        sim.departures = deps
+            .iter()
+            .map(|&(time, tour, _)| Departure {
+                time, trip: 0, profile: 0, line: "1".into(), ai_group: "depot".into(), tour: tour.into(), mask, spawned: false, yesterday: false,
+            })
+            .collect();
+        sim.tour_prev = deps.iter().map(|d| d.2).collect();
+        sim.tour_next = vec![None; deps.len()];
+        for (i, d) in deps.iter().enumerate() {
+            if let Some(k) = d.2 {
+                sim.tour_next[k] = Some(i);
+            }
+        }
+    }
+
+    /// A tour's bus is out only while its tour runs: the second trip of a tour whose bus is
+    /// missing stands at its first stop well before it leaves (#2593), the first trip of a
+    /// tour comes at its departure time and not before (#2595).
+    #[test]
+    fn only_a_tour_under_way_has_its_bus_before_a_departure() {
+        let mut sim = schedule();
+        let (world, mut traffic) = (no_world(), no_traffic());
+        // tour 1 at 10:00 and 10:35 (its first trip over at 10:10), tour 2 from 10:30
+        tours(&mut sim, &[(36_000.0, "1", None), (37_800.0, "2", None), (38_100.0, "1", Some(0))]);
+        sim.departures[0].spawned = true;
+        // 10:25: tour 1's bus stands for its 10:35 trip, tour 2 has no bus yet
+        sim.queue_due(&world, &mut traffic, 36_000.0 + 1500.0, 1.0);
+        assert_eq!(sim.pending.iter().copied().collect::<Vec<_>>(), [2]);
+        // 10:30: tour 2 leaves now
+        sim.queue_due(&world, &mut traffic, 37_800.0 + 0.5, 1.0);
+        assert_eq!(sim.pending.iter().copied().collect::<Vec<_>>(), [2, 1]);
+    }
+
+    /// A previous trip of the tour that does not run today is no trip before this one: the
+    /// trip is its tour's first and comes at its time. And after a break longer than a tour's
+    /// bus waits out, no bus stands there early either (the one that drove has gone).
+    #[test]
+    fn no_early_bus_after_a_trip_of_another_day_or_a_long_break() {
+        let mut sim = schedule();
+        let (world, mut traffic) = (no_world(), no_traffic());
+        // 10:00 (another day's), 10:30 after it; 11:00, then 11:41 after a 31-minute break
+        tours(&mut sim, &[(36_000.0, "1", None), (37_800.0, "1", Some(0)), (39_600.0, "2", None), (42_060.0, "2", Some(2))]);
+        sim.departures[0].mask = 0;
+        sim.departures[2].spawned = true;
+        sim.queue_due(&world, &mut traffic, 37_800.0 - 600.0, 1.0);
+        assert!(sim.pending.is_empty(), "{:?}", sim.pending);
+        sim.queue_due(&world, &mut traffic, 42_060.0 - 300.0, 1.0);
+        assert!(sim.pending.is_empty(), "{:?}", sim.pending);
+        // a 29-minute break: it stands there
+        sim.departures[3].time = 41_940.0;
+        sim.queue_due(&world, &mut traffic, 41_940.0 - 300.0, 1.0);
+        assert_eq!(sim.pending.iter().copied().collect::<Vec<_>>(), [3]);
+    }
+
+    /// A layover bus whose stand was taken tries again in a while, and when it comes at its
+    /// departure time it is no longer kept as one: at midnight the trip is made ready to run
+    /// again (it had stopped running after the first midnight).
+    #[test]
+    fn a_stand_taken_departure_retries_and_runs_again_the_next_day() {
+        let mut sim = schedule();
+        let (world, mut traffic) = (no_world(), no_traffic());
+        tours(&mut sim, &[(36_000.0, "1", None), (37_800.0, "1", Some(0))]);
+        sim.departures[0].spawned = true;
+        let t = 37_800.0 - 900.0;
+        sim.queue_due(&world, &mut traffic, t, 1.0);
+        assert_eq!(sim.next_pending(), Some(1));
+        sim.stand_taken(1, t);
+        sim.queue_due(&world, &mut traffic, t + 5.0, 1.0);
+        assert!(sim.pending.is_empty(), "not again at once");
+        sim.queue_due(&world, &mut traffic, t + 30.0, 1.0);
+        assert_eq!(sim.next_pending(), Some(1), "tried again");
+        sim.stand_taken(1, t + 30.0);
+        // at its departure time it comes, and is no longer a layover departure
+        sim.queue_due(&world, &mut traffic, 37_800.0 + 0.5, 1.0);
+        assert_eq!(sim.next_pending(), Some(1));
+        assert!(sim.later_layover.is_empty());
+        let mut next = sim.date_clock.clone();
+        next.day_of_year += 1;
+        sim.set_day(&next);
+        assert!(!sim.departures[1].spawned, "made ready to run again");
+    }
+
 }

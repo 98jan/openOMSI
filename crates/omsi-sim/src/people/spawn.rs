@@ -111,6 +111,8 @@ impl PeopleSim {
             tickets_sold: 0,
             ticket_cash: 0.0,
             sales: Vec::new(),
+            ticket_hook: false,
+            ticket_asks: Vec::new(),
             boarded: 0,
             served: 0,
             stepped_in: 0,
@@ -221,6 +223,30 @@ impl PeopleSim {
     /// `limited`: said only when the same file has not been said for 10 s (greetings and
     /// complaints; the ticket asked for, "thanks" and the missing change always are).
     pub fn say_ex(&mut self, i: usize, name: &str, limited: bool) {
+        self.say_line(i, name, limited, name.starts_with("Ticket_"));
+    }
+
+    /// The voice file of line `name` for person `i`: `<voice path>/<the .hum's voice>/
+    /// <name>.wav`, where there is one.
+    pub fn voice_file(&self, i: usize, name: &str) -> Option<std::path::PathBuf> {
+        // (without a `[voicepath]` the pack's own folder: Berlin_1 and Berlin_86 carry the
+        // voices themselves and name no path; the later packs point at theirs)
+        let base = self.tickets.as_ref().and_then(|t| match &t.voice_path {
+            Some(vp) if !vp.trim().is_empty() => Some(omsi_cfg::resolve_path(&self.root, vp.trim())),
+            _ => t.path.parent().map(|p| p.to_path_buf()),
+        })?;
+        let voice = self.people[i].ty.def.voice.trim();
+        if voice.is_empty() {
+            return None;
+        }
+        let dir = omsi_cfg::resolve_path(&base, voice);
+        let path = omsi_cfg::resolve_path(&dir, &format!("{name}.wav"));
+        omsi_cfg::vfs::is_file(&path).then_some(path)
+    }
+
+    /// `say_ex`; `ticket`: the line is the ticket asked for (said whatever the voices
+    /// setting but "nothing").
+    pub fn say_line(&mut self, i: usize, name: &str, limited: bool, ticket: bool) {
         // (what the riders of the player's bus say is shown as well, as OMSI's dialog hints
         // do - whatever the voices setting, and with no voice files: #1806)
         if self.pax(i).is_some_and(|p| p.bus == Some(BusId::Player)) {
@@ -229,7 +255,7 @@ impl PeopleSim {
         // the player may have silenced them (settings), all but the ticket they ask for
         match self.voices {
             2 => return,
-            1 if !name.starts_with("Ticket_") => return,
+            1 if !ticket => return,
             _ => {}
         }
         // Greetings and complaints: one at a time for the whole bus. OMSI only keeps
@@ -239,23 +265,7 @@ impl PeopleSim {
         if limited && self.time - self.last_chat < CHAT_PAUSE && self.time >= self.last_chat {
             return;
         }
-        // (without a `[voicepath]` the pack's own folder: Berlin_1 and Berlin_86 carry the
-        // voices themselves and name no path; the later packs point at theirs)
-        let Some(base) = self.tickets.as_ref().and_then(|t| match &t.voice_path {
-            Some(vp) if !vp.trim().is_empty() => Some(omsi_cfg::resolve_path(&self.root, vp.trim())),
-            _ => t.path.parent().map(|p| p.to_path_buf()),
-        }) else {
-            return;
-        };
-        let voice = self.people[i].ty.def.voice.trim().to_string();
-        if voice.is_empty() {
-            return;
-        }
-        let dir = omsi_cfg::resolve_path(&base, &voice);
-        let path = omsi_cfg::resolve_path(&dir, &format!("{name}.wav"));
-        if !omsi_cfg::vfs::is_file(&path) {
-            return;
-        }
+        let Some(path) = self.voice_file(i, name) else { return };
         if limited {
             if let Some(&t) = self.voice_said.get(&path) {
                 if self.time - t < 10.0 && self.time >= t {
