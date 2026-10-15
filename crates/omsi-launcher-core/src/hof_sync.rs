@@ -1,9 +1,9 @@
 use super::*;
 use anyhow::bail;
 
-/// Copy each installed mod map's depot file into vehicle folders that already contain a
-/// vehicle-local HOF. OMSI expects that copy next to every bus; openOMSI keeps it in its
-/// writable content folder so the original installation stays untouched.
+/// Copy each installed mod map's depot file into existing content vehicle folders that
+/// already contain a vehicle-local HOF. OMSI expects that copy next to every bus; openOMSI
+/// keeps it in its writable content folder so the original installation stays untouched.
 #[derive(Default)]
 struct MapHofSyncState {
     stamp: Option<String>,
@@ -42,6 +42,11 @@ pub(super) fn sync_map_hofs_to_vehicle_folders() {
             continue;
         }
         let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+        // Only use a bus folder already present directly in writable content. This avoids
+        // creating standalone bus mods for stock buses or buses read from an archive.
+        if !content_case_path(&content, &format!("Vehicles/{name}")).is_dir() {
+            continue;
+        }
         let mirrors = omsi_cfg::mirrored_dirs(&dir);
         let mut local_hofs = std::collections::HashSet::new();
         for mirror in mirrors {
@@ -175,8 +180,8 @@ pub(super) fn sync_map_hofs_to_vehicle_folders() {
     state.stamp = if retry { None } else { Some(final_stamp) };
 }
 
-/// Copy player-selected depot files into vehicle folders that already have local HOFs.
-/// Only the writable openOMSI content folder is changed; existing files are left alone.
+/// Copy player-selected depot files into existing content vehicle folders that already have
+/// local HOFs. Only the writable openOMSI content folder is changed; existing files are left alone.
 pub fn add_hofs_to_vehicle_folders(files: &[PathBuf]) -> Result<String> {
     let content = content_dir().ok_or_else(|| anyhow!("no game content folder is configured"))?;
     let original = root()?;
@@ -193,6 +198,7 @@ pub fn add_hofs_to_vehicle_folders(files: &[PathBuf]) -> Result<String> {
     for dir in omsi_cfg::read_dir_merged("Vehicles") {
         if !omsi_cfg::vfs::is_dir(&dir) { continue; }
         let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
+        if !content_case_path(&content, &format!("Vehicles/{name}")).is_dir() { continue; }
         let mut local_hofs = std::collections::HashSet::new();
         for mirror in omsi_cfg::mirrored_dirs(&dir) {
             for (file, is_dir) in omsi_cfg::vfs::list_dir(&mirror).unwrap_or_default() {

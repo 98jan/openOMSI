@@ -133,7 +133,7 @@ export function ModsPage() {
         ${status?.waiting?.length > 0 && html`<${Card} title="Waiting for their bus" hint="Packs installed before the bus they belong to: they go in once it is there.">
           <div class="row wrap">${status.waiting.map((w) => html`<${Tag}>${w}</${Tag}>`)}</div>
         </${Card}>`}
-        ${status?.hof_warnings?.length > 0 && html`<${Notice} kind="danger"><b>${t('Map HOF issue')}</b><div>${t('Some map HOF files could not be added. Check launcher.log for details.')}</div></${Notice}>`}
+        ${status?.hof_warnings?.length > 0 && html`<${Notice} kind="danger"><b>${t('Map HOF issue')}</b><div>${t('Some map HOF files could not be added. Check launcher.log for details.')}</div><ul>${status.hof_warnings.map((warning) => html`<li>${warning}</li>`)}</ul></${Notice}>`}
         ${status?.archives?.length > 0 && html`<${Card} title="Archives" hint="Read in place by the game, without unpacking.">
           <table class="table"><tbody>${status.archives.map(([n, b]) => html`<tr><td>${n}</td><td class="num muted" style="text-align:right">${bytes(b)}</td></tr>`)}</tbody></table>
         </${Card}>`}
