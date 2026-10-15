@@ -262,7 +262,7 @@ impl Warm {
                     if !seen.insert(path.clone()) {
                         continue;
                     }
-                    let data = omsi_texture::gpu::load_gpu_fast(&path).ok().map(|(t, _)| Arc::new(t));
+                    let data = omsi_texture::gpu::load_gpu(&path).ok().map(|(t, _)| Arc::new(t));
                     let pbr = if a.face.is_some() { omsi_texture::pbr::load_set(&omsi_texture::pbr::find(&path)) } else { None };
                     list.push((path, (data, pbr)));
                 }
