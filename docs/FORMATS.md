@@ -789,8 +789,10 @@ Regional = https://example.org/regional.mp3 | 97.9
   resolution reduction and the compression switch of the options dialog (not verified);
   `[texmemlimit]` (401.0 in the stock file) is the texture memory in MB above which OMSI
   lowers the resolution of distant textures. openOMSI's own keys are
-  `texture_compression=` (on by default) and `texture_memory=` (MB; `texmemlimit=` is read
-  too; an eighth of the machine's memory when unset). `OMSI_NO_BC=1` uploads everything as
+  `texture_compression=` (on by default) and `video_memory=` (MB for everything the game
+  holds on the card, not the textures alone; nine tenths of a discrete card's memory when
+  unset). `[texmemlimit]` and openOMSI's old `texture_memory=` were texture budgets: they
+  are not imported and the launcher drops `texture_memory=` when it writes the file. `OMSI_NO_BC=1` uploads everything as
   RGBA, `OMSI_NO_TEXCOMPRESS=1` keeps DXT files as blocks and the rest RGBA.
 
 ## Lighting (envir.cfg, model lights)
