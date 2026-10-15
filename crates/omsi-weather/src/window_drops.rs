@@ -260,10 +260,6 @@ impl Canvas {
         std::mem::replace(self, empty)
     }
 
-    pub fn is_taken(&self) -> bool {
-        self.image.rgba.is_empty()
-    }
-
     pub fn reset(&mut self) {
         *self = Self::new(self.size);
     }

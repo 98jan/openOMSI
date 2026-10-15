@@ -17,6 +17,12 @@ impl Player {
         start.elapsed().as_secs_f64()
     }
 
+    pub(crate) fn finish_window_paints(&mut self, renderer: &Renderer, scene: &mut Scene) {
+        if let Some(wipers) = self.render.window_wipers.as_mut() {
+            wipers.finish_paints(renderer, scene);
+        }
+    }
+
     /// Pose and place the driver at the wheel; `show` false hides the figure (the `driver`
     /// setting off), `mirror_only` keeps it to the mirrors (the cab view).
     pub(crate) fn sync_driver(&mut self, renderer: &Renderer, scene: &mut Scene, dt: f32, show: bool, mirror_only: bool) {
