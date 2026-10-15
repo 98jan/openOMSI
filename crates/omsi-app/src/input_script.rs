@@ -1169,17 +1169,10 @@ impl App {
     pub(crate) fn chord_bound(&self, code: KeyCode, shift: bool, ctrl: bool, alt: bool) -> bool {
         let m = omsi_content::input::chord(shift, ctrl, alt);
         let Some(scan) = keys::dik_code(code) else { return false };
-        // (a vehicle key counts where this bus has a use for it - a trigger of its scripts or
-        // one the engine handles: keyboard.cfg keeps the keys of every bus ever installed,
-        // and one add-on's Ctrl+Shift+M took the mirror editor from every other bus, #2577)
+        // (a vehicle key counts where this bus has a use for it, see `bus_uses_action`, #2577)
+        let uses = |p: &crate::player::Player, a: &str| omsi_sim::input::engine_action(a).is_some() || omsi_input::actions::bus_uses_action(&p.vehicle.ty.program, a, crate::player::ACTION_ALIASES);
         self.input.game_keys.iter().any(|b| b.scan_code == scan && b.matches(m))
-            || self.player.as_ref().is_some_and(|p| {
-                p.bindings.iter().any(|b| {
-                    b.scan_code == scan
-                        && b.matches(m)
-                        && (p.vehicle.ty.program.trigger(&b.action).is_some() || omsi_sim::input::engine_action(&b.action).is_some())
-                })
-            })
+            || self.player.as_ref().is_some_and(|p| p.bindings.iter().any(|b| b.scan_code == scan && b.matches(m) && uses(p, &b.action)))
     }
 }
 

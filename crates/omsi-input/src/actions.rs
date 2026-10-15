@@ -34,9 +34,46 @@ pub fn is_door_release(name: &str) -> bool {
     name.eq_ignore_ascii_case("doors_release")
 }
 
+/// Whether a bus whose scripts are `program` does something with a vehicle key bound to
+/// `name`, as `Player::action` handles it: the game's own indicator, door, ticket and change
+/// keys, a gate of an H-pattern gearbox, a trigger of the scripts, one of the stock names an
+/// action stands for (`aliases`, `ACTION_ALIASES`) or a toggle the scripts take as up and
+/// down steps. (The engine's axes - throttle, brake, steering - are the caller's to add.)
+/// keyboard.cfg keeps the keys of every bus ever installed: a key only another add-on uses
+/// must not take a game shortcut such as Ctrl+Shift+M from this bus (#2577), while one this
+/// bus answers - Ctrl+Left on `blinker_left_set` - must.
+pub fn bus_uses_action(program: &omsi_script::Program, name: &str, aliases: &[(&str, &[&str])]) -> bool {
+    let n = name.to_ascii_lowercase();
+    matches!(n.as_str(), "blinker_left_toggle" | "blinker_right_toggle" | "ticket_give" | "change_give" | "change_take")
+        || door_action(&n).is_some()
+        || is_door_release(&n)
+        || crate::hpattern::resolve(program, name).is_some()
+        || program.trigger(name).is_some()
+        || aliases.iter().find(|(a, _)| a.eq_ignore_ascii_case(name)).is_some_and(|(_, al)| al.iter().any(|a| program.trigger(a).is_some()))
+        || n.strip_suffix("_toggle").is_some_and(|b| program.trigger(&format!("{b}_up")).is_some() && program.trigger(&format!("{b}_down")).is_some())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The game's own vehicle keys count for any bus; a script's trigger, an alias and a
+    /// toggle by steps only where the scripts have them (#2577).
+    #[test]
+    fn a_key_counts_where_the_bus_uses_it() {
+        let src = "{trigger:kw_m_enginestart}\n{end}\n{trigger:lights_up}\n{end}\n{trigger:lights_down}\n{end}\n{trigger:bremse_halte_on}\n{end}\n";
+        let file = std::env::temp_dir().join(format!("omsi-input-actions-{}.osc", std::process::id()));
+        std::fs::write(&file, src).unwrap();
+        let program = omsi_script::compile(&omsi_script::CompileInput { scripts: vec![file.clone()], ..Default::default() });
+        std::fs::remove_file(&file).ok();
+        let aliases: &[(&str, &[&str])] = &[("haltestellenbremse", &["bremse_halte_on"]), ("unused_alias", &["no_such_trigger"])];
+        for used in ["blinker_left_toggle", "door_2", "doors_all", "ticket_give", "kw_m_enginestart", "haltestellenbremse", "lights_toggle"] {
+            assert!(bus_uses_action(&program, used, aliases), "{used}");
+        }
+        for unused in ["mirror_editor_of_another_bus", "unused_alias", "wipers_toggle"] {
+            assert!(!bus_uses_action(&program, unused, aliases), "{unused}");
+        }
+    }
 
     /// The door actions that work on every bus (#916).
     #[test]
