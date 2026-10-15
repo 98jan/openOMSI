@@ -200,7 +200,11 @@ pub fn overview(look: Look) -> serde_json::Value {
 /// widths. `look.global` is the map's `global.cfg`; the tiles stand beside it and the assets
 /// the map names under the installation it belongs to.
 fn read_map(look: &Look) -> Roads {
-    let Ok(global) = omsi_map::GlobalCfg::load(&look.global) else { return Roads::default() };
+    let Ok(mut global) = omsi_map::GlobalCfg::load(&look.global) else { return Roads::default() };
+    // (a map from OMSI 1 lists no entry points: they are its tiles' entry objects)
+    if global.entry_points.is_empty() {
+        global.add_object_entry_points();
+    }
     // everything that turns a tile index and a place in the tile into world metres needs
     // this first (`[worldcoordinates]` maps use another grid)
     omsi_map::configure_grid(&global);

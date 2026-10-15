@@ -36,6 +36,9 @@ pub struct MapSpline {
     pub id: i64,
     pub prev_id: i64,
     pub next_id: i64,
+    /// A tile older than version 11 links the spline to the one written before it and
+    /// leaves its place out: it goes on from that one's end (see `chain_linked_splines`).
+    pub linked: bool,
     /// Start point, tile-local metres: x east, y north, z up.
     pub pos: [f64; 3],
     /// Degrees, 0 = +y, clockwise positive.
@@ -598,16 +601,16 @@ fn read_spline(t: &mut Tile, r: &mut omsi_cfg::CfgReader, k: &str, auto: &mut us
     }
     let file_name = r.str().to_string();
     let id = if has(t.version, 6) { r.i64() } else { auto_id(auto) };
-    let (prev_id, next_id) = if has(t.version, 11) {
-        (r.i64(), r.i64())
+    let (prev_id, next_id, linked) = if has(t.version, 11) {
+        (r.i64(), r.i64(), false)
     } else {
         let linked = r.i64() != -1;
         match t.splines.last_mut().filter(|_| linked) {
             Some(p) => {
                 p.next_id = id;
-                (p.id, 0)
+                (p.id, 0, true)
             }
-            None => (0, 0),
+            None => (0, 0, false),
         }
     };
     // Splines store x, height, y (verified by prev/next continuity of stock maps).
@@ -654,6 +657,7 @@ fn read_spline(t: &mut Tile, r: &mut omsi_cfg::CfgReader, k: &str, auto: &mut us
         id,
         prev_id,
         next_id,
+        linked,
         pos,
         heading,
         length,
