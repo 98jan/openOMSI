@@ -63,12 +63,10 @@ impl Observations {
     }
 }
 
-/// The surface model shared by presets, reports and measured providers.
-pub use crate::conditions::road_wetness;
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conditions::road_wetness;
     fn sample() -> Observations {
         Observations {
             temperature_c: 12.0,

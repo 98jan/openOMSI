@@ -5,12 +5,14 @@ use serde_json::Value;
 use std::{
     collections::{HashMap, HashSet},
     io::Read,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::mpsc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const CFG: &str = "openomsi_weather.cfg";
+#[cfg(test)]
+mod storage_tests;
 pub(crate) fn selected(value: Option<&str>) -> bool {
     value.is_some_and(|v| v.eq_ignore_ascii_case("tomorrow"))
 }
@@ -149,8 +151,6 @@ fn now() -> u64 {
         .as_secs()
 }
 fn cache_path(key: &str) -> Option<PathBuf> {
-    use sha2::{Digest, Sha256};
-    let hash: String = Sha256::digest(key.as_bytes()).iter().map(|byte| format!("{byte:02x}")).collect();
     let base = omsi_cfg::flags::OMSI_TOMORROW_CACHE_DIR
         .live_os()
         .map(PathBuf::from)
@@ -158,22 +158,33 @@ fn cache_path(key: &str) -> Option<PathBuf> {
             crate::settings::Settings::path()
                 .and_then(|p| p.parent().map(|d| d.join("weather-cache")))
         })?;
-    Some(base.join(format!("tomorrow-{}.json", &hash[..16])))
+    Some(cache_path_in(&base, key))
+}
+fn cache_path_in(base: &Path, key: &str) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let hash: String = Sha256::digest(key.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    base.join(format!("tomorrow-{}.json", &hash[..16]))
 }
 fn credential() -> Option<String> {
-    let key = omsi_cfg::flags::OMSI_TOMORROW_API_KEY
-        .var()
-        .map(str::to_owned)
+    let path = omsi_cfg::flags::OMSI_TOMORROW_KEY_FILE
+        .os()
+        .map(PathBuf::from)
         .or_else(|| {
-            let path = omsi_cfg::flags::OMSI_TOMORROW_KEY_FILE
-                .os()
-                .map(PathBuf::from)
-                .or_else(|| {
-                    crate::settings::Settings::path()
-                        .and_then(|p| p.parent().map(|d| d.join("tomorrow-api-key.txt")))
-                })?;
-            std::fs::read_to_string(path).ok()
-        })?;
+            crate::settings::Settings::path()
+                .and_then(|p| p.parent().map(|d| d.join("tomorrow-api-key.txt")))
+        });
+    read_credential(
+        omsi_cfg::flags::OMSI_TOMORROW_API_KEY.var(),
+        path.as_deref(),
+    )
+}
+fn read_credential(explicit: Option<&str>, path: Option<&Path>) -> Option<String> {
+    let key = explicit
+        .map(str::to_owned)
+        .or_else(|| std::fs::read_to_string(path?).ok())?;
     let key = key.trim().to_string();
     (!key.is_empty()
         && key.len() < 512
@@ -193,6 +204,15 @@ fn write_cache(path: &PathBuf, cache: &Cache) -> Result<(), &'static str> {
 }
 fn fetch(key: String, coord: &str, ttl: u64) -> Result<Loaded, &'static str> {
     let path = cache_path(&key).ok_or("no private cache directory")?;
+    fetch_in(&path, coord, ttl, now(), || request(&key, coord))
+}
+fn fetch_in(
+    path: &PathBuf,
+    coord: &str,
+    ttl: u64,
+    time: u64,
+    request: impl FnOnce() -> Result<ureq::Response, ureq::Error>,
+) -> Result<Loaded, &'static str> {
     std::fs::create_dir_all(path.parent().unwrap())
         .map_err(|_| "cannot create private cache directory")?;
     let lock = path.with_extension("lock");
@@ -217,7 +237,6 @@ fn fetch(key: String, coord: &str, ttl: u64) -> Result<Loaded, &'static str> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Cache::default(),
         Err(_) => return Err("cannot read weather cache"),
     };
-    let time = now();
     if let Some(c) = cache
         .values
         .get(coord)
@@ -228,17 +247,7 @@ fn fetch(key: String, coord: &str, ttl: u64) -> Result<Loaded, &'static str> {
     cache.reserve(time)?;
     // Persist the reservation before networking; failed calls count too.
     write_cache(&path, &cache)?;
-    let agent = ureq::AgentBuilder::new()
-        .redirects(0)
-        .timeout(Duration::from_secs(8))
-        .build();
-    let response = agent
-        .get("https://api.tomorrow.io/v4/weather/realtime")
-        .query("location", coord)
-        .query("units", "metric")
-        .set("apikey", &key)
-        .call();
-    let response = match response {
+    let response = match request() {
         Ok(r) => r,
         Err(ureq::Error::Status(status, _)) => {
             if matches!(status, 401 | 403 | 429) {
@@ -271,6 +280,17 @@ fn fetch(key: String, coord: &str, ttl: u64) -> Result<Loaded, &'static str> {
     cache.values.insert(coord.into(), cached.clone());
     write_cache(&path, &cache)?;
     Ok(Loaded { cached, observed })
+}
+fn request(key: &str, coord: &str) -> Result<ureq::Response, ureq::Error> {
+    ureq::AgentBuilder::new()
+        .redirects(0)
+        .timeout(Duration::from_secs(8))
+        .build()
+        .get("https://api.tomorrow.io/v4/weather/realtime")
+        .query("location", coord)
+        .query("units", "metric")
+        .set("apikey", key)
+        .call()
 }
 // Parsing stays on the worker, including a cache hit. The provider adapter
 // converts API units only; the weather model chooses the game representation.
@@ -592,18 +612,22 @@ mod tests {
         assert!(
             MapConfig::parse(s.replace("\"latitude\":50", "\"latitude\":95").as_bytes()).is_err()
         );
-        assert!(MapConfig::parse(
-            s.replace("\"version\":1", "\"version\":1,\"apikey\":\"never here\"")
-                .as_bytes()
-        )
-        .is_err());
-        assert!(MapConfig::parse(
-            s.replace(
-                "{\"object_id\":7,\"tile\":[0,0]}",
-                "{\"object_id\":7,\"tile\":[0,0]},{\"object_id\":7,\"tile\":[0,0]}"
+        assert!(
+            MapConfig::parse(
+                s.replace("\"version\":1", "\"version\":1,\"apikey\":\"never here\"")
+                    .as_bytes()
             )
-            .as_bytes()
-        )
-        .is_err());
+            .is_err()
+        );
+        assert!(
+            MapConfig::parse(
+                s.replace(
+                    "{\"object_id\":7,\"tile\":[0,0]}",
+                    "{\"object_id\":7,\"tile\":[0,0]},{\"object_id\":7,\"tile\":[0,0]}"
+                )
+                .as_bytes()
+            )
+            .is_err()
+        );
     }
 }

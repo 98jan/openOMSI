@@ -13,7 +13,7 @@ Maps contain locations; each player supplies their own private API key.
    You can also create it using the editor below. Ordinary OMSI ignores the
    additional file; `global.cfg` does not need modification.
 3. Choose **Tomorrow.io**, select the map and bus, and start driving in a build
-   containing this feature. The editor's availability does not mean this draft
+   containing this feature. The editor's availability does not mean this
    feature is included in the official release you have installed.
 
 Environment overrides are `OMSI_TOMORROW_API_KEY` and `OMSI_TOMORROW_KEY_FILE`.
