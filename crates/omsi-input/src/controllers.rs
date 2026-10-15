@@ -257,6 +257,12 @@ fn free_axis_steers(moved: &mut Vec<String>, name: &str, x: f32, rest: Option<f3
     true
 }
 
+/// The X axis of a device nobody set up as it steers: from where it rests (`rest`). One
+/// resting off its centre held the bus that far off straight ahead (#868).
+fn free_axis_from_rest(x: f32, rest: Option<f32>) -> f32 {
+    (x - rest.unwrap_or(0.0)).clamp(-1.0, 1.0)
+}
+
 /// Whether a pad's left stick at `x` steers, given what steers already (`current`) and whether
 /// that is a device set up to steer. Only the first device used to: an idle joystick, wheel or
 /// virtual pad nobody set up (its X axis lends the steering) held the wheel at its centre and
@@ -1426,7 +1432,9 @@ impl Controllers {
                         // force-feedback wheel's is not: 2 % of it held a 1080° wheel's
                         // picture 11° behind the rim, #866)
                         let dz_free = if c.ff_capable { dz } else { dz.max(0.02) };
-                        let (steering, position) = wheel_steering(*v, false, 0, dz_free, self.steer_gain);
+                        // (the forces keep the axis' place itself)
+                        let (steering, _) = wheel_steering(free_axis_from_rest(*v, rest), false, 0, dz_free, self.steer_gain);
+                        let position = v.clamp(-1.0, 1.0);
                         out.steering.get_or_insert(steering);
                         if takes_feedback(&steer, c.ff) {
                             steer = Some((c.name.clone(), position, c.ff));
@@ -1861,11 +1869,13 @@ pub fn di_slots(axes: &[(u32, f32)]) -> Vec<(usize, f32)> {
 }
 
 /// Linux: whether an evdev ABS code is a controller's axis. A hat (ABS_HAT0X..3Y) is read
-/// as its buttons; a keyboard's or a macro keypad's volume knob or ABS_MISC, a tablet's
-/// pressure and the touch codes are no axes at all - taking the first free slot, X, the
-/// stray axis of a macro keypad steered the bus (#868).
+/// as its buttons; a keyboard's or a macro keypad's volume knob (ABS_VOLUME, ABS_PROFILE),
+/// a tablet's pressure, distance and tilt and the touch codes are no axes at all - taking
+/// the first free slot, X, the stray axis of a macro keypad steered the bus (#868).
+/// ABS_MISC and the codes after it are kept: Linux puts a device's vendor-defined analog
+/// axes there.
 fn controller_abs(code: u32) -> bool {
-    code & 0xFFFF < 0x10
+    matches!(code & 0xFFFF, 0x00..=0x0F | 0x28..=0x2E)
 }
 
 /// OMSI stores DirectInput's product name; the system's may differ in spacing and case.
@@ -2242,15 +2252,20 @@ mod slot_tests {
         }
     }
 
-    /// Linux: a macro keypad's ABS_MISC, a volume knob or a hat takes no slot - the stray axis
+    /// Linux: a macro keypad's volume knob, a tablet's or a touch code or a hat takes no slot - the stray axis
     /// was X and steered the bus (#868). ABS_WHEEL still takes a free one.
     #[test]
     fn no_controller_axis_takes_no_slot_on_linux() {
         assert!(controller_abs(0x3_0000) && controller_abs(0x3_0008) && controller_abs(0x3_000A));
-        assert!(!controller_abs(0x3_0010) && !controller_abs(0x3_0020) && !controller_abs(0x3_0028) && !controller_abs(0x3_0035));
+        // (ABS_MISC and on: a device's vendor-defined axes)
+        assert!(controller_abs(0x3_0028) && controller_abs(0x3_002E));
+        for code in [0x3_0010, 0x3_0017, 0x3_0018, 0x3_001C, 0x3_0020, 0x3_0021, 0x3_002F, 0x3_0035] {
+            assert!(!controller_abs(code), "{code:#x}");
+        }
         if cfg!(target_os = "linux") {
-            assert!(di_slots(&[(0x3_0028, -1.0), (0x3_0020, 0.3), (0x3_0010, 1.0)]).is_empty());
-            assert_eq!(di_slots(&[(0x3_0008, 0.2), (0x3_0028, -1.0)]), [(0, 0.2)]);
+            assert!(di_slots(&[(0x3_0021, -1.0), (0x3_0020, 0.3), (0x3_0010, 1.0)]).is_empty());
+            assert_eq!(di_slots(&[(0x3_0008, 0.2), (0x3_0020, -1.0)]), [(0, 0.2)]);
+            assert_eq!(di_slots(&[(0x3_0028, 0.5)]), [(0, 0.5)]);
         }
     }
 

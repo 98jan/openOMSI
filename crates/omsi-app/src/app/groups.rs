@@ -234,9 +234,6 @@ pub(crate) struct InputState {
     /// work nothing until it has the focus again (`App::input_lost` / `input_back`).
     pub(crate) input_away: bool,
     pub(crate) keys: hashbrown::HashSet<KeyCode>,
-    /// Keys held together that Windows reads as one virtual key (Num4 and Left with Num
-    /// Lock off, #1830): `keys::VkTwins`.
-    pub(crate) vk_twins: omsi_input::keys::VkTwins,
     /// Door trigger groups currently held by the Shift+number shortcut. Keeping the
     /// release until physical key-up prevents latched button states and door chatter.
     pub(crate) door_key_triggers: hashbrown::HashMap<KeyCode, Vec<String>>,

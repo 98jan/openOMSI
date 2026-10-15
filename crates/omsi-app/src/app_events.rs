@@ -227,10 +227,17 @@ impl ApplicationHandler for App {
                 ) {
                     lan::chat_type(&mut self.net.remotes, text);
                 }
+                // (a release is never a repeat, and on Windows the second of Num4 and Left
+                // held together is pressed, not repeated: `keys::key_repeat`, #1830)
+                let pressed = event.state == ElementState::Pressed;
+                let repeat = match event.physical_key {
+                    PhysicalKey::Code(code) => crate::keys::key_repeat(code, pressed, event.repeat, cfg!(windows), |k| self.input.keys.contains(&k)),
+                    _ => event.repeat && pressed,
+                };
                 // (the Lua plugins' `key` event; a key held down repeats nothing)
-                if let (PhysicalKey::Code(code), false) = (event.physical_key, event.repeat) {
+                if let (PhysicalKey::Code(code), false) = (event.physical_key, repeat) {
                     if self.integrations.plugin_keys.len() < 64 {
-                        self.integrations.plugin_keys.push((format!("{code:?}"), event.state == ElementState::Pressed));
+                        self.integrations.plugin_keys.push((format!("{code:?}"), pressed));
                     }
                 }
                 // a phone's back key is Escape (the game menu, out of the city map ...)
@@ -239,27 +246,7 @@ impl ApplicationHandler for App {
                     k => k,
                 };
                 if let PhysicalKey::Code(code) = physical {
-                    let pressed = event.state == ElementState::Pressed;
-                    // Windows keeps one state per virtual key: Num4 (Num Lock off) and the
-                    // Left arrow held together are one key to it, the second press comes as
-                    // a repeat and one of the two releases never comes - the wheel stayed
-                    // at full lock until Num4 was pressed again (#1830). The second press
-                    // counts as a press, and letting go of one lets go of both.
-                    let mut repeat = event.repeat;
-                    if cfg!(windows) && pressed {
-                        let keys = &self.input.keys;
-                        if self.input.vk_twins.first_press(code, repeat, |k| keys.contains(&k)) {
-                            repeat = false;
-                        }
-                    }
                     self.on_key(event_loop, code, pressed, repeat);
-                    if !pressed {
-                        if let Some(twin) = self.input.vk_twins.release(code) {
-                            if self.input.keys.contains(&twin) {
-                                self.on_key(event_loop, twin, false, false);
-                            }
-                        }
-                    }
                 }
             }
             // In VR right-click zooms; with mouse steering it first releases the steering.

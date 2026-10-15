@@ -153,32 +153,21 @@ pub fn vk_twin(key: KeyCode) -> Option<KeyCode> {
     PAIRS.iter().find_map(|&(a, b)| if a == key { Some(b) } else if b == key { Some(a) } else { None })
 }
 
-/// Keys held together that Windows read as one (see [`vk_twin`]). The second one's press
-/// comes flagged as a repeat (the virtual key is down already) and, of the two releases,
-/// one never comes: with Num4 held and the Left arrow pressed and let go, Num4's release
-/// was lost and the wheel stayed at full lock until Num4 was pressed again (#1830).
-#[derive(Debug, Default)]
-pub struct VkTwins(Vec<(KeyCode, KeyCode)>);
+/// A press of `key` that came flagged as a repeat while `key` itself is not held (`held`)
+/// but its twin (see [`vk_twin`]) is: its first press. Windows flags it so because the
+/// virtual key the two share is down already; taken for a repeat, the Left arrow pressed
+/// with Num4 held did nothing (#1830).
+pub fn twin_first_press(key: KeyCode, held: impl Fn(KeyCode) -> bool) -> bool {
+    !held(key) && vk_twin(key).is_some_and(held)
+}
 
-impl VkTwins {
-    /// A press of `key` flagged as a repeat while it is not held (`held`) but its twin is:
-    /// its first press, which `key` now goes on as. The pair is remembered for the release.
-    pub fn first_press(&mut self, key: KeyCode, repeat: bool, held: impl Fn(KeyCode) -> bool) -> bool {
-        self.0.retain(|&(a, b)| held(a) || held(b));
-        let Some(twin) = vk_twin(key).filter(|t| repeat && !held(key) && held(*t)) else {
-            return false;
-        };
-        self.0.push((key, twin));
-        true
-    }
-
-    /// `key` let go: the twin held with it, which is let go as well (its own release may
-    /// never come).
-    pub fn release(&mut self, key: KeyCode) -> Option<KeyCode> {
-        let i = self.0.iter().position(|&(a, b)| a == key || b == key)?;
-        let (a, b) = self.0.swap_remove(i);
-        Some(if a == key { b } else { a })
-    }
+/// Whether a key event of the window (`repeat` as the system flags it) is a repeat. A release
+/// never is: Windows flags the second release of two keys sharing one virtual key as one
+/// (its key was up already), and a release taken for a repeat went nowhere - with Num4 held
+/// and Left tapped, Num4's release was lost and the wheel stayed at full lock until Num4 was
+/// pressed again (#1830). On Windows (`windows`) a twin's first press is no repeat either.
+pub fn key_repeat(key: KeyCode, pressed: bool, repeat: bool, windows: bool, held: impl Fn(KeyCode) -> bool) -> bool {
+    pressed && repeat && !(windows && twin_first_press(key, held))
 }
 
 #[cfg(test)]
@@ -195,19 +184,29 @@ mod vk_twin_tests {
         assert_eq!(vk_twin(KeyA), None);
     }
 
-    /// Num4 held, Left pressed (a "repeat") and let go: both are let go (#1830).
+    /// Num4 held, Left pressed (flagged as a repeat): Left's first press (#1830).
     #[test]
     fn numpad_and_arrow_held_together() {
-        let mut t = VkTwins::default();
-        let held = [Numpad4];
-        assert!(t.first_press(ArrowLeft, true, |k| held.contains(&k)));
-        assert_eq!(t.release(ArrowLeft), Some(Numpad4));
-        assert_eq!(t.release(Numpad4), None);
+        assert!(twin_first_press(ArrowLeft, |k| k == Numpad4));
+        assert!(twin_first_press(Numpad4, |k| k == ArrowLeft));
         // a real repeat of a key held, or a repeat with no twin held, stays a repeat
-        let held = [ArrowLeft, Numpad4];
-        assert!(!t.first_press(ArrowLeft, true, |k| held.contains(&k)));
-        assert!(!t.first_press(ArrowRight, true, |k| held.contains(&k)));
-        assert!(!t.first_press(ArrowRight, false, |_| false));
+        assert!(!twin_first_press(ArrowLeft, |k| k == ArrowLeft || k == Numpad4));
+        assert!(!twin_first_press(ArrowRight, |k| k == Numpad4));
+        assert!(!twin_first_press(KeyA, |_| false));
+    }
+
+    /// Num4 held, Left tapped, Left and then Num4 let go, as Windows flags the events: the
+    /// Left press is a press, and both releases are releases (#1830).
+    #[test]
+    fn a_release_is_never_a_repeat() {
+        assert!(!key_repeat(Numpad4, true, false, true, |_| false));
+        assert!(!key_repeat(ArrowLeft, true, true, true, |k| k == Numpad4));
+        assert!(key_repeat(ArrowLeft, true, true, true, |k| k == Numpad4 || k == ArrowLeft));
+        assert!(!key_repeat(ArrowLeft, false, false, true, |k| k == Numpad4 || k == ArrowLeft));
+        assert!(!key_repeat(Numpad4, false, true, true, |k| k == Numpad4));
+        // elsewhere keys are told apart by themselves: a repeat stays one
+        assert!(key_repeat(ArrowLeft, true, true, false, |k| k == Numpad4));
+        assert!(key_repeat(KeyW, true, true, true, |k| k == KeyW));
     }
 }
 

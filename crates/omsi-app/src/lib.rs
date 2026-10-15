@@ -733,7 +733,6 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             window_focused: false,
             input_away: false,
             keys: Default::default(),
-            vk_twins: Default::default(),
             door_key_triggers: Default::default(),
             mouse_look: false,
             buttons_held: (false, false),

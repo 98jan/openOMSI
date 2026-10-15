@@ -86,6 +86,15 @@ fn an_x_axis_resting_at_an_end_does_not_steer() {
     assert!(moved.is_empty());
 }
 
+/// Steering from where the axis rests: one resting at 0.4 is straight ahead there (#868).
+#[test]
+fn a_free_axis_steers_from_where_it_rests() {
+    assert_eq!(free_axis_from_rest(0.4, Some(0.4)), 0.0);
+    assert!((free_axis_from_rest(0.9, Some(0.4)) - 0.5).abs() < 1e-6);
+    assert_eq!(free_axis_from_rest(-1.0, Some(0.4)), -1.0);
+    assert_eq!(free_axis_from_rest(0.3, None), 0.3);
+}
+
 #[test]
 fn hot_reload_editing_suppresses_input_and_releases_once() {
     let mut c = Controllers::with_devices(no_hardware(), vec![wheel()]);
