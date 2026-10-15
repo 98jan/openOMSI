@@ -51,13 +51,26 @@ Everything can also be given on the command line, which then skips both:
 | `--season winter` (`autumn-late`, `spring-early`, …) / `--situation x.osn` / `--physics simple` | season override, a saved situation, the kinematic dynamics instead of the rigid body |
 | `--enhanced` / `--export-glb bus.glb` | the physically based renderer; write the bus as glTF (the launcher's preview) and quit |
 | `--enhanced-plus` | Enhanced+: the physically based renderer with ray-traced shadows, ambient occlusion and reflections |
-| `--launcher` / `--menu` / `--no-menu` | open the launcher (the default without arguments), the in-game menu, or neither |
+| `--menu` / `--no-menu` | the in-game start menu instead of the launcher (which a start without arguments opens), or neither |
 
 **Experimental passenger animation A/B test.** In the launcher open **Settings → Gameplay →
 Passengers → Passenger animations** and choose **Procedural (experimental)** to test the
 earlier foot-planted/IK poses. **Original OMSI** is the default and remains compatible.
 For temporary A/B tests without changing the saved setting, set `OMSI_PAX_ANIMATION=enhanced`
 before starting openOMSI (or `OMSI_PAX_ANIMATION=original` to force the classic mode).
+
+**Character models.** **Settings → Gameplay → Passengers → Character models** chooses how
+the people look. **Original** (the default) draws the people of OMSI's content. **High
+quality (improved)** draws them with the [Microsoft Rocketbox avatars](https://github.com/microsoft/Microsoft-Rocketbox)
+(91 of them: everyday people, office workers, workers, nurses, pilots, police officers,
+children): each person an avatar of the same kind, with a living face - they blink, look
+about, smile when they pay, now and then raise their brows, frown in thought or yawn late
+at night, and their lips move with what they say. This is drawn on your computer only: the
+passengers themselves (where they go, sit and pay) stay as they are, and in multiplayer the
+others see their own people. The avatars are downloaded once, the first time the setting is
+on (about 310 MB, into `~/.openomsi/avatars`); until they are there the people stay the
+content's own. `OMSI_CHARACTER_MODELS=improved` or `=original` overrides the setting for one
+session, `OMSI_AVATARS_DIR` names another folder of avatars.
 This is a visual experiment: check boarding, seats, door steps, CPU time and mirrors before
 making it the default. The setting does not change passenger routing or tickets.
 
@@ -73,7 +86,11 @@ second (starter), **Shift+D** (drive), **.** (parking brake off), then throttle.
 whole start-up by itself (main switch, ignition, starter, gearbox to neutral); `--autostart`
 is the same thing for an offscreen run.
 
-**Updates.** When the launcher starts it asks
+**Updates.** (Not yet in the desktop launcher and the Android page: offering and installing an
+update was the game's old launcher window's, which is gone, and their update page is still to
+come - until then a new release is downloaded from the
+[latest release](https://github.com/openOMSI-org/openOMSI/releases/latest) page. During a session the game
+still downloads a newer release and says so, as below.) When the launcher starts it asks
 [github.com/openOMSI-org/openOMSI](https://github.com/openOMSI-org/openOMSI) for the latest release
 and, when there is a newer one, offers it: **Update now** downloads it (checked against the
 SHA-256 GitHub lists), puts the new program in place of the old one and starts the launcher
@@ -81,7 +98,8 @@ again - on Windows `openomsi.exe` and `openomsi-launcher.exe`, on macOS the `ope
 you started, on Linux the program files; mods, content and settings stay. On Android the
 system's installer asks "Do you want to update this app?"; Update replaces openOMSI and starts
 it again, Cancel leaves it as it was. Settings → General → Updates: look for updates at the start (on
-by default), install without asking (off by default), Check now. A folder openOMSI cannot
+by default), install without asking (off by default), the update channel (Stable, the tested
+releases, by default; Beta, every new version before it is tested, for testers), Check now. A folder openOMSI cannot
 write to (Program Files, an app opened straight from Downloads on macOS) is reported with
 what to do. A download that breaks goes on where it stopped (up to four times), a request
 that times out is tried again after 3 and 10 s, and when the GitHub API does not answer (or
@@ -96,6 +114,28 @@ runs. "Tell me about a new version during a session" switches the cards off (the
 goes on). `OMSI_NO_UPDATE=1` switches the checks off; `OMSI_UPDATE_URL` points them at another
 release description (GitHub's format; `file://` works, for testing - the game then looks after
 3 s).
+
+**When a version does not start.** openOMSI heals a start that breaks on its own, before
+anything that could break has run: when it is started (a double click, the launcher) it first
+starts a small watcher without a window. If the launcher crashes, ends on an error or has not
+drawn its first frames after two minutes (it is then ended), the watcher steps in - when that
+version never started on this computer, or failed twice in a row:
+
+1. a newer release, when there is one, is downloaded and installed (its program must start
+   before it replaces anything) and openOMSI starts again;
+2. else the version the last update replaced - kept beside it until the new version has
+   started well once - is put back, and openOMSI starts again;
+3. else openOMSI starts once more in **safe mode** (the basic render pipelines, no plugins);
+4. else a message says what to do (download the latest release, where the log is).
+
+Each step is told in a message box. A version that failed is never installed again on this
+computer, only a newer one. The project can also list a released version as broken
+(`release/health.json`); such a version goes back to the one before, or on to a fixed one, at
+the next start even when it starts well. A crash in the middle of a drive is not a broken
+start: nothing is changed then. The guard keeps its own record in `~/.openomsi/guard/`
+(`guard.log`, `starts.json`, `bad-versions`). `OMSI_NO_GUARD=1` switches it off. On Android
+the next start after one that never reached the launcher looks for an update at once (the
+system's installer asks); going back is the system's business there.
 
 **Playing now.** While a session runs the game tells the project's counter (a Cloudflare
 Worker, `services/presence/`) every ten minutes that it is being played, and says goodbye
@@ -209,16 +249,27 @@ nothing - what virtual bus companies ask their drivers for.
 
 ## The launcher
 
-The launcher is the game's own window (`crates/omsi-app/src/launcher`): `omsi` started
-without arguments (or with `--launcher`) opens it. It is drawn with wgpu - no web engine -
-flat and dark (neutral greys, one amber accent), every control custom (sliders, switches,
-dropdowns, a calendar, a time picker, text fields, segmented buttons), Material Symbols
-icons and Roboto (`crates/omsi-ui`). The Drive page shows the chosen bus in a card, as a
-picture **drawn by the game's renderer** - its model, paint, materials, reflections and
-shadows exactly as in the game, under the light of the chosen time and weather - drawn
-again only when something changes; drag on it to turn the bus, scroll to zoom. Its pages:
+The launcher is a program of its own beside the game, `openomsi-launcher-app` (a Tauri window,
+`launcher/`, see its README): `openomsi` started without arguments opens it, and where it is
+missing - or its window cannot open, for want of WebView2 on an old Windows (the game offers
+Microsoft's installer) or of WebKitGTK 4.1 on Linux - the game says so and where it belongs
+(on Linux in a dialog of the desktop as well as in the terminal).
 
-* **Drive** - four steps: the bus (search, liveries, depot file, number plate), the route (map, start
+**Linux needs WebKitGTK 4.1** for the launcher's window: `libwebkit2gtk-4.1-0` on Debian and
+Ubuntu, `webkit2gtk4.1` on Fedora, `webkit2gtk-4.1` on Arch. **SteamOS** (Steam Deck) does not
+include it and its system is read-only: in Desktop Mode open Konsole and run
+`sudo steamos-readonly disable`, `sudo pacman -S webkit2gtk-4.1`, `sudo steamos-readonly enable`
+(a password must be set first with `passwd`; when pacman complains about keys, run
+`sudo pacman-key --init` and `sudo pacman-key --populate archlinux holo` first; a SteamOS
+update can remove the package again, then run the same commands once more).
+On Android the same page shows in a web view over the game's window; iPhone, iPad and the Mac
+app have a launcher of their own (SwiftUI). The Drive page shows the chosen bus as a picture
+**drawn by the game's renderer** (the game program runs beside the launcher as its helper,
+`openomsi --launcher-service`) - its model, paint, materials, reflections and shadows exactly
+as in the game, under the light of the chosen time and weather; drag on it to turn the bus,
+scroll to zoom. Its pages:
+
+* **Drive** - the bus (search, liveries, depot file, number plate), the route (map, start
   point, line and tour - the lines that run on the chosen date), time and weather (time,
   date, season, traffic, passengers, timetable buses, autostart, *LAN play: host / join*,
   the weather presets that suit the season), and the roadbook with the IBIS codes; the
@@ -233,17 +284,19 @@ again only when something changes; drag on it to turn the bus, scroll to zoom. I
   head tracking, VR), *Sound*, *Gameplay* (passengers, traffic, collisions, the clock) and
   *General* (language, the game's interface size, navigator, Discord Rich Presence,
   updates, and resetting every setting).
-  **Discord Rich Presence** shows the launcher while preparing a drive, then the map and
-  line above the vehicle type and tour while playing. The full vehicle name is in the logo's
-  tooltip. The launcher status returns when the game ends.
+  **Discord Rich Presence** shows the map and line above the vehicle type and tour while
+  playing. The full vehicle name is in the logo's tooltip.
   It is enabled by default and can be turned off under Settings → General; the switch
-  affects the launcher immediately and the game on its next start. Discord must be running
+  affects the game on its next start. Discord must be running
   on the same computer.
   **Voice chat through GreenTeaSpeak** (on by default): in multiplayer, the other players
   are heard from where they are, when GreenTeaSpeak 2 runs with the openOMSI plugin and the
   server names a voice channel (see [SERVER.md](SERVER.md) and
   `tools/greenteaspeak-plugin/README.md`).
 * **Controls** - `Inputs/keyboard.cfg`: click a key, press the new one; clashes are red. The
+  keys and the game controllers are kept in `~/.openomsi/Inputs` (on Windows
+  `C:\Users\<you>\.openomsi\Inputs`), so an update or a new program folder keeps them; the first
+  start of this version brings over those an earlier one saved beside the program. The
   keys are the game's with *Driving keys: Custom controls* (Settings → Driving); with a ready-made
   layout (W A S D, arrows) those keys drive and win over the list - the page says so, and
   changing a key switches to Custom controls by itself. *Game controllers*: wheels, pedals,
@@ -277,16 +330,13 @@ again only when something changes; drag on it to turn the bus, scroll to zoom. I
   (it is then neither read nor listed as steering); **Remove this device** (clicked twice) takes
   one out of the list, kept so by **Save**. Select a device to adjust *Steering force*
   (centering and resistance) and *Vibration* separately, then press **Save**. The values are stored
-  for that device in the content folder's `Inputs/gamectrler.cfg`; restart a running game to use
+  for that device in `~/.openomsi/Inputs/gamectrler.cfg`; restart a running game to use
   the new values. *Force feedback and vibration* in Settings → Driving remains the global on/off switch.
 * **Sessions** - every game started from the launcher, with its log, a **Stop** that lets
   it save its run (SIGTERM, up to 8 s, and only a stuck game is killed) and, for a LAN
   session, the code to copy, who is playing and the chat.
 * **Mods** - installing mods and archives (see *Mods and the content folder*); a folder or
   .zip, .7z or .rar dropped on the window is installed.
-* **Timetable** - a map's lines, their tours and trips. Changes stay while you move between
-  lines and are saved together (*Save all*); **New line** makes a line, **Repeat** turns a tour
-  into a whole day of them (every *n* minutes up to a last departure).
 * **Setup** - where the original installation and the game binary are. The OMSI 2 folder may
   be given as a path with quotes, as `Omsi.exe` itself or as a folder inside it; unpacked into
   the OMSI 2 folder itself, openOMSI keeps its own content in an `openOMSI` folder there and
@@ -296,11 +346,9 @@ again only when something changes; drag on it to turn the bus, scroll to zoom. I
 scripts/build-macos.sh   # or build-windows.cmd / build-linux.sh: the game opens the launcher
 ```
 
-Without a person at it: `OMSI_LAUNCHER_PAGE=drive:2` opens a page (and a Drive step;
-`settings:3` or `controls:1` a tab), `OMSI_LAUNCHER_SHOT=secs:file.png` writes a picture,
-`OMSI_LAUNCHER_EXIT=secs` closes it,
-`OMSI_LAUNCHER_INPUT="t=2 click 412,60; t=3 type 76; t=4 key Enter; t=5 shot a.png"` works
-it (logical pixels). The data side is `crates/omsi-launcher-core`:
+Without a person at it: `OPENOMSI_LAUNCHER_SELFTEST=1 openomsi-launcher-app` checks the page in
+a hidden window and prints a report (see `launcher/README.md`). The data side is
+`crates/omsi-launcher-core`:
 `openomsi-launcher --cli lines '{"map":"maps/Grundorf/global.cfg"}'` runs any of its commands
 from a terminal - `config`, `maps`, `vehicles`, `weather`, `lines`, `ibis`, `profiles`,
 `profile`, `mods`, `modinfo`, `install`, `instances`, `stop`, `log`, `join`, `settings`,
@@ -319,6 +367,7 @@ menu's, the timetable's, the plates under the notes - 0.2 to 1, the texts stayin
 as designed; `navigator_opacity` in older files),
 `navigator_corner` (`bottom-left` default, `bottom-right`, `top-left`, `top-right`),
 `nav_ai` (the other AI vehicles as dots on the navigator and the city map; on by default),
+`nav_surface` (the map's own water, green land, rivers and rail under the roads of the navigator and the city map, when the map has a package, see [MAP_PACKAGE.md](MAP_PACKAGE.md); on by default), `nav_light` (the navigator's maps in a light look; off by default),
 `ai_wait_timed_stops_only` (an AI timetable bus ahead of its time waits for its departure only
 at its first and last stop, railway stations and the stops the timetable gives a time of their
 own, and drives on from the others once boarding is done; off by default: it waits at every
@@ -663,6 +712,20 @@ running through its line where they do not fit (ten characters on Dmitrij's "Mag
 P3ta's SOR buses and its kin, whose first line then shows the map's frequency for the
 place, e.g. `94.6 MHz`). Without stations, or with the radio off, a display shows its own texts.
 
+**Where it is heard.** In the cab the radio sounds from the driver's corner, a little ahead
+of the driver's eyes - from half as far as it really is, since a bus's speakers are spread
+along it: towards the back it is heard from the front but does not fade away. Changing the
+view, the sound glides to its new side in a quarter of a second. From outside it is the bus
+playing through its windows.
+
+**The radio's own sound.** Settings → Sound (in the game: Options → Sound) has three sliders,
+all off at first: *Radio: small speaker* plays it through a small dashboard speaker (no deep
+bass, no bright treble, nearly mono and a little pushed on the loud parts), *Radio: FM hiss*
+adds the hiss and crackle of a weak signal, *Radio: signal dropouts* loses the signal now
+and then for a moment (a bridge, a tall building). With all three at 0 the stream is played
+untouched. They are `radio_speaker`, `radio_hiss` and `radio_dropouts` (0..1) in
+`settings.cfg`.
+
 **When nothing plays.** `~/.openomsi/game.log` says what happened:
 `radio: 23 stations` (the list), `radio: station 1 Radiozurnal (https://…)` (a button
 pressed), then `Radio 1: Radiozurnal - buffering …` and the song, or `no signal (…)` with
@@ -700,6 +763,34 @@ original map is never written; delete the copy to have the original back. Only a
 `[object]` records can be edited: splines, the ground, spline rows, new objects and the
 timetable are not part of it.
 
+## Developer tools
+
+For those who build vehicles: **Ctrl+Shift+D** opens a panel at the right of the picture
+over the running game (again: closes it; closed it costs nothing). The game goes on under it;
+the mouse works the panel where it is over it and the cab everywhere else. Four pages:
+
+* **Variables**: the search lists the bus's script variables (`$` before the text: its string
+  variables) with their values; a click puts one on the watch list at the top, which is kept
+  per bus in `~/.openomsi/devtools/<bus file>.watch`. A watched variable chosen can be **Set**
+  to a value once, or **Held** at it - written into the bus before its scripts run and after
+  them, every frame, until *Let go* or until the panel closes.
+* **Overlays** over the picture: the paths and their points (with the entries and exits), the
+  seats and standing places (and the way they face), the bounding boxes, the axles and
+  wheels, the interior lights with their variables and values, the ticket and stamper
+  points, the mirrors, the centre of gravity and the views - of every part of an articulated
+  bus in its own place.
+* **Mirrors**: each mirror moved, turned and widened while you look at it, and *Copy the
+  block* puts it on the clipboard as the `[add_camera_reflexion_2]` block it has become, to
+  paste into the `.bus` (the block is shown under the buttons, and written to the log too).
+* **Files**: what changes in the bus's files is read again within a second while the panel
+  is open (or on its button): paths.cfg and `[passengercabin]` (not while people are aboard
+  and places, doors or points would go), sound.cfg, the `.bus` (physics, cameras, mirrors,
+  bounding box; not when its axles change), model.cfg (animations, visibility and lights, as
+  long as it names the same meshes) and the constfiles (as long as the scripts and their
+  variables stay). A changed script needs the bus placed anew. *Open the log* opens the
+  game's log. Change a copy of a bus in your content folder, never the installation's own
+  files.
+
 ## Mirror panels
 
 Copies of the bus's mirrors can be laid over the picture, so that the street behind is in
@@ -726,7 +817,11 @@ A new panel has the shape of the mirror's glass in the model. The layout is kept
 `~/.openomsi/mirror_hud.cfg`. The setting `mirror_hud` (0 off, 1 the right mirror, 2 the left,
 3 both) gives a bus with no layout of its own its first panels. The panels need the mirrors
 themselves to be drawn (`mirror_size` not 0); they are redrawn at the rate `mirror_refresh`
-sets, also when the glass is not in the view.
+sets, also when the glass is not in the view. With **Mirror panels every frame** (Settings →
+Graphics, `mirror_hud_every_frame=1`) the mirrors the panels show are drawn every frame instead,
+as ETS2 draws its screen mirrors, whatever `mirror_refresh` says (even with no real-time
+reflections); the other mirrors take their turns without them. It costs one mirror picture a
+frame for each mirror on the panels (none in VR, where the panels are not drawn).
 
 ## Debug and test switches
 
@@ -757,7 +852,7 @@ Environment variables, all off unless set. The useful ones:
 | `OMSI_NO_LAN_MODS=1` | a LAN host serves no mods and a joining game fetches none |
 | `OMSI_BACKEND=vulkan\|dx12\|gl\|angle` | the graphics interface to ask first (the log lists every adapter each one offers; `angle`, also `dx11`/`d3d11`: OpenGL ES on ANGLE over DirectX 11, Windows, with ANGLE's DLLs beside the game) |
 | `OMSI_GPU_LIMITS=default\|downlevel` | pretend the graphics card can only do this much (tests of old cards) |
-| `OMSI_GPU_ARRAYS=textures\|nostorage` | read the scene's arrays from textures, as on OpenGL chips without storage buffers in the vertex shader (or without any: no per-pixel lamp light) - tests of old cards |
+| `OMSI_GPU_ARRAYS=textures\|nostorage\|lighttextures` | read the scene's arrays from textures, as on OpenGL chips without storage buffers in the vertex shader (or without any: no per-pixel lamp light; with `lighttextures` the lamps read from textures too, as on ANGLE) - tests of old cards |
 | `OMSI_GL_TEXTURE_UNITS=1` | with `OMSI_GPU_ARRAYS`, keep to the sixteen texture units OpenGL has there, as such a chip does: the enhanced graphics are left out (vanilla+ is drawn) |
 | `OMSI_RENDER_OCCLUDED=1` | draw even while the window is hidden (tests) |
 | `OMSI_CHECK_OBSTACLES=1` | offscreen: drive every lane as a bus and list the objects that would stop it |

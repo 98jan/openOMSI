@@ -29,7 +29,11 @@ impl App {
         ctl.ff_engine = self.settings.ff_engine_vib;
         ctl.ff_fade = self.settings.ff_fade;
         ctl.steer_gain = if self.settings.wheel_lock >= 45.0 { (self.settings.wheel_range / self.settings.wheel_lock).clamp(0.1, 20.0) } else { 1.0 };
-        ctl.disabled = self.settings.ctrl_off.split('|').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        // (made anew only when the setting no longer says what the list holds)
+        let off = || self.settings.ctrl_off.split('|').map(str::trim).filter(|s| !s.is_empty());
+        if !ctl.disabled.iter().map(String::as_str).eq(off()) {
+            ctl.disabled = off().map(str::to_string).collect();
+        }
         ctl.set_editing(self.menus.game_menu.is_some() || self.menus.chooser.is_some() || self.photo.is_some());
         let analog = ctl.poll();
         let actions = std::mem::take(&mut ctl.actions);
@@ -63,6 +67,12 @@ impl App {
         if let Some(n) = ctl.notice.take() {
             self.service_msg = Some((n, 8.0));
         }
+        // a device set up by itself: kept for the next start and the launcher's page
+        if let Some(cfg) = ctl.auto_saved.take() {
+            if let Err(e) = crate::controllers::save_cfg(&cfg) {
+                log::warn!("game controllers: the automatic set-up could not be saved: {e}");
+            }
+        }
         // the bus's force feedback (OMSI's FF_Vib_Amp, and on a wheel its forces)
         // (in every view of the bus - the wheel went slack outside and in the
         // passenger view)
@@ -86,6 +96,12 @@ impl App {
             dt,
         });
         crate::game_controller_menu::frame(self);
+        // In the photo mode the wheel, the pedals and the joystick do nothing: its camera
+        // listens to a gamepad of its own (`photo::pad`), and a wheel's axes and buttons went
+        // on turning the view and switching things while the picture was being framed.
+        if self.photo.is_some() {
+            return (crate::controllers::Analog::default(), Vec::new());
+        }
         (analog, actions)
     }
 
@@ -116,17 +132,22 @@ impl App {
             // wheel's - the stick's curve and its less lock at speed made its first
             // degrees do nothing and the rest too much, #1653)
             analog.steering = Some(x);
-        } else if let Some((x, p)) = stick {
+        } else if let Some((x, p)) = stick.filter(|(x, p)| !keys_steer_over_idle_stick(*x, p.axes.steering)) {
             let now = p.vehicle.physics.controls.steering;
             let kmh = p.vehicle.physics.velocity_kmh() as f32;
             self.input.pad_kmh = crate::controllers::smooth_toward(self.input.pad_kmh, kmh, dt, 0.4);
             let target = crate::controllers::gamepad_steering(x, self.input.pad_kmh);
             self.input.pad_steer_target = crate::controllers::smooth_toward(self.input.pad_steer_target, target, dt, self.settings.pad_steer_smooth / 1000.0);
-            // (the hand's pace is the same at any speed: the stick's reach already shrinks
-            // with the speed, `gamepad_steering`)
-            let step = dt / self.settings.pad_steer_speed.max(0.3);
+            // (the hand's pace shrinks with the stick's reach: `gamepad_reach`, #2014)
+            let step = dt / self.settings.pad_steer_speed.max(0.3) * crate::controllers::gamepad_reach(self.input.pad_kmh);
             analog.steering = Some(now + (self.input.pad_steer_target - now).clamp(-step, step));
         } else if let Some(p) = self.player.as_ref() {
+            // (an idle gamepad's stick beside the steering keys: the keys have the wheel - the
+            // stick pulled the wheel back towards its own middle at its pace whenever the keys
+            // had turned it, and the wheel went to and fro between the two, #1895)
+            if stick.is_some() {
+                analog.steering = None;
+            }
             // (the stick picks up from where the wheel is, at the bus's speed)
             self.input.pad_steer_target = p.vehicle.physics.controls.steering;
             self.input.pad_kmh = p.vehicle.physics.velocity_kmh() as f32;
@@ -138,7 +159,7 @@ impl App {
         let bus_view = self.mouse_steers_in_view();
         // (the plugins' panels having the mouse hold the wheel and the pedals as
         // looking round does: the cursor goes to their buttons)
-        let panels_mouse = self.plugin_focus();
+        let panels_mouse = self.integrations.plugin_focus() || self.game_panels_mouse();
         // (the cursor locked while a mouse button looks round, held while the mouse steers,
         // let go when it is wanted: mouse_grab.rs)
         self.sync_look_hold();
@@ -203,13 +224,20 @@ impl App {
             // a steering key's leftover turn must not take over whenever the cursor
             // passes the middle - the wheel jumped there; and the pedals, which Omsi.exe
             // writes from the cursor every frame: a brake the keys held stayed on (#395)
+            // (the setting off, the mouse only steers: the pedals stay the keys' and a
+            // controller's, #1704)
+            let pedals = self.settings.mouse_pedals;
             if let Some(p) = self.player.as_mut() {
                 p.axes.steering = 0.0;
-                p.axes.brake = 0.0;
-                p.axes.throttle = 0.0;
+                if pedals {
+                    p.axes.brake = 0.0;
+                    p.axes.throttle = 0.0;
+                }
             }
-            analog.throttle = Some(self.input.mouse_pedals.0);
-            analog.brake = Some(self.input.mouse_pedals.1);
+            if pedals {
+                analog.throttle = Some(self.input.mouse_pedals.0);
+                analog.brake = Some(self.input.mouse_pedals.1);
+            }
         } else if self.input.mouse_drive && bus_view && (self.input.mouse_look || self.input.input_away || panels_mouse)
             && self.menus.game_menu.is_none() {
             // looking round with the right button: the wheel and the pedals stay where
@@ -218,8 +246,10 @@ impl App {
             // background the same, its throttle let go (`App::input_lost`): the
             // cursor wandering over other windows steered and drove the bus.
             analog.steering = Some(self.input.mouse_steer.0);
-            analog.throttle = Some(self.input.mouse_pedals.0);
-            analog.brake = Some(self.input.mouse_pedals.1);
+            if self.settings.mouse_pedals {
+                analog.throttle = Some(self.input.mouse_pedals.0);
+                analog.brake = Some(self.input.mouse_pedals.1);
+            }
             if let Some(p) = self.player.as_mut() {
                 p.axes.steering = 0.0;
             }
@@ -277,12 +307,51 @@ impl App {
             p.axes.old_steering = self.settings.old_steering;
             p.axes.red_steer_spd = self.settings.red_steer_spd;
             p.axes.pedal_hold = self.settings.brake_hold;
+            p.axes.pedal_speed = self.settings.key_pedal_speed;
             p.analog = analog;
             for (name, down) in actions {
                 if !down || (self.menus.game_menu.is_none() && self.menus.chooser.is_none()) {
+                    // a button on a pedal (the clutch, a throttle or brake button) works the
+                    // pedal as its key does; `action` only fires the bus's triggers (#2029)
+                    if let Some(a) = omsi_sim::engine_action(&name) {
+                        p.axes.set(a, down);
+                        continue;
+                    }
                     p.action(&name, down);
                 }
             }
         }
+    }
+}
+
+/// Whether the steering keys have the wheel over a gamepad's stick at `x` (its place past the
+/// dead zone): the stick at rest while the keys' own wheel (`keys_steering`) is turned.
+fn keys_steer_over_idle_stick(x: f32, keys_steering: f32) -> bool {
+    x == 0.0 && keys_steering != 0.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keys_steer_over_idle_stick;
+
+    /// A gamepad lying idle beside the keyboard (#1895): the keys steer; the stick pushed, or
+    /// the keys' wheel back in the middle, the stick does.
+    #[test]
+    fn an_idle_stick_leaves_the_wheel_to_the_keys() {
+        assert!(keys_steer_over_idle_stick(0.0, 0.4));
+        assert!(keys_steer_over_idle_stick(0.0, -0.01));
+        assert!(!keys_steer_over_idle_stick(0.3, 0.4));
+        assert!(!keys_steer_over_idle_stick(0.0, 0.0));
+    }
+
+    /// The stick's reach and the hand's pace shrink together with the speed (#2014).
+    #[test]
+    fn the_sticks_pace_shrinks_with_the_speed() {
+        use crate::controllers::gamepad_reach as r;
+        assert_eq!(r(0.0), 1.0);
+        assert_eq!(r(10.0), 1.0);
+        assert!((r(50.0) - 1.0 / 3.0).abs() < 1e-6);
+        assert!((r(-90.0) - 0.2).abs() < 1e-6);
+        assert_eq!(r(f32::NAN), 1.0);
     }
 }

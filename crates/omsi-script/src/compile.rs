@@ -49,6 +49,48 @@ pub struct Program {
     var_index: HashMap<String, VarId>,
     str_var_index: HashMap<String, StrVarId>,
     name_index: HashMap<String, NameId>,
+    /// Which variables the blocks store into and read, worked out on the first question
+    /// (see [`VarUse`]).
+    var_use: std::sync::OnceLock<VarUse>,
+}
+
+/// Per variable, whether any block stores into it (`(S.L.x)`) or reads it (`(L.L.x)`):
+/// [`Program::stores`] is asked every frame for every bus (the cabin air, 32 passenger
+/// doors), and each answer scanned the whole bytecode. Blocks are only ever appended, so
+/// the number of blocks it was made for tells whether it still holds.
+#[derive(Debug, Clone, Default)]
+struct VarUse {
+    blocks: usize,
+    stores: Vec<u64>,
+    loads: Vec<u64>,
+    /// `(L.S.x)` reads, one bit per [`SysVar`] (there are fewer than 64).
+    sys_loads: u64,
+}
+
+impl VarUse {
+    fn of(blocks: &[Block]) -> VarUse {
+        let mut u = VarUse { blocks: blocks.len(), ..Default::default() };
+        let set = |bits: &mut Vec<u64>, v: VarId| {
+            let (w, b) = (v as usize / 64, v % 64);
+            if bits.len() <= w {
+                bits.resize(w + 1, 0);
+            }
+            bits[w] |= 1 << b;
+        };
+        for op in blocks.iter().flat_map(|b| &b.ops) {
+            match op {
+                Op::Store(v) => set(&mut u.stores, *v),
+                Op::Load(v) => set(&mut u.loads, *v),
+                Op::LoadSys(v) => u.sys_loads |= 1 << (*v as u8),
+                _ => {}
+            }
+        }
+        u
+    }
+
+    fn has(bits: &[u64], v: VarId) -> bool {
+        bits.get(v as usize / 64).is_some_and(|w| w & (1 << (v % 64)) != 0)
+    }
 }
 
 impl Program {
@@ -140,17 +182,32 @@ impl Program {
 
     /// Whether any block of the program stores into `var`.
     pub fn stores(&self, var: VarId) -> bool {
-        self.blocks.iter().any(|b| b.ops.iter().any(|op| matches!(op, Op::Store(v) if *v == var)))
+        match self.var_use() {
+            Some(u) => VarUse::has(&u.stores, var),
+            None => self.blocks.iter().any(|b| b.ops.iter().any(|op| matches!(op, Op::Store(v) if *v == var))),
+        }
     }
 
     /// Whether any block of the program reads variable `var` (`(L.L.name)`).
     pub fn reads(&self, var: VarId) -> bool {
-        self.blocks.iter().any(|b| b.ops.iter().any(|op| matches!(op, Op::Load(v) if *v == var)))
+        match self.var_use() {
+            Some(u) => VarUse::has(&u.loads, var),
+            None => self.blocks.iter().any(|b| b.ops.iter().any(|op| matches!(op, Op::Load(v) if *v == var))),
+        }
+    }
+
+    /// The variables' use, unless blocks were added since it was made (a program put
+    /// together by hand in a test): then the callers scan as before.
+    fn var_use(&self) -> Option<&VarUse> {
+        Some(self.var_use.get_or_init(|| VarUse::of(&self.blocks))).filter(|u| u.blocks == self.blocks.len())
     }
 
     /// Whether any block of the program reads the system variable `sys` (`(L.S.name)`).
     pub fn reads_sys(&self, sys: SysVar) -> bool {
-        self.blocks.iter().any(|b| b.ops.iter().any(|op| matches!(op, Op::LoadSys(v) if *v == sys)))
+        match self.var_use() {
+            Some(u) => u.sys_loads & (1 << (sys as u8)) != 0,
+            None => self.blocks.iter().any(|b| b.ops.iter().any(|op| matches!(op, Op::LoadSys(v) if *v == sys))),
+        }
     }
 
     /// Whether running `block` (with the macros it calls) can write variable `var` with
@@ -951,6 +1008,41 @@ mod tests {
         assert!(!p.has_script_var("PAX_Exit0_Open"));
         assert!(!p.has_script_var("Velocity"));
         assert!(p.var("PAX_Exit0_Open").is_some());
+    }
+
+    /// `stores`/`reads` answer from the bits made once as the whole bytecode scan did, and
+    /// a block added afterwards (programs put together by hand) is still seen.
+    #[test]
+    fn stores_and_reads_answer_as_the_bytecode_scan() {
+        let mut p = program_of("{frame}\n(L.L.a) (S.L.b)\n(L.L.c) 1 + (S.L.c)\n{end}\n");
+        let scan = |p: &Program, store: bool, var: VarId| {
+            p.blocks.iter().flat_map(|b| &b.ops).any(|op| matches!(op, Op::Store(v) | Op::Load(v) if *v == var && matches!(op, Op::Store(_)) == store))
+        };
+        let names = ["a", "b", "c", "Clutch"];
+        for n in names {
+            let v = p.var(n).unwrap();
+            assert_eq!(p.stores(v), scan(&p, true, v), "stores {n}");
+            assert_eq!(p.reads(v), scan(&p, false, v), "reads {n}");
+        }
+        assert!(p.stores(p.var("b").unwrap()) && !p.stores(p.var("a").unwrap()) && p.reads(p.var("c").unwrap()));
+        // (a variable past every one the bits hold)
+        assert!(!p.stores(4000) && !p.reads(4000));
+        let clutch = p.var("Clutch").unwrap();
+        p.blocks.push(Block { ops: vec![Op::Push(1.0), Op::Store(clutch)], ..Default::default() });
+        assert!(p.stores(clutch));
+    }
+
+    /// `reads_sys` answers from the same bits as the scan, and still sees a block added later.
+    #[test]
+    fn reads_sys_answers_as_the_bytecode_scan() {
+        let mut p = program_of("{frame}\n(L.S.Timegap) (L.S.AutoClutch) + (S.L.a)\n{end}\n");
+        let scan = |p: &Program, sys: SysVar| p.blocks.iter().flat_map(|b| &b.ops).any(|op| matches!(op, Op::LoadSys(v) if *v == sys));
+        for sys in SysVar::ALL {
+            assert_eq!(p.reads_sys(sys), scan(&p, sys), "{sys:?}");
+        }
+        assert!(p.reads_sys(SysVar::AutoClutch) && !p.reads_sys(SysVar::SunAlt));
+        p.blocks.push(Block { ops: vec![Op::LoadSys(SysVar::SunAlt)], ..Default::default() });
+        assert!(p.reads_sys(SysVar::SunAlt));
     }
 }
 

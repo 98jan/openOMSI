@@ -157,6 +157,8 @@ impl PlayerDuty {
             first_update: None,
             heading: 0.0,
             position: None,
+            unnumbered_public: Vec::new(),
+            passed: PassedStop::default(),
         }
     }
 
@@ -184,7 +186,8 @@ impl PlayerDuty {
     /// player's IBIS should use the next public leg while the bus is waiting.
     pub fn trip_for_ibis(&self) -> (&PlannedTrip, usize) {
         let current = self.trip();
-        if !current.line.trim().is_empty() {
+        let public = |t: &PlannedTrip| !t.line.trim().is_empty() || self.unnumbered_public.iter().any(|n| n.eq_ignore_ascii_case(&t.name));
+        if public(current) {
             return (
                 current,
                 self.next_stop.min(current.stops.len().saturating_sub(1)),
@@ -194,7 +197,7 @@ impl PlayerDuty {
             .trips
             .iter()
             .skip(self.trip_index + 1)
-            .find(|trip| !trip.line.trim().is_empty());
+            .find(|trip| public(trip));
         match next {
             Some(trip) => (trip, 0),
             None => (
@@ -267,7 +270,7 @@ impl PlayerDuty {
     /// gets its place once the tile comes, and one placed roughly (an object hung on
     /// another) its exact one. A stop without a place was never reached: the next stop
     /// stayed on it for the rest of the trip (#975) and the map left it out (#1014).
-    pub fn learn_loaded(&mut self, positions: &HashMap<i64, (glam::DVec3, [f64; 3])>) {
+    pub fn learn_loaded(&mut self, positions: &crate::world_data::ObjectPlaces) {
         // (the trip under way and the next: the later ones learn theirs when they come)
         let from = self.trip_index;
         for trip in self.trips[from..].iter_mut().take(2) {
@@ -482,6 +485,7 @@ impl PlayerDuty {
         let back = stop < self.next_stop;
         self.next_stop = stop;
         self.at_stop = false;
+        self.passed = PassedStop::default();
         self.served_terminus = None;
         self.arrived_late = None;
         if back {
@@ -533,6 +537,7 @@ impl PlayerDuty {
         self.held_back = false;
         self.trip_changed = true;
         self.picked = false;
+        self.passed = PassedStop::default();
     }
 
     /// How late the bus is (s; negative = early), as the IBIS shows it: at a stop against
@@ -540,7 +545,9 @@ impl PlayerDuty {
     /// the last stop's departure and the next one's arrival shared out by how far it has
     /// come between them, as OMSI shows it while driving (it stood still between the stops
     /// at the delay the bus left the last one with, #1898, #735) - and at the end of a trip
-    /// against the next trip's start.
+    /// against the next trip's start. The shares are the straight distances to the stop
+    /// left and the stop ahead, as Omsi.exe weighs the two times for `GetTTDelay` (0x61f59c
+    /// measures them, 0x7d5124 weighs).
     pub fn delay(&self, now: f64) -> f64 {
         let now = self.duty_time(now);
         let trip = self.trip();
@@ -591,6 +598,12 @@ impl PlayerDuty {
         self.heading = bus.heading;
         self.position = Some(bus.position);
         let served = self.advance(bus.position, day_time);
+        let standing = bus.physics.velocity_kmh().abs() < 0.36;
+        if self.at_stop && Self::doors_open(bus) {
+            self.passed.doors = true;
+        } else if !self.at_stop && standing && Self::doors_open(bus) {
+            self.step_back(bus.position, day_time);
+        }
         if self.done
             && self.at_stop
             && bus.physics.velocity_kmh().abs() < 0.36
@@ -598,34 +611,43 @@ impl PlayerDuty {
         {
             self.served_terminus = self.trip().stops.last().and_then(|stop| stop.position);
         }
-        // (the next trip starts on leaving the terminus only when it is due within a few
-        // minutes: a bus moved to its layover or across to the departure stand well before
-        // then waits for it, instead of being hours early on a trip begun at once)
-        if self.trip_index + 1 < self.trips.len()
-            && self.trips[self.trip_index + 1].departure - day_time <= EARLY_START
-            && self
-                .served_terminus
-                .is_some_and(|stop| (bus.position - stop).length() >= 60.0)
-        {
-            let terminus = self.served_terminus.unwrap();
+        // On to the next trip as soon as the bus has served the terminus (stopped there with
+        // a door open), as OMSI 2 does: the next trip's stops and departure, and the people
+        // at the terminus board for it. The duty stayed on the trip over until a minute before
+        // the next one left (or the bus drove off): nobody boarded the bus re-signed for its
+        // next trip while it waited at the terminus (#2148, #2060).
+        if self.trip_index + 1 < self.trips.len() && self.served_terminus.is_some() {
             self.set_trip(self.trip_index + 1);
-            // This trip has begun, however early it is. Do not place it again or skip it
-            // as an unbegun trip on a subsequent update.
-            self.picked = true;
-            self.left_late = Some(day_time - self.trip().departure);
-            if self
-                .trip()
-                .stops
-                .first()
-                .and_then(|stop| stop.position)
-                .is_some_and(|start| (start - terminus).length() < AT_STOP)
-            {
-                self.next_stop = 1.min(self.trip().stops.len().saturating_sub(1));
-            }
+            log::info!("duty: terminus served, on to trip {} {} to {}", self.trip_index + 1, self.trip().name, self.trip().terminus);
             self.advance(bus.position, day_time);
         }
         self.feed_host(bus, day_time);
         served
+    }
+
+    /// The bus stands with its doors open after the stop it passed without opening them, nearer
+    /// to that one than to the next and at most [`STEP_BACK`] beyond it: it serves that stop
+    /// here, and the duty (the IBIS, the navigator, the information bar) goes back to it. Its
+    /// object stood at the beginning of a station's long bay: the bus passed it on the way
+    /// to its platform, the duty moved on to the next stop, and it stayed there when the bus
+    /// stopped and opened its doors (Ahlheim's Eichenhöhe Bf, #2468).
+    pub(crate) fn step_back(&mut self, pos: glam::DVec3, day_time: f64) {
+        let Some(k) = self.passed.stop else { return };
+        if self.done || k + 1 != self.next_stop || self.held_back {
+            return;
+        }
+        let trip = &self.trips[self.trip_index];
+        let at = |i: usize| trip.stops.get(i).and_then(|s| s.position).map(|p| (p - pos).length());
+        let Some(back) = at(k) else { return };
+        if back > STEP_BACK || at(k + 1).is_some_and(|ahead| ahead <= back) {
+            return;
+        }
+        let stop = &trip.stops[k];
+        log::info!("duty: trip {}: the bus serves stop {} '{}' it had passed, {back:.0} m beyond it", trip.name, k + 1, stop.name.trim());
+        self.arrived_late = Some(day_time - stop.arr);
+        self.next_stop = k;
+        self.at_stop = true;
+        self.passed = PassedStop { doors: true, stop: None, stand: Some(pos) };
     }
 
     pub(crate) fn doors_open(bus: &crate::VehicleInstance) -> bool {
@@ -633,28 +655,16 @@ impl PlayerDuty {
         let mut passenger_door_open = false;
         for i in 0..16 {
             for kind in ["Entry", "Exit"] {
-                let name = format!("PAX_{kind}{i}_Open");
-                if bus.has_script_var(&name)
-                    || bus
-                        .ty
-                        .program
-                        .var(&name)
-                        .is_some_and(|id| bus.ty.program.stores(id))
-                {
+                if bus.pax_reports_open(kind, i) {
                     reports_passenger_doors = true;
-                    passenger_door_open |= bus.var(&name).unwrap_or(0.0) > 0.5;
+                    passenger_door_open |= bus.pax_open(kind, i).unwrap_or(0.0) > 0.5;
                 }
             }
         }
         if reports_passenger_doors {
             passenger_door_open
         } else {
-            (0..8).any(|i| {
-                bus.var(&format!("door_{i}"))
-                    .or_else(|| bus.var(&format!("door{i}")))
-                    .unwrap_or(0.0)
-                    > 0.5
-            })
+            (0..8).any(|i| bus.door_anim(i).unwrap_or(0.0) > 0.5)
         }
     }
 
@@ -681,7 +691,10 @@ impl PlayerDuty {
             host.tt_stop_ids = trip.stops.iter().map(|s| s.object_id).collect();
             host.tt_busstop_index = self.next_stop as i32;
             host.tt_terminus_index = tt_terminus_index(host.hof.as_deref(), &trip.terminus);
-            host.tt_delay = delay as f32;
+            // (whole seconds, as Omsi.exe keeps it: an integer field of the vehicle, the
+            // clock's second less the timetable's interpolated one, each rounded - 0x7d5124 -
+            // so a bus 0.3 s behind is not yet late to the scripts' `GetTTDelay > 0`)
+            host.tt_delay = delay.round() as f32;
         }
         // Aachen's ibox keeps its own stop counter and does `+ 1` when
         // `GetTTBusstopIndex` changes. A jump of more than one stop, or a unit that only
@@ -758,7 +771,8 @@ impl PlayerDuty {
             self.place(pos, day_time);
         }
         // on to the next trip a minute before it leaves, once this one is over, was never
-        // begun, or was given up half an hour ago
+        // begun, or was given up half an hour ago (one whose terminus the bus served goes on
+        // at once, `update`)
         while self.trip_index + 1 < self.trips.len()
             && self.trips[self.trip_index + 1].departure - 60.0 <= day_time
         {
@@ -809,7 +823,9 @@ impl PlayerDuty {
         if let Some(stop) = trip.stops.get(self.next_stop) {
             if let Some(p) = stop.position {
                 let d = (p - pos).length();
-                if d < AT_STOP {
+                // (a stop served beyond its object is left from where the bus stood)
+                let gone = self.passed.stand.map_or(d, |s| (s - pos).length());
+                if d < AT_STOP && self.passed.stand.is_none() {
                     self.held_back = false;
                     if !self.at_stop {
                         self.arrived_late = Some(day_time - stop.arr);
@@ -819,8 +835,10 @@ impl PlayerDuty {
                         self.done = true;
                         self.finish(TripEnd::Arrived);
                     }
-                } else if self.at_stop && d > LEFT_STOP {
+                } else if self.at_stop && gone > LEFT_STOP {
                     self.at_stop = false;
+                    let left = self.next_stop;
+                    self.passed = PassedStop { doors: false, stop: (!self.passed.doors && stop.stops).then_some(left), stand: None };
                     let late = day_time - stop.dep;
                     self.left_late = Some(late);
                     // (OMSI counts a stop only with its arrival: the original)

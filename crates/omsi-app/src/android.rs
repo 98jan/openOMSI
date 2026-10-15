@@ -1,10 +1,10 @@
 //! openOMSI on Android: the NativeActivity's `android_main`.
 //!
 //! A phone runs one program in one window, so the launcher and the game share both: the
-//! launcher hands the game's command line over (`omsi_launcher_lib::launch` keeps it
-//! instead of starting a process), the window goes to the game, and when the session ends
-//! (Escape, the menu's Quit) the window comes back to the launcher, which is kept as it
-//! was. The app's own data (settings, profiles, sessions) lives in its private folder
+//! launcher - the desktop launcher's page in a web view over the window (`android_launcher`)
+//! - hands the game's command line over (`omsi_launcher_lib::launch` keeps it instead of
+//! starting a process), the page steps aside for the game, and when the session ends
+//! (Escape, the menu's Quit) it comes back, kept as it was. The app's own data (settings, profiles, sessions) lives in its private folder
 //! (`HOME`); the original game, the mods and the screenshots are on the shared storage in
 //! `openOMSI/`, where a cable or a file manager reaches them.
 //!
@@ -25,6 +25,8 @@ pub const SHARED: &str = "/storage/emulated/0/openOMSI";
 
 #[no_mangle]
 fn android_main(app: AndroidApp) {
+    crate::view_sync::install_sim_decoder();
+    crate::startup::install_scene_settings();
     // an error is also written where a person finds it without a computer:
     // openOMSI/crash.log (or Android/data/org.openomsi.game/files/crash.log)
     let crash_files: Vec<PathBuf> = [Some(PathBuf::from(SHARED)), app.external_data_path()].into_iter().flatten().map(|d| d.join("crash.log")).collect();
@@ -47,6 +49,12 @@ fn android_main(app: AndroidApp) {
     // the Java activity (OmsiActivity) for the calls into it: ndk_context's context is the
     // Application, which has none of the activity's methods
     ACTIVITY.store(app.activity_as_ptr(), Ordering::Relaxed);
+    // the launcher is the page in this APK (LauncherBridge): an APK without it has none
+    if app.asset_manager().open(c"launcher/ui/index.html").is_none() {
+        log::error!("the launcher page (assets/launcher/ui) is not in this APK");
+    }
+    // (the updater's calls into Java, see `omsi_platform::android`)
+    omsi_platform::android::install(omsi_platform::android::Hooks { install_apk, install_status, open_url });
     // the app's own folder is the home of settings.cfg, launcher.json, the profiles
     if let Some(home) = app.internal_data_path() {
         std::env::set_var("HOME", &home);
@@ -74,7 +82,12 @@ fn android_main(app: AndroidApp) {
     };
     std::env::set_var("OMSI_CONTENT", &content);
     let _ = std::fs::write(content.join("README.txt"), README);
-    hide_from_gallery(&content);
+    // (beside the start, not before it: a folder read and a file written for each of the
+    // content folder's folders, on a slow card storage while the screen stayed empty)
+    {
+        let content = content.clone();
+        std::thread::spawn(move || hide_from_gallery(&content));
+    }
     // `openOMSI/env.txt`: the OMSI_* switches a computer takes from its environment, one
     // `NAME=value` a line (a phone has no environment to set; for looking into problems)
     if let Ok(t) = std::fs::read_to_string(content.join("env.txt")) {
@@ -100,7 +113,7 @@ fn android_main(app: AndroidApp) {
             return;
         }
     };
-    let mut shell = Shell { launcher: None, game: None, instance: None };
+    let mut shell = Shell { game: None, spare: None, prepared: false };
     if let Err(e) = event_loop.run_app(&mut shell) {
         log::error!("{e}");
     }
@@ -308,30 +321,29 @@ a folder or a .zip, .7z or .rar from the launcher's Mods page. Screenshots are w
 The folders here hold a .nomedia file so that the gallery leaves the game's textures alone:\n\
 they are not photos - deleting them breaks buses and maps.\n";
 
-/// The launcher, or the game in the launcher's window.
+/// The launcher page, or the game in the window under it.
 struct Shell {
-    launcher: Option<Box<launcher::Launcher>>,
     game: Option<Box<App>>,
-    instance: Option<()>,
+    /// The window a session ended in, for the next one, and whether the installation and the
+    /// content roots were looked for yet.
+    spare: Option<Arc<Window>>,
+    prepared: bool,
 }
 
 impl Shell {
-    fn launcher(&mut self) -> &mut launcher::Launcher {
-        if self.launcher.is_none() {
-            // the original installation and the content roots, as a bare start finds them
-            let args = Args::parse_from(["openomsi"]);
-            if let Err(e) = prepare(args, true) {
-                log::error!("{e:#}");
-            }
-            // (an installation chosen under Setup is known from here on)
-            if let Some(content) = crate::startup::content_dir() {
-                hide_from_gallery(&content);
-            }
-            launcher_statics();
-            self.instance = Some(());
-            self.launcher = Some(Box::new(launcher::Launcher::new(graphics_instance())));
+    /// The installation and the content roots, as a bare start finds them.
+    fn prepare_once(&mut self) {
+        if self.prepared {
+            return;
         }
-        self.launcher.as_mut().unwrap()
+        self.prepared = true;
+        if let Err(e) = prepare(Args::parse_from(["openomsi"]), true) {
+            log::error!("{e:#}");
+        }
+        if let Some(content) = crate::startup::content_dir() {
+            std::thread::spawn(move || hide_from_gallery(&content));
+        }
+        started_ok();
     }
 
     /// After every event: a game the launcher asked for starts, a game that ended gives
@@ -347,11 +359,9 @@ impl Shell {
             drop(game);
             lan_mods::clean_up();
             log::info!("session ended: back to the launcher");
-            let l = self.launcher();
-            if let Some(w) = window {
-                l.adopt_window(w);
-            }
-            l.resumed(event_loop);
+            // (the launcher page over the window again)
+            crate::android_launcher::session_ended();
+            self.spare = window;
             return;
         }
         let Some(line) = omsi_launcher_lib::take_in_process_launch() else { return };
@@ -404,7 +414,7 @@ impl Shell {
                 return;
             }
         };
-        let window = self.launcher().release_window();
+        let window = self.spare.take();
         app.create_window(event_loop, window);
         self.game = Some(Box::new(app));
     }
@@ -415,7 +425,7 @@ impl ApplicationHandler for Shell {
         log::info!("app in front");
         match self.game.as_mut() {
             Some(g) => g.resumed(event_loop),
-            None => self.launcher().resumed(event_loop),
+            None => self.prepare_once(),
         }
         self.switch(event_loop);
     }
@@ -424,17 +434,15 @@ impl ApplicationHandler for Shell {
         // (the system may end an app in the background without a word: see
         // `previous_run_crash`)
         log::info!("app in the background");
-        match self.game.as_mut() {
-            Some(g) => g.suspended(event_loop),
-            None => self.launcher().suspended(event_loop),
+        if let Some(g) = self.game.as_mut() {
+            g.suspended(event_loop);
         }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
         let redraw = matches!(event, WindowEvent::RedrawRequested);
-        match self.game.as_mut() {
-            Some(g) => g.window_event(event_loop, id, event),
-            None => self.launcher().window_event(event_loop, id, event),
+        if let Some(g) = self.game.as_mut() {
+            g.window_event(event_loop, id, event);
         }
         if redraw {
             started_ok();
@@ -454,7 +462,11 @@ impl ApplicationHandler for Shell {
                 event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
                 g.about_to_wait(event_loop)
             }
-            None => self.launcher().about_to_wait(event_loop),
+            None => {
+                // (the page asks for a duty from Java's threads: looked for now and then)
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(std::time::Instant::now() + std::time::Duration::from_millis(100)));
+                self.prepare_once();
+            }
         }
         self.switch(event_loop);
     }
@@ -473,6 +485,8 @@ impl ApplicationHandler for Shell {
 
 // --- the phone's tilt as a steering wheel ----------------------------------------------
 
+// (the sensor's thread writes these and the frame reads them: platform input, outside any
+// session, like the sensor itself)
 static TILT_ON: AtomicBool = AtomicBool::new(false);
 /// The latest turn (-1 .. 1) as f32 bits, and whether the sensor gave one yet.
 static TILT: AtomicU32 = AtomicU32::new(0);

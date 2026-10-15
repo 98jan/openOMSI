@@ -9,11 +9,8 @@
 //! sounds (`Sounds\rain_outside.wav`, its ambient sound objects, an object's `[sound]`) keep
 //! playing; ours give way to them.
 
-pub mod catalog;
-pub mod pack;
-pub mod place;
-pub mod rules;
-mod voices;
+pub use omsi_soundscape::{pack, place, rules};
+use omsi_soundscape::voices;
 
 use glam::DVec3;
 use omsi_audio::AudioEngine;
@@ -204,7 +201,11 @@ impl Soundscape {
         self.events(&pack, &c, master, lowpass, dt);
         self.timed(&pack, &c, master, lowpass);
         self.flush(engine, &pack);
-        self.last = self.describe(&c);
+        // (only read for OMSI_DEBUG_SOUND's lines: written out every frame it was a dozen
+        // strings made for nobody)
+        if omsi_cfg::flags::OMSI_DEBUG_SOUND.is_set() {
+            self.last = self.describe(&c);
+        }
         self.place = place;
         self.pack = Some(pack);
     }

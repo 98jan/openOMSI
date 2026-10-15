@@ -500,6 +500,33 @@ pub(crate) fn routes_to(hof: &omsi_vehicle::Hof, line: &str, codes: &[i32]) -> V
         .collect()
 }
 
+/// Whether the depot file runs a trip without a line number to `terminus` through `stops`
+/// as a public trip: it has a route of line 000 (`[infosystem_trip]` 000xx) to that
+/// terminus that starts at the trip's first stop and calls at another of its stops. A works
+/// trip from the depot has none.
+pub fn serves_unnumbered(hof: &omsi_vehicle::Hof, terminus: &str, stops: &[&str]) -> bool {
+    let rows = termini_named(hof, terminus);
+    let codes: Vec<i32> = rows.iter().map(|&i| hof.termini[i].code).collect();
+    let routes: Vec<usize> = hof
+        .info_trips
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.code.trim().parse::<u32>().is_ok_and(|c| c / 100 == 0) && codes.contains(&omsi_cfg::parse_i32(&t.route)))
+        .map(|(i, _)| i)
+        .collect();
+    let trip: Vec<(String, Vec<String>)> = stops
+        .iter()
+        .map(|s| (s.trim().to_lowercase(), stop_words(s)))
+        .filter(|(s, _)| !s.is_empty())
+        .collect();
+    routes.iter().any(|&r| {
+        let list = hof.info_busstop_lists.get(r).map(|l| l.as_slice()).unwrap_or(&[]);
+        let names: Vec<Vec<(String, Vec<String>)>> = list.iter().map(|id| ident_names(hof, id)).collect();
+        let starts = matches!((names.first(), trip.first()), (Some(n), Some(t)) if same_stop(n, t));
+        starts && trip.iter().skip(1).any(|t| names.iter().skip(1).any(|n| same_stop(n, t)))
+    })
+}
+
 /// Which of `routes` a trip through `stops` (the timetable's station names) runs: one
 /// starting at the trip's first stop (the IBIS starts its count there), of those the one
 /// that has most of the trip's stops in the trip's order, then the one as long as the trip
@@ -775,23 +802,4 @@ pub(crate) fn set_destination_at(
         "IBIS_terminus_texture",
         hof.termini[ti].texture_id.clone(),
     );
-}
-
-/// What a bus's displays call its terminus: the depot file's first string for it (what the
-/// IBIS shows, in capitals - the stock departure display's font has no small letters, and
-/// the trip's "Bauernhof" came out as a lone "B"), else the timetable's name in capitals
-/// (a train has no depot file).
-pub fn terminus_text(hof: Option<&omsi_vehicle::Hof>, terminus: &str) -> String {
-    let name = terminus.trim();
-    hof.and_then(|h| {
-        h.termini.iter().find(|t| {
-            t.texture_id.trim().eq_ignore_ascii_case(name)
-                || t.strings
-                .iter()
-                .any(|s| s.trim().eq_ignore_ascii_case(name))
-        })
-    })
-        .and_then(|t| t.strings.first())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| name.to_uppercase())
 }

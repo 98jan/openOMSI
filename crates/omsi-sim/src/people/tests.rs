@@ -171,9 +171,80 @@ fn pavement_corners_are_joined_and_routed() {
             },
         )
         .unwrap();
-    let turn = ped.next_leg(&net, n, 1, 7).unwrap();
+    let turn = ped.next_leg(&net, n, &Leg { lane: 1, a: 0.0, b: net.lanes[1].length() }, 7).unwrap();
     assert_eq!(turn.lane, 1);
-    assert!(turn.a > turn.b);
+    assert!(turn.a > turn.b);    let mut net = Network::default();
+    net.lanes.push(lane(vec![DVec3::new(0.0, 0.0, 0.0), DVec3::new(0.0, 20.0, 0.0)], LaneKind::Sidewalk));
+    net.lanes.push(lane(vec![DVec3::new(0.0, 0.0, 0.0), DVec3::new(0.0, -20.0, 0.0)], LaneKind::Sidewalk));
+    net.lanes.push(lane(vec![DVec3::new(0.0, 0.0, 0.0), DVec3::new(20.0, 0.0, 0.0)], LaneKind::Sidewalk));
+    net.link(1.5);
+    let ped = PedNet::build(&net);
+    let off = Leg { lane: 0, a: 0.0, b: 0.0 };
+    let n = ped.end_node(&net, &off).unwrap();
+    let ways: Vec<usize> = (0..4).map(|pick| ped.next_leg(&net, n, &off, pick).unwrap().lane).collect();
+    assert!(ways.contains(&1), "{ways:?}");
+}
+
+#[test]
+fn a_roundabout_pavement_is_left_where_paths_meet_it_midway() {
+    let ring: Vec<DVec3> = (0..=48)
+        .map(|k| {
+            let a = k as f64 / 48.0 * std::f64::consts::TAU;
+            DVec3::new(8.0 * a.cos(), 8.0 * a.sin(), 0.0)
+        })
+        .collect();
+    let mut net = Network::default();
+    net.lanes.push(lane(ring, LaneKind::Sidewalk));
+    net.lanes.push(lane(vec![DVec3::new(0.0, 8.0, 0.0), DVec3::new(0.0, 30.0, 0.0)], LaneKind::Sidewalk));
+    net.lanes.push(lane(vec![DVec3::new(-8.0, 0.0, 0.0), DVec3::new(-30.0, 0.0, 0.0)], LaneKind::Sidewalk));
+    net.link(1.5);
+    let ped = PedNet::build(&net);
+    let walk = |mut leg: Leg, steps: u64| {
+        let mut lanes = Vec::new();
+        for pick in 0..steps {
+            let n = ped.end_node(&net, &leg).unwrap();
+            leg = ped.next_leg(&net, n, &leg, pick).unwrap();
+            assert!(leg.len() > 0.05, "{leg:?}");
+            lanes.push(leg.lane);
+        }
+        lanes
+    };
+    let round = walk(Leg { lane: 0, a: 0.0, b: net.lanes[0].length() }, 4);
+    assert!(round.iter().any(|&l| l != 0), "{round:?}");
+    let len = net.lanes[1].length();
+    let inward = walk(Leg { lane: 1, a: len, b: 0.0 }, 12);
+    assert!(inward.contains(&0) && inward.contains(&2), "{inward:?}");
+    let seam = ped.ends[&0].0;
+    for pick in 0..4 {
+        let on = ped.next_leg(&net, seam, &Leg { lane: 0, a: 6.0, b: 0.0 }, pick).unwrap();
+        assert!(on.lane == 0 && on.b < on.a, "{on:?}");
+    }
+}
+
+#[test]
+fn a_crossing_with_an_island_is_crossed_one_carriageway_at_a_time() {
+    let mut net = Network::default();
+    net.lanes.push(lane(vec![DVec3::new(0.0, 0.0, 0.0), DVec3::new(0.0, 16.0, 0.0)], LaneKind::Sidewalk));
+    net.lanes.push(lane(vec![DVec3::new(-60.0, 4.0, 0.0), DVec3::new(60.0, 4.0, 0.0)], LaneKind::Street));
+    net.lanes.push(lane(vec![DVec3::new(60.0, 12.0, 0.0), DVec3::new(-60.0, 12.0, 0.0)], LaneKind::Street));
+    net.lanes.push(lane(vec![DVec3::new(0.6, 8.0, 0.0), DVec3::new(10.0, 8.0, 0.0)], LaneKind::Sidewalk));
+    net.link(1.5);
+    let mut ped = PedNet::build(&net);
+    let h = PeopleSim::new(Path::new("/nonexistent"), 0);
+    let near = [(DVec2::new(-15.0, 4.0), DVec2::new(10.0, 0.0), 2.0)];
+    let far = [(DVec2::new(15.0, 12.0), DVec2::new(-10.0, 0.0), 2.0)];
+    let kerb = ped.ends[&0].0;
+    let over = ped.next_leg(&net, kerb, &Leg { lane: 0, a: 1.0, b: 0.0 }, 0).unwrap();
+    assert!((over.b - 8.0).abs() < 0.1, "{over:?}");
+    assert!(h.may_cross(Some(&mut ped), &net, &over, None, &near, 1.2, 0.0).is_err());
+    assert!(h.may_cross(Some(&mut ped), &net, &over, None, &far, 1.2, 0.0).is_ok());
+    let island = ped.end_node(&net, &over).unwrap();
+    let on = (0..6)
+        .map(|pick| ped.next_leg(&net, island, &over, pick).unwrap())
+        .find(|l| l.lane == 0 && l.b > l.a)
+        .unwrap();
+    assert!(h.may_cross(Some(&mut ped), &net, &on, None, &far, 1.2, 0.0).is_err());
+    assert!(h.may_cross(Some(&mut ped), &net, &on, None, &near, 1.2, 0.0).is_ok());
 }
 
 #[test]
@@ -733,7 +804,15 @@ fn places_follow_their_own_variables() {
     PeopleSim::write_door_requests(&mut v, &DoorWants { places: taken, ..Default::default() });
     assert_eq!(v.var("fold_seat_down"), Some(1.0));
     PeopleSim::write_door_requests(&mut v, &DoorWants { places: places_taken(&bn, &[]), ..Default::default() });
-    assert_eq!(v.var("fold_seat_down"), Some(0.0), "up again once they have got up");
+    assert_eq!(v.var("fold_seat_down"), Some(0.0), "up again once they have got up");    // a player's figure on the tip-up seat counts for the scripts' GetHumanCountOnSeat
+    let cab = bn.cabin.clone();
+    h.player_cabin = Some(cab.clone());
+    assert!(h.seat_counts().iter().all(|&n| n == 0));
+    let sat = cab.seats[1].omsi_seat;
+    h.avatar_cmds.insert(7, AvatarCmd { seat: Some((BusId::Player, 1)), pos: DVec3::ZERO, heading: 0.0, vel: DVec2::ZERO, lift: 0.0, floor: None, aboard: None });
+    assert_eq!(h.seat_counts()[sat], 1);
+    h.avatar_cmds.insert(8, AvatarCmd { seat: Some((BusId::Ai(2), 1)), pos: DVec3::ZERO, heading: 0.0, vel: DVec2::ZERO, lift: 0.0, floor: None, aboard: None });
+    assert_eq!(h.seat_counts().iter().sum::<u32>(), 1, "another bus's seat is not this one's");
 }
 
 /// A timetable bus boarding at a stop the passengers' stops do not have (#1593): its
@@ -942,10 +1021,187 @@ fn walking_can_find_a_biarticulated_bus_at_its_last_section() {
         served: None,
     };
     let mut people = PeopleSim::new(Path::new("/nonexistent"), 0);
-    people.last_buses.push(bus);
+    Arc::make_mut(&mut people.last_buses).push(bus);
     let at_rear = DVec3::new(9.0, -34.0, 0.0);
     assert!(at_rear.truncate().length() > 25.0);
     assert_eq!(people.bus_ids_near(at_rear, 25.0), [BusId::Ai(42)]);
     assert!(people.bus_ids_near(DVec3::new(100.0, -34.0, 0.0), 25.0).is_empty());
     assert_eq!(people.bus_ids_near(DVec3::ZERO, 25.0), [BusId::Ai(42)]);
+}
+
+#[test]
+fn riders_are_drawn_on_the_bus_where_it_is_drawn() {
+    let dir = std::env::temp_dir().join(format!("omsi-drawn-bus-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("test.bus"), "[boundingbox]\n2.5\n12\n3\n0\n0\n1.5\n\n[passengercabin]\ncabin.cfg\n\n[paths]\npaths.cfg\n").unwrap();
+    std::fs::write(dir.join("paths.cfg"), "[pathpnt]\n0\n4\n0.5\n\n[pathpnt]\n0\n-3\n0.5\n\n[pathlink]\n0\n1\n").unwrap();
+    std::fs::write(dir.join("cabin.cfg"), "[entry]\n0\n\n[exit]\n1\n").unwrap();
+    let def = omsi_vehicle::Vehicle::load(&dir.join("test.bus")).unwrap();
+    let cabin = Arc::new(Cabin::load_train(&[(&def, Vec3::ZERO, f32::INFINITY)]).expect("cabin"));
+    std::fs::remove_dir_all(&dir).ok();
+    let pose = |pos: DVec3, heading: f64| (pos, Mat4::from_rotation_z((-heading).to_radians() as f32), heading);
+    let (pos, rot, heading) = pose(DVec3::new(100.0, 200.0, 5.0), 30.0);
+    let bn = BusNow {
+        id: BusId::Ai(7),
+        cabin,
+        pos,
+        rot,
+        heading,
+        speed: 10.0,
+        entry_open: vec![false],
+        exit_open: vec![false],
+        walk_open: None,
+        interior: 0.0,
+        air: CabinAir::default(),
+        half: DVec2::new(1.25, 6.0),
+        centre: DVec2::ZERO,
+        accel: DVec2::ZERO,
+        trailers: Vec::new(),
+        terminus: None,
+        takes: Takes::Nobody,
+        next_stop: None,
+        places_off: Vec::new(),
+        served: None,
+    };
+    let local = Vec3::new(0.6, -2.0, 0.9);
+    let (at, faces, tilt) = (bn.world(local), heading + 90.0, bn.tilt_at(local));
+    let still = DrawnBus { pos, rot, heading, trailers: Vec::new() };
+    let (p, h, t) = bn.follow(&still, local, at, faces, tilt);
+    assert!((p - at).length() < 1e-9 && (h - faces).abs() < 1e-9 && t.abs_diff_eq(tilt, 1e-6), "a bus drawn where it stands leaves its riders be");
+    let (pos2, rot2, heading2) = pose(DVec3::new(100.1, 200.2, 5.0), 31.0);
+    let drawn = DrawnBus { pos: pos2, rot: rot2, heading: heading2, trailers: Vec::new() };
+    let (p, h, _) = bn.follow(&drawn, local, at, faces, tilt);
+    assert!((p - drawn.world(local)).length() < 1e-6, "the rider stands on the drawn floor: {p:?}");
+    assert!((h - (faces + 1.0)).abs() < 1e-9, "and turns with it: {h}");
+}
+
+/// The destination the people take a bus to show: the display script's own row
+/// (`target_index_int`, which Omsi.exe ties to the vehicle's terminus), then the IBIS's row
+/// for a script that keeps none or one past the list, then the first row of the IBIS's code.
+#[test]
+fn the_terminus_shown_is_the_display_scripts_row_before_the_ibis_row() {
+    use crate::people::bus_view::shown_terminus_row;
+    use omsi_vehicle::hof::Terminus;
+    let t = |code: i32, name: &str| Terminus { code, texture_id: name.into(), ..Default::default() };
+    let termini = vec![t(300, "Novi Sad 300"), t(14, "Sajlovo"), t(14, "Sajlovo via Centar"), t(18, "Avijaticarsko naselje")];
+    // the script keeps row 2: that row, whatever stale values the IBIS holds
+    assert_eq!(shown_terminus_row(&termini, Some(18), Some(3), Some(2)), Some(2));
+    // no script row: the IBIS's row of its code
+    assert_eq!(shown_terminus_row(&termini, Some(18), Some(3), None), Some(3));
+    // no script row, the index not of the code: the first row of the code
+    assert_eq!(shown_terminus_row(&termini, Some(14), Some(3), None), Some(1));
+    // a script row past the list: the IBIS's row
+    assert_eq!(shown_terminus_row(&termini, Some(14), Some(2), Some(9)), Some(2));
+    // nothing set at all: nothing
+    assert_eq!(shown_terminus_row(&termini, None, None, None), None);
+}
+
+/// With a door open, a shut door with a button draws nobody -
+/// people walk to the open one; with every door shut, the button door is the one to wait at.
+#[test]
+fn a_shut_button_door_draws_nobody_while_another_door_is_open() {
+    let dir = std::env::temp_dir().join(format!("omsi-button-door-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let write = |name: &str, text: &str| std::fs::write(dir.join(name), text).unwrap();
+    // a door at the front right (point 0) and one at the rear right with a button (point 2)
+    write("paths.cfg", "[pathpnt]
+1.1
+4
+0.4
+[pathpnt]
+0
+0
+0.5
+[pathpnt]
+1.1
+-4
+0.4
+[pathlink]
+0
+1
+[pathlink]
+1
+2
+");
+    write("cabin.cfg", "[entry]
+0
+[entry]
+2
+{withbutton}
+[exit]
+2
+[passpos]
+-0.5
+0
+1.0
+0.45
+0
+");
+    let bus = omsi_vehicle::Vehicle {
+        path: dir.join("bus.bus"),
+        passenger_cabin: Some("cabin.cfg".into()),
+        paths: Some("paths.cfg".into()),
+        bounding_box: Some([2.5, 9.0, 3.0, 0.0, 0.0, 1.5]),
+        ..Default::default()
+    };
+    let cabin = Cabin::load_train(&[(&bus, Vec3::ZERO, f32::INFINITY)]).expect("cabin");
+    std::fs::remove_dir_all(&dir).ok();
+    let entries = cabin.entry_points();
+    assert_eq!(entries, [Some(0), Some(2)]);
+    let flags = cabin.entry_flags();
+    assert_eq!(flags[1].1, true, "the rear door has its button");
+    let (near_front, near_rear) = (Vec3::new(1.6, 4.0, 0.0), Vec3::new(1.6, -4.0, 0.0));
+    // every door shut: the button door, from wherever
+    assert_eq!(cabin.omsi_nearest(near_front, &entries, false, false, Some(&flags), Some(&[false, false])), Some(2));
+    // the front open, the rear shut with its button: the front, even from the rear
+    assert_eq!(cabin.omsi_nearest(near_rear, &entries, false, false, Some(&flags), Some(&[true, false])), Some(0));
+    // both open: the nearest
+    assert_eq!(cabin.omsi_nearest(near_rear, &entries, false, false, Some(&flags), Some(&[true, true])), Some(2));
+    // the exits: with one open, the shut one is passed by; with none, the nearest
+    let exits = cabin.exit_points();
+    assert_eq!(cabin.omsi_nearest(near_front, &exits, false, false, None, Some(&[true])), Some(2));
+}
+
+/// A map's `drivers.txt` names the figures that drive its buses: when the people are drawn
+/// from everybody installed (no `humans.txt`), those figures stay out of the passengers.
+#[test]
+fn the_maps_drivers_are_not_passengers() {
+    let root = std::env::temp_dir().join(format!("omsi-drivers-out-{}", std::process::id()));
+    for (dir, name) in [("Humans/A", "Man.hum"), ("Humans/B", "Woman.hum"), ("Humans/London", "Driver.hum")] {
+        let d = root.join(dir);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join(name), "[model]\nmodel.cfg\n").unwrap();
+        std::fs::write(d.join("model.cfg"), "").unwrap();
+    }
+    let map = root.join("maps").join("Test");
+    std::fs::create_dir_all(&map).unwrap();
+    std::fs::write(map.join("drivers.txt"), "Humans\\London\\Driver.hum\n").unwrap();
+    let mut h = PeopleSim::new(Path::new("/nonexistent"), 10);
+    h.types = map_human_types(&root, &["Humans/A/Man.hum".into(), "Humans/B/Woman.hum".into(), "Humans/London/Driver.hum".into()]);
+    assert_eq!(h.types.len(), 3);
+    h.pool_types = h.types.len();
+    h.leave_out_drivers(&map);
+    std::fs::remove_dir_all(&root).ok();
+    let left: Vec<String> = h.types.iter().map(|t| t.def.path.file_name().unwrap().to_string_lossy().to_string()).collect();
+    assert_eq!(left, ["Man.hum", "Woman.hum"], "the driver is out, the others stay");
+}
+
+/// Off a bus where no pavement is, people walk a few steps out and to the side, each to a
+/// place of their own, and never back into the bus.
+#[test]
+fn people_off_a_bus_without_a_pavement_step_away_from_the_door() {
+    let door = DVec3::new(100.0, 50.0, 0.0);
+    let (out, along) = (DVec3::X, DVec3::Y);
+    let mut places = Vec::new();
+    for id in 1..40u32 {
+        let p = super::pax_task::away_point(door, out, along, id);
+        let d = p - door;
+        assert!((2.5..=5.0).contains(&d.x), "{id}: {d:?} out from the door");
+        assert!(d.y.abs() <= 7.0, "{id}: {d:?} along the bus");
+        assert_eq!(d.z, 0.0);
+        places.push((d.x * 10.0) as i64 * 1000 + (d.y * 10.0) as i64);
+    }
+    places.sort();
+    places.dedup();
+    assert!(places.len() > 30, "a busload spreads out: {} places of 39", places.len());
 }

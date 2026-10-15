@@ -29,7 +29,6 @@ impl ScheduleSim {
         now: f64,
         on_road: &HashMap<usize, OnRoad>,
         duty: Option<&PlayerDuty>,
-        player_hof: Option<&omsi_vehicle::Hof>,
     ) -> Vec<(f64, String, String, f64, StopExtra)> {
         let mut list: Vec<(f64, String, String, f64, StopExtra)> = Vec::new();
         // the last time each line leaves this stop today (for "last bus")
@@ -104,14 +103,12 @@ impl ScheduleSim {
                     None if leave < now => continue,
                     None => arrive.max(now),
                 };
+                // Departure boards use the timetable destination; HOF strings carry
+                // vehicle-specific padding, multi-line text and texture names.
                 let terminus = &self.data.trips[d.trip].terminus;
-                let hof = self
-                    .depots
-                    .get(&d.ai_group.to_ascii_lowercase())
-                    .and_then(|v| v.iter().find_map(|x| x.2.as_deref()));
                 let line = self.display_line(i);
                 extra.last_trip = last_of_line.get(&line).is_some_and(|&l| leave >= l - 0.5);
-                list.push((expected, line, terminus_text(hof, terminus), (leave - arrive).max(0.0), extra));
+                list.push((expected, line, terminus.clone(), (leave - arrive).max(0.0), extra));
             }
         }
         // the player's bus
@@ -156,7 +153,7 @@ impl ScheduleSim {
                     list.push((
                         expected,
                         trip.line.trim().to_string(),
-                        terminus_text(player_hof, &trip.terminus),
+                        trip.terminus.clone(),
                         (s.dep - s.arr).max(0.0),
                         extra,
                     ));
@@ -184,7 +181,6 @@ impl ScheduleSim {
         wanted: Vec<i64>,
         wanted_names: Vec<String>,
         duty: Option<&PlayerDuty>,
-        player_hof: Option<&omsi_vehicle::Hof>,
         clock: &crate::SimClock,
     ) -> (HashMap<i64, Vec<(String, String, f64)>>, std::collections::HashMap<String, Vec<crate::vehicle_api::Departure>>) {
         let now = clock.time;
@@ -208,7 +204,9 @@ impl ScheduleSim {
                             .find(|(_, s)| !**s)
                             .map(|(st, _)| st.1)
                     })
-                });
+                })
+                // (the bus's times are on the traffic's clock, which counts on past 24:00)
+                .map(|t| t - self.day_base);
                 on_road.insert(
                     i,
                     OnRoad {
@@ -222,7 +220,7 @@ impl ScheduleSim {
         }
         let mut made = HashMap::new();
         for stop in wanted {
-            let mut list = self.stop_list(stop, now, &on_road, duty, player_hof);
+            let mut list = self.stop_list(stop, now, &on_road, duty);
             list.sort_by(|a, b| a.0.total_cmp(&b.0));
             list.truncate(8);
             if omsi_cfg::flags::OMSI_DEBUG_BOARDS.is_set() {
@@ -265,7 +263,7 @@ impl ScheduleSim {
             }
             let mut list: Vec<(f64, String, String, StopExtra)> = Vec::new();
             for id in ids {
-                for (expected, line, terminus, dwell, extra) in self.stop_list(id, now, &on_road, duty, player_hof) {
+                for (expected, line, terminus, dwell, extra) in self.stop_list(id, now, &on_road, duty) {
                     let leaves = expected + dwell;
                     if leaves <= now + BOARD_AHEAD {
                         list.push((leaves, line, terminus, extra));
@@ -360,14 +358,12 @@ impl ScheduleSim {
         out
     }
 
+    /// The line an AI bus and the departure boards show for departure `i`: its trip's own,
+    /// blank when the trip has none, as Omsi.exe shows it (Gerolstein's service trips: a
+    /// blank rear matrix and line column). The timetable line's name stood in for it once,
+    /// and the service trips read "Diensttafeln".
     pub fn display_line(&self, i: usize) -> String {
-        let d = &self.departures[i];
-        let own = self.data.trips[d.trip].line.trim();
-        if own.is_empty() {
-            d.line.trim().to_string()
-        } else {
-            own.to_string()
-        }
+        self.data.trips[self.departures[i].trip].line.trim().to_string()
     }
 }
 
@@ -393,4 +389,136 @@ pub(super) struct StopExtra {
     delay: Option<f64>,
     /// The last departure of its line at this stop today.
     last_trip: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct EmptyWorld {
+        path: PathBuf,
+        ai: omsi_map::AiLists,
+        positions: crate::world_data::ObjectPlaces,
+    }
+
+    impl TimetableWorld for EmptyWorld {
+        fn root(&self) -> &Path { &self.path }
+        fn map_dir(&self) -> &Path { &self.path }
+        fn chrono_dirs(&self) -> Vec<PathBuf> { Vec::new() }
+        fn ailists(&self) -> &omsi_map::AiLists { &self.ai }
+        fn raw_tiles(&self) -> Vec<(i32, i32)> { Vec::new() }
+        fn has_tile(&self, _: (i32, i32)) -> bool { false }
+        fn date(&self) -> i32 { 20221010 }
+        fn object_positions(&self) -> &crate::world_data::ObjectPlaces { &self.positions }
+        fn stop_side(&self, _: i64) -> f32 { 0.0 }
+    }
+
+    fn schedule() -> ScheduleSim {
+        let world = EmptyWorld {
+            path: std::env::temp_dir().join(format!("omsi_empty_board_world_{}", std::process::id())),
+            ai: Default::default(),
+            positions: Default::default(),
+        };
+        ScheduleSim::new(&world.path, &world, &crate::SimClock::default())
+    }
+
+    /// A trip without a line of its own shows none, as in Omsi.exe: Gerolstein's service
+    /// trips in `Diensttafeln.ttl` read "Diensttafeln" on the boards and the AI buses.
+    #[test]
+    fn a_trip_without_a_line_shows_none() {
+        let mut sim = schedule();
+        sim.data.trips.push(omsi_timetable::Trip { terminus: "Betriebsfahrt".into(), stations: vec![42], ..Default::default() });
+        sim.departures.push(Departure {
+            time: 100.0, trip: 0, profile: 0, line: "Diensttafeln".into(), ai_group: "depot".into(),
+            tour: "101 Mo-Do".into(), mask: -1, spawned: false, yesterday: false,
+        });
+        sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0)], stops: vec![true], ..Default::default() }]];
+        sim.visits.insert(42, vec![(0, 0)]);
+        sim.trip_departures = vec![vec![0]];
+        assert_eq!(sim.display_line(0), "");
+        let clock = crate::SimClock { time: 0.0, ..Default::default() };
+        let (boards, _) = sim.make_boards(None, vec![42], vec!["markt".into()], None, &clock);
+        assert_eq!(boards[&42].iter().map(|r| (r.0.as_str(), r.1.as_str())).collect::<Vec<_>>(), [("", "Betriebsfahrt")]);
+    }
+
+    #[test]
+    fn departure_boards_keep_timetable_text_for_ai_players_and_pages() {
+        let mut sim = schedule();
+        let destination = "U Marktstraße";
+        sim.data.trips.push(omsi_timetable::Trip {
+            terminus: destination.into(), line: "7".into(), stations: vec![42], ..Default::default()
+        });
+        sim.departures.push(Departure {
+            time: 100.0, trip: 0, profile: 0, line: "7".into(), ai_group: "depot".into(),
+            tour: "1".into(), mask: -1, spawned: false, yesterday: false,
+        });
+        sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0)], stops: vec![true], ..Default::default() }]];
+        sim.visits.insert(42, vec![(0, 0)]);
+        sim.trip_departures = vec![vec![0]];
+        sim.data.bus_stops.push(omsi_timetable::BusStopEntry { name: "Markt".into(), object_id: 42, ..Default::default() });
+        let hof = omsi_vehicle::Hof::parse(&omsi_cfg::CfgFile::from_str("test.hof", concat!(
+            "stringcount_terminus\n3\n[addterminus]\n10\nU Marktstraße\n",
+            "     U Marktstraße   über Bahnhof\n\nMATRIX\\target.bmp\n",
+        )));
+        let bus = crate::timetable_run::tests::ibis_test_vehicle();
+        sim.depots.insert("depot".into(), vec![(bus.ty.clone(), Vec::new(), Some(Arc::new(hof)))]);
+        let mut trip = crate::timetable_run::tests::planned(200.0, &[(0.0, 200.0, 200.0)]);
+        trip.line = "8".into();
+        trip.terminus = destination.into();
+        trip.stops[0].object_id = 42;
+        let duty = PlayerDuty::new("8".into(), "2".into(), vec![trip], 0, 0, true);
+        let clock = crate::SimClock { time: 0.0, ..Default::default() };
+        let (boards, pages) = sim.make_boards(None, vec![42], vec!["markt".into()], Some(&duty), &clock);
+        assert_eq!(boards[&42].iter().map(|r| (r.0.as_str(), r.1.as_str())).collect::<Vec<_>>(), [("7", destination), ("8", destination)]);
+        assert_eq!(pages["markt"].iter().map(|r| r.destination.as_str()).collect::<Vec<_>>(), [destination, destination]);
+        assert_eq!(sim.depots["depot"][0].2.as_ref().unwrap().termini[0].strings[0], "     U Marktstraße   über Bahnhof");
+    }
+
+    /// A night tour of today (23:00, 24:30) and the same tour's 24:30 as yesterday's, at
+    /// 00:30 (#2166).
+    fn night_tour(sim: &mut ScheduleSim) {
+        sim.data.trips.push(omsi_timetable::Trip { terminus: "Bahnhof".into(), line: "N1".into(), stations: vec![42], ..Default::default() });
+        sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0)], stops: vec![true], duration: 600.0, ..Default::default() }]];
+        let mask = sim.day_bits.0 | sim.day_bits.1;
+        let d = |time: f64, yesterday: bool| Departure {
+            time, trip: 0, profile: 0, line: "N1".into(), ai_group: "depot".into(), tour: "1".into(), mask, spawned: false, yesterday,
+        };
+        sim.departures = vec![d(1800.0, true), d(82_800.0, false), d(88_200.0, false)];
+        sim.night_twin = super::load::night_twins(&sim.departures);
+        sim.tour_next = vec![None, Some(2), None];
+        sim.tour_prev = vec![None, None, Some(1)];
+    }
+
+    #[test]
+    fn a_night_trip_after_midnight_runs_as_yesterdays_tour() {
+        let mut sim = schedule();
+        night_tour(&mut sim);
+        assert_eq!(sim.night_twin, [Some(2), None, Some(0)]);
+        // today the tour runs from 23:00 into the night; this morning's 00:30 was yesterday's
+        assert!(sim.runs(1) && sim.runs(2));
+        assert!(!sim.runs(0), "yesterday's tour does not run on yesterday's day mask");
+        // midnight: the day moves on, and the 24:30 comes at 00:30 as yesterday's
+        sim.roll_day(DAY + 10.0);
+        assert!(sim.runs(0), "after midnight the night trip is yesterday's tour's");
+        assert!(!sim.departures[0].spawned);
+        let tod = 1800.0 + 1.0;
+        assert!(sim.departures[0].time <= tod && sim.departures[0].time > tod - 5.0, "due at 00:30");
+        assert_eq!(sim.dep_time(0), DAY + 1800.0);
+    }
+
+    #[test]
+    fn the_tour_bus_on_a_night_trip_at_midnight_keeps_it_as_yesterdays() {
+        let mut sim = schedule();
+        night_tour(&mut sim);
+        // 23:55: the tour's bus will take the 24:30 on after its 23:00 trip
+        sim.departures[2].spawned = true;
+        sim.awaiting.insert(2);
+        sim.car_departure.insert(7, 1);
+        sim.roll_day(DAY + 10.0);
+        assert!(sim.awaiting.contains(&0) && !sim.awaiting.contains(&2));
+        assert!(sim.departures[0].spawned, "no second bus for the trip its tour's bus takes on");
+        assert!(!sim.departures[2].spawned, "tonight's 24:30 runs again");
+        assert_eq!(sim.dep_time(0), DAY + 1800.0, "the same moment as before midnight");
+    }
+
 }

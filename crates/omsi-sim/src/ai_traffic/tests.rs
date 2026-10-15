@@ -327,6 +327,40 @@ mod group_density_tests {
     }
 
     #[test]
+    fn the_bus_in_a_bend_is_looked_for_along_its_turn() {
+        use super::{in_player_box, in_player_sweep, player_turn_of};
+        use glam::DVec3;
+        let (c, f, r) = (DVec3::ZERO, DVec2::new(0.0, 1.0), DVec2::new(1.0, 0.0));
+        // a bus heading north through a right-hand bend of 25 m radius at 14 m/s, reaching
+        // 27 m ahead; the oncoming lane runs round the same bend 3.5 m further out
+        let on_arc = |radius: f64, deg: f64| {
+            let a = deg.to_radians();
+            DVec3::new(25.0 - radius * a.cos(), radius * a.sin(), 0.0)
+        };
+        let oncoming = on_arc(28.5, 30.0);
+        // straight ahead, the reach lay across the oncoming lane
+        assert!(in_player_box(oncoming, c, f, r, 2.6, 27.0, 6.5));
+        assert!(!in_player_sweep(oncoming, c, f, r, 2.6, 6.5, 27.0, 6.5, 1.0 / 25.0));
+        // along the turn, the bus's own lane round the bend is in its way
+        let own = on_arc(25.0, 50.0);
+        assert!(!in_player_box(own, c, f, r, 2.6, 27.0, 6.5));
+        assert!(in_player_sweep(own, c, f, r, 2.6, 6.5, 27.0, 6.5, 1.0 / 25.0));
+        // but not beyond its reach, nor behind it
+        assert!(!in_player_sweep(on_arc(25.0, 70.0), c, f, r, 2.6, 6.5, 27.0, 6.5, 1.0 / 25.0));
+        assert!(!in_player_sweep(DVec3::new(0.0, -10.0, 0.0), c, f, r, 2.6, 6.5, 27.0, 6.5, 1.0 / 25.0));
+        // the body itself always counts, and a straight path is the old box
+        assert!(in_player_sweep(DVec3::new(-2.0, 5.0, 0.0), c, f, r, 2.6, 6.5, 27.0, 6.5, 1.0 / 25.0));
+        assert!(in_player_sweep(oncoming, c, f, r, 2.6, 6.5, 27.0, 6.5, 0.0));
+        // the curvature from two boxes 0.1 s apart: 14 m/s turning 3.2 degrees to the right
+        let a = (DVec3::ZERO, 0.0, 6.0, 1.25, 14.0);
+        let b = (DVec3::new(0.0, 1.4, 0.0), 14.0 * 0.1 / 25.0 * 57.29578, 6.0, 1.25, 14.0);
+        let k = player_turn_of(1.0 / 25.0, Some(a), Some(b), 0.1);
+        assert!((k - 0.04).abs() < 1e-3, "{k}");
+        // standing: no turn
+        assert_eq!(player_turn_of(0.04, Some(a), Some((b.0, b.1, 6.0, 1.25, 0.2)), 0.1), 0.0);
+    }
+
+    #[test]
     fn a_following_bus_is_no_bus_in_the_way() {
         let north = DVec2::new(0.0, 1.0);
         // a car ahead going the same way: only the bus itself counts
@@ -424,24 +458,24 @@ mod way_user_tests {
         let point = 17.5; // the car's origin to the meeting point
         // the bus 50 m off on the main road at 11 m/s (there in about four seconds)
         let coming = user(vec![(7, -10.0), (1, 40.0)], 11.0, 0.0);
-        assert_eq!(way_user_verdict(&st, &coming, 40.0, &c, point, false, false, false, true, 1.0).0, Verdict::Ruled);
+        assert_eq!(way_user_verdict(&st, &coming, 40.0, &c, point, false, false, false, (true, false), 1.0).0, Verdict::Ruled);
         // the car has the right of way, or has claimed the junction already: it goes
-        assert_eq!(way_user_verdict(&st, &coming, 40.0, &c, point, false, false, false, false, 1.0).0, Verdict::Free);
-        assert_eq!(way_user_verdict(&st, &coming, 40.0, &c, point, false, true, false, true, 1.0).0, Verdict::Free);
+        assert_eq!(way_user_verdict(&st, &coming, 40.0, &c, point, false, false, false, (false, false), 1.0).0, Verdict::Free);
+        assert_eq!(way_user_verdict(&st, &coming, 40.0, &c, point, false, true, false, (true, false), 1.0).0, Verdict::Free);
         // far off (a gap any driver takes), or standing at a stop: it goes
         let far = user(vec![(1, 140.0)], 11.0, 0.0);
-        assert_eq!(way_user_verdict(&st, &far, 140.0, &c, point, false, false, false, true, 1.0).0, Verdict::Free);
+        assert_eq!(way_user_verdict(&st, &far, 140.0, &c, point, false, false, false, (true, false), 1.0).0, Verdict::Free);
         let standing = user(vec![(1, 20.0)], 0.0, 30.0);
-        assert_eq!(way_user_verdict(&st, &standing, 20.0, &c, point, false, false, false, true, 1.0).0, Verdict::Free);
+        assert_eq!(way_user_verdict(&st, &standing, 20.0, &c, point, false, false, false, (true, false), 1.0).0, Verdict::Free);
         // in the meeting place: whoever has the right of way, the car waits
         let there = user(vec![(1, -6.0)], 0.0, 30.0);
-        assert_eq!(way_user_verdict(&st, &there, -6.0, &c, point, false, false, false, false, 1.0).0, Verdict::Hard);
+        assert_eq!(way_user_verdict(&st, &there, -6.0, &c, point, false, false, false, (false, false), 1.0).0, Verdict::Hard);
         // in the junction and on its way through, there first: the car waits
         let crossing = user(vec![(1, -1.0)], 8.0, 0.0);
-        assert_eq!(way_user_verdict(&st, &crossing, -1.0, &c, 4.0, false, false, false, false, 1.0).0, Verdict::Hard);
+        assert_eq!(way_user_verdict(&st, &crossing, -1.0, &c, 4.0, false, false, false, (false, false), 1.0).0, Verdict::Hard);
         // through already
         let through = user(vec![(1, -20.0)], 8.0, 0.0);
-        assert_eq!(way_user_verdict(&st, &through, -20.0, &c, point, false, false, false, true, 1.0).0, Verdict::Free);
+        assert_eq!(way_user_verdict(&st, &through, -20.0, &c, point, false, false, false, (true, false), 1.0).0, Verdict::Free);
     }
 
     /// Two lanes running into one (lane 0 from the south, lane 1 slanting in from the

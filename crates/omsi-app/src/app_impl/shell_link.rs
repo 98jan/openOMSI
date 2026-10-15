@@ -43,8 +43,13 @@ impl App {
             self.shell.clear();
             return;
         };
-        // (the photo mode draws its own panel, `frame_photo_panel`)
+        // (the photo mode draws its own panel, `photo::panel`)
         if self.photo.is_some() {
+            return;
+        }
+        // the developer tools, while the pause menu is closed
+        if self.devtools.is_some() && self.menus.game_menu.is_none() {
+            self.frame_devtools(dt);
             return;
         }
         if !self.shell_takes_mouse() {
@@ -62,7 +67,7 @@ impl App {
             _ => None,
         };
         let chooser_list = self.menus.admin_list.as_ref().unwrap_or(&self.menus.vehicle_list);
-        let (kind, head, preview) = crate::game_lists::menu_extras(self.menus.list_kind.as_ref(), self.menus.admin_list.as_deref(), self.menus.chooser, self.session.schedule.as_ref(), self.clock.time);
+        let (kind, head, preview) = crate::game_lists::menu_extras(self.menus.list_kind.as_ref(), self.menus.admin_list.as_deref(), self.menus.chooser, crate::duty_book::timetable(self), self.clock.time);
         let camera_tab = matches!(self.menus.list_kind, Some(ListKind::Options(t)) if Some(t) == tabs.as_ref().and_then(|(titles, _)| titles.iter().position(|x| x == omsi_ui::tr("Camera").as_ref())));
         let list = self.menus.chooser.map(|sel| ListView {
             kind,
@@ -83,10 +88,17 @@ impl App {
             list,
             kbd: self.menus.menu_kbd,
             keys: !crate::platform::touch_controls(),
+            summary: self.pause_summary(),
         };
         self.shell.begin(w, h, scale, dt);
         crate::shell::pause::draw(&mut self.shell, &view);
         self.shell.finish();
+    }
+
+    /// What the pause menu's sidebar shows of the session: the bus and the driver.
+    fn pause_summary(&self) -> crate::shell::pause::Summary {
+        let bus = self.player.as_ref().map(|p| format!("{} {}", p.vehicle.ty.def.manufacturer.trim(), p.vehicle.ty.def.type_name.trim()).trim().to_string()).unwrap_or_default();
+        crate::shell::pause::Summary { bus, driver: self.args.lan_name.trim().to_string() }
     }
 
     /// What the clicks on the screens asked for, done (at the start of a frame, with the

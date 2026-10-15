@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 /// Version of the settings file (`version=`); files without it are version 1.
-pub const SETTINGS_VERSION: u32 = 2;
+#[cfg(test)]
+pub const SETTINGS_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
@@ -40,6 +41,12 @@ pub struct Settings {
     pub standing_chance: f32,
     /// Passenger poses: `original` (the OMSI animation, default) or `enhanced` (experimental IK).
     pub passenger_animation: String,
+    /// The photo mode's panel: "simple" (a few settings, the look) or "advanced" (a camera's
+    /// body: the exposure triangle, metering, white balance in kelvin, tilt-shift, ...).
+    pub photo_mode: String,
+    /// The people as drawn: `original` (the content's own, default) or `improved` (the
+    /// Microsoft Rocketbox avatars with living faces, on this computer only).
+    pub character_models: String,
     /// Procedural detail (fractal) texturing of the ground and large walls when close.
     pub detail_textures: bool,
     /// Passengers pay the exact fare (no change to give at the cash desk).
@@ -70,6 +77,8 @@ pub struct Settings {
     pub volume: f32,
     /// Control preset: "simple", "wasd", "arrows" or "omsi".
     pub drive_keys: String,
+    /// Mobile screen-door controls: standard physical grouping or direct OMSI script triggers.
+    pub touch_door_mode: String,
     /// Anti-aliasing of the enhanced picture after tone mapping: `fxaa` (default) or `off`.
     pub post_aa: String,
     /// OMSI's maintenance condition (`[wear_lifespan]`): 0 infinite (no wear), 1 very bad,
@@ -120,12 +129,19 @@ pub struct Settings {
     pub language: String,
     /// What passengers say: `all`, `tickets` (only what they ask for) or `off`.
     pub pax_voices: String,
+    /// The units of the game's own texts: `metric`, `uk` or `us` (see `units`).
+    pub units: String,
     /// OMSI 2's route arrows over the road (as well as or instead of the navigator).
     pub nav_arrows: bool,
     /// The other (AI) vehicles as dots on the navigator's and the city map.
     pub nav_ai: bool,
+    /// The map's package's surface under the roads of the navigator and the city map, and their light look.
+    pub nav_surface: bool, pub nav_light: bool,
     /// The driver may get up from the seat and walk about (Ctrl+Shift+G).
     pub get_up: bool,
+    /// A summary of each trip of a duty as it ends: its stops with their times as planned and
+    /// as driven (`game_panels::trip_summary`).
+    pub trip_summary: bool,
     /// Uncompressed texture files are compressed on loading where that leaves the picture
     /// close (DXT files always stay compressed on a GPU that takes them).
     pub texture_compression: bool,
@@ -168,8 +184,10 @@ pub struct Settings {
     pub driver: bool,
     /// The frame rate in the HUD.
     pub show_fps: bool,
-    /// The notes in the top left corner: why the bus does not move, the change due, what a
-    /// service did (off, none are shown).
+    pub perf_overlay: String,
+    /// The driving hints: why the bus does not move, the change due, what a service did, as
+    /// short notifications when they start (off, the game keeps them to itself; the server's
+    /// and the plugins' notifications still come). The key keeps its old name, `notes`.
     pub notes: bool,
     /// The information bar along the top (Shift+Y, the menu, the touch panel's button): as
     /// it was left, not switched on again every session (#1164).
@@ -205,13 +223,24 @@ pub struct Settings {
     /// life and the map's objects - see `soundscape`), and its volume 0..1.
     pub ambient: bool,
     pub vol_ambient: f32,
+    /// What the bus radio's own sound does to a station (`radio_speaker`, `radio_hiss`,
+    /// `radio_dropouts`, each 0..1, all 0 at first: see `omsi_audio::radio_fx`).
+    pub radio_fx: omsi_audio::radio_fx::RadioFxParams,
     /// Edge of the mirrors' pictures in pixels (OMSI's `performance_reflTexSize`, 2^n); 0 disables mirror rendering.
     pub mirror_size: u32,
     /// How often the mirrors are drawn (OMSI's `performance_realreflexions`): `off` once
-    /// for each bus and then still, `eco` 15 times a second at most, `full` 30 (the default).
+    /// for each bus and then still, `eco` 15 times a second at most, `full` 30 (the default),
+    /// `every` each of them every frame - the street moves through them as smoothly as
+    /// through the windscreen, where in turns it went by in steps, the longer the faster.
     pub mirror_refresh: String,
+    /// How the mirrors are shaded in the Enhanced pictures: `standard` with the plain light
+    /// (the cost of a small picture), `enhanced` as the window's picture is.
+    pub mirror_quality: String,
     /// Copies of the main side mirrors in the corners of the window while in the cab: 0 off, 1 the right one, 2 the left, 3 both.
     pub mirror_hud: u8,
+    /// The mirror panels (Ctrl+M) drawn every frame, as ETS2 draws its screen mirrors, rather than
+    /// in turn with the other mirrors within `mirror_refresh`.
+    pub mirror_hud_every_frame: bool,
     /// OMSI's `sound_doppler`: approaching sounds higher, receding ones lower.
     pub doppler: bool,
     /// How fast the clock runs (1 real time .. 30); in LAN play the host's decides.
@@ -251,8 +280,9 @@ pub struct Settings {
     /// A gamepad nobody set up buttons for drives the cabin with its default buttons
     /// (`gamepad_profile`).
     pub pad_buttons: bool,
-    /// With a wheel steering, Left/Right switch the interior cameras as without one, instead
-    /// of turning the head (OMSI's glance), #1345.
+    /// With a wheel steering, Left/Right switch the interior cameras as without one (as in
+    /// Omsi.exe, whose view_interiorcam keys, 0x706a3c, ask for no controller), instead of
+    /// turning the head (a glance), #1345; on by default since #2164.
     pub arrows_switch_cams: bool,
     /// Game controllers switched off, by name (`|` between them).
     pub ctrl_off: String,
@@ -313,6 +343,11 @@ pub struct Settings {
     /// steers without the frame's delay, and the window's edges are the lock, as in OMSI
     /// (#1948).
     pub mouse_hold: bool,
+    /// The mouse steering works the pedals too (up the throttle, down the brake), as in
+    /// Omsi.exe; off, it only steers and the pedals stay on the keys or a controller (#1704).
+    pub mouse_pedals: bool,
+    /// How fast the throttle and brake keys push their pedals, against OMSI's (1), #1371.
+    pub key_pedal_speed: f32,
     /// How fast the view turns for the mouse's way while looking round (1 = Omsi.exe's
     /// field of view / 78.75 degrees per pixel in the views of the bus; #859).
     pub look_sens: f32,
@@ -384,34 +419,11 @@ pub struct Settings {
     pub voice_chat: bool,
 }
 
-/// A pedal's last few per cent of travel are its end: a wheel's pedal on the floor reads
-/// 0.93..0.99, and the scripts ask for the ends exactly - the LiAZ/PAZ gearboxes put a gear
-/// in only at `(L.L.clutch) 1 =` and part the engine from the wheels only above 0.95, so a
-/// clutch held down to the floor still dragged and the engine died at every stop.
-pub fn pedal_ends(v: f32) -> f32 {
-    if v >= 0.96 {
-        1.0
-    } else if v <= 0.02 {
-        0.0
-    } else {
-        v
-    }
-}
-
-/// A pedal as the settings shape it: `v` 0..1 through the response curve of `strength`.
-pub fn pedal_curve(v: f32, strength: f32) -> f32 {
-    let g = strength.clamp(0.25, 4.0);
-    v.clamp(0.0, 1.0).powf(1.0 / g)
-}
-
 impl Default for Settings {
     fn default() -> Self {
-        if crate::platform::MOBILE {
-            // a phone's graphics chip and battery: 2x MSAA (cheap on a tiled GPU), no
-            // ambient occlusion, a smaller shadow map and mirrors, a shorter view
-            return Self { msaa: 2, anisotropy: 4, ssao: false, shadow_size: 1024, mirror_size: 128, max_fps: 60, max_obj_dist: 900.0, pax_density: 0.7, navigator_corner: "top-center".into(), ..Self::desktop() };
-        }
-        Self::desktop()
+        // a phone's graphics chip and battery: 2x MSAA (cheap on a tiled GPU), no
+        // ambient occlusion, a smaller shadow map and mirrors, a shorter view
+        if crate::platform::MOBILE { Self::phone() } else { Self::desktop() }
     }
 }
 
@@ -427,13 +439,20 @@ impl Settings {
             [0.0, 0.0, size.0 as f32, size.1 as f32]
         }
     }
+    pub(crate) fn phone() -> Self {
+        Self { msaa: 2, anisotropy: 4, ssao: false, shadow_size: 1024, mirror_size: 128, max_fps: 60, max_obj_dist: 900.0, pax_density: 0.7, navigator_corner: "top-center".into(), ..Self::desktop() }
+    }
     /// The defaults of a computer.
     fn desktop() -> Self {
-        Self { msaa: 4, anisotropy: 8, ssao: true, shadows: true, shadow_size: 2048, shadow_blobs: true, navigator: true, ui_opacity: 0.85, notes: true, ui_scale: 1.0, ui_scale_window: true, navigator_corner: "bottom-left".into(), boarding: "auto".into(), passenger_animation: "original".into(), standing_chance: 0.05, ambient: true, vol_ambient: 0.8, detail_textures: true, exact_fare: true, enhanced: false, graphics: "vanilla_plus".into(), triple: Default::default(), triple_span: true, triple_hud_center: true, vr: false, vr_scale: 0.65, vr_head_smoothing_ms: 0.0, vr_mirror_rate: 16.0, vr_desktop_mirror: true, fullscreen: false, vsync: true, volume: 0.6, drive_keys: "simple".into(), post_aa: "fxaa".into(), render_scale: 0.0, language: "ENG".into(), pax_voices: "all".into(), nav_arrows: false, nav_ai: true, get_up: false, texture_compression: true, gpu_texture_compression: true, texture_memory: 0, auto_clutch: true, momentary_gears: false, auto_shift: false, min_obj_size: 0.013, max_obj_dist: -1.0, max_fps: 0, chat: true, chat_size: 1.0, tooltips: true, name_tags: true, show_fps: false, clouds: true, cloud_quality: "high".into(), rain_quality: "high".into(), windy_trees: true, pax_density: 1.0, vol_ai: 1.0, vol_scenery: 1.0, mirror_size: 256, mirror_hud: 0, mirror_refresh: "full".into(), doppler: true, driver: true, maintenance: 0, ai_unsched_factor: 1.0, ai_max_scheduled: 0, ai_max_parked: 0, ai_max_humans: 200, ai_wait_timed_stops_only: false, collision_vehicles: true, collision_objects: true, collision_pedestrians: true, head_movement: true, driverview_smooth: true, hands_in_cab: false, alt_view: true, precision_zoom: false, time_speed: 1.0, time_sync: false, metar_sync: false, metar_station: String::new(), machine_translation: false, shadow_casters: "all".into(), ctrl_deadzone: 0.0, right_stick_look: true, pad_steer_smooth: 120.0, pad_steer_linear: false, pad_steer_speed: 2.0, pad_deadzone: 0.08, pad_type: "auto".into(), pad_buttons: true, arrows_switch_cams: false, ctrl_off: String::new(), steering_linear: false, old_steering: false, red_steer_spd: false, reflections: true, led_glow: 6, led_mips: 1.3, night_brightness: 0.0, mouse_sens: 1.0, mouse_pedal_strength: 1.0, graphics_api: "auto".into(), ff_invert: false, ff_enabled: true, ff_road_vib: 1.0, ff_engine_vib: 1.0, ff_fade: 0.28, brake_hold: true, mouse_steering: false, mouse_right_off: false, mouse_smooth: true, mouse_hold: true, look_sens: 1.0, look_smoothing_ms: 0.0, blinker_cancel: true, wheel_range: 900.0, wheel_lock: 0.0, fov: 0.0, camera_collision: true, steer_look: false, steer_look_angle: 30.0, steer_look_response: 0.25, head_idle: 0.0, head_idle_pace: 1.0, pedal_throttle: 1.0, pedal_brake: 1.0, seat: [0.0; 3], seat_pitch_deg: 0.0, head_tracking: false, head_tracking_port: 4242, head_tracking_invert: String::new(), head_tracking_yaw_sens: 100.0, head_tracking_pitch_sens: 100.0, head_tracking_roll_sens: 100.0, head_tracking_x_sens: 100.0, head_tracking_y_sens: 100.0, head_tracking_z_sens: 100.0, head_tracking_invert_yaw: false, head_tracking_invert_pitch: false, head_tracking_invert_roll: false, head_tracking_invert_x: false, head_tracking_invert_y: false, head_tracking_invert_z: false, discord_status: true, discord_app_id: String::new(), voice_chat: true, info_bar: false }
+        Self { msaa: 4, anisotropy: 8, ssao: true, shadows: true, shadow_size: 2048, shadow_blobs: true, navigator: true, ui_opacity: 0.85, notes: true, ui_scale: 1.0, ui_scale_window: true, navigator_corner: "bottom-left".into(), boarding: "auto".into(), passenger_animation: "original".into(), units: "metric".into(), photo_mode: "simple".into(), character_models: "original".into(), standing_chance: 0.05, ambient: true, vol_ambient: 0.8, radio_fx: Default::default(), detail_textures: true, exact_fare: true, enhanced: false, graphics: "vanilla_plus".into(), triple: Default::default(), triple_span: true, triple_hud_center: true, vr: false, vr_scale: 0.65, vr_head_smoothing_ms: 0.0, vr_mirror_rate: 16.0, vr_desktop_mirror: true, fullscreen: false, vsync: true, volume: 0.6, drive_keys: "simple".into(), touch_door_mode: "standard".into(), post_aa: "fxaa".into(), render_scale: 0.0, language: "ENG".into(), pax_voices: "all".into(), nav_arrows: false, nav_ai: true, nav_surface: true, nav_light: false, get_up: false, trip_summary: true, texture_compression: true, gpu_texture_compression: true, texture_memory: 0, auto_clutch: true, momentary_gears: false, auto_shift: false, min_obj_size: 0.013, max_obj_dist: -1.0, max_fps: 0, chat: true, chat_size: 1.0, tooltips: true, name_tags: true, show_fps: false, perf_overlay: "off".into(), clouds: true, cloud_quality: "high".into(), rain_quality: "high".into(), windy_trees: true, pax_density: 1.0, vol_ai: 1.0, vol_scenery: 1.0, mirror_size: 256, mirror_hud: 0, mirror_hud_every_frame: false, mirror_refresh: "full".into(), mirror_quality: "standard".into(), doppler: true, driver: true, maintenance: 0, ai_unsched_factor: 1.0, ai_max_scheduled: 0, ai_max_parked: 0, ai_max_humans: 200, ai_wait_timed_stops_only: false, collision_vehicles: true, collision_objects: true, collision_pedestrians: true, head_movement: true, driverview_smooth: true, hands_in_cab: false, alt_view: true, precision_zoom: false, time_speed: 1.0, time_sync: false, metar_sync: false, metar_station: String::new(), machine_translation: false, shadow_casters: "all".into(), ctrl_deadzone: 0.0, right_stick_look: true, pad_steer_smooth: 120.0, pad_steer_linear: false, pad_steer_speed: 2.0, pad_deadzone: 0.08, pad_type: "auto".into(), pad_buttons: true, arrows_switch_cams: true, ctrl_off: String::new(), steering_linear: false, old_steering: false, red_steer_spd: false, reflections: true, led_glow: 6, led_mips: 1.3, night_brightness: 0.0, mouse_sens: 1.0, mouse_pedal_strength: 1.0, graphics_api: "auto".into(), ff_invert: false, ff_enabled: true, ff_road_vib: 1.0, ff_engine_vib: 1.0, ff_fade: 0.28, brake_hold: true, mouse_steering: false, mouse_right_off: false, mouse_smooth: true, mouse_hold: true, mouse_pedals: true, key_pedal_speed: 1.0, look_sens: 1.0, look_smoothing_ms: 0.0, blinker_cancel: true, wheel_range: 900.0, wheel_lock: 0.0, fov: 0.0, camera_collision: true, steer_look: false, steer_look_angle: 30.0, steer_look_response: 0.25, head_idle: 0.0, head_idle_pace: 1.0, pedal_throttle: 1.0, pedal_brake: 1.0, seat: [0.0; 3], seat_pitch_deg: 0.0, head_tracking: false, head_tracking_port: 4242, head_tracking_invert: String::new(), head_tracking_yaw_sens: 100.0, head_tracking_pitch_sens: 100.0, head_tracking_roll_sens: 100.0, head_tracking_x_sens: 100.0, head_tracking_y_sens: 100.0, head_tracking_z_sens: 100.0, head_tracking_invert_yaw: false, head_tracking_invert_pitch: false, head_tracking_invert_roll: false, head_tracking_invert_x: false, head_tracking_invert_y: false, head_tracking_invert_z: false, discord_status: true, discord_app_id: String::new(), voice_chat: true, info_bar: false }
     }
 }
 
 impl Settings {
+    pub fn perf_overlay_on(&self) -> bool {
+        self.perf_overlay != "off"
+    }
+
     /// The launcher setting, with the old environment switch kept for existing VR runs.
     pub fn vr_requested(&self) -> bool {
         cfg!(windows) && (self.vr || omsi_cfg::flags::OMSI_OPENXR.is_set())
@@ -459,6 +478,16 @@ impl Settings {
         if let Some(g) = omsi_cfg::flags::OMSI_GRAPHICS.var() {
             text.push_str(&format!("\ngraphics={g}\n"));
         }
+        // The settings made of the text read last, while the file says just the same: a
+        // start asked for them some twenty times, and each time parsed the file anew.
+        // (Compared by its text, not its time of change: a menu's change saved and read
+        // back within the same second must not be missed.)
+        static LAST: parking_lot::Mutex<Option<(PathBuf, String, Settings)>> = parking_lot::Mutex::new(None);
+        if let Some((path, was, s)) = LAST.lock().as_ref() {
+            if *path == p && *was == text {
+                return s.clone();
+            }
+        }
         let mut s = Self::from_text(&text);
         // OMSI_SAFE_GPU=<n>: the game was started again after its graphics device was lost
         // (see `App::restart_after_device_loss`): lighter on the card each time
@@ -466,6 +495,7 @@ impl Settings {
             s.apply_safe_gpu(n);
         }
         log::info!("settings from {}: msaa {} af {} ssao {} shadows {} ({}) navigator {} graphics {} post aa {} vsync {} render scale {} boarding {} min object size {} max object distance {} max fps {}", p.display(), s.msaa, s.anisotropy, s.ssao, s.shadows, s.shadow_size, s.navigator, s.graphics, s.post_aa, s.vsync, s.render_scale_text(), s.boarding, s.min_obj_size, s.object_distance(), s.max_fps);
+        *LAST.lock() = Some((p, text, s.clone()));
         s
     }
 
@@ -495,7 +525,9 @@ impl Settings {
                 "navigator_corner" => s.navigator_corner = v.to_ascii_lowercase(),
                 "boarding" => s.boarding = v.to_ascii_lowercase(),
                 "standing_chance" => s.standing_chance = v.trim_end_matches('%').parse::<f32>().ok().filter(|x| x.is_finite()).map(|x| (x / 100.0).clamp(0.0, 1.0)).unwrap_or(s.standing_chance),
+                "photo_mode" => s.photo_mode = if v.eq_ignore_ascii_case("advanced") { "advanced" } else { "simple" }.into(),
                 "passenger_animation" => s.passenger_animation = if v.eq_ignore_ascii_case("enhanced") { "enhanced" } else { "original" }.into(),
+                "character_models" => s.character_models = if v.eq_ignore_ascii_case("improved") { "improved" } else { "original" }.into(),
                 "detail_textures" | "fractal" => s.detail_textures = b(v),
                 "exact_fare" => s.exact_fare = b(v),
                 "enhanced" => s.enhanced = b(v),
@@ -581,10 +613,12 @@ impl Settings {
                     }
                 }
                 "language" | "lang" => s.language = crate::describe::language_code(v),
+                "units" => s.units = crate::units::Units::from_setting(v).setting().into(),
                 "pax_voices" => s.pax_voices = match v.to_ascii_lowercase().as_str() { "tickets" => "tickets".into(), "off" | "0" | "none" => "off".into(), _ => "all".into() },
                 "nav_arrows" => s.nav_arrows = b(v),
-                "nav_ai" => s.nav_ai = b(v),
+                "nav_ai" => s.nav_ai = b(v), "nav_surface" => s.nav_surface = b(v), "nav_light" => s.nav_light = b(v),
                 "get_up" => s.get_up = b(v),
+                "trip_summary" => s.trip_summary = b(v),
                 "texture_compression" => s.texture_compression = b(v),
                 "gpu_texture_compression" => s.gpu_texture_compression = gpu_texture_compression(v),
                 "auto_clutch" | "automatic_clutch" => s.auto_clutch = b(v),
@@ -595,7 +629,7 @@ impl Settings {
                 "max_fps" | "maxfps" => {
                     s.max_fps = v.parse::<f32>().map(|x| x.max(0.0) as u32).unwrap_or(s.max_fps);
                     // a phone given the PC OMSI's 30 by the settings import: 60
-                    if cfg!(target_os = "android") && s.max_fps == 30 {
+                    if cfg!(any(target_os = "android", target_os = "ios")) && s.max_fps == 30 {
                         s.max_fps = 60;
                     }
                 }
@@ -604,6 +638,7 @@ impl Settings {
                 "name_tags" | "nametags" => s.name_tags = b(v),
                 "driver" => s.driver = b(v),
                 "show_fps" | "fps" => s.show_fps = b(v),
+                "perf_overlay" => s.perf_overlay = omsi_launcher_lib::perf_overlay_mode(v).into(),
                 "clouds" => s.clouds = b(v),
                 "cloud_quality" => s.cloud_quality = cloud_quality(v).into(),
                 "rain_quality" => s.rain_quality = rain_quality(v).into(),
@@ -613,15 +648,21 @@ impl Settings {
                 "vol_scenery" => s.vol_scenery = v.parse::<f32>().map(|x| x.clamp(0.0, 1.0)).unwrap_or(s.vol_scenery),
                 "ambient" => s.ambient = b(v),
                 "vol_ambient" => s.vol_ambient = v.parse::<f32>().map(|x| x.clamp(0.0, 1.0)).unwrap_or(s.vol_ambient),
+                "radio_speaker" => s.radio_fx.speaker = v.parse::<f32>().map(|x| x.clamp(0.0, 1.0)).unwrap_or(s.radio_fx.speaker),
+                "radio_hiss" => s.radio_fx.hiss = v.parse::<f32>().map(|x| x.clamp(0.0, 1.0)).unwrap_or(s.radio_fx.hiss),
+                "radio_dropouts" => s.radio_fx.dropouts = v.parse::<f32>().map(|x| x.clamp(0.0, 1.0)).unwrap_or(s.radio_fx.dropouts),
                 "doppler" | "sound_doppler" => s.doppler = b(v),
                 "mirror_hud" => s.mirror_hud = v.parse::<u8>().map(|x| x.min(3)).unwrap_or(s.mirror_hud),
+                "mirror_hud_every_frame" => s.mirror_hud_every_frame = b(v),
                 "mirror_size" => s.mirror_size = v.parse::<u32>().map(|x| if x == 0 { 0 } else { x.clamp(64, 2048).next_power_of_two() }).unwrap_or(s.mirror_size),
                 "mirror_refresh" | "performance_realreflexions" => s.mirror_refresh = match v.trim().to_ascii_lowercase().as_str() {
                     "off" | "none" => "off",
                     "eco" | "economy" => "eco",
+                    "every" | "every_frame" => "every",
                     _ => "full",
                 }
                 .into(),
+                "mirror_quality" => s.mirror_quality = if v.trim().eq_ignore_ascii_case("enhanced") { "enhanced" } else { "standard" }.into(),
                 "texture_memory" | "texmemlimit" => s.texture_memory = v.parse::<f32>().map(|x| x.max(0.0) as u32).unwrap_or(s.texture_memory),
                 "maintenance" | "wear_lifespan" => s.maintenance = v.parse::<u8>().map(|x| x.min(4)).unwrap_or(s.maintenance),
                 "ai_unsched_factor" | "aiunschedfactor" => s.ai_unsched_factor = v.trim_end_matches('%').parse::<f32>().map(|x| (x / 100.0).clamp(0.0, 3.0)).unwrap_or(s.ai_unsched_factor),
@@ -670,6 +711,8 @@ impl Settings {
                 "mouse_right_off" => s.mouse_right_off = b(v),
                 "mouse_smooth" => s.mouse_smooth = b(v),
                 "mouse_hold" => s.mouse_hold = b(v),
+                "mouse_pedals" => s.mouse_pedals = b(v),
+                "key_pedal_speed" => s.key_pedal_speed = v.parse::<f32>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.25, 2.0)).unwrap_or(s.key_pedal_speed),
                 "mouse_pedal_strength" => {
                     s.mouse_pedal_strength = v
                         .parse::<f32>()
@@ -724,33 +767,42 @@ impl Settings {
                 "shadow_casters" => s.shadow_casters = if v.eq_ignore_ascii_case("omsi") { "omsi".into() } else { "all".into() },
                 "post_aa" => s.post_aa = if matches!(v.to_ascii_lowercase().as_str(), "off" | "0" | "none" | "false") { "off".into() } else { "fxaa".into() },
                 "drive_keys" => s.drive_keys = match v.to_ascii_lowercase().as_str() { "wasd" | "arrows" | "omsi" | "simple" => v.to_ascii_lowercase(), _ => s.drive_keys },
+                "touch_door_mode" => s.touch_door_mode = if v.eq_ignore_ascii_case("direct") { "direct" } else { "standard" }.into(),
                 _ => {}
             }
         }
+        s.settle_after_reading(graphics, version);
+        s
+    }
+
+    fn settle_after_reading(&mut self, graphics: Option<String>, version: u32) {
         // `graphics` decides; a file without it (older builds) says only `enhanced`, and
         // its vanilla renderer is what is now called Vanilla+
-        s.graphics = graphics.unwrap_or_else(|| if s.enhanced { "enhanced" } else { "vanilla_plus" }.to_string());
-        s.enhanced = s.graphics == "enhanced" || s.graphics == "enhanced_plus";
+        self.graphics = graphics.unwrap_or_else(|| if self.enhanced { "enhanced" } else { "vanilla_plus" }.to_string());
+        self.enhanced = self.graphics == "enhanced" || self.graphics == "enhanced_plus";
         // Enhanced+ is Enhanced with ray tracing: its shadows, ambient occlusion and
         // reflections are traced and belong to it - they cannot be switched off apart
-        if s.ray_tracing() {
-            s.shadows = true;
-            s.ssao = true;
-            s.reflections = true;
+        if self.ray_tracing() {
+            self.shadows = true;
+            self.ssao = true;
+            self.reflections = true;
         }
-        if s.classic() {
-            s.shadows = false;
-            s.ssao = false;
-            s.detail_textures = false;
+        if self.classic() {
+            self.shadows = false;
+            self.ssao = false;
+            self.detail_textures = false;
         }
         // Files older than version 2 say `boarding=pay` because that was the launcher's
         // default, not because anybody chose it: passengers then stood at the cash desk
         // waiting for a driver who did not know he had to sell them a ticket.
-        if version < SETTINGS_VERSION && s.boarding == "pay" {
+        if version < 2 && self.boarding == "pay" {
             log::info!("settings: boarding=pay from an old settings file taken as auto (choose pay again in the launcher to keep it)");
-            s.boarding = "auto".into();
+            self.boarding = "auto".into();
         }
-        s
+        if version == 3 && self.passenger_animation == "enhanced" {
+            log::info!("settings: passenger_animation=enhanced from a version 3 settings file taken as Original OMSI (choose Natural again to keep it)");
+            self.passenger_animation = "original".into();
+        }
     }
 
     /// The settings as the file holds them. The game only ever reads the file - the
@@ -777,6 +829,7 @@ impl Settings {
         text.push_str(&format!("head_tracking_yaw_sens={}\nhead_tracking_pitch_sens={}\nhead_tracking_roll_sens={}\nhead_tracking_x_sens={}\nhead_tracking_y_sens={}\nhead_tracking_z_sens={}\nhead_tracking_invert_yaw={}\nhead_tracking_invert_pitch={}\nhead_tracking_invert_roll={}\nhead_tracking_invert_x={}\nhead_tracking_invert_y={}\nhead_tracking_invert_z={}\n", self.head_tracking_yaw_sens, self.head_tracking_pitch_sens, self.head_tracking_roll_sens, self.head_tracking_x_sens, self.head_tracking_y_sens, self.head_tracking_z_sens, self.head_tracking_invert_yaw as u8, self.head_tracking_invert_pitch as u8, self.head_tracking_invert_roll as u8, self.head_tracking_invert_x as u8, self.head_tracking_invert_y as u8, self.head_tracking_invert_z as u8));
         text.push_str(&format!("discord_status={}\ndiscord_app_id={}\n", self.discord_status as u8, self.discord_app_id));
         text.push_str(&format!("auto_shift={}\n", self.auto_shift as u8));
+        text.push_str(&format!("touch_door_mode={}\n", self.touch_door_mode));
         text.push_str(&format!("right_stick_look={}\n", self.right_stick_look as u8));
         text.push_str(&format!("pad_steer_smooth={}\n", self.pad_steer_smooth));
         text.push_str(&format!("pad_steer_linear={}\n", self.pad_steer_linear as u8));
@@ -787,12 +840,19 @@ impl Settings {
         text.push_str(&format!("arrows_switch_cams={}\n", self.arrows_switch_cams as u8));
         text.push_str(&format!("voice_chat={}\n", self.voice_chat as u8));
         text.push_str(&format!("windy_trees={}\n", self.windy_trees as u8));
+        text.push_str(&format!("mirror_hud_every_frame={}\n", self.mirror_hud_every_frame as u8));
+        text.push_str(&format!("mirror_quality={}\n", self.mirror_quality));
+        text.push_str(&format!("perf_overlay={}\n", self.perf_overlay));
         text.push_str(&format!("standing_chance={}\n", (self.standing_chance * 100.0).round() as i32));
         text.push_str(&format!("ambient={}\nvol_ambient={}\n", self.ambient as u8, self.vol_ambient));
+        text.push_str(&format!("radio_speaker={}\nradio_hiss={}\nradio_dropouts={}\n", self.radio_fx.speaker, self.radio_fx.hiss, self.radio_fx.dropouts));
         text.push_str(&format!("cloud_quality={}\n", self.cloud_quality));
         text.push_str(&format!("rain_quality={}\n", self.rain_quality));
         text.push_str(&format!("gpu_texture_compression={}\n", self.gpu_texture_compression as u8));
         text.push_str(&format!("passenger_animation={}\n", self.passenger_animation));
+        text.push_str(&format!("photo_mode={}\n", self.photo_mode));
+        text.push_str(&format!("character_models={}\n", self.character_models));
+        text.push_str(&format!("units={}\n", self.units));
         text
     }
 
@@ -851,7 +911,7 @@ impl Settings {
     }
 
     pub fn render_options(&self) -> omsi_render::RenderOptions {
-        omsi_render::RenderOptions { msaa: self.msaa, anisotropy: self.anisotropy, shadow_size: self.shadow_size, ssao: self.ssao, render_scale: self.render_scale, compress_textures: self.texture_compression, gpu_texture_compression: self.gpu_texture_compression, fxaa: self.post_aa != "off", min_obj_size: self.min_obj_size, max_obj_dist: self.object_distance(), omsi_shadow_casters: self.shadow_casters == "omsi", shadow_blobs: self.shadow_blobs, reflections: self.reflections, preview_only: false, no_enhanced: !matches!(graphics_mode(&self.graphics), "enhanced" | "enhanced_plus"), ray_tracing: self.ray_tracing() || crate::ENHANCED_PLUS.load(std::sync::atomic::Ordering::Relaxed) }
+        omsi_render::RenderOptions { msaa: self.msaa, anisotropy: self.anisotropy, shadow_size: self.shadow_size, ssao: self.ssao, render_scale: self.render_scale, compress_textures: self.texture_compression, gpu_texture_compression: self.gpu_texture_compression, fxaa: self.post_aa != "off", min_obj_size: self.min_obj_size, max_obj_dist: self.object_distance(), mirror_enhanced: self.mirror_quality == "enhanced", omsi_shadow_casters: self.shadow_casters == "omsi", shadow_blobs: self.shadow_blobs, reflections: self.reflections, preview_only: false, no_enhanced: !matches!(graphics_mode(&self.graphics), "enhanced" | "enhanced_plus"), ray_tracing: self.ray_tracing() }
     }
 }
 
@@ -905,6 +965,23 @@ pub fn view_distance() -> Option<f64> {
 
 #[cfg(test)]
 mod tests {
+    use super::Settings;
+
+    #[test]
+    fn mobile_door_mode_defaults_and_round_trips() {
+        assert_eq!(Settings::from_text("").touch_door_mode, "standard");
+        assert_eq!(Settings::from_text("touch_door_mode=Direct\n").touch_door_mode, "direct");
+        assert_eq!(Settings::from_text("touch_door_mode=unknown\n").touch_door_mode, "standard");
+        let selected = Settings { touch_door_mode: "direct".into(), ..Default::default() };
+        assert_eq!(Settings::from_text(&selected.to_text()).touch_door_mode, "direct");
+        let mut launcher = omsi_launcher_lib::settings_from_text(None);
+        assert_eq!(launcher["touch_door_mode"], "standard");
+        launcher["touch_door_mode"] = serde_json::json!("direct");
+        let saved = omsi_launcher_lib::settings_to_text(&launcher, None);
+        assert_eq!(Settings::from_text(&saved).touch_door_mode, "direct");
+        assert_eq!(omsi_launcher_lib::settings_from_text(Some(&saved))["touch_door_mode"], "direct");
+    }
+
     /// DXT/BC on the GPU: on unless the file says off; the launcher and the game start
     /// from the same defaults for the graphics settings.
     #[test]
@@ -966,6 +1043,19 @@ mod tests {
         assert!(!again.ambient && (again.vol_ambient - 0.35).abs() < 1e-6, "kept through a save");
         assert!(super::Settings::from_text("info_bar=1\n").info_bar);
         assert!(!super::Settings::from_text("info_bar=0\n").info_bar);
+        assert_eq!(super::Settings::default().perf_overlay, "off");
+        assert_eq!(super::Settings::from_text(&super::Settings { perf_overlay: "detailed".into(), ..Default::default() }.to_text()).perf_overlay, "detailed");
+        assert_eq!(super::Settings::from_text("perf_overlay=compact\n").perf_overlay, "compact");
+    }
+
+    /// The radio's effects are off until asked for, and kept through a save.
+    #[test]
+    fn the_radio_effects_are_off_at_first_and_kept() {
+        assert!(super::Settings::default().radio_fx.is_off());
+        let s = super::Settings::from_text("radio_speaker=0.6\nradio_hiss=2\nradio_dropouts=x\n");
+        assert_eq!((s.radio_fx.speaker, s.radio_fx.hiss, s.radio_fx.dropouts), (0.6, 1.0, 0.0));
+        let again = super::Settings::from_text(&s.to_text());
+        assert_eq!(again.radio_fx, s.radio_fx);
     }
 
     #[test]
@@ -1050,12 +1140,33 @@ mod tests {
     }
 
     #[test]
+    fn photo_mode_setting_round_trip() {
+        assert_eq!(Settings::default().photo_mode, "simple");
+        let s = Settings::from_text("photo_mode=advanced\n");
+        assert_eq!(s.photo_mode, "advanced");
+        assert_eq!(Settings::from_text(&s.to_text()).photo_mode, "advanced");
+        assert_eq!(Settings::from_text("photo_mode=pro\n").photo_mode, "simple");
+    }
+
+    #[test]
+    fn character_models_setting_round_trip() {
+        assert_eq!(Settings::default().character_models, "original");
+        let s = Settings::from_text("character_models=improved\n");
+        assert_eq!(s.character_models, "improved");
+        assert!(s.to_text().contains("character_models=improved"));
+        assert_eq!(Settings::from_text("character_models=whatever\n").character_models, "original");
+    }
+
+    #[test]
     fn passenger_animation_setting_round_trip() {
         assert_eq!(Settings::default().passenger_animation, "original");
-        let s = Settings::from_text("passenger_animation=enhanced\n");
-        assert_eq!(s.passenger_animation, "enhanced");
+        assert_eq!(Settings::from_text("version=2\npassenger_animation=original\n").passenger_animation, "original");
+        assert_eq!(Settings::from_text("version=2\npassenger_animation=enhanced\n").passenger_animation, "enhanced");
+        assert_eq!(Settings::from_text("version=3\npassenger_animation=enhanced\n").passenger_animation, "original");
+        assert_eq!(Settings::from_text("version=4\npassenger_animation=enhanced\n").passenger_animation, "enhanced");
+        let s = Settings::from_text("version=4\npassenger_animation=enhanced\n");
         assert_eq!(Settings::from_text(&s.to_text()), s);
-        assert_eq!(Settings::from_text("passenger_animation=invalid\n").passenger_animation, "original");
+        assert_eq!(Settings::from_text("version=4\npassenger_animation=invalid\n").passenger_animation, "original");
     }
 
     #[test]
@@ -1091,9 +1202,19 @@ mod tests {
         assert_eq!(Settings::from_text("performance_realreflexions=economy\n").mirror_refresh, "eco");
         assert_eq!(Settings::from_text("performance_realreflexions=full\n").mirror_refresh, "full");
         assert_eq!(Settings::from_text("mirror_refresh=nonsense\n").mirror_refresh, "full");
-        for mode in ["off", "eco", "full"] {
+        for mode in ["off", "eco", "full", "every"] {
             let s = Settings { mirror_refresh: mode.into(), ..Default::default() };
             assert_eq!(Settings::from_text(&s.to_text()).mirror_refresh, mode);
+        }
+    }
+
+    #[test]
+    fn mirror_hud_every_frame_is_off_by_default_and_round_trips() {
+        assert!(!Settings::default().mirror_hud_every_frame);
+        assert!(Settings::from_text("mirror_hud_every_frame=1\n").mirror_hud_every_frame);
+        for on in [false, true] {
+            let s = Settings { mirror_hud_every_frame: on, ..Default::default() };
+            assert_eq!(Settings::from_text(&s.to_text()).mirror_hud_every_frame, on);
         }
     }
 
@@ -1309,17 +1430,7 @@ mod resolution_tests {
 }
 
 #[cfg(test)]
-mod right_stick_look_tests {
-    #[test]
-    fn existing_settings_keep_automatic_look_and_the_switch_round_trips() {
-        assert!(super::Settings::from_text("").right_stick_look);
-        for enabled in [false, true] {
-            let settings = super::Settings::from_text(&format!("right_stick_look={}\n", enabled as u8));
-            assert_eq!(settings.right_stick_look, enabled);
-            assert_eq!(super::Settings::from_text(&settings.to_text()).right_stick_look, enabled);
-        }
-    }
-}
+mod right_stick_look_tests;
 
 /// The driver's seat per bus (`~/.openomsi/seats.cfg`, a line `bus|x|y|z|pitch` each, the
 /// bus by its `.bus` file relative to the installation, lower case). The seat set in the

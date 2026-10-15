@@ -10,7 +10,7 @@
   <a href="https://openomsi.org/"><img alt="Playing now" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fopenomsi.savvabestbrother.workers.dev%2Fbadge&label=playing%20now&style=for-the-badge&logo=steam&logoColor=white"></a>
   <a href="https://github.com/openOMSI-org/openOMSI/actions/workflows/release.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/openOMSI-org/openOMSI/release.yml?branch=main&style=for-the-badge&label=build"></a>
   <a href="https://openomsi.org/"><img alt="Docs" src="https://img.shields.io/badge/docs-website-2d3138?style=for-the-badge"></a>
-  <a href="https://discord.gg/VG2EKVafYG"><img alt="Discord" src="https://img.shields.io/badge/discord-join%20us-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
+  <a href="https://discord.gg/openomsi"><img alt="Discord" src="https://img.shields.io/badge/discord-join%20us-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
   <a href="https://buymeacoffee.com/usonskyyy"><img alt="Buy me a coffee" src="https://img.shields.io/badge/buy%20me%20a%20coffee-support-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=black"></a>
   <a href="https://ko-fi.com/usonance"><img alt="Ko-fi" src="https://img.shields.io/badge/ko--fi-support-29abe0?style=for-the-badge&logo=kofi&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/openOMSI-org/openOMSI?style=for-the-badge"></a>
@@ -20,7 +20,7 @@
 > **Early release. Expect bugs.** openOMSI is in an early stage of development: things may be
 > missing, broken or change between versions. Please report problems in
 > [Issues](https://github.com/openOMSI-org/openOMSI/issues) or on our
-> [Discord server](https://discord.gg/VG2EKVafYG).
+> [Discord server](https://discord.gg/openomsi).
 
 **openOMSI** is a from-scratch recreation of the bus simulator **OMSI 2**, written in Rust:
 64-bit, multithreaded, with a modern renderer (Metal / Vulkan / DirectX 12 through wgpu),
@@ -33,8 +33,10 @@ and fully compatible with the existing maps, buses, scenery and mods.
 
 ## Download
 
-Every commit to `main` is built by GitHub Actions and published on the
-[**Releases**](https://github.com/openOMSI-org/openOMSI/releases) page:
+A maintainer publishes `main` as a beta from time to time (built by GitHub Actions, marked
+*Pre-release*) on the [**Releases**](https://github.com/openOMSI-org/openOMSI/releases) page;
+the tested ones become stable releases, and the newest stable release is always at
+[**Releases → Latest**](https://github.com/openOMSI-org/openOMSI/releases/latest):
 
 | Platform | File |
 | --- | --- |
@@ -138,7 +140,7 @@ pages live in [`docs/`](docs):
 | [Plugins](docs/PLUGINS.md) | Lua and WebAssembly plugins (the API of every group, examples), compiled `.oop` plugins, OMSI plugin DLLs and the 32-bit plugin host |
 | [Development Tools](https://github.com/openOMSI-org/openOMSI-Development-Tools) | the plugin workbench: projects, the API documentation, the `.oop` compiler and signing keys (Windows, Linux, macOS) |
 | [Dedicated server](docs/SERVER.md) | hosting a session without a window |
-| [Versioning & releases](docs/VERSIONING.md) | the `MAJOR.MINOR.COMMIT` scheme and the CI |
+| [Versioning & releases](docs/VERSIONING.md) | the `MAJOR.MINOR.PATCH` scheme and the CI |
 | [Changelog](CHANGELOG.md) | what changed in each version |
 
 ## Building from source
@@ -175,12 +177,13 @@ openOMSI/
 ├── assets/            fonts, Material icons, app icons (assets/icons/app), logos (assets/logos)
 ├── docs/              documentation (also published as the website)
 ├── site/              the GitHub Pages website
-└── .github/workflows/ CI: release builds for every commit, the website
+└── .github/workflows/ CI: test builds for every pull request, releases, the website
 ```
 
 ## Contributing
 
-Issues and pull requests are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md).
+Issues and pull requests are welcome - see [CONTRIBUTING.md](CONTRIBUTING.md); how the project is
+run, reviewed and released is in [GOVERNANCE.md](GOVERNANCE.md).
 
 ## Support
 
@@ -194,5 +197,11 @@ coffee or support it on Ko-fi - thank you!
 
 ## License
 
-openOMSI is released under the [MIT License](LICENSE). OMSI and OMSI 2 are trademarks of their
+openOMSI is released under the [GNU Affero General Public License, version 3 only](LICENSE)
+(`AGPL-3.0-only`). The historical MIT copyright and permission notice is retained in
+`LICENSE`; earlier MIT releases keep their terms. Third-party files keep their own licenses.
+The openOMSI name and original project logos are marks of `usonskyyyy`, who created
+the original codebase; see [TRADEMARKS.md](TRADEMARKS.md). The official organization is
+[openOMSI.org (`openOMSI-org`)](https://github.com/openOMSI-org).
+OMSI and OMSI 2 are trademarks of their
 respective owners. openOMSI is an independent project and is not affiliated with them.

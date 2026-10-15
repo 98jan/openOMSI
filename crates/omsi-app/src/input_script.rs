@@ -3,25 +3,11 @@
 use super::*;
 
 // (moved to `app_impl` with the methods they serve; kept reachable at their old path)
-pub(crate) use crate::app_impl::{cab_look_yaw, chase_orbit_step, ease_look, gate_gear_var, look_key_of, on_server, reset_blend, swap_view_look};
+pub(crate) use crate::app_impl::{cab_look_yaw, chase_orbit_step, ease_look, gate_gear_var, look_key_is, look_key_of, on_server, reset_blend, swap_view_look};
 
 
-/// Global actions a controller button should send to the game instead of to the bus script.
-pub(crate) fn is_game_action(name: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    name.starts_with("view_")
-        || matches!(
-            name.as_str(),
-            "sim_pause"
-                | "open_menu"
-                | "screenshot"
-                | "photo_mode"
-                | "quicksave"
-                | "toggel_mouse_ctrl"
-                | "toggel_ctrler"
-                | "voice_radio"
-        )
-}
+// (the game's own action names live with the controllers: `omsi-input`)
+pub(crate) use omsi_input::actions::is_game_action;
 
 /// How far (m) a click reaches a scenery object with a `[mouseevent]`.
 pub(crate) const SCENERY_OBJECT_REACH: f32 = 50.0;
@@ -29,6 +15,8 @@ pub(crate) const SCENERY_OBJECT_REACH: f32 = 50.0;
 impl App {
     /// A key of the window, or of an `OMSI_INPUT` script.
     pub(crate) fn on_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, pressed: bool, repeat: bool) {
+        // (Alt tapped alone opens OMSI 2's quick menu: `game_panels`)
+        self.alt_tap(code, pressed, repeat);
         // the photo mode has all the keys
         if self.photo_on() {
             self.photo_key(code, pressed, repeat);
@@ -36,6 +24,10 @@ impl App {
         }
         if self.xr.vr_nav_edit.is_some() {
             self.vr_nav_edit_key(code, pressed, repeat);
+            return;
+        }
+        // the developer tools: Ctrl+Shift+D, and their text fields' keys
+        if self.devtools_key(code, pressed, repeat) {
             return;
         }
         // The mirror panels (see mirror_hud.rs): Ctrl+M shows or hides them, Ctrl+Shift+M
@@ -50,7 +42,11 @@ impl App {
                 return;
             }
             // and gives the mouse back to the bus when the plugins' panels have it
-            if self.release_plugin_focus() {
+            if self.integrations.release_plugin_focus() {
+                return;
+            }
+            // and closes the game's panel on top (the quick menu, a form, the editor)
+            if self.close_game_panel() {
                 return;
             }
         }
@@ -160,7 +156,7 @@ impl App {
         if self.cam.in_cab && self.menus.game_menu.is_none() && self.player.is_some() {
             let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
             let shift = self.input.keys.contains(&KeyCode::ShiftLeft) || self.input.keys.contains(&KeyCode::ShiftRight);
-            if pressed && !repeat && code == KeyCode::KeyM && ctrl {
+            if pressed && !repeat && code == KeyCode::KeyM && ctrl && !self.chord_bound(code, shift, ctrl, false) {
                 if let Some(p) = self.player.as_ref() {
                     let msg = if shift { self.gfx.mirror_hud.toggle_edit(p) } else { self.gfx.mirror_hud.toggle(p) };
                     self.service_msg = Some((msg, if shift { 6.0 } else { 3.0 }));
@@ -282,7 +278,7 @@ impl App {
                     .find(|b| b.scan_code == scan && b.matches(chord) && b.action.to_ascii_lowercase().starts_with("chat_"))
                     .map(|b| b.action.clone()))
             };
-            if lan::chat_key(l, &mut self.net.remotes, code, pressed, repeat, bound.as_deref()) {
+            if lan::chat_key(l, &mut self.net.remotes, crate::app_impl::lan_tick::chat_key_of(code), pressed, repeat, bound.as_deref()) {
                 return true;
             }
         }
@@ -365,17 +361,21 @@ impl App {
             // Ctrl+S, OMSI's quicksave, stays a [game] key)
             let flying = m == 0
                 && flies_free_camera(code)
+                && !(self.input.camera_keys_off && self.player.is_some())
                 && (self.view == "free" || (self.player.is_none() && self.session.on_foot.is_none()));
             // (Ctrl+Alt+arrows turn the mirror looked at: not Ctrl+arrow's gear or camera)
             let mirror_aim = ctrl && alt && matches!(code, KeyCode::ArrowLeft | KeyCode::ArrowRight | KeyCode::ArrowUp | KeyCode::ArrowDown);
             if let Some(scan) = keys::dik_code(code).filter(|_| !ours && !flying && !mirror_aim) {
-                let action = self.input.game_keys.iter().find(|b| b.scan_code == scan && b.matches(m)
+                // (a Shift, Ctrl or Alt key is also OMSI's "both sides" code: the stock file has
+                // the quick menu on "Alt (both)"; a tap of one opens it, see `alt_tap`, #2392)
+                let action = self.input.game_keys.iter().find(|b| binding_is_key(b, code, scan, m)
                     && !b.action.starts_with("vr_")
+                    && !(keys::both_code(code).is_some() && b.action.eq_ignore_ascii_case("open_menue"))
                     && !(plain_arrow && b.action.starts_with("view_interiorcam_"))).map(|b| b.action.clone());
                 // (a key bound in [game] and in [vehicles] does both, as in Omsi.exe: the
                 // parking brake put on Space, the stock view_reset_all_directions key,
                 // reset the view and never reached the bus - #745)
-                let vehicle_too = self.player.as_ref().is_some_and(|p| p.bindings.iter().any(|b| b.scan_code == scan && b.matches(m)));
+                let vehicle_too = self.player.as_ref().is_some_and(|p| p.bindings.iter().any(|b| binding_is_key(b, code, scan, m)));
                 log::debug!("key {code:?} (DIK {scan}, chord {m}): [game] {action:?}, a key of the bus too: {vehicle_too}; [game] keys on it: {:?}", self.input.game_keys.iter().filter(|b| b.scan_code == scan).collect::<Vec<_>>());
                 // OMSI's `exit` (Ctrl+Q, or what the player put it on): the game ends as
                 // the menu's Quit ends it. It was no action here at all, so the key did
@@ -403,7 +403,7 @@ impl App {
         if pressed && !repeat {
             match code {
                 // OMSI's `toggel_mouse_ctrl` (O): steering and pedals with the mouse
-                KeyCode::KeyO if !ctrl && !alt && !shift_now && self.key_left_free(code, "toggel_mouse_ctrl") => {
+                KeyCode::KeyO if !ctrl && !alt && !shift_now && self.input.key_left_free(code, "toggel_mouse_ctrl") => {
                     self.game_action("toggel_mouse_ctrl");
                     return true;
                 }
@@ -441,7 +441,7 @@ impl App {
                     return true;
                 }
                 // the object editor (`crate::editor`)
-                KeyCode::KeyE if ctrl && shift_now => {
+                KeyCode::KeyE if ctrl && shift_now && !self.chord_bound(code, shift_now, ctrl, alt) => {
                     self.toggle_editor();
                     return true;
                 }
@@ -483,6 +483,14 @@ impl App {
         let extras = self.args.drive_keys != "omsi"
             && !keys::dik_code(code).is_some_and(|s| self.input.own_keys.contains(&s))
             && !self.input.keys.iter().any(|k| matches!(k, KeyCode::ControlLeft | KeyCode::ControlRight | KeyCode::AltLeft | KeyCode::AltRight | KeyCode::ShiftLeft | KeyCode::ShiftRight));
+        // the built-in Shift chords below (Shift+U, Shift+R, Shift+M, Shift+N, Shift+digit):
+        // Shift alone, and not where the player bound that chord to something (Ctrl+Shift+U
+        // on a door also switched the bus off, #2478)
+        let held = |a: KeyCode, b: KeyCode| self.input.keys.contains(&a) || self.input.keys.contains(&b);
+        let shift_chord = shift_held_now(&self.input.keys)
+            && !held(KeyCode::ControlLeft, KeyCode::ControlRight)
+            && !held(KeyCode::AltLeft, KeyCode::AltRight)
+            && !self.chord_bound(code, true, false, false);
         if pressed && !repeat {
             // Z / X / C: indicator left / hazard / right, where the hand rests
             // (OMSI's own layout wants Shift and the numpad for them). Each is a
@@ -504,7 +512,7 @@ impl App {
             // Shift + 1..9: open or close that physical door, front to back (see
             // `door_trigger_groups`); plain digits are left alone (some buses put
             // gears or numbered presets on them, `kw_s_1`/`automatic_1`).
-            if self.view != "free" && shift_held_now(&self.input.keys) && !keys::dik_code(code).is_some_and(|s| self.input.own_shift.contains(&s)) {
+            if self.view != "free" && shift_chord && !keys::dik_code(code).is_some_and(|s| self.input.own_shift.contains(&s)) {
                 if let Some(n) = digit_of(code) {
                     if let Some(p) = self.player.as_mut() {
                         let fire = p.door_key(n);
@@ -529,17 +537,15 @@ impl App {
             // (F1-F4 where keyboard.cfg has no view keys; a key the player gave to
             // something else, or a view key moved elsewhere, leaves them alone, #701)
             match code {
-                KeyCode::F1 if self.key_left_free(code, "view_set_driver") => self.view = "driver".into(),
-                KeyCode::F2 if self.key_left_free(code, "view_set_passenger") => self.view = "pax".into(),
-                KeyCode::F3 if self.key_left_free(code, "view_set_outside") => self.view = "outside".into(),
-                KeyCode::F4 if self.key_left_free(code, "view_set_map") => {
+                KeyCode::F1 if self.input.key_left_free(code, "view_set_driver") => self.view = "driver".into(),
+                KeyCode::F2 if self.input.key_left_free(code, "view_set_passenger") => self.view = "pax".into(),
+                KeyCode::F3 if self.input.key_left_free(code, "view_set_outside") => self.view = "outside".into(),
+                KeyCode::F4 if self.input.key_left_free(code, "view_set_map") => {
                     // the free camera starts where the current view is looking
                     self.view = "free".into();
                     self.cam.ego = false;
                 }
-                KeyCode::KeyU
-                if self.input.keys.contains(&KeyCode::ShiftLeft)
-                    || self.input.keys.contains(&KeyCode::ShiftRight) =>
+                KeyCode::KeyU if shift_chord =>
                     {
                         // Shift+U: toggle a bus's service state by itself (start a shut
                         // bus, shut down a running one), and set its IBIS to the current
@@ -554,26 +560,20 @@ impl App {
                         }
                     }
 
-                KeyCode::KeyR
-                if self.input.keys.contains(&KeyCode::ShiftLeft)
-                    || self.input.keys.contains(&KeyCode::ShiftRight) =>
+                KeyCode::KeyR if shift_chord =>
                     {
                         // Shift+R: the next internet radio station (see radio.rs)
                         let msg = self.sound.radio.next_station();
                         self.service_msg = Some((msg, 4.0));
                     }
-                KeyCode::KeyM
-                if self.input.keys.contains(&KeyCode::ShiftLeft)
-                    || self.input.keys.contains(&KeyCode::ShiftRight) =>
+                KeyCode::KeyM if shift_chord =>
                     {
                         // Shift+M: the city map (M alone is the starter)
                         if let Some(n) = self.menus.navigator.as_mut() {
                             n.toggle_map();
                         }
                     }
-                KeyCode::KeyN
-                if self.input.keys.contains(&KeyCode::ShiftLeft)
-                    || self.input.keys.contains(&KeyCode::ShiftRight) =>
+                KeyCode::KeyN if shift_chord =>
                     {
                         // Shift+N: navigator → navigator with the schedule → off (N alone is
                         // the gearbox's neutral)
@@ -648,7 +648,9 @@ impl App {
             self.input.keys.contains(&KeyCode::ShiftLeft) || self.input.keys.contains(&KeyCode::ShiftRight);
         if let Some(p) = self.player.as_mut() {
             let ctrl_alt_held = (self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight)) && (self.input.keys.contains(&KeyCode::AltLeft) || self.input.keys.contains(&KeyCode::AltRight));
-            if self.view != "free" && !repeat && !shift_held && !(ctrl_alt_held && pressed) {
+            // (in the free view too while its keys are handed to the bus, #1779)
+            let bus_keys = self.view != "free" || self.input.camera_keys_off;
+            if bus_keys && !repeat && !shift_held && !(ctrl_alt_held && pressed) {
                 if let Some(a) = fallback_action(code, wasd) {
                     p.axes.set(a, pressed);
                 }
@@ -666,11 +668,11 @@ impl App {
         // viewpoint - otherwise a bus driven with WASD could never be put in gear.
         let shift =
             self.input.keys.contains(&KeyCode::ShiftLeft) || self.input.keys.contains(&KeyCode::ShiftRight);
-        let covers_vehicle_key = fallback_action(code, wasd).is_some() && self.view != "free";
+        let covers_vehicle_key = fallback_action(code, wasd).is_some() && (self.view != "free" || self.input.camera_keys_off);
         let driving_key = covers_vehicle_key && !shift;
         // (the keys that fly the free camera are the camera's: W switched the wipers on
         // while flying)
-        let fly_key = self.view == "free" && flies_free_camera(code);
+        let fly_key = self.view == "free" && flies_free_camera(code) && !self.input.camera_keys_off;
         if let (Some(p), Some(scan)) = (
             self.player.as_mut(),
             keys::dik_code(code).filter(|_| !driving_key && !fly_key),
@@ -688,16 +690,47 @@ impl App {
                             && !matches!(code, KeyCode::AltLeft | KeyCode::AltRight),
                     )
                 };
-                p.key(scan, m, pressed);
+                // (a Shift, Ctrl or Alt key: also OMSI's code for both sides, and a binding of
+                // one written with its own modifier bit counts, #2003)
+                let ob = keys::own_modifier_bit(code);
+                for sc in std::iter::once(scan).chain(keys::both_code(code)) {
+                    let plain = ob == 0 || p.bindings.iter().any(|b| b.scan_code == sc && b.matches(m));
+                    p.key(sc, if plain { m } else { m | ob }, pressed);
+                }
             }
         }
     }
 
-    /// Whether a key the game gives `action` by itself (F1 the driver's view, O the mouse
-    /// steering) is still free for it: neither bound by the player to something of their
-    /// own nor `action` bound to another key in keyboard.cfg.
-    pub(crate) fn key_left_free(&self, code: KeyCode, action: &str) -> bool {
-        key_left_free(keys::dik_code(code), action, &self.input.own_keys, &self.input.game_keys)
+    /// A side button of the mouse (`keys::MOUSE_4` / `MOUSE_5`) pressed or let go: what
+    /// keyboard.cfg binds to it, in [game] and for the bus, as a key's (#2281). Not while a
+    /// menu or the photo mode has the mouse.
+    pub(crate) fn mouse_side_button(&mut self, scan: i32, pressed: bool) {
+        let held = |a: KeyCode, b: KeyCode| self.input.keys.contains(&a) || self.input.keys.contains(&b);
+        let m = omsi_content::input::chord(
+            held(KeyCode::ShiftLeft, KeyCode::ShiftRight),
+            held(KeyCode::ControlLeft, KeyCode::ControlRight),
+            held(KeyCode::AltLeft, KeyCode::AltRight),
+        );
+        // (a key being set in the game's controls list takes the button)
+        if self.menus.key_capture.is_some() {
+            if pressed {
+                self.apply_key_capture(Some(scan), m);
+            }
+            return;
+        }
+        if self.menus.game_menu.is_some() || self.menus.chooser.is_some() || self.photo_on() {
+            return;
+        }
+        log::debug!("mouse button {scan} {}", if pressed { "down" } else { "up" });
+        if pressed {
+            let action = self.input.game_keys.iter().find(|b| b.scan_code == scan && b.matches(m)).map(|b| b.action.clone());
+            if let Some(a) = action {
+                self.game_action(&a);
+            }
+        }
+        if let Some(p) = self.player.as_mut() {
+            p.key(scan, m, pressed);
+        }
     }
 
     /// A key of the input script by name: a letter, a digit, F1..F12, or one of the named keys.
@@ -738,6 +771,11 @@ impl App {
             "Delete" => Delete,
             "[" => BracketLeft,
             "]" => BracketRight,
+            "Num+" => NumpadAdd,
+            "Num-" => NumpadSubtract,
+            "RShift" => ShiftRight,
+            "RCtrl" => ControlRight,
+            "RAlt" => AltRight,
             _ => return None,
         })
     }
@@ -750,7 +788,7 @@ impl App {
     /// right-button drag does, the free and outside cameras too), `set name=value` (a script
     /// variable), `trigger name`, `log name` (with what the HUD says about the cursor),
     /// `dumptex <folder>` (the display pictures), `shot <file>` (the window's picture as a
-    /// PNG) and `type <text>` (into the LAN chat line that `key V` opened; `key Enter`
+    /// PNG), `notify <id> <seconds> <kind> <text>` (a notification card) and `type <text>` (into the LAN chat line that `key V` opened; `key Enter`
     /// sends it).
     pub(crate) fn run_input_script(&mut self, event_loop: &ActiveEventLoop) {
         if self.perf.input_script.is_empty() {
@@ -869,9 +907,17 @@ impl App {
                 // `click down` / `click up` only press or let go (a drag in between)
                 "click" => {
                     let (press, release) = (arg != "up", arg != "down");
-                    if self.menus.placing.is_some() && self.menus.game_menu.is_none() {
+                    if self.game_panels_mouse() {
+                        // (on the game's panels as the window's button)
+                        if press {
+                            self.game_panel_click(true);
+                        }
+                        if release {
+                            self.game_panel_click(false);
+                        }
+                    } else if self.menus.placing.is_some() && self.menus.game_menu.is_none() {
                         self.placing_click();
-                    } else if self.menus.game_menu.is_some() || self.shell_takes_mouse() {
+                    } else if self.menus.game_menu.is_some() || self.shell_takes_mouse() || (self.devtools.is_some() && self.shell.over_ui) {
                         // (on the menu as the window's button: its lines, its arrows)
                         if press {
                             self.left_button(event_loop, true);
@@ -934,6 +980,11 @@ impl App {
                     self.gfx.window_hidden = false;
                     self.input_back();
                 }
+                // `mouse4 down|up`, `mouse5 down|up`: the mouse's side buttons
+                "mouse4" | "mouse5" => {
+                    let scan = if verb == "mouse4" { keys::MOUSE_4 } else { keys::MOUSE_5 };
+                    self.mouse_side_button(scan, arg == "down");
+                }
                 "key" | "keydown" | "keyup" => {
                     let Some(code) = Self::script_key(arg) else {
                         log::warn!("input script: unknown key {arg}");
@@ -947,6 +998,10 @@ impl App {
                     }
                 }
                 // `log pose`: where the bus and the camera are, and whether the bus has ground
+                "log" if arg == "clock" => {
+                    let t = self.clock.time;
+                    log::info!("input script: clock {:02}:{:02}:{:02} (day {}, sync {})", (t / 3600.0) as u32, (t / 60.0) as u32 % 60, t as u32 % 60, self.clock.day_of_year, self.real_time_locked());
+                }
                 "log" if arg == "pose" => {
                     let bus = self.player.as_ref().map(|p| {
                         (
@@ -1028,9 +1083,17 @@ impl App {
                     let riders = self.session.humans.as_ref().map(|h| (h.people_in(crate::humans::BusId::Player), self.session.placed.iter().map(|q| h.people_in(crate::humans::BusId::Ai(crate::humans::placed_bus_id(q.uid)))).collect::<Vec<_>>()));
                     log::info!("input script: menu {arg}: player {:?}, on foot {:?}, placed {}, people in the bus / the placed ones {:?}", self.player.as_ref().map(|p| p.vehicle.position), self.session.on_foot.as_ref().map(|f| f.pos), self.session.placed.len(), riders);
                 }
+                // `devtools <command>`: the developer tools (see `App::devtools_command`)
+                "devtools" => self.devtools_command(cmd.split_once(' ').map(|x| x.1.trim()).unwrap_or("")),
                 // `shot <file>`: the window's own view into a PNG, drawn from the scene the
                 // window is showing (the only way to see what the window path renders)
                 "shot" => self.perf.shot = Some((PathBuf::from(arg), true)),
+                // `notify <id> <seconds> <kind> <text>`: a notification, as the server's
+                // `notify` sends one (to look at the cards)
+                "notify" => match cmd.split_once(' ').and_then(|(_, rest)| crate::ui::Notice::parse(rest)) {
+                    Some((_, n)) => crate::ui::push_notice(&mut self.menus.notices, n),
+                    None => log::warn!("input script: notify <id> <seconds> <info|warn|alert|action|success> <text>"),
+                },
                 // `dumptex <folder>`: the player's display pictures as the window has them
                 "dumptex" => {
                     if let Some(p) = self.player.as_ref() {
@@ -1167,6 +1230,15 @@ pub(crate) fn flies_free_camera(code: KeyCode) -> bool {
     matches!(code, KeyCode::KeyW | KeyCode::KeyA | KeyCode::KeyS | KeyCode::KeyD | KeyCode::KeyQ | KeyCode::KeyE | KeyCode::Space | KeyCode::ShiftLeft | KeyCode::ArrowLeft | KeyCode::ArrowRight | KeyCode::ArrowUp | KeyCode::ArrowDown)
 }
 
+/// Whether the binding `b` is the key `code` (scan code `scan`) pressed with the other
+/// modifiers `m`: its own scan code or, for a Shift, Ctrl or Alt key, OMSI's code for either
+/// side ("Alt (both)"), and a modifier key's binding written with its own bit counts too
+/// (OMSI's files have "Shift (both)" with the Shift flag; #2003, #2392).
+pub(crate) fn binding_is_key(b: &omsi_content::KeyBinding, code: KeyCode, scan: i32, m: i32) -> bool {
+    let ob = keys::own_modifier_bit(code);
+    (b.scan_code == scan || keys::both_code(code) == Some(b.scan_code)) && (b.matches(m) || ob != 0 && b.matches(m | ob))
+}
+
 /// `App::key_left_free` for a key's scan code.
 pub(crate) fn key_left_free(scan: Option<i32>, action: &str, own: &std::collections::HashSet<i32>, game: &[omsi_content::KeyBinding]) -> bool {
     !scan.is_some_and(|s| own.contains(&s)) && !game.iter().any(|b| b.scan_code != 0 && b.action.eq_ignore_ascii_case(action))
@@ -1253,6 +1325,26 @@ mod key_tests {
         }
     }
 
+    /// A lone Shift, Ctrl or Alt bound in keyboard.cfg: its own code with no modifier (#1477),
+    /// OMSI's "both sides" code, and with its own bit as OMSI's files write it (#2003, #2392).
+    #[test]
+    fn a_modifier_key_is_a_key_of_its_own() {
+        use omsi_content::KeyBinding;
+        let kb = |k: i32, m: i32| KeyBinding { action: "a".into(), scan_code: k, modifier: m };
+        assert!(binding_is_key(&kb(42, 0), KeyCode::ShiftLeft, 42, 0));
+        assert!(binding_is_key(&kb(90, 0), KeyCode::ShiftRight, 54, 0));
+        assert!(binding_is_key(&kb(90, 3), KeyCode::ShiftLeft, 42, 0));
+        assert!(binding_is_key(&kb(92, 0), KeyCode::AltRight, 184, 0));
+        assert!(!binding_is_key(&kb(92, 0), KeyCode::ControlLeft, 29, 0));
+        assert!(!binding_is_key(&kb(56, 0), KeyCode::AltRight, 184, 0));
+        // Ctrl held with a lone Shift binding: not that binding
+        assert!(!binding_is_key(&kb(42, 0), KeyCode::ShiftLeft, 42, omsi_content::input::KEY_CTRL));
+        // an ordinary key: only its own code, only its chord
+        assert!(binding_is_key(&kb(22, 6), KeyCode::KeyU, 22, 6));
+        assert!(!binding_is_key(&kb(22, 6), KeyCode::KeyU, 22, 2));
+        assert!(!binding_is_key(&kb(22, 2), KeyCode::KeyU, 22, 6));
+    }
+
     /// F1 given to a door and the driver's view moved to 1 (#701): F1 is not the view any more.
     #[test]
     fn a_built_in_view_key_steps_aside_for_the_players_own() {
@@ -1264,5 +1356,14 @@ mod key_tests {
         assert!(!super::key_left_free(Some(59), "view_set_driver", &own, &[]));
         assert!(!super::key_left_free(Some(59), "view_set_driver", &none, &[kb("view_set_driver", 2)]));
         assert!(super::key_left_free(Some(59), "view_set_driver", &none, &[kb("view_set_passenger", 60)]));
+    }
+}
+
+impl InputState {
+    /// Whether a key the game gives `action` by itself (F1 the driver's view, O the mouse
+    /// steering) is still free for it: neither bound by the player to something of their
+    /// own nor `action` bound to another key in keyboard.cfg.
+    pub(crate) fn key_left_free(&self, code: KeyCode, action: &str) -> bool {
+        key_left_free(keys::dik_code(code), action, &self.own_keys, &self.game_keys)
     }
 }
