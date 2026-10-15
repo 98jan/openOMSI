@@ -4,6 +4,24 @@
 use super::*;
 use crate::mods::failure::{self, Failure};
 
+/// A font library shared by the vehicles that write with it (the world's, or one fetched
+/// bus's own).
+pub type SharedFonts = Arc<parking_lot::Mutex<omsi_sim::texttex::FontLibrary>>;
+
+/// The fonts of each fetched bus, by its mount (the same mount is the same files).
+static MOUNT_FONTS: std::sync::LazyLock<Mutex<HashMap<PathBuf, SharedFonts>>> = std::sync::LazyLock::new(Default::default);
+
+/// The fonts the bus fetched as `fp` writes its displays with: those of its own mount alone
+/// (`FontLibrary::only`), never this machine's fonts of the same names. One library a
+/// mount, shared by every vehicle made of it and built once (a flyweight): a fresh one for
+/// every remake read its fonts and built their atlases again on the frame. None when `fp`
+/// is not mounted here.
+pub(crate) fn fonts_of(fp: &str) -> Option<SharedFonts> {
+    let at = mount(fp)?;
+    let mut fonts = MOUNT_FONTS.lock().unwrap_or_else(|e| e.into_inner());
+    Some(fonts.entry(at.clone()).or_insert_with(|| Arc::new(parking_lot::Mutex::new(omsi_sim::texttex::FontLibrary::only(&at)))).clone())
+}
+
 /// Where another player's bus stands on this machine.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Wanted {
@@ -285,7 +303,7 @@ impl Viewer {
             if !crate::mods::upload::serving() {
                 return Wanted::Failed(Failure::NoHost);
             }
-            return match wait_for(fp, crate::mods::upload::MANIFEST_WAIT).and_then(|_| bus_file(fp)) {
+            return match wait_for(fp, crate::mods::upload::MANIFEST_WAIT).then(|| bus_file(fp)).flatten() {
                 Some(p) => Wanted::Mounted(p),
                 None => Wanted::Failed(Failure::NotHereYet),
             };

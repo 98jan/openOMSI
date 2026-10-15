@@ -130,6 +130,7 @@ pub(in crate::mods) use local_files::*;
 pub(in crate::mods) use recompress::*;
 pub use room::*;
 pub(crate) use viewer::*;
+pub use viewer::SharedFonts;
 
 #[cfg(test)]
 pub(super) fn open_for_test(dir: &Path) {

@@ -3654,6 +3654,7 @@ dependencies = [
  "omsi-sim",
  "omsi-texture",
  "omsi-vehicle",
+ "parking_lot",
  "rayon",
  "ring",
  "rustrict",

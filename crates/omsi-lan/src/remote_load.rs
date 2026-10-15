@@ -2,7 +2,7 @@
 //! scripts (`omsi_sim::VehicleType::load`) - and its paint's textures took the thread that
 //! draws a good part of a second for a heavy coach: fifteen players coming one after the
 //! other were fifteen frozen frames in a row. Here they are read on a thread of their own,
-//! two at a time, the paint's textures and meshes put on the GPU there too (`set_prefetcher`,
+//! two at a time, the paint's textures and meshes put on the GPU there too (`lend_prefetcher`,
 //! as the AI fleet's are), while a box of the bus's size stands in for it
 //! (`mods::placeholder`); the bus takes the box's place once all of it is here.
 
@@ -15,14 +15,25 @@ use std::time::{Duration, Instant};
 use omsi_sim::VehicleType;
 
 /// What reads a bus's paint ahead (its textures and meshes, made on the GPU from a worker):
-/// the app's renderer gives one (`set_prefetcher`); without one (a server) nothing is.
+/// the app's renderer lends one (`lend_prefetcher`); without one (a server) nothing is.
 pub type Prefetcher = Arc<dyn Fn(&VehicleType, Option<usize>) + Send + Sync>;
 
 static PREFETCHER: Mutex<Option<Prefetcher>> = Mutex::new(None);
 
-/// The renderer's reader of vehicle sets for this session (None: the session's world is gone).
-pub fn set_prefetcher(p: Option<Prefetcher>) {
-    *PREFETCHER.lock().unwrap_or_else(|e| e.into_inner()) = p;
+/// The renderer's reader of vehicle sets lent for this session: until the guard is dropped
+/// (the session's world gone), when it is given back.
+pub fn lend_prefetcher(p: Prefetcher) -> Lent {
+    *PREFETCHER.lock().unwrap_or_else(|e| e.into_inner()) = Some(p);
+    Lent(())
+}
+
+/// The reader of `lend_prefetcher`, lent while this lives.
+pub struct Lent(());
+
+impl Drop for Lent {
+    fn drop(&mut self) {
+        *PREFETCHER.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
 }
 
 pub fn has_prefetcher() -> bool {

@@ -1694,13 +1694,13 @@ fn new_remote(
     };
     // (a bus fetched by its content writes its displays with its own fonts, not with this
     // machine's fonts of the same names)
-    let fonts_at = match crate::mods::vehicles::status(&pose.content) {
-        Some(crate::mods::vehicles::Wanted::Mounted(_)) if theirs => crate::mods::vehicles::mount(&pose.content),
+    let fonts = match crate::mods::vehicles::status(&pose.content) {
+        Some(crate::mods::vehicles::Wanted::Mounted(_)) if theirs => crate::mods::vehicles::fonts_of(&pose.content),
         _ => None,
     };
     let t1 = Instant::now();
     let (mut vehicle, hof) =
-        lan_host.remote_vehicle(args, ty, scheme, clock.cloned().unwrap_or_else(|| args.start_clock()), fonts_at.as_deref());
+        lan_host.remote_vehicle(args, ty, scheme, clock.cloned().unwrap_or_else(|| args.start_clock()), fonts);
     let t_vehicle = t1.elapsed();
     reads.extend(audit.end());
     if theirs && omsi_net::is_fingerprint(&pose.content) {
@@ -2769,6 +2769,8 @@ thread_local! {
 
 mod remote_type;
 use remote_type::{remote_type, RemoteType};
+mod tag;
+pub use tag::tag_text;
 
 #[cfg(test)]
 mod tests;
