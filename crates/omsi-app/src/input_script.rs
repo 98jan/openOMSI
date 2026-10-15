@@ -1246,11 +1246,7 @@ pub(crate) fn key_left_free(scan: Option<i32>, action: &str, own: &std::collecti
     !scan.is_some_and(|s| own.contains(&s)) && !game.iter().any(|b| b.scan_code != 0 && b.action.eq_ignore_ascii_case(action))
 }
 
-/// Shift, Ctrl, Alt and the system key, either side: the keys `ModifiersChanged` keeps.
-pub(crate) fn is_modifier(code: KeyCode) -> bool {
-    matches!(code, KeyCode::ShiftLeft | KeyCode::ShiftRight | KeyCode::ControlLeft | KeyCode::ControlRight
-        | KeyCode::AltLeft | KeyCode::AltRight | KeyCode::SuperLeft | KeyCode::SuperRight)
-}
+pub(crate) use omsi_input::keys::is_modifier;
 
 /// OS shortcuts can consume modifier key-ups without taking window focus. Winit then
 /// reports the released modifiers through `ModifiersChanged` (on macOS, also before
@@ -1312,19 +1308,6 @@ mod key_tests {
         keys.clear();
         assert!(release_inactive_modifiers(&mut keys, M::SHIFT).is_empty());
         assert!(keys.is_empty());
-    }
-
-    /// The modifier key-ups the window drops once `ModifiersChanged` has let them go (Windows
-    /// reports the state first): the eight modifier keys, nothing else.
-    #[test]
-    fn only_the_modifier_keys_count_as_modifiers() {
-        for code in [KeyCode::ShiftLeft, KeyCode::ShiftRight, KeyCode::ControlLeft, KeyCode::ControlRight,
-            KeyCode::AltLeft, KeyCode::AltRight, KeyCode::SuperLeft, KeyCode::SuperRight] {
-            assert!(is_modifier(code), "{code:?}");
-        }
-        for code in [KeyCode::KeyW, KeyCode::CapsLock, KeyCode::Escape, KeyCode::Digit1] {
-            assert!(!is_modifier(code), "{code:?}");
-        }
     }
 
     /// A lone Shift, Ctrl or Alt bound in keyboard.cfg: its own code with no modifier (#1477),
