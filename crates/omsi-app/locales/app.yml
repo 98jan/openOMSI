@@ -46963,6 +46963,20 @@ _version: 2
   tl: "Lumalaki kasabay ng window; dito itinatakda kung gaano kalaki"
   sv: "Växer med fönstret; här ställer du in hur stort det är"
 
+"Very small":
+  ca: "Molt petit"
+  de: "Sehr klein"
+  fr: "Très petit"
+  es: "Muy pequeño"
+  it: "Molto piccolo"
+  pt: "Muito pequeno"
+"Smallest":
+  ca: "Mínim"
+  de: "Winzig"
+  fr: "Minuscule"
+  es: "Mínimo"
+  it: "Minimo"
+  pt: "Mínimo"
 "Smaller":
   ca: "Més petit"
   de: "Kleiner"
