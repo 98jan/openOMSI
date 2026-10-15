@@ -380,7 +380,8 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
             }
         }
     }
-    if let Some(memo) = root_memo().filter(|_| is_omsi_root(&args.root)) {
+    // (only a game played remembers its installation, not a server's copy)
+    if let Some(memo) = root_memo().filter(|_| is_omsi_root(&args.root) && server_cfg.is_none()) {
         let _ = std::fs::write(memo, args.root.to_string_lossy().as_bytes());
     }
     // content roots: the game's own folder (mods) first, then the original installation
@@ -470,6 +471,8 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     // the host's mods: served by the host, fetched by a joining player before its world is
     // made (see `lan_mods`)
     lan_mods::remove_stale();
+    // (a joining player notes what it reads: its bus's files, see `lan_mods::upload`)
+    omsi_cfg::vfs::record_reads(lan.as_ref().is_some_and(|l| l.role == omsi_net::Role::Client));
     if let Some(l) = lan.as_mut() {
         let mut c = args.lan_config();
         lan::share_mods(&mut c, l);
@@ -478,7 +481,10 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     }
     if let (Some(cfg), Some(l)) = (server_cfg.as_ref(), lan.as_ref()) {
         lan::open_public_gateway(l, server::info_of(cfg), cfg.web_port, cfg.tunnel);
-        lan::publish_vehicles(args.root.clone(), cfg.vehicles.clone());
+        // (a server that takes its players' buses offers any bus: one it lacks is sent to it)
+        if !(cfg.accept_uploads && cfg.vehicles.is_empty()) {
+            lan::publish_vehicles(args.root.clone(), cfg.vehicles.clone());
+        }
         if cfg.tunnel {
             // the address to give the players, as soon as cloudflared says it
             std::thread::spawn(|| {

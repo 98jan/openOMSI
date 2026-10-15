@@ -213,6 +213,11 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   player fetches must be what its name says (a picture of a size a texture can have, a sound,
   a mesh the reader takes, a text), or it is left out and reported; a vehicle script that
   would never end is cut short instead of stopping the game.
+- **Players' buses go to the server by their content** — a player's game says which bus it
+  drives by the fingerprint of the files it uses, and sends a server that lacks it those files
+  (the variant and paint driven, not the whole pack); a dedicated server keeps every version
+  its players send (`accept_uploads`, `uploads_keep_days`) and may leave the map for the
+  players to install (`share_maps`).
 
 ## 0.3.0 - 2026-10-14
 

@@ -891,6 +891,13 @@ pub struct Pose {
     pub box_offset: f32,
     /// Hash of the vehicle's sync table (see `lamps`, `switches`, `values`), 0 for none.
     pub table: u32,
+    /// What the vehicle is, by its content: the fingerprint of every file it uses (`v2-`
+    /// and 64 hex digits, see the game's `lan_mods::identity`). Two players whose buses have
+    /// the same one see the same bus, file for file. Empty: not known (an older game, or not
+    /// worked out yet).
+    pub content: String,
+    /// Height (m) of the box around the vehicle, for a stand-in of its size; 0: not known.
+    pub height: f32,
     pub x: f64,
     pub y: f64,
     pub z: f64,
@@ -984,15 +991,19 @@ impl Pose {
             clean_text(&self.tour, MAX_FIELD),
         );
         let figure = human_path(&self.figure).unwrap_or_default();
+        // the vehicle's fingerprint and height go last (an older game reads the fields it
+        // knows and passes these by); their room is kept first, so long texts or pictures
+        // never make an INFO too long to be taken in, nor cut what the bus is
+        let content = if is_fingerprint(&self.content) { self.content.as_str() } else { "" };
+        let tail = format!("|{content}|{:.2}", finite_or(self.height, 0.0).clamp(0.0, 10.0));
         // the display texts get what room is left in one datagram (long vehicle and figure
         // paths and a destination in another alphabet made an INFO too long to be taken in:
         // the others never learnt which bus the player drove)
-        let room = MAX_DATAGRAM.saturating_sub(head.len() + figure.len() + 1);
+        let room = MAX_DATAGRAM.saturating_sub(head.len() + figure.len() + 2 + tail.len());
         let info = format!("{head}{}|{figure}", encode_texts(&self.texts, MAX_TEXTS, MAX_TEXT_LEN, room));
-        // the `[matl_freetex]` pictures last, in what room is left (an older game reads the
-        // fields it knows and passes this one by)
-        let room = MAX_DATAGRAM.saturating_sub(info.len() + 1);
-        format!("{info}|{}", encode_texts(&self.freetex, MAX_FREETEX, MAX_FREETEX_LEN, room))
+        // the `[matl_freetex]` pictures in what room is left
+        let room = MAX_DATAGRAM.saturating_sub(info.len() + 1 + tail.len());
+        format!("{info}|{}{tail}", encode_texts(&self.freetex, MAX_FREETEX, MAX_FREETEX_LEN, room))
     }
 
     /// The info fields of an `INFO` message (checked and cleaned), or None.
@@ -1022,6 +1033,8 @@ impl Pose {
             texts: parts.get(12).map(|t| decode_texts(t, MAX_TEXTS, MAX_TEXT_LEN)).unwrap_or_default(),
             figure: parts.get(13).and_then(|f| human_path(f)).unwrap_or_default(),
             freetex: parts.get(14).map(|t| remote_text::only_relative(decode_texts(t, MAX_FREETEX, MAX_FREETEX_LEN))).unwrap_or_default(),
+            content: parts.get(15).map(|c| c.trim()).filter(|c| is_fingerprint(c)).map(str::to_string).unwrap_or_default(),
+            height: parts.get(16).and_then(|h| h.trim().parse::<f32>().ok()).filter(|h| h.is_finite() && (0.0..=10.0).contains(h)).unwrap_or(0.0),
             ..Default::default()
         })
     }
@@ -1041,6 +1054,8 @@ impl Pose {
         self.width = info.width;
         self.box_offset = info.box_offset;
         self.table = info.table;
+        self.content = info.content.clone();
+        self.height = info.height;
     }
 
     /// Take the state of `s`, keeping the who-and-what.
@@ -1061,6 +1076,8 @@ impl Pose {
             width: keep.width,
             box_offset: keep.box_offset,
             table: keep.table,
+            content: keep.content,
+            height: keep.height,
             ..s
         };
     }
@@ -1156,6 +1173,15 @@ pub fn clean_text(s: &str, max: usize) -> String {
 
 /// The longest vehicle path taken from the network.
 const MAX_VEHICLE_PATH: usize = 260;
+
+/// Is `s` a vehicle's fingerprint (`v2-`, or the older `v1-`, and 64 lower-case hex digits)?
+/// (`v2` hashes the bus file's path too; `v1` is still recognised on the wire but no longer
+/// produced - see the game's `lan_mods::identity`.)
+pub fn is_fingerprint(s: &str) -> bool {
+    s.strip_prefix("v2-")
+        .or_else(|| s.strip_prefix("v1-"))
+        .is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+}
 
 /// `Pose::bus` as a path relative to a content root that may be looked up on this machine,
 /// or None. A pose comes from another machine, so the path is not trusted: it must be

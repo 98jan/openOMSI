@@ -45,6 +45,9 @@ pub(crate) fn prepare(args: &mut Args, path: &Path) -> Result<ServerCfg> {
     let _ = SERVER_ADMIN.set((cfg.admin_password.clone(), if cfg.real_time { 1.0 } else { cfg.time_speed }));
     crate::real_time::set_server_real(cfg.real_time);
     let _ = SERVER_VEHICLES.set(cfg.vehicles.clone());
+    omsi_lan::mods::upload::accept(cfg.accept_uploads);
+    omsi_lan::mods::vehicles::keep_for_days(cfg.uploads_keep_days);
+    omsi_lan::mods::share_maps(cfg.share_maps);
     let _ = SERVER_VOICE.set(cfg.voice.clone());
     args.map = cfg.map.clone();
     args.time = cfg.time.clone();
