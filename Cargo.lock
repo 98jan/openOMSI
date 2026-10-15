@@ -3643,6 +3643,7 @@ dependencies = [
  "omsi-cfg",
  "omsi-map",
  "omsi-net",
+ "omsi-o3d",
  "omsi-script",
  "omsi-sim",
  "omsi-vehicle",
@@ -3653,6 +3654,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "windows 0.62.2",
+ "zip",
 ]
 
 [[package]]

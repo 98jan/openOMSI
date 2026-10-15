@@ -4,6 +4,15 @@ Releases are started by hand from `main` as the beta `MAJOR.MINOR.PATCH`, and te
 promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-org/openOMSI/releases) page.
 
+## Unreleased
+
+### Multiplayer
+
+- **What another machine sends is checked for what it is** — a host's mod file a joining
+  player fetches must be what its name says (a picture of a size a texture can have, a sound,
+  a mesh the reader takes, a text), or it is left out and reported; a vehicle script that
+  would never end is cut short instead of stopping the game.
+
 ## 0.3.0 - 2026-10-14
 
 A stabilization release: the slowdowns and breakages that came with the updates since 0.2.20,
