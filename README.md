@@ -140,7 +140,7 @@ pages live in [`docs/`](docs):
 | [Plugins](docs/PLUGINS.md) | Lua and WebAssembly plugins (the API of every group, examples), compiled `.oop` plugins, OMSI plugin DLLs and the 32-bit plugin host |
 | [Development Tools](https://github.com/openOMSI-org/openOMSI-Development-Tools) | the plugin workbench: projects, the API documentation, the `.oop` compiler and signing keys (Windows, Linux, macOS) |
 | [Dedicated server](docs/SERVER.md) | hosting a session without a window |
-| [Versioning & releases](docs/VERSIONING.md) | the `MAJOR.MINOR.COMMIT` scheme and the CI |
+| [Versioning & releases](docs/VERSIONING.md) | the `MAJOR.MINOR.PATCH` scheme and the CI |
 | [Changelog](CHANGELOG.md) | what changed in each version |
 
 ## Building from source
