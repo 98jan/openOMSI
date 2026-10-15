@@ -736,17 +736,12 @@ impl App {
         self.last = Instant::now();
     }
 
-    /// The first area of a streamed map is loading: show how far it got, and start the rest
-    /// of the world once it is there. Returns false while the loading screen is up.
+    /// The first area of a streamed map is loading, then what holds the start (`omsi_lan::game::start_held`):
+    /// show how far it got, start the world once it is there. False while the loading screen is up.
     pub(crate) fn drive_start(&mut self, event_loop: &ActiveEventLoop) -> bool {
         let Some(cam) = self.cam.starting.take() else {
-            // (a joining player's bus goes to the server first: `omsi_lan::mods::upload`)
-            let Some((caption, progress)) = omsi_lan::mods::upload::loading() else {
-                return true;
-            };
-            if let (Some(renderer), Some(scene)) = (self.renderer.take(), self.scene.take()) {
-                self.loading_frame(renderer, scene, &caption, progress);
-            }
+            let Some((caption, progress)) = omsi_lan::game::start_held() else { return true };
+            if let (Some(renderer), Some(scene)) = (self.renderer.take(), self.scene.take()) { self.loading_frame(renderer, scene, &caption, progress) }
             return false;
         };
         let (Some(renderer), Some(mut scene)) = (self.renderer.take(), self.scene.take()) else {
@@ -792,15 +787,8 @@ impl App {
                 log::warn!("this run was started again after the graphics device was lost ({n}): lighter graphics for this run");
                 self.service_msg = Some(("The graphics driver reset the card: the game started again with lighter graphics for this drive. Settings → Graphics keeps yours for the next start.".into(), 12.0));
             }
-            // our player's bus is offered to the session it joined, under its loading screen
-            if let Some(p) = self.player.as_ref() {
-                let cfg = self.args.lan_config();
-                let root = self.args.root.clone();
-                let bus = omsi_lan::game::content_relative(&p.vehicle.ty.def.path, &root);
-                let paint = omsi_lan::game::current_paint(&cfg, &p.vehicle);
-                omsi_lan::mods::upload::begin(&root, &bus, &paint, || omsi_lan::mods::upload::own_files(&root, &p.vehicle));
-            }
-            return omsi_lan::mods::upload::loading().is_none();
+            omsi_lan::game::drive_started(&self.args.lan_config(), &self.args.root, self.player.as_ref().map(|p| &p.vehicle));
+            return omsi_lan::game::start_held().is_none();
         };
         let name = self
             .world
@@ -821,8 +809,7 @@ impl App {
         }
         self.menus.loading.step(done as f32 / total.max(1) as f32, dt);
         self.menus.loading.title = name.trim().to_string();
-        let shown = self.menus.loading.shown();
-        self.loading_frame(renderer, scene, name.trim(), shown);
+        self.loading_frame(renderer, scene, name.trim(), self.menus.loading.shown());
         self.cam.starting = Some(cam);
         if let Some(limit) = self.args.exit_after {
             if self.started.elapsed().as_secs_f32() > limit {

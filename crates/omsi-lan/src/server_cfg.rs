@@ -141,6 +141,15 @@ voice_radio = 1
 ";
 
 impl ServerCfg {
+    /// The players' buses and the map as this config says (`mods`): whether the server takes
+    /// its players' buses, how long it keeps the ones nobody drives, and whether it passes
+    /// the map on to players who join without it.
+    pub fn apply_to_mods(&self) {
+        crate::mods::upload::accept(self.accept_uploads);
+        crate::mods::vehicles::keep_for_days(self.uploads_keep_days);
+        crate::mods::share_maps(self.share_maps);
+    }
+
     /// `traffic_max`: the most AI vehicles the game allows (`traffic` is capped there).
     pub fn load(path: &Path, traffic_max: usize) -> Result<ServerCfg> {
         if !path.is_file() {

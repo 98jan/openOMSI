@@ -53,12 +53,17 @@ pub fn loading() -> Option<(String, f32)> {
     notices().line()
 }
 
+/// How long a card over the HUD stays (s): while what it tells goes on (each new line of it
+/// takes the card's place), and once it is done.
+const CARD_GOING_ON: f32 = 600.0;
+const CARD_DONE: f32 = 8.0;
+
 /// Once a frame: the line about our bus or the others' for a card over the HUD, when there
-/// is a new one - (the text of the card before, to take down; the new text; whether it is
-/// still going on: the card stays while it does, its text following the progress). None
-/// while the line is the one shown already, or while the loading screen says it.
-pub fn notice() -> Option<(String, String, bool)> {
-    notices().next_card(loading().is_some())
+/// is a new one - (the text of the card before, to take down; the new text; how long the
+/// card stays, s: while it goes on, its text following the progress). None while the line
+/// is the one shown already, or while the loading screen says it.
+pub fn notice() -> Option<(String, String, f32)> {
+    notices().next_card(loading().is_some()).map(|(before, text, busy)| (before, text, if busy { CARD_GOING_ON } else { CARD_DONE }))
 }
 
 impl Notices {

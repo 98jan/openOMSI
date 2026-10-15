@@ -582,6 +582,8 @@ pub fn share_mods(args: &mut LanConfig, lan: &mut LanSession) {
             }
         }
         Role::Client => {
+            // (a joining player notes what it reads: what its bus uses, `mods::upload`)
+            omsi_cfg::vfs::record_reads(true);
             let Some(mut host) = lan.host.filter(|_| lan.welcome.is_some()) else {
                 log::info!("LAN mods: no host to ask yet (its mods are not fetched)");
                 return;
@@ -1048,6 +1050,23 @@ pub fn content_relative(path: &Path, root: &Path) -> String {
     let mut roots = omsi_cfg::content_roots();
     roots.push(root.to_path_buf());
     crate::mirror::relative_to_roots(path, &roots).unwrap_or_default()
+}
+
+/// The drive starts, the map there and our player's bus `v` (None: no bus to drive) ready:
+/// a joining player offers it to the session's host under the loading screen
+/// (`mods::upload`), which `start_held` then shows.
+pub fn drive_started(args: &LanConfig, root: &Path, v: Option<&omsi_sim::VehicleInstance>) {
+    let Some(v) = v else { return };
+    let bus = content_relative(&v.ty.def.path, root);
+    let paint = current_paint(args, v);
+    crate::mods::upload::begin(root, &bus, &paint, || crate::mods::upload::own_files(root, v));
+}
+
+/// What of the session still holds the start once the map is there - our bus on its way to
+/// the server - as the loading screen shows it (its caption, and how far it got, 0..1), or
+/// None. The app asks only this, not what it is: whatever else must come first is added here.
+pub fn start_held() -> Option<(String, f32)> {
+    crate::mods::upload::loading()
 }
 
 /// The paint scheme the bus wears now (one picked in the game's menu after the start too).
