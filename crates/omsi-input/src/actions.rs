@@ -53,9 +53,33 @@ pub fn bus_uses_action(program: &omsi_script::Program, name: &str, aliases: &[(&
         || n.strip_suffix("_toggle").is_some_and(|b| program.trigger(&format!("{b}_up")).is_some() && program.trigger(&format!("{b}_down")).is_some())
 }
 
+/// A `keyboard.cfg` action of the VR headset (`vr_recenter`, `vr_position_navigator`, ...).
+pub fn is_vr_action(action: &str) -> bool {
+    action.get(..3).is_some_and(|p| p.eq_ignore_ascii_case("vr_"))
+}
+
+/// Whether a [game] key of `keys` takes the chord (`scan` with the modifier bits `chord`): the
+/// headset's keys only while a headset runs (`vr`), as their actions do nothing without one.
+/// Everybody's list has `vr_position_navigator` on Ctrl+Shift+M (`with_vr_defaults`), and
+/// outside VR it held the mirror editor's shortcut dead since 0.2.46 (#2577).
+pub fn game_chord_bound(keys: &[omsi_content::KeyBinding], scan: i32, chord: i32, vr: bool) -> bool {
+    keys.iter().any(|b| b.scan_code == scan && b.matches(chord) && (vr || !is_vr_action(&b.action)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// With the default lists, the only [game] key on Ctrl+Shift+M is the headset's: outside
+    /// VR the mirror editor has the chord, in VR the key (#2577).
+    #[test]
+    fn the_mirror_editor_chord_is_only_a_vr_key() {
+        let keys = omsi_content::KeyboardCfg::default().with_game_defaults().with_vr_defaults().game;
+        let scan = crate::keys::dik_code(winit::keyboard::KeyCode::KeyM).unwrap();
+        let chord = omsi_content::input::chord(true, true, false);
+        assert!(!game_chord_bound(&keys, scan, chord, false));
+        assert!(game_chord_bound(&keys, scan, chord, true));
+    }
 
     /// The game's own vehicle keys count for any bus; a script's trigger, an alias and a
     /// toggle by steps only where the scripts have them (#2577).

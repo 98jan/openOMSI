@@ -207,7 +207,8 @@ fn an_axis_is_read_in_the_range_the_driver_reports() {
     assert_eq!(axis_value(-RANGE / 2, (-RANGE, RANGE)), -0.5);
     assert_eq!(axis_value(0, (0, RANGE)), -1.0);
     assert_eq!(axis_value(RANGE, (0, RANGE)), 1.0);
-    assert_eq!(axis_value(32_767, (0, 65_535)), 0.0);
+    // (the middle of 0..65535 is 32767.5)
+    assert!(axis_value(32_767, (0, 65_535)).abs() < 1e-4);
     assert_eq!(axis_value(70_000, (0, 65_535)), 1.0);
     assert_eq!(axis_value(RANGE / 2, (0, 0)), 0.5);
 }

@@ -380,6 +380,8 @@ impl Opened {
             // (the format chosen for the window before: the same the surface would give)
             return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
         }
+        // (the retry is over; a device lost later in the run takes the usual way)
+        MSAA_RETRY.store(false, std::sync::atomic::Ordering::Relaxed);
         match &made {
             Ok(_) => pipeline_cache::save(),
             Err(_) => pipeline_cache::close(&device),

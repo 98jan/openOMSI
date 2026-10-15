@@ -702,9 +702,12 @@ impl BusService {
             Phase::Waiting => {
                 let mut up = self.move_up(st, ctx, berths);
                 // (something came to stand in the berth after it was handed it - the player's
-                // bus, a car: at its departure time it gives the move up and leaves from
-                // where it stands, rather than standing there for good)
-                if up.is_some() && ctx.day_time >= self.leave_at {
+                // bus, a car: it gives the move up and leaves from where it stands, rather
+                // than standing there for good - at its departure time once it has boarded,
+                // and a bus put out behind with its doors shut when its boarding is due, so
+                // that it boards where it stands and is not late)
+                let give_up_at = if self.reboard || self.boarded { self.leave_at } else { self.leave_at - LAYOVER_BOARDING };
+                if up.is_some() && ctx.day_time >= give_up_at {
                     up = None;
                     self.behind = false;
                     self.moving_up = false;
