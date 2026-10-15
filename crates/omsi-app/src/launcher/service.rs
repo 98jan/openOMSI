@@ -117,6 +117,7 @@ impl InProcess {
 fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
     let send = |id: &Value, head: Value, body: &[u8]| reply(id, head, body);
     let mut renderer: Option<Renderer> = None;
+    let mut settings = crate::settings::Settings::load();
     let mut showroom = Showroom::new();
     let pads = super::pads::Pads::start();
     let mut last = Instant::now();
@@ -126,6 +127,12 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
         let f = |k: &str, d: f64| req.get(k).and_then(Value::as_f64).unwrap_or(d);
         match req.get("cmd").and_then(Value::as_str).unwrap_or("") {
             "look" => {
+                let next = crate::settings::Settings::load();
+                if settings != next {
+                    showroom = Showroom::new();
+                    renderer = None;
+                    settings = next;
+                }
                 let _ = omsi_launcher_lib::content_dir();
                 let root = omsi_launcher_lib::root_dir().unwrap_or_default();
                 showroom.want(Look { root, map: s("map"), bus: s("bus"), paint: s("paint"), weather: s("weather"), time: f("time", 540.0) as i32, date: s("date") });
@@ -146,7 +153,7 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
             // (the launcher starts: the renderer's pipelines are built now, not on the first picture)
             "warm" => {
                 if renderer.is_none() {
-                    renderer = open_renderer().ok();
+                    renderer = open_renderer(&settings).ok();
                 }
                 send(&id, json!({ "ok": renderer.is_some() }), &[]);
             }
@@ -163,7 +170,7 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
                     showroom.set_view(view);
                 }
                 if renderer.is_none() {
-                    match open_renderer() {
+                    match open_renderer(&settings) {
                         Ok(r) => renderer = Some(r),
                         Err(e) => {
                             send(&id, json!({ "ok": false, "error": format!("{e:#}") }), &[]);
@@ -218,10 +225,9 @@ impl Showroom {
 }
 
 /// The preview's renderer: no window, the launcher window's own options.
-fn open_renderer() -> anyhow::Result<Renderer> {
-    let settings = crate::settings::Settings::load();
+fn open_renderer(settings: &crate::settings::Settings) -> anyhow::Result<Renderer> {
     let instance = crate::graphics_instance();
-    let r = pollster::block_on(Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), super::showroom_options(&settings)))?;
+    let r = pollster::block_on(Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), super::showroom_options(settings)))?;
     log::info!("launcher service: renderer on {}", r.adapter_name);
     Ok(r)
 }

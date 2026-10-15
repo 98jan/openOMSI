@@ -3,7 +3,8 @@
 // textures and every part, under the chosen time and weather.
 //
 // One request a picture, and the drag and the wheel ride along with it, so a turn costs one
-// round trip. Every picture is full size, turning or not. Nothing is asked while nothing moves.
+// round trip. Nothing is asked while nothing moves or the window is hidden; moving
+// pictures are capped at 30 per second to leave room for the launcher's interface.
 
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
 import { call, on } from './api.js';
@@ -40,8 +41,17 @@ export function BusPreview({ look, class: cls = '' }) {
   useEffect(() => {
     const st = r.current;
     st.alive = true;
+    let lastFrame = 0;
     (async () => {
       while (st.alive) {
+        if (document.hidden) {
+          await new Promise((res) => (st.wake = res));
+          continue;
+        }
+        const delay = 1000 / 30 - (performance.now() - lastFrame);
+        if (delay > 0) await new Promise((res) => setTimeout(res, delay));
+        if (!st.alive) break;
+        lastFrame = performance.now();
         const el = host.current;
         // (full size while it turns too: a smaller picture stretched over the view is blurred)
         const k = Math.min(window.devicePixelRatio || 1, 2);
@@ -56,11 +66,14 @@ export function BusPreview({ look, class: cls = '' }) {
         let more = false;
         try {
           const { head, jpeg } = await frame(args);
+          if (!st.alive) break;
           if (jpeg && canvas.current) {
             const bmp = await createImageBitmap(jpeg);
             const c = canvas.current;
-            if (c.width !== bmp.width || c.height !== bmp.height) Object.assign(c, { width: bmp.width, height: bmp.height });
-            c.getContext('2d').drawImage(bmp, 0, 0);
+            if (st.alive && c) {
+              if (c.width !== bmp.width || c.height !== bmp.height) Object.assign(c, { width: bmp.width, height: bmp.height });
+              c.getContext('2d').drawImage(bmp, 0, 0);
+            }
             bmp.close();
           }
           setViews(`${head.view || 'outside'}|${(head.views || []).join(',')}`);
@@ -79,11 +92,14 @@ export function BusPreview({ look, class: cls = '' }) {
     const ro = new ResizeObserver(() => host.current?.clientWidth && wake(true));
     ro.observe(host.current);
     const off = on('games-ended', () => wake(true));
+    const visible = () => { if (!document.hidden) wake(true); };
+    document.addEventListener('visibilitychange', visible);
     return () => {
       st.alive = false;
       wake();
       ro.disconnect();
       off();
+      document.removeEventListener('visibilitychange', visible);
     };
   }, []);
 

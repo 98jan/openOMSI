@@ -33,12 +33,12 @@ pub(crate) fn install() {
     omsi_launcher_model::host::set(Box::new(AppHost));
 }
 
-/// The showroom's renderer: a bus on a floor needs none of the game's costly passes - no
-/// ambient occlusion, a small shadow map, 4x MSAA for the edges whatever the game uses -
-/// and it draws Vanilla+ whatever the game does (`showroom::lighting_for`): no enhanced
-/// pipelines, reflection probe or cloud noise either (`RenderOptions::preview_only`).
+/// Keep the player's shading, anti-aliasing, render scale and texture options. A bus on
+/// a floor needs only a small shadow map, with no ambient occlusion or ray tracing.
+/// Plain graphics still omit the enhanced resources on every backend.
 pub(crate) fn showroom_options(settings: &crate::settings::Settings) -> omsi_render::RenderOptions {
-    omsi_render::RenderOptions { msaa: 4, ssao: false, shadow_size: 1024, render_scale: 1.0, preview_only: true, no_enhanced: true, ray_tracing: false, ..settings.render_options() }
+    let enhanced = crate::startup::SessionSettings::for_showroom(settings).enhanced;
+    omsi_render::RenderOptions { ssao: false, shadow_size: settings.shadow_size.min(1024), preview_only: !enhanced, no_enhanced: !enhanced, ray_tracing: false, ..settings.render_options() }
 }
 
 struct AppHost;
@@ -78,6 +78,22 @@ impl Host for AppHost {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
+    #[test]
+    fn showroom_keeps_player_quality_without_the_expensive_passes() {
+        for graphics in ["vanilla", "vanilla_plus", "enhanced", "enhanced_plus"] {
+            let settings = crate::settings::Settings::from_text(&format!("graphics={graphics}\nmsaa=1\nrender_scale=0.75\nshadow_size=2048\nanisotropy=2\nreflections=0\n"));
+            let options = super::showroom_options(&settings);
+            assert_eq!(options.msaa, 1);
+            assert_eq!(options.render_scale, 0.75);
+            assert_eq!(options.anisotropy, 2);
+            assert_eq!(options.reflections, settings.reflections);
+            assert_eq!(options.shadow_size, 1024);
+            assert_eq!(options.preview_only, !settings.enhanced);
+            assert_eq!(options.no_enhanced, !settings.enhanced);
+            assert!(!options.ssao && !options.ray_tracing);
+        }
+    }
 
     /// What the launcher's settings page saves is what the game reads (the launcher's own
     /// checks are its page's; the game's reading of the file is here).

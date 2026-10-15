@@ -1,5 +1,5 @@
 //! The launcher's bus preview: the chosen bus drawn by the game's own renderer - its
-//! model, paint and materials - on the plain (Vanilla+) path without the costly passes,
+//! model, paint and materials - with the player's graphics settings,
 //! under the light of the chosen time and weather, into a picture the launcher shows
 //! in a card. It is drawn again only when something changed (another bus, paint, light,
 //! the preview turned by the mouse), never every frame.
@@ -693,18 +693,15 @@ mod tests {
     }
 }
 
-/// The light of the look's time and weather, with the sun's shadow under the bus. Always
-/// the plain renderer, whatever the game's graphics setting: a preview is to be quick and
-/// clear, not the game's picture (no enhanced exposure and glow, no weather effects).
+/// The selected time and weather with the player's shading, detail and shadow switches.
+/// Keep the showroom clear of weather films and fog so the selected bus stays visible.
 fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather, sky: &crate::weather_setup::SkyState) -> Lighting {
+    let settings = crate::settings::Settings::load();
     let clock = start_clock(args);
     let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
     let daylight = omsi_sim::Daylight::compute(&clock, envir.as_ref());
-    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, true, sky);
-    l.shadows = daylight.altitude_deg > 2.0;
-    l.enhanced = false;
-    l.classic = false;
-    l.detail = false;
+    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, settings.shadows && daylight.altitude_deg > 2.0, sky);
+    l.detail = settings.detail_textures;
     l.wetness = 0.0;
     l.snow = 0.0;
     l.fog_density = 0.0;

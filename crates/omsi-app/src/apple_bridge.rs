@@ -593,6 +593,7 @@ fn preview_release() {
 
 fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
     let mut renderer: Option<omsi_render::Renderer> = None;
+    let mut settings = crate::settings::Settings::load();
     let mut failed = false;
     let mut showroom = crate::launcher::showroom::Showroom::new();
     let mut last = Instant::now();
@@ -600,7 +601,17 @@ fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
     let mut asked = Instant::now();
     while let Ok(m) = rx.recv() {
         match m {
-            PreviewMsg::Want(look) => showroom.want(look),
+            PreviewMsg::Want(look) => {
+                let next = crate::settings::Settings::load();
+                if settings != next {
+                    showroom = crate::launcher::showroom::Showroom::new();
+                    renderer = None;
+                    failed = false;
+                    delivered = u64::MAX;
+                    settings = next;
+                }
+                showroom.want(look);
+            }
             PreviewMsg::Orbit(dx, dy) => showroom.orbit(dx, dy),
             PreviewMsg::Zoom(k) => showroom.zoom_by(k),
             PreviewMsg::Release => return,
@@ -612,7 +623,6 @@ fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
                 }
                 asked = Instant::now();
                 if renderer.is_none() && !failed {
-                    let settings = crate::settings::Settings::load();
                     let instance = crate::startup::graphics_instance();
                     match pollster::block_on(omsi_render::Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), crate::launcher::showroom_options(&settings))) {
                         Ok(r) => renderer = Some(r),
