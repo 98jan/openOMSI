@@ -44,6 +44,15 @@ pub struct Street {
     pub heavy: u32,
 }
 
+/// Whether `rel` names a file inside the package folder: a relative path of plain names, with `/` (or `\`) between them. Not one that climbs
+/// out (`..`), and not an absolute or rooted one (`/tmp/a.png`, `\a.png`, `C:\a.png`, `\\server\share\a.png`): `Path::join` takes such a path
+/// instead of the folder, so the icon would be read from wherever the author's machine has it. A colon is refused anywhere for the same reason:
+/// a package that works only on its author's computer is no package.
+pub fn is_inside(rel: &str) -> bool {
+    let rel = rel.replace('\\', "/");
+    !rel.is_empty() && !rel.contains(':') && !rel.starts_with('/') && rel.split('/').all(|c| !c.is_empty() && c != "." && c != "..")
+}
+
 impl Package {
     /// Reads `regions.cfg` and finds out whether the surface has named streets (called once, by `open`).
     pub(super) fn load_places(&mut self) {
@@ -119,7 +128,7 @@ impl Package {
                 continue;
             }
             let f: Vec<&str> = v.split('|').map(str::trim).collect();
-            if f.len() < 4 || f[0].contains("..") {
+            if f.len() < 4 || !is_inside(f[0]) {
                 continue;
             }
             let (Ok(width), Ok(x), Ok(y)) = (f[1].parse::<f32>(), f[2].parse::<f64>(), f[3].parse::<f64>()) else {
@@ -133,12 +142,12 @@ impl Package {
         out
     }
 
-    /// A file of the package folder (an icon), when its path does not climb out of it.
+    /// A file of the package folder (an icon), when its path lies inside it (see [`is_inside`]).
     pub fn picture(&self, rel: &str) -> Option<Vec<u8>> {
-        if rel.contains("..") {
+        if !is_inside(rel) {
             return None;
         }
-        omsi_cfg::vfs::read(&self.dir.join(rel)).ok()
+        omsi_cfg::vfs::read(&self.dir.join(rel.replace('\\', "/"))).ok()
     }
 
     /// `regions.cfg`: `region = name | label x | label y | box width | box height | x,y x,y ...`, metres of the
@@ -327,6 +336,16 @@ mod tests {
     }
 
     #[test]
+    fn only_a_relative_path_inside_the_package_is_an_icon() {
+        for good in ["icons/stop.png", "icons\\stop.png", "stop.png", "a/b/c.png"] {
+            assert!(super::is_inside(good), "{good}");
+        }
+        for bad in ["", ".", "..", "../a.png", "icons/../../a.png", "icons\\..\\a.png", "/a.png", "/tmp/icon.png", "\\a.png", "\\\\server\\share\\a.png", "C:\\a.png", "C:/a.png", "C:a.png", "icons//a.png", "./a.png"] {
+            assert!(!super::is_inside(bad), "{bad}");
+        }
+    }
+
+    #[test]
     fn the_example_names_its_places() {
         // docs/examples/openomsi-realmap, in the tile grid of the tutorial map: a street through (494, 730)
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/examples");
@@ -334,6 +353,9 @@ mod tests {
         assert_eq!(p.markers().len(), 2);
         assert!(p.picture("icons/stop.png").is_some_and(|b| b.len() > 4 && &b[1..4] == b"PNG"));
         assert!(p.picture("../manifest.cfg").is_none(), "a path cannot climb out of the folder");
+        for bad in ["/tmp/icon.png", "\\icon.png", "C:/icons/stop.png", "C:\\icons\\stop.png", "C:stop.png", "\\\\server\\share\\stop.png", "icons/../../manifest.cfg"] {
+            assert!(p.picture(bad).is_none(), "{bad} is not inside the package folder");
+        }
         assert_eq!(p.regions().len(), 1);
         assert!(p.has_location());
         let mut names: Vec<String> = p.labels().into_iter().map(|l| l.name).collect();

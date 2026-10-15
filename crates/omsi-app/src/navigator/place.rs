@@ -136,19 +136,6 @@ impl PlaceView {
     }
 }
 
-/// The few words the place row and the chips of the city map write.
-struct PlaceText {
-    you_are_on: &'static str,
-    heavy: &'static str,
-}
-
-fn place_text(lang: &str) -> PlaceText {
-    match lang.to_ascii_uppercase().as_str() {
-        "PTB" | "PT" | "POR" | "BRA" => PlaceText { you_are_on: "Você está em", heavy: "pesados" },
-        _ => PlaceText { you_are_on: "You are on", heavy: "heavy" },
-    }
-}
-
 impl Navigator {
     /// The package, when it is on and says where one is (municipalities or named streets).
     fn locating(&self) -> Option<&Package> {
@@ -282,8 +269,9 @@ impl PlaceView {
     /// Where the bus is, under the header of the city map: the municipality, the street, and the street's limit as
     /// a road sign (and the heavy vehicles', smaller, when it is another).
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn draw_chips(&self, ui: &mut Painter, atlas: &mut Atlas, fonts: &Fonts, head: Rect, w: f32, pad: f32, s: f32, lang: &str) {
-        let words = place_text(lang);
+    pub(super) fn draw_chips(&self, ui: &mut Painter, atlas: &mut Atlas, fonts: &Fonts, head: Rect, w: f32, pad: f32, s: f32) {
+        // the words are in the catalog (crates/omsi-app/locales/app.yml): looked up before they are put into a sentence
+        let (you_are_on, heavy) = (omsi_ui::tr("You are on"), omsi_ui::tr("heavy"));
         let mut y = head.bottom() + 10.0 * s;
         if let Some(c) = self.city.as_ref().map(|c| c.to_uppercase()) {
             let tw = fonts.width(&c, 12.5 * s, Weight::Bold) + 20.0 * s;
@@ -293,7 +281,7 @@ impl PlaceView {
             y += 28.0 * s;
         }
         let Some(st) = self.street.as_ref() else { return };
-        let t = fonts.fit(&format!("{}: {}", words.you_are_on, st), 12.0 * s, Weight::Medium, w * 0.45);
+        let t = fonts.fit(&format!("{}: {}", you_are_on, st), 12.0 * s, Weight::Medium, w * 0.45);
         let tw = fonts.width(&t, 12.0 * s, Weight::Medium) + 20.0 * s;
         let r = Rect::new(pad, y, tw, 22.0 * s);
         ui.rounded(r, 3.0 * s, Color::rgba(10, 12, 16, 0.82));
@@ -309,7 +297,7 @@ impl PlaceView {
             ui.text_in(atlas, fonts, &v.to_string(), rad * 0.95, Weight::Bold, Rect::new(c.x - rad, c.y - rad, 2.0 * rad, 2.0 * rad), Align::Center, Color::rgba(15, 15, 15, 1.0));
             sx += 2.0 * rad + 6.0 * s;
             if rad < 14.0 * s {
-                ui.text(atlas, fonts, words.heavy, 10.5 * s, Weight::Medium, Vec2::new(sx, c.y + 4.0 * s), Align::Left, TEXT_DIM);
+                ui.text(atlas, fonts, &heavy, 10.5 * s, Weight::Medium, Vec2::new(sx, c.y + 4.0 * s), Align::Left, TEXT_DIM);
             }
         }
     }
