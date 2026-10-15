@@ -192,7 +192,7 @@ pub(super) fn player_step(cx: PlayerStepCx, dt: f32) {
 
 crate::app::stage_ctx!(
     /// The player's bus into the scene: its part of the game.
-    PlayerToSceneCx { reads: [view, world, people, ui], writes: [player, gfx] }
+    PlayerToSceneCx { reads: [view, world, people, ui], writes: [player, gfx, perf] }
 );
 
 /// The bus and its driver into the scene.
@@ -205,7 +205,8 @@ pub(super) fn player_to_scene(cx: PlayerToSceneCx, dt: f32) {
         return;
     };
     let inside = cx.view.cam.in_cab;
-    p.sync_transforms(r, scene, inside, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
+    let glass = p.sync_transforms(r, scene, inside, cx.world.world.as_ref().map_or(2, |w| w.settings.rain_quality()));
+    cx.perf.profile.add(crate::profile_keys::ProfKey::PlayerGlass, glass);
     crate::scene::sync_vehicle_damage(r, scene, &mut p.vehicle, &mut p.render);
     // from the driver's seat the figure stays in the mirrors
     // (from the driver's seat only the mirrors show him - while the camera is at his eyes:
