@@ -1,11 +1,21 @@
 // Keep these rules in step with server_join_address in omsi-launcher-model.
-export function serverJoinSettings(address, protocol = 'auto', info) {
-  address = address.trim();
-  const web = /^(https?|wss?):\/\//.test(address)
+function isWebAddress(address) {
+  return /^(https?|wss?):\/\//.test(address)
     || address.toLowerCase() === 'openomsi'
     || address.endsWith('.trycloudflare.com') || address.includes('.trycloudflare.com/');
+}
+
+export function serverJoinProtocol(address, protocol = 'auto') {
+  address = address.trim();
   const port = address.match(/^(?:[^:\s/]+|\[[^\]\s]+\]):([0-9]+)$/)?.[1];
-  const udp = protocol === 'udp' || (protocol === 'auto' && !web && port != null && Number(port) <= 65535);
+  return protocol === 'udp' || (protocol === 'auto' && !isWebAddress(address) && port != null && Number(port) <= 65535)
+    ? 'udp' : 'websocket';
+}
+
+export function serverJoinSettings(address, protocol = 'auto', info) {
+  address = address.trim();
+  const web = isWebAddress(address);
+  const udp = serverJoinProtocol(address, protocol) === 'udp';
   if (udp && web) throw new Error("UDP needs the game's address (host or host:port), not a web link");
   if (!info) throw new Error('The server has not answered yet (is its address right? is it running?)');
   return {
