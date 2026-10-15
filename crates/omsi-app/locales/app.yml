@@ -5733,7 +5733,7 @@ _version: 2
 "Navigator (Shift+N: map, schedule, off)":
   ca: "Navegador (Maj+N: mapa, horari, desactivat)"
   ru: "Навигатор (Shift+N: карта, расписание, выкл.)"
-  de: "Navigator (Shift+N: Karte, Fahrplan, aus)"
+  de: "Navigator (Umschalt+N: Karte, Fahrplan, aus)"
   fr: "Navigateur (Shift+N : carte, horaire, désactivé)"
   uk: "Навігатор (Shift+N: мапа, розклад, вимк.)"
   be: "Навігатар (Shift+N: мапа, расклад, выкл.)"
@@ -21303,6 +21303,7 @@ _version: 2
   sv: "Muspedalernas styrka"
   pt: "Força dos pedais pelo mouse"
   ca: "Sensibilitat dels pedals amb el ratolí"
+  de: "Stärke des Mauspedals"
 "Adjust how much mouse travel is needed to reach full throttle or braking":
   es: "Ajusta cuánto hay que mover el ratón para acelerar o frenar al máximo"
   zh-tw: "調整滑鼠需要移動多少距離才能達到全油門或全煞車"
@@ -22634,6 +22635,7 @@ _version: 2
   zh-tw: "已儲存的個人資料"
   nl: "Opgeslagen profiel"
   sv: "Sparad profil"
+  de: "Gespeichertes Profil"
 
 "Load":
   es: "Cargar"
@@ -22646,6 +22648,7 @@ _version: 2
   zh-tw: "載入"
   nl: "Laden"
   sv: "Läs in"
+  de: "Laden"
 
 "Profile name":
   es: "Nombre del perfil"
@@ -22658,6 +22661,7 @@ _version: 2
   zh-tw: "個人資料名稱"
   nl: "Profielnaam"
   sv: "Profilnamn"
+  de: "Profilname"
 
 "Save current graphics as profile":
   es: "Guardar los ajustes gráficos actuales como perfil"
@@ -22670,6 +22674,7 @@ _version: 2
   zh-tw: "將目前圖形儲存為設定文件"
   nl: "Huidige grafische instellingen als profiel opslaan"
   sv: "Spara nuvarande grafik som profil"
+  de: "Aktuelles Grafikprofil speichern"
 
 "OMSI's shadow meshes (under vehicles)":
   ca: "Malles d'ombra d'OMSI (sota els vehicles)"
@@ -22711,6 +22716,7 @@ _version: 2
   zh-tw: "動態轉向（速度較慢的按鍵，OMSI 的 redSteerSpd）"
   nl: "Dynamisch sturen (tragere toetsen bij hogere snelheid, OMSI's redSteerSpd)"
   sv: "Dynamisk styrning (långsammare tangenter vid hög fart, OMSI:s redSteerSpd)"
+  de: "Dynamische Lenkung (langsameres Lenken bei Geschwindigkeit, redSteerSpd von OMSI)"
 
 "Driver's view turns with the steering":
   es: "La vista del conductor gira con la dirección"
@@ -22723,6 +22729,7 @@ _version: 2
   zh-tw: "駕駛者的視野隨著轉向而轉動"
   nl: "Bestuurderszicht draait mee met het stuur"
   sv: "Förarvyn vrids med styrningen"
+  de: "Sicht des Fahrers dreht sich mit der Lenkung"
 
 "Right mouse button turns the view, Shift+right zooms (off: right zooms as in OMSI, the wheel button turns)":
   es: "El botón derecho del ratón gira la vista, Mayús+derecho hace zoom (desactivado: el derecho hace zoom como en OMSI y el botón central gira la vista)"
@@ -22735,6 +22742,7 @@ _version: 2
   zh-tw: "滑鼠右鍵旋轉視角，Shift+右縮放（關閉：像 OMSI 中那樣右縮放，滾輪按鈕旋轉）"
   nl: "Rechtermuisknop draait het beeld, Shift+rechts zoomt (uit: rechts zoomt zoals in OMSI, middelste knop draait)"
   sv: "Höger musknapp vrider vyn, Shift+höger zoomar (av: höger zoomar som i OMSI, hjulknappen vrider)"
+  de: "Rechte Maustaste dreht die Sicht, Umschalt+R. Maustaste zoomt (aus: R. Maustaste zoomt wie in OMSI, der Lenkrad-Knopf dreht)"
 
 "Sync the clock with the real time (locks the time)":
   es: "Sincronizar el reloj con la hora real (bloquea la hora)"
@@ -22747,6 +22755,7 @@ _version: 2
   zh-tw: "將時鐘與即時時間同步（鎖定時間）"
   nl: "Klok synchroniseren met de werkelijke tijd (vergrendelt de tijd)"
   sv: "Synkronisera klockan med verklig tid (låser tiden)"
+  de: "Uhrzeit mit Echtzeit synchronisieren (Sperrt die Zeit)"
 
 "Sync the weather with METAR (locks the weather)":
   es: "Sincronizar el tiempo con METAR (bloquea la meteorología)"
@@ -22759,6 +22768,7 @@ _version: 2
   zh-tw: "與 METAR 同步天氣（鎖定天氣）"
   nl: "Weer synchroniseren met METAR (vergrendelt het weer)"
   sv: "Synkronisera vädret med METAR (låser vädret)"
+  de: "Wetter mit Echtwetter-METAR synchronisieren (Sperrt das Wetter)"
 
 "Time speed (not in multiplayer or with the real-time sync)":
   es: "Velocidad del tiempo (no disponible en multijugador ni con sincronización en tiempo real)"
@@ -22771,6 +22781,7 @@ _version: 2
   zh-tw: "時間速度（不在多人遊戲或即時同步中可用）"
   nl: "Tijdsnelheid (niet in multiplayer of bij realtime synchronisatie)"
   sv: "Tidshastighet (inte i flerspelarläge eller med tidssynkronisering)"
+  de: "Zeitmultiplikator (nicht im Mehrspieler oder mit Echzeit-Synchronisation)"
 
 "Search...":
   es: "Buscar..."
@@ -24494,6 +24505,7 @@ _version: 2
   zh-tw: "下雨或下雪。"
   nl: "Regen of sneeuw."
   sv: "Regn eller snö."
+  de: "Regen oder Schnee."
 
 "Precipitation strength":
   ca: "Intensitat de la precipitació"
@@ -24617,6 +24629,7 @@ _version: 2
   zh-tw: "空氣溫度。"
   nl: "De luchttemperatuur."
   sv: "Lufttemperaturen."
+  de: "Die Lufttemperatur."
 
 "Wind speed":
   ca: "Velocitat del vent"
@@ -24658,6 +24671,7 @@ _version: 2
   zh-tw: "風吹得多快，它影響著雲移動。"
   nl: "Hoe hard de wind waait; dit verplaatst de wolken."
   sv: "Hur snabbt vinden blåser; den driver molnen."
+  de: "Wie stark der Wind weht; sorgt für Bewegung der Wolken."
 
 "Wind direction":
   ca: "Direcció del vent"
@@ -24699,6 +24713,7 @@ _version: 2
   zh-tw: "風向，以度為單位（0 為北）。"
   nl: "De windrichting in graden (0 is noord)."
   sv: "Vindens riktning i grader (0 är norr)."
+  de: "Die Richtung des Windes in Grad (0 ist Norden)."
 
 "Open":
   es: "Abrir"
@@ -24711,6 +24726,7 @@ _version: 2
   zh-tw: "打開"
   nl: "Openen"
   sv: "Öppna"
+  de: "Öffnen"
 
 "Place and move objects in the world.":
   es: "Coloca y mueve objetos en el mundo."
@@ -24735,6 +24751,7 @@ _version: 2
   zh-tw: "有多少車輛在地圖上行駛。"
   nl: "Hoeveel voertuigen op de kaart rondrijden."
   sv: "Hur många fordon som kör runt på kartan."
+  de: "Wie viele Fahrzeuge auf der Karte herumfahren."
 
 "How many passengers wait at the stops and ride.":
   es: "Cantidad de pasajeros que esperan en las paradas y viajan."
@@ -24747,6 +24764,7 @@ _version: 2
   zh-tw: "有多少乘客在車站等候和乘車。"
   nl: "Hoeveel reizigers aan haltes wachten en meerijden."
   sv: "Hur många passagerare som väntar vid hållplatserna och åker med."
+  de: "Wie viele Passagiere an den Haltestellen warten und mitfahren."
 
 "Vehicle settings":
   es: "Ajustes del vehículo"
@@ -24759,6 +24777,7 @@ _version: 2
   zh-tw: "車輛設定"
   nl: "Voertuiginstellingen"
   sv: "Fordonsinställningar"
+  de: "Fahrzeug-Einstellungen"
 
 "Start options":
   es: "Opciones de inicio"
@@ -24771,6 +24790,7 @@ _version: 2
   zh-tw: "啟動選項"
   nl: "Startopties"
   sv: "Startalternativ"
+  de: "Startoptionen"
 
 "Season":
   es: "Estación del año"
@@ -25619,6 +25639,7 @@ _version: 2
   zh: "启动器在游戏运行时暂停"
   nl: "De launcher pauzeert terwijl een spel draait"
   sv: "Startprogrammet vilar medan ett spel körs"
+  de: "Der Launcher ist pausiert während das Spiel läuft"
 
 "A right click ends the mouse steering (as in OMSI)":
   es: "Un clic derecho desactiva la dirección con el ratón (como en OMSI)"
@@ -25630,6 +25651,7 @@ _version: 2
   zh: "单击右键停止鼠标转向（与 OMSI 相同）"
   nl: "Een rechtermuisklik beëindigt de muissturing (zoals in OMSI)"
   sv: "Högerklick avslutar musstyrningen (som i OMSI)"
+  de: "Ein Rechtsklick beendet die Maussteuerung"
 
 "Applies a graphics profile saved in the launcher":
   ca: "Aplica un perfil gràfic desat al launcher"
@@ -25692,7 +25714,7 @@ _version: 2
   pt: "Sem bordas em três monitores iguais, lado a lado na horizontal; requer reinicialização"
   pt-pt: "Sem margens em três monitores iguais, lado a lado na horizontal; requer reinício"
   zh: "三个相同显示器水平排列的无边框模式；需要重启"
-  de: "Randlos über drei horizontal nebeneinander angeordnete gleiche Bildschirme; erfordert Neustart"
+  de: "Randlos über drei horizontal nebeneinander angeordnete gleiche Monitore; erfordert Neustart"
   nl: "Randloos over drie gelijke schermen naast elkaar; herstart vereist"
   sv: "Kantlöst över tre lika stora skärmar i en vågrät rad; omstart krävs"
 
@@ -26698,7 +26720,7 @@ _version: 2
   pt: "Usar três monitores ao iniciar"
   pt-pt: "Usar três monitores no arranque"
   zh: "启动时跨越三个显示器"
-  de: "Über drei Monitore beim Start strecken"
+  de: "Beim Start über drei Monitore strecken"
   nl: "Gebruik drie schermen bij het opstarten"
   sv: "Sträck över tre skärmar vid start"
 
@@ -26802,6 +26824,7 @@ _version: 2
   zh: "游戏运行时启动器暂停（将显卡资源让给游戏）"
   nl: "De launcher pauzeert tijdens het spelen (zodat het spel de grafische kaart kan gebruiken)"
   sv: "Startprogrammet vilar medan ett spel körs (ger grafikkortet till spelet)"
+  de: "Der Launcher ist pausiert während ein Spiel läuft (Spiel kann Grafikkarte voll nutzen)"
 
 "Three equal screens in a horizontal row. OpenXR takes priority.":
   es: "Tres pantallas iguales en fila horizontal. OpenXR tiene prioridad."
@@ -26845,6 +26868,7 @@ _version: 2
   zh: "工具"
   nl: "Hulpmiddelen"
   sv: "Verktyg"
+  de: "Werkzeuge"
 "Top left":
   es: "Arriba a la izquierda"
   ca: "Superior esquerra"
@@ -26879,6 +26903,7 @@ _version: 2
   zh: "三屏"
   nl: "Drievoudig scherm"
   sv: "Tre skärmar"
+  de: "Triple Screen"
 
 "triple screen: the window spans three monitors, fullscreen is left alone":
   es: "triple pantalla: la ventana se extiende a tres monitores, sin cambiar el modo de pantalla completa"
@@ -26890,6 +26915,7 @@ _version: 2
   zh: "三屏：窗口跨越三个显示器，全屏模式保持不变"
   nl: "Drievoudig scherm: het venster beslaat drie monitoren, de instelling voor volledig scherm blijft ongewijzigd"
   sv: "tre skärmar: fönstret sträcker sig över tre skärmar, helskärmsläget lämnas oförändrat"
+  de: "Triple Screen: Das Fenster erstreckt sich über drei Monitore, Vollbild bleibt unverändert"
 "Vertical eye offset":
   es: "Desplazamiento vertical de los ojos"
   ca: "Desplaçament vertical de l'ull"
@@ -27680,6 +27706,7 @@ _version: 2
   nl: "Diagnostische gegevens exporteren"
   sv: "Exportera diagnostik"
   ca: "Exporta el diagnòstic"
+  de: "Diagnosedaten exportieren"
 "8x MSAA":
   pt: "MSAA 8x"
   pt-pt: "MSAA 8x"
@@ -27717,7 +27744,7 @@ _version: 2
   sv: "Träd som rör sig i vinden"
   ca: "Arbres al vent"
   ru: "Деревья на ветру"
-  de: "Bäume im Wind"
+  de: "Wind beeinflusst Bäume"
   uk: "Дерева на вітрі"
   be: "Дрэвы на ветры"
   kk: "Желдегі ағаштар"
@@ -27744,12 +27771,13 @@ _version: 2
   nl: "Geautomatiseerde handgeschakelde versnellingsbak (schakelt op basis van het motortoerental)"
   sv: "Automatiserad manuell växellåda (växlar åt dig efter motorvarvtalet)"
   ca: "Canvi manual automatitzat (canvia les marxes segons les revolucions del motor)"
+  de: "Automatisiertes manuelles Getriebe (Schaltet manuelle Getriebe für dich nach der Motordrehzahl)"
 "Stick steers like a wheel (a wheel seen as a gamepad)":
   pt: "Analógico dirige como volante (volante detectado como controle)"
   pt-pt: "Manípulo dirige como volante (volante detetado como comando)"
   fr: "Le stick dirige comme un volant (un volant vu comme une manette)"
   nl: "Stick stuurt als een stuurwiel (stuur herkend als gamepad)"
-  de: "Stick lenkt wie ein Lenkrad (als Gamepad erkanntes Lenkrad)"
+  de: "Stick verhält sich wie ein Lenkrad (Lenkrad wird als Gamepad erkannt)"
   ru: "Стик рулит как руль (руль, распознанный как геймпад)"
   uk: "Стік керує як кермо (кермо, розпізнане як геймпад)"
   be: "Стык кіруе як руль (руль, распазнаны як геймпад)"
@@ -27777,7 +27805,7 @@ _version: 2
   pt-pt: "As setas também mudam de câmara ao usar um volante (sem olhar para os lados)"
   fr: "Les flèches changent de caméra aussi avec un volant (sans coup d'œil)"
   nl: "Pijltjestoetsen wisselen ook met een stuur tussen camera's (zonder zijwaarts kijken)"
-  de: "Pfeiltasten wechseln auch mit Lenkrad die Kameras (kein Umsehen)"
+  de: "Pfeiltasten schalten auch bei angeschlossenem Lenkrad durch die Kameras (kein Umsehen)"
   ru: "Стрелки переключают камеры и с рулём (без взгляда в сторону)"
   uk: "Стрілки перемикають камери й з кермом (без погляду вбік)"
   be: "Стрэлкі пераключаюць камеры і з рулём (без позірку ўбок)"
@@ -27808,6 +27836,7 @@ _version: 2
   nl: "Hoofdtracking (native TrackIR / OpenTrack)"
   sv: "Huvudspårning (inbyggt TrackIR / OpenTrack)"
   ca: "Seguiment del cap (TrackIR natiu / OpenTrack)"
+  de: "Head-Tracking (natives TrackIR / OpenTrack)"
 "Invert yaw":
   es: "Invertir guiñada"
   zh-tw: "反轉水平旋轉"
@@ -27816,6 +27845,7 @@ _version: 2
   nl: "Gierhoek omkeren"
   sv: "Invertera horisontell rotation"
   ca: "Inverteix el gir horitzontal"
+  de: "Gieren invertieren"
 "Invert pitch":
   es: "Invertir cabeceo"
   zh-tw: "反轉俯仰"
@@ -27824,6 +27854,7 @@ _version: 2
   nl: "Kantelhoek omkeren"
   sv: "Invertera vertikal rotation"
   ca: "Inverteix el gir vertical"
+  de: "Neigung invertieren"
 "Invert roll":
   es: "Invertir alabeo"
   zh-tw: "反轉側傾"
@@ -27832,6 +27863,7 @@ _version: 2
   nl: "Rolhoek omkeren"
   sv: "Invertera sidolutning"
   ca: "Inverteix la inclinació lateral"
+  de: "Rollen invertieren"
 "Invert X":
   es: "Invertir X"
   zh-tw: "反轉 X 軸"
@@ -27840,6 +27872,7 @@ _version: 2
   nl: "X omkeren"
   sv: "Invertera X"
   ca: "Inverteix l'eix X"
+  de: "X invertieren"
 "Invert Y":
   es: "Invertir Y"
   zh-tw: "反轉 Y 軸"
@@ -27848,6 +27881,7 @@ _version: 2
   nl: "Y omkeren"
   sv: "Invertera Y"
   ca: "Inverteix l'eix Y"
+  de: "Y invertieren"
 "Invert Z":
   es: "Invertir Z"
   zh-tw: "反轉 Z 軸"
@@ -27856,6 +27890,7 @@ _version: 2
   nl: "Z omkeren"
   sv: "Invertera Z"
   ca: "Inverteix l'eix Z"
+  de: "Z invertieren"
 "Reset head-tracking axes":
   es: "Restablecer los ejes de seguimiento de cabeza"
   zh-tw: "重設頭部追蹤軸"
@@ -27864,6 +27899,7 @@ _version: 2
   nl: "Assen van hoofdtracking herstellen"
   sv: "Återställ huvudspårningens axlar"
   ca: "Restableix els eixos del seguiment del cap"
+  de: "Head-Tracking Achsen zurücksetzen"
 "Back to keys":
   es: "Volver a las teclas"
   pt: "Voltar às teclas"
@@ -28490,6 +28526,7 @@ _version: 2
   sv: "Tilldela kontroller och konfigurera låsande omkopplare"
   pt: "Atribuir comandos e configurar interruptores travantes"
   ca: "Assigna controls i configura interruptors de posició fixa"
+  de: "Weise Steuerungen zu und konfiguriere Rastschalter"
 
 "Adjust this device's force, vibration and direction":
   es: "Ajusta la fuerza, la vibración y el sentido de este dispositivo"
@@ -28591,6 +28628,7 @@ _version: 2
   sv: "Låsande omkopplare"
   pt: "Interruptor travante"
   ca: "Interruptor de posició fixa"
+  de: "Rastschalter"
 
 "Switch back when a physical switch is released":
   es: "Cambia al estado anterior al soltar un interruptor físico"
@@ -28745,6 +28783,7 @@ _version: 2
   sv: "Låsande omkopplare | välj dess åtgärd eller beteende"
   pt: "Interruptor travante | escolha a ação ou o comportamento"
   ca: "Interruptor de posició fixa | tria'n l'acció o el comportament"
+  de: "Rastschalter | Wähle die Aktion oder das Verhalten"
 
 "Choose its action or switch behaviour":
   es: "Elige su acción o el comportamiento del interruptor"
@@ -29105,6 +29144,7 @@ _version: 2
   sv: "Inga moln"
   pt: "Sem nuvens"
   ca: "Sense núvols"
+  de: "Keine Wolken"
 
 "Graphics driver is slow ({upload:.0} MB/s): the game will stutter. Restarting the computer usually fixes it.":
   es: "El controlador gráfico es lento ({upload:.0} MB/s): el juego dará tirones. Reiniciar el equipo suele solucionarlo."
@@ -29119,6 +29159,7 @@ _version: 2
   sv: "Kollision: {:.0} kJ"
   pt: "Batida: {:.0} kJ"
   ca: "Accident: {:.0} kJ"
+  de: "Unfall: {:.0} kJ"
 
 "Mirror {}: field of view {:.0}° (the bus's {:.0}°)":
   es: "Espejo {}: campo de visión de {:.0}° (original del autobús: {:.0}°)"
@@ -29154,6 +29195,7 @@ _version: 2
   sv: "Motorn är av ({e} elsystem, {m} startmotor; moddbussar med tändningsnyckel vrider den med {e}: tryck igen och håll. Shift+U gör allt)"
   pt: "O motor está desligado  ({e} elétrica, {m} partida; ônibus de mod com chave de ignição a giram com {e}: aperte de novo e segure. Shift+U faz tudo)"
   ca: "El motor està apagat  ({e} sistema elèctric, {m} arrencada; als autobusos de mods amb clau de contacte, gira-la amb {e}: torna a prémer i mantén la tecla. Maj+U ho fa tot)"
+  de: "Der Motor ist aus ({e} Elektronik, {m} Anlasser; Mod-Busse mit einem Zündschlüssel, drehen mit {e}: nochmals drücken und halten. Umschalt+U macht alles)"
 
 "The gearbox is in N: press {d}, or click it. Buses like the Citaro take D only with the brake held":
   es: "El cambio está en N: pulsa {d} o haz clic en él. Los autobuses como el Citaro solo aceptan D con el freno pisado"
@@ -29161,6 +29203,7 @@ _version: 2
   sv: "Växellådan är i N: tryck {d} eller klicka. Bussar som Citaro tillåter D endast när bromsen hålls ned"
   pt: "O câmbio está em N: aperte {d}, ou clique nele. Ônibus como o Citaro só engatam o D com o freio pisado"
   ca: "El canvi és en N: prem {d} o fes-hi clic. Autobusos com el Citaro només accepten D amb el fre premut"
+  de: "Das Getriebe ist in N: drücke {d}, oder klicke es. Busse wie der Citaro schalten nur in D, wenn die Bremse gehalten wird"
 
 "Parking brake is on  ({k} releases it)":
   es: "El freno de mano está puesto ({k} lo suelta)"
@@ -29168,6 +29211,7 @@ _version: 2
   sv: "Parkeringsbromsen är på ({k} släpper den)"
   pt: "Freio de estacionamento acionado  ({k} solta)"
   ca: "El fre d'estacionament està posat  ({k} el deixa anar)"
+  de: "Feststellbremse ist aktiviert  ({k} löst diese)"
 
 "The tour starts at {}: the clock was moved from {from} to {}":
   es: "El turno empieza a las {}: el reloj ha pasado de {from} a {}"
@@ -29175,6 +29219,7 @@ _version: 2
   sv: "Omloppet startar vid {}: klockan flyttades från {from} till {}"
   pt: "A escala começa às {}: o relógio foi de {from} para {}"
   ca: "El torn comença a les {}: s'ha canviat l'hora de {from} a {}"
+  de: "Der Kurs startet um {}: Die Uhrzeit wurde von {from} zu {} gestellt"
 
 "New object {name}: taken away (Delete brings it back)":
   es: "Objeto nuevo {name}: retirado (Supr lo recupera)"
@@ -29225,6 +29270,7 @@ _version: 2
   sv: "Grafikprofil ”{name}” har lästs in: grafikinställningarna gäller från nästa spelstart"
   pt: "Perfil gráfico \"{name}\" carregado: as configurações gráficas valem a partir do próximo início do jogo"
   ca: "S'ha carregat el perfil gràfic «{name}»: la configuració gràfica s'aplicarà la propera vegada que s'iniciï el joc"
+  de: "Grafikprofil \"{name}\" geladen: Grafikeinstellungen werden nach einem Neustart angewendet"
 
 "Graphics profile \"{name}\" not found":
   es: "No se ha encontrado el perfil gráfico \"{name}\""
@@ -29232,6 +29278,7 @@ _version: 2
   sv: "Grafikprofil ”{name}” hittades inte"
   pt: "Perfil gráfico \"{name}\" não encontrado"
   ca: "No s'ha trobat el perfil gràfic «{name}»"
+  de: "Grafikprofil \"{name}\" nicht gefunden"
 
 "Line {line}, tour {}":
   es: "Línea {line}, turno {}"
@@ -29239,6 +29286,7 @@ _version: 2
   sv: "Linje {line}, omlopp {}"
   pt: "Linha {line}, escala {}"
   ca: "Línia {line}, torn {}"
+  de: "Linie {line}, Kurs {}"
 
 "Passenger waiting for a ticket: {name} {value:.2} - press {}":
   es: "Pasajero esperando un billete: {name} {value:.2} - pulsa {}"
@@ -29246,6 +29294,7 @@ _version: 2
   sv: "Passagerare väntar på en biljett: {name} {value:.2} – tryck {}"
   pt: "Passageiro esperando o bilhete: {name} {value:.2} - aperte {}"
   ca: "Passatger esperant un bitllet: {name} {value:.2} - prem {}"
+  de: "Passagier wartet auf eine Fahrkarte: {name} {value:.2} - drücke {}"
 
 "Mirror {} is back as the bus has it (Shift+R: every mirror)":
   es: "El espejo {} ha vuelto a su configuración original (Mayús+R: todos los espejos)"
@@ -29274,6 +29323,7 @@ _version: 2
   sv: "Värdens moddar: {pct}% ({:.0} av {:.0} MB) {file}"
   pt: "Mods do anfitrião: {pct}% ({:.0} de {:.0} MB) {file}"
   ca: "Mods de l'amfitrió: {pct}% ({:.0} de {:.0} MB) {file}"
+  de: "Mods des Hosts: {pct}% ({:.0} von {:.0} MB) {file}"
 
 "Host's mods: {} files ({:.0} MB) fetched (kept for the next join)":
   es: "Mods del anfitrión: {} archivos ({:.0} MB) descargados (se conservan para la próxima conexión)"
@@ -29281,6 +29331,7 @@ _version: 2
   sv: "Värdens moddar: {} filer ({:.0} MB) hämtade (behålls till nästa anslutning)"
   pt: "Mods do anfitrião: {} arquivos ({:.0} MB) baixados (guardados para a próxima vez)"
   ca: "Mods de l'amfitrió: {} fitxers ({:.0} MB) baixats (es conserven per a la propera connexió)"
+  de: "Mods des Hosts: {} Dateien ({:.0} MB) abgerufen (wird für nächstes Beitreten beibehalten)"
 
 "Personnel file of {name} deleted.":
   es: "Expediente de {name} eliminado."
@@ -29368,6 +29419,7 @@ _version: 2
   sv: "Körtangenter: {name} (Inställningar). Dessa tangenter kör bussen och har företräde framför listan nedan. Ändra en tangent här så används din egen layout (Anpassade kontroller) därefter."
   pt: "Teclas de direção: {name} (Configurações). Essas teclas dirigem o ônibus e têm prioridade sobre a lista abaixo. Troque qualquer tecla aqui e o seu próprio esquema (Controles personalizados) passa a ser usado."
   ca: "Tecles de conducció: {name} (Configuració). Aquestes tecles condueixen l'autobús i tenen prioritat sobre la llista següent. Si canvies alguna tecla aquí, a partir d'aleshores es farà servir la teva distribució (Controls personalitzats)."
+  de: "Driving keys: {name} (Einstellungen). Diese Tasten können zum Fahren des Busses genutzt werden und haben eine höhere Priorität als die Liste unten. Passe beliebige Tasten hier an und dein eigenes Layout (benutzerdefinierte Steuerung) wird ab dann genutzt."
 
 "Anything put into {} is installed by itself once it has finished copying.":
   es: "Todo lo que copies en {} se instala automáticamente cuando termina de copiarse."
@@ -29386,6 +29438,7 @@ _version: 2
   sv: "Servern använder {}, som inte är installerat här: det hämtas från servern vid anslutning."
   pt: "O servidor usa {}, que não está instalado aqui: ele é baixado do servidor ao entrar."
   ca: "El servidor juga a {}, que no està instal·lat aquí: es baixarà del servidor en connectar-t'hi."
+  de: "Der Server spielt {}, welche hier nicht installiert ist: Sie wird beim Verbinden zum Server heruntergeladen."
 
 "The host drives on {name}: that map is chosen":
   es: "El anfitrión conduce en {name}: se selecciona ese mapa"
@@ -29393,6 +29446,7 @@ _version: 2
   sv: "Värden kör på {name}: den kartan väljs"
   pt: "O anfitrião dirige em {name}: esse mapa foi escolhido"
   ca: "L'amfitrió juga a {name}: s'ha seleccionat aquest mapa"
+  de: "Der Host fährt auf {name}: Diese Karte ist ausgewählt"
 
 "Game {pid} ended by itself.":
   es: "La partida {pid} ha terminado por sí sola."
@@ -29400,6 +29454,7 @@ _version: 2
   sv: "Spel {pid} avslutades av sig självt."
   pt: "O jogo {pid} terminou sozinho."
   ca: "La partida {pid} s'ha tancat per si sola."
+  de: "Spiel {pid} hat sich selbst beendet."
 
 "Game {pid} did not end by itself and was killed - this run is not saved.":
   es: "La partida {pid} no ha terminado por sí sola y se ha forzado su cierre: esta sesión no se guarda."
@@ -29407,6 +29462,7 @@ _version: 2
   sv: "Spel {pid} avslutades inte av sig självt och tvångsavslutades – denna körning sparas inte."
   pt: "O jogo {pid} não terminou sozinho e foi encerrado à força - esta sessão não foi salva."
   ca: "La partida {pid} no s'ha tancat per si sola i s'ha aturat forçosament; aquesta sessió no es desa."
+  de: "Spiel {pid} hat sich nicht selbst beendet, sondern wurde erzwungen - Diese Fahrt wurde nicht gespeichert."
 
 "Line {name} is there already":
   es: "La línea {name} ya existe"
@@ -29415,6 +29471,7 @@ _version: 2
   sv: "Linje {name} finns redan"
   pt: "A linha {name} já existe"
   ca: "La línia {name} ja existeix"
+  de: "Linie {name} existiert bereits"
 
 "All {n} mirrors of this bus have a panel already":
   es: "Los {n} espejos de este autobús ya tienen un panel"
@@ -29450,6 +29507,7 @@ _version: 2
   sv: "Hämtar översättningsmodellen: {} %"
   pt: "Baixando o modelo de tradução: {} %"
   ca: "S'està baixant el model de traducció: {} %"
+  de: "Übersetzungsmodell herunterladen: {} %"
 
 "paid: {paid:.2}  (change {:.2})":
   es: "pagado: {paid:.2} (cambio: {:.2})"
@@ -29457,6 +29515,7 @@ _version: 2
   sv: "betalt: {paid:.2} (växel {:.2})"
   pt: "pago: {paid:.2}  (troco {:.2})"
   ca: "pagat: {paid:.2}  (canvi {:.2})"
+  de: "Gegeben: {paid:.2}  (Wechselgeld {:.2})"
 
 "KY_{action} added. Press its key now.":
   es: "KY_{action} añadido. Pulsa ahora su tecla."
@@ -29471,6 +29530,7 @@ _version: 2
   sv: "Den här bussen använder delar från fordonspaket som inte är installerade: {} (installera dem för bussens displayer och utrustning)"
   pt: "Este ônibus usa peças de pacote(s) de veículos que não estão instalados: {} (instale-os para os letreiros e equipamentos dele)"
   ca: "Aquest autobús fa servir peces de paquets de vehicles que no estan instal·lats: {} (instal·la'ls per als seus indicadors i dispositius)"
+  de: "Dieser Bus nutzt Teile von Fahrzeugpaketen, die nicht installiert sind: {} (Installiere sie für die Bildschirme und Geräte des Busses)"
 
 "openOMSI {} could not be downloaded: {e}":
   es: "No se ha podido descargar openOMSI {}: {e}"
@@ -29478,6 +29538,7 @@ _version: 2
   sv: "openOMSI {} kunde inte hämtas: {e}"
   pt: "Não foi possível baixar o openOMSI {}: {e}"
   ca: "No s'ha pogut baixar openOMSI {}: {e}"
+  de: "openOMSI {} konnte nicht heruntergeladen werden: {e}"
 
 "openOMSI was not updated to {}: the installation was cancelled.":
   es: "openOMSI no se ha actualizado a {}: se ha cancelado la instalación."
@@ -29485,6 +29546,7 @@ _version: 2
   sv: "openOMSI uppdaterades inte till {}: installationen avbröts."
   pt: "O openOMSI não foi atualizado para {}: a instalação foi cancelada."
   ca: "No s'ha actualitzat openOMSI a {}: s'ha cancel·lat la instal·lació."
+  de: "openOMSI wurde nicht auf {} aktualisiert: Die Installation wurde abgebrochen."
 
 "openOMSI was not updated to {}: installing apps was not allowed for openOMSI (Settings → Apps → openOMSI → Install unknown apps).":
   es: "openOMSI no se ha actualizado a {}: no se ha permitido que openOMSI instale aplicaciones (Ajustes → Aplicaciones → openOMSI → Instalar aplicaciones desconocidas)."
@@ -29492,6 +29554,7 @@ _version: 2
   sv: "openOMSI uppdaterades inte till {}: installation av appar tilläts inte för openOMSI (Inställningar → Appar → openOMSI → Installera okända appar)."
   pt: "O openOMSI não foi atualizado para {}: a instalação de apps não foi permitida para o openOMSI (Configurações → Apps → openOMSI → Instalar apps desconhecidos)."
   ca: "No s'ha actualitzat openOMSI a {}: openOMSI no té permís per instal·lar aplicacions (Configuració → Aplicacions → openOMSI → Instal·la aplicacions desconegudes)."
+  de: "openOMSI wurde nicht auf {} aktualisiert: Die Installation von Anwendungen wurde für openOMSI nicht zugelassen (Einstellungen → Apps → openOMSI → Unbekannte Apps installieren)."
 
 "METAR of {} (fetched at the start)":
   es: "METAR de {} (consultado al iniciar)"
@@ -29500,6 +29563,7 @@ _version: 2
   sv: "METAR från {} (hämtas vid start)"
   pt: "METAR de {} (baixado no início)"
   ca: "METAR de {} (obtingut a l'inici)"
+  de: "METAR von {} (beim Start abgerufen)"
 
 "the host plays on {theirs}, which is not installed here - install that map to meet the others":
   es: "el anfitrión juega en {theirs}, que no está instalado aquí: instala ese mapa para reunirte con los demás"
@@ -29507,6 +29571,7 @@ _version: 2
   sv: "värden spelar på {theirs}, som inte är installerad här – installera den kartan för att träffa de andra"
   pt: "o anfitrião joga em {theirs}, que não está instalado aqui - instale esse mapa para encontrar os outros"
   ca: "l'amfitrió juga a {theirs}, que no està instal·lat aquí: instal·la aquest mapa per trobar-te amb els altres"
+  de: "der Host spielt auf {theirs}, welche hier nicht installiert ist - Installiere diese Karte, um die anderen zu treffen"
 
 "the host's season ({}) differs from the one loaded here ({}) - start the game again to see it":
   es: "la estación del año del anfitrión ({}) es distinta de la cargada aquí ({}): vuelve a iniciar el juego para verla"
@@ -29514,6 +29579,7 @@ _version: 2
   sv: "värdens årstid ({}) skiljer sig från den som lästs in här ({}) – starta om spelet för att se den"
   pt: "a estação do anfitrião ({}) é diferente da carregada aqui ({}) - inicie o jogo de novo para vê-la"
   ca: "l'estació de l'amfitrió ({}) és diferent de la que has carregat ({}): torna a iniciar el joc per veure-la"
+  de: "die Jahreszeit vom Host ({}) unterscheidet sich von der aktuell geladenen ({}) - Starte das Spiel neu, um sie zu sehen"
 "Esc resumes  |  P pauses":
   ca: "Esc reprèn  |  P pausa"
   ru: "Esc - продолжить  |  P - пауза"
@@ -32829,7 +32895,7 @@ _version: 2
   sv: "Statistik"
 
 "Personnel file":
-  de: "Fahrerakte"
+  de: "Personalakte"
   fr: "Dossier du conducteur"
   ru: "Личное дело"
   uk: "Особова справа"
