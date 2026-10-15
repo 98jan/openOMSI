@@ -145,6 +145,10 @@ pub struct Vm {
     rng: u64,
     /// Macro recursion guard.
     depth: u32,
+    /// Instructions the engine-called block now running may still take (`MAX_OPS`).
+    budget: u64,
+    /// A run was cut short by the budget (said once).
+    starved: bool,
 }
 
 /// The state every `random` starts from while no session seed is set (tests and tools
@@ -185,11 +189,18 @@ impl Default for Vm {
     fn default() -> Self {
         let session = SESSION_SEED.load(std::sync::atomic::Ordering::Relaxed);
         let rng = if session == 0 { FIXED_RNG } else { splitmix64(session ^ splitmix64(SEEDED.fetch_add(1, std::sync::atomic::Ordering::Relaxed))) | 1 };
-        Self { stacks: Stacks::default(), rng, depth: 0 }
+        Self { stacks: Stacks::default(), rng, depth: 0, budget: MAX_OPS, starved: false }
     }
 }
 
 const MAX_DEPTH: u32 = 64;
+
+/// Instructions one vehicle's frame (all its `{frame}` or `{frame_ai}` blocks together), or
+/// one `{init}` block or trigger, may take, macros included. The language has no loops, but
+/// a macro that calls itself a few times over, 64 deep, would run for ever - a script that
+/// came from another machine (a host's mods, another player's bus) would stop this game. The
+/// stock scripts take thousands a frame; a run cut short leaves its variables as they are.
+const MAX_OPS: u64 = 2_000_000;
 
 impl Vm {
     pub fn new() -> Self {
@@ -219,17 +230,23 @@ impl Vm {
         }
     }
 
-    /// Run the `{frame}` blocks.
+    /// Run the `{frame}` blocks - one budget (`MAX_OPS`) for all of them: a vehicle's frame.
     pub fn run_frame(&mut self, p: &Program, state: &mut State, host: &mut dyn Host) {
-        for &b in &p.frame {
-            self.run_top(p, b, state, host);
-        }
+        self.run_frame_blocks(p, &p.frame, state, host);
     }
 
-    /// Run the `{frame_ai}` blocks (falls back to nothing when absent).
+    /// Run the `{frame_ai}` blocks (falls back to nothing when absent), on one budget too.
     pub fn run_frame_ai(&mut self, p: &Program, state: &mut State, host: &mut dyn Host) {
-        for &b in &p.frame_ai {
-            self.run_top(p, b, state, host);
+        self.run_frame_blocks(p, &p.frame_ai, state, host);
+    }
+
+    /// `blocks` run one after the other on empty stacks, sharing one budget: with a budget
+    /// for each block, a script made of many blocks would stall the game as many times over.
+    fn run_frame_blocks(&mut self, p: &Program, blocks: &[BlockId], state: &mut State, host: &mut dyn Host) {
+        self.budget = MAX_OPS;
+        for &b in blocks {
+            self.stacks.clear();
+            self.run_block(p, b, state, host);
         }
     }
 
@@ -244,6 +261,7 @@ impl Vm {
                 self.stacks.clear();
                 let value = if name.to_ascii_lowercase().ends_with("_off") { 0.0 } else { 1.0 };
                 self.stacks.push(value);
+                self.budget = MAX_OPS;
                 self.run_block(p, b, state, host);
                 true
             }
@@ -257,6 +275,7 @@ impl Vm {
     /// the last one's.
     fn run_top(&mut self, p: &Program, block: BlockId, state: &mut State, host: &mut dyn Host) {
         self.stacks.clear();
+        self.budget = MAX_OPS;
         self.run_block(p, block, state, host);
     }
 
@@ -269,6 +288,14 @@ impl Vm {
         let ops = &p.blocks[block as usize].ops;
         let mut pc = 0usize;
         while pc < ops.len() {
+            if self.budget == 0 {
+                if !self.starved {
+                    self.starved = true;
+                    log::warn!("script: {} took more than {MAX_OPS} instructions in one run and was cut short", p.blocks[block as usize].name);
+                }
+                break;
+            }
+            self.budget -= 1;
             let op = &ops[pc];
             pc += 1;
             match op {
@@ -648,6 +675,44 @@ mod tests {
         let distinct = a.iter().map(|v| *v as i64).collect::<std::collections::BTreeSet<_>>().len();
         assert!(distinct >= 15, "{a:?}");
         assert!(a.iter().any(|v| *v > 650000.0) && a.iter().any(|v| *v < 650000.0), "{a:?}");
+    }
+
+    /// A macro that calls itself twice, 64 deep, would make 2^64 calls: the run is cut short
+    /// at its budget, the game goes on, and the next run has a budget of its own.
+    #[test]
+    fn a_script_that_would_run_for_ever_is_cut_short() {
+        let p = prog("{macro:m}\n(L.L.a) 1 + (S.L.a) (M.L.m) (M.L.m)\n{end}\n{frame}\n(M.L.m)\n{end}\n");
+        assert!(p.errors.is_empty(), "{:?}", p.errors);
+        let mut vm = Vm::new();
+        let mut st = State::new(&p);
+        let t0 = std::time::Instant::now();
+        vm.run_frame(&p, &mut st, &mut NullHost);
+        let a = st.get(p.var("a").unwrap());
+        assert!(a > 1000.0, "{a}");
+        vm.run_frame(&p, &mut st, &mut NullHost);
+        assert!(st.get(p.var("a").unwrap()) > a, "the next run had a budget of its own");
+        assert!(t0.elapsed() < std::time::Duration::from_secs(10), "{:?}", t0.elapsed());
+    }
+
+    /// The budget is one vehicle's frame, not one block's: a script split into many
+    /// `{frame}` blocks, each of which would run for ever, takes no more than one budget in
+    /// all (with a budget for each, 50 blocks would stall the game 50 times as long).
+    #[test]
+    fn many_frame_blocks_share_one_budget() {
+        let mut src = String::from("{macro:m}\n(L.L.a) 1 + (S.L.a) (M.L.m) (M.L.m)\n{end}\n");
+        for _ in 0..50 {
+            src.push_str("{frame}\n(M.L.m)\n{end}\n");
+        }
+        let p = prog(&src);
+        assert!(p.errors.is_empty(), "{:?}", p.errors);
+        assert_eq!(p.frame.len(), 50);
+        let mut vm = Vm::new();
+        let mut st = State::new(&p);
+        vm.run_frame(&p, &mut st, &mut NullHost);
+        // every op of `m` that counts `a` is one of the budget's: the 50 blocks together
+        // stayed within one budget, not 50
+        let a = st.get(p.var("a").unwrap());
+        assert!(a > 1000.0 && (a as u64) < MAX_OPS, "{a}");
     }
 
     #[test]
