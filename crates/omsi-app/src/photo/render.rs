@@ -207,12 +207,15 @@ impl crate::App {
         let Some(acc) = ph.render.accum.as_mut() else { return };
         let mut added = false;
         if acc.n < target {
-            // the bus's parts to move with the shutter (a rolling shot): bus, trailers, people aboard (#2611)
+            // Keep the bus's occupants and loose cabin objects in its shutter frame (#2611).
             let parts: Vec<(usize, glam::DVec3, glam::Mat4)> = match (shot.motion.is_some(), self.player.as_ref()) {
                 (true, Some(p)) => {
                     let trailers: Vec<usize> = p.trailer_renders.iter().flat_map(|t| t.instances.iter().copied()).collect();
                     let people = &self.gfx.sim_view.people.people;
-                    let riders: Vec<usize> = self.session.humans.iter().flat_map(|h| h.people.iter()).filter(|q| q.inside(crate::humans::BusId::Player)).filter_map(|q| people.get(&q.id)).flat_map(|v| v.meshes.iter().map(|m| m.1)).collect();
+                    let mut riders: Vec<usize> = self.session.humans.iter().flat_map(|h| h.people.iter()).filter(|q| q.inside(crate::humans::BusId::Player)).filter_map(|q| people.get(&q.id)).flat_map(|v| v.meshes.iter().map(|m| m.1)).collect();
+                    riders.extend(p.driver.iter().flat_map(|d| d.instances()));
+                    riders.extend(self.session.humans.iter().flat_map(|h| h.sim.money.iter()).flat_map(|m| m.placed.iter().map(|coin| coin.0)));
+                    riders.extend(self.gfx.sim_view.people.ticket_blocks.iter().flat_map(|b| b.instances()));
                     omsi_photo::motion_parts(&p.render.instances, &trailers, &riders).into_iter().filter_map(|i| scene.instances.get(i).map(|x| (i, x.origin, x.transform))).collect()
                 }
                 _ => Vec::new(),

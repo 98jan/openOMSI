@@ -24,13 +24,10 @@ pub fn stretch(w: u32, h: u32, px: &[u8], tw: u32, th: u32) -> Vec<u8> {
     out
 }
 
-/// The instances a rolling shot moves with the shutter: the bus's, its trailers' and the
-/// riders', each once and in that order. The bus's come first, as the wheels' spin is read
-/// by their place in this list (the app's `wheel_spin`); one that is named twice would be moved twice
-/// in one picture and stand a step ahead of the rest.
-pub fn motion_parts(bus: &[usize], trailers: &[usize], riders: &[usize]) -> Vec<usize> {
+/// Keep bus instances first for wheel animation and avoid moving shared instances twice.
+pub fn motion_parts(bus: &[usize], trailers: &[usize], aboard: &[usize]) -> Vec<usize> {
     let mut seen = std::collections::HashSet::new();
-    bus.iter().chain(trailers).chain(riders).copied().filter(|i| seen.insert(*i)).collect()
+    bus.iter().chain(trailers).chain(aboard).copied().filter(|i| seen.insert(*i)).collect()
 }
 
 #[cfg(test)]
@@ -40,12 +37,9 @@ mod tests {
     #[test]
     fn a_rolling_shot_moves_the_bus_its_trailers_and_the_riders_once_each_in_that_order() {
         assert_eq!(motion_parts(&[3, 4, 5], &[9, 10], &[20, 21, 22]), [3, 4, 5, 9, 10, 20, 21, 22]);
-        // an instance named twice (a rider seen through two lists) is moved once
         assert_eq!(motion_parts(&[3, 4], &[4, 9], &[9, 20, 3]), [3, 4, 9, 20]);
-        // nobody aboard: as before
         assert_eq!(motion_parts(&[1, 2], &[], &[]), [1, 2]);
         assert!(motion_parts(&[], &[], &[]).is_empty());
-        // the bus's own come first and keep their places: the wheels' spin is read by them
         let parts = motion_parts(&[7, 8, 9], &[], &[1, 2]);
         assert_eq!(&parts[..3], &[7, 8, 9]);
     }
