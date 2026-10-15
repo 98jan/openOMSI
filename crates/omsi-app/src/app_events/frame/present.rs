@@ -665,6 +665,9 @@ impl App {
                     for (k, v) in r.counts.borrow().iter() {
                         log::info!("profile count {k}: {:.0} a frame", v / n);
                     }
+                    if let Some(memory) = r.allocator_summary() {
+                        log::info!("profile graphics memory: {memory}");
+                    }
                     for (pass, ms, frames) in r.gpu_pass_times() {
                         log::info!("profile gpu pass {pass:12}: {ms:.2} ms ({frames} frames measured)");
                     }

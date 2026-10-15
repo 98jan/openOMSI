@@ -359,7 +359,7 @@ lines, as in the game, whose default date is 1989-05-30.
 ## Settings, enhanced graphics, the navigator
 
 `~/.openomsi/settings.cfg` (written by the launcher's settings page, or by hand) holds
-`msaa` (1/2/4/8; a count the GPU cannot do falls back to the next lower one), `anisotropy`
+`msaa` (1/2/4/8; a count the GPU cannot do falls back to the next lower one, and Enhanced+ draws 8 at 4), `anisotropy`
 (1..16), `ssao`, `shadows`, `shadow_size`, `shadow_blobs` (the models' `[isshadow]` shadow
 meshes, OMSI's flat blob under a vehicle, laid on the road its wheels stand on; off, only the
 sun shadow map shades under a vehicle), `navigator`, `ui_opacity` (how much of the interface's backgrounds shows - the navigator's, the
@@ -375,13 +375,15 @@ stop it serves, as in OMSI),
 `boarding`, `detail_textures`, `exact_fare`, `enhanced`, `fullscreen`, `vsync`, `volume`
 and `drive_keys`, plus `render_scale` (`auto` or a fraction: the picture is drawn smaller
 and upscaled), `post_aa` (`fxaa`, the enhanced renderer's, or `off`), `view_distance` (m,
-how far the tiles are kept loaded), `texture_memory` (MB - OMSI's `texmemlimit` is read
-under that name too; an eighth of the machine's memory when unset), `texture_compression`
+how far the tiles are kept loaded), `video_memory` ("Video memory", MB: all the game holds
+on the graphics card - textures, meshes, render targets, the driver's own; when unset, nine
+tenths of a discrete card's memory, and never more than the driver's budget; the old
+`texture_memory=` and OMSI's `texmemlimit` were texture budgets and are dropped), `texture_compression`
 (loose pictures compressed to BC1-BC3 on loading, on by default), `gpu_texture_compression`
 (DXT/BC textures kept compressed on the GPU, on by default; off decodes them to RGBA, for a
 driver that mishandles block formats, at four to eight times the memory - as
-`OMSI_NO_BC=1`), `reflections` (the materials' reflection maps,
-`[matl_envmap]` - off, paint, chrome and glass mirror nothing), `led_glow` (0..15: how
+`OMSI_NO_BC=1`), `reflections` (0..1, how strongly the materials' reflection maps,
+`[matl_envmap]`, show on paint, chrome and glass; 0 = off, they mirror nothing), `led_glow` (0..15: how
 bright an LED destination matrix's dots burn in the enhanced picture, 0 = off - they are
 the panel's own light, and the glow draws a halo around them), `led_mips` (0..4, 0.05 steps,
 1.3 by default: how much of the mip chain an LED matrix is held at - its picture and its
@@ -497,7 +499,7 @@ vignette.
 `crates/omsi-render/src/rt.rs`) shows its buffers.
 
 Vanilla, Vanilla+ and Enhanced reflect buses, buildings and scenery in wet road puddles
-when `reflections=1`, each using its own lighting. Depth-aware filtering softens the image;
+when `reflections` is above 0, each using its own lighting. Depth-aware filtering softens the image;
 Enhanced also shades shallow rain ripples.
 The player's nearby bus and up to three coupled sections use one local geometry capture,
 mirrored around the actual road face's height and slope. Its windows are shaded from the
@@ -743,7 +745,7 @@ scripts run in parallel. Spandau with traffic, passengers and a storm: 14 → 69
 M4, no frame over 50 ms after start-up.
 
 Big maps are kept within memory by compressed textures, a texture budget
-(`texture_memory`), a timetable fleet read ahead and trimmed again, and tiles that give
+and the video memory (`video_memory`), a timetable fleet read ahead and trimmed again, and tiles that give
 everything back when they unload: Ahlheim V5 at its main station with traffic, passengers
 and the timetable peaks at 1.93 GB instead of 8.75 GB (see `docs/ARCHITECTURE.md`,
 *Memory*). The game's log is `~/.openomsi/game.log` (the launcher's `launcher.log`

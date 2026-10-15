@@ -1,7 +1,7 @@
 //! Persistent wetness on the player's glass, cleared by the animated blade's swept area.
 //! A small mask uses the existing transmap binding: no extra draw or offscreen pass.
 
-use omsi_weather::window_drops::Drops;
+use omsi_weather::window_drops::{Canvas, Drops};
 use glam::{Vec2, Vec3};
 use omsi_geometry::MeshData;
 use omsi_render::{MaterialId, Renderer, Scene, TextureId};
@@ -52,6 +52,8 @@ struct Film {
     drops_texture: TextureId,
     paint_phase: f32,
     paint_due: bool,
+    painted: bool,
+    pending: Option<std::sync::mpsc::Receiver<(Canvas, bool)>>,
     runoff_time: f32,
     points: Vec<Vec3>,
     // Negative is a recent wipe's residual film; 0..1 droplets; 1..2 the pushed ridge.
@@ -211,7 +213,7 @@ impl WindowWipers {
                         wetness,
                         (mesh * 7919 + slot * 104729 + 1) as u32,
                     );
-                    let drops_texture = renderer.add_data_texture(scene, &drops.image);
+                    let drops_texture = renderer.add_data_texture(scene, &drops.canvas.image);
                     let material = renderer
                         .add_window_wetness_material(scene, base, texture, drops_texture, bounds, false)
                         .unwrap();
@@ -229,6 +231,8 @@ impl WindowWipers {
                         drops_texture,
                         paint_phase: 1.0,
                         paint_due: false,
+                        painted: false,
+                        pending: None,
                         runoff_time: 0.0,
                         points,
                         wet: vec![wetness; SIZE * SIZE],
@@ -422,14 +426,7 @@ impl WindowWipers {
             if repaint_due(&mut film.paint_phase, dt, every) {
                 if liquid {
                     // Also discard initial seeds which landed outside the mesh's slot.
-                    let bounds = film.bounds;
-                    film.drops.drops.retain(|d| {
-                        d.pos.cmpge(Vec2::ZERO).all()
-                            && (d.pos * Vec2::new(bounds[2].abs(), bounds[3]))
-                                .cmplt(Vec2::ONE)
-                                .all()
-                            && film.points[drop_pixel(d.pos, bounds)].is_finite()
-                    });
+                    film.drop_strays();
                 } else {
                     film.drops.drops.clear();
                 }
@@ -473,20 +470,88 @@ impl WindowWipers {
                 &vehicle.mesh_props[film.mesh].slot_uv,
             );
         }
-        let paint = |films: &mut Vec<Film>| -> Vec<bool> {
-            films.par_iter_mut().map(|film| std::mem::take(&mut film.paint_due) && film.drops.paint()).collect()
-        };
-        let painted = match drops_pool() {
-            Some(pool) => pool.install(|| paint(&mut self.films)),
-            None => paint(&mut self.films),
-        };
-        for (film, painted) in self.films.iter().zip(painted) {
-            if painted {
-                renderer.update_texture(scene, film.drops_texture, &film.drops.image);
+        let pool = drops_pool();
+        for film in &mut self.films {
+            film.take_back(renderer, scene, false);
+        }
+        let first = |film: &Film| film.paint_due && (!film.painted || pool.is_none());
+        if self.films.iter().any(first) {
+            let paint = |films: &mut Vec<Film>| -> Vec<bool> {
+                films.par_iter_mut().map(|film| first(film) && film.drops.paint()).collect()
+            };
+            let painted = match pool {
+                Some(pool) => pool.install(|| paint(&mut self.films)),
+                None => paint(&mut self.films),
+            };
+            for (film, painted) in self.films.iter_mut().zip(painted) {
+                if first(film) {
+                    film.paint_due = false;
+                    film.painted = true;
+                    if painted {
+                        renderer.update_texture(scene, film.drops_texture, &film.drops.canvas.image);
+                    }
+                }
+            }
+        }
+        if let Some(pool) = pool {
+            for film in &mut self.films {
+                if !film.paint_due || film.pending.is_some() {
+                    continue;
+                }
+                film.paint_due = false;
+                film.drop_strays();
+                let mut canvas = film.drops.canvas.take();
+                let drops = film.drops.drops.clone();
+                let (done, receiver) = std::sync::mpsc::channel();
+                film.pending = Some(receiver);
+                pool.spawn(move || {
+                    let changed = canvas.paint(&drops);
+                    let _ = done.send((canvas, changed));
+                });
             }
         }
         for blade in &mut self.blades {
             blade.previous = blade.current;
+        }
+    }
+
+    pub fn finish_paints(&mut self, renderer: &Renderer, scene: &mut Scene) {
+        for film in &mut self.films {
+            film.take_back(renderer, scene, true);
+        }
+    }
+}
+
+impl Film {
+    fn drop_strays(&mut self) {
+        let (bounds, points) = (self.bounds, &self.points);
+        self.drops.drops.retain(|d| {
+            d.pos.cmpge(Vec2::ZERO).all()
+                && (d.pos * Vec2::new(bounds[2].abs(), bounds[3])).cmplt(Vec2::ONE).all()
+                && points[drop_pixel(d.pos, bounds)].is_finite()
+        });
+    }
+
+    fn take_back(&mut self, renderer: &Renderer, scene: &mut Scene, wait: bool) {
+        let Some(pending) = &self.pending else { return };
+        let got = if wait { pending.recv().map_err(|_| std::sync::mpsc::TryRecvError::Disconnected) } else { pending.try_recv() };
+        match got {
+            Ok((canvas, changed)) => {
+                self.drops.canvas = canvas;
+                self.pending = None;
+                if changed {
+                    for rect in self.drops.canvas.changed() {
+                        renderer.update_texture_rect(scene, self.drops_texture, &self.drops.canvas.image, rect);
+                    }
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.pending = None;
+                self.drops.canvas.reset();
+                self.painted = false;
+                self.paint_due = true;
+            }
         }
     }
 }

@@ -52,7 +52,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         slider_row(app, "night_brightness", "Night brightness", "Enhanced graphics: how much brighter the night is shown", &|v| if v < 0.01 { "Off".to_string() } else { format!("+{v:.2}") }).filter(|_| shown("night_brightness")),
         slider_row(app, "led_glow", "LED glow", "How strongly the dots of LED destination displays glow", &|v| format!("{}/15", v as i64)).filter(|_| shown("led_glow")),
         slider_row(app, "led_mips", "LED mip strength", "Lower: sharper LED dots that shimmer from a distance; higher: calmer, softer dots", &|v| format!("{v:.2}")).filter(|_| shown("led_mips")),
-        switch_row(app, "reflections", "Reflection maps (paint, chrome, glass)", later).filter(|_| shown("reflections")),
+        slider_row(app, "reflections", "Reflection maps (paint, chrome, glass)", "Changes show at once; turned up from Off, they come back when the game starts the next time", &|v| if v < 0.005 { "Off".to_string() } else { format!("{:.0}%", v * 100.0) }).filter(|_| shown("reflections")),
         switch_row(app, "clouds", "Clouds", later),
         pick("cloud_quality", "Cloud quality", "Enhanced: the volumetric clouds marched in fewer steps - faster, a little grainier").filter(|_| shown("cloud_quality") && app.settings.clouds),
         pick("rain_quality", "Rain quality", "Lower is faster: the drops on the glass painted less often, less spray and fewer streaks; Low shows OMSI 2's own rain on the glass (from the next bus loaded)"),
@@ -143,7 +143,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         pick("mirror_refresh", "Bus mirror refresh", "How often the mirrors are drawn: every frame, the street moves through them as smoothly as through the windscreen"),
         pick("mirror_quality", "Mirror quality", "In Enhanced and Enhanced+: the mirrors shaded as the picture is, with its light and its sky, instead of the plain light").filter(|_| shown("mirror_quality")),
         switch_row(app, "mirror_hud_every_frame", "Mirror panels every frame", "The mirror panels in the cab (Ctrl+M) are drawn every frame, as in ETS2, instead of taking turns with the other mirrors"),
-        pick("texture_memory", "Texture memory", later),
+        pick("video_memory", "Video memory", later),
         switch_row(app, "texture_compression", "Compress textures on loading", later),
         (!omsi_launcher_lib::graphics_profiles().is_empty()).then(|| opens("Load graphics profile", "Applies a graphics profile saved in the launcher", "gfxprofile")),
     ])
@@ -521,9 +521,9 @@ mod tests {
         assert_eq!(s.graphics, "vanilla_plus");
         assert!(s.shadows && s.ssao && s.detail_textures && !s.classic());
         let s = text_in_mode("graphics=enhanced_plus\nshadows=0\nssao=0\nreflections=0\n", "vanilla");
-        assert!(!s.ray_tracing() && !s.enhanced && !s.shadows && !s.ssao && !s.reflections);
+        assert!(!s.ray_tracing() && !s.enhanced && !s.shadows && !s.ssao && s.reflections == 0.0);
         let s = text_in_mode("graphics=vanilla\nshadows=0\n", "enhanced_plus");
-        assert!(s.ray_tracing() && s.enhanced && s.shadows && s.ssao && s.reflections);
+        assert!(s.ray_tracing() && s.enhanced && s.shadows && s.ssao && s.reflections == 1.0);
     }
 
     #[test]
