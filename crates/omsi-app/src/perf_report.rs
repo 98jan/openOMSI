@@ -11,6 +11,9 @@ use std::collections::BTreeMap;
 /// The frame times kept at most (about two hours at 144 fps).
 pub(crate) const MAX_FRAMES: usize = 1 << 20;
 
+/// The frames whose stage times are kept, for [`stages_by_frame_time`] (about 15 MB).
+pub(crate) const STAGE_FRAMES: usize = 1 << 16;
+
 /// The profile when the warm-up ended, for what the stages took after it.
 pub(crate) struct ProfileMark {
     app: crate::profile_keys::ProfileTimes,
@@ -90,6 +93,35 @@ pub(crate) fn frame_summary(frame_times: &[f32]) -> Value {
     })
 }
 
+/// What each stage took per frame (ms) in the slowest 5 % of the frames and in the faster
+/// half: the stage that grows in the slow ones is what makes the frame uneven.
+pub(crate) fn stages_by_frame_time(frame_times: &[f32], stages: &[f32]) -> Value {
+    let keys = crate::profile_keys::ProfKey::ALL;
+    let n = (stages.len() / keys.len()).min(frame_times.len());
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| frame_times[a].total_cmp(&frame_times[b]));
+    let average = |picked: &[usize]| {
+        let mut sum = vec![0.0f64; keys.len()];
+        let mut ran = vec![0usize; keys.len()];
+        let mut seconds = 0.0f64;
+        for &i in picked {
+            seconds += frame_times[i] as f64;
+            for ((s, r), v) in sum.iter_mut().zip(ran.iter_mut()).zip(&stages[i * keys.len()..(i + 1) * keys.len()]) {
+                *s += *v as f64;
+                *r += usize::from(*v > 50e-6);
+            }
+        }
+        let c = picked.len().max(1) as f64;
+        let stage: BTreeMap<&str, f64> =
+            keys.iter().zip(&sum).filter(|(_, s)| **s > 0.0).map(|(k, s)| (k.name(), s / c * 1000.0)).collect();
+        let share: BTreeMap<&str, f64> =
+            keys.iter().zip(&ran).filter(|(_, r)| **r > 0).map(|(k, r)| (k.name(), *r as f64 / c * 100.0)).collect();
+        json!({ "frames": picked.len(), "frame_ms": seconds / c * 1000.0, "stage_ms": stage, "frames_over_50_us_pct": share })
+    };
+    let slowest = (n as f64 * 0.05).ceil() as usize;
+    json!({ "frames_counted": n, "stage_limit_reached": frame_times.len() > n, "slowest_5pct": average(&order[n - slowest..]), "fastest_half": average(&order[..n / 2]) })
+}
+
 /// The log line of [`frame_summary`].
 pub(crate) fn log_line(s: &Value) -> String {
     let f = |k: &str| s[k].as_f64().unwrap_or(0.0);
@@ -146,6 +178,7 @@ pub(crate) fn report(run: Run, r: &omsi_render::Renderer, window: (u32, u32), sc
     let mut summary = summary;
     summary["stage_average_ms"] = json!(stages);
     summary["gpu_pass_ms"] = json!(gpu);
+    summary["stages_by_frame_time"] = stages_by_frame_time(&perf.frame_times, &perf.frame_stages);
     if let (Some((c0, t0, f0)), Some(c1)) = (perf.cpu_mark, crate::startup::process_cpu_seconds()) {
         let frames = perf.total_frames.saturating_sub(f0).max(1) as f64;
         summary["cpu_ms_per_frame"] = json!((c1 - c0) / frames * 1000.0);
@@ -192,6 +225,34 @@ mod tests {
         // (the frame rate is the frames over their time, not an average of rates)
         assert!((ms("average_fps") - 20.0).abs() < 1e-3);
         assert_eq!(frame_summary(&[])["average_fps"], 0.0);
+    }
+
+    #[test]
+    fn the_stage_that_grows_in_the_slow_frames_stands_out() {
+        use crate::profile_keys::ProfKey;
+        let (render, traffic) = (ProfKey::of("render") as usize, ProfKey::of("traffic") as usize);
+        let mut times = Vec::new();
+        let mut stages = Vec::new();
+        for i in 0..100 {
+            let slow = i % 20 == 7;
+            let mut row = vec![0.0f32; ProfKey::ALL.len()];
+            row[render] = 0.008;
+            if slow {
+                row[traffic] = 0.020;
+            }
+            times.push(if slow { 0.030 } else { 0.010 });
+            stages.extend(row);
+        }
+        let s = stages_by_frame_time(&times, &stages);
+        let ms = |part: &str, k: &str| s[part]["stage_ms"][k].as_f64().unwrap_or(0.0);
+        assert_eq!(s["slowest_5pct"]["frames"], 5);
+        assert!((ms("slowest_5pct", "traffic") - 20.0).abs() < 1e-3);
+        assert!((ms("slowest_5pct", "render") - 8.0).abs() < 1e-3 && (ms("fastest_half", "render") - 8.0).abs() < 1e-3);
+        assert_eq!(ms("fastest_half", "traffic"), 0.0);
+        assert_eq!(s["slowest_5pct"]["frames_over_50_us_pct"]["traffic"], 100.0);
+        assert_eq!(s["fastest_half"]["frames_over_50_us_pct"]["render"], 100.0);
+        assert!(s["fastest_half"]["frames_over_50_us_pct"]["traffic"].is_null());
+        assert_eq!(stages_by_frame_time(&[], &[])["slowest_5pct"]["frames"], 0);
     }
 
     #[test]

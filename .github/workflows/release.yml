@@ -1,13 +1,12 @@
 # Builds openOMSI for Windows and Linux (x64, ARM64), macOS (Apple silicon, Intel) and Android
-# (plus the dedicated server for Linux and Windows) on every push to
-# main and publishes them as the beta (pre-release) v<MAJOR.MINOR.COMMIT>; promote.yml makes a
-# tested beta the stable release. See docs/VERSIONING.md.
+# (plus the dedicated server for Linux and Windows) when a maintainer runs it from main
+# (Actions -> Release -> Run workflow) and publishes them as the beta (pre-release)
+# v<MAJOR.MINOR.PATCH>; promote.yml makes a tested beta the stable release. A push to main
+# publishes nothing by itself. See docs/VERSIONING.md.
 # Pull requests run the same builds without publishing.
 name: Release
 
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
     # (a beta of one platform alone, to test a fix only that platform needs; a published
@@ -356,6 +355,11 @@ jobs:
           fi
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             echo "::error::v$VERSION is already published and stays as it is: a fix is released as a new version"
+            exit 1
+          fi
+          prev=$(git tag -l "v${VERSION%.*}.*" --sort=-v:refname | grep -vx "v$VERSION" | head -1)
+          if [ -n "$prev" ] && ! git merge-base --is-ancestor "$prev" "$GITHUB_SHA"; then
+            echo "::error::$GITHUB_SHA is older than $prev: only a newer commit of main is released"
             exit 1
           fi
           if ! git tag "v$VERSION" "$GITHUB_SHA" 2>/dev/null && [ "$(git rev-parse "v$VERSION^{commit}")" != "$GITHUB_SHA" ]; then

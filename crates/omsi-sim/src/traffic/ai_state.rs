@@ -356,6 +356,11 @@ impl LaneSeq {
         let (i, u) = self.locate(net, s, d);
         self.at(net, i, u)
     }
+
+    fn heading(&self, net: &Network, s: f32, d: f32) -> f32 {
+        let (i, u) = self.locate(net, s, d);
+        net.lanes[self.lanes[i]].heading_ext(u)
+    }
 }
 
 /// How many lanes deep a car looks for a way on that leads only into lanes closed to it.
@@ -707,7 +712,7 @@ impl AiState {
         let mut next = first;
         while d <= reach {
             let (i, u) = q.locate(net, s, d);
-            let turn = wrap_deg(q.point(net, s, d + 3.0).1 - q.point(net, s, d - 3.0).1).abs().to_radians() / 6.0;
+            let turn = wrap_deg(q.heading(net, s, d + 3.0) - q.heading(net, s, d - 3.0)).abs().to_radians() / 6.0;
             let k = net.lanes[q.lanes[i]].curvature_at(u).abs().max(turn);
             if k > 1e-4 {
                 // (an emergency vehicle on its drive takes the bends harder)

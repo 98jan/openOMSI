@@ -1418,6 +1418,11 @@ fn turn_towards(a: Vec3, b: Vec3, max: f32) -> Vec3 {
 }
 
 impl DriverFigure {
+    /// Allow photo shutter samples to move the driver with the bus.
+    pub fn instances(&self) -> impl Iterator<Item = usize> + '_ {
+        self.meshes.iter().map(|m| m.1)
+    }
+
     /// The figure at the wheel (the player's own when getting up).
     pub fn human_type(&self) -> Arc<HumanType> {
         self.ty.clone()

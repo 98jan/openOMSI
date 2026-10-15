@@ -1,15 +1,17 @@
 # Versioning and releases
 
-## The version number: `MAJOR.MINOR.COMMIT`
+## The version number: `MAJOR.MINOR.PATCH`
 
 | Part | Where it comes from | Example |
 | --- | --- | --- |
 | `MAJOR` | the first number in the [`VERSION`](../VERSION) file, changed by hand | `1` |
 | `MINOR` | the second number in `VERSION`, changed by hand | `1.2` |
-| `COMMIT` | counted automatically: commits on `main` since `VERSION` last changed (not counting those marked `[skip ci]` or `[skip actions]`, which are never released) | `1.2.17` |
+| `PATCH` | counted automatically: one more than the last release `v<MAJOR.MINOR>.*` (its tag), or `0` when there is none yet | `1.2.17` |
 
-`COMMIT` restarts from `0` whenever `VERSION` changes: after `1.1.23`, a commit that sets
-`VERSION` to `1.2` is released as `1.2.0`, and the next one as `1.2.1`.
+Releases follow each other without gaps, however many commits come in between: after
+`1.2.16`, the next release is `1.2.17`. A commit that already has a release keeps its version.
+`PATCH` restarts from `0` whenever `VERSION` changes: after `1.1.23`, the first release with
+`VERSION` set to `1.2` is `1.2.0`, and the next one `1.2.1`.
 
 To start a new version, change that one line in a pull request like any other change:
 
@@ -20,7 +22,8 @@ git commit -am "Version 1.2" && git push -u origin version-1.2
 
 `scripts/version.sh` prints the version of the checked-out commit; the game shows it in the
 launcher's side bar, in its log and in `openomsi --version` (baked in by
-`crates/omsi-app/build.rs`, which uses the same rule).
+`crates/omsi-platform/build.rs`, which uses the same rule). A build of a commit that has no
+release shows the number of the next release, whichever commit that release comes from.
 
 ## Releases: beta, then stable
 
@@ -28,7 +31,7 @@ There are two channels:
 
 | Channel | What it is | Who gets it |
 | --- | --- | --- |
-| **Beta** | every push to `main`, published as a GitHub **pre-release** | testers: the launcher's **Settings → General → Updates → Update channel: Beta**, or the [Releases](https://github.com/openOMSI-org/openOMSI/releases) page |
+| **Beta** | a build of `main` a maintainer starts by hand, published as a GitHub **pre-release** | testers: the launcher's **Settings → General → Updates → Update channel: Beta**, or the [Releases](https://github.com/openOMSI-org/openOMSI/releases) page |
 | **Stable** | a beta the maintainers have tested and promoted | every other player: on the Stable channel (the default) the launcher's updater, the start guard, the website's Download page, `releases/latest` and the README badge only ever see stable releases |
 
 On the Beta channel the updater offers the newest release, beta or stable, that has a file
@@ -37,9 +40,11 @@ the betas too (marked *Beta*). Changing the channel looks for an update again at
 beta installed stays until a newer stable release comes out, or an older one is chosen in
 *Choose a version…*.
 
-### Beta: every push to `main`
+### Beta: a release started by hand
 
-Every push to `main` runs [`.github/workflows/release.yml`](../.github/workflows/release.yml):
+A push to `main` publishes nothing by itself. A maintainer starts a release with **Actions →
+Release → Run workflow** from `main` (or `gh workflow run release.yml --ref main`), which runs
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) for the commit `main` is on:
 
 1. works out the version with `scripts/version.sh`;
 2. builds Windows x64 and ARM64 (MSVC), macOS for Apple silicon and Intel, Linux x64 and
@@ -69,8 +74,10 @@ can be promoted. The workflow runs from `main` only and reads `release/health.js
 ### A published release never changes
 
 A version is published once. The release job refuses to publish a version that already
-exists, or whose tag names another commit; it never moves a tag nor replaces a file. A
-mistake in a release is fixed by a new commit, hence a new version. With the repository's
+exists, whose tag names another commit, or whose commit is older than the last release; it
+never moves a tag nor replaces a file. A release's tag is never deleted either: the next
+version is counted from the tags. A mistake in a release is fixed by a new commit, hence a
+new version. With the repository's
 *immutable releases* setting on, GitHub enforces it too.
 
 The `SHA256SUMS` of a release checks a download by hand:
@@ -131,3 +138,7 @@ and never offered again.
 the Markdown files of `docs/` to GitHub Pages
 (https://openomsi.org/) whenever they change on `main`. The site renders
 the Markdown in the browser, so a documentation change is one edit in `docs/`.
+The Download page offers the latest stable release. Beta downloads have a separate page
+with the same platform cards and installation instructions; when no beta is newer than
+stable, it links back to stable instead of offering an older build. The release history
+has separate Stable and Betas lists. Auxiliary asset packs are kept out of both lists.

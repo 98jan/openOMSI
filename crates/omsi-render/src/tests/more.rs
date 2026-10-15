@@ -331,6 +331,40 @@ fn excavation_keeps_ordinary_depth_prefilling_without_a_gpu() {
 }
 
 #[test]
+fn an_excavation_is_prefilled_at_1x_only_on_apple_graphics() {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::NOOP;
+    descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
+    let instance = wgpu::Instance::new(descriptor);
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: true, render_scale: 1.0, ..Default::default() },
+    )).expect("noop renderer");
+    renderer.profiling = true;
+    let mut scene = renderer.new_scene();
+    let material = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [1.0; 4], true);
+    let mesh = renderer.add_mesh(&mut scene, &MeshData {
+        positions: vec![Vec3::new(-2.0, 4.0, -2.0), Vec3::new(2.0, 4.0, -2.0),
+            Vec3::new(2.0, 4.0, 2.0), Vec3::new(-2.0, 4.0, 2.0)],
+        normals: vec![-Vec3::Y; 4], uvs: vec![glam::Vec2::ZERO; 4],
+        indices: vec![0, 1, 2, 0, 2, 3], ranges: vec![(0, 6, 0)],
+        ..Default::default()
+    });
+    let floor = renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![material]);
+    scene.instances[floor].presurface = true;
+    let glass_material = renderer.add_material(&mut scene, None, AlphaMode::Blend, [1.0, 1.0, 1.0, 0.25], true);
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![glass_material]);
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![material]);
+    let camera = Camera { position: DVec3::ZERO, yaw: 0.0, pitch: 0.0, roll: 0.0,
+        fov_deg: 90.0, near: 0.1, far: 100.0 };
+    let lighting = Lighting { enhanced: true, shadows: false, fog_density: 0.0, ..Default::default() };
+    renderer.counts.borrow_mut().clear();
+    renderer.render_to_image(&mut scene, 16, 16, &camera, &lighting).unwrap();
+    let prefilled = renderer.counts.borrow().get("presurface prepass batches").is_some_and(|n| *n > 0.0);
+    assert_eq!(prefilled, cfg!(target_vendor = "apple"));
+}
+
+#[test]
 fn declared_transmap_ignores_slot_alpha() {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::NOOP;
@@ -749,6 +783,7 @@ fn the_scene_shader_reads_its_arrays_from_textures_without_vertex_storage() {
     for (path, versions) in [
         (ArrayPath::VertexTextures, [glsl::Version::Embedded { version: 310, is_webgl: false }, glsl::Version::Desktop(430)]),
         (ArrayPath::NoStorage, [glsl::Version::Embedded { version: 300, is_webgl: false }, glsl::Version::Desktop(330)]),
+        (ArrayPath::LightTextures, [glsl::Version::Embedded { version: 300, is_webgl: false }, glsl::Version::Desktop(330)]),
     ] {
         let src = scene_shader_for(true, path);
         assert!(!src.contains("models[") && !src.contains("inst_params[") && !src.contains("draw_list["));
@@ -768,10 +803,10 @@ fn the_scene_shader_reads_its_arrays_from_textures_without_vertex_storage() {
                     .and_then(|mut w| w.write())
                     .unwrap_or_else(|e| panic!("{path:?} {version:?} {}: {e:?}", entry.name));
                 let vertex = entry.stage == naga::ShaderStage::Vertex;
-                if vertex || path == ArrayPath::NoStorage {
+                if vertex || path.no_storage() {
                     assert!(!out.contains(" buffer "), "{path:?} {version:?} {}: a storage block", entry.name);
                 }
-                if path == ArrayPath::NoStorage {
+                if path.no_storage() {
                     assert!(!out.contains("textureGather"), "{path:?} {version:?} {}: textureGather", entry.name);
                 }
             }
@@ -795,6 +830,13 @@ fn the_scene_groups_fit_the_sixteen_texture_units_of_opengl() {
         let n = textures(&camera_layout_entries(path, sixteen)) + material;
         assert!(n <= 16, "{path:?}: {n} textures");
     }
+    let lamps = textures(&camera_layout_entries(ArrayPath::LightTextures, true)) + material;
+    assert_eq!(lamps, 18);
+    let sixteen = wgpu::DownlevelLimits { max_sampled_textures_per_pipeline_layout: 16, ..Default::default() };
+    let angle = wgpu::DownlevelLimits { max_sampled_textures_per_pipeline_layout: 32, ..Default::default() };
+    let gles = wgpu::Limits::downlevel_webgl2_defaults();
+    assert!(!crate::device_selection::lamps_fit(&sixteen, &gles));
+    assert!(crate::device_selection::lamps_fit(&angle, &gles));
     // (and nothing is left out where storage buffers carry the arrays)
     assert_eq!(textures(&camera_layout_entries(ArrayPath::Storage, false)) + material, 16);
     // the entry points that read a texture left out are the enhanced path's, the
@@ -815,7 +857,7 @@ fn the_scene_groups_fit_the_sixteen_texture_units_of_opengl() {
         out
     };
     let only_enhanced = |name: &str| name.contains("enhanced") || name.contains("probe") || name.contains("puddle") || name.contains("reflections") || name == "fs_sky_cube";
-    for path in [ArrayPath::VertexTextures, ArrayPath::NoStorage] {
+    for path in [ArrayPath::VertexTextures, ArrayPath::NoStorage, ArrayPath::LightTextures] {
         let scene = arrays_as_textures(&scene_shader_text(true), path);
         for src in [scene, sky_shader_source(), corona_shader_source()] {
             for name in left_out(&src) {
@@ -1099,7 +1141,7 @@ fn display_behind_a_pane_keeps_its_pixel_contrast() {
 }
 
 #[test]
-fn a_texture_the_card_cannot_make_is_drawn_plain_and_asks_for_fewer_textures() {
+fn a_texture_the_card_refuses_is_drawn_plain_without_cutting_the_texture_budget() {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
     descriptor.backends = wgpu::Backends::NOOP;
     descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
@@ -1109,7 +1151,6 @@ fn a_texture_the_card_cannot_make_is_drawn_plain_and_asks_for_fewer_textures() {
         RenderOptions { msaa: 1, ssao: false, render_scale: 1.0, ..Default::default() },
     )).expect("noop renderer");
     let _ = renderer.take_out_of_memory();
-    // (one the device refuses stands for one it has no memory for)
     let too_big = renderer.device.limits().max_texture_dimension_2d + 1;
     let desc = wgpu::TextureDescriptor {
         label: None,
@@ -1123,6 +1164,8 @@ fn a_texture_the_card_cannot_make_is_drawn_plain_and_asks_for_fewer_textures() {
     };
     let scope = renderer.device.push_error_scope(wgpu::ErrorFilter::Validation);
     assert!(crate::resources::try_create_texture(&renderer.device, &desc).is_none());
+    let empty = wgpu::TextureDescriptor { size: wgpu::Extent3d { width: 1, height: 0, depth_or_array_layers: 1 }, ..desc.clone() };
+    assert!(crate::resources::try_create_texture(&renderer.device, &empty).is_none());
     // the stand-in is a valid texture: a material made with it is no device error
     let mut scene = renderer.new_scene();
     let t = crate::resources::stand_in_texture(&renderer.device, &renderer.queue);
@@ -1131,6 +1174,26 @@ fn a_texture_the_card_cannot_make_is_drawn_plain_and_asks_for_fewer_textures() {
     let id = scene.textures.len() - 1;
     let _ = renderer.add_material(&mut scene, Some(id), AlphaMode::Opaque, [1.0; 4], true);
     assert!(pollster::block_on(scope.pop()).is_none(), "nothing invalid reached the device");
-    assert!(renderer.take_out_of_memory(), "the game is told to keep fewer textures");
-    assert!(!renderer.take_out_of_memory());
+    assert!(!renderer.take_out_of_memory(), "a refused texture is no shortage of graphics memory");
+}
+
+#[test]
+fn the_lamps_light_the_scene_from_textures_where_storage_buffers_carry_nothing() {
+    let storage = scene_shader_for(false, ArrayPath::Storage);
+    assert_eq!(storage, scene_shader_text(false));
+    assert_eq!(scene_shader_for(true, ArrayPath::Storage), scene_shader_text(true));
+    let lamps = scene_shader_for(true, ArrayPath::LightTextures);
+    let none = scene_shader_for(true, ArrayPath::NoStorage);
+    assert!(lamps.contains("@group(0) @binding(3) var lights_tex: texture_2d<f32>;"));
+    assert!(lamps.contains("@group(0) @binding(4) var grid_tex: texture_2d<u32>;"));
+    assert!(!lamps.contains("lights[") && !lamps.contains("grid[") && !lamps.contains("var<storage"));
+    assert!(none.contains("return 0xffffffffu;") && !none.contains("lights_tex"));
+    assert_eq!(lamps.matches("lights_at(").count(), none.matches("lights_at(").count());
+    assert_eq!(lamps.matches("grid_at(").count(), none.matches("grid_at(").count());
+    let entries = camera_layout_entries(ArrayPath::LightTextures, true);
+    for (binding, sample_type) in [(3, wgpu::TextureSampleType::Float { filterable: false }), (4, wgpu::TextureSampleType::Uint)] {
+        let e = entries.iter().find(|e| e.binding == binding).expect("lights binding");
+        assert_eq!(e.visibility, wgpu::ShaderStages::FRAGMENT);
+        assert!(matches!(e.ty, wgpu::BindingType::Texture { sample_type: t, .. } if t == sample_type));
+    }
 }

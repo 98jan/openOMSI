@@ -36,6 +36,9 @@ pub struct MapSpline {
     pub id: i64,
     pub prev_id: i64,
     pub next_id: i64,
+    /// A tile older than version 11 links the spline to the one written before it and
+    /// leaves its place out: it goes on from that one's end (see `chain_linked_splines`).
+    pub linked: bool,
     /// Start point, tile-local metres: x east, y north, z up.
     pub pos: [f64; 3],
     /// Degrees, 0 = +y, clockwise positive.
@@ -121,6 +124,9 @@ pub struct SplineAttachment {
     pub repeater: Option<(usize, usize)>,
     pub var_parent: Option<i64>,
     pub rules: Vec<MapRule>,
+    /// `[spline_terrain_align]` after the record (the editor's flag on the attachment; it
+    /// says nothing about the spline the objects stand on).
+    pub terrain_align: bool,
 }
 
 /// Chrono patch: `[selobject]` / `[selspline]` name an object or spline **by id** (838 of
@@ -403,14 +409,29 @@ impl Tile {
                         _ => {}
                     }
                 }
-                "spline_terrain_align" => {
-                    if let Some(s) = t.splines.last_mut() {
-                        s.terrain_align_flag = true;
+                // Both belong to the record right before them. The editor writes the plain
+                // flag after a spline attachment too (Omsi.exe 0x794e1a: after anything but a
+                // spline it goes to the last object, and spline attachments are objects
+                // there; the `_2` number only ever to a spline). Given to the last spline
+                // instead, a bridge's deck 30 m up was taken for a road laid on the ground:
+                // the ground was pulled up onto it and a hole with walls cut under it, a tall
+                // wall under the bridge (#2004).
+                "spline_terrain_align" => match last {
+                    Last::Spline => {
+                        if let Some(s) = t.splines.last_mut() {
+                            s.terrain_align_flag = true;
+                        }
                     }
-                }
+                    Last::SplineAttach => {
+                        if let Some(a) = t.spline_attachments.last_mut() {
+                            a.terrain_align = true;
+                        }
+                    }
+                    _ => {}
+                },
                 "spline_terrain_align_2" => {
                     let v = r.f64();
-                    if let Some(s) = t.splines.last_mut() {
+                    if let (Last::Spline, Some(s)) = (&last, t.splines.last_mut()) {
                         s.terrain_align = Some(v);
                     }
                 }
@@ -580,16 +601,16 @@ fn read_spline(t: &mut Tile, r: &mut omsi_cfg::CfgReader, k: &str, auto: &mut us
     }
     let file_name = r.str().to_string();
     let id = if has(t.version, 6) { r.i64() } else { auto_id(auto) };
-    let (prev_id, next_id) = if has(t.version, 11) {
-        (r.i64(), r.i64())
+    let (prev_id, next_id, linked) = if has(t.version, 11) {
+        (r.i64(), r.i64(), false)
     } else {
         let linked = r.i64() != -1;
         match t.splines.last_mut().filter(|_| linked) {
             Some(p) => {
                 p.next_id = id;
-                (p.id, 0)
+                (p.id, 0, true)
             }
-            None => (0, 0),
+            None => (0, 0, false),
         }
     };
     // Splines store x, height, y (verified by prev/next continuity of stock maps).
@@ -636,6 +657,7 @@ fn read_spline(t: &mut Tile, r: &mut omsi_cfg::CfgReader, k: &str, auto: &mut us
         id,
         prev_id,
         next_id,
+        linked,
         pos,
         heading,
         length,
@@ -700,6 +722,7 @@ fn read_spline_attachment(t: &mut Tile, r: &mut omsi_cfg::CfgReader, k: &str, au
         repeater,
         var_parent: None,
         rules: Vec::new(),
+        terrain_align: false,
     });
 }
 
