@@ -378,7 +378,15 @@ impl Renderer {
         // unless it comes before the window's first frame)
         if enhanced && lead_view {
             let ground = lighting.fog_base.or(lighting.inside.map(|v| v.0.z)).map(|z| (z - scene.render_origin.z) as f32);
-            self.tone.view_lamps = Some(view_lamp_light(&scene.lights, scene.render_origin, cam_rel, camera, aspect, ground));
+            if let Some(s) = self.tone.lamp_sight.as_mut() {
+                s.take();
+            }
+            let sight = self.tone.lamp_sight.as_ref();
+            let seen = |at: DVec3| sight.map_or(1.0, |s| s.seen(at));
+            self.tone.view_lamps = Some(view_lamp_light(&scene.lights, scene.render_origin, cam_rel, camera, aspect, ground, &seen));
+            if let Some(s) = self.tone.lamp_sight.as_mut().filter(|s| s.idle()) {
+                s.candidates = brightest_glare(&scene.lights, scene.render_origin, cam_rel, camera.forward(), vp_mat);
+            }
             if f.env.debug_view_lamps {
                 log::info!("view lamps: {:.6}", self.tone.view_lamps.unwrap_or(0.0));
             }

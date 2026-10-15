@@ -23,15 +23,16 @@ fn the_night_meter_sees_a_lamp_lit_lot_from_above() {
     }
     let cam = Camera { position: DVec3::new(0.0, -35.0, 30.0), yaw: 0.0, pitch: -40.0, roll: 0.0, fov_deg: 60.0, near: 0.1, far: 1000.0 };
     let cam_rel = cam.position.as_vec3();
-    let seen = view_lamp_light(&lights, DVec3::ZERO, cam_rel, &cam, 16.0 / 9.0, Some(0.0));
-    let in_air = view_lamp_light(&lights, DVec3::ZERO, cam_rel, &cam, 16.0 / 9.0, None);
+    let seen = view_lamp_light(&lights, DVec3::ZERO, cam_rel, &cam, 16.0 / 9.0, Some(0.0), &|_| 1.0);
+    let in_air = view_lamp_light(&lights, DVec3::ZERO, cam_rel, &cam, 16.0 / 9.0, None, &|_| 1.0);
     // (the lot's ground: some 10-30 lux under the lamps, 1e-3 .. 3e-3, less between and
     // round them - a log-average of some 10 lux; a moonless night is 2e-6)
     assert!(seen > 5e-5, "{seen}");
     assert!(in_air < seen * 0.2, "{in_air} vs {seen}");
     // and the lamps seen from beside the lot, at eye height, veil the eye as well
     let eye = Camera { position: DVec3::new(0.0, -40.0, 1.7), pitch: 0.0, ..cam };
-    assert!(glare_veil(&lights, DVec3::ZERO, eye.position.as_vec3(), eye.forward()) > 1e-5);
+    assert!(glare_veil(&lights, DVec3::ZERO, eye.position.as_vec3(), eye.forward(), &|_| 1.0) > 1e-5);
+    assert_eq!(glare_veil(&lights, DVec3::ZERO, eye.position.as_vec3(), eye.forward(), &|_| 0.0), 0.0);
 }
 
 /// A textured material can have black diffuse but white ambient (depot interiors).
@@ -325,7 +326,7 @@ fn enhanced_masked_and_uncut_ground_share_lighting() {
     for (name, lighting) in [("sun", &day), ("lamp", &night)] {
         scene.lights = if name == "lamp" {
             vec![PointLight {
-                position: DVec3::new(0.0, 0.0, 4.0),
+                position: DVec3::new(0.0, 0.0, 7.0),
                 radius: 20.0,
                 core: 10.0,
                 intensity: 1.0,
@@ -362,6 +363,9 @@ fn enhanced_masked_and_uncut_ground_share_lighting() {
     renderer.set_material(&mut scene, ground, 0, masked);
     renderer.set_material(&mut scene, mapped, 0, foliage);
     scene.lights[0].position.z = -4.0;
+    renderer
+        .render_to_image(&mut scene, 64, 64, &camera, &night)
+        .unwrap();
     let rgba = renderer
         .render_to_image(&mut scene, 64, 64, &camera, &night)
         .unwrap();
