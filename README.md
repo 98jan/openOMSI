@@ -33,7 +33,7 @@ and fully compatible with the existing maps, buses, scenery and mods.
 
 ## Download
 
-Every commit to `main` is built by GitHub Actions and published as a beta (marked
+A maintainer publishes `main` as a beta from time to time (built by GitHub Actions, marked
 *Pre-release*) on the [**Releases**](https://github.com/openOMSI-org/openOMSI/releases) page;
 the tested ones become stable releases, and the newest stable release is always at
 [**Releases → Latest**](https://github.com/openOMSI-org/openOMSI/releases/latest):
@@ -177,7 +177,7 @@ openOMSI/
 ├── assets/            fonts, Material icons, app icons (assets/icons/app), logos (assets/logos)
 ├── docs/              documentation (also published as the website)
 ├── site/              the GitHub Pages website
-└── .github/workflows/ CI: release builds for every commit, the website
+└── .github/workflows/ CI: test builds for every pull request, releases, the website
 ```
 
 ## Contributing
