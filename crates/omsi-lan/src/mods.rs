@@ -30,12 +30,15 @@
 //! Sound, Sounds), with plain relative names, and nothing that runs code: executables,
 //! libraries, scripts of the operating system and OMSI plugins are refused by name, and by
 //! content (a Windows, Linux or macOS executable or a script with `#!`, whatever it is
-//! called). OMSI's own vehicle scripts are data for the game's own interpreter, which
-//! touches nothing outside the vehicle. No plugin is ever loaded from the session folder
-//! (`omsi_cfg::mark_sandbox`).
+//! called). Each file must also be what its name says it is: a picture of a size a texture
+//! can have, a sound, a mesh the reader takes, a text (`quarantine`). OMSI's own vehicle
+//! scripts are data for the game's own interpreter, which touches nothing outside the
+//! vehicle, and a run of one is cut short when it would not end (`omsi_script`'s budget).
+//! No plugin is ever loaded from the session folder (`omsi_cfg::mark_sandbox`).
 
 mod channel;
 mod paced;
+mod quarantine;
 mod store;
 
 use channel::{SecureReader, SecureWriter};
@@ -899,8 +902,10 @@ pub fn fetch(map: &mut String, host: SocketAddr, session: u64, progress: &mut dy
             };
             got += 1;
             let len = data.len() as u64;
-            if looks_executable(&data[..data.len().min(8)]) {
-                report.refused.push(format!("{}: a program", e.path));
+            // (no program, and what it says it is: a texture must be a picture of a size a
+            // texture can have, a sound a sound - `quarantine`)
+            if let Err(why) = quarantine::screen(&e.path, &data) {
+                report.refused.push(why);
                 continue;
             }
             // (sealed straight away: the plain bytes never reach the disk)

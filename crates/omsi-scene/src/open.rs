@@ -35,6 +35,13 @@ impl World {
             .with_context(|| format!("loading {}", global_cfg.display()))?;
         let map_dir = global.dir().to_path_buf();
         omsi_map::configure_grid(&global);
+        // a map from OMSI 1 lists no entry points: the entry objects of its tiles are its
+        // entry points, as Omsi.exe adds them when it opens a map (only then: the launcher's
+        // list shows the same ones, and a map that lists its own opens no slower)
+        if global.entry_points.is_empty() {
+            let added = global.add_object_entry_points();
+            log::info!("entry points: {added} from the tiles' entry objects");
+        }
         omsi_sim::people::LEFT_HAND.store(global.left_hand_traffic, std::sync::atomic::Ordering::Relaxed);
         log::info!(
             "tile size {:.1} m ({})",

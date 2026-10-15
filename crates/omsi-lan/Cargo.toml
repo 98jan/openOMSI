@@ -12,6 +12,8 @@ omsi-map = { path = "../omsi-map" }
 omsi-sim = { path = "../omsi-sim" }
 omsi-vehicle = { path = "../omsi-vehicle" }
 omsi-script = { path = "../omsi-script" }
+# what came from another machine is checked for what it says it is (`mods::quarantine`)
+omsi-o3d = { path = "../omsi-o3d" }
 anyhow.workspace = true
 glam.workspace = true
 hashbrown.workspace = true
@@ -30,3 +32,7 @@ libc.workspace = true
 # the LAN store's key, sealed with the user's account (DPAPI, see `mods::store`)
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography"] }
+
+[dev-dependencies]
+# `mods::quarantine`'s scan of a mod archive, read in place as the game reads one
+zip.workspace = true

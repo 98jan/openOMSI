@@ -83,7 +83,7 @@ impl Renderer {
         let vram = adapter_vram_mb(&adapter, &info, mem.as_ref());
         let guess_mb = gpu_memory::texture_allowance_mb(&info, vram, mem.as_ref());
         ADAPTER_TEXTURE_MB.store(guess_mb, std::sync::atomic::Ordering::Relaxed);
-        let discrete_vram = vram.filter(|_| info.device_type == wgpu::DeviceType::DiscreteGpu).unwrap_or(0);
+        let discrete_vram = gpu_memory::own_card_vram_mb(&info, vram);
         ADAPTER_VRAM_MB.store(discrete_vram, std::sync::atomic::Ordering::Relaxed);
         *ADAPTER_INFO.lock().unwrap_or_else(|e| e.into_inner()) = Some(info.clone());
         log::info!("graphics adapter: {} ({:?}, {:?}{}), texture memory taken for it: {guess_mb} MB", info.name, info.device_type, info.backend, vram.map(|v| format!(", {v} MB of its own")).unwrap_or_default());
@@ -450,18 +450,18 @@ impl Renderer {
                 let internal = device.push_error_scope(wgpu::ErrorFilter::Internal);
                 let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
                 let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
-                let renderer = Self::build(device.clone(), queue.clone(), name.to_string(), format, RenderOptions { msaa, ..options });
+                let (renderer, caught) = pipelines::parallel::catching(|| Self::build(device.clone(), queue.clone(), name.to_string(), format, RenderOptions { msaa, ..options }));
                 // (test hook: OMSI_FAKE_GPU_ERROR=pipeline fails a pipeline until the basic ones)
                 #[cfg(feature = "test-hooks")]
                 if !basic && omsi_cfg::flags::OMSI_FAKE_GPU_ERROR.var() == Some("pipeline") {
                     let _ = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("test"), source: wgpu::ShaderSource::Wgsl("fn broken( {".into()) });
                 }
-                (renderer, [validation.pop(), memory.pop(), internal.pop()])
+                (renderer, [validation.pop(), memory.pop(), internal.pop()], caught)
             };
-            let (renderer, scopes) = if is_angle(info) { angle::compile(device, build) } else { build() };
+            let (renderer, scopes, caught) = if is_angle(info) { angle::compile(device, build) } else { build() };
             let [validation, memory, internal] = scopes;
             let errors = [validation.await, memory.await, internal.await];
-            match errors.iter().flatten().next() {
+            match errors.iter().flatten().chain(&caught).next() {
                 None => {
                     if msaa != options.msaa || basic {
                         log::warn!("{}: drawing with {}x MSAA{}", info.name, msaa, if basic { ", without the snowfall, the lamps in the fog and the street lamps' shadows" } else { "" });

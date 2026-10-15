@@ -1,6 +1,6 @@
 # Changelog
 
-Releases are started by hand from `main` as the beta `MAJOR.MINOR.COMMIT`, and tested betas are
+Releases are started by hand from `main` as the beta `MAJOR.MINOR.PATCH`, and tested betas are
 promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the downloads are on the
 [Releases](https://github.com/openOMSI-org/openOMSI/releases) page.
 
@@ -54,6 +54,12 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   objects run, and fade out over the last part instead of stopping dead at 300 m ([#2534](https://github.com/openOMSI-org/openOMSI/issues/2534)).
 - Shader tests cover OpenGL ES 3.1/3.2 per entry point and catch the nested constant-array
   lookups the Adreno 710 refused ([#2009](https://github.com/openOMSI-org/openOMSI/issues/2009)).
+### Multiplayer
+
+- **What another machine sends is checked for what it is** — a host's mod file a joining
+  player fetches must be what its name says (a picture of a size a texture can have, a sound,
+  a mesh the reader takes, a text), or it is left out and reported; a vehicle script that
+  would never end is cut short instead of stopping the game.
 
 ## 0.3.0 - 2026-10-14
 

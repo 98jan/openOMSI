@@ -1,6 +1,6 @@
 //! Updates from the project's GitHub releases (github.com/openOMSI-org/openOMSI).
 //!
-//! A release a maintainer starts from main publishes `v<MAJOR.MINOR.COMMIT>` with one archive
+//! A release a maintainer starts from main publishes `v<MAJOR.MINOR.PATCH>` with one archive
 //! per platform (see .github/workflows/release.yml). The launcher asks the GitHub API for the
 //! latest release when it starts (setting `update_check`), and when it is newer than this
 //! build it offers it - or, with `update_auto`, installs it at once:
@@ -294,7 +294,7 @@ pub fn agent() -> ureq::Agent {
         .timeout_read(std::time::Duration::from_secs(30))
         .user_agent(&format!("openOMSI/{} (updater)", current_version()));
     // (through the proxy the system is set to use, #1000)
-    match crate::proxy::system_proxy().and_then(|p| ureq::Proxy::new(&p).map_err(|e| log::warn!("network: the proxy {p} cannot be used: {e}")).ok()) {
+    match crate::proxy::system_proxy().and_then(|p| ureq::Proxy::new(&p).map_err(|e| log::warn!("network: the proxy {} cannot be used: {e}", crate::proxy::redact(&p))).ok()) {
         Some(proxy) => b.proxy(proxy).build(),
         None => b.build(),
     }
