@@ -69,6 +69,7 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 - **Enhanced+ draws 8x MSAA at 4x:** 8x doubled the ray traced passes' cost (2.4 ms a frame on
   an RTX 4050) and their multisampled targets' memory for little to see; `OMSI_FULL_GPU=1`
   keeps 8x ([#2228](https://github.com/openOMSI-org/openOMSI/issues/2228)).
+- A video memory of 16 GB can be chosen, for cards with more than 16 GB of their own.
 - Render targets of a size not drawn for 5 s are let go: those of a photo taken at a large size
   stayed on the graphics card until the window changed size.
 - A remembered MSAA fallback is tried at the chosen MSAA again once with each new version
