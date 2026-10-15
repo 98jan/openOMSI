@@ -266,7 +266,8 @@ end)
   (`ticket_by`). Without a plugin listening the passengers do as before, and nobody waits.
 
 [`reduced_tickets.lua`](examples/plugins/reduced_tickets.lua) has every adult ask for the
-reduced fare of the stock Berlin ticket packs.
+reduced fare of the stock Berlin ticket packs; [`passenger_log.lua`](examples/plugins/passenger_log.lua)
+writes what a plugin learns of each passenger into `game.log`.
 
 ### On-screen panels
 
@@ -379,6 +380,7 @@ Complete plugins to start from (each runs in the tests against a stand-in game):
 | [`trip_panel.lua`](examples/plugins/trip_panel.lua) | a panel with the line, the next stop and a button |
 | [`dispatcher/`](examples/plugins/dispatcher/main.lua) | a dispatcher and a small career: a draggable panel with tabs, the duty's next stops in a table, a chart of the delays, pay for stops and trips kept in the storage, today's duties offered and taken with a click, settings, hotkeys |
 | [`telemetry_hud.lua`](examples/plugins/telemetry_hud.lua) | a HUD: the speed with a chart of the last minute, gear, rpm, fuel, passengers, the speed limit and the traffic light ahead; a warning before a red light; the values as JSON over UDP for a program beside the game |
+| [`passenger_log.lua`](examples/plugins/passenger_log.lua) | every passenger boarding the bus in `game.log`: age, boarding stop and destination, the ticket they will ask for (`passenger_ticket`, `people.get`) |
 | [`reduced_tickets.lua`](examples/plugins/reduced_tickets.lua) | every adult asks for the reduced fare instead of the full one (`passenger_ticket`, `people.set_ticket`) |
 | [`weather_controller.lua`](examples/plugins/weather_controller.lua) | the weather files as tabs, sliders for temperature, visibility and rain, snow cover, the clock moved by buttons, and a day cycle of its own |
 

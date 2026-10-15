@@ -178,3 +178,17 @@ fn reduced_tickets_change_the_full_fare() {
     no_errors(&g);
     assert_eq!(*g.log.borrow(), ["ticket 1 None Some(4) None None None Some(\"reduced\") by reduced_tickets"]);
 }
+
+#[test]
+fn the_passenger_log_runs() {
+    let mut p = load("ex-paxlog", "passenger_log.lua");
+    let mut g = Game::new();
+    // one the game knows (people.get finds them), one it does not, one with a full ride
+    let ask = |person: u32| omsi_plugin::TicketAsk { person, age: 40.0, kind: omsi_plugin::TicketKind::Buy, ticket: 1, ..Default::default() };
+    let mut ride = ask(1);
+    (ride.stop_name, ride.destination, ride.stop_index, ride.destination_index) = (Some("Zoo".into()), Some("Rathaus".into()), Some(0), Some(2));
+    g.ticket_asks = vec![ask(1), ask(9), ride];
+    p.frame(&mut g);
+    no_errors(&g);
+    assert!(g.log.borrow().is_empty(), "it only reads");
+}
