@@ -393,7 +393,7 @@ impl Navigator {
         let x0 = right - pw;
         let focus = self.city.lines.focus.filter(|&i| i < lines.len());
         let card_h = if focus.is_some() { 178.0 * s } else { 84.0 * s };
-        let ink = Color::rgba(22, 26, 33, 0.95);
+        let ink = Color::rgba(22, 26, 33, 1.0);
         let pad = 14.0 * s;
         let mut hits: Vec<(Rect, LinesHit)> = Vec::new();
         let num = |v: f32, dec: usize| {
