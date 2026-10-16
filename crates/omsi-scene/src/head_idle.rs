@@ -58,7 +58,7 @@ const MAX_PACE: f32 = 2.0;
 /// same sense as a head tracker's pose (a positive yaw turns left, as `finish` in `app_events`
 /// adds it to the camera's yaw).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct HeadIdle {
+pub struct HeadIdle {
     pub offset: Vec3,
     pub yaw: f32,
     pub pitch: f32,
@@ -80,7 +80,7 @@ impl HeadIdle {
     /// A step longer than a tenth of a second is held back (a load hitch must not throw the
     /// head), the pace or no pace, and the whole movement is a function of the elapsed time
     /// alone, so it does not depend on how often it is asked.
-    pub(crate) fn step(&mut self, dt: f32, strength: f32, pace: f32) {
+    pub fn step(&mut self, dt: f32, strength: f32, pace: f32) {
         let strength = strength.clamp(0.0, 1.0);
         if strength <= 0.0 {
             *self = Self::default();
@@ -104,7 +104,7 @@ impl HeadIdle {
     }
 
     /// The head is where it began: nothing is added to the view at all.
-    pub(crate) fn is_still(&self) -> bool {
+    pub fn is_still(&self) -> bool {
         *self == Self::default()
     }
 }
@@ -112,7 +112,7 @@ impl HeadIdle {
 /// How much of the sway a bus moving at `kmh` keeps: all of it standing, none from 5 km/h,
 /// eased in between so that it neither stops with a jerk as the bus pulls away nor jumps
 /// back when it stops (#1325: it swayed on the road too).
-pub(crate) fn standstill(kmh: f32) -> f32 {
+pub fn standstill(kmh: f32) -> f32 {
     let x = ((kmh.abs() - 0.5) / 4.5).clamp(0.0, 1.0);
     1.0 - x * x * (3.0 - 2.0 * x)
 }
@@ -124,7 +124,7 @@ pub(crate) fn standstill(kmh: f32) -> f32 {
 /// it goes on once the hand has left. It is only ever the sway of a head at rest that waits:
 /// the bus's own head movement is not held back by it.
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct Hold {
+pub struct Hold {
     /// Seconds of it left.
     left: f32,
 }
@@ -132,7 +132,7 @@ pub(crate) struct Hold {
 impl Hold {
     /// Tell it whether a control is under the cursor (`reaching`) and move it on by `dt`
     /// seconds; the answer is whether the sway is to wait where it is.
-    pub(crate) fn step(&mut self, dt: f32, reaching: bool) -> bool {
+    pub fn step(&mut self, dt: f32, reaching: bool) -> bool {
         self.left = if reaching { HOLD_S } else { (self.left - dt.max(0.0)).max(0.0) };
         self.left > 0.0
     }

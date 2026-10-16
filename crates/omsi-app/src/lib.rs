@@ -17,7 +17,7 @@ use omsi_platform::discord;
 #[cfg(steam)]
 mod steam;
 use omsi_lan::voice;
-mod head_idle;
+pub(crate) use omsi_scene::head_idle;
 use omsi_input::headtrack;
 #[cfg(windows)]
 use omsi_xr::openxr;

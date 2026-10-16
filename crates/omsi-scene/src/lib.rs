@@ -62,6 +62,7 @@ mod vehicles;
 mod lanes;
 mod season_looks;
 pub mod host;
+pub mod head_idle;
 
 pub use staging::*;
 pub use batching::*;
