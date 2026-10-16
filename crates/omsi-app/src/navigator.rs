@@ -411,6 +411,8 @@ pub struct Navigator {
     live_list_t: f32,
     live_tt: HashMap<usize, std::sync::Arc<omsi_sim::ai_traffic::bus_service::AiTimetable>>,
     trip_paths: HashMap<usize, Option<std::sync::Arc<live::TripPath>>>,
+    /// What the package names: icons, names, where the bus is.
+    place: place::PlaceView,
     /// How far the panel has faded in (Shift+N fades it in and out rather than cutting).
     shown: f32,
     /// The trip's next stops (place, name, the bus's heading there) and where the bus is,
@@ -548,6 +550,7 @@ impl Navigator {
             live_list_t: 0.0,
             live_tt: HashMap::new(),
             trip_paths: HashMap::new(),
+            place: Default::default(),
             shown: if enabled { 1.0 } else { 0.0 },
             stop_spots: Vec::new(),
             bus_at: DVec3::ZERO,
@@ -1169,6 +1172,7 @@ impl Navigator {
                 global.as_deref().and_then(|g| g.nearest_lane_near(f.bus, LaneKind::Street)).filter(|l| l.2 < 10.0).and_then(|l| self.street_of(l.0))
             }
                 .map(str::to_string);
+            self.update_place(f.bus.truncate());
         }
         self.first = false;
         if !self.enabled && self.shown < 0.01 {
@@ -1195,7 +1199,7 @@ impl Navigator {
         let map_h = (pw * 0.8).round();
         let s = pw / 360.0;
         let sched = if self.schedule { (f.stops.len().clamp(1, 5) as f32 * 22.0 + 12.0) * s } else { 0.0 };
-        let ph = (map_h + sched).round();
+        let ph = (map_h + self.place_row_height(s) + sched).round();
         let (w, h) = (pw as u32, ph as u32);
         let (x0, y0) = self.panel_origin((sw, sh), (pw, ph), crate::platform::touch_controls(), f.info_rect, f.touch_gap);
 
@@ -1283,6 +1287,7 @@ impl<'a> NavFrame<'a> {
 
 mod roads;
 pub(crate) use roads::*;
+mod place;
 mod surface;
 pub(crate) use omsi_mapdraw::style;
 pub(crate) use omsi_mapdraw as mapmesh;

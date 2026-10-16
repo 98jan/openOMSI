@@ -533,6 +533,8 @@ impl Navigator {
         let houses = depth.with_height(self.city.tilt);
         let shadows = world.with_shadow().with_height(self.city.tilt);
         let to_screen = |q: DVec3| -> Option<Vec2> { project(vpm, vp, rel(q)) };
+        // (for the package's places: a point behind the camera lies far off the window)
+        let on_screen = |q: DVec3| -> Vec2 { to_screen(q).unwrap_or(Vec2::splat(-1e6)) };
         let win = Rect::new(0.0, 0.0, w, h);
         let mut bg = Painter::new();
         bg.rounded(win, 14.0 * s, pal.land);
@@ -590,6 +592,9 @@ impl Navigator {
             let h = heading.to_radians();
             let Some(ahead) = to_screen(*pos + DVec3::new(h.sin(), h.cos(), 0.0) * 5.0) else { continue };
             transit_drop(&mut ui, &mut self.atlas, &self.fonts, p, ahead - p, line.as_deref(), s, &mut taken, &pal);
+        }
+        if let Some(sf) = self.surface.as_deref().filter(|_| self.show_surface) {
+            self.place.draw_names(&mut ui, &mut self.atlas, &self.fonts, sf, self.light, self.city.mpp, &mut taken, win, s, &on_screen);
         }
         // street names along their roads, with a halo, where there is room
         if let (Some(st), true) = (self.streets.clone(), self.city.mpp < 3.2) {
@@ -653,6 +658,7 @@ impl Navigator {
         if let Some(bp) = to_screen(f.bus) {
             puck(&mut ui, bp, (f.heading as f32).to_radians(), 10.0 * s, pal.route);
         }
+        let icon_verts = self.city_icons(&on_screen, win, s);
         // --- the cards: the trip top left, the buttons top right, the scale bottom left
         let pad = 14.0 * s;
         let wd = words(f.language);
@@ -709,21 +715,14 @@ impl Navigator {
             }
             self.city.buttons.push((r, id));
         }
+        if self.show_surface && self.place.has_location() {
+            self.place.draw_chips(&mut ui, &mut self.atlas, &self.fonts, head, w, pad, s);
+        }
+        if self.show_surface && self.place.has_location() {
+            self.place.draw_chips(&mut ui, &mut self.atlas, &self.fonts, head, w, pad, s);
+        }
         self.draw_credit(&mut ui, w, h, s);
-        // a scale bar, bottom left (of the middle of the view)
-        let nice = [5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0];
-        let metres = nice.iter().copied().find(|m| m / self.city.mpp > 60.0 * s as f64).unwrap_or(5000.0);
-        let len = (metres / self.city.mpp) as f32;
-        let units = crate::units::Units::now();
-        let label = units.distance(metres);
-        let lw = self.fonts.width(&label, 11.5 * s, Weight::Medium);
-        let card = Rect::new(pad, h - pad - 26.0 * s, len + lw + 30.0 * s, 26.0 * s);
-        ui.rounded(card, 13.0 * s, pal.card);
-        let by = card.center().y;
-        ui.rect(Rect::new(card.x + 10.0 * s, by - 1.0 * s, len, 2.0 * s), pal.card_text);
-        ui.rect(Rect::new(card.x + 10.0 * s, by - 4.0 * s, 1.5 * s, 8.0 * s), pal.card_text);
-        ui.rect(Rect::new(card.x + 10.0 * s + len - 1.5 * s, by - 4.0 * s, 1.5 * s, 8.0 * s), pal.card_text);
-        ui.text(&mut self.atlas, &self.fonts, &label, 11.5 * s, Weight::Medium, Vec2::new(card.x + 18.0 * s + len, by + 4.0 * s), Align::Left, pal.card_text);
+        self.draw_scale_bar(&mut ui, h, pad, s, &pal);
 
         // --- to the GPU
         let (tex, _, _) = self.city.target.unwrap();
@@ -747,6 +746,7 @@ impl Navigator {
         let n_ui = all.len() as u32;
         all.extend(ui.verts);
         gpu.upload(device, queue, 5, &all);
+        let (icon_n, icon_tex) = self.place.upload(gpu, device, queue, 17, &icon_verts);
         gpu.upload_atlas(queue, &mut self.atlas);
         let flat = Layer::flat([0.0, 0.0, w, h], 14.0 * s, 1.0);
         let layers = [flat, world, shadows, houses, depth];
@@ -764,11 +764,29 @@ impl Navigator {
             // (flat from above the route needs no depth: from far it fought with itself)
             Draw { buffer: 4, range: 0..route_n, layer: if stand { 4 } else { 1 }, texture: 0 },
             Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 1, texture: 0 },
+            Draw { buffer: 17, range: 0..icon_n, layer: 0, texture: icon_tex },
             Draw { buffer: 5, range: n_ui..all.len() as u32, layer: 0, texture: 0 },
         ];
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("city map") });
         gpu.render(device, queue, &mut enc, &view, (tw, th), Some(wgpu::Color::TRANSPARENT), &layers, &draws);
         queue.submit([enc.finish()]);
         scene.overlays.push((tex, [x0, y0, x0 + w, y0 + h]));
+    }
+
+    /// A scale bar, bottom left (of the middle of the view), on a card.
+    fn draw_scale_bar(&mut self, ui: &mut Painter, h: f32, pad: f32, s: f32, pal: &Palette) {
+        let nice = [5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0];
+        let metres = nice.iter().copied().find(|m| m / self.city.mpp > 60.0 * s as f64).unwrap_or(5000.0);
+        let len = (metres / self.city.mpp) as f32;
+        let units = crate::units::Units::now();
+        let label = units.distance(metres);
+        let lw = self.fonts.width(&label, 11.5 * s, Weight::Medium);
+        let card = Rect::new(pad, h - pad - 26.0 * s, len + lw + 30.0 * s, 26.0 * s);
+        ui.rounded(card, 13.0 * s, pal.card);
+        let by = card.center().y;
+        ui.rect(Rect::new(card.x + 10.0 * s, by - 1.0 * s, len, 2.0 * s), pal.card_text);
+        ui.rect(Rect::new(card.x + 10.0 * s, by - 4.0 * s, 1.5 * s, 8.0 * s), pal.card_text);
+        ui.rect(Rect::new(card.x + 10.0 * s + len - 1.5 * s, by - 4.0 * s, 1.5 * s, 8.0 * s), pal.card_text);
+        ui.text(&mut self.atlas, &self.fonts, &label, 11.5 * s, Weight::Medium, Vec2::new(card.x + 18.0 * s + len, by + 4.0 * s), Align::Left, pal.card_text);
     }
 }

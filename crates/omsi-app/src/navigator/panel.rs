@@ -164,9 +164,13 @@ impl Navigator {
         // the far end of the map: a haze into the land's colour
         ui.gradient(Rect::new(map.x, map.y, map.w, map.h * 0.16), pal.land.alpha(0.7), pal.land.alpha(0.0));
         self.draw_map_marks(&mut ui, f, map, vpm, vp, anchor, s, transit, &pal);
+        // the package's places: its icons on the map, the municipality and the street under it
+        let icon_verts = self.minimap_icons(vpm, vp, anchor, f.bus.truncate(), map, s);
+        let loc_h = self.place_row_height(s);
+        self.draw_place_row(&mut ui, Rect::new(0.0, map.bottom(), pw, loc_h), 10.0 * s, s);
         self.draw_cards(&mut ui, f, &wd, net, map, s, &pal);
         if self.schedule {
-            self.draw_schedule(&mut ui, f, Rect::new(0.0, map.bottom(), pw, ph - map.bottom()), s, &pal);
+            self.draw_schedule(&mut ui, f, Rect::new(0.0, map.bottom() + loc_h, pw, ph - map.bottom() - loc_h), s, &pal);
         }
         if self.widget {
             // the corner to pull for another size
@@ -197,6 +201,7 @@ impl Navigator {
         let n_ui_start = all.len() as u32;
         all.extend(ui.verts);
         gpu.upload(device, queue, 2, &all);
+        let (icon_n, icon_tex) = self.place.upload(gpu, device, queue, 16, &icon_verts);
         gpu.upload_atlas(queue, &mut self.atlas);
         let flat = Layer::flat(clip_panel, radius, 1.0);
         let mut layers = [flat, map_layer, map_layer.with_shadow(), depth_layer, depth_layer];
@@ -215,6 +220,7 @@ impl Navigator {
             Draw { buffer: 9, range: 0..if three && solid_n > 0 { route_n } else { 0 }, layer: 1, texture: 0 },
             Draw { buffer: 1, range: 0..route_n, layer: 4, texture: 0 },
             Draw { buffer: 2, range: n_bg..n_bg + n_dy, layer: 1, texture: 0 },
+            Draw { buffer: 16, range: 0..icon_n, layer: 0, texture: icon_tex },
             Draw { buffer: 2, range: n_ui_start..all.len() as u32, layer: 0, texture: 0 },
         ];
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("navigator") });
