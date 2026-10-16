@@ -182,38 +182,30 @@ impl MapData {
         }
     }
 
-    /// The paved surfaces: the pavements' and yards' edges and surfaces, then the carriageways'
-    /// (so a carriageway keeps its edge against the pavement beside it).
-    pub fn build_paved(&self, p: &mut Painter, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette, look: GroundLook) {
+    /// The paved surfaces: the yards' and car parks' outline and surface, then the
+    /// carriageways' (one smooth surface each, `omsi_scene::mapgen::smooth_paving`): the outline
+    /// a fine line along the edge, the surface over its inner half.
+    pub fn build_paved(&self, p: &mut Painter, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette, _look: GroundLook) {
         let k = self.shift(anchor);
         let c = (centre - self.layers.origin).as_vec2();
+        let r = radius as f32;
         let v = |q: Vec2| (q + k).extend(0.0);
-        let cells: Vec<&Cell> = self.cells_near(c, radius as f32).collect();
-        let classes: &[(usize, Color, Color)] = if look.surfaces {
-            &[(layers::PAVE_FOOT, pal.foot, pal.foot_edge), (layers::PAVE_AREA, pal.area, pal.area_edge)]
-        } else {
-            &[(layers::PAVE_AREA, pal.area, pal.area_edge)]
-        };
-        for &(class, fill, edge) in classes {
-            for cell in &cells {
-                for t in cell.paved[class].chunks_exact(3) {
-                    p.grown_tri([v(t[0]), v(t[1]), v(t[2])], 0.12, 0.8, edge);
+        let cells: Vec<&Cell> = self.cells_near(c, r).collect();
+        for (class, edge_class, fill, edge) in [(layers::PAVE_AREA, layers::LINE_AREA_EDGE, pal.area, pal.area_edge), (layers::PAVE_ROAD, layers::LINE_ROAD_EDGE, pal.road, pal.road_edge)] {
+            for &(lo, hi, i) in &self.lines {
+                if lo.x > c.x + r || hi.x < c.x - r || lo.y > c.y + r || hi.y < c.y - r {
+                    continue;
+                }
+                let l = &self.layers.lines[i];
+                if l.class == edge_class {
+                    let pts: Vec<Vec3> = l.points.iter().map(|q| v(*q)).collect();
+                    p.ribbon(&pts, 0.5, 2.2, edge, false);
                 }
             }
             for cell in &cells {
                 for t in cell.paved[class].chunks_exact(3) {
                     p.world_poly(&[v(t[0]), v(t[1]), v(t[2])], fill);
                 }
-            }
-        }
-        for cell in &cells {
-            for t in cell.paved[layers::PAVE_ROAD].chunks_exact(3) {
-                p.grown_tri([v(t[0]), v(t[1]), v(t[2])], 0.25, 1.0, pal.road_edge);
-            }
-        }
-        for cell in &cells {
-            for t in cell.paved[layers::PAVE_ROAD].chunks_exact(3) {
-                p.world_poly(&[v(t[0]), v(t[1]), v(t[2])], pal.road);
             }
         }
     }
@@ -237,7 +229,8 @@ impl MapData {
                     }
                 }
                 layers::LINE_TRAM => p.ribbon(&pts, 0.9, 1.3, pal.tram, false),
-                _ => p.ribbon(&pts, l.width.max(3.0), 2.0, pal.water, false),
+                layers::LINE_RIVER => p.ribbon(&pts, l.width.max(3.0), 2.0, pal.water, false),
+                _ => {}
             }
         }
     }

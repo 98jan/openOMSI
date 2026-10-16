@@ -41,6 +41,13 @@ fn trip_path(net: &Network, lanes: &[usize], stops: &[Option<DVec3>]) -> Option<
     let mut pts: Vec<DVec3> = Vec::new();
     for &l in lanes {
         let lane = net.lanes.get(l)?;
+        // (a hole in the route - a piece the map does not have - would be crossed in a straight
+        // line over the fields: such a trip is not shown at all)
+        if let (Some(q), Some(first)) = (pts.last(), lane.points.first()) {
+            if (*q - *first).truncate().length() > 25.0 {
+                return None;
+            }
+        }
         for p in &lane.points {
             if pts.last().map(|q: &DVec3| (*q - *p).truncate().length() > 0.3).unwrap_or(true) {
                 pts.push(*p);

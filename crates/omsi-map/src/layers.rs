@@ -32,6 +32,9 @@ pub const PAVE_CLASSES: usize = 3;
 pub const LINE_RAIL: u8 = 0;
 pub const LINE_TRAM: u8 = 1;
 pub const LINE_RIVER: u8 = 2;
+/// The outlines of the carriageways and of the yards and car parks (closed rings).
+pub const LINE_ROAD_EDGE: u8 = 3;
+pub const LINE_AREA_EDGE: u8 = 4;
 
 /// A house: its outline (anticlockwise, not closed), its roof's triangles (indices into the
 /// outline) and how tall it is (m).
@@ -68,7 +71,7 @@ pub struct Layers {
 
 const MAGIC: &[u8; 4] = b"OMML";
 /// Bumped whenever the generator changes what it makes: an older cache is read again.
-pub const VERSION: u32 = 5;
+pub const VERSION: u32 = 6;
 
 impl Layers {
     pub fn empty(origin: DVec2) -> Layers {
