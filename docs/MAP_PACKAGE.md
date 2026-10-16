@@ -61,6 +61,9 @@ light_water = #9cc3d6
 - `format`: integer. A reader that does not know it ignores the package.
 - `grid`: the author's tile size in metres (section 3). Required, greater than 1.
 - `name`: for people. `credit`: shown on the city map; give it when the data needs attribution.
+- `north`: degrees, clockwise from the map's own up (+Y) to real north (default 0). A map drawn upside down has 180,
+  one turned a little a small number. The compass of the city map points to it, and the player can have real north
+  up (section 11).
 - `terrain_offset`: metres added to the height of every contour line when the game writes it (default 0; section 10).
 - Colours: the game has a **dark** and a **light** look. `water = #rrggbb` colours the dark map and its
   `light_` twin the light one. Keys: `land water river green grass forest sport farm built rail rail_edge
@@ -200,7 +203,15 @@ metres written on the lines: on all of them up close, on the index lines only fr
 another. From far away the lines are fainter, so that the streets stand out. Without contour lines there is no
 button, and a reader that does not know classes 5 and 6 skips them.
 
-## 11. Trying it
+## 11. Orientation: the compass
+
+The city map has a **compass**, bottom right, whose red tip points to real north (where the package's `north` says it
+lies; without it, the map's own up). A click on it changes how the map is turned: **Map** (as the map is drawn, the
+way openOMSI always showed it), **North** (real north up) or **Heading** (the way the bus faces up, the view turning
+smoothly with it). The street names, the stops, the vehicles, the route and the houses turn with the map, and the
+mouse still drags and zooms where it points.
+
+## 12. Trying it
 
 - **The example in this repository**, `docs/examples/openomsi-realmap/`: a few made-up shapes (a lake, a
   river, a railway, a border, a park, a wood, a hill with its contour lines), three names, a street with a 30 km/h limit, two icons (a stop and a
