@@ -600,7 +600,7 @@ table.table { width: 100%; border-collapse: collapse; }
 .cp-pip:hover, .cp-pip:focus-visible { box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 0 2px var(--accent); }
 .cp-pip > * { pointer-events: none; }
 .cp-pip .routemap .legend, .cp-pip .routemap .credit { display: none; }
-:root:not([data-theme="light"]) .routemap { background: #26282b; }
+:root:not([data-theme="light"]) .routemap { background: #22322a; }
 :root:not([data-theme="light"]) .routemap .state { color: #98989d; }
 :root:not([data-theme="light"]) .routemap .legend { color: #f2f2f7; background: rgba(44, 44, 46, 0.92); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); }
 :root:not([data-theme="light"]) .routemap .credit { color: #98989d; background: rgba(44, 44, 46, 0.85); }
@@ -661,7 +661,7 @@ table.table { width: 100%; border-collapse: collapse; }
 .viewer { position: relative; height: 340px; background: #1a1a1a; flex: none; overflow: hidden; touch-action: none; }
 .viewer.in-card { width: 100%; height: auto; aspect-ratio: 2 / 1; min-height: 250px; max-height: 40vh; border-radius: var(--radius-sm); }
 .viewer .state.corner { inset: auto 12px 12px auto; }
-.routemap { position: relative; border-radius: var(--radius-sm); background: #f3f1ea; overflow: hidden; touch-action: none; cursor: grab; }
+.routemap { position: relative; border-radius: var(--radius-sm); background: #d8ecc8; overflow: hidden; touch-action: none; cursor: grab; }
 .routemap canvas { width: 100%; height: 100%; display: block; }
 .routemap .state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; color: #4a4a4f; pointer-events: none; }
 .routemap .legend { position: absolute; left: 10px; bottom: 8px; font-size: 11.5px; color: #1c1c1e; background: rgba(255, 255, 255, 0.92); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14); padding: 3px 10px; border-radius: 10px; pointer-events: none; }

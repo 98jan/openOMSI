@@ -97,7 +97,7 @@ fn simplify(pts: &[Vec3], tol: f32) -> Vec<Vec3> {
 /// stops stand - points in metres from `origin`, rounded to the decimetre, as flat
 /// `[x0, y0, x1, y1, ...]` lists. `colors` are the game's city map colours (casing, road, main
 /// road, route) as CSS.
-pub fn export(map: &str, global: &Path, date: &str, trip: &str, tolerance: f32) -> serde_json::Value {
+pub fn export(map: &str, global: &Path, date: &str, trip: &str, tolerance: f32, surface: bool) -> serde_json::Value {
     use serde_json::json;
     let look = Look { map: map.to_string(), global: global.to_path_buf(), date: date.to_string(), trip: trip.to_string(), entry: -1 };
     let roads = read_map(&look);
@@ -126,8 +126,8 @@ pub fn export(map: &str, global: &Path, date: &str, trip: &str, tolerance: f32) 
         "lo": rel(roads.lo), "hi": rel(roads.hi),
         "roads": list, "route": route, "stops": stops, "entries": entries,
         "colors": [css(casing), css(road), css(main), css(red)],
-        "package": package_view(global, o, roads.lo, roads.hi, tolerance),
-        "layers": layers_view(roads.layers.as_deref(), o),
+        "package": if surface { package_view(global, o, roads.lo, roads.hi, tolerance) } else { serde_json::Value::Null },
+        "layers": if surface { layers_view(roads.layers.as_deref(), o) } else { serde_json::Value::Null },
     })
 }
 
