@@ -234,15 +234,43 @@ fn age_ms(at: Option<Instant>) -> Value {
     at.map(|t| json!(t.elapsed().as_millis() as u64)).unwrap_or(Value::Null)
 }
 
+/// The panel's files (`panel/`): a page, its script and its style - nothing secret, and only
+/// where the API may be reached.
+const PANEL: [(&str, &str, &str); 3] = [
+    ("/admin/", "text/html; charset=utf-8", include_str!("../panel/index.html")),
+    ("/admin/panel.js", "text/javascript; charset=utf-8", include_str!("../panel/panel.js")),
+    ("/admin/panel.css", "text/css; charset=utf-8", include_str!("../panel/panel.css")),
+];
+
+/// The panel's page may load its own script and style and talk to its own server, nothing
+/// else: no inline script, no other site, no frame around it.
+const PANEL_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+
+fn panel_file(req: &Request) -> Option<Response> {
+    let path = if req.path == "/admin/index.html" { "/admin/" } else { req.path };
+    let (_, ctype, text) = PANEL.iter().find(|(p, _, _)| *p == path)?;
+    let mut r = guarded(Response { status: "200 OK", content_type: ctype, body: text.as_bytes().to_vec(), headers: Vec::new() });
+    r.headers.push(("Content-Security-Policy", PANEL_CSP.into()));
+    Some(r)
+}
+
 /// Answer an administration request (None: a path that is not the administration's).
 pub fn handle(hub: &Hub, cfg: &WebCfg, req: &Request) -> Option<Response> {
-    if !req.path.starts_with("/api/admin/") && req.path != "/api/admin" {
+    let panel = req.path.starts_with("/admin/");
+    if !req.path.starts_with("/api/admin/") && req.path != "/api/admin" && !panel {
         return None;
     }
     let source = match admitted(req, cfg) {
         Ok(s) => s,
         Err(r) => return Some(r),
     };
+    if panel {
+        return Some(match (req.method, panel_file(req)) {
+            ("GET", Some(r)) => r,
+            ("GET", None) => error("404 Not Found", "no such file"),
+            _ => error("405 Method Not Allowed", "GET"),
+        });
+    }
     let post = req.method == "POST";
     if post {
         if let Err(r) = same_origin(req, cfg) {
@@ -586,6 +614,28 @@ mod tests {
         assert_eq!(v["players"].as_array().unwrap().len(), 1);
         let (_, v) = R::get("/api/admin/players?q=.%2A").token(&t).send(&h, &cfg);
         assert_eq!(v["players"].as_array().unwrap().len(), 0);
+    }
+
+    /// The panel's files where the API may be reached, with a policy that lets them load
+    /// nothing else; nowhere else.
+    #[test]
+    fn the_panels_files() {
+        let (h, cfg) = (hub(), WebCfg::default());
+        for (path, kind) in [("/admin/", "text/html"), ("/admin/index.html", "text/html"), ("/admin/panel.js", "text/javascript"), ("/admin/panel.css", "text/css")] {
+            let r = handle(&h, &cfg, &Request { method: "GET", path, query: "", headers: "Host: 127.0.0.1:27025", body: &[], peer: Some(HERE.parse().unwrap()) }).unwrap();
+            assert_eq!(r.status, "200 OK", "{path}");
+            assert!(r.content_type.starts_with(kind), "{path}");
+            assert!(r.headers.iter().any(|(k, v)| *k == "Content-Security-Policy" && v.contains("script-src 'self'") && !v.contains("unsafe")), "{path}");
+        }
+        let page = handle(&h, &cfg, &Request { method: "GET", path: "/admin/", query: "", headers: "Host: 127.0.0.1:27025", body: &[], peer: Some(HERE.parse().unwrap()) }).unwrap();
+        let html = String::from_utf8(page.body).unwrap();
+        // no inline script (the policy would refuse it), no password in the page
+        assert!(!html.contains("<script>") && html.contains("src=\"panel.js\""));
+        assert_eq!(handle(&h, &cfg, &Request { method: "GET", path: "/admin/../server.cfg", query: "", headers: "Host: 127.0.0.1:27025", body: &[], peer: Some(HERE.parse().unwrap()) }).unwrap().status, "404 Not Found");
+        assert_eq!(handle(&h, &cfg, &Request { method: "GET", path: "/admin/", query: "", headers: "Host: 127.0.0.1:27025\r\nX-Forwarded-For: 203.0.113.9", body: &[], peer: Some(HERE.parse().unwrap()) }).unwrap().status, "403 Forbidden");
+        assert_eq!(handle(&h, &cfg, &Request { method: "GET", path: "/admin/", query: "", headers: "Host: 127.0.0.1:27025", body: &[], peer: Some("192.0.2.4:1".parse().unwrap()) }).unwrap().status, "403 Forbidden");
+        // (and only by this machine's own names)
+        assert_eq!(handle(&h, &cfg, &Request { method: "GET", path: "/admin/", query: "", headers: "Host: rebound.example:27025", body: &[], peer: Some(HERE.parse().unwrap()) }).unwrap().status, "403 Forbidden");
     }
 
     #[test]

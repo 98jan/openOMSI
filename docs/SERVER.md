@@ -206,6 +206,24 @@ session or the world. A request the loop has not come to in 30 s is refused. The
 values, never commands: a line break in a reason is a space, markup stays text (the panel
 shows it as text).
 
+**The web panel.** `http://127.0.0.1:<web_port>/admin/` (with the slash) on the server's
+machine - or through your HTTPS proxy with `admin_web = remote` - is a page of the server
+itself: no other service, nothing to install, the same API and the same checks as above. Log
+in with the admin's or the moderator's password (it is sent to the server only and kept
+nowhere; the session's token lives in that browser tab until it is closed or you log out). It
+shows the server (map, players, clock and its speed, weather, traffic, the passengers' density
+and how many wait, walk and ride, with "real time" and "METAR" when they hold the clock or the
+weather), the players with a search (by name or `#number`), the actions on the player picked
+- send away, for this run, a word - each confirmed with the name, number and connection; the
+announcement; the world's controls with their present values (disabled with the reason for a
+moderator, on the real time or under METAR, without passengers); and what became of each
+operation (queued, applied, sent, rejected and why). It asks the server every 3 seconds while
+the tab is shown (not while it is hidden), more slowly when the server does not answer, and
+says so; a player who left or came back while picked is not acted on. English and Portuguese,
+for a desktop and a phone. `crates/omsi-lan/examples/admin_demo.rs` runs a session with a few
+players and the panel without OMSI 2, to try it (`crates/omsi-admin/panel/test/` drives it in
+a browser).
+
 **Who reaches the web panel and the API** (`server.cfg`):
 
 * `admin_web = local` (the default): from the server's own machine only, directly - a request
