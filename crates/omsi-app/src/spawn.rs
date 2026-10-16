@@ -186,8 +186,8 @@ fn player_identity(
         Some(w) => match available.iter().find(|(n, _)| n.trim() == w) {
             Some((n, _)) => Some(n.clone()),
             None => {
-                log::warn!("--number {w}: not in the bus's [number] list, the first one is taken");
-                available.first().map(|(n, _)| n.clone())
+                log::warn!("--number {w}: not in the bus's [number] list");
+                Some(w.to_string())
             }
         },
         None => available.first().map(|(n, _)| n.clone()),

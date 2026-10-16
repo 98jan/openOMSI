@@ -138,6 +138,14 @@ forbid omsi-photo omsi-ui
 forbid omsi-photo omsi-net
 forbid omsi-photo omsi-launcher-*
 
+# The interface's machine translation knows omsi-ui's fallback hook and nothing of the game.
+forbid omsi-mt omsi-sim
+forbid omsi-mt omsi-render
+forbid omsi-mt omsi-audio
+forbid omsi-mt omsi-net
+forbid omsi-mt omsi-scene
+forbid omsi-mt omsi-launcher-*
+
 # The launcher's data side (what `omsi-launcher --cli` offers a terminal too) knows nothing of
 # its front ends: the model and the page's commands stand on it, never the other way round.
 forbid omsi-launcher-core omsi-launcher-model

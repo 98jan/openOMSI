@@ -13,7 +13,6 @@ log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 omsi-cfg = { path = "../omsi-cfg" }
-omsi-lan = { path = "../omsi-lan" }
 omsi-launcher-core = { path = "../omsi-launcher-core" }
 omsi-map = { path = "../omsi-map" }
 omsi-net = { path = "../omsi-net" }
