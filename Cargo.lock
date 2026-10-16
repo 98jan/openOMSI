@@ -3454,6 +3454,7 @@ dependencies = [
  "omsi-launcher-core",
  "omsi-launcher-model",
  "omsi-map",
+ "omsi-mapdraw",
  "omsi-model",
  "omsi-net",
  "omsi-o3d",
@@ -3721,9 +3722,24 @@ dependencies = [
 name = "omsi-map"
 version = "0.1.0"
 dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
  "log",
  "omsi-cfg",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "omsi-mapdraw"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
+ "omsi-map",
+ "omsi-sim",
+ "omsi-ui",
 ]
 
 [[package]]
