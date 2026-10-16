@@ -338,3 +338,16 @@ fn the_wheels_tremble_and_its_fade_out_survive_a_save() {
     let bad = Settings::from_text("ff_road_vib=loud\nff_fade=\n");
     assert_eq!((bad.ff_road_vib, bad.ff_fade), (1.0, 0.28));
 }
+
+/// The wet roads' reflections: high in a file that has none (as they were), the three
+/// qualities kept through a save, a word it does not know read as high.
+#[test]
+fn puddles_round_trip() {
+    assert_eq!(Settings::default().puddles, "high");
+    assert_eq!(Settings::from_text("version=4\n").puddles, "high");
+    for q in ["off", "low", "high"] {
+        let s = Settings::from_text(&format!("puddles={q}\n"));
+        assert_eq!(Settings::from_text(&s.to_text()).puddles, q);
+    }
+    assert_eq!(Settings::from_text("puddles=ultra\n").puddles, "high");
+}

@@ -1,9 +1,18 @@
 //! Bounded screen-space puddles, with a small planar capture of the player's vehicle
-//! for its complete geometry. Both use at most 518400 pixels.
+//! for its complete geometry. Both use at most 518400 pixels (high), 129600 (low).
 
 use super::*;
 
 const MAX_TRACE_PIXELS: f32 = 960.0 * 540.0;
+/// The low quality's ray budget: a quarter of the high one's, at a quarter of the picture.
+const MAX_TRACE_PIXELS_LOW: f32 = 480.0 * 270.0;
+
+/// What a puddle ray may do (`Lighting::puddles`): how far from the eye a wet pixel is
+/// traced (m) and how many screen-space steps a ray takes at most. Low keeps the puddles
+/// near the bus.
+fn reach(low: bool) -> [f32; 4] {
+    if low { [40.0, 24.0, 0.0, 0.0] } else { [100.0, 48.0, 0.0, 0.0] }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -32,6 +41,8 @@ pub(super) struct Uniform {
     vehicle_plane: [f32; 4],
     vehicle_info: [f32; 4],
     vehicle_parts: [VehicleBox; 4],
+    /// x: the farthest wet pixel traced (m), y: the most steps a ray takes (see `reach`).
+    quality: [f32; 4],
 }
 
 pub(super) fn shader_source() -> String {
@@ -331,6 +342,8 @@ impl Pipelines {
 
 pub(super) struct Targets {
     size: (u32, u32),
+    /// Made for the low quality (its quarter-size rays).
+    low: bool,
     source_depth: wgpu::Texture,
     hit_depth: wgpu::Texture,
     hit_depth_view: wgpu::TextureView,
@@ -349,8 +362,16 @@ pub(super) struct Targets {
     pub(super) classic_bg: wgpu::BindGroup,
 }
 
-fn trace_size(w: u32, h: u32) -> (u32, u32) {
-    let scale = 0.5_f32.min((MAX_TRACE_PIXELS / (w.max(1) as f32 * h.max(1) as f32)).sqrt());
+/// How many picture pixels one ray stands for, each way (2 at half size; 4 on Low, or on
+/// High past the budget): the wet pixel looked for in all of them.
+fn footprint(w: u32, h: u32, low: bool) -> f32 {
+    let (tw, th) = trace_size(w, h, low);
+    (w as f32 / tw as f32).max(h as f32 / th as f32).ceil().clamp(1.0, 8.0)
+}
+
+fn trace_size(w: u32, h: u32, low: bool) -> (u32, u32) {
+    let (half, budget) = if low { (0.25_f32, MAX_TRACE_PIXELS_LOW) } else { (0.5, MAX_TRACE_PIXELS) };
+    let scale = half.min((budget / (w.max(1) as f32 * h.max(1) as f32)).sqrt());
     (
         ((w as f32 * scale).floor() as u32).max(1),
         ((h as f32 * scale).floor() as u32).max(1),
@@ -358,9 +379,9 @@ fn trace_size(w: u32, h: u32) -> (u32, u32) {
 }
 
 impl Targets {
-    fn new(r: &Renderer, hdr: &HdrTargets, w: u32, h: u32) -> Self {
+    fn new(r: &Renderer, hdr: &HdrTargets, w: u32, h: u32, low: bool) -> Self {
         let pipelines = r.puddles.as_ref().unwrap();
-        let size = trace_size(w, h);
+        let size = trace_size(w, h, low);
         let source_depth = r.targets.ao.as_ref().unwrap().depth_view.texture().clone();
         let hit_depth = r.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("puddle hit depth including glass"),
@@ -482,6 +503,7 @@ impl Targets {
         let classic_bg = r.picture_group(&view);
         Self {
             size,
+            low,
             source_depth,
             hit_depth,
             hit_depth_view,
@@ -526,16 +548,20 @@ impl Renderer {
         };
         // A previously used size can outlive the AO depth after a resize/another view.
         // Rebind the current receiver texture instead of tracing against an old frame.
+        let low = lighting.puddles == 1;
         if hdr
             .puddles
             .as_ref()
-            .is_none_or(|t| t.source_depth != *self.targets.ao.as_ref().unwrap().depth_view.texture())
+            .is_none_or(|t| t.source_depth != *self.targets.ao.as_ref().unwrap().depth_view.texture() || t.low != low)
         {
-            let targets = Targets::new(self, hdr, w, h);
+            let targets = Targets::new(self, hdr, w, h, low);
             log::info!(
-                "puddle reflections: {}x{} rays, at most 48 steps; resolve {w}x{h}",
+                "puddle reflections ({}): {}x{} rays, at most {} steps within {} m; resolve {w}x{h}",
+                if low { "low" } else { "high" },
                 targets.size.0,
-                targets.size.1
+                targets.size.1,
+                reach(low)[1],
+                reach(low)[0]
             );
             self.targets.hdr_targets.get_mut(&(w, h)).unwrap().puddles = Some(targets);
         }
@@ -560,7 +586,8 @@ impl Renderer {
         } else {
             1.0
         };
-        let origins = vehicle_origins(lighting, camera);
+        // (low: no capture of the player's vehicle - the screen-space rays still find it)
+        let origins = if low { Vec::new() } else { vehicle_origins(lighting, camera) };
         let mut parts = [<VehicleBox as bytemuck::Zeroable>::zeroed(); 4];
         for (part, (o, h, bb)) in parts
             .iter_mut()
@@ -615,6 +642,11 @@ impl Renderer {
                 },
             ],
             vehicle_parts: parts,
+            quality: {
+                let mut q = reach(low);
+                q[2] = footprint(w, h, low);
+                q
+            },
         };
         self.queue.write_buffer(
             &self.puddles.as_ref().unwrap().vehicle_params,
@@ -646,7 +678,8 @@ impl Renderer {
         let targets = self.targets.hdr_targets[&(w, h)].puddles.as_ref().unwrap();
         // Select only this vehicle's existing draw entries. AI instances can share meshes
         // and batches with it; selecting a mesh alone would reflect all of them at one height.
-        let origins = vehicle_origins(lighting, camera);
+        // (low: the capture is only cleared, see `prepare_puddle_reflections`)
+        let origins = if lighting.puddles == 1 { Vec::new() } else { vehicle_origins(lighting, camera) };
         let vehicle_batches = player_vehicle_batches(scene, batches, draw_list, &origins);
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1310,11 +1343,37 @@ mod tests {
             (7680, 4320),
             (2160, 3840),
         ] {
-            let (tw, th) = trace_size(w, h);
+            let (tw, th) = trace_size(w, h, false);
             assert!(tw >= 1 && th >= 1 && tw <= w && th <= h);
             assert!(tw * th <= MAX_TRACE_PIXELS as u32);
             if w >= 2 && h >= 2 {
                 assert!(tw <= w / 2 && th <= h / 2);
+            }
+            // the low quality: at most a quarter of the picture each way and of the budget
+            let (lw, lh) = trace_size(w, h, true);
+            assert!(lw >= 1 && lh >= 1 && lw <= tw && lh <= th);
+            assert!(lw * lh <= MAX_TRACE_PIXELS_LOW as u32);
+            if w >= 4 && h >= 4 {
+                assert!(lw <= w / 4 && lh <= h / 4);
+            }
+        }
+    }
+
+    /// The wet pixel is looked for in every picture pixel a ray stands for: 2x2 at half size,
+    /// 4x4 on Low - and more past the budget.
+    #[test]
+    fn a_ray_looks_at_all_its_pixels() {
+        assert_eq!(footprint(1920, 1080, false), 2.0);
+        assert_eq!(footprint(1920, 1080, true), 4.0);
+        assert_eq!(footprint(3840, 2160, false), 4.0);
+        assert_eq!(footprint(3840, 2160, true), 8.0);
+        for (w, h) in [(1, 1), (1279, 719), (2160, 3840), (7680, 4320)] {
+            for low in [false, true] {
+                let (tw, th) = trace_size(w, h, low);
+                let f = footprint(w, h, low);
+                assert!(f >= 1.0 && f <= 8.0);
+                // (the pixels looked at cover the picture, up to the 8x8 cap)
+                assert!((tw as f32 * f >= w as f32 && th as f32 * f >= h as f32) || f == 8.0, "{w}x{h} {low}");
             }
         }
     }

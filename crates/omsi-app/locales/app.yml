@@ -51653,3 +51653,15 @@ _version: 2
   pt-pt: "O tráfego de IA, as pessoas e os scripts do cenário correm ao lado do desenho, noutro núcleo do processador (os carros de IA um fotograma depois); vale a partir do próximo arranque do jogo"
   es: "El tráfico de IA, las personas y los scripts del escenario se ejecutan junto al dibujo, en otro núcleo del procesador (los coches de IA un fotograma después); desde el próximo inicio"
   fr: "Le trafic IA, les personnes et les scripts du décor tournent à côté du dessin, sur un autre cœur du processeur (les voitures IA une image plus tard) ; à partir du prochain lancement"
+
+"Puddles":
+  pt: "Poças"
+  pt-pt: "Poças"
+  es: "Charcos"
+  fr: "Flaques"
+
+"The wet roads' reflections in the rain: Low only near the bus and in fewer rays, much cheaper; Off none (the reflections on paint and glass stay)":
+  pt: "Os reflexos da rua molhada na chuva: Baixa só perto do ônibus e com menos raios, bem mais leve; Desligado nenhum (os reflexos na pintura e nos vidros continuam)"
+  pt-pt: "Os reflexos da estrada molhada à chuva: Baixa só perto do autocarro e com menos raios, bem mais leve; Desligado nenhum (os reflexos na pintura e nos vidros mantêm-se)"
+  es: "Los reflejos de la calle mojada con lluvia: Baja solo cerca del autobús y con menos rayos, mucho más ligera; Desactivado ninguno (los reflejos en la pintura y los cristales se mantienen)"
+  fr: "Les reflets de la route mouillée sous la pluie : Basse seulement près du bus et avec moins de rayons, bien plus légère ; Désactivé aucun (les reflets sur la peinture et les vitres restent)"
