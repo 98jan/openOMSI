@@ -51641,3 +51641,169 @@ _version: 2
   hi: "दरवाज़ा {} पर चढ़ने का अनुरोध किया गया"
   ca: "Pujada demanada a la porta {}"
   sv: "Påstigning begärd vid dörr {}"
+
+"driving a bus":
+  pt: "dirigindo um ônibus"
+  pt-pt: "a conduzir um autocarro"
+  es: "conduciendo un autobús"
+  fr: "au volant d'un bus"
+"on foot":
+  pt: "a pé"
+  pt-pt: "a pé"
+  es: "a pie"
+  fr: "à pied"
+"aboard the bus of":
+  pt: "a bordo do ônibus de"
+  pt-pt: "a bordo do autocarro de"
+  es: "a bordo del autobús de"
+  fr: "à bord du bus de"
+"joining":
+  pt: "entrando"
+  pt-pt: "a entrar"
+  es: "entrando"
+  fr: "en train de rejoindre"
+"admin":
+  pt: "admin"
+  pt-pt: "admin"
+  es: "admin"
+  fr: "admin"
+"moderator":
+  pt: "moderador"
+  pt-pt: "moderador"
+  es: "moderador"
+  fr: "modérateur"
+"The server does not answer the new menu (it may be older than this game): the full list below still works":
+  pt: "O servidor não responde ao menu novo (pode ser mais antigo que este jogo): a lista completa abaixo continua funcionando"
+  pt-pt: "O servidor não responde ao menu novo (pode ser mais antigo do que este jogo): a lista completa abaixo continua a funcionar"
+  es: "El servidor no responde al menú nuevo (puede ser más antiguo que este juego): la lista completa de abajo sigue funcionando"
+  fr: "Le serveur ne répond pas au nouveau menu (il est peut-être plus ancien que ce jeu) : la liste complète ci-dessous fonctionne toujours"
+"You administer this server":
+  pt: "Você administra este servidor"
+  pt-pt: "Administra este servidor"
+  es: "Administras este servidor"
+  fr: "Vous administrez ce serveur"
+"Players":
+  pt: "Jogadores"
+  pt-pt: "Jogadores"
+  es: "Jugadores"
+  fr: "Joueurs"
+"Full list of commands (older menu)...":
+  pt: "Lista completa de comandos (menu antigo)..."
+  pt-pt: "Lista completa de comandos (menu antigo)..."
+  es: "Lista completa de comandos (menú antiguo)..."
+  fr: "Liste complète des commandes (ancien menu)..."
+"Stop administering":
+  pt: "Parar de administrar"
+  pt-pt: "Deixar de administrar"
+  es: "Dejar de administrar"
+  fr: "Arrêter d'administrer"
+"The clock, the weather, the traffic and the passengers are for an admin":
+  pt: "Relógio, clima, tráfego e passageiros são só para admin"
+  pt-pt: "O relógio, o tempo, o tráfego e os passageiros são só para um admin"
+  es: "El reloj, el clima, el tráfico y los pasajeros son solo para un admin"
+  fr: "L'horloge, la météo, le trafic et les passagers sont réservés à un admin"
+"Clock: follows the server's real time (it cannot be moved)":
+  pt: "Relógio: segue a hora real do servidor (não dá para mudar)"
+  pt-pt: "Relógio: segue a hora real do servidor (não pode ser alterado)"
+  es: "Reloj: sigue la hora real del servidor (no se puede cambiar)"
+  fr: "Horloge : suit l'heure réelle du serveur (elle ne peut pas être changée)"
+"Weather: follows the METAR report (it cannot be changed)":
+  pt: "Clima: segue o METAR (não dá para mudar)"
+  pt-pt: "Tempo: segue o boletim METAR (não pode ser alterado)"
+  es: "Clima: sigue el informe METAR (no se puede cambiar)"
+  fr: "Météo : suit le bulletin METAR (elle ne peut pas être changée)"
+"Passengers: off on this server (passengers = 0)":
+  pt: "Passageiros: desligados neste servidor (passengers = 0)"
+  pt-pt: "Passageiros: desligados neste servidor (passengers = 0)"
+  es: "Pasajeros: desactivados en este servidor (passengers = 0)"
+  fr: "Passagers : désactivés sur ce serveur (passengers = 0)"
+"waiting":
+  pt: "esperando"
+  pt-pt: "à espera"
+  es: "esperando"
+  fr: "en attente"
+"walking":
+  pt: "andando"
+  pt-pt: "a pé"
+  es: "caminando"
+  fr: "à pied"
+"aboard":
+  pt: "a bordo"
+  pt-pt: "a bordo"
+  es: "a bordo"
+  fr: "à bord"
+"Passenger density":
+  pt: "Densidade de passageiros"
+  pt-pt: "Densidade de passageiros"
+  es: "Densidad de pasajeros"
+  fr: "Densité de passagers"
+"Nobody else is on the server":
+  pt: "Não há mais ninguém no servidor"
+  pt-pt: "Não está mais ninguém no servidor"
+  es: "No hay nadie más en el servidor"
+  fr: "Personne d'autre n'est sur le serveur"
+"more not listed":
+  pt: "a mais, fora da lista"
+  pt-pt: "a mais, fora da lista"
+  es: "más, fuera de la lista"
+  fr: "de plus, hors de la liste"
+"That player is no longer on the server (or came back on a new connection): pick them again":
+  pt: "Esse jogador não está mais no servidor (ou voltou com outra conexão): escolha de novo"
+  pt-pt: "Esse jogador já não está no servidor (ou voltou com outra ligação): escolha-o de novo"
+  es: "Ese jugador ya no está en el servidor (o volvió con otra conexión): elígelo de nuevo"
+  fr: "Ce joueur n'est plus sur le serveur (ou est revenu avec une nouvelle connexion) : choisissez-le à nouveau"
+"connection":
+  pt: "conexão"
+  pt-pt: "ligação"
+  es: "conexión"
+  fr: "connexion"
+"Send away...":
+  pt: "Expulsar..."
+  pt-pt: "Expulsar..."
+  es: "Expulsar..."
+  fr: "Exclure..."
+"Send away for this server run...":
+  pt: "Expulsar até o servidor reiniciar..."
+  pt-pt: "Expulsar até o servidor reiniciar..."
+  es: "Expulsar hasta que el servidor se reinicie..."
+  fr: "Exclure jusqu'au redémarrage du serveur..."
+"Send this player away for the rest of this server run?":
+  pt: "Expulsar este jogador até o servidor reiniciar?"
+  pt-pt: "Expulsar este jogador até o servidor reiniciar?"
+  es: "¿Expulsar a este jugador hasta que el servidor se reinicie?"
+  fr: "Exclure ce joueur jusqu'au redémarrage du serveur ?"
+"Send this player away?":
+  pt: "Expulsar este jogador?"
+  pt-pt: "Expulsar este jogador?"
+  es: "¿Expulsar a este jugador?"
+  fr: "Exclure ce joueur ?"
+"Yes, send them away":
+  pt: "Sim, expulsar"
+  pt-pt: "Sim, expulsar"
+  es: "Sí, expulsar"
+  fr: "Oui, exclure"
+"Applied":
+  pt: "Aplicado"
+  pt-pt: "Aplicado"
+  es: "Aplicado"
+  fr: "Appliqué"
+"Sent":
+  pt: "Enviado"
+  pt-pt: "Enviado"
+  es: "Enviado"
+  fr: "Envoyé"
+"Refused":
+  pt: "Recusado"
+  pt-pt: "Recusado"
+  es: "Rechazado"
+  fr: "Refusé"
+"Waiting":
+  pt: "Aguardando"
+  pt-pt: "À espera"
+  es: "Esperando"
+  fr: "En attente"
+"Sent to the server":
+  pt: "Enviado ao servidor"
+  pt-pt: "Enviado ao servidor"
+  es: "Enviado al servidor"
+  fr: "Envoyé au serveur"

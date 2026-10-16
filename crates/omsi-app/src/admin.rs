@@ -342,10 +342,13 @@ pub(crate) fn carry_out(app: &mut App, from: u32, command: Command) {
         }
         Command::AdminLocked => app.service_msg = Some(("Too many wrong admin passwords: try again later".into(), 4.0)),
         // (server → us) the password was right: the menu is ours
-        Command::AdminOk => {
+        Command::AdminOk(role) => {
             app.net.is_admin = true;
+            crate::admin_panel::take(app, &Command::AdminOk(role));
             app.service_msg = Some(("You administer this server now: Esc menu, Administration".into(), 6.0));
         }
+        // (server → us) what its admin's menu shows
+        c @ (Command::AdminResult { .. } | Command::AdminPlayer(_) | Command::AdminListEnd { .. } | Command::AdminState(_)) => crate::admin_panel::take(app, &c),
         Command::AdminNo => app.service_msg = Some(("Wrong admin password".into(), 4.0)),
         // (a game hosting by code sent a notice: the player's game showed it)
         Command::NotifySeen(id) => log::info!("LAN: player {from} saw notice {id}"),

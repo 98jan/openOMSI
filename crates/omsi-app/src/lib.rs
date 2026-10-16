@@ -12,6 +12,7 @@
 //! launcher knows through `apple_bridge`.
 
 mod admin;
+mod admin_panel;
 mod check;
 use omsi_platform::discord;
 #[cfg(steam)]
@@ -803,6 +804,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             remote_walkers: Vec::new(),
             inside_remote: None,
             is_admin: false,
+            admin_panel: Default::default(),
             lan: None,
             remotes: Default::default(),
             lan_world: Default::default(),

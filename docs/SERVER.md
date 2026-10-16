@@ -123,6 +123,22 @@ A game from before the roles, given the moderator's password, shows the admin's 
 the server still refuses the world's actions, but that game does not read the answer
 (`admin-result`), so nothing happens on its screen. Moderators should play a current game.
 
+**The Administration menu, from afar.** A player who administers a dedicated server gets
+the server's own menu under Esc → *Administration*: who they are (admin or moderator), the
+clock and the weather; *Players...* - every player the server lists, by name and number, with
+what they do and drive, searchable with the menu's search line; a player's page and, before
+sending them away (now, or for the rest of the run), a question naming them, their number and
+their connection; the clock, its speed, the next weather, the traffic and the passengers'
+density with their present values - or why they cannot be changed (a moderator's role, the real
+time, METAR, no passengers); and what became of the last operations. The menu asks the server
+over the session itself - the server may be anywhere; it never looks for it at an address of
+its own - every 3 seconds at most while it is open, one question at a time, and says so when
+no answer comes (a server older than the game: *Full list of commands (older menu)...* still
+has every line of the older menu). The line picked stays on what it does when new answers
+come; a player picked who left or came back is not acted on. *Stop administering* ends the
+rights. It is a list of the game menu like the others, worked the same way (the search line
+needs a keyboard; the list works without it). The host of a game hosted by code keeps the menu it had.
+
 **One way of doing it.** Whatever way an operation comes - a player's menu, the machine's own
 tool (`POST /admin`, see above: the admin's role), the web panel - it is checked against the
 role, done by the server's own loop on its tick (never by a web request's thread), and

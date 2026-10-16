@@ -46,6 +46,8 @@ pub(crate) struct NetState {
     pub(crate) inside_remote: Option<u32>,
     /// A dedicated server said we administer it (`admin`).
     pub(crate) is_admin: bool,
+    /// What that server told its menu (`admin_panel`).
+    pub(crate) admin_panel: omsi_lan::admin::panel::Panel,
     /// LAN session, and the other players' buses (drawn and heard like AI vehicles) with the
     /// chat line.
     pub(crate) lan: Option<omsi_net::LanSession>,
