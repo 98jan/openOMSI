@@ -84,6 +84,7 @@ impl Offscreen<'_> {
             Some(&self.weather),
             cloud_drift_at(&self.weather, self.run_clock.time),
             self.wetness,
+            0.0,
             Some(&self.world),
             driven,
             driven,

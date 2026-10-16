@@ -2,6 +2,7 @@
 
 use omsi_cfg::CfgFile;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FontChar {
@@ -174,15 +175,20 @@ pub struct FontAtlas {
     pub font: Font,
     pub width: u32,
     pub height: u32,
-    /// Colour bitmap (RGBA8) and alpha bitmap (RGBA8; the red channel is the coverage).
-    pub color: Vec<u8>,
-    pub alpha: Vec<u8>,
+    /// Shared colour and coverage pixels (RGBA8; coverage is in the red channel).
+    pub color: Arc<[u8]>,
+    pub alpha: Arc<[u8]>,
 }
 
 impl FontAtlas {
     /// `color`/`alpha` are the decoded font bitmaps (same size). When the font has no
     /// separate colour bitmap, pass the alpha image for both.
     pub fn new(font: Font, width: u32, height: u32, color: Vec<u8>, alpha: Vec<u8>) -> FontAtlas {
+        Self::from_shared(font, width, height, color.into(), alpha.into())
+    }
+
+    /// Fonts with different glyph metrics may use the same immutable bitmap pixels.
+    pub fn from_shared(font: Font, width: u32, height: u32, color: Arc<[u8]>, alpha: Arc<[u8]>) -> FontAtlas {
         FontAtlas { font, width, height, color, alpha }
     }
 

@@ -11,6 +11,13 @@ impl App {
         let Some(lan) = self.net.lan.as_mut() else {
             // (the session is over: the plugin is told so)
             self.sound.voice = None;
+            if let Some(p) = self.player.as_mut() {
+                for texture in &mut p.vehicle.host.script_textures {
+                    texture.disable_network_snapshot();
+                }
+                p.vehicle.host.capture_sound_triggers = false;
+                p.vehicle.host.network_sound_triggers.clear();
+            }
             return;
         };
         let duty = self
@@ -32,10 +39,17 @@ impl App {
         };
         let config = self.args.lan_config();
         let host = AppLanHost { args: &self.args, world: self.world.as_deref() };
+        if lan.role == omsi_net::Role::Host {
+            if let Some(t) = self.session.traffic.as_mut() {
+                for c in &mut t.sim.cars {
+                    self.net.remotes.publish_vehicle_sounds(lan, &mut c.vehicle, c.id, &config);
+                }
+            }
+        }
         let sent = {
             let traffic = self.session.traffic.as_ref();
             let cars = || traffic.map(|t| t.cars.iter().map(|c| lan::car_footprint(&c.vehicle)).collect()).unwrap_or_default();
-            lan::tick_send(lan, &mut self.net.remotes, dt, &config, self.player.as_ref().map(|p| &p.vehicle), &cars, duty, &frame)
+            lan::tick_send(lan, &mut self.net.remotes, dt, &config, self.player.as_mut().map(|p| &mut p.vehicle), &cars, duty, &frame)
         };
         self.net.lan_world.tick(
             lan,
@@ -49,6 +63,12 @@ impl App {
             &mut self.gfx.sim_view,
             self.player.as_ref().map(|p| p.vehicle.position),
         );
+        if let Some(t) = self.session.traffic.as_mut().filter(|t| t.sim.mirror) {
+            let ready: Vec<_> = t.sim.cars.iter().filter(|c| t.has_sound_set(c.id)).map(|c| c.id).collect();
+            for c in &mut t.sim.cars {
+                if ready.contains(&c.id) { self.net.remotes.apply_ai_sounds(&mut c.vehicle, c.id, &config.root); }
+            }
+        }
         let updates = lan::tick_receive(
             lan,
             &mut self.net.remotes,
@@ -73,52 +93,47 @@ impl App {
         self.tick_voice(dt);
     }
 
-    /// A command another player's game sent ours (`LanSession::command`).
+    /// A command another player's game sent ours (`LanSession::command`): read by the session
+    /// (`omsi_lan::commands::Command`), carried out here.
     pub(crate) fn lan_command(&mut self, from: u32, text: &str) {
-        let Some(lan) = self.net.lan.as_ref() else { return };
-        let my_id = lan.my_id;
-        if let Some(ev) = text.strip_prefix("trigger ") {
-            // a switch worked by a passenger of ours: only by one who is in our bus
-            let walker = lan.peers().find(|p| p.pose.id == from).and_then(|p| p.pose.walker);
-            let aboard = walker.and_then(|w| w.aboard).filter(|a| a.owner == my_id);
-            let inside = match (aboard, self.player.as_ref()) {
-                (Some(a), Some(p)) => omsi_lan::passenger::inside(&omsi_lan::spawn::footprint_of(&p.vehicle, omsi_lan::spawn::BUS_BOX), a.local),
-                _ => false,
-            };
-            let aboard = aboard.is_some();
-            if !aboard || !inside || !omsi_lan::passenger::passenger_trigger(ev) {
-                log::info!("LAN: player {from} asked for switch {ev} of our bus from outside it, or for one only the driver works: ignored");
-                return;
-            }
-            if let Some(p) = self.player.as_mut() {
-                log::info!("LAN: player {from} works {ev} in our bus");
-                p.vehicle.trigger(ev.trim());
-            }
-            return;
-        }
-        // the voice server of the session (`voice`): asked of the host, told by it
-        if text == "voice?" {
-            if lan.role == omsi_net::Role::Host {
-                let answer = crate::voice::VoiceServer::command(crate::voice::hosted().as_ref());
-                if let Some(l) = self.net.lan.as_mut() {
-                    l.command(from, &answer);
-                }
-            }
-            return;
-        }
-        if text.starts_with("voice ") {
-            if from == 1 {
-                if let (Some(v), Some(server)) = (self.sound.voice.as_mut(), crate::voice::VoiceServer::parse_command(text)) {
-                    v.set_server(server);
-                }
-            }
+        use omsi_lan::commands::Command;
+        if let Some(request) = text.strip_prefix("pax_request ") {
+            self.receive_passenger_door_request(from, request);
             return;
         }
         // a plugin's message to the same plugin here (`lan.send`)
         if self.plugin_lan_message(from, text) {
             return;
         }
-        crate::admin::command(self, from, text);
+        let Some(command) = Command::parse(from, text) else {
+            log::info!("LAN: command '{text}' from player {from} not taken");
+            return;
+        };
+        match command {
+            // a switch worked by a passenger of ours: only by one who is in our bus
+            Command::Trigger(ev) => {
+                let may = self.net.lan.as_ref().is_some_and(|l| omsi_lan::passenger::may_work(l, from, self.player.as_ref().map(|p| &p.vehicle), &ev));
+                match self.player.as_mut().filter(|_| may) {
+                    Some(p) => {
+                        log::info!("LAN: player {from} works {ev} in our bus");
+                        p.vehicle.trigger(&ev);
+                    }
+                    None => log::info!("LAN: player {from} asked for switch {ev} of our bus from outside it, or for one only the driver works: ignored"),
+                }
+            }
+            // the voice server of the session (`voice`): asked of the host, told by it
+            Command::VoiceAsked => {
+                if let Some(l) = self.net.lan.as_mut().filter(|l| l.role == omsi_net::Role::Host) {
+                    l.command(from, &crate::voice::VoiceServer::command(crate::voice::hosted().as_ref()));
+                }
+            }
+            Command::Voice(server) => {
+                if let Some(v) = self.sound.voice.as_mut() {
+                    v.set_server(server);
+                }
+            }
+            command => crate::admin::carry_out(self, from, command),
+        }
     }
 
     /// The host's world as LAN play asks for it: its clock (set or caught up with) and its
@@ -253,6 +268,8 @@ impl omsi_lan::host::LanHost for AppLanHost<'_> {
         let hof = self.depot_of(args, &ty);
         host.hof = hof.clone();
         host.paint_scheme = Some(scheme);
+        host.remote_script_textures = true;
+        host.remote_sound_triggers = true;
         let mut vehicle = omsi_sim::VehicleInstance::new(ty.clone(), host);
         vehicle.ground = None;
         if !ty.model.text_textures.is_empty() {

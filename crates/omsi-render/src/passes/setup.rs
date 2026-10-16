@@ -250,7 +250,7 @@ impl Renderer {
                 self.options.shadow_size.min(SHADOW_CLOSE_MAX) as f32 / self.options.shadow_size.max(1) as f32,
             ],
             view_proj: vp_mat.to_cols_array_2d(),
-            cam_pos: cam_rel.extend(1.0).to_array(),
+            cam_pos: cam_rel.extend(lighting.reflection_strength.clamp(0.0, 1.0)).to_array(),
             // (modulo the shaders' PATTERN_PERIOD, 1000 m: the patterns repeat with it, and
             // the whole map coordinate has no precision left for them in 32 bits)
             // (zw: the origin modulo CLOUD_ORIGIN_PERIOD for the sky's clouds, which are
@@ -369,6 +369,9 @@ impl Renderer {
         };
         self.queue
             .write_buffer(&self.camera_buf, 0, bytemuck::bytes_of(&cu));
+        if let Some(m) = sh.precip {
+            self.write_precip_camera(&cu, m);
+        }
         if rt_frame {
             let proj = Mat4::perspective_rh(camera.fov_deg.to_radians(), aspect, camera.far, camera.near);
             self.prepare_ray_tracing(scene, camera, lighting, vp_mat, proj, f.width, f.height, f.dt);

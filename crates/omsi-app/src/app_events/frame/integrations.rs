@@ -54,11 +54,18 @@ impl App {
             let keys = std::mem::take(&mut self.integrations.plugin_keys);
             let events = std::mem::take(&mut self.integrations.plugin_events);
             let events_ex = std::mem::take(&mut self.integrations.plugin_events_ex);
+            let asks = std::mem::take(&mut self.integrations.plugin_ticket_asks);
+            let heard: Vec<u32> = asks.iter().map(|a| a.person).collect();
             // (the plugins see the whole game; they are out of it for their frame)
             let mut io = crate::plugins::Io::new(self, dt, keys, events, events_ex);
+            io.ticket_asks = asks;
             plugins.frame(&mut io);
             let commands = std::mem::take(&mut io.commands);
             drop(io);
+            // the passengers they heard of ask at the cash desk now
+            if let Some(h) = self.session.humans.as_mut() {
+                h.ticket_asks_heard(&heard);
+            }
             crate::plugin_io::world::follow_sounds(self);
             // what the plugins asked the game to do: lines of the game menu
             self.integrations.plugin_command = true;
@@ -84,8 +91,11 @@ impl App {
             if plugins.is_empty() {
                 self.integrations.plugin_events.clear();
                 self.integrations.plugin_events_ex.clear();
+                self.integrations.plugin_ticket_asks.clear();
             }
         }
+        // the passengers report their tickets only while a plugin hears of them
+        let hear_tickets = plugins.hear_tickets();
         self.integrations.plugins = Some(plugins);
         // OMSI_WATCH_VARS=a,b: every change of those variables of the player's bus
         if let (Some(p), Some(list)) = (self.player.as_ref(), omsi_cfg::flags::OMSI_WATCH_VARS.var()) {
@@ -100,6 +110,20 @@ impl App {
                     }
                 }
             });
+        }
+        if let Some(h) = self.session.humans.as_mut() {
+            h.ticket_hook = hear_tickets;
+            let asks = &mut self.integrations.plugin_ticket_asks;
+            // (the plugins hear of 256 at most a frame; whoever is left out does not wait)
+            let mut dropped = Vec::new();
+            for a in h.take_ticket_asks() {
+                if asks.len() < 256 {
+                    asks.push(crate::plugin_io::bus::ticket_ask(a));
+                } else {
+                    dropped.push(a.person);
+                }
+            }
+            h.ticket_asks_heard(&dropped);
         }
         if let (Some(h), Some(p)) = (self.session.humans.as_mut(), self.player.as_ref()) {
             let hurt = steps::people_in_career(&mut self.session.career, h, p, self.settings.collision_pedestrians);

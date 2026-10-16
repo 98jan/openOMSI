@@ -11,6 +11,8 @@
 //! feet on the ground, turning, sitting down on a seat and getting up are the passengers'
 //! own, eased as theirs are; the camera eases into each new view instead of cutting.
 
+mod door_requests;
+
 use crate::humans::{AvatarCmd, BusId, Humans};
 use crate::App;
 use glam::{DVec2, DVec3};
@@ -86,6 +88,8 @@ pub(crate) struct OnFoot {
     pub kneel: bool,
     /// How far down the eyes are on their way (0 standing .. 1 kneeling).
     pub crouch: f32,
+    pub door_request: Option<omsi_sim::people::DoorRequest>,
+    pub door_request_send: f32,
 }
 
 /// What a walk leads to once walked.
@@ -370,6 +374,8 @@ impl App {
             arrive: None,
             kneel: false,
             crouch: 0.0,
+            door_request: None,
+            door_request_send: 0.0,
         });
         self.view = "foot".into();
         self.service_msg = Some(("On foot: W A S D walk, Shift runs, C kneels, F4 free camera / F1 back, G sits down (by the driver's place: back at the wheel), Ctrl+Shift+G steps out of the bus".into(), 7.0));
@@ -500,6 +506,8 @@ impl App {
             arrive: None,
             kneel: false,
             crouch: 0.0,
+            door_request: None,
+            door_request_send: 0.0,
         });
         self.view = "foot".into();
     }
@@ -983,7 +991,12 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
     let Some(mut f) = cx.people.on_foot.take() else { return };
     let dt64 = dt as f64;
     f.ease_crouch(dt);
-    let key = |k: KeyCode| cx.input.keys.contains(&k);
+    let shift = cx.input.keys.contains(&KeyCode::ShiftLeft) || cx.input.keys.contains(&KeyCode::ShiftRight);
+    let ctrl = cx.input.keys.contains(&KeyCode::ControlLeft) || cx.input.keys.contains(&KeyCode::ControlRight);
+    let alt = cx.input.keys.contains(&KeyCode::AltLeft) || cx.input.keys.contains(&KeyCode::AltRight);
+    let modifier = omsi_content::input::chord(shift, ctrl, alt);
+    let key = |k: KeyCode| cx.input.keys.contains(&k) && !omsi_input::keys::dik_code(k).is_some_and(|scan|
+        cx.input.game_keys.iter().any(|b| b.action == "pax_door_request" && crate::input_script::binding_is_key(b, k, scan, modifier & !omsi_input::keys::own_modifier_bit(k))));
     if key(KeyCode::ArrowLeft) {
         f.yaw -= 90.0 * dt;
     }
@@ -1380,6 +1393,8 @@ mod tests {
             arrive: None,
             kneel: false,
             crouch: 0.0,
+            door_request: None,
+            door_request_send: 0.0,
         }
     }
 

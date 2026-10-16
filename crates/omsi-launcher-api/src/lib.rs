@@ -191,6 +191,11 @@ fn saved_situations(map: String) -> Answer {
     to_json(core::saved_situations(&map))
 }
 
+/// Delete one of the situations `saved_situations` lists for `map` (#2556).
+fn delete_situation(map: String, file: String) -> Answer {
+    Ok(json!(core::delete_situation(&map, Path::new(&file)).map_err(err)?))
+}
+
 /// A season and its phase chosen: the date the game will have (none: by date), and the word
 /// the game's `--season` takes.
 fn season_date(season: String, phase: String, date: String, map: String, keep: bool) -> Answer {
@@ -659,6 +664,7 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "ibis" => ibis(arg::<String>(args, "bus")?, arg::<String>(args, "hof")?, arg::<String>(args, "line")?),
         "default_hof" => default_hof(arg::<Value>(args, "map")?, arg::<Value>(args, "bus")?, arg::<String>(args, "date")?, arg::<Option<String>>(args, "line")?),
         "saved_situations" => saved_situations(arg::<String>(args, "map")?),
+        "delete_situation" => delete_situation(arg::<String>(args, "map")?, arg::<String>(args, "file")?),
         "season_date" => season_date(arg::<String>(args, "season")?, arg::<String>(args, "phase")?, arg::<String>(args, "date")?, arg::<String>(args, "map")?, arg::<bool>(args, "keep")?),
         "tutorials" => tutorials(),
         "timetable" => timetable::load(arg::<String>(args, "map")?),
@@ -700,7 +706,8 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "poll" => poll(),
         "stop_game" => stop_game(arg::<u32>(args, "pid")?),
         "game_log" => game_log(arg::<u32>(args, "pid")?, arg::<Option<usize>>(args, "lines")?),
-        "model_check" => model_check(arg::<String>(args, "bus")?),
+        "model_check" => content_check(arg::<String>(args, "bus")?, false),
+        "content_check" => content_check(arg::<String>(args, "path")?, arg::<Option<bool>>(args, "deep")?.unwrap_or(false)),
         "launch" => launch(p, arg::<Value>(args, "duty")?),
         "duty_args" => duty_args(arg::<Value>(args, "duty")?),
         "check_join" => check_join(arg::<String>(args, "text")?),
@@ -831,15 +838,21 @@ mod custom_weather_tests {
     }
 }
 
-// --- the model test ----------------------------------------------------------------
+// --- the content test (Settings) -----------------------------------------------------
 
-/// The game program loads `bus` as it would for a drive (`openomsi --check-vehicle`) and
-/// answers its loaders' warnings and errors and the model's missing textures as JSON.
-fn model_check(bus: String) -> Answer {
+/// The game program loads `path` - a vehicle, a scenery object, a spline, a human, a map, a
+/// mod's folder or zip - as it would for a drive (`openomsi --check`) and answers its
+/// loaders' warnings and errors and whatever it names that is not there as JSON. `deep`: a
+/// map's objects and splines are loaded whole (models, meshes, textures), not only read.
+fn content_check(path: String, deep: bool) -> Answer {
     let game = core::game_binary().ok_or_else(|| "the game program was not found: set it under Setup".to_string())?;
     let root = core::root_dir().map_err(err)?;
     let mut cmd = std::process::Command::new(&game);
-    cmd.arg("--check-vehicle").arg(&bus).arg("--root").arg(&root).env("OMSI_NO_GUARD", "1");
+    // (a mod's folders come one to a line)
+    cmd.arg("--check").args(path.lines().map(str::trim).filter(|l| !l.is_empty())).arg("--root").arg(&root).env("OMSI_NO_GUARD", "1");
+    if deep {
+        cmd.arg("--deep");
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

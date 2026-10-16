@@ -434,6 +434,7 @@ impl SceneryObject {
                 }
             }
         }
+        o.model.tidy_visible();
         o
     }
 }
@@ -456,6 +457,15 @@ mod tests {
         let o = SceneryObject::parse(&CfgFile::from_str("objects/x.sco", "[groups]\n2\nA\nB\n[onlyeditor]\n"));
         assert_eq!(o.groups, ["A", "B"]);
         assert!(o.only_editor);
+    }
+
+    #[test]
+    fn several_plain_visible_blocks_keep_the_last_as_omsi_does() {
+        let o = SceneryObject::parse(&CfgFile::from_str("objects/x.sco", "[mesh]\na.o3d\n[visible]\nExclamation\n1\n[visible]\nTrafficLightApproach\n1\n"));
+        let m = &o.model.meshes[0];
+        let var = |e: f32, t: f32| move |n: &str| Some(if n == "Exclamation" { e } else { t });
+        assert_eq!(m.visible_by(var(0.0, 1.0)), Some(true));
+        assert_eq!(m.visible_by(var(1.0, 0.0)), Some(false));
     }
 
     #[test]

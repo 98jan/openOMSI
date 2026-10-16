@@ -387,9 +387,11 @@ impl App {
             t.wheel_r = 78.0 * u;
             t.wheel_c = Vec2::new(pad + t.wheel_r + 6.0 * u, h - pad - t.wheel_r);
             // --- the pedals, bottom right
-            let th = 150.0 * u;
+            // (as long as the settings make them, within what the screen's height leaves)
+            let long = self.settings.touch_pedal_length.clamp(0.8, 1.6).min((h * 0.45 / (150.0 * u)).max(0.8));
+            let th = 150.0 * u * long;
             t.throttle_r = Rect::new(w - pad - 64.0 * u, h - pad - th, 64.0 * u, th);
-            let bh = 112.0 * u;
+            let bh = 112.0 * u * long;
             t.brake_r = Rect::new(t.throttle_r.x - 14.0 * u - 80.0 * u, h - pad - bh, 80.0 * u, bh);
             // the gearbox above the pedals: an automatic's R N D, a sequential lever's - N +,
             // else a manual's whole gate - R, N and every gear its script has (`kw_s_1` ...),
@@ -597,7 +599,7 @@ impl App {
         }
         let moved = role == Role::Menu && self.input.touch.fingers.iter().any(|f| f.role == Role::MenuSlider);
         self.input.touch.fingers.push(Touched { id, start: p, pos: p, role, moved, since: Instant::now() });
-        self.input.touch_pedals(p);
+        self.input.touch_pedals(p, self.settings.touch_pedal_deadzone);
         // two fingers on the picture: a pinch
         let looks: Vec<Vec2> = self.input.touch.fingers.iter().filter(|f| matches!(f.role, Role::Look | Role::Mouse)).map(|f| f.pos).collect();
         if looks.len() == 2 {
@@ -649,7 +651,7 @@ impl App {
                 }
                 self.input.touch.fingers[k].role = Role::Wheel(a, d.length());
             }
-            Role::Throttle | Role::Brake => self.input.touch_pedals(p),
+            Role::Throttle | Role::Brake => self.input.touch_pedals(p, self.settings.touch_pedal_deadzone),
             Role::Stick => {
                 let d = p - self.input.touch.stick_c;
                 self.input.touch.stick_at = Some((self.input.touch.stick_c, d.clamp_length_max(self.input.touch.stick_r)));
@@ -1308,6 +1310,18 @@ mod tests {
     }
 
     #[test]
+    fn a_finger_resting_at_the_foot_of_a_pedal_presses_nothing() {
+        assert_eq!(super::pedal_press(0.0, 0.15), 0.0);
+        assert_eq!(super::pedal_press(0.14, 0.15), 0.0);
+        assert!(super::pedal_press(0.3, 0.15) < 0.1);
+        assert!(super::pedal_press(0.6, 0.15) > 0.3 && super::pedal_press(0.6, 0.15) < 0.6);
+        assert_eq!(super::pedal_press(1.0, 0.15), 1.0);
+        // no rest zone: from the foot up
+        assert_eq!(super::pedal_press(0.0, 0.0), 0.0);
+        assert!(super::pedal_press(0.05, 0.0) > 0.0);
+    }
+
+    #[test]
     fn the_screen_wheel_turns_as_the_wheel_settings_say() {
         let deg = |s: &Settings| touch_lock_angle(s).to_degrees().round();
         // "Full lock at: OMSI": the wheel's whole rotation is the lock, half of it each way
@@ -1318,19 +1332,35 @@ mod tests {
     }
 }
 
+/// How far a screen pedal is pressed with a finger at `at` of its height (0 its foot, 1 its
+/// top): nothing in the rest zone, then a curve that gives the first part of the travel to
+/// gentle presses (a car's pedal does the same with its progressive spring) - a soft brake
+/// is a third of the way up, full braking the top.
+fn pedal_press(at: f32, rest: f32) -> f32 {
+    let u = ((at - rest) / (1.0 - rest).max(0.05)).clamp(0.0, 1.0);
+    u.powf(1.6)
+}
+
 impl InputState {
     /// The pedals from where the fingers on them are: the higher up the pedal, the harder
-    /// it is pressed (a finger at its foot presses a little).
-    fn touch_pedals(&mut self, _p: Vec2) {
+    /// it is pressed - nothing at all in the rest zone at its foot (#1458: a finger put on the
+    /// brake pressed a fifth of it at once, a hard stop where a gentle one was meant).
+    /// `rest`: the rest zone's share of the pedal (Settings, `touch_pedal_deadzone`).
+    fn touch_pedals(&mut self, _p: Vec2, rest: f32) {
+        let rest = rest.clamp(0.0, 0.4);
         let t = &mut self.touch;
-        let depth = |r: Rect, y: f32| (0.2 + 0.8 * ((r.bottom() - y) / r.h)).clamp(0.2, 1.0);
+        let depth = |r: Rect, y: f32| pedal_press(((r.bottom() - y) / r.h.max(1.0)).clamp(0.0, 1.0), rest);
         for f in &t.fingers {
             match f.role {
                 Role::Throttle => t.throttle = depth(t.throttle_r, f.pos.y),
                 Role::Brake => t.brake = depth(t.brake_r, f.pos.y),
                 // (the clutch pushed in most of the way is in: the gearboxes want it at 1
                 // to take a gear, see `pedal_ends`, and a thumb seldom sits at the top edge)
-                Role::Clutch => t.clutch = if depth(t.clutch_r, f.pos.y) >= 0.75 { 1.0 } else { depth(t.clutch_r, f.pos.y) },
+                // (the clutch as it was: no rest zone, straight up the pedal)
+                Role::Clutch => {
+                    let c = (0.2 + 0.8 * ((t.clutch_r.bottom() - f.pos.y) / t.clutch_r.h.max(1.0))).clamp(0.2, 1.0);
+                    t.clutch = if c >= 0.75 { 1.0 } else { c };
+                }
                 _ => {}
             }
         }

@@ -337,8 +337,20 @@ pub fn query(target: &str, with_icon: bool) -> Result<ServerInfo, String> {
     Ok(info)
 }
 
-/// Connections the gateway serves at once (players, status requests, mod streams).
-const MAX_CONNECTIONS: usize = 64;
+/// Connections the gateway serves at once (each is a thread): the places of both kinds
+/// below. One whose request has not shown its kind yet holds a thread only, for at most
+/// `HEAD_WAIT` (and one source has its own ceiling, `PER_SOURCE`).
+const MAX_CONNECTIONS: usize = MAX_ORDINARY + MAX_TUNNELS;
+
+/// Players, status requests and the icon carried at once: the 64 the hardening set for
+/// everything. One more is answered `503`. Mod streams never take one of these places.
+const MAX_ORDINARY: usize = if cfg!(test) { 3 } else { 64 };
+
+/// Mod streams (`/tcp`) carried at once, apart from the players' places; one more is told
+/// the mods server's `ERR busy` and its game asks again in a moment. With 64 for
+/// everything, fifteen players fetching a new player's bus (a list and four pieces each)
+/// took every place, and one more player could not join at all.
+const MAX_TUNNELS: usize = if cfg!(test) { 3 } else { 160 };
 const PER_SOURCE: usize = 16;
 const HEAD_WAIT: Duration = Duration::from_secs(3);
 const DATAGRAM_LIMIT: usize = 4096;
@@ -406,6 +418,33 @@ impl Drop for SourceSlot {
     }
 }
 
+/// The places of one kind of connection (`MAX_ORDINARY`, `MAX_TUNNELS`): one is taken when
+/// a request shows its kind and given back when its connection ends.
+#[derive(Default)]
+struct Places(AtomicUsize);
+
+struct Place<'a>(&'a AtomicUsize);
+
+impl Places {
+    /// A place, when fewer than `max` are taken.
+    fn take(&self, max: usize) -> Option<Place<'_>> {
+        self.0.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| (n < max).then_some(n + 1)).ok().map(|_| Place(&self.0))
+    }
+}
+
+impl Drop for Place<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// The gateway's places: the players' and status requests', and the mod streams'.
+#[derive(Default)]
+struct Admission {
+    ordinary: Places,
+    tunnels: Places,
+}
+
 /// The host's or server's side (see the module).
 pub struct WsGateway {
     pub addr: SocketAddr,
@@ -434,6 +473,7 @@ impl WsGateway {
         std::thread::Builder::new().name("ws gateway".into()).spawn(move || {
             // connections served at once (each its own thread): more are closed at once
             let open = Arc::new(AtomicUsize::new(0));
+            let admission = Arc::new(Admission::default());
             let sources = Arc::new(Sources::default());
             while !st.load(Ordering::Relaxed) {
                 match listener.accept() {
@@ -456,9 +496,9 @@ impl WsGateway {
                             }
                         };
                         open.fetch_add(1, Ordering::Relaxed);
-                        let (st, inf, conn, held, src) = (st.clone(), inf.clone(), conn.clone(), open.clone(), sources.clone());
+                        let (st, inf, conn, held, src, adm) = (st.clone(), inf.clone(), conn.clone(), open.clone(), sources.clone(), admission.clone());
                         let spawned = std::thread::Builder::new().name("ws player".into()).spawn(move || {
-                            if let Err(e) = serve(stream, slot, target, &inf, &st, &conn, &src) {
+                            if let Err(e) = serve(stream, slot, target, &inf, &st, &conn, &src, &adm) {
                                 log::debug!("ws gateway: {peer}: {e}");
                             }
                             held.fetch_sub(1, Ordering::Relaxed);
@@ -574,8 +614,10 @@ pub fn local_admin(request: &[u8], peer: Option<SocketAddr>, info: &Mutex<Server
     ("202 Accepted", format!("{n} command(s) taken"))
 }
 
-/// One TCP connection to the gateway: a status request, the icon, or a player's WebSocket.
-fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: &Mutex<ServerInfo>, stop: &AtomicBool, connected: &AtomicUsize, sources: &Arc<Sources>) -> Result<(), String> {
+/// One TCP connection to the gateway: a status request, the icon, a player's WebSocket or a
+/// mod stream.
+#[allow(clippy::too_many_arguments)]
+fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: &Mutex<ServerInfo>, stop: &AtomicBool, connected: &AtomicUsize, sources: &Arc<Sources>, admission: &Admission) -> Result<(), String> {
     let peer = stream.peer_addr().ok();
     stream.set_nonblocking(false).map_err(|e| e.to_string())?;
     stream.set_read_timeout(Some(HEAD_WAIT)).map_err(|e| e.to_string())?;
@@ -591,7 +633,23 @@ fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: 
         (None, Some(ip)) => Some(sources.take(ip).ok_or_else(|| format!("{source}: {PER_SOURCE} connections open already"))?),
         (None, None) => None,
     };
-    if !upgrade || path.starts_with("/tcp") {
+    let tunnel = upgrade && path.starts_with("/tcp");
+    // (a player or a status request takes one of the players' places, for its whole life:
+    // the mod streams have places of their own, below)
+    let _place = if tunnel {
+        None
+    } else {
+        match admission.ordinary.take(MAX_ORDINARY) {
+            Some(place) => Some(place),
+            None => {
+                log::debug!("ws gateway: {source}: {MAX_ORDINARY} players and requests carried already; one more told to come back");
+                let mut s = stream;
+                let _ = s.write_all(b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 2\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                return Ok(());
+            }
+        }
+    };
+    if !upgrade || tunnel {
         stream.set_read_timeout(Some(Duration::from_secs(10))).map_err(|e| e.to_string())?;
     }
     if !upgrade {
@@ -633,10 +691,18 @@ fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: 
         s.write_all(&body).map_err(|e| e.to_string())?;
         return Ok(());
     }
-    if path.starts_with("/tcp") {
+    if tunnel {
         // a byte stream to the session's TCP port (the host's mods): the way the files go
         // where only HTTP gets through
         let mut ws = tungstenite::accept_with_config(stream, Some(stream_config())).map_err(|e| e.to_string())?;
+        let Some(_place) = admission.tunnels.take(MAX_TUNNELS) else {
+            log::info!("ws gateway: {MAX_TUNNELS} mod streams open already; one more told to come back");
+            // (what the mods server says when it has no place: the game knows to ask again)
+            let _ = ws.send(Message::Binary(b"ERR busy\n".to_vec().into()));
+            let _ = ws.close(None);
+            let _ = ws.flush();
+            return Ok(());
+        };
         // (the 10 s of the request's read held every chunk that long)
         ws.get_mut().set_read_timeout(Some(Duration::from_millis(5))).map_err(|e| e.to_string())?;
         let tcp = TcpStream::connect(SocketAddr::from(([127, 0, 0, 1], target.port()))).map_err(|e| e.to_string())?;
@@ -1109,6 +1175,95 @@ mod tests {
         assert!(again, "the datagram came back through the second connection");
         assert!(client.alive.load(Ordering::Relaxed));
         assert_eq!(client.reconnects(), 1);
+    }
+
+    /// Mod streams up to `MAX_TUNNELS`; one more is told `ERR busy` (and its game asks again),
+    /// and a player's session still gets through with every stream taken.
+    #[test]
+    fn mod_streams_never_shut_a_player_out() {
+        let session = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let target = session.local_addr().unwrap();
+        // the mods server at the session's port: holds every stream open
+        let mods = TcpListener::bind(("127.0.0.1", target.port())).unwrap();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for c in mods.incoming().flatten() {
+                held.push(c);
+            }
+        });
+        let gw = WsGateway::start("127.0.0.1:0".parse().unwrap(), target, ServerInfo::default()).unwrap();
+        let forward = tcp_forward(&format!("ws://{}/tcp", gw.addr)).unwrap();
+        let mut streams: Vec<TcpStream> = (0..MAX_TUNNELS).map(|_| TcpStream::connect(forward).unwrap()).collect();
+        // (each through the gateway to the mods server before the next is counted)
+        std::thread::sleep(Duration::from_millis(500));
+        let mut one_more = TcpStream::connect(forward).unwrap();
+        one_more.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut said = String::new();
+        let _ = one_more.read_to_string(&mut said);
+        assert_eq!(said, "ERR busy\n");
+        // a player joins all the same
+        let player = WsClient::connect(&format!("ws://{}/ws", gw.addr)).unwrap();
+        let t = Instant::now();
+        while gw.connected.load(Ordering::Relaxed) == 0 && t.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(gw.connected.load(Ordering::Relaxed), 1, "the player's session is carried");
+        // and a stream that ends gives its place to the next
+        drop(streams.pop());
+        std::thread::sleep(Duration::from_millis(300));
+        let mut next = TcpStream::connect(forward).unwrap();
+        next.set_read_timeout(Some(Duration::from_millis(800))).unwrap();
+        let mut b = [0u8; 16];
+        assert!(matches!(next.read(&mut b), Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)), "carried, not refused");
+        drop(player);
+    }
+
+    /// The players' places and the mod streams' are counted apart: with every player's place
+    /// taken, one more status request is told to come back (`503`) - and a mod stream is still
+    /// carried; once a player leaves, the requests get through again.
+    #[test]
+    fn players_never_take_the_mod_streams_places() {
+        let session = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let target = session.local_addr().unwrap();
+        let mods = TcpListener::bind(("127.0.0.1", target.port())).unwrap();
+        std::thread::spawn(move || {
+            let mut held = Vec::new();
+            for c in mods.incoming().flatten() {
+                held.push(c);
+            }
+        });
+        let gw = WsGateway::start("127.0.0.1:0".parse().unwrap(), target, ServerInfo::default()).unwrap();
+        let mut players: Vec<WsClient> = (0..MAX_ORDINARY).map(|_| WsClient::connect(&format!("ws://{}/ws", gw.addr)).unwrap()).collect();
+        let t = Instant::now();
+        while gw.connected.load(Ordering::Relaxed) < MAX_ORDINARY && t.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(gw.connected.load(Ordering::Relaxed), MAX_ORDINARY);
+        let status = || {
+            let mut s = TcpStream::connect(gw.addr).unwrap();
+            s.write_all(b"GET /status HTTP/1.1\r\nHost: gateway\r\n\r\n").unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut said = String::new();
+            let _ = s.read_to_string(&mut said);
+            said
+        };
+        let said = status();
+        assert!(said.starts_with("HTTP/1.1 503"), "{said}");
+        // a mod stream all the same: carried, not refused
+        let forward = tcp_forward(&format!("ws://{}/tcp", gw.addr)).unwrap();
+        let mut stream = TcpStream::connect(forward).unwrap();
+        stream.set_read_timeout(Some(Duration::from_millis(800))).unwrap();
+        let mut b = [0u8; 16];
+        assert!(matches!(stream.read(&mut b), Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut)), "the mod stream is carried");
+        // a player who leaves gives their place back
+        drop(players.pop());
+        let t = Instant::now();
+        while gw.connected.load(Ordering::Relaxed) >= MAX_ORDINARY && t.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        let said = status();
+        assert!(said.starts_with("HTTP/1.1 200"), "{said}");
     }
 
     #[test]

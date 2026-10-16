@@ -59,6 +59,7 @@ struct View {
     sent: HashMap<Key, ([i64; 4], f32)>,
     /// Per thing: the hash of the description sent.
     described: HashMap<Key, u64>,
+    context_pages: HashMap<u32, usize>,
     /// Things that went out of sight, named for a second more.
     gone: Vec<(Key, f32)>,
     bytes: u64,
@@ -83,6 +84,8 @@ struct Mirror {
     cars: HashMap<u32, Track<CarState>>,
     people: HashMap<u32, Track<PersonState>>,
     descs: HashMap<Key, Desc>,
+    context_receiver: omsi_net::ai_context::Receiver,
+    contexts: HashMap<u32, omsi_net::ai_context::Context>,
     /// Descriptions asked for and when.
     wanted: HashMap<Key, Instant>,
     /// Vehicle types by file: loaded, being loaded, or not to be had.
@@ -161,33 +164,7 @@ pub struct LanWorld {
 
 /// The line a timetable bus shows and the depot terminus it is set to, `#<index>` (host;
 /// `#-1` for none, so that a client still knows it is a timetable bus).
-fn car_display(v: &omsi_sim::VehicleInstance) -> (String, String) {
-    let line = v
-        .ty
-        .program
-        .str_var("SetLineTo")
-        .and_then(|i| v.state.str_vars.get(i as usize))
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default();
-    let target = v
-        .var("AI_target_index")
-        .filter(|t| *t >= 0.0)
-        .map(|t| t as i32)
-        .unwrap_or(-1);
-    (line, format!("#{target}"))
-}
 
-/// A host's timetable bus on our copy of it: line `line` and destination `destination`,
-/// the row of the depot file [`car_display`] names (`#<row>`) - that row itself. Looked up
-/// again by the row's sign text, it was the first row with that text anywhere on its sign:
-/// Spandau's buses to U Ruhleben (282) showed Machandelweg (194), whose second line reads
-/// RUHLEBEN.
-fn show_car_destination(v: &mut omsi_sim::VehicleInstance, hof: Option<&omsi_vehicle::Hof>, line: &str, destination: &str) {
-    let row = destination.strip_prefix('#').and_then(|n| n.parse::<usize>().ok());
-    if let (Some(ti), Some(hof)) = (row, hof) {
-        crate::schedule::set_ai_destination_at(v, hof, line, ti, &[]);
-    }
-}
 
 impl LanWorld {
     /// Once a frame, after `LanSession::tick`.
@@ -523,6 +500,14 @@ impl LanWorld {
             let mut g = Gather::default();
             if let Some(t) = t_ref {
                 gather_cars(view, t, at, args, &mut g);
+                for c in &t.cars {
+                    if (c.vehicle.position - at).truncate().length() > CAR_RADIUS || c.id > nw::MAX_ID as u64 { continue; }
+                    let page = view.context_pages.entry(c.id as u32).or_default();
+                    if let Some(packet) = ai_context(&c.vehicle.host).packet(omsi_net::PROTOCOL as u8, c.id as u32, lan.stamp_ms(), *page) {
+                        lan.send_ai_context(id, &packet);
+                        *page = page.wrapping_add(1);
+                    }
+                }
             }
             if let Some(h) = h_ref {
                 gather_people(view, h, at, &mut g);
@@ -614,6 +599,7 @@ impl LanWorld {
             let gone: Vec<Key> = view.sent.keys().filter(|k| !seen.contains(*k)).copied().collect();
             for k in gone {
                 view.sent.remove(&k);
+                if !k.0 { view.context_pages.remove(&k.1); }
                 view.gone.push((k, 1.0));
             }
             for g in view.gone.iter_mut() {
@@ -699,6 +685,9 @@ impl LanWorld {
         // cars: forgotten, gone, new
         let forget = std::time::Duration::from_secs_f32(nw::FORGET_AFTER);
         m.cars.retain(|_, t| t.heard.elapsed() < forget);
+        let context_ids: Vec<u32> = m.cars.keys().copied().collect();
+        m.context_receiver.retain(&context_ids);
+        m.contexts.retain(|id, _| m.cars.contains_key(id));
         if let Some(t) = traffic.as_deref_mut() {
             m.add_and_remove_cars(t, view, args, world, renderer, scene);
             let shown = m.place_cars(t, dt, render_ms);
@@ -787,6 +776,8 @@ impl Mirror {
             m.drawn_people.clear();
             m.shown.clear();
             m.odometer.clear();
+            m.contexts.clear();
+            m.context_receiver = Default::default();
             log::info!(
                 "LAN: {}",
                 if want_on {
@@ -817,6 +808,22 @@ impl Mirror {
             };
             m.wanted.remove(&key);
             m.descs.insert(key, d);
+        }
+        let mut contexts_new = HashSet::new();
+        for packet in lan.take_ai_contexts() {
+            if let Some((id, context)) = m.context_receiver.receive(&packet, omsi_net::PROTOCOL as u8) {
+                if m.contexts.get(&id) != Some(&context) {
+                    contexts_new.insert(id);
+                    m.contexts.insert(id, context);
+                }
+            }
+        }
+        if let Some(t) = traffic.as_deref_mut() {
+            for car in &mut t.cars {
+                if contexts_new.contains(&(car.id as u32)) {
+                    if let Some(context) = m.contexts.get(&(car.id as u32)) { apply_ai_context(&mut car.vehicle.host, context); }
+                }
+            }
         }
         for (at, f) in lan.take_world() {
             // the host's clock against ours: the frame that took the shortest way sets it
@@ -954,15 +961,14 @@ impl Mirror {
             let Some(Desc::Car {
                 file,
                 scheme,
-                line,
-                destination,
                 paint,
                 ..
             }) = m.descs.get(&(false, id)).cloned()
             else {
                 continue;
             };
-            let scheduled = !line.is_empty() || !destination.is_empty();
+            // Never run init with an incomplete host timetable.
+            let Some(context) = m.contexts.get(&id).cloned() else { continue };
             let Some(path) = local_file(&args.root, &file) else {
                 if m.types.insert(PathBuf::from(&file), None).is_none() {
                     log::warn!("LAN: the host's vehicle {file} is not installed here; it is left out");
@@ -1005,7 +1011,8 @@ impl Mirror {
                 id as u64,
                 ty.clone(),
                 scheme,
-                scheduled,
+                &context,
+                m.hofs.entry(ty.def.path.clone()).or_insert_with(|| crate::find_hof_named(args.hof.as_deref(), world, &ty)).clone(),
                 DVec3::new(first.x, first.y, first.z),
                 first.heading as f64,
             );
@@ -1481,20 +1488,11 @@ fn describe(
 }
 
 #[cfg(test)]
-mod tests {
-    /// The host's bus to U Ruhleben (row 2) shows U Ruhleben on ours too, not Machandelweg
-    /// (row 1), whose sign has RUHLEBEN on its second line.
-    #[test]
-    fn a_hosts_timetable_bus_shows_the_row_it_was_given() {
-        let t = |code: i32, id: &str, s: &[&str]| omsi_vehicle::hof::Terminus { code, texture_id: id.into(), strings: s.iter().map(|x| x.to_string()).collect(), ..Default::default() };
-        let hof = omsi_vehicle::Hof { termini: vec![t(0, "Empty", &[""]), t(194, "Machandelweg", &["MACHANDELWEG", "RUHLEBEN"]), t(282, "U Ruhleben", &["RUHLEBEN", "U-BAHNHOF"])], ..Default::default() };
-        let mut v = crate::schedule::tests::script_test_vehicle("{frame}\n{end}\n", "AI_target_index\nIBIS_TerminusIndex\nIBIS_TerminusCode\n", "SetLineTo\n");
-        super::show_car_destination(&mut v, Some(&hof), "5", "#2");
-        assert_eq!((v.var("AI_target_index"), v.var("IBIS_TerminusCode")), (Some(2.0), Some(282.0)));
-        assert_eq!(v.str_var("SetLineTo"), "5");
-        // no such row, or no depot file: nothing changes
-        super::show_car_destination(&mut v, Some(&hof), "5", "#7");
-        super::show_car_destination(&mut v, None, "5", "#1");
-        assert_eq!(v.var("AI_target_index"), Some(2.0));
-    }
-}
+mod tests;
+
+mod display;
+use display::{car_display, show_car_destination};
+
+mod context;
+pub(crate) use context::apply_ai_context;
+use context::ai_context;

@@ -38,25 +38,25 @@ fn quality_presets_keep_the_mode_and_the_rest() {
 }
 
 #[test]
-fn presets_keep_reflections_clouds_and_texture_memory() {
+fn presets_keep_reflections_clouds_and_video_memory() {
     for mode in ["vanilla", "vanilla_plus", "enhanced", "enhanced_plus"] {
         let enhanced = mode.starts_with("enhanced");
         for (i, (name, p)) in graphics_presets_for(mode).into_iter().enumerate() {
-            assert!(p.get("texture_memory").is_none(), "{mode} {name}");
+            assert!(p.get("video_memory").is_none(), "{mode} {name}");
             assert!(p.get("cloud_quality").is_none(), "{mode} {name}");
             assert_eq!(p["clouds"], !(enhanced && i == 0), "{mode} {name}");
             if mode != "enhanced_plus" {
-                assert_eq!(p["reflections"], true, "{mode} {name}");
+                assert_eq!(p["reflections"], 1.0, "{mode} {name}");
             }
             assert_eq!(p["rain_quality"], ["low", "medium", "high", "high"][i], "{mode} {name}");
         }
         assert_eq!(graphics_presets_for(mode)[0].1["shadow_size"], 1024, "{mode}");
     }
-    let mut v = settings_from_text(Some("texture_memory=3000\n"));
+    let mut v = settings_from_text(Some("video_memory=3000\n"));
     apply_graphics_profile(&graphics_presets_for("vanilla_plus")[0].1, &mut v);
     let saved = settings_from_text(Some(&settings_to_text(&v, None)));
-    assert_eq!(saved["texture_memory"], 3000);
-    assert_eq!(saved["reflections"], true);
+    assert_eq!(saved["video_memory"], 3000);
+    assert_eq!(saved["reflections"], 1.0);
     assert_eq!(saved["clouds"], true);
 }
 
@@ -79,7 +79,7 @@ fn a_vanilla_preset_leaves_the_shadows_of_vanilla_plus_alone() {
     apply_graphics_profile(&graphics_presets_for("enhanced_plus")[0].1, &mut v);
     v["graphics"] = json!("enhanced");
     let saved = settings_from_text(Some(&settings_to_text(&v, None)));
-    assert_eq!((&saved["shadows"], &saved["ssao"], &saved["reflections"]), (&json!(false), &json!(false), &json!(false)));
+    assert_eq!((&saved["shadows"], &saved["ssao"], &saved["reflections"]), (&json!(false), &json!(false), &json!(0.0)));
 }
 
 #[test]
@@ -174,4 +174,16 @@ fn a_delete_request_needs_a_plain_profile_name() {
     for name in ["", " ", "../other", "a\\b", "C:other"] {
         assert!(delete_profile(name).is_err());
     }
+}
+
+#[test]
+fn the_reflections_are_a_strength_and_older_files_read_as_on_or_off() {
+    for (text, x) in [("reflections=1\n", 1.0), ("reflections=0\n", 0.0), ("reflections=true\n", 1.0), ("reflections=0.35\n", 0.35), ("reflections=7\n", 1.0)] {
+        let v = settings_from_text(Some(text));
+        assert_eq!(v["reflections"], x, "{text}");
+        assert_eq!(settings_from_text(Some(&settings_to_text(&v, None)))["reflections"], x, "{text}");
+    }
+    let mut v = settings_from_text(None);
+    v["reflections"] = json!(false);
+    assert_eq!(settings_from_text(Some(&settings_to_text(&v, None)))["reflections"], 0.0);
 }
