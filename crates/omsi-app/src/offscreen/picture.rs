@@ -477,8 +477,9 @@ impl Offscreen<'_> {
         // been there, then - with the budget raised to MB - the textures that come near again
         // with the camera are read back)
         if omsi_cfg::flags::OMSI_TEXTURE_MEMORY.is_set() || omsi_cfg::flags::OMSI_VIDEO_MEMORY.is_set() {
-            world.set_texture_budget(texture_budget());
-            world.set_video_memory_limit(video_memory_limit(settings));
+            let video = video_memory_limit(settings);
+            world.set_texture_budget(texture_budget(video));
+            world.set_video_memory_limit(video);
             let from: Vec<f64> = omsi_cfg::flags::OMSI_BUDGET_FROM.var()
                 .unwrap_or_default()
                 .split(',')
