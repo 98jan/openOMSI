@@ -538,7 +538,7 @@ impl Navigator {
         // (from far the public transport is its line's badge alone, the cars are left out)
         let far = self.city.mpp > 1.6;
         if let Some(t) = f.traffic.filter(|_| self.show_ai) {
-            for car in t.cars.iter().filter(|c| !c.gone) {
+            for car in t.cars.iter().filter(|c| !c.gone && !in_the_air(c, &t.net)) {
                 let (color, line) = traffic_kind(car);
                 let at = self.smoothed_position(car);
                 if color == DOT {

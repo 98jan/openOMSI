@@ -60,6 +60,12 @@ fn line_text(c: Color) -> Color {
 /// The other players of a LAN session or server: an arrow the way they face, with their name.
 const PLAYER: Color = Color::rgba(190, 96, 255, 1.0);
 
+/// An aircraft of the timetable (Spandau's approaches into Tegel run as line `TXL` on the
+/// map's air paths): no vehicle of the streets, left off the maps.
+pub(crate) fn in_the_air(c: &crate::traffic::AiCar, net: &Network) -> bool {
+    net.lanes.get(c.state.lane).is_some_and(|l| l.kind == LaneKind::Air)
+}
+
 /// What a traffic vehicle is on the map: a trolleybus (its model has trolley poles to
 /// raise, `cp_SHTANGALEV` or `shtanga_lev_rot`), a tram, a bus (one on a timetable or
 /// showing a line), or any other car; and the line it shows, if it is public transport.

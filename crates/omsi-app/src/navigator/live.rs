@@ -95,6 +95,10 @@ fn trip_path(net: &Network, lanes: &[usize], stops: &[Option<DVec3>]) -> Option<
     if stops.iter().all(|s| s.is_none()) {
         return None;
     }
+    // (an aircraft's approach is no vehicle of the streets)
+    if lanes.iter().any(|&l| net.lanes.get(l).is_some_and(|l| l.kind == LaneKind::Air)) {
+        return None;
+    }
     let rail = lanes.first().and_then(|&l| net.lanes.get(l)).is_some_and(|l| l.kind == LaneKind::Rail);
     Some(TripPath { pts, along, stops: out, rail })
 }

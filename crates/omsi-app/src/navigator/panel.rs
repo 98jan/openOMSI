@@ -133,7 +133,7 @@ impl Navigator {
         let mut lines: Vec<(DVec3, Color, String)> = Vec::new();
         if let Some(t) = f.traffic.filter(|_| self.show_ai) {
             for c in &t.cars {
-                if c.gone || (c.vehicle.position - f.bus).truncate().length() > self.zoom * 3.5 + 150.0 {
+                if c.gone || in_the_air(c, &t.net) || (c.vehicle.position - f.bus).truncate().length() > self.zoom * 3.5 + 150.0 {
                     continue;
                 }
                 let (color, line) = traffic_kind(c);
