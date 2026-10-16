@@ -12,6 +12,11 @@ pub mod index;
 pub mod install;
 pub mod instances;
 pub mod mods;
+mod hof_sync;
+mod file_dialog;
+
+pub use file_dialog::{pick_file, pick_folder, pick_hofs, pick_mod};
+pub use hof_sync::add_shared_hofs;
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -529,6 +534,7 @@ pub struct ModsStatus {
     /// What an earlier, interrupted install left and was removed now.
     pub cleaned: Vec<String>,
     pub jobs: Vec<install::Progress>,
+    pub hof_warnings: Vec<String>,
     /// Every mod, one by one (see `mods`).
     pub installed: Vec<mods::Mod>,
 }
@@ -678,6 +684,8 @@ pub fn install_inbox_blocking() -> Vec<install::Progress> {
 pub fn mods_status() -> Result<ModsStatus> {
     let content = content_dir().ok_or_else(|| anyhow!("no game binary configured, so no content folder"))?;
     let cleaned = install::cleanup_stale(&data_dir(), Some(&content));
+    hof_sync::sync_map_hofs();
+    let hof_warnings = hof_sync::warnings();
     let folders = omsi_cfg::CONTENT_FOLDERS
         .iter()
         .map(|f| {
@@ -701,6 +709,7 @@ pub fn mods_status() -> Result<ModsStatus> {
         free_bytes: install::free_space(&content).unwrap_or(0),
         cleaned,
         jobs: install::jobs(),
+        hof_warnings,
         installed: mods::list(&content),
     })
 }
@@ -762,6 +771,7 @@ pub struct EntryInfo {
 
 pub fn list_maps() -> Result<Vec<MapInfo>> {
     root()?;
+    hof_sync::sync_map_hofs();
     let lang = content_language();
     let mut out = Vec::new();
     let mut keys = Vec::new();
@@ -3021,51 +3031,6 @@ pub fn log_to_file(line: &str) {
 pub fn cleanup() {
     for line in install::cleanup_stale(&data_dir(), content_dir().as_deref()) {
         log_to_file(&format!("cleanup: {line}"));
-    }
-}
-
-/// Native folder / file picker (Finder, Explorer, the GTK dialog) for a mod. Must run on
-/// the main thread. (None on a phone: the launcher browses the storage itself there, and on an iPhone or an iPad
-/// the system's document picker of the Swift launcher hands the path over.)
-pub fn pick_mod(zip: bool) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        if zip {
-            rfd::FileDialog::new().set_title("Choose a mod archive").add_filter("Mod archive", &["zip", "7z", "rar"]).pick_file()
-        } else {
-            rfd::FileDialog::new().set_title("Choose the mod folder").pick_folder()
-        }
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = zip;
-        None
-    }
-}
-
-/// Folder picker (Setup: the OMSI 2 folder).
-pub fn pick_folder(title: &str) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        rfd::FileDialog::new().set_title(title).pick_folder()
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = title;
-        None
-    }
-}
-
-/// File picker (Setup: the game program).
-pub fn pick_file(title: &str) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        rfd::FileDialog::new().set_title(title).pick_file()
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = title;
-        None
     }
 }
 
