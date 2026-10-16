@@ -152,7 +152,7 @@ impl Renderer {
                 light_view_proj_close,
             )));
         }
-        let falling = scene.rainfall.rate > 0.001 || lighting.snowfall > 0.01;
+        let falling = (scene.rainfall.rate > 0.001 && !f.env.no_rain) || (lighting.snowfall > 0.01 && !f.env.no_snowfall);
         let precip = (falling && f.with_overlays && projection.is_none() && f.exclude_texture.is_none() && !basic_pipelines() && !f.env.no_precip_roof).then(|| precip_matrix(cam_rel));
         ShadowPlan {
             precip,

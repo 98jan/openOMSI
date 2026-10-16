@@ -2744,7 +2744,7 @@ pub fn saved_situations(map: &str) -> Vec<SavedSituation> {
 /// slot, the quicksave made on it, its last situation - with the script textures saved
 /// beside it. Whether it was there to delete.
 pub fn delete_situation(map: &str, file: &Path) -> Result<bool> {
-    if !saved_situations(map).iter().any(|s| s.file == file) {
+    if !Path::new(&map.replace('\\', "/")).components().all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir)) || !saved_situations(map).iter().any(|s| s.file == file) {
         return Ok(false);
     }
     std::fs::remove_file(file)?;

@@ -420,7 +420,7 @@ const general = {
 };
 
 /** Content test: no settings - the page draws the test itself (content-test.js). */
-const contentTest = { id: 'content', label: 'Content test', page: 'content', cols: [] };
+const contentTest = { id: 'content', label: 'Content test', page: 'content', cols: [], when: (s, p) => !mobile(s, p) };
 
 export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, general, contentTest];
 

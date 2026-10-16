@@ -56,16 +56,6 @@ pub fn snow_cover(kind: i32, rate: f32, temp: f32, secs: f32, start: f32) -> f32
     (start + change * secs).clamp(0.0, 1.0)
 }
 
-/// The snow cover a session starts with: a snowfall that is falling now has been for a
-/// while.
-pub fn initial_snow_cover(kind: i32, rate: f32, temp: f32) -> f32 {
-    if kind == 2 && rate > 0.0 && temp < 2.0 {
-        1.0
-    } else {
-        0.0
-    }
-}
-
 pub struct Rain {
     kind: i32,
     rate: f32,
@@ -128,7 +118,7 @@ impl Rain {
         if dt > 0.0 {
             self.eye += (carried - self.eye) * (dt / 0.1).min(1.0);
         }
-        let start = self.cover.unwrap_or_else(|| initial_snow_cover(self.kind, self.rate, self.temp));
+        let start = self.cover.unwrap_or(0.0);
         self.cover = Some(snow_cover(self.kind, self.rate, self.temp, dt, start));
         let raining = self.kind == 1 && self.rate > 0.0;
         scene.rainfall = Rainfall {
@@ -317,8 +307,6 @@ mod tests {
         let thaw = snow_cover(0, 0.0, 5.0, 900.0, 1.0);
         assert!(thaw > 0.4 && thaw < 0.6, "{thaw}");
         assert!(snow_cover(1, 0.5, 5.0, 900.0, 1.0) < thaw);
-        assert_eq!(initial_snow_cover(2, 0.5, -1.0), 1.0);
-        assert_eq!(initial_snow_cover(1, 0.5, -1.0), 0.0);
     }
 
     #[test]

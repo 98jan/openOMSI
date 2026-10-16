@@ -73,7 +73,10 @@ impl Renderer {
 
     /// Draw the map (when the frame has one: see `ShadowPlan::precip`).
     pub(crate) fn encode_precip_map(&self, encoder: &mut wgpu::CommandEncoder, scene: &Scene, sh: &ShadowPlan, shadow_batches: &[Vec<Batch>; SHADOW_LISTS], timers: &mut PassTimers) {
-        let (Some(m), Some(bg)) = (sh.precip, scene.precip_bind_group.as_ref()) else { return };
+        let (Some(m), Some(bg)) = (sh.precip, scene.precip_bind_group.as_ref()) else {
+            self.shadows.precip.matrix.set(None);
+            return;
+        };
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("precipitation roof"),
             color_attachments: &[],

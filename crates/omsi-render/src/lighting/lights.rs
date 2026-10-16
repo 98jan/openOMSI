@@ -427,10 +427,12 @@ impl Renderer {
                     let cx = (origin[0] + (x as f32 + 0.5) * LIGHT_CELL - p.x).abs().max(0.0) - LIGHT_CELL * 0.5;
                     let cy = (origin[1] + (y as f32 + 0.5) * LIGHT_CELL - p.y).abs().max(0.0) - LIGHT_CELL * 0.5;
                     let d2 = cx.max(0.0).powi(2) + cy.max(0.0).powi(2);
-                    // (a spot - a headlight - always counts as strong: it is the player's or a
-                    // car's own light, which Omsi.exe gives a light of its own)
-                    let s = if l.direction.length_squared() > 1e-6 { f32::MAX } else { cell_strength(l.intensity, l.color, l.radius, d2) };
+                    // (a spot - a headlight - counts as strong: it is the player's or a car's
+                    // own light, which Omsi.exe gives a light of its own; past half the cell,
+                    // a junction full of traffic would leave its street lamps out)
                     let base = cell * LIGHT_CELL_CAP;
+                    let spot = l.direction.length_squared() > 1e-6;
+                    let s = if spot && strength[base..base + n].iter().filter(|&&x| x == f32::MAX).count() < cap / 2 { f32::MAX } else { cell_strength(l.intensity, l.color, l.radius, d2) };
                     if n < cap {
                         if n == 0 {
                             scene.grid_filled.push(cell as u32);

@@ -125,8 +125,9 @@ impl App {
         let sit = build_situation(&self.args, w, &self.clock, self.args.weather.as_deref(), self.player.as_ref(), &self.session.placed, cam, self.session.duty.as_ref(), "Last situation");
         match sit.save(&out) {
             Ok(()) => {
-                if let Some(p) = self.player.as_ref() {
-                    crate::situation::save_script_textures(&out, &p.vehicle);
+                match self.player.as_ref() {
+                    Some(p) => crate::situation::save_script_textures(&out, &p.vehicle),
+                    None => crate::situation::write_script_textures(&out, &[] as &[(&[u8], u32, u32)]),
                 }
                 log::info!("saved the last situation {}", out.display());
                 Some(out)
@@ -189,8 +190,9 @@ impl App {
         let sit = build_situation(&self.args, w, &self.clock, self.args.weather.as_deref(), self.player.as_ref(), &self.session.placed, cam, self.session.duty.as_ref(), "Quicksave");
         match save_or_fallback(&sit, &out, Path::new("Situations").join("quicksave.osn").as_path()) {
             Ok(out) => {
-                if let Some(p) = self.player.as_ref() {
-                    crate::situation::save_script_textures(&out, &p.vehicle);
+                match self.player.as_ref() {
+                    Some(p) => crate::situation::save_script_textures(&out, &p.vehicle),
+                    None => crate::situation::write_script_textures(&out, &[] as &[(&[u8], u32, u32)]),
                 }
                 log::info!("saved situation {} ({} vehicles)", out.display(), sit.vehicles.len());
                 self.service_msg = Some(("Situation saved (quicksave): the launcher continues from it".into(), 4.0));
@@ -231,10 +233,13 @@ impl App {
         let over = over.filter(|f| self.save_slots().iter().any(|s| s.file == *f));
         let number_of = |f: &std::path::Path| f.file_stem().and_then(|s| s.to_string_lossy().strip_prefix("Slot ").and_then(|n| n.trim().parse::<usize>().ok()));
         let (n, out) = match over {
-            Some(f) => (number_of(&f).unwrap_or(0), f),
+            Some(f) => match number_of(&f) {
+                Some(n) => (n.to_string(), f),
+                None => (f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(), f),
+            },
             None => {
                 let Some(n) = (1..10_000).find(|n| !taken(*n)) else { return };
-                (n, dir.join(format!("Slot {n}.osn")))
+                (n.to_string(), dir.join(format!("Slot {n}.osn")))
             }
         };
         let bus = self.player.as_ref().map(|p| {
@@ -247,13 +252,15 @@ impl App {
             (Some(b), None) => b,
             (None, _) => "on foot".to_string(),
         };
-        let name = format!("Slot {n}: {what}, {:02}:{:02}", (t / 3600.0) as i32 % 24, ((t % 3600.0) / 60.0) as i32);
+        let head = if out.file_stem().is_some_and(|s| s.to_string_lossy() == n) { n.clone() } else { format!("Slot {n}") };
+        let name = format!("{head}: {what}, {:02}:{:02}", (t / 3600.0) as i32 % 24, ((t % 3600.0) / 60.0) as i32);
         let sit = build_situation(&self.args, w, &self.clock, self.args.weather.as_deref(), self.player.as_ref(), &self.session.placed, cam, self.session.duty.as_ref(), &name);
         let rel = rel_dir.join(out.file_name().map(|f| f.to_os_string()).unwrap_or_else(|| format!("Slot {n}.osn").into()));
         match save_or_fallback(&sit, &out, rel.as_path()) {
             Ok(out) => {
-                if let Some(p) = self.player.as_ref() {
-                    crate::situation::save_script_textures(&out, &p.vehicle);
+                match self.player.as_ref() {
+                    Some(p) => crate::situation::save_script_textures(&out, &p.vehicle),
+                    None => crate::situation::write_script_textures(&out, &[] as &[(&[u8], u32, u32)]),
                 }
                 log::info!("saved situation {} ({} vehicles)", out.display(), sit.vehicles.len());
                 self.service_msg = Some((format!("Saved as slot {n}: the launcher continues from it"), 4.0));

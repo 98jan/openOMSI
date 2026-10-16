@@ -1793,9 +1793,11 @@ fn wheel_force(f: &FfInput, x: f32, x0: f32, t: &mut f32, k_springs: f32, k_effe
     // This only resists motion: it adds no holding force or parked centring.
     // A wheel let go comes back through the steering box's hydraulic damping: more of it
     // on the way back, so that it settles at the centre instead of swinging past (#2103).
-    // (only on a wheel coming back quickly: the last slow degrees of a return are left to
-    // the centring, which a wheel's own friction would otherwise stop short)
-    let fast_back = if returning { 0.35 * (turning_speed.abs() - 0.15).max(0.0) * turning_speed.signum() } else { 0.0 };
+    // (only on a wheel coming back quickly, fading out across the centre: the last slow
+    // degrees of a return are left to the centring, which a wheel's own friction would
+    // otherwise stop short)
+    let back = ((0.03 - x * turning_speed.signum()) / 0.06).clamp(0.0, 1.0);
+    let fast_back = 0.35 * (turning_speed.abs() - 0.15).max(0.0) * turning_speed.signum() * back * back * (3.0 - 2.0 * back);
     let damping = -(0.03 * turning_speed + fast_back) * rolling;
     *t += dt;
     let period = (f.vib_period * 0.01).max(0.02);

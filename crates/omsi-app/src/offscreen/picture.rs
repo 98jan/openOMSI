@@ -95,10 +95,7 @@ impl Offscreen<'_> {
             Some(weather),
             cloud_drift_at(weather, clock.time),
             wetness,
-            {
-                let (kind, rate) = precip_of(weather);
-                rain::initial_snow_cover(kind, rate, weather.temp.0)
-            },
+            0.0,
             Some(world),
             driven,
             driven,

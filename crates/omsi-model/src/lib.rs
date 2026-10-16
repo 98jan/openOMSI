@@ -225,11 +225,12 @@ pub struct MeshDef {
     pub smooth_skin: bool,
     pub anim_parent: Option<String>,
     pub animations: Vec<Animation>,
-    /// `[visible] var value`: the mesh's first plain condition (what the original reads).
+    /// `[visible] var value`: the mesh's last plain condition (what the original reads).
     pub visible: Option<(String, f32)>,
     /// Every visibility condition of the mesh (openOMSI, #729): the mesh is shown when all
     /// conditions of any one group hold. Several `[visible]` and `[visible_range] var min
-    /// max` blocks of a mesh make one group (all must hold), a variable written with `!`
+    /// max` blocks of a mesh make one group (all must hold; with plain `[visible]` blocks
+    /// alone the last one counts, as in the original), a variable written with `!`
     /// after it (`door_open !`) negates its condition, and a line `||` between two blocks
     /// starts the next group (either may hold). Empty: no condition. (An empty group is
     /// the mark a `||` leaves before its condition: see [`MeshDef::visible_groups`].)
@@ -555,7 +556,19 @@ impl Model {
             }
         }
         m.tidy_interior_lamps();
+        m.tidy_visible();
         m
+    }
+
+    pub fn tidy_visible(&mut self) {
+        for m in &mut self.meshes {
+            let groups = m.visible_any.iter().filter(|g| !g.is_empty()).count();
+            if groups == 1 && m.visible_any.iter().flatten().all(|c| !c.range && !c.not) {
+                if let Some(last) = m.visible_any.iter().flatten().last().cloned() {
+                    m.visible_any = vec![vec![last]];
+                }
+            }
+        }
     }
 
     /// Handle one `[newanim]` sub-command line (one of [`ANIM_TOKENS`]): it goes to the
@@ -838,7 +851,7 @@ impl Model {
                 let lo = r.f32();
                 let (hi, range) = if k == "visible_range" { (r.f32(), true) } else { (lo, false) };
                 if let Some(m) = self.cur_mesh() {
-                    if !range && !not && m.visible.is_none() {
+                    if !range && !not {
                         m.visible = Some((v.clone(), lo));
                     }
                     if m.visible_any.is_empty() {
@@ -1287,11 +1300,12 @@ pub fn load_texchanges(base: &Path, files: &[String]) -> Vec<TexChangeMaster> {
 
 #[cfg(test)]
 mod tests {
-    /// `[visible]` conditions combined (#729): several of a mesh all hold, a range, a `!`
-    /// turns one round, `||` between blocks gives another group; one alone is as before.
+    /// `[visible]` conditions combined (#729): plain `[visible]` blocks alone keep the last,
+    /// with a range they all hold, a `!` turns one round, `||` between blocks gives another
+    /// group; one alone is as before.
     #[test]
     fn several_visible_conditions_combine() {
-        let text = "[mesh]\na.o3d\n[visible]\ndoor\n1\n[visible]\nlight\n1\n\n[mesh]\nb.o3d\n[visible_range]\ngear\n1\n4\n\n[mesh]\nc.o3d\n[visible]\ndoor !\n1\n||\n[visible]\nlight\n1\n\n[mesh]\nd.o3d\n[visible]\ndoor\n2\n";
+        let text = "[mesh]\na.o3d\n[visible]\ndoor\n1\n[visible]\nlight\n1\n\n[mesh]\ne.o3d\n[visible_range]\ndoor\n1\n1\n[visible]\nlight\n1\n\n[mesh]\nb.o3d\n[visible_range]\ngear\n1\n4\n\n[mesh]\nc.o3d\n[visible]\ndoor !\n1\n||\n[visible]\nlight\n1\n\n[mesh]\nd.o3d\n[visible]\ndoor\n2\n";
         let m = super::Model::parse(&omsi_cfg::CfgFile::from_str("model.cfg", text));
         let vars = |door: f32, light: f32, gear: f32| move |n: &str| match n {
             "door" => Some(door),
@@ -1300,13 +1314,14 @@ mod tests {
             _ => None,
         };
         let shown = |i: usize, d, l, g| m.meshes[i].visible_by(vars(d, l, g)).unwrap();
-        assert!(shown(0, 1.0, 1.0, 0.0) && !shown(0, 1.0, 0.0, 0.0) && !shown(0, 0.0, 1.0, 0.0));
-        assert!(shown(1, 0.0, 0.0, 1.0) && shown(1, 0.0, 0.0, 4.0) && !shown(1, 0.0, 0.0, 5.0) && !shown(1, 0.0, 0.0, 0.0));
-        assert!(shown(2, 0.0, 0.0, 0.0) && shown(2, 1.0, 1.0, 0.0) && !shown(2, 1.0, 0.0, 0.0));
-        assert!(shown(3, 2.0, 0.0, 0.0) && !shown(3, 1.0, 0.0, 0.0));
-        assert_eq!(m.meshes[3].visible, Some(("door".to_string(), 2.0)));
-        // (the plain field keeps the first plain condition, for what reads only that)
-        assert_eq!(m.meshes[2].visible, Some(("light".to_string(), 1.0)));
+        assert!(shown(0, 1.0, 1.0, 0.0) && !shown(0, 1.0, 0.0, 0.0) && shown(0, 0.0, 1.0, 0.0));
+        assert_eq!(m.meshes[0].visible, Some(("light".to_string(), 1.0)));
+        assert!(shown(1, 1.0, 1.0, 0.0) && !shown(1, 1.0, 0.0, 0.0) && !shown(1, 0.0, 1.0, 0.0));
+        assert!(shown(2, 0.0, 0.0, 1.0) && shown(2, 0.0, 0.0, 4.0) && !shown(2, 0.0, 0.0, 5.0) && !shown(2, 0.0, 0.0, 0.0));
+        assert!(shown(3, 0.0, 0.0, 0.0) && shown(3, 1.0, 1.0, 0.0) && !shown(3, 1.0, 0.0, 0.0));
+        assert!(shown(4, 2.0, 0.0, 0.0) && !shown(4, 1.0, 0.0, 0.0));
+        assert_eq!(m.meshes[4].visible, Some(("door".to_string(), 2.0)));
+        assert_eq!(m.meshes[3].visible, Some(("light".to_string(), 1.0)));
         assert!(m.unknown_keywords.is_empty(), "{:?}", m.unknown_keywords);
     }
 

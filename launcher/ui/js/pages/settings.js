@@ -55,14 +55,15 @@ export function SettingsPage() {
   const [ask, dialog] = useConfirm();
   if (!s.settings) return null;
   const platform = s.boot?.platform || '';
-  const current = SETTINGS_TABS.find((x) => x.id === tab);
+  const tabs = SETTINGS_TABS.filter((x) => visible(x, s.settings, platform));
+  const current = tabs.find((x) => x.id === tab) || tabs[0];
   const pick = (id) => {
     setTab(id);
     remember('settings-tab', id);
   };
   return html`
     <${PageHead} title="Settings" text="Every change is saved at once; the game reads them when it starts." />
-    <${Tabs} value=${tab} options=${SETTINGS_TABS.map((x) => [x.id, x.label])} onChange=${pick} />
+    <${Tabs} value=${current.id} options=${tabs.map((x) => [x.id, x.label])} onChange=${pick} />
     ${current.page === 'content'
       ? html`<div key=${tab}><${ContentTest} /></div>`
       : html`<div class="settings-grid" key=${tab}>

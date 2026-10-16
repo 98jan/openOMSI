@@ -168,18 +168,21 @@ that camera sees from the rear section.
   mask and a white light map is taken for an LED panel. See FORMATS.md.
 - A mesh may carry **several visibility conditions** (#729) - no script needed for a mesh
   shown by two variables at once:
-  - every `[visible]` of a mesh must hold (in OMSI 2 the last one alone counted):
+  - `[visible_range]` with a variable, the lowest and the highest value shows the mesh while
+    the variable is between them (both included): `[visible_range]` `gear` `1` `4`;
+  - once a mesh has a `[visible_range]`, a `!` or a `||`, every condition of a group must
+    hold; plain `[visible]` blocks alone keep OMSI 2's rule (the last one counts), so a mesh
+    shown by two variables at once writes one of them as a range round its value:
     ```
-    [visible]
+    [visible_range]
     door_open
-    1
+    0.5
+    1.5
 
     [visible]
     lights_on
     1
     ```
-  - `[visible_range]` with a variable, the lowest and the highest value shows the mesh while
-    the variable is between them (both included): `[visible_range]` `gear` `1` `4`;
   - a `!` after the variable's name turns a condition round: `door_open !` then `1` shows
     the mesh while the door is not open (with `[visible_range]` outside the range);
   - a line `||` between two blocks starts another group of conditions: the mesh shows when
