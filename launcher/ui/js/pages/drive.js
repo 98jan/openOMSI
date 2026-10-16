@@ -205,7 +205,7 @@ function BusCard({ onPick, preview }) {
               </${Field}>
               ${numbers.length > 0 && html`<${Field} label="Fleet number">
                 <${Select} raw value=${c.number} options=${[['', `${t('Automatic')} (${numbers[0][0]})`], ...numbers.map(([n, p]) => [n, p ? `${n} - ${p}` : n])]} onChange=${(number) => choose({ number })} />
-                <${Input} value=${c.number} placeholder=${t('Custom')} onInput=${(number) => choose({ number })} />
+                <${Input} value=${numbers.some(([n]) => n === c.number) ? '' : c.number} placeholder="Custom" onInput=${(number) => choose({ number })} />
               </${Field}>`}
               <${Field} label="Number plate"><${Input} value=${c.plate} placeholder="Automatic" onInput=${(plate) => choose({ plate })} /></${Field}>
             </div>
