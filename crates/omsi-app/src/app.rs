@@ -434,10 +434,14 @@ impl App {
                         .unwrap_or(1200.0)
                         .max(omsi_map::tile_size());
                     w.set_fast_texture_loads(true);
-                    w.set_texture_budget(texture_budget(&self.settings));
+                    let video = video_memory_limit(&self.settings);
+                    let textures = texture_budget(video);
+                    w.set_texture_budget(textures);
+                    w.set_video_memory_limit(video);
                     log::info!(
-                        "texture budget: {:.0} MB",
-                        texture_budget(&self.settings) as f64 / 1e6
+                        "texture budget: {:.0} MB, video memory: {:.0} MB (0 = the driver's budget)",
+                        textures as f64 / 1e6,
+                        video as f64 / 1e6
                     );
                     self.gfx.streamer = Some(tiles::Streamer::new(
                         w.clone(),
@@ -575,6 +579,9 @@ impl App {
                     n.show_ai = self.settings.nav_ai;
                     n.show_surface = self.settings.nav_surface;
                     n.light = self.settings.nav_light;
+                    n.show_3d = self.settings.nav_3d;
+                    n.widget = self.settings.nav_widget;
+                    n.size = self.settings.nav_size;
                 }
                 if let Some(d) = self.args.driver.as_deref() {
                     self.session.career = career::Career::load(&self.args.root, d);

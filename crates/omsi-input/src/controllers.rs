@@ -1758,7 +1758,12 @@ fn wheel_force(f: &FfInput, x: f32, x0: f32, t: &mut f32, k_springs: f32, k_effe
     // At road speed, power steering gives the driver a firmer sense of direction.
     // Keep parking and town-speed forces familiar while separating 70 km/h from 10 km/h.
     let road_speed = ((v - 20.0) / 50.0).clamp(0.0, 1.0);
-    let spring_strength = (0.22 + 0.28 * v / (v + 10.0)) * (1.0 + 0.5 * road_speed);
+    // The tyres' aligning torque is their side force times the pneumatic trail, and the side
+    // force grows with the speed through the turn: crawling round a corner it is the caster
+    // alone that brings the wheel back, slowly - the bus driver lets the wheel slide back
+    // through the hands. Firmer only as the speed builds (#2103: a strong pull at town speed
+    // snapped the wheel back as if the tyres had no grip).
+    let spring_strength = (0.12 + 0.38 * v / (v + 20.0)) * (1.0 + 0.5 * road_speed);
     let moving_steering_gain = 1.0 + 0.18 * v / (v + 8.0);
     // More return torque at small and medium angles, where wheel friction can
     // otherwise stop the return. Compensate wheel friction near the centre with
@@ -1786,7 +1791,14 @@ fn wheel_force(f: &FfInput, x: f32, x0: f32, t: &mut f32, k_springs: f32, k_effe
     // resistance on return lets a quick wheel overshoot and oscillate around
     // the centre, especially when force commands arrive at a low frame rate.
     // This only resists motion: it adds no holding force or parked centring.
-    let damping = -0.03 * turning_speed * rolling;
+    // A wheel let go comes back through the steering box's hydraulic damping: more of it
+    // on the way back, so that it settles at the centre instead of swinging past (#2103).
+    // (only on a wheel coming back quickly, fading out across the centre: the last slow
+    // degrees of a return are left to the centring, which a wheel's own friction would
+    // otherwise stop short)
+    let back = ((0.03 - x * turning_speed.signum()) / 0.06).clamp(0.0, 1.0);
+    let fast_back = 0.35 * (turning_speed.abs() - 0.15).max(0.0) * turning_speed.signum() * back * back * (3.0 - 2.0 * back);
+    let damping = -(0.03 * turning_speed + fast_back) * rolling;
     *t += dt;
     let period = (f.vib_period * 0.01).max(0.02);
     let shake = f.vib_amp.clamp(0.0, 1.0) * VIB_SHARE * (std::f32::consts::TAU * *t / period).sin();
@@ -2492,6 +2504,32 @@ mod button_tests {
         }
     }
 
+    /// A wheel let go at half lock in a turn comes back to the centre and settles there,
+    /// without swinging far past it (#2103) - a rim of 0.06 kg m^2 on an 8 Nm base, 900
+    /// degrees, the forces sent sixty times a second.
+    #[test]
+    fn a_released_wheel_returns_without_overshooting() {
+        for kmh in [10.0, 30.0, 60.0] {
+            let mut t = 0.0;
+            let (mut x, mut x0) = (0.5f32, 0.5f32);
+            let mut lowest = x;
+            let dt = 1.0 / 60.0;
+            let half_range = 450.0f32.to_radians();
+            let accel_per_force = 8.0 / 0.06 / half_range;
+            let mut v = 0.0f32;
+            for _ in 0..(6.0 / dt) as usize {
+                let f = super::FfInput { on: true, kmh, dt, ..Default::default() };
+                let force = super::wheel_force(&f, x, x0, &mut t, 1.0, 0.0);
+                v += force * accel_per_force * dt;
+                x0 = x;
+                x += v * dt;
+                lowest = lowest.min(x);
+            }
+            assert!(x.abs() < 0.03, "kmh={kmh}: still at {x}");
+            assert!(lowest > -0.06, "kmh={kmh}: swung past the centre to {lowest}");
+        }
+    }
+
     #[test]
     fn steering_resistance_drops_as_the_bus_starts_rolling() {
         let mut t = 0.0;
@@ -2505,8 +2543,9 @@ mod button_tests {
     fn a_returning_wheel_is_not_stopped_by_parking_drag() {
         let mut t = 0.0;
         let f = super::FfInput { on: true, kmh: 20.0, dt: 0.016, ..Default::default() };
-        let right = super::wheel_force(&f, 0.5, 0.55, &mut t, 1.0, 0.0);
-        let left = super::wheel_force(&f, -0.5, -0.55, &mut t, 1.0, 0.0);
+        // (coming back at a third of the wheel's range a second, as a wheel let go does)
+        let right = super::wheel_force(&f, 0.5, 0.505, &mut t, 1.0, 0.0);
+        let left = super::wheel_force(&f, -0.5, -0.505, &mut t, 1.0, 0.0);
         assert!(right < 0.0 && left > 0.0, "{right} {left}");
     }
 
@@ -2615,7 +2654,8 @@ mod button_tests {
         let f = super::FfInput { on: true, kmh: 25.0, lateral_accel: 2.0, dt: 0.016, ..Default::default() };
         let held = super::wheel_force(&f, 0.5, 0.5, &mut t, 1.0, 0.0);
         let turning_out = super::wheel_force(&f, 0.5, 0.48, &mut t, 1.0, 0.0);
-        let returning = super::wheel_force(&f, 0.5, 0.52, &mut t, 1.0, 0.0);
+        // (coming back as a wheel let go does; a faster return meets the steering's damping)
+        let returning = super::wheel_force(&f, 0.5, 0.505, &mut t, 1.0, 0.0);
         // Assistance still lightens turning out. A moving return also includes
         // damping, so its net torque need not exceed the outward-turning torque.
         assert!(held < turning_out && turning_out < 0.0, "{held} {turning_out}");

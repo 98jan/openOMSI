@@ -10,6 +10,8 @@ mod effects;
 mod headlamp_shadow;
 mod main_pass;
 mod post;
+mod precip_map;
+pub(crate) use precip_map::*;
 mod prepass;
 mod setup;
 mod shadow;
@@ -55,6 +57,8 @@ pub(crate) struct FrameEnv {
     pub no_main_split: bool,
     pub no_smoke: bool,
     pub no_snowfall: bool,
+    pub no_rain: bool,
+    pub no_precip_roof: bool,
     pub no_coronas: bool,
     pub no_glare: bool,
     pub debug_fog_lamps: bool,
@@ -92,6 +96,8 @@ impl FrameEnv {
             no_main_split: omsi_cfg::flags::OMSI_NO_MAIN_SPLIT.is_set(),
             no_smoke: omsi_cfg::flags::OMSI_NO_SMOKE.is_set(),
             no_snowfall: omsi_cfg::flags::OMSI_NO_SNOWFALL.is_set(),
+            no_rain: omsi_cfg::flags::OMSI_NO_RAIN.is_set(),
+            no_precip_roof: omsi_cfg::flags::OMSI_NO_PRECIP_ROOF.is_set(),
             no_coronas: omsi_cfg::flags::OMSI_NO_CORONAS.is_set(),
             no_glare: omsi_cfg::flags::OMSI_NO_GLARE.is_set(),
             debug_fog_lamps: omsi_cfg::flags::OMSI_DEBUG_FOG_LAMPS.is_set(),

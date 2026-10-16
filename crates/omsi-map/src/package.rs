@@ -12,7 +12,11 @@
 //! objects; they are put onto this game's grid with [`crate::tile_local_to_world`], so the grid
 //! must have been set first ([`crate::configure_grid`]).
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+mod places;
+pub use places::{Label, Marker, Region, Street};
 
 pub const FOLDER: &str = "openomsi-realmap";
 const MAGIC: &[u8; 4] = b"OMSF";
@@ -31,6 +35,10 @@ pub const FILL_CLASSES: usize = 7;
 pub const LINE_RIVER: u8 = 0;
 pub const LINE_RAIL: u8 = 1;
 pub const LINE_BORDER: u8 = 2;
+/// A named street (not drawn, only looked up) and a named street that also says its limits: `width` is the limit
+/// (km/h, 0 = none), `flags` the limit of heavy vehicles (km/h, 0 = the same, or none).
+pub const LINE_STREET: u8 = 3;
+pub const LINE_STREET_LIMITS: u8 = 4;
 
 /// A colour as the manifest writes it, `#rrggbb`.
 pub type Rgb = [u8; 3];
@@ -161,6 +169,12 @@ pub struct Package {
     chunk: f64,
     index: Vec<Entry>,
     data: Vec<u8>,
+    names: Vec<String>,
+    by_key: HashMap<(i32, i32), usize>,
+    /// The package folder (`markers.cfg`, `regions.cfg` and `icons/` lie in it).
+    dir: PathBuf,
+    regions: Vec<Region>,
+    has_streets: bool,
 }
 
 /// Bounds-checked reading: any short or odd file ends in `None`, never a panic.
@@ -252,7 +266,11 @@ impl Package {
             return None;
         }
         let data = omsi_cfg::vfs::read(&dir.join("surface.oms")).ok()?;
-        let p = Self::parse(data, name, credit, dark, light, grid);
+        let mut p = Self::parse(data, name, credit, dark, light, grid);
+        if let Some(p) = p.as_mut() {
+            p.dir = dir.clone();
+            p.load_places();
+        }
         if p.is_none() {
             log::warn!(
                 "map package: {}/surface.oms is not a valid version {VERSION} file: not used",
@@ -286,9 +304,10 @@ impl Package {
         if n_names > r.left() {
             return None;
         }
+        let mut names = Vec::with_capacity(n_names);
         for _ in 0..n_names {
             let n = r.u16()? as usize;
-            r.take(n)?;
+            names.push(String::from_utf8_lossy(r.take(n)?).into_owned());
         }
         let n_chunks = r.u32()? as usize;
         if n_chunks.checked_mul(20)? > r.left() {
@@ -303,6 +322,7 @@ impl Package {
             }
             index.push(Entry { cx, cy, at, len });
         }
+        let by_key = index.iter().enumerate().map(|(i, e)| ((e.cx, e.cy), i)).collect();
         Some(Package {
             name,
             credit,
@@ -313,6 +333,11 @@ impl Package {
             chunk,
             index,
             data,
+            names,
+            by_key,
+            dir: PathBuf::new(),
+            regions: Vec::new(),
+            has_streets: false,
         })
     }
 

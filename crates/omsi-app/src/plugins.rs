@@ -42,17 +42,19 @@ pub(crate) struct Io<'a> {
     /// What happened since the last frame (see [`queue_event`]).
     pub events: Vec<GameEvent>,
     pub events_ex: Vec<(&'static str, Vec<omsi_plugin::api::Value>)>,
+    /// The passengers who decided about their ticket since the last frame.
+    pub ticket_asks: Vec<omsi_plugin::TicketAsk>,
 }
 
 impl<'a> Io<'a> {
     pub(crate) fn new(app: &'a mut crate::App, dt: f32, keys: Vec<(String, bool)>, events: Vec<GameEvent>, events_ex: Vec<(&'static str, Vec<omsi_plugin::api::Value>)>) -> Io<'a> {
-        Io { app: Some(app), dt, message: None, info: Default::default(), commands: Vec::new(), keys, events, events_ex }
+        Io { app: Some(app), dt, message: None, info: Default::default(), commands: Vec::new(), keys, events, events_ex, ticket_asks: Vec::new() }
     }
 
     /// An io without a game, with `info` as `omsi.info()` (the tests).
     #[cfg(test)]
     fn snapshot(info: Vec<(&'static str, InfoValue)>) -> Io<'static> {
-        Io { app: None, dt: 0.0, message: None, info: std::cell::RefCell::new(Some(info)), commands: Vec::new(), keys: Vec::new(), events: Vec::new(), events_ex: Vec::new() }
+        Io { app: None, dt: 0.0, message: None, info: std::cell::RefCell::new(Some(info)), commands: Vec::new(), keys: Vec::new(), events: Vec::new(), events_ex: Vec::new(), ticket_asks: Vec::new() }
     }
 
     fn app(&self) -> Option<&crate::App> {
@@ -723,6 +725,13 @@ impl PluginIo for Io<'_> {
         let Some(app) = self.app_mut() else { return false };
         app.settings.pax_density = v;
         true
+    }
+    fn ticket_asks(&self) -> Vec<op::TicketAsk> {
+        self.ticket_asks.clone()
+    }
+    fn people_set_ticket(&mut self, id: u32, change: &op::TicketChange, by: &str) -> Result<(), String> {
+        let app = self.app_mut().ok_or("no game")?;
+        pbus::set_ticket(app, id, change, by)
     }
 
     // --- duty, timetable, map ---

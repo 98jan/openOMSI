@@ -34,11 +34,18 @@ fn main() {
             (wire::FRAME, Some(lib)) => {
                 // (the script textures travel only for a library with AccessScriptTexture,
                 // as the game knows from the flags of START)
-                let textures = lib.procs().texture;
-                match wire::get_frame(&mut input, textures, lib.procs().pointer) {
+                // (and the passengers' tickets only for one with AccessTicketRequest)
+                let (textures, tickets) = (lib.procs().texture, lib.procs().ticket);
+                let frame = wire::get_frame(&mut input, textures, lib.procs().pointer).and_then(|mut f| {
+                    if tickets {
+                        f.tickets = wire::get_tickets(&mut input)?;
+                    }
+                    Ok(f)
+                });
+                match frame {
                     Ok(f) => {
                         let reply = lib.frame(&f);
-                        wire::put_reply(&mut out, &reply, textures)
+                        wire::put_reply(&mut out, &reply, textures).and_then(|_| if tickets { wire::put_ticket_answers(&mut out, &reply.tickets) } else { Ok(()) })
                     }
                     Err(_) => return,
                 }

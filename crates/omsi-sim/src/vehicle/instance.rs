@@ -110,6 +110,14 @@ impl VehicleInstance {
                 None => model_only.push((key, Some(*value))),
             }
         }
+        // (the variables of the further conditions - a range, a negated one, the second of a
+        // mesh's `[visible]`s - start at 0)
+        for c in ty.model.meshes.iter().flat_map(|m| m.visible_groups()).flatten() {
+            let key = c.variable.to_ascii_lowercase();
+            if !var_index.contains_key(&key) && !model_only.iter().any(|(k, _)| *k == key) {
+                model_only.push((key, None));
+            }
+        }
         for (key, value) in model_only {
             let id = state.vars.len() as omsi_script::VarId;
             state.vars.push(value.unwrap_or(0.0));

@@ -1,7 +1,7 @@
 //! The main pass's pipelines for each of the three ways the scene is drawn: vanilla into
 //! the target, enhanced into the high-range picture, and vanilla with reflections.
 
-use super::coronas::{Coronas, Snow, ADDITIVE, ALPHA_BLEND, SCREEN};
+use super::coronas::{Coronas, Precip, ADDITIVE, ALPHA_BLEND, SCREEN};
 use super::parallel::{compile_all, Job};
 use super::scene::SceneBase;
 use super::sky::SkyBase;
@@ -12,7 +12,8 @@ pub(crate) struct PassKit<'a> {
     pub device: &'a wgpu::Device,
     pub scene: &'a SceneBase,
     pub coronas: &'a Coronas,
-    pub snow: &'a Snow,
+    pub snow: &'a Precip,
+    pub rain: &'a Precip,
     pub sky: &'a SkyBase,
     pub msaa: u32,
 }
@@ -25,6 +26,7 @@ struct PassShaders<'a> {
     corona_blend: wgpu::BlendState,
     smoke: &'a str,
     snow: &'a str,
+    rain: &'a str,
     sky: &'a str,
 }
 
@@ -61,6 +63,7 @@ fn take(made: &mut impl Iterator<Item = Made>) -> PassPipelines {
         corona_pipeline: one(made),
         smoke_pipeline: one(made),
         snow_pipeline: made.next().flatten(),
+        rain_fall_pipeline: made.next().flatten(),
         sky_pipeline: one(made),
     }
 }
@@ -76,6 +79,7 @@ impl PassKit<'_> {
         jobs.push(Box::new(move || Some(self.coronas.pipeline(device, f, fs.corona, fs.corona_blend, self.msaa))));
         jobs.push(Box::new(move || Some(self.coronas.pipeline(device, f, fs.smoke, ALPHA_BLEND, self.msaa))));
         jobs.push(Box::new(move || (!basic_pipelines()).then(|| optional_pipeline(device, "the snowfall", || self.snow.pipeline(device, f, fs.snow, self.msaa))).flatten()));
+        jobs.push(Box::new(move || (!basic_pipelines()).then(|| optional_pipeline(device, "the rainfall", || self.rain.pipeline(device, f, fs.rain, self.msaa))).flatten()));
         jobs.push(Box::new(move || Some(self.sky.pipeline(device, f, fs.sky, self.msaa))));
     }
 
@@ -83,13 +87,13 @@ impl PassKit<'_> {
         let enhanced = !leave_out_enhanced;
         let reflections = enhanced && !GL_BACKEND.load(std::sync::atomic::Ordering::Relaxed);
         let mut jobs: Vec<Job<Made>> = Vec::new();
-        self.pass(format, PassShaders { scene: "fs_main", corona: "fs_main", corona_blend: SCREEN, smoke: "fs_smoke", snow: "fs_snow", sky: "fs_main" }, &mut jobs);
+        self.pass(format, PassShaders { scene: "fs_main", corona: "fs_main", corona_blend: SCREEN, smoke: "fs_smoke", snow: "fs_snow", rain: "fs_rain", sky: "fs_main" }, &mut jobs);
         if enhanced {
             jobs.push(Box::new(move || Some(self.sky.pipeline(self.device, format, "fs_enhanced_mirror", self.msaa))));
-            self.pass(hdr_format, PassShaders { scene: "fs_enhanced", corona: "fs_enhanced", corona_blend: ADDITIVE, smoke: "fs_smoke_enhanced", snow: "fs_snow_enhanced", sky: "fs_enhanced" }, &mut jobs);
+            self.pass(hdr_format, PassShaders { scene: "fs_enhanced", corona: "fs_enhanced", corona_blend: ADDITIVE, smoke: "fs_smoke_enhanced", snow: "fs_snow_enhanced", rain: "fs_rain_enhanced", sky: "fs_enhanced" }, &mut jobs);
         }
         if reflections {
-            self.pass(hdr_format, PassShaders { scene: "fs_vanilla_reflections", corona: "fs_main", corona_blend: SCREEN, smoke: "fs_smoke", snow: "fs_snow", sky: "fs_main" }, &mut jobs);
+            self.pass(hdr_format, PassShaders { scene: "fs_vanilla_reflections", corona: "fs_main", corona_blend: SCREEN, smoke: "fs_smoke", snow: "fs_snow", rain: "fs_rain", sky: "fs_main" }, &mut jobs);
         }
         let mut made = compile_all(self.device, jobs).into_iter();
         let pass = take(&mut made);

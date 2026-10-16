@@ -212,6 +212,7 @@ impl Renderer {
         scene.params_buf = None;
         scene.camera_bind_group = None;
         scene.shadow_bind_group = None;
+        scene.precip_bind_group = None;
     }
 
     /// Rebuild the pipelines and targets without multisampling after a GPU error with it.
@@ -246,6 +247,7 @@ impl Renderer {
         scene.params_buf = None;
         scene.camera_bind_group = None;
         scene.shadow_bind_group = None;
+        scene.precip_bind_group = None;
     }
 
     /// Render the scene into `target` (which must have the renderer's format).
@@ -686,7 +688,9 @@ impl Renderer {
         };
         self.encode_shadow_maps(&mut enc.shadow, scene, &sh, &shadow_batches, &mut timers);
         self.encode_lamp_shadows(&mut enc.shadow, scene, &f, &shadow_batches, &mut timers);
-        self.encode_depth_prepass(&mut enc.prepass, scene, &f, &plan.prepass_batches, &mut timers);
+        self.encode_precip_map(&mut enc.shadow, scene, &sh, &shadow_batches, &mut timers);
+        let prepass_batches = if self.shares_prepass_depth(&f, &plan) { plan.prefill_batches() } else { &plan.prepass_batches };
+        self.encode_depth_prepass(&mut enc.prepass, scene, &f, prepass_batches, &mut timers);
         if f.enhanced && f.lead_view && f.prepass_on && self.device_lost().is_none() {
             if let (Some(s), Some(ao)) = (self.tone.lamp_sight.as_mut(), self.targets.ao.as_ref()) {
                 s.encode(&self.device, &self.queue, &mut enc.prepass, &ao.depth_view, vp_mat, f.ro, f.cam_rel);

@@ -145,7 +145,7 @@ pub struct Vm {
     rng: u64,
     /// Macro recursion guard.
     depth: u32,
-    /// Instructions the engine-called block now running may still take (`MAX_OPS`).
+    /// Instructions the engine-called block now running may still take (`MAX_OPS`, `MAX_INIT_OPS`).
     budget: u64,
     /// A run was cut short by the budget (said once).
     starved: bool,
@@ -196,11 +196,17 @@ impl Default for Vm {
 const MAX_DEPTH: u32 = 64;
 
 /// Instructions one vehicle's frame (all its `{frame}` or `{frame_ai}` blocks together), or
-/// one `{init}` block or trigger, may take, macros included. The language has no loops, but
+/// one trigger, may take, macros included. The language has no loops, but
 /// a macro that calls itself a few times over, 64 deep, would run for ever - a script that
 /// came from another machine (a host's mods, another player's bus) would stop this game. The
 /// stock scripts take thousands a frame; a run cut short leaves its variables as they are.
 const MAX_OPS: u64 = 2_000_000;
+
+/// Instructions one `{init}` block may take: it runs once, as the vehicle is set up, so a long
+/// one only delays that. GPM's Citaro C2 looks up its depot file from its `{init}` (its AFR4
+/// printer's `ReadHof`) in 4.4 million; cut at `MAX_OPS`, its destination sign, IBIS and
+/// climate were never set up. Triggers run while driving and keep `MAX_OPS`.
+const MAX_INIT_OPS: u64 = 50_000_000;
 
 impl Vm {
     pub fn new() -> Self {
@@ -275,7 +281,7 @@ impl Vm {
     /// the last one's.
     fn run_top(&mut self, p: &Program, block: BlockId, state: &mut State, host: &mut dyn Host) {
         self.stacks.clear();
-        self.budget = MAX_OPS;
+        self.budget = MAX_INIT_OPS;
         self.run_block(p, block, state, host);
     }
 
@@ -291,7 +297,7 @@ impl Vm {
             if self.budget == 0 {
                 if !self.starved {
                     self.starved = true;
-                    log::warn!("script: {} took more than {MAX_OPS} instructions in one run and was cut short", p.blocks[block as usize].name);
+                    log::warn!("script: {} ran out of its instructions for one run and was cut short", p.blocks[block as usize].name);
                 }
                 break;
             }
@@ -691,6 +697,48 @@ mod tests {
         assert!(a > 1000.0, "{a}");
         vm.run_frame(&p, &mut st, &mut NullHost);
         assert!(st.get(p.var("a").unwrap()) > a, "the next run had a budget of its own");
+        assert!(t0.elapsed() < std::time::Duration::from_secs(10), "{:?}", t0.elapsed());
+    }
+
+    /// A chain of macros run 10 x 10 x ... times, as GPM's AFR4 printer reads its depot file.
+    fn nested_count(top: &str) -> String {
+        let mut src = String::from("{macro:m1}\n(L.L.a) 1 + (S.L.a)\n{end}\n");
+        for k in 1..7 {
+            src.push_str(&format!("{{macro:m{}}}\n{}\n{{end}}\n", k + 1, format!("(M.L.m{k}) ").repeat(10)));
+        }
+        src.push_str(&format!("{{{top}}}\n(M.L.m7)\n{{end}}\n"));
+        src
+    }
+
+    /// An `{init}` block may take more than a frame: GPM's Citaro C2 reads its depot file there
+    /// in 4.4 million instructions, and cut at a frame's budget its destination sign stayed dark.
+    #[test]
+    fn an_init_block_may_take_more_than_a_frame() {
+        let p = prog(&nested_count("init"));
+        assert!(p.errors.is_empty(), "{:?}", p.errors);
+        let mut vm = Vm::new();
+        let mut st = State::new(&p);
+        vm.run_init(&p, &mut st, &mut NullHost);
+        assert_eq!(st.get(p.var("a").unwrap()), 1_000_000.0);
+        // the same in a frame or a trigger, while driving, is still cut short
+        let p = prog(&nested_count("frame"));
+        let mut st = State::new(&p);
+        vm.run_frame(&p, &mut st, &mut NullHost);
+        assert!(st.get(p.var("a").unwrap()) < 1_000_000.0);
+        let p = prog(&nested_count("trigger:t"));
+        let mut st = State::new(&p);
+        assert!(vm.run_trigger(&p, "t", &mut st, &mut NullHost));
+        assert!(st.get(p.var("a").unwrap()) < 1_000_000.0);
+    }
+
+    #[test]
+    fn an_init_block_that_would_run_for_ever_is_cut_short() {
+        let p = prog("{macro:m}\n(L.L.a) 1 + (S.L.a) (M.L.m) (M.L.m)\n{end}\n{init}\n(M.L.m)\n{end}\n");
+        let mut vm = Vm::new();
+        let mut st = State::new(&p);
+        let t0 = std::time::Instant::now();
+        vm.run_init(&p, &mut st, &mut NullHost);
+        assert!(st.get(p.var("a").unwrap()) > 1000.0);
         assert!(t0.elapsed() < std::time::Duration::from_secs(10), "{:?}", t0.elapsed());
     }
 

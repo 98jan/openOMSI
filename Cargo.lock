@@ -3454,6 +3454,7 @@ dependencies = [
  "omsi-launcher-core",
  "omsi-launcher-model",
  "omsi-map",
+ "omsi-mapdraw",
  "omsi-model",
  "omsi-net",
  "omsi-o3d",
@@ -3628,6 +3629,7 @@ dependencies = [
  "omsi-script",
  "omsi-sim",
  "omsi-vehicle",
+ "serde_json",
  "windows 0.62.2",
  "winit",
 ]
@@ -3643,6 +3645,7 @@ dependencies = [
  "log",
  "omsi-cfg",
  "omsi-map",
+ "omsi-model",
  "omsi-net",
  "omsi-o3d",
  "omsi-script",
@@ -3719,9 +3722,24 @@ dependencies = [
 name = "omsi-map"
 version = "0.1.0"
 dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
  "log",
  "omsi-cfg",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "omsi-mapdraw"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
+ "omsi-map",
+ "omsi-sim",
+ "omsi-ui",
 ]
 
 [[package]]
@@ -3971,6 +3989,7 @@ dependencies = [
  "image",
  "log",
  "naga",
+ "omsi-cfg",
  "pollster 1.0.1",
  "resvg",
  "wgpu",

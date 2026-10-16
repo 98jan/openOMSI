@@ -7,6 +7,7 @@ members = [
     "crates/omsi-model",
     "crates/omsi-scenery",
     "crates/omsi-map",
+    "crates/omsi-mapdraw",
     "crates/omsi-vehicle",
     "crates/omsi-timetable",
     "crates/omsi-content",

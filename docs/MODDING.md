@@ -50,9 +50,9 @@ OMSI 2 reads the first four and skips the rest. A model may declare any number o
   `.ktx2`, `.ktx`, `.qoi`, `.hdr`, `.exr` and `.pnm`.
 - There is no 2 GB address-space limit: openOMSI is a 64-bit program.
 - A texture keeps its full resolution within 150 m of the camera, so a bus's own 4K
-  textures always stay sharp. Far scenery gives up detail only when the texture memory
-  (`texture_memory` in the settings, or `OMSI_TEXTURE_MEMORY`, in MB) runs out, as OMSI's
-  `[texmemlimit]` does.
+  textures always stay sharp. Far scenery gives up detail only when the texture budget
+  (`OMSI_TEXTURE_MEMORY`, in MB) or the video memory (`video_memory` in the settings, all
+  the game holds on the card) runs out, as with OMSI's `[texmemlimit]`.
 - `[scripttexture]`, `[htmltexture]` and `[texttexture]` / `[texttexture_enh]` can be any size the card
   takes.
 
@@ -166,6 +166,28 @@ that camera sees from the rear section.
   dots glow in the enhanced picture: 1 the full `LED glow` setting, 0.5 half of it, 0 not at
   all (the slot is no LED panel). Without it openOMSI guesses: a slot with a `\S:n` script
   mask and a white light map is taken for an LED panel. See FORMATS.md.
+- A mesh may carry **several visibility conditions** (#729) - no script needed for a mesh
+  shown by two variables at once:
+  - `[visible_range]` with a variable, the lowest and the highest value shows the mesh while
+    the variable is between them (both included): `[visible_range]` `gear` `1` `4`;
+  - once a mesh has a `[visible_range]`, a `!` or a `||`, every condition of a group must
+    hold; plain `[visible]` blocks alone keep OMSI 2's rule (the last one counts), so a mesh
+    shown by two variables at once writes one of them as a range round its value:
+    ```
+    [visible_range]
+    door_open
+    0.5
+    1.5
+
+    [visible]
+    lights_on
+    1
+    ```
+  - a `!` after the variable's name turns a condition round: `door_open !` then `1` shows
+    the mesh while the door is not open (with `[visible_range]` outside the range);
+  - a line `||` between two blocks starts another group of conditions: the mesh shows when
+    all of the conditions before it hold, or all of those after it, as `||` reads in a script.
+  A variable the vehicle does not have reads 0, as with OMSI 2's single `[visible]`.
 - `.o3d` files with 32-bit indices (the long-index flag) are drawn with their full vertex
   and face count; everything is drawn with 32-bit indices.
 - There is no limit on the number of meshes, materials, `[matl_change]` items, `[CTC]`

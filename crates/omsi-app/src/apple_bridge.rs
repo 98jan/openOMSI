@@ -593,7 +593,7 @@ fn preview_release() {
 
 fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
     let mut renderer: Option<omsi_render::Renderer> = None;
-    let mut settings = crate::settings::Settings::load();
+    let mut quality = crate::launcher::showroom::Quality::now();
     let mut failed = false;
     let mut showroom = crate::launcher::showroom::Showroom::new();
     let mut last = Instant::now();
@@ -602,13 +602,10 @@ fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
     while let Ok(m) = rx.recv() {
         match m {
             PreviewMsg::Want(look) => {
-                let next = crate::settings::Settings::load();
-                if settings != next {
-                    showroom = crate::launcher::showroom::Showroom::new();
+                if showroom.follow(&mut quality, false) {
                     renderer = None;
                     failed = false;
                     delivered = u64::MAX;
-                    settings = next;
                 }
                 showroom.want(look);
             }
@@ -624,7 +621,7 @@ fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
                 asked = Instant::now();
                 if renderer.is_none() && !failed {
                     let instance = crate::startup::graphics_instance();
-                    match pollster::block_on(omsi_render::Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), crate::launcher::showroom_options(&settings))) {
+                    match pollster::block_on(omsi_render::Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), quality.options)) {
                         Ok(r) => renderer = Some(r),
                         Err(e) => {
                             log::warn!("launcher preview: no renderer: {e:#}");

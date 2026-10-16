@@ -21,7 +21,7 @@ async fn work<F: FnOnce() -> Answer + Send + 'static>(f: F) -> Answer {
 }
 
 pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![call, call_bytes, pick_folder, pick_file, pick_mod, open_path, open_url, update_relaunch, selftest_done, fit_zoom]
+    tauri::generate_handler![call, call_bytes, pick_folder, pick_file, pick_mod, pick_hofs, open_path, open_url, update_relaunch, selftest_done, fit_zoom]
 }
 
 /// This window, for the commands of `omsi-launcher-api`.
@@ -110,6 +110,11 @@ fn pick_mod(archive: bool) -> Option<String> {
     core::pick_mod(archive).map(|p| p.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn pick_hofs(title: String, filter: String) -> Option<Vec<String>> {
+    core::pick_hofs(&title, &filter).map(|files| files.into_iter().map(|p| p.to_string_lossy().to_string()).collect())
+}
+
 /// Show a folder or file in the system's file manager.
 #[tauri::command]
 async fn open_path(path: String) -> Answer {
@@ -155,7 +160,8 @@ fn fit_zoom(window: tauri::WebviewWindow, size: f64) -> Answer {
     let dpi = window.scale_factor().map_err(err)?;
     let inner = window.inner_size().map_err(err)?;
     let (w, h) = (inner.width as f64 / dpi, inner.height as f64 / dpi);
-    let zoom = (w / 1440.0).min(h / 820.0).clamp(1.0, 2.2) * size.clamp(0.8, 1.5);
+    let fit = (w / 1440.0).min(h / 820.0).max(1.0);
+    let zoom = (0.9 * fit.powf(0.7)).min(1.8) * size.clamp(0.7, 1.5);
     window.set_zoom(zoom).map_err(err)?;
     Ok(json!(zoom))
 }

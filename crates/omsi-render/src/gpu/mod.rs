@@ -539,7 +539,8 @@ impl Renderer {
     /// textures, before the driver gives up the device).
     pub fn take_out_of_memory(&self) -> bool {
         let texture = crate::resources::TEXTURE_OUT_OF_MEMORY.swap(false, std::sync::atomic::Ordering::Relaxed);
-        self.errors.out_of_memory.swap(false, std::sync::atomic::Ordering::Relaxed) | texture
+        let mesh = crate::resources::MESH_OUT_OF_MEMORY.swap(false, std::sync::atomic::Ordering::Relaxed);
+        self.errors.out_of_memory.swap(false, std::sync::atomic::Ordering::Relaxed) | texture | mesh
     }
 
     pub fn device_lost(&self) -> Option<String> {

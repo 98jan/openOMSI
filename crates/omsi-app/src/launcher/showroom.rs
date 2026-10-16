@@ -1,8 +1,8 @@
 //! The launcher's bus preview: the chosen bus drawn by the game's own renderer - its
-//! model, paint and materials - with the player's graphics settings,
-//! under the light of the chosen time and weather, into a picture the launcher shows
-//! in a card. It is drawn again only when something changed (another bus, paint, light,
-//! the preview turned by the mouse), never every frame.
+//! model, paint and materials - with the player's graphics settings, under a fixed
+//! midday light on a plain backdrop, into a picture the launcher shows in a card. It is
+//! drawn again only when something changed (another bus, paint, the preview turned by the
+//! mouse, other graphics settings), never every frame.
 //!
 //! A bus is read on a worker (its type, its scripts run to their resting state, its
 //! textures and meshes put on the GPU ahead) and then placed into a scene of its own with
@@ -47,8 +47,6 @@ struct Shown {
     centre: glam::Vec3,
     length: f32,
     weather: omsi_content::weather::Weather,
-    /// The sky's cloud type and weather model its look is drawn with.
-    sky: crate::weather_setup::SkyState,
     lighting: Lighting,
 }
 
@@ -140,6 +138,7 @@ pub struct Showroom {
     pub generation: u64,
     /// Bumped at every drawing of the picture (the launcher shows an unchanged one only once).
     pub drawn: u64,
+    fresh_light: bool,
 }
 
 /// Names the bus whose preview is being read and placed, until it is in the picture.
@@ -184,14 +183,8 @@ fn args_for(look: &Look) -> Args {
     if !look.paint.is_empty() {
         v.extend(["--paint".into(), look.paint.clone()]);
     }
-    // (the current weather is fetched by the game, not by the preview)
-    if !look.weather.is_empty() && !look.weather.starts_with("metar:") {
-        v.extend(["--weather".into(), look.weather.clone()]);
-    }
-    v.extend(["--time".into(), format!("{:02}:{:02}", look.time / 60, look.time % 60)]);
-    if !look.date.is_empty() {
-        v.extend(["--date".into(), look.date.clone()]);
-    }
+    // (the same light whatever the duty's time and weather: at night the bus was hardly seen)
+    v.extend(["--time".into(), "12:00".into()]);
     let mut args = Args::try_parse_from(v).unwrap_or_else(|_| Args::parse_from(["omsi"]));
     // (drawn the way the game will be)
     args.session_settings = crate::startup::SessionSettings::for_showroom(&crate::settings::Settings::load());
@@ -232,6 +225,7 @@ impl Showroom {
             dirty: true,
             generation: 0,
             drawn: 0,
+            fresh_light: true,
         }
     }
 
@@ -318,6 +312,7 @@ impl Showroom {
                 Ok(Ok(ready)) => {
                     self.loading = None;
                     self.shown = Some(self.place(renderer, ready));
+                    self.fresh_light = true;
                     if !self.can_view(self.view) {
                         self.view = PreviewView::Outside;
                     }
@@ -344,17 +339,12 @@ impl Showroom {
             let shown = self.shown.as_ref().map(|s| &s.look);
             let loading = self.loading.as_ref().map(|l| &l.0);
             if shown != Some(&w) && loading != Some(&w) && self.loading.is_none() && self.failed.as_ref() != Some(&w) {
-                // only the light changed: no need to read the bus again
+                // only the time or weather changed: the preview does not show them
                 let same_bus = shown.map(|s| s.bus == w.bus && s.paint == w.paint && s.map == w.map && s.root == w.root).unwrap_or(false);
                 if same_bus {
                     if let Some(s) = self.shown.as_mut() {
                         s.look = w.clone();
-                        let args = args_for(&w);
-                        (s.weather, s.sky.model) = crate::weather_setup::load_weather_run(&args);
-                        setup_sky(&args, renderer, &mut s.scene, omsi_content::Envir::load(&args.root.join("envir.cfg")).ok().as_ref(), Some(&s.weather), &mut s.sky.clouds);
-                        s.lighting = lighting_for(&args, &s.weather, &s.sky);
                     }
-                    self.dirty = true;
                 } else {
                     self.start_loading(w);
                 }
@@ -438,10 +428,8 @@ impl Showroom {
         let t0 = std::time::Instant::now();
         let mut scene = renderer.new_scene();
         let args = args_for(&r.look);
-        let (weather, model) = crate::weather_setup::load_weather_run(&args);
-        let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
-        let mut sky = crate::weather_setup::SkyState { clouds: None, model, look: args.session_settings };
-        setup_sky(&args, renderer, &mut scene, envir.as_ref(), Some(&weather), &mut sky.clouds);
+        let weather = studio_weather();
+        let sky = crate::weather_setup::SkyState { clouds: None, model: None, look: args.session_settings };
         add_floor(renderer, &mut scene);
         let world = r.world;
         // (the panes wear this weather's snow as the bus goes onto the GPU)
@@ -470,7 +458,7 @@ impl Showroom {
         let lighting = lighting_for(&args, &weather, &sky);
         log::info!("showroom: {} ({} meshes, {:.1} m long) placed in {:.2} s", r.look.bus, render.instances.len(), length, t0.elapsed().as_secs_f64());
         let _ = std::fs::remove_file(placing_mark());
-        Shown { look: r.look, scene, world: Some(world), vehicle: Some(vehicle), render: Some(render), trailers, centre, length, weather, sky, lighting }
+        Shown { look: r.look, scene, world: Some(world), vehicle: Some(vehicle), render: Some(render), trailers, centre, length, weather, lighting }
     }
 
     /// The picture of the bus at `w` x `h` pixels, drawn again when something changed.
@@ -497,7 +485,9 @@ impl Showroom {
             self.dirty = false;
             self.drawn += 1;
             let view = self.target.as_ref().unwrap().1.clone();
+            renderer.instant_exposure = std::mem::take(&mut self.fresh_light);
             self.render(renderer, &view, w, h);
+            renderer.instant_exposure = false;
         }
         self.target.as_ref().map(|t| t.1.clone())
     }
@@ -601,12 +591,72 @@ impl Showroom {
         self.shown.as_ref().map(|s| s.vehicle.is_some()).unwrap_or(false) && self.target.is_some()
     }
 
+    pub fn renderer_changed(&mut self) {
+        let _ = std::fs::remove_file(placing_mark());
+        self.shown = None;
+        self.target = None;
+        self.loading = None;
+        self.opening = None;
+        self.failed = None;
+        self.dirty = true;
+    }
+
+    pub fn relight(&mut self) {
+        if let Some(s) = self.shown.as_mut() {
+            let args = args_for(&s.look);
+            let sky = crate::weather_setup::SkyState { clouds: None, model: None, look: args.session_settings };
+            s.lighting = lighting_for(&args, &s.weather, &sky);
+            self.fresh_light = true;
+            self.dirty = true;
+        }
+    }
+
+    pub fn follow(&mut self, quality: &mut Quality, now: bool) -> bool {
+        if !now && quality.checked.elapsed() < std::time::Duration::from_millis(500) {
+            return false;
+        }
+        let next = Quality::now();
+        let rebuild = next.options != quality.options;
+        if rebuild {
+            self.renderer_changed();
+        } else if next.light != quality.light {
+            self.relight();
+        }
+        *quality = next;
+        rebuild
+    }
+}
+
+pub struct Quality {
+    pub options: omsi_render::RenderOptions,
+    pub(super) light: (crate::startup::SessionSettings, bool, bool, u32),
+    checked: std::time::Instant,
+}
+
+impl Quality {
+    pub fn now() -> Quality {
+        Quality::of(&crate::settings::Settings::load())
+    }
+
+    pub(super) fn of(s: &crate::settings::Settings) -> Quality {
+        let light = (crate::startup::SessionSettings::for_showroom(&s), s.shadows, s.detail_textures, s.reflections.to_bits());
+        Quality { options: super::showroom_options(s), light, checked: std::time::Instant::now() }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::mem::ManuallyDrop;
+
+    #[test]
+    fn the_studio_weather_is_clear() {
+        let w = studio_weather();
+        assert_eq!(w.clouds.0, "-1");
+        assert!(!w.snow && !w.snow_on_road);
+        assert_eq!(w.precip[0], 0.0);
+        assert!(w.fog.0 >= 10_000.0);
+    }
 
     fn look(bus: &str) -> Look {
         Look { bus: bus.into(), ..Look::default() }
@@ -693,20 +743,32 @@ mod tests {
     }
 }
 
-/// The selected time and weather with the player's shading, detail and shadow switches.
-/// Keep the showroom clear of weather films and fog so the selected bus stays visible.
+/// A clear midday light, with the sun's shadow under the bus, before a plain grey backdrop,
+/// drawn with the player's shading, detail and shadow switches (no weather effects).
 fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather, sky: &crate::weather_setup::SkyState) -> Lighting {
     let settings = crate::settings::Settings::load();
     let clock = start_clock(args);
     let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
     let daylight = omsi_sim::Daylight::compute(&clock, envir.as_ref());
-    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, settings.shadows && daylight.altitude_deg > 2.0, sky);
+    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, 0.0, settings.shadows, sky);
+    l.shadows = settings.shadows && daylight.altitude_deg > 2.0;
+    l.enhanced = super::showroom_enhanced(&settings);
     l.detail = settings.detail_textures;
     l.wetness = 0.0;
     l.snow = 0.0;
     l.fog_density = 0.0;
+    l.reflection_strength = settings.reflections;
+    l.sky_color = glam::Vec3::splat(STUDIO_GREY);
     l
 }
+
+/// A clear sky whatever the duty's weather: no clouds dimming the sun, no snow on the panes.
+fn studio_weather() -> omsi_content::weather::Weather {
+    omsi_content::weather::from_metar("", "CAVOK")
+}
+
+/// The backdrop's grey (linear), drawn where no sky is set up.
+const STUDIO_GREY: f32 = 0.08;
 
 /// A round showroom floor under the bus: dark, matt, catching its shadow.
 fn add_floor(renderer: &Renderer, scene: &mut Scene) {

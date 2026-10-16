@@ -42,14 +42,18 @@ export function BusPreview({ look, class: cls = '' }) {
     const st = r.current;
     st.alive = true;
     let lastFrame = 0;
+    const paced = () => new Promise((res) => {
+      const step = (t) => (t - lastFrame >= 1000 / 30 - 4 ? res() : requestAnimationFrame(step));
+      if (performance.now() - lastFrame >= 1000 / 30) res();
+      else requestAnimationFrame(step);
+    });
     (async () => {
       while (st.alive) {
         if (document.hidden) {
           await new Promise((res) => (st.wake = res));
           continue;
         }
-        const delay = 1000 / 30 - (performance.now() - lastFrame);
-        if (delay > 0) await new Promise((res) => setTimeout(res, delay));
+        await paced();
         if (!st.alive) break;
         lastFrame = performance.now();
         const el = host.current;
@@ -69,13 +73,18 @@ export function BusPreview({ look, class: cls = '' }) {
           if (!st.alive) break;
           if (jpeg && canvas.current) {
             const bmp = await createImageBitmap(jpeg);
-            const c = canvas.current;
-            if (st.alive && c) {
-              if (c.width !== bmp.width || c.height !== bmp.height) Object.assign(c, { width: bmp.width, height: bmp.height });
-              c.getContext('2d').drawImage(bmp, 0, 0);
+            try {
+              if (!st.alive) break;
+              const c = canvas.current;
+              if (c) {
+                if (c.width !== bmp.width || c.height !== bmp.height) Object.assign(c, { width: bmp.width, height: bmp.height });
+                c.getContext('2d').drawImage(bmp, 0, 0);
+              }
+            } finally {
+              bmp.close();
             }
-            bmp.close();
           }
+          if (!st.alive) break;
           setViews(`${head.view || 'outside'}|${(head.views || []).join(',')}`);
           setState(head.failed || head.ok === false ? 'failed' : head.picture ? (head.busy ? 'switching' : 'ok') : 'loading');
           st.easing = !!head.moving;

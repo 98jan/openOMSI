@@ -147,6 +147,12 @@ pub struct Pax {
     pub paid: f32,
     pub bad_change: bool,
     pub sub: u8,
+    /// A plugin's say in the ticket (`ticket_hook`), boxed: most passengers have none, and a
+    /// `Pax` is cloned several times a frame.
+    pub plugin: Option<Box<super::ticket_hook::PluginTicket>>,
+    /// Since when (`time`) the plugins have been told about this passenger's ticket and not
+    /// yet had their frame: they wait for it in the doorway and at the desk (`TICKET_HOLD`).
+    pub ticket_hold: Option<f64>,
     /// The entry or exit asked for (+0x640).
     pub door: Option<usize>,
     /// The validator they stamp at (an index into the cabin's: a bus may have several).
@@ -231,6 +237,8 @@ impl Pax {
             paid: 0.0,
             bad_change: false,
             sub: 0,
+            plugin: None,
+            ticket_hold: None,
             door: None,
             stamper: None,
             seat_h: 0.0,

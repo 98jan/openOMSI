@@ -95,6 +95,7 @@ impl Offscreen<'_> {
             Some(weather),
             cloud_drift_at(weather, clock.time),
             wetness,
+            0.0,
             Some(world),
             driven,
             driven,
@@ -185,7 +186,6 @@ impl Offscreen<'_> {
     fn final_lights(&mut self, daylight: &omsi_sim::Daylight, lighting: &omsi_render::Lighting) {
         let Self {
             ref player_ref,
-            ref player,
             ref traffic,
             ref remotes_off,
             ref weather,
@@ -202,19 +202,10 @@ impl Offscreen<'_> {
             let (kind, rate) = precip_of(weather);
             let mut rn = rain::Rain::new();
             rn.set(kind, rate, world.settings.rain_quality());
-            for _ in 0..30 {
-                scene
-                    .coronas
-                    .retain(|c| c.cone_cos > -1.5 && !(c.size < 0.07 && c.brightness < 0.95));
-                rn.tick(
-                    1.0 / 30.0,
-                    camera.position,
-                    // ([wind] direction (deg) and speed (m/s), as the window's frame takes it)
-                    rain::weather_wind(weather),
-                    scene,
-                    &player_ref.as_ref().or(player.as_ref()).map(|p| rain::vehicle_boxes(&p.vehicle)).unwrap_or_default(),
-                );
-            }
+            rn.set_temperature(weather.temp.0);
+            // ([wind] direction (deg) and speed (m/s), as the window's frame takes it)
+            let carried = player_ref.as_ref().map(|p| crate::lights::vehicle_velocity(&p.vehicle)).unwrap_or_default();
+            rn.tick(1.0 / 30.0, carried, rain::weather_wind(weather), scene);
             // the tyres' spray as the drive left it (OMSI_DRIVE_V0=S moves the bus without a
             // full engine-start sequence)
             spray.sprites(camera.position, &mut scene.smoke);
@@ -321,6 +312,12 @@ impl Offscreen<'_> {
                 nav.show_ai = settings.nav_ai;
                 nav.show_surface = settings.nav_surface;
                 nav.light = settings.nav_light;
+                nav.show_3d = settings.nav_3d;
+                nav.widget = settings.nav_widget;
+                nav.size = settings.nav_size;
+                if omsi_cfg::flags::OMSI_NAV_2D.is_set() {
+                    nav.show_3d = false;
+                }
                 if omsi_cfg::flags::OMSI_NAV_MAP.is_set() {
                     nav.toggle_map();
                 }
@@ -329,11 +326,19 @@ impl Offscreen<'_> {
                 }
                 nav.set_map(world.navigation_map());
                 nav.set_surface(omsi_map::package::Package::open(&world.map_dir));
+                nav.set_layers(world.map_layers());
                 let (line, terminus, stops, trip) = navigator::duty_parts(duty.as_ref());
                 if let (Some((key, name)), Some(sch)) = (trip, schedule.as_ref()) {
                     let lanes = sch.trip_route_in(nav.map_net().unwrap(), &name);
                     let g = nav.global_version + (1 << 40);
                     nav.set_route(&key, lanes, true, g);
+                }
+                if let Some(sch) = schedule.as_ref() {
+                    let cars: Vec<(glam::DVec3, String)> = traffic.as_ref().map(|t| t.cars.iter().filter(|c| !c.gone && c.bus.is_some()).map(|c| (c.vehicle.position, c.vehicle.host.tt_line.clone())).collect()).unwrap_or_default();
+                    // (a few trips' routes a call: called until they all are there)
+                    for _ in 0..80 {
+                        nav.update_live(sch, clock.time, 0.6, &cars);
+                    }
                 }
                 let (outside_temp, inside_temp) = crate::app_events::vehicle_temperatures(p);
                 let frame = navigator::NavFrame {
@@ -361,6 +366,19 @@ impl Offscreen<'_> {
                     touch_gap: None,
                 };
                 for _ in 0..30 {
+                    nav.frame_at(renderer, scene, &frame, viewport[0]);
+                    scene.overlays.pop();
+                }
+                // (and until the parts built on workers are there)
+                for _ in 0..1500 {
+                    if !nav.building() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    nav.frame_at(renderer, scene, &frame, viewport[0]);
+                    scene.overlays.pop();
+                }
+                for _ in 0..3 {
                     nav.frame_at(renderer, scene, &frame, viewport[0]);
                     scene.overlays.pop();
                 }
@@ -458,8 +476,10 @@ impl Offscreen<'_> {
         // (OMSI_BUDGET_FROM=x,y[,MB]: the budget is met from there first, as if the camera had
         // been there, then - with the budget raised to MB - the textures that come near again
         // with the camera are read back)
-        if omsi_cfg::flags::OMSI_TEXTURE_MEMORY.is_set() {
-            world.set_texture_budget(texture_budget(settings));
+        if omsi_cfg::flags::OMSI_TEXTURE_MEMORY.is_set() || omsi_cfg::flags::OMSI_VIDEO_MEMORY.is_set() {
+            let video = video_memory_limit(settings);
+            world.set_texture_budget(texture_budget(video));
+            world.set_video_memory_limit(video);
             let from: Vec<f64> = omsi_cfg::flags::OMSI_BUDGET_FROM.var()
                 .unwrap_or_default()
                 .split(',')
