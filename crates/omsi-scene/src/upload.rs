@@ -197,11 +197,7 @@ impl World {
         // that had nothing to do with the weather.
         let ground_dirs_ref: Vec<&Path> = ground_dirs.iter().map(|p| p.as_path()).collect();
         let ground_cfg = self.textures.cfg(&ground_tex, &ground_dirs_ref);
-        let ground_wet = if ground_cfg.moisture || ground_cfg.puddles {
-            1.0
-        } else {
-            0.0
-        };
+        let ground_wet = ground_cfg.wetness_kind();
         let plain_terrain_mat = renderer.add_terrain_material(
             scene,
             ground_id,
@@ -468,9 +464,7 @@ impl World {
                 if tex.is_some() {
                     let dirs_ref: Vec<&Path> = dirs.iter().map(|p| p.as_path()).collect();
                     let c = self.textures.cfg(&m.texture, &dirs_ref);
-                    if c.moisture || c.puddles {
-                        extra.moisture = 1.0;
-                    }
+                    extra.moisture = c.wetness_kind();
                     if c.terrain_mapping {
                         t.terrain_slots.push((0, t.meshes.len(), slot));
                     }

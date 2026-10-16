@@ -179,7 +179,7 @@ impl SyncTable {
         let switch_names: Vec<String> = types
             .iter()
             .flat_map(|t| t.model.meshes.iter())
-            .filter_map(|m| m.visible.as_ref().map(|v| v.0.clone()))
+            .flat_map(|m| m.visible_groups().flatten().map(|c| c.variable.clone()))
             .collect();
         let lamp_set: Vec<VarId> = lamps.iter().map(|l| l.1).collect();
         let switches = collect(

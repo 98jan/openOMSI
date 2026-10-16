@@ -164,72 +164,11 @@ pub fn vehicle_lights(
         if sel >= 0.0 {
             if let Some(sp) = ty.model.spotlights.get(sel as usize) {
                 let vals = sp.values;
-                let d = body
-                    .transform_vector3(Vec3::new(vals[3], vals[4], vals[5]))
-                    .normalize_or_zero();
-                // D3D's spot is only a direction: the stock NL202 puts it 3.8 m behind its
-                // nose, where the real one lit the dashboard and the windscreen from inside.
-                // It shines from the vehicle's front (or rear) face at its own height. The face
-                // is where the model's lamps ([light_enh], [light_enh_2]) reach furthest: the
-                // AA-FR Agora's spot sits 4 m behind its headlamps, and moved at most 1.5 m it
-                // still shone from inside the bus onto its own front. (Within the bounding box;
-                // without lamps, the box alone, by at most 1.5 m: a box grown by mirrors, a
-                // coupling or a mod's odd bounds threw the light well ahead of the bus.)
-                let mut apex = Vec3::new(vals[0], vals[1], vals[2]);
                 let dl = Vec3::new(vals[3], vals[4], vals[5]).normalize_or_zero();
-                let lamps: Vec<[f32; 3]> = ty
-                    .model
-                    .meshes
-                    .iter()
-                    .flat_map(|m| m.light_enh.iter().map(|l| l.pos).chain(m.light_enh_2.iter().map(|l| l.pos)))
-                    .collect();
-                let nose = lamps.iter().map(|l| l[1]).reduce(f32::max);
-                let tail = lamps.iter().map(|l| l[1]).reduce(f32::min);
-                let bb = ty.def.bounding_box.map(|bb| (bb[4] + bb[1] * 0.5, bb[4] - bb[1] * 0.5));
-                if dl.y > 0.3 {
-                    let face = match (nose.filter(|n| *n > apex.y), bb) {
-                        (Some(n), Some((front, _))) => Some(n.min(front)),
-                        (Some(n), None) => Some(n),
-                        (None, Some((front, _))) => Some(front.min(apex.y + 1.5)),
-                        (None, None) => None,
-                    };
-                    if let Some(face) = face.filter(|f| *f > apex.y) {
-                        apex.y = face + 0.05;
-                    } else if let Some(n) = nose.filter(|n| *n + 0.05 < apex.y) {
-                        // (a spot ahead of the lamps, the Grand Paris-Moulon Citaro's 55 cm: back onto them)
-                        apex.y = n + 0.05;
-                    }
-                } else if dl.y < -0.3 {
-                    let face = match (tail.filter(|t| *t < apex.y), bb) {
-                        (Some(t), Some((_, rear))) => Some(t.max(rear)),
-                        (Some(t), None) => Some(t),
-                        (None, Some((_, rear))) => Some(rear.max(apex.y - 1.5)),
-                        (None, None) => None,
-                    };
-                    if let Some(face) = face.filter(|f| *f < apex.y) {
-                        apex.y = face - 0.05;
-                    } else if let Some(t) = tail.filter(|t| *t - 0.05 > apex.y) {
-                        apex.y = t - 0.05;
-                    }
-                }
-                // One spot on the vehicle's axis threw one narrow beam: it is split into one
-                // per headlamp on that face (within 35 cm of it), as far apart as the mean of
-                // their distances from the axis (the outermost are indicators and position
-                // lamps). The Agora's headlamps are 1.8 to 2.4 m apart.
-                let half_width = ty.def.bounding_box.map_or(1.25, |bb| (bb[0] * 0.5).min(1.25));
-                let on_face: Vec<f32> = lamps
-                    .iter()
-                    .filter(|l| (dl.y > 0.3 || dl.y < -0.3) && (l[1] - apex.y).abs() < 0.35)
-                    .map(|l| (l[0] - apex.x).abs())
-                    .collect();
-                let spread = (on_face.iter().sum::<f32>() / on_face.len().max(1) as f32).min(half_width);
-                let right = body.transform_vector3(Vec3::X).normalize_or_zero();
-                let apex = body.transform_point3(apex);
-                let sides: &[f32] = if spread > 0.1 { &[-1.0, 1.0] } else { &[0.0] };
+                let d = body.transform_vector3(dl).normalize_or_zero();
                 let level = level_axis(body, dl);
-                for side in sides {
-                    let at = v.position + (apex + right * spread * side).as_dvec3();
-                    push_spot(lights, at, d, level, &vals, 1.0 / sides.len() as f32, night);
+                for (at, share) in spot_origins(&ty.model, ty.def.bounding_box, &vals, &v.light_fade, &value_of) {
+                    push_spot(lights, v.position + body.transform_point3(at).as_dvec3(), d, level, &vals, share, night);
                 }
             }
         }
@@ -283,6 +222,72 @@ pub fn vehicle_lights(
     // [interiorlight]s light only the meshes listing them and the passengers (per-instance
     // term, see MeshProps::interior); they do not shine on the outside world.
     let _ = &ty.model.interior_lights;
+}
+
+fn spot_origins(model: &omsi_model::Model, bounding_box: Option<[f32; 6]>, vals: &[f32; 12], fades: &[f32], value_of: &dyn Fn(&str) -> f32) -> Vec<(Vec3, f32)> {
+    let dl = Vec3::new(vals[3], vals[4], vals[5]).normalize_or_zero();
+    if dl.y > 0.3 {
+        let lamps = spot_headlamps(model, fades, value_of);
+        if !lamps.is_empty() {
+            return lamps;
+        }
+    }
+    // D3D's spot is only a direction: the stock NL202 puts it 3.8 m behind its
+    // nose, where the real one lit the dashboard and the windscreen from inside.
+    // It shines from the vehicle's front (or rear) face at its own height. The face
+    // is where the model's lamps ([light_enh], [light_enh_2]) reach furthest: the
+    // AA-FR Agora's spot sits 4 m behind its headlamps, and moved at most 1.5 m it
+    // still shone from inside the bus onto its own front. (Within the bounding box;
+    // without lamps, the box alone, by at most 1.5 m: a box grown by mirrors, a
+    // coupling or a mod's odd bounds threw the light well ahead of the bus.)
+    let mut apex = Vec3::new(vals[0], vals[1], vals[2]);
+    let lamps: Vec<[f32; 3]> = model
+        .meshes
+        .iter()
+        .flat_map(|m| m.light_enh.iter().map(|l| l.pos).chain(m.light_enh_2.iter().map(|l| l.pos)))
+        .collect();
+    let nose = lamps.iter().map(|l| l[1]).reduce(f32::max);
+    let tail = lamps.iter().map(|l| l[1]).reduce(f32::min);
+    let bb = bounding_box.map(|bb| (bb[4] + bb[1] * 0.5, bb[4] - bb[1] * 0.5));
+    if dl.y > 0.3 {
+        let face = match (nose.filter(|n| *n > apex.y), bb) {
+            (Some(n), Some((front, _))) => Some(n.min(front)),
+            (Some(n), None) => Some(n),
+            (None, Some((front, _))) => Some(front.min(apex.y + 1.5)),
+            (None, None) => None,
+        };
+        if let Some(face) = face.filter(|f| *f > apex.y) {
+            apex.y = face + 0.05;
+        } else if let Some(n) = nose.filter(|n| *n + 0.05 < apex.y) {
+            // (a spot ahead of the lamps, the Grand Paris-Moulon Citaro's 55 cm: back onto them)
+            apex.y = n + 0.05;
+        }
+    } else if dl.y < -0.3 {
+        let face = match (tail.filter(|t| *t < apex.y), bb) {
+            (Some(t), Some((_, rear))) => Some(t.max(rear)),
+            (Some(t), None) => Some(t),
+            (None, Some((_, rear))) => Some(rear.max(apex.y - 1.5)),
+            (None, None) => None,
+        };
+        if let Some(face) = face.filter(|f| *f < apex.y) {
+            apex.y = face - 0.05;
+        } else if let Some(t) = tail.filter(|t| *t - 0.05 > apex.y) {
+            apex.y = t - 0.05;
+        }
+    }
+    // One spot on the vehicle's axis threw one narrow beam: it is split into one
+    // per headlamp on that face (within 35 cm of it), as far apart as the mean of
+    // their distances from the axis (the outermost are indicators and position
+    // lamps). The Agora's headlamps are 1.8 to 2.4 m apart.
+    let half_width = bounding_box.map_or(1.25, |bb| (bb[0] * 0.5).min(1.25));
+    let on_face: Vec<f32> = lamps
+        .iter()
+        .filter(|l| (dl.y > 0.3 || dl.y < -0.3) && (l[1] - apex.y).abs() < 0.35)
+        .map(|l| (l[0] - apex.x).abs())
+        .collect();
+    let spread = (on_face.iter().sum::<f32>() / on_face.len().max(1) as f32).min(half_width);
+    let sides: &[f32] = if spread > 0.1 { &[-1.0, 1.0] } else { &[0.0] };
+    sides.iter().map(|side| (apex + Vec3::X * spread * side, 1.0 / sides.len() as f32)).collect()
 }
 
 /// A `[spotlight_cookie]`'s direction in its vehicle's frame (x right, y ahead, z up),
@@ -470,7 +475,28 @@ fn cars_with_beams(vehicles: &[&VehicleInstance], camera: DVec3) -> Vec<usize> {
 /// face forward from its front, white or nearly (no indicator, no rear or roof lamp), one
 /// beam per side from the middle of that side's lamps.
 fn headlamps_of_lamps(model: &omsi_model::Model, fades: &[f32], value_of: &dyn Fn(&str) -> f32) -> Vec<(Vec3, Vec3, [f32; 3], f32)> {
-    let mut found: Vec<(Vec3, Vec3, [f32; 3])> = Vec::new();
+    let mut found: Vec<FrontLamp> = white_front_lamps(model, fades, value_of).into_iter().filter(|f| f.3 >= 0.5).collect();
+    let Some(front) = found.iter().map(|f| f.0.y).reduce(f32::max) else { return Vec::new() };
+    found.retain(|f| f.0.y >= front - 0.4);
+    let sides = by_side(&found);
+    let n = sides.len() as f32;
+    sides
+        .into_iter()
+        .map(|s| {
+            let k = s.len() as f32;
+            let dir = s.iter().map(|f| f.1).sum::<Vec3>().normalize_or(Vec3::Y);
+            // (a lamp's glow sits on its glass: the light leaves just in front of it)
+            let pos = s.iter().map(|f| f.0).sum::<Vec3>() / k + dir * 0.1;
+            let color = [0, 1, 2].map(|c| s.iter().map(|f| f.2[c]).sum::<f32>() / k);
+            (pos, dir, color, 1.0 / n)
+        })
+        .collect()
+}
+
+type FrontLamp = (Vec3, Vec3, [f32; 3], f32, f32);
+
+fn white_front_lamps(model: &omsi_model::Model, fades: &[f32], value_of: &dyn Fn(&str) -> f32) -> Vec<FrontLamp> {
+    let mut found = Vec::new();
     let mut li = 0usize;
     for md in &model.meshes {
         for l in &md.light_enh_2 {
@@ -483,28 +509,55 @@ fn headlamps_of_lamps(model: &omsi_model::Model, fades: &[f32], value_of: &dyn F
             let dir = Vec3::from(l.dir).normalize_or_zero();
             let (hi, lo) = (l.color.iter().copied().fold(0.0, f32::max), l.color.iter().copied().fold(f32::MAX, f32::min));
             let pos = Vec3::from(l.pos);
-            if l.omni || !(lit >= 0.5) || dir.y < 0.8 || hi < 150.0 || lo < 0.6 * hi || !(0.2..1.6).contains(&pos.z) {
+            if l.omni || dir.y < 0.8 || hi < 150.0 || lo < 0.6 * hi || !(0.2..1.6).contains(&pos.z) {
                 continue;
             }
-            found.push((pos, dir, l.color));
+            let lit = if lit.is_nan() { 0.0 } else { lit };
+            found.push((pos, dir, l.color, lit, lit / if l.factor > 0.0 { l.factor } else { 1.0 }));
         }
     }
-    let Some(front) = found.iter().map(|f| f.0.y).reduce(f32::max) else { return Vec::new() };
-    found.retain(|f| f.0.y >= front - 0.4);
-    let sides: Vec<Vec<&(Vec3, Vec3, [f32; 3])>> = [found.iter().filter(|f| f.0.x < -0.2).collect(), found.iter().filter(|f| f.0.x > 0.2).collect(), found.iter().filter(|f| f.0.x.abs() <= 0.2).collect()]
+    found
+}
+
+fn by_side(lamps: &[FrontLamp]) -> Vec<Vec<&FrontLamp>> {
+    [lamps.iter().filter(|f| f.0.x < -0.2).collect(), lamps.iter().filter(|f| f.0.x > 0.2).collect(), lamps.iter().filter(|f| f.0.x.abs() <= 0.2).collect()]
         .into_iter()
         .filter(|s: &Vec<_>| !s.is_empty())
-        .collect();
+        .collect()
+}
+
+fn spot_headlamps(model: &omsi_model::Model, fades: &[f32], value_of: &dyn Fn(&str) -> f32) -> Vec<(Vec3, f32)> {
+    let mut found = white_front_lamps(model, fades, value_of);
+    let Some(front) = found.iter().map(|f| f.0.y).reduce(f32::max) else { return Vec::new() };
+    let nose = model.meshes.iter().flat_map(|m| m.light_enh.iter().map(|l| l.pos[1]).chain(m.light_enh_2.iter().map(|l| l.pos[1]))).fold(front, f32::max);
+    if front < nose - 0.5 {
+        return Vec::new();
+    }
+    found.retain(|f| f.0.y >= front - 0.4);
+    let on = |f: &FrontLamp| f.4 >= 0.5;
+    let lit_top = |lamps: &[&FrontLamp]| lamps.iter().filter(|f| on(f)).map(|f| f.0.z).reduce(f32::max);
+    let mut sides = by_side(&found);
+    let any_lit = sides.iter().filter_map(|s| lit_top(s)).reduce(f32::max);
+    let paired = sides.iter().any(|s| s[0].0.x.abs() > 0.2);
+    sides.retain(|s| !(s[0].0.x.abs() <= 0.2 && lit_top(s).is_none() && paired));
     let n = sides.len() as f32;
     sides
         .into_iter()
-        .map(|s| {
-            let k = s.len() as f32;
-            let dir = s.iter().map(|f| f.1).sum::<Vec3>().normalize_or(Vec3::Y);
-            // (a lamp's glow sits on its glass: the light leaves just in front of it)
-            let pos = s.iter().map(|f| f.0).sum::<Vec3>() / k + dir * 0.1;
-            let color = [0, 1, 2].map(|c| s.iter().map(|f| f.2[c]).sum::<f32>() / k);
-            (pos, dir, color, 1.0 / n)
+        .map(|side| {
+            let lit: Vec<&FrontLamp> = side.iter().copied().filter(|f| on(f)).collect();
+            let set = if !lit.is_empty() {
+                lit
+            } else if any_lit.is_some() {
+                side
+            } else {
+                let most = side.iter().map(|f| f.4).fold(f32::MIN, f32::max);
+                side.into_iter().filter(|f| f.4 >= most - 1e-3).collect()
+            };
+            let target = lit_top(&set).or(any_lit).unwrap_or_else(|| set.iter().map(|f| f.0.z).fold(f32::MIN, f32::max));
+            let best = set.iter().map(|f| f.0.z).min_by(|a, b| (a - target).abs().total_cmp(&(b - target).abs())).unwrap_or(target);
+            let group: Vec<&FrontLamp> = set.into_iter().filter(|f| (f.0.z - best).abs() <= 0.1).collect();
+            let dir = group.iter().map(|f| f.1).sum::<Vec3>().normalize_or(Vec3::Y);
+            (group.iter().map(|f| f.0).sum::<Vec3>() / group.len() as f32 + dir * 0.1, 1.0 / n)
         })
         .collect()
 }
@@ -665,6 +718,65 @@ mod spot_tests {
         sp.mirrored = false;
         assert_eq!(super::spotlight_2_lamps(&sp, 0.5), [(Vec3::new(0.9, 5.9, 0.65), Vec3::new(0.2, 1.0, -0.3), 0.5)]);
         assert_eq!(super::spotlight_2_lamps(&sp, 3.0)[0].2, 1.0);
+    }
+    #[test]
+    fn a_spotlight_shines_from_its_headlamps() {
+        use glam::Vec3;
+        let lamp = |x: f32, y: f32, z: f32, variable: &str| omsi_model::LightEnh2 {
+            pos: [x, y, z],
+            dir: [0.0, 1.0, 0.0],
+            color: [255.0, 255.0, 240.0],
+            variable: variable.into(),
+            ..Default::default()
+        };
+        let mesh = |light_enh_2: Vec<omsi_model::LightEnh2>| omsi_model::Model { meshes: vec![omsi_model::MeshDef { light_enh_2, ..Default::default() }], ..Default::default() };
+        let model = mesh(vec![
+            lamp(-0.8, 5.8, 1.05, "abbl_l"),
+            lamp(0.8, 5.8, 1.05, "abbl_r"),
+            lamp(-0.8, 5.8, 1.2, "fern"),
+            lamp(0.8, 5.8, 1.2, "fern"),
+            lamp(-0.7, 5.8, 0.6, "nebel"),
+            lamp(0.7, 5.8, 0.6, "nebel"),
+            lamp(0.0, 5.8, 1.0, "logo"),
+            lamp(-1.1, -5.8, 1.4, "stand"),
+            lamp(1.1, -5.8, 1.4, "stand"),
+            omsi_model::LightEnh2 { color: [255.0, 160.0, 0.0], ..lamp(-1.1, 5.8, 1.05, "abbl_l") },
+        ]);
+        let bb = Some([2.5, 12.0, 3.0, 0.0, 0.0, 1.5]);
+        let low = [0.0, 2.0, 0.76, 0.0, 1.0, -0.3, 255.0, 255.0, 233.0, 100.0, 30.0, 80.0];
+        let at = |model: &omsi_model::Model, on: &[&str], fades: &[f32], vals: &[f32; 12]| {
+            let on: Vec<String> = on.iter().map(|s| s.to_string()).collect();
+            let mut at = super::spot_origins(model, bb, vals, fades, &|name: &str| if on.iter().any(|o| o == name) { 1.0 } else { 0.0 });
+            at.sort_by(|a, b| a.0.x.total_cmp(&b.0.x));
+            at
+        };
+        let near = |got: &[(Vec3, f32)], want: &[(Vec3, f32)]| got.len() == want.len() && got.iter().zip(want).all(|(g, w)| (g.0 - w.0).length() < 1e-4 && g.1 == w.1);
+        let pair = |z: f32| [(Vec3::new(-0.8, 5.9, z), 0.5), (Vec3::new(0.8, 5.9, z), 0.5)];
+        let got = at(&model, &["abbl_l", "abbl_r", "stand"], &[], &low);
+        assert!(near(&got, &pair(1.05)), "low beam, rear markers lit: {got:?}");
+        let got = at(&model, &["stand"], &[], &low);
+        assert!(near(&got, &pair(1.2)), "rear markers alone: {got:?}");
+        let got = at(&model, &["abbl_l", "abbl_r", "nebel"], &[], &low);
+        assert!(near(&got, &pair(1.05)), "fog lamps on: {got:?}");
+        let got = at(&model, &["abbl_l", "abbl_r", "fern"], &[], &low);
+        assert!(near(&got, &pair(1.2)), "full beam: {got:?}");
+        let got = at(&model, &["abbl_l"], &[], &low);
+        assert!(near(&got, &pair(1.05)), "one bulb out: {got:?}");
+        let got = at(&model, &[], &[0.4, 0.4, 0.0, 0.0, 0.0, 0.0, 0.0], &low);
+        assert!(near(&got, &pair(1.05)), "low beam fading in: {got:?}");
+        let got = at(&model, &["abbl_l", "abbl_r"], &[0.0, 0.0, 1.0, 1.0], &low);
+        assert!(near(&got, &pair(1.2)), "the fades rule over the variables: {got:?}");
+        let dim = mesh(vec![omsi_model::LightEnh2 { factor: 0.3, ..lamp(-0.8, 5.8, 1.05, "abbl") }, omsi_model::LightEnh2 { factor: 0.3, ..lamp(0.8, 5.8, 1.05, "abbl") }, lamp(-0.7, 5.8, 0.6, "drl"), lamp(0.7, 5.8, 0.6, "drl")]);
+        let got = at(&dim, &["abbl", "drl"], &[], &low);
+        assert!(near(&got, &pair(1.05)), "a faint headlamp glow over a DRL: {got:?}");
+        let rear = [0.0, -5.0, 0.76, 0.0, -1.0, -0.3, 255.0, 255.0, 233.0, 100.0, 30.0, 80.0];
+        let got = at(&model, &["abbl_l", "abbl_r"], &[], &rear);
+        assert!(got.iter().all(|(p, _)| p.z == 0.76 && (p.y + 5.85).abs() < 1e-4), "a rear spot keeps its own height: {got:?}");
+        let inside = mesh(vec![lamp(-0.5, 2.0, 1.0, "x"), lamp(0.5, 2.0, 1.0, "x"), omsi_model::LightEnh2 { color: [255.0, 190.0, 0.0], ..lamp(0.9, 5.8, 0.9, "x") }]);
+        let got = at(&inside, &["x"], &[], &low);
+        assert!(got.iter().all(|(p, _)| p.z == 0.76 && (p.y - 5.85).abs() < 1e-4), "white lamps far behind the nose: {got:?}");
+        let got = super::spot_origins(&omsi_model::Model::default(), bb, &low, &[], &|_| 0.0);
+        assert!(near(&got, &[(Vec3::new(0.0, 3.55, 0.76), 1.0)]), "no lamps: {got:?}");
     }
 }
 

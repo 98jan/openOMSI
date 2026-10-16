@@ -756,7 +756,7 @@ fn object_program(
     has_mouse_events: bool,
 ) -> Option<Arc<omsi_script::Program>> {
     let animated = mesh_def_index.iter().any(|d| {
-        !model.meshes[*d].animations.is_empty() || model.meshes[*d].visible.is_some()
+        !model.meshes[*d].animations.is_empty() || model.meshes[*d].visible_groups().next().is_some()
     });
     let has_freetex = mesh_def_index.iter().any(|d| {
         model.meshes[*d].materials.iter().any(|o| !o.item && o.freetex.is_some())

@@ -455,6 +455,7 @@ pub(crate) fn picture_lighting(
     weather: Option<&omsi_content::weather::Weather>,
     cloud_drift: [f64; 4],
     wetness: f32,
+    snow_cover: f32,
     world: Option<&World>,
     inside: Option<&omsi_sim::VehicleInstance>,
     driven: Option<&omsi_sim::VehicleInstance>,
@@ -464,7 +465,7 @@ pub(crate) fn picture_lighting(
     sky: &crate::weather_setup::SkyState,
 ) -> omsi_render::Lighting {
     let mut lighting = match weather {
-        Some(w) => weather_lighting(daylight, w, cloud_drift, wetness, settings.shadows, sky),
+        Some(w) => weather_lighting(daylight, w, cloud_drift, wetness, snow_cover, settings.shadows, sky),
         None => lights::lighting_from(daylight, 50000.0),
     };
     lighting.wetness = omsi_cfg::flags::OMSI_WETNESS.parse()
@@ -502,6 +503,7 @@ pub(crate) fn dress_lighting(
     lighting.detail = settings.detail_textures;
     lighting.windy_trees = settings.windy_trees();
     lighting.night_brightness = settings.night_brightness;
+    lighting.reflection_strength = settings.reflections;
 }
 
 /// The time of day and the departure displays' boards (without a timetable only the clock).

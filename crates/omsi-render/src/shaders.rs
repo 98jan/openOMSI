@@ -48,13 +48,14 @@ mod tests {
     /// 0.2.30's capped surface pull and the Vanilla/transparency fixes in both modules,
     /// 0.2.42's night sphere map and lacquer, people lit as bodies, not leaves, the far
     /// map's shadow where no traced one is found, 0.2.51's clear coat that stays sharp on
-    /// lacquer, and the draw order's depth step of a surface lying on another of its object).
+    /// lacquer, the draw order's depth step of a surface lying on another of its object, and a
+    /// livery's tint above the alpha test, the painted lines' pull and the wet paint's water film).
     /// (with Unix line ends: a Windows checkout may turn the parts' into CRLF, as it did the
     /// single files', and the 0.2.31 release's Windows test failed on that alone)
     #[test]
     fn assembled_shaders_are_the_old_files() {
         let (scene, enhanced) = (super::SCENE.replace("\r\n", "\n"), super::ENHANCED.replace("\r\n", "\n"));
-        assert_eq!((scene.len(), fnv1a(&scene)), (122_867, 0x4171_d2b3_2b34_fe0c));
-        assert_eq!((enhanced.len(), fnv1a(&enhanced)), (86_528, 0xb2a5_d02a_77aa_488f));
+        assert_eq!((scene.len(), fnv1a(&scene)), (123_450, 0x0390_843f_65de_f55b));
+        assert_eq!((enhanced.len(), fnv1a(&enhanced)), (87_163, 0xa203_26d8_6203_b024));
     }
 }

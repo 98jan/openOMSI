@@ -252,6 +252,7 @@ impl Offscreen<'_> {
                         weather,
                         cloud_drift_at(weather, run_clock.time),
                         0.0,
+                        0.0,
                         settings.shadows,
                         sky,
                     );

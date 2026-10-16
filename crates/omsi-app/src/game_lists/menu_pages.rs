@@ -52,7 +52,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         slider_row(app, "night_brightness", "Night brightness", "Enhanced graphics: how much brighter the night is shown", &|v| if v < 0.01 { "Off".to_string() } else { format!("+{v:.2}") }).filter(|_| shown("night_brightness")),
         slider_row(app, "led_glow", "LED glow", "How strongly the dots of LED destination displays glow", &|v| format!("{}/15", v as i64)).filter(|_| shown("led_glow")),
         slider_row(app, "led_mips", "LED mip strength", "Lower: sharper LED dots that shimmer from a distance; higher: calmer, softer dots", &|v| format!("{v:.2}")).filter(|_| shown("led_mips")),
-        switch_row(app, "reflections", "Reflection maps (paint, chrome, glass)", later).filter(|_| shown("reflections")),
+        slider_row(app, "reflections", "Reflection maps (paint, chrome, glass)", "Changes show at once; turned up from Off, they come back when the game starts the next time", &|v| if v < 0.005 { "Off".to_string() } else { format!("{:.0}%", v * 100.0) }).filter(|_| shown("reflections")),
         switch_row(app, "clouds", "Clouds", later),
         pick("cloud_quality", "Cloud quality", "Enhanced: the volumetric clouds marched in fewer steps - faster, a little grainier").filter(|_| shown("cloud_quality") && app.settings.clouds),
         pick("rain_quality", "Rain quality", "Lower is faster: the drops on the glass painted less often, less spray and fewer streaks; Low shows OMSI 2's own rain on the glass (from the next bus loaded)"),
@@ -173,7 +173,8 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         slider_row(app, "head_idle_pace", "Sway pace", "How fast that sway moves (100% is the pace it is designed at)", &|v| format!("{:.0}%", v * 100.0)),
         switch_row(app, "hands_in_cab", "Driver's hands in the cab view", "Shows the driver's hand on the steering wheel (Cockpit only)"),
         switch_row(app, "driver", "Driver at the wheel (outside views)", "Shows the driver in the outside views and in the mirrors"),
-        switch_row(app, "headtrack", "Head tracking (native TrackIR / OpenTrack)", &format!("Use native TrackIR on Windows, or OpenTrack on UDP port {}", s.head_tracking_port)),
+        switch_row(app, "headtrack", "Head tracking (native TrackIR / OpenTrack)", &omsi_ui::tr("Use native TrackIR on Windows, or OpenTrack on UDP port {}")
+            .into_owned().replace("{}", &s.head_tracking_port.to_string())),
         slider_row(app, "head_tracking_yaw_sens", "TrackIR yaw sensitivity", "Left / right head movement. 100% is 1:1; the low end is deliberately finer.", &|v| format!("{v:.0}%")),
         slider_row(app, "head_tracking_pitch_sens", "TrackIR pitch sensitivity", "Up / down head movement. 100% is 1:1; the low end is deliberately finer.", &|v| format!("{v:.0}%")),
         slider_row(app, "head_tracking_roll_sens", "TrackIR roll sensitivity", "Head tilt. 100% is 1:1; the low end is deliberately finer.", &|v| format!("{v:.0}%")),
@@ -521,9 +522,9 @@ mod tests {
         assert_eq!(s.graphics, "vanilla_plus");
         assert!(s.shadows && s.ssao && s.detail_textures && !s.classic());
         let s = text_in_mode("graphics=enhanced_plus\nshadows=0\nssao=0\nreflections=0\n", "vanilla");
-        assert!(!s.ray_tracing() && !s.enhanced && !s.shadows && !s.ssao && !s.reflections);
+        assert!(!s.ray_tracing() && !s.enhanced && !s.shadows && !s.ssao && s.reflections == 0.0);
         let s = text_in_mode("graphics=vanilla\nshadows=0\n", "enhanced_plus");
-        assert!(s.ray_tracing() && s.enhanced && s.shadows && s.ssao && s.reflections);
+        assert!(s.ray_tracing() && s.enhanced && s.shadows && s.ssao && s.reflections == 1.0);
     }
 
     #[test]

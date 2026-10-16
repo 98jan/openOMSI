@@ -213,8 +213,9 @@ pub fn run() -> Result<()> {
     restart_with_allocator_settings();
     #[cfg(windows)]
     attach_parent_console();
-    // `--check-vehicle <file>`: the loaders' findings as JSON, no window, no log
-    if std::env::args().nth(1).as_deref() == Some("--check-vehicle") {
+    // `--check <file or folder>` (`--check-vehicle`, its old name): the loaders' findings
+    // as JSON, no window, no log
+    if matches!(std::env::args().nth(1).as_deref(), Some("--check" | "--check-vehicle")) {
         let rest: Vec<String> = std::env::args().skip(2).collect();
         return check::run(&rest);
     }

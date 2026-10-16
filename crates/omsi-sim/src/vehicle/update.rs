@@ -56,7 +56,11 @@ impl VehicleInstance {
         let speed = (self.physics.velocity_kmh().abs() / 50.0).min(2.0);
         // a dry duty adds a few percent, a wet one soils the bus in a couple of hours
         // a dry duty of a couple of hours shows; a wet one soils the bus in half an hour
-        self.dirt = (self.dirt + dt * speed * (8.0e-5 + 1.2e-3 * rain)).clamp(0.0, 1.0);
+        // Off the road the wheels throw up the ground itself: earth and grass churned up
+        // under the tyres spatter the sides, dust off dry ground, mud off wet - a few minutes
+        // across a field leave the bus brown (`host.offroad`, the wheels' share off the road)
+        let off = self.host.offroad.clamp(0.0, 1.0) * (2.5e-3 + 6.0e-3 * rain.max(self.host.street_cond.clamp(0.0, 1.0)));
+        self.dirt = (self.dirt + dt * speed * (8.0e-5 + 1.2e-3 * rain + off)).clamp(0.0, 1.0);
         self.set_engine_ev(Ev::DirtNorm, self.dirt);
         // spray off a wet road, dust off a dry one
         self.set_engine_ev(Ev::DirtRate, speed * (1.5e-4 + 6.0e-3 * rain));

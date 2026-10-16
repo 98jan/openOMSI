@@ -415,6 +415,7 @@ pub(crate) fn weather_lighting(
     w: &omsi_content::weather::Weather,
     cloud_drift: [f64; 4],
     wetness: f32,
+    snow_cover: f32,
     shadows: bool,
     sky: &SkyState,
 ) -> omsi_render::Lighting {
@@ -432,9 +433,12 @@ pub(crate) fn weather_lighting(
         density,
         kind,
         rate,
-        if w.snow { 1.0 } else { 0.0 },
+        // (the weather's own snow cover, or what the snowfalls have laid so far)
+        if w.snow { 1.0 } else { snow_cover },
     );
-    lighting.roads_clear = w.snow && !w.snow_on_road;
+    // (the roads are kept clear unless the weather says the snow lies on them: the traffic
+    // and the gritters keep them black while the roofs and the verges turn white)
+    lighting.roads_clear = !w.snow_on_road;
     if let Some(custom)=CustomWeather::parse(&w.path.to_string_lossy()){
         let k=custom.brightness;
         lighting.sun_intensity*=k;

@@ -45,6 +45,10 @@ pub struct VehicleHost {
     /// `WetLane_2.wav` over 1 … 2, and `spray.osc` raises the wheel spray while it is
     /// between 1 and 2.
     pub street_cond: f32,
+    /// How much of the vehicle rolls off the road (0..1): its wheels' share on grass, earth
+    /// or gravel, a muddy one counted whole (set from what the wheels roll on, see
+    /// `omsi_scene::wheel_surface`). The body soils with it (`update_dirt`).
+    pub offroad: f32,
     /// People aboard (`humans_count`), set by whoever carries them.
     pub humans_count: f32,
     /// 1 while the vehicle drives a timetable duty (`schedule_active`).
@@ -304,6 +308,7 @@ impl VehicleHost {
             precip_rate: self.precip_rate,
             wind: self.wind,
             street_cond: self.street_cond,
+            offroad: self.offroad,
             temperature: self.temperature,
             abs_humidity: self.abs_humidity,
             sun_alt: self.sun_alt,

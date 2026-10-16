@@ -572,6 +572,14 @@ fn only_flat_blended_ground_strips_draw_after_the_roads() {
     let mut solid = line.clone();
     solid.textures[0].alpha = 0;
     assert_eq!(spline_render_phase(&solid), RenderPhase::Spline);
+    // cut-out dashes lying on the road are paint as well, the top of a kerb is not (#1694)
+    let mut dashes = line.clone();
+    dashes.textures[0].alpha = 1;
+    for p in &mut dashes.profiles[0].points { p.z = 0.002; }
+    assert_eq!(spline_render_phase(&dashes), RenderPhase::BeforeNormal);
+    let mut kerb_top = dashes.clone();
+    for p in &mut kerb_top.profiles[0].points { p.z = 0.15; }
+    assert_eq!(spline_render_phase(&kerb_top), RenderPhase::Spline);
     let mut fence = line.clone();
     fence.profiles[0].points[1].z = 1.0;
     assert_eq!(spline_render_phase(&fence), RenderPhase::Spline);
