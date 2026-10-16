@@ -3429,7 +3429,6 @@ dependencies = [
  "anyhow",
  "arboard",
  "clap",
- "ct2rs",
  "env_logger",
  "gilrs",
  "glam",
@@ -3456,6 +3455,7 @@ dependencies = [
  "omsi-map",
  "omsi-mapdraw",
  "omsi-model",
+ "omsi-mt",
  "omsi-net",
  "omsi-o3d",
  "omsi-photo",
@@ -3486,7 +3486,6 @@ dependencies = [
  "rustrict",
  "serde",
  "serde_json",
- "sha2",
  "steamworks",
  "ureq",
  "wgpu",
@@ -3748,6 +3747,19 @@ version = "0.1.0"
 dependencies = [
  "log",
  "omsi-cfg",
+]
+
+[[package]]
+name = "omsi-mt"
+version = "0.1.0"
+dependencies = [
+ "ct2rs",
+ "log",
+ "omsi-ui",
+ "parking_lot",
+ "serde_json",
+ "sha2",
+ "ureq",
 ]
 
 [[package]]
