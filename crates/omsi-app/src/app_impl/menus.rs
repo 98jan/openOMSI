@@ -361,13 +361,14 @@ impl App {
 
 /// The game menu on a server (`--lan-join https://…`): the world's clock and weather are the
 /// server's, and the way out leaves the server.
-pub(crate) const SERVER_GAME_MENU: [(&str, &str); 8] = [
+pub(crate) const SERVER_GAME_MENU: [(&str, &str); 9] = [
     ("resume", "Resume"),
     ("options", "Options..."),
     ("camera", "Camera..."),
     ("vehicle", "Vehicle options..."),
     ("world", "World options..."),
     ("map", "City map"),
+    ("shot", "Screenshot"),
     ("photo", "Photo mode"),
     ("quit", "Leave the server"),
 ];
@@ -486,7 +487,7 @@ impl crate::App {
 
 /// The lines of the game menu: (what, label). What can be set is on the pages behind
 /// "Options", "Vehicle options" and "World options" (see `game_lists`).
-pub(crate) const GAME_MENU: [(&str, &str); 15] = [
+pub(crate) const GAME_MENU: [(&str, &str); 16] = [
     ("resume", "Resume"),
     ("options", "Options..."),
     ("controls", "Controls..."),
@@ -502,6 +503,7 @@ pub(crate) const GAME_MENU: [(&str, &str); 15] = [
     ("save", "Save the situation"),
     ("saveslot", "Save to a slot..."),
     ("load", "Load the quicksave"),
+    ("shot", "Screenshot"),
     ("photo", "Photo mode"),
     ("quit", "End the session"),
 ];

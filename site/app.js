@@ -161,6 +161,7 @@ async function download(beta = false) {
     return;
   }
   const v = rel.tag_name.replace(/^v/, "");
+  if (rel.html_url) document.getElementById("dl-github").href = rel.html_url;
   ver.innerHTML = `${beta ? "Latest beta" : "Stable version"}: <b>${esc(v)}</b> · ${new Date(rel.published_at).toLocaleDateString()}`;
   // Each file by its exact name: matched by its ending alone, "-windows-x64.zip" was the
   // dedicated server's zip as well, and the Windows button downloaded the server.

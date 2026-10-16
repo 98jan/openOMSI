@@ -40,9 +40,17 @@ export const LAUNCHER_SIZES = [['0.7', 'Smallest'], ['0.8', 'Very small'], ['0.9
 
 export const launcherSize = () => remembered('launcher_size', '1');
 
-export const LAUNCHER_LAYOUTS = [['cards', 'Modern: everything on one page'], ['classic', 'Classic: in steps, as before']];
+export const LAUNCHER_LAYOUTS = [
+  ['bigmap', 'Big Map: the map fills the page'],
+  ['control', 'Control Room: everything side by side'],
+  ['classicplus', 'Classic+: two tabs, time and weather on top'],
+  ['classic', 'Classic: in steps, as before'],
+];
 
-export const launcherLayout = () => (remembered('launcher_layout', 'cards') === 'classic' ? 'classic' : 'cards');
+export const launcherLayout = () => {
+  const l = remembered('launcher_layout', 'bigmap');
+  return LAUNCHER_LAYOUTS.some(([id]) => id === l) ? l : 'bigmap';
+};
 
 export function fitWindow() {
   if (inTauri) call('fit_zoom', { size: Number(launcherSize()) || 1 }).catch(() => {});

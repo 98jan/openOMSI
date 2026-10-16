@@ -198,7 +198,7 @@ LAN session. Esc opens the game menu: drive the next placed vehicle, place any v
 the installation in front of the camera (or beside the bus), couple what stands close behind
 the bus and uncouple it again, save the situation or load the quicksave, the next weather, the clock an hour on or back, refuel and wash (only at a
 petrol station, as in OMSI), repair (the team needs the map's travel time when the bus stands
-in no depot yard), the photo mode (below), timetable, skip the duty's next stop (also **Ctrl+Shift+H**: for a
+in no depot yard), a screenshot, the photo mode (below), timetable, skip the duty's next stop (also **Ctrl+Shift+H**: for a
 stop the bus cannot reach or never registers at), the object editor (below), quit. The menu is a
 page of the launcher: its rail on the left (the menu's lines as its pages, the picture of the
 game beside it with a card of what is being driven and **Resume**), and *Options*, *Controls*,
@@ -372,7 +372,7 @@ as designed; `navigator_opacity` in older files),
 at its first and last stop, railway stations and the stops the timetable gives a time of their
 own, and drives on from the others once boarding is done; off by default: it waits at every
 stop it serves, as in OMSI),
-`boarding`, `detail_textures`, `exact_fare`, `enhanced`, `fullscreen`, `vsync`, `volume`
+`boarding`, `detail_textures`, `exact_fare`, `pax_bad_driving`, `enhanced`, `fullscreen`, `vsync`, `volume`
 and `drive_keys`, plus `render_scale` (`auto` or a fraction: the picture is drawn smaller
 and upscaled), `post_aa` (`fxaa`, the enhanced renderer's, or `off`), `view_distance` (m,
 how far the tiles are kept loaded), `video_memory` ("Video memory", MB: all the game holds
@@ -454,7 +454,8 @@ free drive the bus takes whom its destination display takes, as a timetable bus:
 whose line record lists the terminus shown, and those without one. With no destination set
 (or a "not in service" one) nobody waiting gets on; the riders aboard still get off at their
 stops.
-`exact_fare=0` makes them overpay so that change is due. Rain and snow stay outside the
+`exact_fare=0` makes them overpay so that change is due. `pax_bad_driving=0` keeps the riders
+quiet about rough driving: no complaints, and nobody decides to get off early because of it. Rain and snow stay outside the
 player's bus (its `[boundingbox]`), and heavy rain darkens the day enough for the saloon
 lights to matter.
 
