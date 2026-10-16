@@ -23,10 +23,10 @@
 //! their width is in metres near the camera and in pixels far away, so zooming rebuilds
 //! nothing.
 
-use glam::{DMat3, DVec2, DVec3, Mat4, Vec2, Vec3};
+use glam::{DVec2, DVec3, Mat4, Vec2, Vec3};
 use hashbrown::HashMap;
 use omsi_render::{Renderer, Scene, TextureId};
-use omsi_sim::traffic::{LaneKey, LaneKind, Network};
+use omsi_sim::traffic::{LaneKind, Network};
 use omsi_ui::paint::Align;
 use omsi_ui::{Atlas, Color, Draw, Fonts, Gpu, Layer, Painter, Rect, Weight};
 
@@ -132,15 +132,6 @@ fn transit_drop(ui: &mut Painter, atlas: &mut Atlas, fonts: &Fonts, p: Vec2, dir
     }
 }
 
-/// How busy a road is from its congestion score: 0 flowing, 2 slow, 3 heavy, 4 standing.
-fn level(score: f32) -> usize {
-    match score {
-        s if s < 0.42 => 0,
-        s if s < 0.66 => 2,
-        s if s < 0.85 => 3,
-        _ => 4,
-    }
-}
 const ON_TIME: Color = Color::rgba(110, 200, 120, 1.0);
 const WARN: Color = Color::rgba(235, 170, 60, 1.0);
 const STOP_REQUEST: Color = Color::hex(0xF0A030);
@@ -1238,23 +1229,6 @@ impl Navigator {
 
 }
 
-/// Lane `i` passes `stop` within `reach` metres with the stop on its kerb side (the right, or
-/// the left on a left-hand-traffic map), or right on it.
-fn passes_on_its_side(net: &Network, i: usize, stop: DVec3, reach: f64) -> bool {
-    let l = &net.lanes[i];
-    let Some((s, d)) = l.nearest_point(stop) else { return false };
-    if d > reach {
-        return false;
-    }
-    if d < 2.5 {
-        return true;
-    }
-    let (p, h) = l.at(s);
-    let dir = DVec2::new((h as f64).to_radians().sin(), (h as f64).to_radians().cos());
-    let side = dir.perp_dot((stop - p).truncate());
-    if net.left_hand { side > 0.0 } else { side < 0.0 }
-}
-
 /// The lanes of `net` that are traffic lane `l`: the same path by its key, else (a junction's
 /// paths have none) the lane of `net` that starts and ends where it does, the same way.
 fn same_paths(net: &Network, traffic: &Network, l: usize) -> Vec<usize> {
@@ -1285,8 +1259,7 @@ impl<'a> NavFrame<'a> {
 }
 
 
-mod roads;
-pub(crate) use roads::*;
+pub(crate) use omsi_mapdraw::roads::{self, *};
 mod place;
 mod surface;
 pub(crate) use omsi_mapdraw::style;

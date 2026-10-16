@@ -365,10 +365,12 @@ flags! {
     OMSI_NO_PIPELINE_CACHE: Bool, Switch, Use, "off", "Compile every pipeline at each start (no ~/.openomsi/cache/pipelines-*.bin).";
     OMSI_NO_PLUGINS: Bool, Switch, Use, "off", "No plugins loaded.";
     OMSI_NO_POLL_THREAD: Bool, Switch, Use, "off", "No device poll thread.";
+    OMSI_NO_PRECIP_ROOF: Bool, Switch, Frame, "off", "Rain and snow fall through roofs (no roof map).";
     OMSI_NO_PRESENCE: Bool, Switch, Use, "off", "No presence (\"playing now\") service.";
     OMSI_NO_PUDDLE_GLASS_DEPTH: Bool, Switch, Use, "off", "Puddles without glass depth.";
     OMSI_NO_PUDDLE_REFLECTIONS: Bool, Switch, Frame, "off", "No puddle reflections.";
     OMSI_NO_PUDDLE_VEHICLE: Bool, Switch, Use, "off", "No vehicles in puddle reflections.";
+    OMSI_NO_RAIN: Bool, Switch, Frame, "off", "No rainfall.";
     OMSI_NO_RENDER_POOL: Bool, Switch, Use, "off", "No encoding thread pool for rendering.";
     OMSI_NO_RT: Bool, Switch, Use, "off", "No ray queries (Enhanced+ draws as Enhanced).";
     OMSI_NO_RT_FRAME: Bool, Switch, Frame, "off", "Ray queries kept but nothing traced.";

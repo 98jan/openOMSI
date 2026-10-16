@@ -284,10 +284,12 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_NO_PIPELINE_CACHE` | bool | off | use | render | Compile every pipeline at each start (no ~/.openomsi/cache/pipelines-*.bin). |
 | `OMSI_NO_PLUGINS` | bool | off | use | app, guard | No plugins loaded. |
 | `OMSI_NO_POLL_THREAD` | bool | off | use | render | No device poll thread. |
+| `OMSI_NO_PRECIP_ROOF` | bool | off | frame | render | Rain and snow fall through roofs (no roof map). |
 | `OMSI_NO_PRESENCE` | bool | off | use | platform | No presence ("playing now") service. |
 | `OMSI_NO_PUDDLE_GLASS_DEPTH` | bool | off | use | render | Puddles without glass depth. |
 | `OMSI_NO_PUDDLE_REFLECTIONS` | bool | off | frame | render | No puddle reflections. |
 | `OMSI_NO_PUDDLE_VEHICLE` | bool | off | use | render | No vehicles in puddle reflections. |
+| `OMSI_NO_RAIN` | bool | off | frame | render | No rainfall. |
 | `OMSI_NO_RENDER_POOL` | bool | off | use | render | No encoding thread pool for rendering. |
 | `OMSI_NO_RT` | bool | off | use | render | No ray queries (Enhanced+ draws as Enhanced). |
 | `OMSI_NO_RT_FRAME` | bool | off | frame | render | Ray queries kept but nothing traced. |

@@ -35,6 +35,39 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 - The launcher's route preview draws the same picture: ground, water, rail, paved surfaces
   and houses, the route in blue, the stops on white cards.
 
+- **Content test** in Settings, in place of the launcher's Model test page: any content is
+  loaded the way the game loads it and every warning of its files is listed - a bus with the
+  parts coupled behind it, a whole map (every tile, object and spline it places, what of it
+  is not installed, its ground textures and AI lists; optionally every model, mesh and
+  texture of it), an installed mod, or any file or folder: a scenery object, a spline, a
+  human, a weather, a mesh, a mod not installed yet (folder or zip). From the command line:
+  `openomsi --check <file or folder> [--deep]`.
+- Save slots: the pause menu's "Save to a slot..." saves to a new slot or over one of the
+  map's slots, and the launcher's Continue card deletes saves [#2556](https://github.com/openOMSI-org/openOMSI/issues/2556).
+- `[visible]` conditions combine: several `[visible]` of a mesh must all hold,
+  `[visible_range] var min max`, a `!` after the variable turns a condition round, and a
+  `||` line between blocks gives either-or (docs/MODDING.md) [#729](https://github.com/openOMSI-org/openOMSI/issues/729).
+- Touch pedals: a rest zone at the foot of the pedals (a finger laid there presses nothing),
+  a softer start of their travel, and their length in the settings [#1458](https://github.com/openOMSI-org/openOMSI/issues/1458).
+- Rain, made anew: a quarter of a million drops worked out on the GPU each frame instead of
+  a few thousand sprites - a downpour is a veil of many short, fine, faint lines, not a few
+  long thick ones. Each streak is the drop's way against the eye in a seventieth of a
+  second, as wide as the drop (fainter where that is less than a pixel) and as faint as it
+  is long; the drops are as big and fall as fast as the rain is heavy (Marshall-Palmer drop
+  sizes, their measured fall speeds), upright standing, slanting at the windscreen while
+  driving; where they land, small splashes on the road, the kerb, a roof. The rain stays
+  put in the world: turning or moving the camera round the bus no longer swings it [#1412](https://github.com/openOMSI-org/openOMSI/issues/1412).
+- Rain and snow stop at roofs: a map of what stands over the ground round the camera, seen
+  from above, keeps them out of every bus and car, under bridges, shelters and eaves - from
+  the outside view as well, where it rained and snowed in the saloon.
+- Snow builds up while it falls - a white cover in a quarter of an hour of a heavy snowfall,
+  an hour or two of a light one - on the roofs of the buses, the cars and the houses, the
+  verges and the ground, and thaws above zero and in the rain; the roads stay clear unless
+  the weather lays snow on them.
+- Enhanced: a wet bus mirrors the street - the water on its paint is as smooth as glass.
+- Driving off the road soils the bus: the wheels on earth, grass or gravel throw it up onto
+  the body (the dirt overlay), mud in the wet in a few minutes, dust in the dry more slowly.
+
 ### Fixes
 
 **Navigator**
@@ -47,6 +80,32 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   and turning round, and may change lanes on the way: it no longer leads back to a part of
   the route already driven, nor round a block to reach a lane beside the bus. The way to a
   stop before the route is there comes to the stop on its own side of the road.
+
+**Graphics**
+
+- Grass and earth no longer shine like wet asphalt in the rain: a ground texture with
+  `[moisture]` on grass, earth or gravel soaks the rain up instead of carrying a film of
+  water, and a `[moisture]` road without `[puddles]` gets a lighter film with fewer pools
+  (the stock grass strips glowed in every lamp at night).
+- Tinted bus windows on an alpha-tested layer that shares its texture with the body are
+  blended above OMSI's cut instead of drawn black (Ychebniy LiAZ 5292.65, NefAZ 5299 2024)
+  [#2609](https://github.com/openOMSI-org/openOMSI/issues/2609).
+- A road's painted lines (also cut-out dashes) are drawn over the crossings and junction
+  plates laid over the road, as in OMSI 2, instead of vanishing under them with the camera's
+  height and distance [#1694](https://github.com/openOMSI-org/openOMSI/issues/1694).
+- Night in the city costs less: the classic picture lights a place with its eight strongest
+  lamps, as Direct3D lit OMSI 2's, and every light grid cell keeps its strongest lamps
+  rather than the first ones listed [#1467](https://github.com/openOMSI-org/openOMSI/issues/1467).
+
+**Controls**
+
+- The steering wheel comes back after a turn the way a bus's does: gently at town speed and
+  damped on its way back, without swinging past the centre [#2103](https://github.com/openOMSI-org/openOMSI/issues/2103).
+
+**Traffic and timetable**
+
+- A test covers buses behind a bus standing long at a shared stop: each serves the stop from
+  behind and goes round it [#1954](https://github.com/openOMSI-org/openOMSI/issues/1954).
 
 **Traffic and timetable**
 

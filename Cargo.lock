@@ -3771,7 +3771,10 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
  "omsi-map",
+ "omsi-sim",
  "omsi-ui",
 ]
 

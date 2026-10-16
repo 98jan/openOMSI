@@ -38,7 +38,7 @@ impl Renderer {
                     i.interior.min(0.99)
                 },
                 // the surface flag: 1 ground, 2 a vehicle's shadow blob (no snow on it),
-                // 1.25 a legacy pulled decal, 0.9 an OMSI-ordered surface (weather
+                // 1.25 a legacy pulled decal, 1.4 a road's painted lines, 0.9 an OMSI-ordered surface (weather
                 // classification without view-space pull), 0.75 a painted ground layer;
                 // below -500 a vehicle part, -(5000 + the roof height relative to origin)
                 if let Some(code) = Self::roof_code(i, ro) {
@@ -50,6 +50,7 @@ impl Renderer {
                         i.decal,
                         i.surface,
                         i.surface_bias,
+                        i.render_phase == RenderPhase::BeforeNormal,
                     )
                 },
             ]);
@@ -395,6 +396,16 @@ impl Renderer {
             ],
         });
         scene.shadow_bind_group = Some(sbg);
+        scene.precip_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("precipitation roof camera"),
+            layout: &self.shadows.shadow_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: self.shadows.precip.camera_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: model_buf.binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: params_buf.binding() },
+                wgpu::BindGroupEntry { binding: 10, resource: draw_buf.binding() },
+            ],
+        }));
     }
 
     /// Upload the frame's draw list, growing its buffer (and the bind groups that hold it)

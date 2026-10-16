@@ -188,6 +188,27 @@ fn a_berth_held_for_long_is_served_from_behind() {
     assert!(c.bus.as_ref().unwrap().stops.is_empty() && !c.at_stop(), "it went on: {:?}", c.bus.as_ref().map(|b| b.phase));
 }
 
+/// A bus on a long stand at a stop several lines share, and three buses of other lines
+/// coming one after the other (#1954): none of them waits the layover out - each serves the
+/// stop behind it and goes round it, and all are on their way within minutes.
+#[test]
+fn buses_behind_a_long_stand_serve_and_go_round_it() {
+    let f = Fixture::new();
+    let mut t = road(&f);
+    let resting = add_bus(&mut t, &f, 1, STOP_S, 0.0, 1800.0);
+    t.cars.iter_mut().find(|c| c.id == resting).unwrap().bus.as_mut().unwrap().layover = true;
+    t.cars.iter_mut().find(|c| c.id == resting).unwrap().bus.as_mut().unwrap().put_out = true;
+    let coming: Vec<u64> = [(2, 200.0), (3, 140.0), (4, 80.0)].iter().map(|&(id, s)| add_bus(&mut t, &f, id, s, 8.0, 0.0)).collect();
+    let ids: Vec<u64> = std::iter::once(resting).chain(coming.iter().copied()).collect();
+    let logs = run(&mut t, &ids, 300.0, |_, _| {});
+    assert!(logs[0].opened_at.is_empty(), "the layover bus: {:?}", logs[0]);
+    for (k, id) in coming.iter().enumerate() {
+        assert_eq!(logs[k + 1].opened_at.len(), 1, "bus {id}: {:?}", logs[k + 1]);
+        let c = car(&t, *id);
+        assert!(c.state.s > STOP_S + 20.0, "bus {id} is still at {:.0} m (the stop at {STOP_S})", c.state.s);
+    }
+}
+
 /// Two buses on their layovers: the second serves from behind the first, and once the first
 /// has left it moves up onto the berth, doors shut, and stands its layover out there.
 #[test]

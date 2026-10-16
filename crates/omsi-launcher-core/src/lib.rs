@@ -2017,6 +2017,8 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
         }
     }
     v["touch_door_mode"] = json!("standard");
+    v["touch_pedal_length"] = json!(1.0);
+    v["touch_pedal_deadzone"] = json!(0.15);
     v["triple_screen"] = json!(false);
     v["triple_span"] = json!(true);
     v["triple_hud_center"] = json!(true);
@@ -2142,6 +2144,8 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
             "ctrl_deadzone" => v[&k] = json!(val.parse::<f64>().unwrap_or(0.0).clamp(0.0, 0.3)),
             "mouse_sens" => v[&k] = json!(val.parse::<f64>().unwrap_or(1.0).clamp(0.1, 3.0)),
             "key_pedal_speed" => v[&k] = json!(val.parse::<f64>().unwrap_or(1.0).clamp(0.25, 2.0)),
+            "touch_pedal_length" => v[&k] = json!(val.parse::<f64>().unwrap_or(1.0).clamp(0.8, 1.6)),
+            "touch_pedal_deadzone" => v[&k] = json!(val.parse::<f64>().unwrap_or(0.15).clamp(0.0, 0.4)),
             "mouse_pedal_strength" => {
                 v[&k] = json!(
                     val.parse::<f64>()
@@ -2151,8 +2155,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
                         .clamp(0.25, 4.0)
                 )
             }
-            "ui_scale" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).unwrap_or(1.0).clamp(0.5, 2.0)),
-            "nav_size" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).unwrap_or(1.0).clamp(0.6, 2.0)),
+            "ui_scale" | "nav_size" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).unwrap_or(1.0).clamp(if k == "ui_scale" { 0.5 } else { 0.6 }, 2.0)),
             "chat_size" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).unwrap_or(1.0).clamp(0.5, 3.0)),
             "wheel_range" => v[&k] = json!(val.parse::<f64>().unwrap_or(900.0).clamp(90.0, 2880.0)),
             "wheel_lock" => v[&k] = json!(val.parse::<f64>().map(|x| if x < 45.0 { 0.0 } else { x.min(2880.0) }).unwrap_or(0.0)),
@@ -2477,8 +2480,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
             _ => "all",
         },
         b("nav_arrows", false),
-        b("nav_ai", true), b("nav_surface", true), b("nav_light", false),
-        b("nav_3d", true), b("nav_widget", true), f("nav_size", 1.0).clamp(0.6, 2.0),
+        b("nav_ai", true), b("nav_surface", true), b("nav_light", false), b("nav_3d", true), b("nav_widget", true), f("nav_size", 1.0).clamp(0.6, 2.0),
         b("get_up", false),
         match v.get("time_speed") {
             Some(Value::String(x)) => x.trim().parse::<f64>().map(|x| x.clamp(1.0, 30.0)).unwrap_or(1.0),
@@ -2569,6 +2571,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("arrows_switch_cams={}\n", b("arrows_switch_cams", true)));
     text.push_str(&format!("mouse_pedals={}\n", b("mouse_pedals", true)));
     text.push_str(&format!("key_pedal_speed={}\n", f("key_pedal_speed", 1.0).clamp(0.25, 2.0)));
+    text.push_str(&format!("touch_pedal_length={}\ntouch_pedal_deadzone={}\n", f("touch_pedal_length", 1.0).clamp(0.8, 1.6), f("touch_pedal_deadzone", 0.15).clamp(0.0, 0.4)));
     text.push_str(&format!("resolution={}\n", resolution_text(v.get("resolution").and_then(|x| x.as_str()).unwrap_or("auto"))));
     text.push_str(&format!("gpu_texture_compression={}\n", b("gpu_texture_compression", true)));
     text.push_str(&format!("cloud_quality={}\n", cloud_quality(v.get("cloud_quality").and_then(|x| x.as_str()).unwrap_or("high"))));
@@ -2735,6 +2738,20 @@ pub fn saved_situations(map: &str) -> Vec<SavedSituation> {
         out[last..].sort_by(|a, b| b.saved.cmp(&a.saved));
     }
     out
+}
+
+/// Delete a saved situation of `map` (#2556): only one `saved_situations` lists for it - a
+/// slot, the quicksave made on it, its last situation - with the script textures saved
+/// beside it. Whether it was there to delete.
+pub fn delete_situation(map: &str, file: &Path) -> Result<bool> {
+    if !Path::new(&map.replace('\\', "/")).components().all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir)) || !saved_situations(map).iter().any(|s| s.file == file) {
+        return Ok(false);
+    }
+    std::fs::remove_file(file)?;
+    let mut tex = file.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    tex.push(".scripttex");
+    let _ = std::fs::remove_dir_all(file.with_file_name(tex));
+    Ok(true)
 }
 
 /// The `[map]` a situation file was saved on (its head alone is read).
