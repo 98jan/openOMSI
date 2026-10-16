@@ -175,6 +175,8 @@ pub struct Package {
     by_key: HashMap<(i32, i32), usize>,
     /// The package folder (`markers.cfg`, `regions.cfg` and `icons/` lie in it).
     dir: PathBuf,
+    /// The map's folder the package was opened for (its timetable is there).
+    map_dir: PathBuf,
     regions: Vec<Region>,
     has_streets: bool,
     lines: Vec<LineInfo>,
@@ -272,6 +274,7 @@ impl Package {
         let mut p = Self::parse(data, name, credit, dark, light, grid);
         if let Some(p) = p.as_mut() {
             p.dir = dir.clone();
+            p.map_dir = map_dir.to_path_buf();
             p.load_places();
             p.load_lines();
         }
@@ -340,10 +343,16 @@ impl Package {
             names,
             by_key,
             dir: PathBuf::new(),
+            map_dir: PathBuf::new(),
             regions: Vec::new(),
             has_streets: false,
             lines: Vec::new(),
         })
+    }
+
+    /// The map's folder the package was opened for.
+    pub fn map_dir(&self) -> &Path {
+        &self.map_dir
     }
 
     /// The colours of the dark map or of the light one.
@@ -469,6 +478,7 @@ impl Package {
             names: Vec::new(),
             by_key: HashMap::new(),
             dir: PathBuf::new(),
+            map_dir: PathBuf::new(),
             regions: Vec::new(),
             has_streets: false,
             lines: Vec::new(),

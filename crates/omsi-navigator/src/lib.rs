@@ -411,6 +411,10 @@ pub struct Navigator {
     place: place::PlaceView,
     /// The date of the session (yyyymmdd).
     date: i32,
+    /// The game's clock (seconds of the day) and weekday (0 = Monday): the timetable lights the next departure.
+    day_clock: (f64, i32),
+    /// The map's timetable for the lines panel, for the date it was read for.
+    times: Option<(i32, std::sync::Arc<line_times::LineTimes>)>,
     /// How far the panel has faded in (Shift+N fades it in and out rather than cutting).
     shown: f32,
     /// The trip's next stops (place, name, the bus's heading there) and where the bus is,
@@ -550,6 +554,8 @@ impl Navigator {
             trip_paths: HashMap::new(),
             place: Default::default(),
             date: 0,
+            day_clock: (0.0, 0),
+            times: None,
             shown: if enabled { 1.0 } else { 0.0 },
             stop_spots: Vec::new(),
             bus_at: DVec3::ZERO,
@@ -1104,6 +1110,7 @@ impl Navigator {
         }
         self.time += f.dt;
         self.date = f.date;
+        self.day_clock = (f.time, f.weekday);
         if let Some(rx) = self.building.as_ref() {
             if let Ok((net, pos, streets, surface, hints)) = rx.try_recv() {
                 self.name_hints = hints;
@@ -1273,7 +1280,9 @@ impl<'a> NavFrame<'a> {
 
 
 pub use omsi_mapdraw::roads::{self, *};
+mod line_times;
 mod lines_panel;
+mod lines_sheet;
 mod place;
 mod surface;
 pub use omsi_mapdraw::style;

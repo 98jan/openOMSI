@@ -7,8 +7,8 @@ use omsi_map::package::{GROUP_BRT, GROUP_EXPRESS, GROUP_FEEDER, MODAL_BUS};
 use omsi_ui::Vertex;
 
 /// The panel is a dark card in either look of the map: its text, and the dimmer text of its labels.
-const TEXT: Color = Color::rgba(237, 237, 237, 1.0);
-const TEXT_DIM: Color = Color::rgba(184, 184, 184, 1.0);
+pub(super) const TEXT: Color = Color::rgba(237, 237, 237, 1.0);
+pub(super) const TEXT_DIM: Color = Color::rgba(184, 184, 184, 1.0);
 
 /// The texts of the lines panel, looked up in the catalog (`locales/app.yml`) by their English wording: a language without its own gets English.
 pub(super) struct LinesText {
@@ -34,6 +34,11 @@ pub(super) struct LinesText {
     modals: [String; 4],
     tick_all: String,
     tick_none: String,
+    pub(super) timetable: String,
+    pub(super) towards: String,
+    /// Monday to Friday, Saturday, Sunday.
+    pub(super) days: [String; 3],
+    pub(super) predicted: String,
     /// Decimals with a comma (the language's own way of writing a number).
     comma: bool,
 }
@@ -67,6 +72,10 @@ pub(super) fn lines_text() -> LinesText {
         modals: [t("Bus"), t("Tram"), t("Metro"), t("Rail")],
         tick_all: t("Select all"),
         tick_none: t("Clear"),
+        timetable: t("Timetable"),
+        towards: t("Towards"),
+        days: [t("Mon–Fri"), t("Sat"), t("Sun")],
+        predicted: t("Times predicted from the map's timetable"),
         comma: decimal_comma(&omsi_ui::i18n::language()),
     }
 }
@@ -90,8 +99,17 @@ pub(super) enum LinesHit {
     Modal(u8),
     /// The route of the line in focus (0 = route 1).
     RoutePick(usize),
+    /// The timetable in place of the list, and back.
+    Sheet,
+    /// A day group (a weekday: 0, 5, 6) and a departure (its time, s).
+    Day(usize),
+    Dep(u32),
+    /// Back from a departure's stops to the departures.
+    Back,
     /// Tick every line of the tab on show, or clear them when all are ticked.
     All,
+    /// A stop of the departure on show (its map object): the view goes to it.
+    Stop(i64),
 }
 
 /// The lines panel of the city map: which lines are ticked and what is on show.
@@ -109,7 +127,13 @@ pub struct LinesView {
     filter: u8,
     modal: u8,
     /// First row of the list on show.
-    scroll: f32,
+    pub(super) scroll: f32,
+    /// The timetable of the line in focus is on show in place of the list; the day group picked (else today's); the departure picked
+    /// (its time, s); and the list is put at the next departure when it is drawn.
+    pub(super) sheet: bool,
+    pub(super) day: Option<usize>,
+    pub(super) dep: Option<u32>,
+    pub(super) jump: bool,
     /// Bumped whenever the choice changes: the ways are drawn again.
     version: u64,
     /// The ways' mesh (buffer 10): the version it was built for, its size and anchor.
@@ -161,7 +185,22 @@ impl Navigator {
         let n = self.surface.as_ref().map_or(0, |s| s.lines().len());
         let shown = if matches!(h, LinesHit::All) { self.shown_lines() } else { Vec::new() };
         let st = &mut self.city.lines;
+        // (a click on a line leaves the list where it is: the player is scrolled down it)
+        if matches!(h, LinesHit::Toggle(_) | LinesHit::Focus(_)) {
+            (st.dep, st.jump) = (None, true);
+        }
         match h {
+            LinesHit::Sheet => (st.sheet, st.dep, st.jump, st.scroll) = (!st.sheet, None, true, 0.0),
+            LinesHit::Day(d) => (st.day, st.dep, st.jump, st.scroll) = (Some(d), None, true, 0.0),
+            LinesHit::Dep(t) => (st.dep, st.scroll) = (Some(t), 0.0),
+            LinesHit::Back => (st.dep, st.jump, st.scroll) = (None, true, 0.0),
+            LinesHit::Stop(id) => {
+                if let Some(p) = self.stop_pos.get(&id) {
+                    self.city.center = p.truncate();
+                    self.city.follow = false;
+                    self.city.mpp = self.city.mpp.min(3.0);
+                }
+            }
             LinesHit::All => {
                 if shown.iter().all(|i| st.selected.contains(i)) {
                     st.selected.retain(|i| !shown.contains(i));
@@ -210,7 +249,7 @@ impl Navigator {
                 st.version += 1;
             }
             LinesHit::RoutePick(r) => {
-                st.scroll = 0.0;
+                (st.dep, st.jump, st.scroll) = (None, true, 0.0);
                 if let Some(i) = st.focus {
                     st.route.insert(i, r);
                     st.version += 1;
@@ -265,15 +304,19 @@ impl Navigator {
         Some(p.verts)
     }
 
-    /// Offscreen pictures (`OMSI_NAV_LINES=number[;route]`): the panel open on a line and its route.
+    /// Offscreen pictures (`OMSI_NAV_LINES=number[;route;HH:MM]`): the panel open on a line, its timetable and a departure picked.
     pub fn debug_lines(&mut self, spec: &str) {
         let mut it = spec.split(';');
         let n = it.next().unwrap_or("");
         let Some(i) = self.surface.as_ref().and_then(|s| s.lines().iter().position(|l| l.number == n)) else { return };
         let st = &mut self.city.lines;
         (st.open, st.selected, st.focus, st.fit, st.version) = (true, vec![i], Some(i), true, st.version + 1);
-        if let Some(r) = it.next().and_then(|r| r.parse().ok()) {
-            st.route.insert(i, r);
+        if let Some(d) = it.next() {
+            (st.sheet, st.jump) = (true, true);
+            st.route.insert(i, d.parse().unwrap_or(0));
+            if let Some((h, m)) = it.next().and_then(|t| t.split_once(':')) {
+                st.dep = Some(h.parse::<u32>().unwrap_or(0) * 3600 + m.parse::<u32>().unwrap_or(0) * 60);
+            }
         }
     }
 
@@ -310,11 +353,15 @@ impl Navigator {
 
     /// The Lines button left of the close button and its panel left of the column of buttons (`size`: the window's width
     /// and height and the interface scale; `at`: the pad, the button size, the column's x and the close button).
-    pub(super) fn draw_lines_ui(&mut self, ui: &mut Painter, size: (f32, f32, f32), at: (f32, f32, f32, Rect), on_line: &HashMap<usize, usize>) {
+    pub(super) fn draw_lines_ui(&mut self, ui: &mut Painter, size: (f32, f32, f32), at: (f32, f32, f32, Rect), on_line: &HashMap<usize, usize>, on_screen: &dyn Fn(DVec3) -> Vec2) {
         let ((w, h, s), (pad, bs, bx, close)) = (size, at);
         let lt = lines_text();
         self.draw_lines_button(ui, pad, bs, close.x - 8.0 * s, s, &lt);
         if self.city.lines.open && self.surface.as_ref().is_some_and(|sf| !sf.lines().is_empty()) {
+            // (a departure picked: the time at each stop, on the map)
+            if let (true, Some(sf), Some(i)) = (self.city.lines.sheet, self.surface.clone(), self.city.lines.focus) {
+                self.sheet_labels(ui, &sf, i, s, on_screen, (w, h));
+            }
             self.lines_panel(ui, w, h, s, close.bottom() + 12.0 * s, bx - 12.0 * s, &lt, on_line);
         }
     }
@@ -370,6 +417,14 @@ impl Navigator {
         }
         if let Some(i) = focus {
             let l = &lines[i];
+            if self.line_times().is_some_and(|t| t.line(&l.number).is_some()) {
+                let tw = self.fonts.width(lt.timetable.as_str(), 11.5 * s, Weight::Bold) + 40.0 * s;
+                let rr = Rect::new(x0 + pw - pad - tw, top + 8.0 * s, tw, 22.0 * s);
+                ui.rounded(rr, 4.0 * s, if self.city.lines.sheet { Color::rgba(60, 98, 156, 1.0) } else { Color::rgba(40, 46, 56, 1.0) });
+                ui.icon(&mut self.atlas, "schedule", Vec2::new(rr.x + 15.0 * s, rr.center().y), 14.0 * s, TEXT);
+                ui.text_in(&mut self.atlas, &self.fonts, lt.timetable.as_str(), 11.5 * s, Weight::Bold, Rect::new(rr.x + 24.0 * s, rr.y, rr.w - 26.0 * s, rr.h), Align::Center, TEXT);
+                hits.push((rr, LinesHit::Sheet));
+            }
             let ri = self.city.lines.route.get(&i).copied().unwrap_or(0).min(l.routes.len().saturating_sub(1));
             let r = &l.routes[ri];
             ui.rect(Rect::new(x0, top + 6.0 * s, 4.0 * s, card_h - 12.0 * s), line_color(i));
@@ -410,6 +465,13 @@ impl Navigator {
         let panel_h = (h - ly - 12.0 * s).max(60.0 * s);
         let list_panel = Rect::new(x0, ly, pw, panel_h);
         ui.rounded(list_panel, 8.0 * s, ink);
+        if let Some(i) = focus.filter(|&i| self.city.lines.sheet && self.line_times().is_some_and(|t| t.line(&lines[i].number).is_some())) {
+            let rows = self.sheet_panel(ui, &sf, i, list_panel, s, lt, &mut hits);
+            self.city.lines.panel = Some(Rect::new(x0, top, pw, ly + panel_h - top));
+            self.city.lines.list = Some(rows);
+            self.city.lines.hits = hits;
+            return;
+        }
         ui.text(&mut self.atlas, &self.fonts, lt.map_lines.as_str(), 10.5 * s, Weight::Bold, Vec2::new(x0 + pad, ly + 20.0 * s), Align::Left, Color::hex(0x6f9bd6));
         let dated: Vec<usize> = (0..lines.len()).filter(|&i| sf.line_on(i, self.date)).collect();
         let mut present = [false; 4];

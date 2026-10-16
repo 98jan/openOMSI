@@ -737,7 +737,7 @@ impl Navigator {
             self.city.buttons.push((r, id));
         }
         // the Lines button, left of the close button, and its panel, left of the column
-        self.draw_lines_ui(&mut ui, (w, h, s), (pad, bs, bx, close), &on_line);
+        self.draw_lines_ui(&mut ui, (w, h, s), (pad, bs, bx, close), &on_line, &on_screen);
         if self.show_surface && self.place.has_location() {
             self.place.draw_chips(&mut ui, &mut self.atlas, &self.fonts, head, w, pad, s);
         }

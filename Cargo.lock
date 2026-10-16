@@ -3777,6 +3777,7 @@ dependencies = [
  "omsi-scene",
  "omsi-sim",
  "omsi-texture",
+ "omsi-timetable",
  "omsi-ui",
  "wgpu",
 ]
