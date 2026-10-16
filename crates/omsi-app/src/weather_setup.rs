@@ -126,7 +126,11 @@ pub(crate) fn setup_sky(
     });
     *sky_clouds = ty.filter(|_| vanilla.is_some()).map(|t| (kind.clone(), t));
     let vanilla = vanilla.map(|img| renderer.add_texture(scene, &img, true));
-    renderer.set_sky_textures_vanilla(scene, [ids[0], ids[1], ids[2]], clouds, vanilla);
+    let sun = omsi_texture::decode_file(&omsi_cfg::resolve_path(&args.root, "Texture\\sonne.bmp"))
+        .map_err(|e| log::warn!("sun texture: {e}"))
+        .ok()
+        .map(|img| renderer.add_texture(scene, &img, false));
+    renderer.set_sky_textures_vanilla(scene, [ids[0], ids[1], ids[2]], clouds, vanilla, sun);
 }
 
 /// A `[cloudtype]` of `Weather/clouds.cfg`: its texture (under `Texture\`), the metres of
