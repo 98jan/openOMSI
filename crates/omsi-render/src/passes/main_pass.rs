@@ -382,7 +382,7 @@ impl Renderer {
                 // some ten centimetres in a downpour)
                 eye: rf.eye_velocity.extend(1.0 / 70.0).to_array(),
                 fall: [rf.rate, rf.drop_mm * 0.001, counts[0] as f32, counts[1] as f32],
-                view: [f.width as f32, f.height as f32, 1.0, 0.0],
+                view: [f.width as f32, f.height as f32, 0.85, (counts[0] + counts[1] + counts[2]) as f32],
                 roof: self.shadows.precip.uniform().0,
                 roof_on: [self.shadows.precip.uniform().1, 0.0, 0.0, 0.0],
             };

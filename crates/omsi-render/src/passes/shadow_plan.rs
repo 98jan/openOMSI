@@ -208,7 +208,10 @@ impl Renderer {
         let windy = f.lighting.windy_trees;
         let casters = |span: std::ops::Range<usize>, out: &mut [Vec<DrawItem>; SHADOW_LISTS], ranges: &mut Vec<(u8, u32, u32, usize, u32)>, sig: &mut LampSigs| {
             for inst in &scene.instances[span] {
-                if !inst.visible || !inst.casts_shadow || (omsi_shadow_casters && !inst.omsi_caster) {
+                // (the roof map takes the ground and the roads as well, which cast no shadow:
+                // the splashes land on them, see rain.wgsl `splash`)
+                let caster = inst.casts_shadow && !(omsi_shadow_casters && !inst.omsi_caster);
+                if !inst.visible || (!caster && precip_box.is_none()) {
                     continue;
                 }
                 // a stand-in for far tiles (`set_near_only`) left out of the picture casts no
@@ -238,7 +241,7 @@ impl Renderer {
                 // most frames only the close cascade (30 m round the camera) is drawn, and
                 // most of a city's instances lie outside it - looking up the materials of
                 // every one of them first was most of this planning's time.
-                let lamp_hit = !lamp_shadows.is_empty() && !(m.bounds_radius > 0.0 && m.bounds_radius < 0.1) && lamp_reach(c, r);
+                let lamp_hit = caster && !lamp_shadows.is_empty() && !(m.bounds_radius > 0.0 && m.bounds_radius < 0.1) && lamp_reach(c, r);
                 let mut hits = [false; 3];
                 for (cascade, &(range, lvp, min_radius)) in boxes.iter().enumerate() {
                     if !active[cascade] {
@@ -258,7 +261,7 @@ impl Renderer {
                         }
                         continue;
                     }
-                    hits[cascade] = true;
+                    hits[cascade] = caster;
                 }
                 // (a pole or a sign is no roof: only what is a fair size)
                 let roof_hit = precip_box.is_some_and(|pm| {

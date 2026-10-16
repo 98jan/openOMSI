@@ -243,9 +243,11 @@ pub(crate) struct RainUniform {
 /// rain's quality (0 low, 1 medium, 2 high): the near one some 90 a cubic metre in a
 /// downpour - of the drops big enough to see, a few hundred a cubic metre in heavy rain -
 /// and a tenth of that in a drizzle.
-pub(crate) fn rainfall_drops(r: f32, quality: u8) -> [u32; 3] {
+/// The fourth figure is the splashes where they land (see rain.wgsl `splash`): some forty
+/// on each square metre at a time in a downpour, close by.
+pub(crate) fn rainfall_drops(r: f32, quality: u8) -> [u32; 4] {
     let k = (0.12 + 0.88 * r.clamp(0.0, 1.0)) * [0.3, 0.6, 1.0][quality.min(2) as usize];
-    [(90000.0 * k) as u32, (110000.0 * k) as u32, (60000.0 * k) as u32]
+    [(90000.0 * k) as u32, (110000.0 * k) as u32, (60000.0 * k) as u32, (25000.0 * k) as u32]
 }
 
 /// Enhanced: the lamps' light in the fog over the drawn picture (`fog_lamps.wgsl`; not

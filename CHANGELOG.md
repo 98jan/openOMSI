@@ -28,7 +28,7 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   second, as wide as the drop (fainter where that is less than a pixel) and as faint as it
   is long; the drops are as big and fall as fast as the rain is heavy (Marshall-Palmer drop
   sizes, their measured fall speeds), upright standing, slanting at the windscreen while
-  driving [#1412](https://github.com/openOMSI-org/openOMSI/issues/1412).
+  driving; where they land, small splashes on the road, the kerb, a roof [#1412](https://github.com/openOMSI-org/openOMSI/issues/1412).
 - Rain and snow stop at roofs: a map of what stands over the ground round the camera, seen
   from above, keeps them out of every bus and car, under bridges, shelters and eaves - from
   the outside view as well, where it rained and snowed in the saloon.

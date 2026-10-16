@@ -21,7 +21,8 @@ struct RainParams {
     // x how hard it rains (0..1), y the median volume diameter of its drops (m), zw how
     // many drops the first two layers hold (the rest are the third's)
     fall: vec4<f32>,
-    // xy the picture's size (px), z how opaque a drop's streak is, w unused
+    // xy the picture's size (px), z how opaque a drop's streak is, w how many of the
+    // instances are drops (the rest are their splashes)
     view: vec4<f32>,
     // the precipitation's roof map: its matrix, and x 1 when there is one
     roof: mat4x4<f32>,
@@ -41,8 +42,60 @@ struct RainOut {
 // The layers round the camera: half width, bottom and top (m).
 const RAIN_LAYERS = array<vec3<f32>, 3>(vec3<f32>(5.0, -2.5, 6.0), vec3<f32>(14.0, -3.0, 12.0), vec3<f32>(32.0, -3.0, 22.0));
 
+// Where a drop lands: a crown of water a centimetre or two high that is gone in a tenth of
+// a second - on whatever is uppermost there, the ground, a kerb, a bus's roof, as the
+// precipitation's roof map has it (none without the map). Each splash takes a new place
+// round the camera every time it comes round again; the most of them close by.
+fn splash(vid: u32, s: u32) -> RainOut {
+    let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
+    let c = corners[vid % 6u];
+    var out: RainOut;
+    out.clip = vec4<f32>(0.0, 0.0, 2.0, 1.0);
+    out.uv = vec2<f32>(0.0);
+    out.shape = vec3<f32>(0.0);
+    out.pos = vec3<f32>(0.0);
+    let life = 0.1;
+    let h0 = hash4(s * 3u + 11u);
+    let cycle = rp.wind.w / life + h0.w;
+    let age = fract(cycle);
+    let h = hash4(s * 7919u + u32(floor(cycle)) * 2654435761u);
+    // (as many on each square metre near and far: a distance drawn by the square root)
+    let r = 14.0 * sqrt(h.x);
+    let a = h.y * 6.2831853;
+    let xy = camera.cam_pos.xy + vec2<f32>(cos(a), sin(a)) * r;
+    let m = rp.roof;
+    let mc = m * vec4<f32>(xy, 0.0, 1.0);
+    let uv = vec2<f32>(mc.x * 0.5 + 0.5, 0.5 - mc.y * 0.5);
+    let side = f32(textureDimensions(roof_map).x);
+    let top = textureLoad(roof_map, vec2<i32>(clamp(uv, vec2<f32>(0.0), vec2<f32>(0.9999)) * side), 0);
+    // (the map's depth back to a height: it looks straight down)
+    let z = (top - mc.z) / m[2].z;
+    let p = vec3<f32>(xy, z + 0.008 + 0.012 * age);
+    let ch = camera.view_proj * vec4<f32>(p, 1.0);
+    let cu = camera.view_proj * vec4<f32>(p + camera.cam_up.xyz, 1.0);
+    if (rp.roof_on.x < 0.5 || top >= 0.9999 || ch.w < 0.3 || in_own_vehicle(p)) {
+        return out;
+    }
+    let half_px = 0.5 * rp.view.xy;
+    let px_per_m = length(cu.xy / cu.w * half_px - ch.xy / ch.w * half_px);
+    // the crown widens as it rises and falls back, and fades
+    let w = (0.006 + 0.02 * age) * px_per_m;
+    let hw = max(0.5 * w, 0.5);
+    let pad = hw + 1.0;
+    let cover = min(w, 1.0) * (1.0 - age) * (1.0 - age) * 0.8 * rp.view.z;
+    out.clip = vec4<f32>(ch.xy + c * pad / half_px * ch.w, ch.zw);
+    out.uv = c * pad;
+    // (a round speck: no length, see `streak_alpha`)
+    out.shape = vec3<f32>(hw, -1.0, cover);
+    out.pos = p;
+    return out;
+}
+
 @vertex
 fn vs_rain(@builtin(vertex_index) vid: u32, @builtin(instance_index) k: u32) -> RainOut {
+    if (k >= u32(rp.view.w)) {
+        return splash(vid, k - u32(rp.view.w));
+    }
     // across (-1, 1) and along (0 the tail, 1 the head)
     let corners = array<vec2<f32>, 6>(vec2<f32>(-1.0, 0.0), vec2<f32>(1.0, 0.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 0.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0));
     let c = corners[vid % 6u];
@@ -103,7 +156,9 @@ fn vs_rain(@builtin(vertex_index) vid: u32, @builtin(instance_index) k: u32) -> 
     // gathers the sky's light, brighter than what is behind it: some six times its width)
     let spread = clamp(6.0 * max(w, 1.0) / max(len, 1.0), 0.2, 1.0);
     let cover = min(w, 1.0) * (d / blur) * spread * fade * near * rp.view.z * clamp(sqrt(d / 0.002), 0.5, 1.4);
-    let hw = max(0.5 * w, 0.5);
+    // (a hair under a pixel at the least: a picture drawn smaller and scaled up widened the
+    // full-pixel lines into the thick white bars of the old sprites)
+    let hw = max(0.5 * w, 0.4);
     let pad = hw + 1.0;
     // the quad round the streak (the head's and the tail's clip positions mixed, so that it
     // keeps the depth along it) widened in the picture's pixels
@@ -123,14 +178,16 @@ fn streak_alpha(in: RainOut) -> f32 {
     let a_across = clamp(hw + 0.5 - abs(in.uv.x), 0.0, 1.0);
     let a_along = clamp(0.5 + min(in.uv.y, len - in.uv.y), 0.0, 1.0);
     let tail = mix(0.55, 1.0, clamp(in.uv.y / max(len, 1.0), 0.0, 1.0));
-    return clamp(in.shape.z * a_across * a_along * tail, 0.0, 1.0);
+    // (a splash's round speck)
+    let speck = clamp(hw + 0.5 - length(in.uv), 0.0, 1.0);
+    return clamp(in.shape.z * select(a_across * a_along * tail, speck, len < 0.0), 0.0, 1.0);
 }
 
 // the classic picture: water lit as the scene is (envir.cfg's ambient and sun light)
 @fragment
 fn fs_rain(in: RainOut) -> @location(0) vec4<f32> {
     let a = streak_alpha(in);
-    let light = min(camera.ambient.rgb + camera.sky_color.rgb * 0.5 + camera.sun_color.rgb * 0.3, vec3<f32>(1.0)) * vec3<f32>(0.9, 0.93, 1.0);
+    let light = min(camera.ambient.rgb + camera.sky_color.rgb * 0.5 + camera.sun_color.rgb * 0.3, vec3<f32>(1.0)) * vec3<f32>(0.68, 0.7, 0.75);
     return vec4<f32>(light * a, a);
 }
 
@@ -140,8 +197,8 @@ fn fs_rain(in: RainOut) -> @location(0) vec4<f32> {
 fn fs_rain_enhanced(in: RainOut) -> @location(0) vec4<f32> {
     let a = streak_alpha(in);
     let to_eye = normalize(camera.cam_pos.xyz - in.pos);
-    // (a drop is a small lens of the sky above it: mostly the sky's light, little of the
-    // ground's)
-    let l = (precip_light(in.pos, to_eye, false) * 0.4 + sh_irradiance(vec3<f32>(0.0, 0.0, 1.0)) / PI * 0.8) * enh.exposure.x;
+    // (a drop is a small lens of what lies round it, the sky above as the street below: a
+    // little brighter than the street it is seen against, never a white line)
+    let l = (precip_light(in.pos, to_eye, false) * 0.3 + sh_irradiance(vec3<f32>(0.0, 0.0, 1.0)) / PI * 0.5) * enh.exposure.x;
     return vec4<f32>(min(l, vec3<f32>(60.0)) * a, a);
 }
