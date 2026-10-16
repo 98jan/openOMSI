@@ -6,7 +6,7 @@
 use omsi_ui::Color;
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Palette {
+pub struct Palette {
     /// The land outside the map's tiles and its plain ground.
     pub land: Color,
     pub grass: Color,
@@ -48,7 +48,7 @@ const fn hex(v: u32) -> Color {
     Color::hex(v)
 }
 
-pub(crate) const LIGHT: Palette = Palette {
+pub const LIGHT: Palette = Palette {
     land: hex(0xdcebcb),
     grass: hex(0xdcebcb),
     forest: hex(0xbcdba5),
@@ -80,7 +80,7 @@ pub(crate) const LIGHT: Palette = Palette {
     label_halo: Color::rgba(255, 255, 255, 0.9),
 };
 
-pub(crate) const DARK: Palette = Palette {
+pub const DARK: Palette = Palette {
     land: hex(0x27332b),
     grass: hex(0x27332b),
     forest: hex(0x203528),
@@ -112,7 +112,7 @@ pub(crate) const DARK: Palette = Palette {
     label_halo: Color::rgba(20, 20, 22, 0.85),
 };
 
-pub(crate) fn palette(light: bool) -> &'static Palette {
+pub fn palette(light: bool) -> &'static Palette {
     if light {
         &LIGHT
     } else {
@@ -121,8 +121,8 @@ pub(crate) fn palette(light: bool) -> &'static Palette {
 }
 
 /// Traffic on a road: free (the route's own blue), slow, heavy, standing.
-pub(crate) const TRAFFIC: [Color; 4] = [hex(0x2f7cf6), hex(0xff9f0a), hex(0xff453a), hex(0xa4161a)];
+pub const TRAFFIC: [Color; 4] = [hex(0x2f7cf6), hex(0xff9f0a), hex(0xff453a), hex(0xa4161a)];
 
 /// Which way the shadows fall, per metre of height (world, x east, y north): the light comes
 /// from the north-west, as on a printed map lit from its top left corner.
-pub(crate) const SHADOW_DIR: [f32; 2] = [0.34, -0.28];
+pub const SHADOW_DIR: [f32; 2] = [0.34, -0.28];

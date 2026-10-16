@@ -3,7 +3,7 @@
 //! shadows) took the game tens of milliseconds whenever the bus drove on or the city map was
 //! dragged. The picture keeps what it has until the new part is there.
 
-use super::mapmesh::{self, GroundLook, MapData};
+use super::mapmesh::{GroundLook, MapData};
 use super::style::Palette;
 use super::*;
 use omsi_ui::Vertex;
@@ -58,7 +58,7 @@ pub(super) fn build(parts: &GroundParts, anchor: DVec2, reach: f64, pal: &Palett
         p.ribbon(pts, l.width, if l.main { 2.2 } else { 1.6 }, pal.road, true);
     }
     if let Some(net) = parts.net.as_deref() {
-        mapmesh::build_switches(&mut p, net, anchor, anchor, reach, pal);
+        build_switches(&mut p, net, anchor, anchor, reach, pal);
     }
     if let Some(md) = parts.md.as_deref() {
         md.build_lines(&mut p, anchor, anchor, reach, pal, look);
@@ -116,7 +116,7 @@ impl Navigator {
                         .name("navigator roads".into())
                         .spawn(move || {
                             let list: Vec<(MapRoad, bool)> = road_geometry(&g).into_iter().map(|l| {
-                                let c = md.as_ref().is_some_and(|m| m.covers(&l));
+                                let c = md.as_ref().is_some_and(|m| m.covers(&l.points));
                                 (l, c)
                             }).collect();
                             let _ = tx.send(Arc::new(list));
@@ -127,7 +127,7 @@ impl Navigator {
                 None => {
                     let md = self.map_data.clone();
                     let list: Vec<(MapRoad, bool)> = road_geometry(net).into_iter().map(|l| {
-                        let c = md.as_ref().is_some_and(|m| m.covers(&l));
+                        let c = md.as_ref().is_some_and(|m| m.covers(&l.points));
                         (l, c)
                     }).collect();
                     self.road_cache = Some((key, Arc::new(list)));
@@ -162,6 +162,26 @@ impl Navigator {
             net: self.global.clone(),
             md: self.map_data.clone(),
             surface: self.surface.clone().filter(|_| self.show_surface),
+        }
+    }
+}
+
+/// The tracks the map lays with objects rather than splines (points and crossings - switches,
+/// a tram's junction): the rail lanes of `net` that come from objects, as the railway or the
+/// tram is drawn (a track beside a street is the tram's).
+fn build_switches(p: &mut Painter, net: &Network, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette) {
+    let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
+    for l in net.lanes.iter().filter(|l| l.kind == LaneKind::Rail && l.source != 1 && l.points.len() >= 2) {
+        if (l.start().truncate() - centre).length() > radius {
+            continue;
+        }
+        let pts: Vec<Vec3> = l.points.iter().map(|q| rel(*q)).collect();
+        let mid = l.at(l.length() * 0.5).0;
+        let street = net.nearest_lane_near(mid, LaneKind::Street).is_some_and(|s| s.2 < 4.0);
+        if street {
+            p.ribbon(&pts, 0.9, 1.3, pal.tram, false);
+        } else {
+            p.ribbon(&pts, 3.6, 3.4, pal.rail, false);
         }
     }
 }

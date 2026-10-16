@@ -1284,8 +1284,8 @@ impl<'a> NavFrame<'a> {
 mod roads;
 pub(crate) use roads::*;
 mod surface;
-pub(crate) mod style;
-pub(crate) mod mapmesh;
+pub(crate) use omsi_mapdraw::style;
+pub(crate) use omsi_mapdraw as mapmesh;
 mod panel;
 mod live;
 mod build;

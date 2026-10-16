@@ -4,12 +4,14 @@
 //! not as ten road ribbons), tracks, trees, and the houses - flat from far, standing in 3D with
 //! lit walls and soft shadows from near.
 
-use super::style::{Palette, SHADOW_DIR};
-use super::*;
+use crate::style::{Palette, SHADOW_DIR};
+use glam::{DVec2, DVec3, Vec2, Vec3};
+use hashbrown::HashMap;
 use omsi_map::layers::{self, Layers};
+use omsi_ui::{Color, Painter};
 
 /// The layers cut into square cells, so that the part around a place is found at once.
-pub(crate) struct MapData {
+pub struct MapData {
     pub layers: std::sync::Arc<Layers>,
     cells: HashMap<(i32, i32), Cell>,
     /// Lines with their boxes (they run across many cells).
@@ -37,7 +39,7 @@ fn cell_of(p: Vec2) -> (i32, i32) {
 
 /// What to draw of the ground.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub(crate) struct GroundLook {
+pub struct GroundLook {
     /// Pavements and car parks as surfaces (near); else carriageways only.
     pub surfaces: bool,
     pub trees: bool,
@@ -107,12 +109,13 @@ impl MapData {
         MapData { layers, cells, lines, paved_cells }
     }
 
-    /// The map's paving lies under most of `road` (its middle sampled every 4 m): the road is
-    /// drawn as its paving, and a path across a junction or a median is no road of its own.
-    pub fn covers(&self, road: &MapRoad) -> bool {
+    /// The map's paving lies under most of a road along `points` (its middle sampled every
+    /// 4 m): the road is drawn as its paving, and a path across a junction or a median is no
+    /// road of its own.
+    pub fn covers(&self, points: &[DVec3]) -> bool {
         let o = self.layers.origin;
         let (mut n, mut hit, mut len) = (0u32, 0u32, 0.0f64);
-        for ab in road.points.windows(2) {
+        for ab in points.windows(2) {
             let (a, b) = (ab[0].truncate() - o, ab[1].truncate() - o);
             let d = (b - a).length();
             len += d;
@@ -294,26 +297,6 @@ impl MapData {
     pub fn extent(&self) -> Option<(DVec2, DVec2)> {
         let (lo, hi) = self.layers.bounds()?;
         Some((self.layers.origin + lo.as_dvec2(), self.layers.origin + hi.as_dvec2()))
-    }
-}
-
-/// The tracks the map lays with objects rather than splines (points and crossings - switches,
-/// a tram's junction): the rail lanes of `net` that come from objects, as the railway or the
-/// tram is drawn (a track beside a street is the tram's).
-pub(crate) fn build_switches(p: &mut Painter, net: &Network, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette) {
-    let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
-    for l in net.lanes.iter().filter(|l| l.kind == LaneKind::Rail && l.source != 1 && l.points.len() >= 2) {
-        if (l.start().truncate() - centre).length() > radius {
-            continue;
-        }
-        let pts: Vec<Vec3> = l.points.iter().map(|q| rel(*q)).collect();
-        let mid = l.at(l.length() * 0.5).0;
-        let street = net.nearest_lane_near(mid, LaneKind::Street).is_some_and(|s| s.2 < 4.0);
-        if street {
-            p.ribbon(&pts, 0.9, 1.3, pal.tram, false);
-        } else {
-            p.ribbon(&pts, 3.6, 3.4, pal.rail, false);
-        }
     }
 }
 
