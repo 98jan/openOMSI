@@ -68,6 +68,7 @@ pub(crate) fn prepare(args: &mut Args, path: &Path) -> Result<ServerCfg> {
     args.traffic = cfg.traffic;
     args.schedule = cfg.timetable;
     args.passengers = cfg.passengers;
+    let _ = SERVER_PASSENGERS.set((cfg.passengers, cfg.passenger_density));
     args.lan_host = Some(cfg.port);
     args.lan_join = None;
     args.lan_name = cfg.name.clone();
@@ -77,9 +78,14 @@ pub(crate) fn prepare(args: &mut Args, path: &Path) -> Result<ServerCfg> {
     if args.offscreen.is_none() {
         args.offscreen = Some(std::env::temp_dir().join("omsi-server-unused.png"));
     }
-    log::info!("server '{}': map {}, {} at {}, traffic {}, timetable {}, passengers {}, UDP {} / web {}, at most {} players", cfg.name, cfg.map, cfg.date.as_deref().unwrap_or("today"), cfg.time, cfg.traffic, cfg.timetable, cfg.passengers, cfg.port, cfg.web_port, cfg.max_players);
+    let density = cfg.passenger_density.map(|d| d.to_string()).unwrap_or_else(|| "as settings.cfg".into());
+    log::info!("server '{}': map {}, {} at {}, traffic {}, timetable {}, passengers {} (density {density}), UDP {} / web {}, at most {} players", cfg.name, cfg.map, cfg.date.as_deref().unwrap_or("today"), cfg.time, cfg.traffic, cfg.timetable, cfg.passengers, cfg.port, cfg.web_port, cfg.max_players);
     Ok(cfg)
 }
+
+/// A dedicated server's people: whether it has any (`passengers`) and its
+/// `passenger_density` (None: the machine's own passengers setting).
+pub(crate) static SERVER_PASSENGERS: std::sync::OnceLock<(bool, Option<f32>)> = std::sync::OnceLock::new();
 
 /// The airport whose METAR report a dedicated server's weather follows (None: no METAR sync).
 pub(crate) static SERVER_METAR: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();

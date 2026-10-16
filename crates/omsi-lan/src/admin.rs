@@ -129,6 +129,13 @@ pub struct ServerAdmin {
     pub set_weather: Option<String>,
     /// An admin's traffic order, for the host loop (`traffic <density>`, `traffic clear`).
     pub traffic: Option<TrafficOrder>,
+    /// The server has people at all (`passengers` of `server.cfg`; switched at start only).
+    pub passengers_on: bool,
+    /// The passenger density the server applies (its `passenger_density`, or an admin's
+    /// `passengers <factor>`); None: the machine's own passengers setting. The host loop
+    /// reads it for every step's demand, so a change counts from the next step on and is
+    /// never multiplied twice.
+    pub passenger_density: Option<f32>,
     /// The challenge each asking player was given (used once).
     challenges: std::collections::HashMap<u32, String>,
     /// When wrong answers came lately (the lock counts them, whoever sent them: a player
@@ -269,6 +276,13 @@ pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut Ser
                         adm.traffic = Some(o);
                     }
                 }
+                // the people the stops and pavements get from now on: those already waiting,
+                // walking or aboard stay where they are
+                Action::PassengerDensity(d) if adm.passengers_on => {
+                    log::info!("server: passenger density now {d}");
+                    adm.passenger_density = Some(d);
+                }
+                Action::PassengerDensity(_) => log::info!("server: no passenger density to change: passengers = 0 in server.cfg"),
                 _ => {}
             }
         }
@@ -358,5 +372,46 @@ mod weather_file_tests {
         assert!(!weather_file_ok("Weather/sub/x.owt"));
         assert!(!weather_file_ok("maps/x.owt"));
         assert!(!weather_file_ok("Weather/x.cfg"));
+    }
+}
+
+#[cfg(test)]
+mod passenger_density_command_tests {
+    use super::*;
+
+    fn session() -> LanSession {
+        // (no rendezvous on the internet from a test)
+        std::env::set_var("OMSI_NO_BRIDGE", "1");
+        LanSession::host(28700, "server", omsi_net::WorldInfo::default(), true).unwrap()
+    }
+
+    fn run(lan: &mut LanSession, adm: &mut ServerAdmin, text: &str) {
+        let rules = ServerRules { real_time: false, traffic_max: 120, notice_ok: &|_| true };
+        adm.admins.insert(LOCAL_ADMIN);
+        server_command(lan, LOCAL_ADMIN, &format!("admin {text}"), adm, &|_| None, &rules);
+    }
+
+    /// `passengers <factor>` sets the density the host loop applies from then on; a wrong
+    /// value changes nothing, and a server without passengers has none to change.
+    #[test]
+    fn an_admin_changes_the_passenger_density() {
+        let mut lan = session();
+        let mut adm = ServerAdmin { passengers_on: true, ..Default::default() };
+        run(&mut lan, &mut adm, "passengers 2");
+        assert_eq!(adm.passenger_density, Some(2.0));
+        for bad in ["passengers -1", "passengers 9", "passengers NaN", "passengers 1;kick 2"] {
+            run(&mut lan, &mut adm, bad);
+            assert_eq!(adm.passenger_density, Some(2.0), "{bad}");
+        }
+        run(&mut lan, &mut adm, "passengers 0");
+        assert_eq!(adm.passenger_density, Some(0.0));
+        let mut off = ServerAdmin { passengers_on: false, ..Default::default() };
+        run(&mut lan, &mut off, "passengers 2");
+        assert_eq!(off.passenger_density, None);
+        // (not an admin: nothing)
+        let mut adm = ServerAdmin { passengers_on: true, ..Default::default() };
+        let rules = ServerRules { real_time: false, traffic_max: 120, notice_ok: &|_| true };
+        server_command(&mut lan, 5, "admin passengers 2", &mut adm, &|_| None, &rules);
+        assert_eq!(adm.passenger_density, None);
     }
 }

@@ -32,7 +32,7 @@ Players reach it two ways:
   address). The same port answers `GET /status` (JSON: name, motd, map, players,
   max_players, time, weather, version, protocol, vehicles, and on a dedicated server `world`:
   its AI cars, buses, cars asleep, parked cars, people walking, waiting and aboard, the
-  traffic density) and `GET /icon.png`, which the launcher's Multiplayer → Servers list
+  traffic density, whether it has passengers and the passenger density it applies now) and `GET /icon.png`, which the launcher's Multiplayer → Servers list
   shows. `vehicles` is the server's `vehicles` list (else every bus it has): a joining
   player's launcher offers only those, and so do the game menu's *Place a vehicle* and *Swap*
   once the game has joined. With an `admin_password` it also takes `POST /admin`
@@ -49,6 +49,24 @@ Players reach it two ways:
   map such as Berlin-Spandau, `null` elsewhere), refreshed every second - what a live map of
   the server on a website needs.
   It is off by default: the players' names and positions are then nobody's business.
+
+**Passengers.** `passengers = 1/0` switches the people at the stops and on the pavements on
+or off for the whole run (a number there is not a count: `passengers = 50` reads as off).
+How many there are is `passenger_density`, a factor on the map's own demand: the hourly
+`[trafficdensity_passenger]` of its `global.cfg` and each stop's own numbers, so the map's
+busy and quiet hours and stops stay as they are. `1` is what the map says, `0.5` half, `2`
+twice, from `0` to `3`; it is the same factor as the game's own passengers setting
+(`pax_density` in `settings.cfg`), which a server without the key goes on using as before.
+It is not a cap on how many people there are (that is `ai_max_humans` of `settings.cfg`), and
+it changes neither `traffic` nor the timetable's buses. `0` brings no new people while the
+passengers stay on; whoever already waits, walks or rides stays. A value that is not a number
+from 0 to 3 (negative, `NaN`, `10`) is refused with the reason in the log, and the server
+runs as if the key were not there. An admin changes it while the server runs with
+`passengers <factor>` (the Administration menu's command, also through `POST /admin`): the
+stops get that many people from then on - nobody already there is taken away, the boarded
+passengers' trips go on, and the players' games only mirror the server's people, so nobody
+appears twice. `GET /status` shows the density applied and the people waiting, walking and
+aboard. On a server with `passengers = 0` the command is refused (the log says so).
 
 With `voice_channel` set, the players **talk** to each other through
 [GreenTeaSpeak](https://greenteaspeak.de) as SaltyChat lets FiveM players do: a player is

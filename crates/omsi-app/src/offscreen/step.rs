@@ -55,6 +55,7 @@ impl Offscreen<'_> {
             ref mut sim_view,
             ref humans_off,
             ref mut real_time,
+            ref settings,
             ..
         } = *self;
         *srv_clock += dt as f64 * lan_off.as_ref().map(|l| l.clock_speed).unwrap_or(1.0);
@@ -181,7 +182,8 @@ impl Offscreen<'_> {
                 let (cars, buses, dormant, parked) = traffic.as_ref().map(|t| t.counts()).unwrap_or_default();
                 let (walking, waiting, aboard) = humans_off.as_ref().map(|h| h.counts()).unwrap_or_default();
                 let target = traffic.as_ref().map(|t| t.target).unwrap_or(0);
-                crate::lan::update_server_world(omsi_net::ws::WorldCounts { cars, buses, dormant, parked, walking, waiting, aboard, traffic: target });
+                let (passengers, passenger_density) = (humans_off.is_some(), srv_admin.passenger_density.unwrap_or(settings.pax_density));
+                crate::lan::update_server_world(omsi_net::ws::WorldCounts { cars, buses, dormant, parked, walking, waiting, aboard, traffic: target, passengers, passenger_density });
             }
         }
         if lan_off.is_none() {
@@ -665,6 +667,7 @@ impl Offscreen<'_> {
             ref mut humans_off,
             ref world,
             ref settings,
+            ref srv_admin,
             ref run_clock,
             ref remotes_off,
             ref mut player,
@@ -683,7 +686,9 @@ impl Offscreen<'_> {
             // (stop_target = enter_mean * density; without this it stays at the startup
             // value and the new formula returns 0 for the whole session when the map has
             // a low hourly density at the start time)
-            steps::humans_by_hour(h, world, run_clock.time, settings.pax_density, duty.as_ref());
+            // (a dedicated server's own passenger density, which its admins may change)
+            let density = srv_admin.passenger_density.unwrap_or(settings.pax_density);
+            steps::humans_by_hour(h, world, run_clock.time, density, duty.as_ref());
             // populate stops near every LAN player every 2 seconds, as app_events.rs
             // does every 2 s near the local player.  At startup `center` is ZERO (no
             // player bus on a headless server), so stops on the actual map - which can
