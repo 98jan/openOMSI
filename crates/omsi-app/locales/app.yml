@@ -48704,6 +48704,7 @@ _version: 2
 "Light map":
   es: "Mapa de iluminación"
   ca: "Mapa d'il·luminació"
+  fr: "Carte claire"
 "You are on":
   es: "Estás en"
   ca: "Ets a"
@@ -48760,7 +48761,6 @@ _version: 2
   id: "berat"
   ms: "berat"
   tl: "mabigat"
-  fr: "Carte claire"
 
 "Changes show at once; turned up from Off, they come back when the game starts the next time":
   ca: "Els canvis es veuen de seguida; si es puja des de Desactivat, tornen la propera vegada que s'inicia el joc"
