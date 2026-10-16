@@ -131,7 +131,7 @@ mod spawn;
 use omsi_input::stock_keys;
 mod startup;
 mod traffic_link;
-mod tutorial;
+pub(crate) use omsi_content::tutorial;
 mod weather_setup;
 use omsi_weather::{weather_cycle, weather_model};
 mod world_load;
