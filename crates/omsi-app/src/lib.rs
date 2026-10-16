@@ -56,7 +56,7 @@ use omsi_scene::driver;
 mod export;
 mod hud;
 mod humans;
-mod journey;
+use omsi_career::journey;
 use omsi_input::keys;
 // (LAN play: the session is omsi-lan's `game`, see `lan_play`; the shared world's mirror
 // stays here: it drives the app's `Traffic`, `Humans` and their view directly)
