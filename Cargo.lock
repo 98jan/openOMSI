@@ -3885,6 +3885,7 @@ dependencies = [
  "parking_lot",
  "pollster 1.0.1",
  "rayon",
+ "serde_json",
  "wgpu",
  "zip",
 ]

@@ -12,7 +12,7 @@
 //! launcher knows through `apple_bridge`.
 
 mod admin;
-mod check;
+use omsi_scene::check;
 use omsi_platform::discord;
 #[cfg(steam)]
 mod steam;
@@ -227,7 +227,7 @@ pub fn run() -> Result<()> {
     // as JSON, no window, no log
     if matches!(std::env::args().nth(1).as_deref(), Some("--check" | "--check-vehicle")) {
         let rest: Vec<String> = std::env::args().skip(2).collect();
-        return check::run(&rest);
+        return check::run(&rest, crate::startup::find_root);
     }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     // a panic goes into the log (which the launcher keeps per session) with where it
