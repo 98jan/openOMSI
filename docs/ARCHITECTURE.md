@@ -156,13 +156,22 @@ budget.
   by all vehicles showing them and compressed like other late loads; an AI vehicle more
   than 50 m from the camera shows its script textures (1024×512 cockpit and passenger
   displays) as a texel of their mean colour, and gets them back within 40 m.
-* OMSI's `[texmemlimit]`: the scenery and vehicle textures have a budget (`texture_memory=`
-  in MB, else an eighth of the machine's memory; `OMSI_TEXTURE_MEMORY` for tests). Once a
+* OMSI's `[texmemlimit]`: the scenery and vehicle textures have a budget (an eighth of the
+  machine's memory; `OMSI_TEXTURE_MEMORY` for tests). Once a
   second, while over it, the scenery textures that only tiles farther than 150 m use lose
   their finest mip level (a GPU copy into a smaller texture, farthest first, down to 64
   texels a side); with a tenth of the budget free, those within 400 m are read again on a
   worker and swapped back. Offscreen, `OMSI_BUDGET_FROM=x,y[,MB]` meets the budget from
   another place first (and raises it) to check the way back.
+* The video memory: everything the game holds on the card - all textures, the meshes, and
+  the rest (render targets, shadow maps, buffers, the driver's own), which the driver counts
+  on DirectX 12, Vulkan (VK_EXT_memory_budget) and Metal, asked once a second
+  (`Renderer::gpu_memory`; less the allocator's free room in its blocks, counted on a thread
+  of its own; the rest is the least of the last three counts, as freed textures leave the
+  driver's count late) and is worked out from the targets' sizes on OpenGL - stays
+  within the "Video memory" setting (`video_memory=`, `OMSI_VIDEO_MEMORY`; nine tenths of a
+  discrete card's memory when unset) and nine tenths of the driver's budget. What is over
+  is taken from the textures in the same pass as their own budget.
 * Freed scene slots are handed out lowest first, and after unloads a free tail of the
   scene's arrays is cut off (`World::compact_slots`; a few live entries at the end keep the
   arrays long - moving live entries is not done).

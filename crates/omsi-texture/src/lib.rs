@@ -73,16 +73,18 @@ pub struct TextureCfg {
 }
 
 impl TextureCfg {
-    /// How the rain wets the surface, as the materials carry it (`MaterialExtra::moisture`):
-    /// 1 a sealed surface water stands on in pools (`[puddles]`), 0.5 one a film of water
-    /// runs over (`[moisture]` on asphalt, concrete, cobbles), 0.25 one that only soaks it
-    /// up (`[moisture]` on grass, earth, gravel - `[surface]` 3 to 5: a lawn holds no film to
-    /// mirror the lamps in, it turned the grass strips into glowing mirrors at night), 0 dry.
+    /// How the rain wets the surface, as the materials carry it (`MaterialExtra::moisture`,
+    /// the share of the wet road's film and pools the shaders give it): 1 a sealed surface
+    /// water stands on in pools (`[puddles]`), 0.5 one a film of water runs over with a pool
+    /// here and there (`[moisture]` on asphalt, concrete, cobbles), 0 one that only soaks it
+    /// up as everything outside does - `[moisture]` on grass, earth or gravel (`[surface]` 3
+    /// to 5): a lawn holds no film to mirror the lamps in, and the stock grass strips glowed
+    /// like mirrors at night in the rain.
     pub fn wetness_kind(&self) -> f32 {
         if self.puddles {
             1.0
         } else if self.moisture && self.surface_given && (3..=5).contains(&self.surface) {
-            0.25
+            0.0
         } else if self.moisture {
             0.5
         } else {

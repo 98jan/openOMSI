@@ -52,6 +52,10 @@ pub struct World {
     /// OMSI's `[texmemlimit]`: bytes the scenery and vehicle textures may take on the GPU
     /// (0 = no limit), and what the budget's last look found (see `BudgetMemo`).
     pub(super) texture_limit: std::sync::atomic::AtomicU64,
+    /// Bytes the game may hold on the graphics card all together - textures, meshes, render
+    /// targets, the driver's (0 = only the driver's budget bounds it), see
+    /// `World::set_video_memory_limit`.
+    pub(super) video_memory_limit: std::sync::atomic::AtomicU64,
     pub(super) budget_checked: Mutex<super::props::BudgetMemo>,
     /// What the placed tiles hand the traffic: their crossings' light programs as they are
     /// numbered, and their lanes and parked cars when a tile is placed the first time (the

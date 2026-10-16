@@ -128,6 +128,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_TRAFFIC_STATS` | text | - | use | sim | CSV: the traffic's flow every minute (standing cars, waits-for cycles, junction entries, red runs, overlaps), a summary at the end. |
 | `OMSI_WATCH_VARS` | text | - | use | app | a,b: log every change of these variables of the player's bus. |
 | `OMSI_WHEEL_TRACE` | bool | off | use | app | Log the deepest a drawn tyre goes into the road, once a second. |
+| `OMSI_ZFIGHT_PROBE` | num | - | once | render | Z-fighting check: the draw order's depth steps within an object from a hash (1) or its reverse (2); offscreen pictures of both differ where an object's surfaces lie in one plane. |
 
 ## Test hooks
 
@@ -166,7 +167,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DRIVER_SHIFTER` | text | - | use | scene | Part of a variable or file name: force the shifter the driver's hand uses; off: both hands on the wheel. |
 | `OMSI_DRIVE_PROFILE` | text | - | use | app | Offscreen: "t throttle brake [steer]/..." piecewise constant pedals (crash/kerb tests). |
 | `OMSI_DRIVE_V0` | num | - | use | app | Offscreen: the bus's speed in km/h on the first frame. |
-| `OMSI_FAKE_GPU_ERROR` | text | - | frame | render | Fault injection: open, open-panic, pipeline, lost-build, build, lost, frame - the GPU error to simulate. Only in builds with omsi-render's `test-hooks` feature (on by default). |
+| `OMSI_FAKE_GPU_ERROR` | text | - | frame | render | Fault injection: open, open-panic, pipeline, lost-build, build, lost, frame, mesh - the GPU error to simulate. Only in builds with omsi-render's `test-hooks` feature (on by default). |
 | `OMSI_FLEET_AHEAD` | num | FLEET_AHEAD | use | app | Minutes ahead the timetable fleet is planned (for tests). |
 | `OMSI_FLEET_IDLE` | num | FLEET_IDLE | use | app | Seconds a fleet vehicle idles (shortened for tests). |
 | `OMSI_FOLLOW_CAM` | text | - | use | app | right,ahead,up,yaw,pitch: a camera in the followed car's frame. |
@@ -237,7 +238,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_CUT_PLAIN` | bool | off | use | scene | Road-cut textures uploaded without GPU-made mipmaps. |
 | `OMSI_FIXED_SCALE` | bool | off | use | app | Keep the render scale fixed (no dynamic resolution). |
 | `OMSI_FORCE_OPAQUE` | bool | off | use | scene | Draw transmap-masked materials opaque. |
-| `OMSI_FULL_GPU` | bool | off | use | render | Keep the requested settings on a small or shared graphics chip. |
+| `OMSI_FULL_GPU` | bool | off | use | render | Keep the requested settings on a small or shared graphics chip, and 8x MSAA with Enhanced+. |
 | `OMSI_GL_TEXTURE_UNITS` | bool | off | use | render | Use the texture-unit layout of the OpenGL backend on any device. |
 | `OMSI_GPU_ARRAYS` | text | - | use | render | textures, nostorage or lighttextures: take that texture array path on any device. |
 | `OMSI_GUARD_DEADLINE` | num | 120 | use | guard | The start guard: seconds the launcher may take to its first frames before its start counts as hung (it is then ended and the guard heals the installation). |
@@ -260,6 +261,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_NO_CLOUDS` | bool | off | use | app | No clouds. |
 | `OMSI_NO_CORONAS` | bool | off | frame | render | No light coronas. |
 | `OMSI_NO_CULL` | bool | off | once | render | Draw every mesh from both sides (A/B). |
+| `OMSI_NO_DRAW_ORDER_DEPTH` | bool | off | once | render | An object's surfaces in one plane without the draw order's depth step (A/B). |
 | `OMSI_NO_ENHANCED` | bool | off | frame | render | Enhanced settings drawn with the plain path. |
 | `OMSI_NO_ENVMAP` | bool | off | use | scene | No environment maps. |
 | `OMSI_NO_FXAA` | bool | off | frame | render | No FXAA. |
@@ -340,6 +342,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_SURFACE_FLUSH` | num | 0.12 | once | sim | Height in metres under which a surface counts as flush with the road. |
 | `OMSI_TEXTURE_MEMORY` | num | settings | use | app | Texture budget in MB. |
 | `OMSI_TONE_CONTRAST` | text | 1 | once | render | day[,night]: tone mapping contrast. |
+| `OMSI_VIDEO_MEMORY` | num | settings | use | app | What the game may hold on the graphics card all together (textures, meshes, render targets), in MB. |
 | `OMSI_WINDY_TREES` | text | settings | use | app | 0 or 1: trees in the wind off or on (A/B renders). |
 
 ## Set-up

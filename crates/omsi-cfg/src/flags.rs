@@ -273,14 +273,14 @@ flags! {
     OMSI_ENHANCED: Bool, Tuning, Use, "settings", "Enhanced graphics for this run.";
     OMSI_ENHANCED_PLUS: Bool, Tuning, Use, "settings", "Enhanced+ (ray traced) graphics for this run.";
     OMSI_ENV_PHOTO: Num, Debug, Use, "1", "0 leaves the environment photo out of the debug views.";
-    OMSI_FAKE_GPU_ERROR: Text, Test, Frame, "-", "Fault injection: open, open-panic, pipeline, lost-build, build, lost, frame - the GPU error to simulate. Only in builds with omsi-render's `test-hooks` feature (on by default).";
+    OMSI_FAKE_GPU_ERROR: Text, Test, Frame, "-", "Fault injection: open, open-panic, pipeline, lost-build, build, lost, frame, mesh - the GPU error to simulate. Only in builds with omsi-render's `test-hooks` feature (on by default).";
     OMSI_FIXED_SCALE: Bool, Switch, Use, "off", "Keep the render scale fixed (no dynamic resolution).";
     OMSI_FLEET_AHEAD: Num, Test, Use, "FLEET_AHEAD", "Minutes ahead the timetable fleet is planned (for tests).";
     OMSI_FLEET_IDLE: Num, Test, Use, "FLEET_IDLE", "Seconds a fleet vehicle idles (shortened for tests).";
     OMSI_FOLLOW_CAM: Text, Test, Use, "-", "right,ahead,up,yaw,pitch: a camera in the followed car's frame.";
     OMSI_FORCE_OPAQUE: Bool, Switch, Use, "off", "Draw transmap-masked materials opaque.";
     OMSI_FRAME_ORDER: Bool, Debug, Once, "off", "Log the window's frame and the offscreen run's step as their ordered stages (phase, what each reads and writes, its profile key), once at start.";
-    OMSI_FULL_GPU: Bool, Switch, Use, "off", "Keep the requested settings on a small or shared graphics chip.";
+    OMSI_FULL_GPU: Bool, Switch, Use, "off", "Keep the requested settings on a small or shared graphics chip, and 8x MSAA with Enhanced+.";
     OMSI_GLASS_WIND: Num, Test, Use, "-", "Offscreen: the rain on the glass as met at this speed in m/s.";
     OMSI_GL_TEXTURE_UNITS: Bool, Switch, Use, "off", "Use the texture-unit layout of the OpenGL backend on any device.";
     OMSI_GPU_ARRAYS: Text, Switch, Use, "-", "textures, nostorage or lighttextures: take that texture array path on any device.";
@@ -342,6 +342,7 @@ flags! {
     OMSI_NO_CLOUDS: Bool, Switch, Use, "off", "No clouds.";
     OMSI_NO_CORONAS: Bool, Switch, Frame, "off", "No light coronas.";
     OMSI_NO_CULL: Bool, Switch, Once, "off", "Draw every mesh from both sides (A/B).";
+    OMSI_NO_DRAW_ORDER_DEPTH: Bool, Switch, Once, "off", "An object's surfaces in one plane without the draw order's depth step (A/B).";
     OMSI_NO_ENHANCED: Bool, Switch, Frame, "off", "Enhanced settings drawn with the plain path.";
     OMSI_NO_ENVMAP: Bool, Switch, Use, "off", "No environment maps.";
     OMSI_NO_FXAA: Bool, Switch, Frame, "off", "No FXAA.";
@@ -462,12 +463,14 @@ flags! {
     OMSI_TYRE_SUSPENSION: Bool, Switch, Once, "off", "The old suspension with wheel mass, tyre and bump stops (A/B).";
     OMSI_UI_PREVIEW: Text, Test, Use, "target/ui-preview.png", "Plugin UI preview test: the picture's path.";
     OMSI_UPDATE_URL: Text, Setup, Use, "built-in", "Another release description (URL or file:///...json) for the update check.";
+    OMSI_VIDEO_MEMORY: Num, Tuning, Use, "settings", "What the game may hold on the graphics card all together (textures, meshes, render targets), in MB.";
     OMSI_WARM_FRAMES: Num, Test, Use, "0", "Offscreen: frames drawn before the picture.";
     OMSI_WATCH_VARS: Text, Debug, Use, "-", "a,b: log every change of these variables of the player's bus.";
     OMSI_WETNESS: Num, Test, Use, "weather", "Ground wetness the picture is drawn with.";
     OMSI_WHEEL_TRACE: Bool, Debug, Use, "off", "Log the deepest a drawn tyre goes into the road, once a second.";
     OMSI_WINDY_TREES: Text, Tuning, Use, "settings", "0 or 1: trees in the wind off or on (A/B renders).";
     OMSI_WINE: Text, Setup, Use, "PATH", "The Wine binary for Windows plugins.";
+    OMSI_ZFIGHT_PROBE: Num, Debug, Once, "-", "Z-fighting check: the draw order's depth steps within an object from a hash (1) or its reverse (2); offscreen pictures of both differ where an object's surfaces lie in one plane.";
 }
 
 #[cfg(test)]

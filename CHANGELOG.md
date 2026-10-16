@@ -26,8 +26,6 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   sizes, their measured fall speeds), a downpour fills the air close by, and the streaks are
   as long as the drop's way against the eye - short and upright standing, long and slanting
   at the windscreen while driving [#1412](https://github.com/openOMSI-org/openOMSI/issues/1412).
-- Water (Enhanced): clear at the shore and thicker with the way the light has through it, no
-  hard line where it meets the bank; its waves no longer repeat across a lake [#1822](https://github.com/openOMSI-org/openOMSI/issues/1822).
 
 ### Fixes
 
@@ -35,8 +33,8 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 - Grass and earth no longer shine like wet asphalt in the rain: a ground texture with
   `[moisture]` on grass, earth or gravel soaks the rain up instead of carrying a film of
-  water, and pools form only where the texture has `[puddles]` (the stock grass strips
-  glowed in every lamp at night).
+  water, and a `[moisture]` road without `[puddles]` gets a lighter film with fewer pools
+  (the stock grass strips glowed in every lamp at night).
 - Tinted bus windows on an alpha-tested layer that shares its texture with the body are
   blended above OMSI's cut instead of drawn black (Ychebniy LiAZ 5292.65, NefAZ 5299 2024)
   [#2609](https://github.com/openOMSI-org/openOMSI/issues/2609).
@@ -99,6 +97,28 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 **Graphics and sound**
 
+- **The video memory setting is kept:** "Texture memory" is now "Video memory", and it bounds
+  everything the game holds on the graphics card - textures, meshes, render targets and shadow
+  maps, the driver's own - not the textures alone. The game took gigabytes more than it was
+  set to, and an 8 GB card could page to the system's memory and drop to a fraction of its
+  frame rate. Where the driver says how much it really hands out (DirectX 12, Vulkan, Metal),
+  the game stays under that as well, whatever the setting; when it is over, the farthest
+  textures give up their finest levels first, and come back when there is room again.
+  "Automatic" is nine tenths of the card's own memory. Choices of 8 and 12 GB were added,
+  500 MB was dropped. A texture memory set before (and OMSI's `texmemlimit`) was a texture
+  budget and is not carried over: the video memory starts on Automatic. After a lost graphics
+  device the safer settings take two thirds of what the card holds, not a fixed 800 MB.
+- **Rain on the windows costs less:** the drops on the cab's panes are painted beside the
+  frame instead of while it waits, and only the rows that changed go to the graphics card (12
+  panes sent a megabyte each, 30 times a second). In heavy rain in the cab, on a Radeon 680M,
+  the panes' share of the frame went from 10.3 to 3.3 ms with Enhanced+ and from 2.3 to 0.7 ms
+  with Vanilla+ (152 to 179 fps). The drops show one frame later ([#2490](https://github.com/openOMSI-org/openOMSI/issues/2490)).
+- **Enhanced+ draws 8x MSAA at 4x:** 8x doubled the ray traced passes' cost (2.4 ms a frame on
+  an RTX 4050) and their multisampled targets' memory for little to see; `OMSI_FULL_GPU=1`
+  keeps 8x ([#2228](https://github.com/openOMSI-org/openOMSI/issues/2228)).
+- A video memory of 16 GB can be chosen, for cards with more than 16 GB of their own.
+- Render targets of a size not drawn for 5 s are let go: those of a photo taken at a large size
+  stayed on the graphics card until the window changed size.
 - A remembered MSAA fallback is tried at the chosen MSAA again once with each new version
   (written down before the try, so a failing or crashing retry is not repeated at every
   start), instead of keeping a computer at 1x for good ([#2597](https://github.com/openOMSI-org/openOMSI/issues/2597)).

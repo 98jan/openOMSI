@@ -54,6 +54,7 @@ impl Renderer {
             block_cursor: 0,
             uploaded_instances: 0,
             next_instance_order: 0,
+            object_run: Default::default(),
             uploaded_entries: 0,
             cpu_models: Vec::new(),
             cpu_params: Vec::new(),
@@ -74,6 +75,23 @@ impl Renderer {
         }
     }
 
+    /// A model begins: the meshes added from now on, one after another from one place, are
+    /// one object, and a surface of it lying on an earlier one of it in the same plane is
+    /// drawn over that one, as Omsi.exe draws a model mesh by mesh (`scene::overlay`). Call it
+    /// before each scenery object's and each vehicle's meshes; meshes added without it take
+    /// no such step.
+    pub fn begin_object(&self, scene: &mut Scene) {
+        scene.object_run.begin(None);
+    }
+
+    /// `begin_object` for a model whose meshes come in the same order and place every time
+    /// (a vehicle set, named by `model`): its steps are worked out for the first copy only.
+    pub fn begin_shared_object(&self, scene: &mut Scene, model: impl std::hash::Hash) {
+        use std::hash::{BuildHasher, BuildHasherDefault};
+        let key = BuildHasherDefault::<std::collections::hash_map::DefaultHasher>::default().hash_one(model);
+        scene.object_run.begin(Some(key));
+    }
+
     pub fn add_instance(
         &self,
         scene: &mut Scene,
@@ -91,8 +109,11 @@ impl Renderer {
             .unwrap_or(1);
         let draw_order = scene.next_instance_order;
         scene.next_instance_order += 1;
+        let key = crate::frame_plan::origin_key(origin);
+        let slot_levels = scene.object_run.levels(key, draw_order, mesh, transform, &scene.meshes[mesh].flats, slots);
         scene.instances.push(Instance {
             draw_order,
+            slot_levels,
             mesh,
             transform,
             origin,
@@ -149,8 +170,11 @@ impl Renderer {
             .unwrap_or(1);
         let draw_order = scene.next_instance_order;
         scene.next_instance_order += 1;
+        let key = crate::frame_plan::origin_key(origin);
+        let slot_levels = scene.object_run.levels(key, draw_order, mesh, transform, &scene.meshes[mesh].flats, slots);
         scene.instances.push(Instance {
             draw_order,
+            slot_levels,
             mesh,
             transform,
             origin,

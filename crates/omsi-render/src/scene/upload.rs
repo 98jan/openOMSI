@@ -23,6 +23,8 @@ impl Renderer {
             (Mat4::from_translation((i.origin - ro).as_vec3()) * i.transform).to_cols_array_2d();
         let vis = if i.visible { 1.0 } else { 0.0 };
         for (k, a) in i.slot_alpha.iter().enumerate() {
+            let mut m = m;
+            m[0][3] = draw_order_level(i, k);
             mats.push(m);
             let uv = i.slot_uv.get(k).copied().unwrap_or([0.0; 2]);
             params.push([*a, vis, uv[0], uv[1]]);
@@ -414,6 +416,38 @@ impl Renderer {
         }
         if let Some(b) = &scene.draw_buf {
             b.write(&self.queue, 0, bytes);
+        }
+    }
+}
+
+/// The depth step of a draw (slot `slot` of `i`) for the vertex shader's `scene_clip`: of
+/// two of an object's surfaces in one plane - a dashboard and the instruments printed on it,
+/// a plate and the lines on it - the one later in the model is seen, as Omsi.exe draws a
+/// model mesh by mesh and subset by subset (0x7c32c4) with LESSEQUAL. Only a slot lying on
+/// an earlier surface of its object takes a step (`Instance::slot_levels`, at most 3);
+/// everything else, and the ground, the roads and what lies on them, keep their depth.
+/// `OMSI_ZFIGHT_PROBE` swaps the steps of the slots that have one for a hash (1) or its
+/// reverse (2), `OMSI_NO_DRAW_ORDER_DEPTH` turns them off.
+pub(crate) fn draw_order_level(i: &Instance, slot: usize) -> f32 {
+    use std::sync::OnceLock;
+    static MODE: OnceLock<u8> = OnceLock::new();
+    let mode = *MODE.get_or_init(|| {
+        if omsi_cfg::flags::OMSI_NO_DRAW_ORDER_DEPTH.is_set() {
+            3
+        } else {
+            omsi_cfg::flags::OMSI_ZFIGHT_PROBE.parse::<f64>().map(|m| m.round() as u8).filter(|m| *m == 1 || *m == 2).unwrap_or(0)
+        }
+    });
+    let level = i.slot_levels.get(slot).copied().unwrap_or(0);
+    if mode == 3 || level == 0 || i.surface || i.render_phase == crate::scene::RenderPhase::Terrain {
+        return 0.0;
+    }
+    let max = crate::scene::overlay::MAX_LEVEL as u64;
+    match mode {
+        0 => level as f32,
+        _ => {
+            let h = 1 + (slot as u64 ^ i.draw_order).wrapping_mul(0x9e37_79b9_7f4a_7c15) % max;
+            (if mode == 1 { h } else { max + 1 - h }) as f32
         }
     }
 }
