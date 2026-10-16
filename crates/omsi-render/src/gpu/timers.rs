@@ -193,31 +193,49 @@ impl GpuTimers {
                         .collect::<Vec<_>>()
                 );
             }
-            let mut order: Vec<(u64, u64, &'static str)> = t
-                .pending
-                .iter()
-                .enumerate()
-                .map(|(k, label)| (stamps[k * 2], stamps[k * 2 + 1], *label))
-                .filter(|(a, b, _)| *b >= *a && *b > 0)
-                .collect();
-            order.sort_by_key(|(_, b, _)| *b);
-            let mut prev: Option<u64> = None;
-            for (a, b, label) in &order {
-                let from = prev.unwrap_or(*a);
+            let (passes, all) = partition(&t.pending, stamps);
+            for (label, ticks) in passes {
                 let e = t.totals.entry(label).or_default();
-                e.0 += b.saturating_sub(from) as f64 * period * 1e-9;
+                e.0 += ticks as f64 * period * 1e-9;
                 e.1 += 1;
-                prev = Some(*b);
             }
-            if let (Some(first), Some(last)) = (order.iter().map(|o| o.0).min(), order.last()) {
+            if let Some(ticks) = all {
                 let e = t.totals.entry("(all passes)").or_default();
-                e.0 += last.1.saturating_sub(first) as f64 * period * 1e-9;
+                e.0 += ticks as f64 * period * 1e-9;
                 e.1 += 1;
             }
         }
         t.read.unmap();
         t.waiting = false;
     }
+}
+
+/// The timed passes of a picture (`labels`, their `stamps` begin and end in query order) as
+/// the GPU finished them, each counted from where the one before it ended - the untimed
+/// passes in between go to the next timed one - and the whole picture, from the first begin
+/// to the last end (in timestamp ticks).
+fn partition(labels: &[&'static str], stamps: &[u64]) -> (Vec<(&'static str, u64)>, Option<u64>) {
+    let mut order: Vec<(u64, u64, &'static str)> = labels
+        .iter()
+        .enumerate()
+        .filter_map(|(k, label)| Some((*stamps.get(k * 2)?, *stamps.get(k * 2 + 1)?, *label)))
+        .filter(|(a, b, _)| *b >= *a && *b > 0)
+        .collect();
+    order.sort_by_key(|(_, b, _)| *b);
+    let mut prev: Option<u64> = None;
+    let mut out = Vec::with_capacity(order.len());
+    for (a, b, label) in &order {
+        out.push((*label, b.saturating_sub(prev.unwrap_or(*a))));
+        prev = Some(*b);
+    }
+    let all = order.iter().map(|o| o.0).min().zip(order.last()).map(|(first, last)| last.1.saturating_sub(first));
+    (out, all)
+}
+
+/// A mirror's average GPU time per picture as a time per frame: a frame draws
+/// `mirrors / windows` mirror pictures on average (0, 1 or 2 of them; one is timed at a time).
+fn per_frame(per_picture_ms: f64, mirrors: u64, windows: u64) -> Option<f64> {
+    (windows > 0).then(|| per_picture_ms * mirrors as f64 / windows as f64)
 }
 
 impl Renderer {
@@ -264,7 +282,46 @@ impl Renderer {
                 out.push((name, v.0 / v.1.max(1) as f64 * 1000.0, v.1));
             }
         }
+        // the mirrors per frame, not per picture: a frame drawing two mirrors pays twice
+        let [mirrors, windows] = self.pictures.get();
+        let mirror_all = out.iter().find(|(n, _, _)| n == "mirrors: (all passes)").map(|(_, ms, k)| (*ms, *k));
+        if let Some((ms, k)) = mirror_all {
+            if let Some(f) = per_frame(ms, mirrors, windows) {
+                out.push(("mirrors: per frame".to_string(), f, k));
+            }
+        }
         out
+    }
+}
+
+#[cfg(test)]
+mod timer_tests {
+    use super::{partition, per_frame};
+
+    /// The first timed pass counts from its own begin; each other from the end of the one
+    /// finished before it (the untimed work between them goes to it); the whole picture from
+    /// the first begin. A split main pass timed in both parts: nothing of it is left out.
+    #[test]
+    fn the_passes_partition_the_picture() {
+        // main part 100..400, (untimed gap 400..450), main 450..900, upscale 900..1000
+        let (p, all) = partition(&["main part", "main", "upscale"], &[100, 400, 450, 900, 905, 1000]);
+        assert_eq!(p, vec![("main part", 300), ("main", 500), ("upscale", 100)]);
+        assert_eq!(all, Some(900));
+        // with the first part untimed (as before), the main pass alone missed its 300
+        let (p, all) = partition(&["main", "upscale"], &[450, 900, 905, 1000]);
+        assert_eq!(p, vec![("main", 450), ("upscale", 100)]);
+        assert_eq!(all, Some(550));
+        // stamps never written (0) or backwards are left out; short stamp lists are not read past
+        let (p, _) = partition(&["a", "b", "c"], &[10, 20, 0, 0, 30]);
+        assert_eq!(p, vec![("a", 10)]);
+    }
+
+    #[test]
+    fn the_mirrors_per_frame() {
+        assert_eq!(per_frame(5.0, 200, 100), Some(10.0));
+        assert_eq!(per_frame(5.0, 50, 100), Some(2.5));
+        assert_eq!(per_frame(5.0, 0, 100), Some(0.0));
+        assert_eq!(per_frame(5.0, 3, 0), None);
     }
 }
 
