@@ -179,6 +179,7 @@ fn device_json(d: &DeviceCfg) -> Value {
         "ff_scale": d.ff_scale.map(|(a, b)| [round3(a), round3(b)]),
         "ff_invert": d.ff_invert,
         "latching": d.latching,
+        "more": d.more,
     })
 }
 
@@ -207,6 +208,16 @@ fn device_from(v: &Value) -> Result<DeviceCfg, String> {
     d.latching = v.get("latching").and_then(Value::as_array).into_iter().flatten().filter_map(|b| b.as_u64().map(|b| b as usize)).filter(|b| *b < d.buttons.len()).collect();
     d.latching.sort_unstable();
     d.latching.dedup();
+    for m in v.get("more").and_then(Value::as_array).into_iter().flatten().take(4096) {
+        let (Some(b), Some(action)) = (m.get(0).and_then(Value::as_u64), m.get(1).and_then(Value::as_str).map(str::trim)) else { continue };
+        if action.contains(['\r', '\n']) {
+            return Err(format!("{action:?} is not an action"));
+        }
+        let b = b as usize;
+        if !action.is_empty() && b < d.buttons.len() && !d.actions_of(b).iter().any(|a| a.eq_ignore_ascii_case(action)) {
+            d.more.push((b, action.to_string()));
+        }
+    }
     Ok(d)
 }
 
@@ -264,6 +275,18 @@ mod tests {
         let v = json!({ "name": "Wheel", "buttons": [["horn\r\n[ctrl]", "0"]] });
         assert!(device_from(&v).is_err());
         assert!(device_from(&json!({ "name": " " })).is_err());
+    }
+
+    #[test]
+    fn more_actions_reach_the_file_once_and_only_on_bound_buttons() {
+        let v = json!({ "name": "Wheel", "buttons": [["door_1", "1"], ["", "0"]], "more": [[0, "door_2"], [0, "door_2"], [0, "DOOR_1"], [0, ""], [5, "horn"]] });
+        let d = device_from(&v).unwrap();
+        assert_eq!(d.more, vec![(0, "door_2".to_string())]);
+        assert!(d.continuous(0));
+        let back = crate::controllers::parse_cfg(&crate::controllers::cfg_text(&[d.clone()]));
+        assert_eq!(back[0].more, d.more);
+        assert_eq!(back[0].actions_of(0), ["door_1", "door_2"]);
+        assert_eq!(device_json(&back[0])["more"], json!([[0, "door_2"]]));
     }
 
     #[test]

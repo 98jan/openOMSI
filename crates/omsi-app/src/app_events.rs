@@ -133,7 +133,7 @@ impl ApplicationHandler for App {
                 self.finish_vr_nav_edit();
                 self.input.window_focused = false;
                 if let Some(ctl) = self.input.controllers.as_mut() {
-                    ctl.set_focus(false);
+                    ctl.set_focus(self.settings.ctrl_background);
                 }
                 #[cfg(windows)]
                 {

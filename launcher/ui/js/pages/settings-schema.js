@@ -180,6 +180,7 @@ const driving = {
         { type: 'slider', key: 'pedal_brake', label: 'Brake pedal strength', min: 0.5, max: 2, step: 0.05, def: 1, format: pedal, store: r2 },
         { type: 'toggle', key: 'momentary_gears', label: 'H-pattern shifter: return to neutral when the gear is released' },
         { type: 'toggle', key: 'arrows_switch_cams', label: 'Arrow keys switch the cameras with a wheel too (no glance)' },
+        { type: 'toggle', key: 'ctrl_background', label: 'Keep driving in the background' },
         { type: 'section', title: 'Gamepad' },
         { type: 'select', key: 'pad_type', label: 'Gamepad type', options: [['auto', 'Automatic'], ['xbox', 'Xbox'], ['ps4', 'PlayStation 4'], ['ps5', 'PlayStation 5']] },
         { type: 'toggle', key: 'pad_buttons', label: 'Default gamepad buttons (indicators, doors, views, gears, menu, pause)' },
