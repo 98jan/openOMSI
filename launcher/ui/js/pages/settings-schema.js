@@ -103,6 +103,7 @@ const graphics = {
         { type: 'select', key: 'cloud_quality', label: 'Cloud quality', options: [['high', 'High'], ['low', 'Low']], when: (s) => enhanced(s) && s.clouds !== false },
         { type: 'select', key: 'rain_quality', label: 'Rain quality', options: [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']] },
         { type: 'toggle', key: 'windy_trees', label: 'Windy trees' },
+        { type: 'toggle', key: 'sim_thread', label: 'Simulation on its own thread' },
       ],
     },
     {

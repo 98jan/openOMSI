@@ -51641,3 +51641,15 @@ _version: 2
   hi: "दरवाज़ा {} पर चढ़ने का अनुरोध किया गया"
   ca: "Pujada demanada a la porta {}"
   sv: "Påstigning begärd vid dörr {}"
+
+"Simulation on its own thread":
+  pt: "Simulação em uma thread própria"
+  pt-pt: "Simulação numa thread própria"
+  es: "Simulación en un hilo propio"
+  fr: "Simulation sur son propre thread"
+
+"The AI traffic, the people and the scenery scripts run beside the drawing, on another processor core (the AI cars one frame later); from the next start":
+  pt: "O tráfego de IA, as pessoas e os scripts do cenário rodam ao lado do desenho, em outro núcleo do processador (os carros de IA um quadro depois); vale a partir da próxima abertura do jogo"
+  pt-pt: "O tráfego de IA, as pessoas e os scripts do cenário correm ao lado do desenho, noutro núcleo do processador (os carros de IA um fotograma depois); vale a partir do próximo arranque do jogo"
+  es: "El tráfico de IA, las personas y los scripts del escenario se ejecutan junto al dibujo, en otro núcleo del procesador (los coches de IA un fotograma después); desde el próximo inicio"
+  fr: "Le trafic IA, les personnes et les scripts du décor tournent à côté du dessin, sur un autre cœur du processeur (les voitures IA une image plus tard) ; à partir du prochain lancement"

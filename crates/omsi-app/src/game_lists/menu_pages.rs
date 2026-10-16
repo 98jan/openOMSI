@@ -138,6 +138,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         pick("max_fps", "Frame limit", "Frames a second at most"),
         switch_row(app, "fps", "Frame rate", "Show the frames per second in the top right corner"),
         pick("perf_overlay", "Performance details", "Where each frame's time goes, how busy the processor is and what slows the game down, with live graphs"),
+        switch_row(app, "sim_thread", "Simulation on its own thread", "The AI traffic, the people and the scenery scripts run beside the drawing, on another processor core (the AI cars one frame later); from the next start"),
         pick("view_distance", "View distance", later),
         pick("max_obj_dist", "Object distance", later),
         pick("min_obj_size", "Small objects", later),

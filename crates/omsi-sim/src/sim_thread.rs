@@ -1,4 +1,5 @@
-//! The simulation's own thread, pipelined with the picture (`OMSI_SIM_THREAD`, off unless set).
+//! The simulation's own thread, pipelined with the picture (the game's `sim_thread` setting,
+//! on by default; `OMSI_SIM_THREAD=0` / `=1` over it - see `set_enabled`).
 //!
 //! The window's frame runs its stages one after the other on the main thread (`WINDOW_FRAME`;
 //! the simulation's once per tick of the fixed step, see `tick`), so a frame costs the
@@ -239,9 +240,29 @@ pub struct Pipeline {
     scenery_stepped: bool,
 }
 
-/// `OMSI_SIM_THREAD`: the window's simulation steps go to the sim thread.
+static ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the window's simulation steps go to the sim thread: decided once, as the game
+/// starts (`set_enabled`), never in the middle of a session; off until then (the offscreen
+/// run and the tests step inline).
 pub fn enabled() -> bool {
-    omsi_cfg::flags::OMSI_SIM_THREAD.is_set()
+    ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The game's choice for the session to come: `OMSI_SIM_THREAD` when it is set (`0`,
+/// `false`, `off` or `no`: inline; anything else: the sim thread), else `setting`.
+pub fn set_enabled(setting: bool) -> bool {
+    let on = choice(omsi_cfg::flags::OMSI_SIM_THREAD.var(), setting);
+    ENABLED.store(on, std::sync::atomic::Ordering::Relaxed);
+    on
+}
+
+/// `OMSI_SIM_THREAD`'s value over the setting (see `set_enabled`).
+fn choice(var: Option<&str>, setting: bool) -> bool {
+    match var {
+        Some(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "0" | "false" | "off" | "no"),
+        None => setting,
+    }
 }
 
 /// An empty traffic: nothing on the road, no lanes. It stands in `Traffic::sim` while the real

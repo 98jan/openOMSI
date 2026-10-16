@@ -288,3 +288,17 @@ fn pipelined_ticks_match_inline_ticks() {
     assert_eq!(piped_t.day_time.to_bits(), inline_t.day_time.to_bits());
     assert!((inline.people[0].position - glam::DVec3::ZERO).length() > 5.0, "the riders went along with the bus");
 }
+
+/// The setting decides, `OMSI_SIM_THREAD` over it both ways (it used to turn the thread on
+/// whatever its value, `=0` too); nobody deciding is inline (the offscreen run, the tests).
+#[test]
+fn the_switch_and_the_setting() {
+    assert!(choice(None, true));
+    assert!(!choice(None, false));
+    for off in ["0", "false", "OFF", " no "] {
+        assert!(!choice(Some(off), true), "{off}");
+    }
+    for on in ["1", "true", "yes", ""] {
+        assert!(choice(Some(on), false), "{on:?}");
+    }
+}

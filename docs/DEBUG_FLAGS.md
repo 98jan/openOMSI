@@ -314,7 +314,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_SERIAL_PIPELINES` | bool | off | use | render | Compile the renderer's pipelines one after the other on one thread, as before (A/B). |
 | `OMSI_SHADOW_FAR_EVERY_FRAME` | bool | off | frame | render | Redraw the far shadow map every frame. |
 | `OMSI_SHADOW_NEAR_EVERY_FRAME` | bool | off | frame | render | Redraw the near shadow map every frame. |
-| `OMSI_SIM_THREAD` | bool | off | use | sim | Window: the AI traffic's, the people's and the scenery scripts' steps run on a thread of its own while the picture is drawn (one frame later); the offscreen run ignores it. |
+| `OMSI_SIM_THREAD` | text | the setting | use | sim | Window: the AI traffic's, the people's and the scenery scripts' steps on a thread of their own while the picture is drawn (one frame later): 0 / false / off / no: on the main thread, anything else: on their thread, over the `sim_thread` setting (on by default); the offscreen run ignores it. |
 | `OMSI_TERRAIN_ALIGN` | bool | off | use | scene | Align the terrain to the splines again at load (A/B; Omsi.exe does not). |
 | `OMSI_TEXTURE_RAIN` | bool | off | use | scene | OMSI 2's own texture rain on the glass instead of the drops. |
 | `OMSI_TRACKIR_NATIVE` | text | on | use | input | 0 turns the native TrackIR interface off. |
