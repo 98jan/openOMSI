@@ -21,6 +21,7 @@ pub(crate) struct DrawPlan {
     /// the blended (and, drawn in model order, all) slots of the vehicle the camera is in
     pub cab_batches: Vec<Batch>,
     pub prepass_batches: Vec<Batch>,
+    pub prefill: Option<Vec<Batch>>,
     pub msaa_safe_batches: Vec<Batch>,
     pub presurface_batch_end: usize,
     /// the rain films on the panes, drawn over the finished picture (see `glass_on`)
@@ -31,6 +32,10 @@ pub(crate) struct DrawPlan {
 }
 
 impl DrawPlan {
+    pub(crate) fn prefill_batches(&self) -> &[Batch] {
+        self.prefill.as_deref().unwrap_or(&self.prepass_batches)
+    }
+
     /// Depth prefilling is shared by bundle planning and pass encoding so neither can
     /// omit the excavation prefix unless it will actually be drawn separately.
     pub(crate) fn msaa_prepass(&self, renderer: &Renderer, f: &FrameCtx) -> bool {
@@ -63,14 +68,18 @@ impl DrawPlan {
 }
 
 // the depth prepass: opaque and alpha-tested, single-sampled
-fn prepass_items(scene: &Scene, visible: &[(usize, f32, bool)], deferred: bool) -> (Vec<u32>, Vec<Batch>, Vec<Batch>) {
+fn prepass_items(scene: &Scene, visible: &[(usize, f32, bool)], deferred: bool) -> (Vec<u32>, Vec<Batch>, Option<Vec<Batch>>, Vec<Batch>) {
     let mut items: Vec<DrawItem> = Vec::new();
+    let mut kept: Vec<DrawItem> = Vec::new();
+    let mut any_cut = false;
     let mut list: Vec<u32> = Vec::new();
     let mut batches: Vec<Batch> = Vec::new();
     let mut safe_items = Vec::new();
     let mut safe_batches = Vec::new();
+    let first_panes = first_depth_panes(scene, visible);
     for &(i, _, _) in visible {
         let inst = &scene.instances[i];
+        let mut cut = inst.ordered && first_panes.get(&origin_key(inst.origin)).is_some_and(|&o| inst.draw_order > o);
         let cull = culls_back_faces(scene, inst);
         for (ri, (_, _, slot)) in scene.meshes[inst.mesh].ranges.iter().enumerate() {
             let mat_id = inst.materials.get(*slot as usize).copied().unwrap_or(0);
@@ -84,8 +93,8 @@ fn prepass_items(scene: &Scene, visible: &[(usize, f32, bool)], deferred: bool) 
             // (0.2.46 left the whole model out: a bus with its glass listed early lost its
             // body from the depth that the ambient occlusion and the sun's glare read - no
             // contact shadow under it, the glare and the passengers through its roof.)
-            if inst.ordered && kind == PIPE_BLEND && mat.writes_depth {
-                break;
+            if inst.ordered && blend_writes_depth(mat) {
+                cut = true;
             }
             // Ground blends compose before they may occlude later scenery.
             // The transmap body prepass is for ordinary meshes, not these
@@ -106,16 +115,47 @@ fn prepass_items(scene: &Scene, visible: &[(usize, f32, bool)], deferred: bool) 
                     entry: inst.base + *slot,
                 };
                 // Ground must finish composing before its coverage can occlude later layers.
-                if deferred && effective_render_phase(inst) as u8 >= RenderPhase::BeforeNormal as u8 {
+                if !cut && deferred && effective_render_phase(inst) as u8 >= RenderPhase::BeforeNormal as u8 {
                     safe_items.push(item);
+                }
+                if cut {
+                    any_cut = true;
+                } else {
+                    kept.push(item);
                 }
                 items.push(item);
             }
         }
     }
     batch_items(scene, &mut items, true, &mut list, &mut batches);
+    let prefill = any_cut.then(|| {
+        let mut prefill = Vec::new();
+        batch_items(scene, &mut kept, true, &mut list, &mut prefill);
+        prefill
+    });
     batch_items(scene, &mut safe_items, true, &mut list, &mut safe_batches);
-    (list, batches, safe_batches)
+    (list, batches, prefill, safe_batches)
+}
+
+fn blend_writes_depth(mat: &Material) -> bool {
+    mat.alpha == AlphaMode::Blend && (!mat.no_z_write || mat.writes_depth) && !mat.no_z_check
+}
+
+fn first_depth_panes(scene: &Scene, visible: &[(usize, f32, bool)]) -> HashMap<[u64; 3], u64> {
+    let mut first: HashMap<[u64; 3], u64> = HashMap::new();
+    for &(i, _, _) in visible {
+        let inst = &scene.instances[i];
+        if !inst.ordered {
+            continue;
+        }
+        let pane = scene.meshes[inst.mesh].ranges.iter().any(|(_, _, slot)| {
+            blend_writes_depth(&scene.materials[inst.materials.get(*slot as usize).copied().unwrap_or(0)])
+        });
+        if pane {
+            first.entry(origin_key(inst.origin)).and_modify(|o| *o = (*o).min(inst.draw_order)).or_insert(inst.draw_order);
+        }
+    }
+    first
 }
 
 /// The surfaces' covered ground pixels committed to depth, before the normal phase.
@@ -268,6 +308,7 @@ impl Renderer {
         let mut items: Vec<DrawItem> = Vec::new();
         let has_presurface = visible.iter().any(|&(i, _, _)| scene.instances[i].presurface);
         let mut prepass_batches: Vec<Batch> = Vec::new();
+        let mut prefill = None;
         let mut msaa_safe_batches = Vec::new();
         let deferred = has_presurface && f.enhanced;
         let prepass_job = || { prepass_items(scene, visible, deferred) };
@@ -348,13 +389,14 @@ impl Renderer {
             batch_items(scene, &mut cab_items, false, list, &mut cab_batches);
             take_prepass();
         });
-        if let Some((pre_list, mut pre_batches, mut safe_batches)) = prepass_found.into_inner().unwrap_or_else(|e| e.into_inner()) {
+        if let Some((pre_list, mut pre_batches, mut pre_prefill, mut safe_batches)) = prepass_found.into_inner().unwrap_or_else(|e| e.into_inner()) {
             let offset = list.len() as u32;
-            for b in pre_batches.iter_mut().chain(&mut safe_batches) {
+            for b in pre_batches.iter_mut().chain(pre_prefill.iter_mut().flatten()).chain(&mut safe_batches) {
                 b.instances = b.instances.start + offset..b.instances.end + offset;
             }
             list.extend(pre_list);
             prepass_batches = pre_batches;
+            prefill = pre_prefill;
             msaa_safe_batches = safe_batches;
         }
         // OMSI_SKIP_PIPE=3,1: leave pipeline kinds out of the main pass (0 opaque, 1 alpha
@@ -375,7 +417,7 @@ impl Renderer {
         if f.env.debug_draws {
             log::info!("  main pass: {} opaque/alpha-tested and {} blended draws in {} batches; prepass {} batches; draw list {} entries", main_draws[0], main_draws[1], main_batches.len(), prepass_batches.len(), list.len());
         }
-        DrawPlan { list: draw_list, main_batches, cab_batches, prepass_batches, msaa_safe_batches, presurface_batch_end, rain_batches: Vec::new(), main_draws, has_presurface }
+        DrawPlan { list: draw_list, main_batches, cab_batches, prepass_batches, prefill, msaa_safe_batches, presurface_batch_end, rain_batches: Vec::new(), main_draws, has_presurface }
     }
 
     /// The order a phase's blended draws are drawn in: (rank, distance, instance), far

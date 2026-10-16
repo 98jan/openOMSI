@@ -155,7 +155,7 @@ impl App {
     /// The weather follows the METAR report and cannot be changed (the `metar_sync` setting).
     /// In a LAN session as a client the host's weather counts: the host syncs, not us.
     pub(crate) fn metar_locked(&self) -> bool {
-        self.settings.metar_sync && !self.net.lan.as_ref().is_some_and(|l| l.role == omsi_net::Role::Client)
+        self.settings.metar_sync && !crate::weather_tomorrow::selected(self.args.weather.as_deref()) && !self.net.lan.as_ref().is_some_and(|l| l.role == omsi_net::Role::Client)
     }
 
     /// The airport whose report the sync follows: the one chosen, else the one of the weather
@@ -212,6 +212,7 @@ impl App {
     /// The METAR sync: with it on, the report is downloaded in the background (at once, then
     /// every ten minutes) and the weather goes over to it; `dt` is real seconds.
     pub(crate) fn tick_metar(&mut self, dt: f32) {
+        if crate::weather_tomorrow::selected(self.args.weather.as_deref()) { return; }
         self.share_start_metar();
         if let Some(rx)=self.session.metar_rx.as_ref(){
             match rx.try_recv(){
@@ -271,20 +272,25 @@ impl App {
         let file = to.path.to_string_lossy().to_string();
         // (what the players are told: the report's values, which they make the weather from)
         let wire = crate::weather_setup::report_wire(&to).unwrap_or_else(|| file.clone());
+        self.apply_report_weather(to, Some(file), &wire);
+    }
+
+    pub(crate) fn apply_report_weather(&mut self, to: omsi_content::weather::Weather, selection: Option<String>, wire: &str) {
         let name = to.name.clone();
         let from = self.session.weather.clone().unwrap_or_default();
+        self.session.sky.model = None;
         if let Some(w) = self.world.as_ref() {
             w.settings.set_snow(to.snow);
         }
         omsi_sim::host::set_ambient_weather(to.temp.0, to.temp.1);
         crate::weather_setup::publish_page_weather(&to);
-        self.args.weather = Some(file.clone());
+        if let Some(file) = selection { self.args.weather = Some(file); }
         self.session.weather_cycle = None;
         self.session.weather_blend = Some(crate::weather_cycle::Blend::new(from, to, 60.0));
         if let Some(l) = self.net.lan.as_mut().filter(|l| l.role == omsi_net::Role::Host) {
             l.set_weather(&wire);
         }
-        log::info!("weather: METAR sync, going over to {file} ({name})");
+        log::info!("weather: applying report ({name})");
         self.service_msg = Some((format!("Weather: {name}"), 4.0));
     }
 }

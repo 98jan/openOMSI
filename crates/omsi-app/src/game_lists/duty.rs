@@ -122,7 +122,7 @@ pub(crate) fn flush_settings(force: bool) {
     *SETTINGS_CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
-pub(super) fn apply_pending(v: &mut serde_json::Value, pending: &[(String, String)]) {
+pub(crate) fn apply_pending(v: &mut serde_json::Value, pending: &[(String, String)]) {
     for (key, value) in pending {
         let parsed: serde_json::Value = value.parse::<f64>().map(serde_json::Value::from).unwrap_or_else(|_| serde_json::Value::from(value.as_str()));
         // a switch goes in as true/false, as the launcher's own values are: written as 1 it

@@ -102,7 +102,7 @@ fn check_textures(ty: &omsi_sim::VehicleType, root: &Path, part: &str, report: &
         for (slot, m) in vm.materials.iter().enumerate() {
             counts.materials += 1;
             let t = m.texture.trim();
-            if t.is_empty() || omsi_scene::is_null_texture(t) || !seen.insert(t.to_ascii_lowercase()) {
+            if t.is_empty() || crate::is_null_texture(t) || !seen.insert(t.to_ascii_lowercase()) {
                 continue;
             }
             let ov: Vec<&omsi_model::MaterialDef> = vm.overrides.iter().filter(|o| omsi_sim::vehicle::override_slot(&vm.materials, o) == Some(slot)).collect();
@@ -136,9 +136,9 @@ fn check_vehicle(root: &Path, bus: &Path, report: &Report) -> (bool, Value) {
             let mut lead = std::sync::Arc::new(ty);
             let mut lead_rev = false;
             let mut seen = vec![lead.def.path.clone()];
-            for _ in 0..crate::spawn::MAX_COUPLED_PARTS {
-                let Some((path, reversed)) = crate::spawn::next_coupled(&lead.def, lead_rev, true) else { break };
-                if crate::spawn::chain_has_part(&seen, &path) {
+            for _ in 0..omsi_vehicle::vehicle::MAX_COUPLED_PARTS {
+                let Some((path, reversed)) = omsi_vehicle::vehicle::next_coupled(&lead.def, lead_rev, true) else { break };
+                if omsi_vehicle::vehicle::chain_has_part(&seen, &path) {
                     break;
                 }
                 let part = name_of(&path);
@@ -214,7 +214,7 @@ fn check_model(model: &omsi_model::Model, model_dir: &Path, dirs: &[PathBuf], pa
                 for mat in &m.materials {
                     counts.materials += 1;
                     let t = mat.texture.trim();
-                    if t.is_empty() || omsi_scene::is_null_texture(t) || generated.contains(&t.to_ascii_lowercase()) || !seen.insert(t.to_ascii_lowercase()) {
+                    if t.is_empty() || crate::is_null_texture(t) || generated.contains(&t.to_ascii_lowercase()) || !seen.insert(t.to_ascii_lowercase()) {
                         continue;
                     }
                     if omsi_texture::find_texture(t, &dir_refs).is_none() {
@@ -272,7 +272,7 @@ fn check_object(root: &Path, path: &Path, report: &Report) -> (bool, Value) {
         }
         None => (sco.model.clone(), sco_dir.clone()),
     };
-    let mut dirs = omsi_scene::texture_dirs(root, &model_dir);
+    let mut dirs = crate::texture_dirs(root, &model_dir);
     if sco.model_file.is_some() {
         dirs.insert(0, omsi_cfg::resolve_path(&sco_dir, "texture"));
     }
@@ -315,12 +315,12 @@ fn check_spline(root: &Path, path: &Path, report: &Report) -> (bool, Value) {
         report.add("info", "keyword", format!("[{k}] is not known (line {n})"), None, &part);
     }
     let dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
-    let dirs = omsi_scene::texture_dirs(root, &dir);
+    let dirs = crate::texture_dirs(root, &dir);
     let dir_refs: Vec<&Path> = dirs.iter().map(PathBuf::as_path).collect();
     let mut missing = 0;
     for t in &def.textures {
         let name = t.file.trim();
-        if name.is_empty() || omsi_scene::is_null_texture(name) {
+        if name.is_empty() || crate::is_null_texture(name) {
             continue;
         }
         if omsi_texture::find_texture(name, &dir_refs).is_none() {
@@ -357,7 +357,7 @@ fn check_human(root: &Path, path: &Path, report: &Report) -> (bool, Value) {
         match omsi_model::Model::load(&mp) {
             Ok(model) => {
                 let model_dir = mp.parent().unwrap_or(Path::new("")).to_path_buf();
-                let dirs = omsi_scene::texture_dirs(root, &model_dir);
+                let dirs = crate::texture_dirs(root, &model_dir);
                 check_model(&model, &model_dir, &dirs, &part, report, &mut counts);
             }
             Err(e) => report.error("model", format!("{}: {e}", h.model.trim()), &part),
@@ -639,8 +639,9 @@ fn check_one(root: &Path, path: &Path, kind: &str, deep: bool, report: &Report) 
     }
 }
 
-/// `args`: what follows `--check` on the command line.
-pub fn run(args: &[String]) -> anyhow::Result<()> {
+/// `args`: what follows `--check` on the command line; `find_root`: where the game finds
+/// OMSI when `--root` does not say.
+pub fn run(args: &[String], find_root: fn() -> Option<PathBuf>) -> anyhow::Result<()> {
     let _ = log::set_logger(&CAPTURE);
     log::set_max_level(log::LevelFilter::Info);
     let mut files: Vec<PathBuf> = Vec::new();
@@ -658,7 +659,7 @@ pub fn run(args: &[String]) -> anyhow::Result<()> {
         println!("{}", json!({"ok": false, "findings": [{"level": "error", "what": "arguments", "text": "nothing to check given"}]}));
         return Ok(());
     }
-    let root = root.or_else(crate::startup::find_root).unwrap_or_else(|| PathBuf::from("."));
+    let root = root.or_else(find_root).unwrap_or_else(|| PathBuf::from("."));
     // the content roots the game reads: its own folder (mods), the archives, the installation
     if let Some(c) = omsi_cfg::content_dir() {
         if omsi_cfg::vfs::is_dir(&c) {

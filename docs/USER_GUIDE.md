@@ -377,7 +377,8 @@ and `drive_keys`, plus `render_scale` (`auto` or a fraction: the picture is draw
 and upscaled), `post_aa` (`fxaa`, the enhanced renderer's, or `off`), `view_distance` (m,
 how far the tiles are kept loaded), `video_memory` ("Video memory", MB: all the game holds
 on the graphics card - textures, meshes, render targets, the driver's own; when unset, nine
-tenths of a discrete card's memory, and never more than the driver's budget; the old
+tenths of a discrete card's memory, and never more than the driver's budget; on a card of
+its own the textures may take half of it; the old
 `texture_memory=` and OMSI's `texmemlimit` were texture budgets and are dropped), `texture_compression`
 (loose pictures compressed to BC1-BC3 on loading, on by default), `gpu_texture_compression`
 (DXT/BC textures kept compressed on the GPU, on by default; off decodes them to RGBA, for a
@@ -607,6 +608,17 @@ Depot files can also be placed in a top-level `HOFs/` folder. Every vehicle can 
 vehicle folder and `HOFs/` contain the same file name, the vehicle's own copy takes
 priority (the launcher's depot list shows the shared ones after the bus's own).
 
+A map names the depot files its buses need in `maps/<map>/ailists.cfg`. When a mod map is
+installed in the openOMSI content folder and one of those files is missing from `HOFs/`, the
+launcher copies it there from the map's folder or from any bus that brought it, so every
+bus, the stock ones included, can use the map's depot without copying `.hof` files by hand.
+The copy belongs to the map's mod: switching the map off or removing it takes the copy with
+it. The original OMSI installation is not changed. A depot file the map needs that no
+installed content provides, or a copy that failed, is shown as a warning on the launcher's
+**Mods** page. The **Add HOF files to buses** button on that page (desktop launcher) copies
+`.hof` files you choose into the content folder's `HOFs/`; files already there are left
+untouched.
+
 Installing a mod: the launcher's **Mods** page opens the system's folder / file picker
 (Finder, Explorer, GTK) for a mod folder or a `.zip`, `.7z` or `.rar` archive and sorts it
 into place (OMSI-style folders anywhere inside are merged; a lone bus, map, object or
@@ -631,6 +643,12 @@ unpacks what fits on the disk and uses an archive in place when its unpacked siz
 and buses inside the archives.
 
 ## Season and weather
+
+**Tomorrow.io map weather** follows the nearest configured area while driving.
+Each player supplies a private API key; the map contains only areas and locations.
+See [setup and map-author instructions](WEATHER_REGIONS.md), including the
+[community config editor](https://openomsi.mxnticek.eu/weather/). This mode requires
+a build containing the feature; the website alone does not enable it in the game.
 
 The launcher's Departure card has a **Season** choice (spring / summer / autumn / winter,
 or by the date as in the original), and under a chosen season its **Early / Mid / Late**

@@ -12,6 +12,11 @@ pub mod index;
 pub mod install;
 pub mod instances;
 pub mod mods;
+mod hof_sync;
+mod file_dialog;
+
+pub use file_dialog::{pick_file, pick_folder, pick_hofs, pick_mod};
+pub use hof_sync::add_shared_hofs;
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -529,6 +534,7 @@ pub struct ModsStatus {
     /// What an earlier, interrupted install left and was removed now.
     pub cleaned: Vec<String>,
     pub jobs: Vec<install::Progress>,
+    pub hof_warnings: Vec<String>,
     /// Every mod, one by one (see `mods`).
     pub installed: Vec<mods::Mod>,
 }
@@ -678,6 +684,8 @@ pub fn install_inbox_blocking() -> Vec<install::Progress> {
 pub fn mods_status() -> Result<ModsStatus> {
     let content = content_dir().ok_or_else(|| anyhow!("no game binary configured, so no content folder"))?;
     let cleaned = install::cleanup_stale(&data_dir(), Some(&content));
+    hof_sync::sync_map_hofs();
+    let hof_warnings = hof_sync::warnings();
     let folders = omsi_cfg::CONTENT_FOLDERS
         .iter()
         .map(|f| {
@@ -701,6 +709,7 @@ pub fn mods_status() -> Result<ModsStatus> {
         free_bytes: install::free_space(&content).unwrap_or(0),
         cleaned,
         jobs: install::jobs(),
+        hof_warnings,
         installed: mods::list(&content),
     })
 }
@@ -762,6 +771,7 @@ pub struct EntryInfo {
 
 pub fn list_maps() -> Result<Vec<MapInfo>> {
     root()?;
+    hof_sync::sync_map_hofs();
     let lang = content_language();
     let mut out = Vec::new();
     let mut keys = Vec::new();
@@ -2019,6 +2029,8 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
     v["touch_door_mode"] = json!("standard");
     v["touch_pedal_length"] = json!(1.0);
     v["touch_pedal_deadzone"] = json!(0.15);
+    // (the game's menus switch these: saved through this page's writer, unknown they were dropped)
+    for k in ["full_tank", "trip_summary"] { v[k] = json!(true); }
     v["triple_screen"] = json!(false);
     v["triple_span"] = json!(true);
     v["triple_hud_center"] = json!(true);
@@ -2184,6 +2196,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
             "seat_x" | "seat_y" | "seat_z" => v[&k] = json!(val.parse::<f64>().map(|x| x.clamp(-1.5, 1.5)).unwrap_or(0.0)),
             "seat_pitch_deg" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).unwrap_or(0.0).clamp(-45.0, 45.0)),
             "head_tracking_yaw_sens" | "head_tracking_pitch_sens" | "head_tracking_roll_sens" | "head_tracking_x_sens" | "head_tracking_y_sens" | "head_tracking_z_sens" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.0, 100.0)).unwrap_or(100.0)),
+            "full_tank" | "trip_summary" => v[&k] = json!(b(val)),
             "nav_arrows" | "nav_ai" | "nav_surface" | "nav_light" | "nav_3d" | "nav_widget" | "get_up" | "time_sync" | "metar_sync" | "ui_scale_window" | "notes" | "machine_translation" | "update_check" | "update_auto" | "update_notify" | "presence" | "steering_linear" | "old_steering" | "red_steer_spd" | "ff_invert" | "ff_enabled" | "brake_hold" | "auto_clutch" | "momentary_gears" | "auto_shift" | "mouse_steering" | "mouse_right_off" | "mouse_smooth" | "mouse_hold" | "mouse_pedals" | "blinker_cancel" => v[&k] = json!(b(val)),
             "info_bar" => v[&k] = json!(b(val)),
             "perf_overlay" => v[&k] = json!(perf_overlay_mode(val)),
@@ -2256,42 +2269,7 @@ pub fn tutorials() -> Vec<(usize, String, String)> {
     out
 }
 
-/// Decode the HTML entities used in OMSI's tutorial pages before drawing plain text.
-pub fn decode_html_entities(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    let mut remaining = input;
-    while let Some(start) = remaining.find('&') {
-        output.push_str(&remaining[..start]);
-        remaining = &remaining[start..];
-        let Some(end) = remaining.find(';').filter(|&end| end <= 12) else {
-            output.push('&');
-            remaining = &remaining[1..];
-            continue;
-        };
-        let entity = &remaining[1..end];
-        let decoded = match entity {
-            "amp" => Some('&'), "quot" => Some('"'), "apos" | "#39" => Some('\''),
-            "lt" => Some('<'), "gt" => Some('>'), "nbsp" => Some(' '),
-            "auml" => Some('ä'), "ouml" => Some('ö'), "uuml" => Some('ü'),
-            "Auml" => Some('Ä'), "Ouml" => Some('Ö'), "Uuml" => Some('Ü'),
-            "szlig" => Some('ß'), "ndash" | "mdash" | "minus" => Some('-'),
-            "bull" => Some('•'), "deg" => Some('°'),
-            _ => entity.strip_prefix("#x").or_else(|| entity.strip_prefix("#X"))
-                .and_then(|n| u32::from_str_radix(n, 16).ok())
-                .or_else(|| entity.strip_prefix('#').and_then(|n| n.parse().ok()))
-                .and_then(char::from_u32),
-        };
-        // (the English pages have zero-width spaces, `&#8203;`: the font has no glyph for them)
-        match decoded {
-            Some('\u{200b}') => {}
-            Some(c) => output.push(c),
-            None => output.push_str(&remaining[..=end]),
-        }
-        remaining = &remaining[end + 1..];
-    }
-    output.push_str(remaining);
-    output
-}
+pub use omsi_content::tutorial::decode_html_entities;
 
 /// OMSI's option presets (`option_presets/*.oop`): their names and what they say, in the
 /// settings' own keys (maxFPS, performance_minObjSize/maxObjDist, texFilter, texmemlimit,
@@ -2593,6 +2571,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("ambient={}\nvol_ambient={}\n", b("ambient", true), f("vol_ambient", 0.8).clamp(0.0, 1.0)));
     text.push_str(&format!("radio_speaker={}\nradio_hiss={}\nradio_dropouts={}\n", f("radio_speaker", 0.0).clamp(0.0, 1.0), f("radio_hiss", 0.0).clamp(0.0, 1.0), f("radio_dropouts", 0.0).clamp(0.0, 1.0)));
     text.push_str(&format!("ai_wait_timed_stops_only={}\n", b("ai_wait_timed_stops_only", false)));
+    text.push_str(&format!("trip_summary={}\nfull_tank={}\n", b("trip_summary", true), b("full_tank", true)));
     text.push_str(&format!("triple_left_angle_deg={}\ntriple_right_angle_deg={}\ntriple_eye_height_mm={}\n", f("triple_left_angle_deg", 45.0).clamp(0.0, 90.0), f("triple_right_angle_deg", 45.0).clamp(0.0, 90.0), f("triple_eye_height_mm", 0.0).clamp(-500.0, 500.0)));
     text.push_str(&format!("photo_mode={}\n", if v.get("photo_mode").and_then(|x| x.as_str()) == Some("advanced") { "advanced" } else { "simple" }));
     text.push_str(&format!("passenger_animation={}\n", if v.get("passenger_animation").and_then(|x| x.as_str()) == Some("enhanced") { "enhanced" } else { "original" }));
@@ -3023,51 +3002,6 @@ pub fn log_to_file(line: &str) {
 pub fn cleanup() {
     for line in install::cleanup_stale(&data_dir(), content_dir().as_deref()) {
         log_to_file(&format!("cleanup: {line}"));
-    }
-}
-
-/// Native folder / file picker (Finder, Explorer, the GTK dialog) for a mod. Must run on
-/// the main thread. (None on a phone: the launcher browses the storage itself there, and on an iPhone or an iPad
-/// the system's document picker of the Swift launcher hands the path over.)
-pub fn pick_mod(zip: bool) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        if zip {
-            rfd::FileDialog::new().set_title("Choose a mod archive").add_filter("Mod archive", &["zip", "7z", "rar"]).pick_file()
-        } else {
-            rfd::FileDialog::new().set_title("Choose the mod folder").pick_folder()
-        }
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = zip;
-        None
-    }
-}
-
-/// Folder picker (Setup: the OMSI 2 folder).
-pub fn pick_folder(title: &str) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        rfd::FileDialog::new().set_title(title).pick_folder()
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = title;
-        None
-    }
-}
-
-/// File picker (Setup: the game program).
-pub fn pick_file(title: &str) -> Option<PathBuf> {
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    {
-        rfd::FileDialog::new().set_title(title).pick_file()
-    }
-    #[cfg(any(target_os = "android", target_os = "ios"))]
-    {
-        let _ = title;
-        None
     }
 }
 

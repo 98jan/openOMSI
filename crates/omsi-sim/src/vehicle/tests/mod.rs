@@ -5,6 +5,7 @@ use super::*;
 use std::sync::Arc;
 
 mod articulation;
+mod fuel;
 mod scripts_props;
 
 #[test]

@@ -169,6 +169,16 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   an RTX 4050) and their multisampled targets' memory for little to see; `OMSI_FULL_GPU=1`
   keeps 8x ([#2228](https://github.com/openOMSI-org/openOMSI/issues/2228)).
 - A video memory of 16 GB can be chosen, for cards with more than 16 GB of their own.
+- Textures stay sharp on a graphics card of its own: their share grows to half of the video
+  memory (about 3.7 GB on an 8 GB card on Automatic), where it stayed at an eighth of the
+  computer's memory (2 GB with 16 GB) whatever the setting, and the far textures lost their
+  finest levels even at the highest settings. The video memory still bounds everything on
+  the card; integrated graphics and the safer settings after a lost device keep the old share.
+- A bus's invisible cover hides its sun blind again instead of showing a light blue patch over
+  the windscreen and the street behind it, in Enhanced, and in Vanilla+ with ambient
+  occlusion and MSAA off: since 0.3.0 the parts listed after the cover still went into the
+  depth the picture is drawn against, also when the cover is a mesh of its own. The ambient
+  occlusion still sees them ([#2678](https://github.com/openOMSI-org/openOMSI/issues/2678), [#2178](https://github.com/openOMSI-org/openOMSI/issues/2178)).
 - Render targets of a size not drawn for 5 s are let go: those of a photo taken at a large size
   stayed on the graphics card until the window changed size.
 - A remembered MSAA fallback is tried at the chosen MSAA again once with each new version

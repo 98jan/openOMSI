@@ -54,7 +54,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DEBUG_MIRRORS` | bool | off | use | app | Log each mirror's eye, angles and field of view. |
 | `OMSI_DEBUG_MISSING` | bool | off | use | scene | Log where missing textures were looked for. |
 | `OMSI_DEBUG_NAN` | bool | off | once | script | Warn at every write of a NaN or infinity into a script variable. |
-| `OMSI_DEBUG_NAV` | bool | off | use | app, mapdraw, scene, sim | Log navigation details (e.g. stops whose tiles are not loaded). |
+| `OMSI_DEBUG_NAV` | bool | off | use | mapdraw, navigator, scene, sim | Log navigation details (e.g. stops whose tiles are not loaded). |
 | `OMSI_DEBUG_OBJECTS` | bool | off | use | scene | Log objects placed outside their tile. |
 | `OMSI_DEBUG_OBJMAT` | text | - | use | scene | Log how the material slots of the objects whose file name contains this text are made. |
 | `OMSI_DEBUG_PARTICLES` | bool | off | use | scene | Log the smoke particles. |
@@ -107,9 +107,9 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_FRAME_ORDER` | bool | off | once | app | Log the window's frame and the offscreen run's step as their ordered stages (phase, what each reads and writes, its profile key), once at start. |
 | `OMSI_GPU_TIMERS` | bool | off | use | render | Measure GPU time per pass with timestamp queries. |
 | `OMSI_GPU_TIMERS_RAW` | bool | off | use | render | With OMSI_GPU_TIMERS: the passes in the order the GPU finished them. |
-| `OMSI_GROUND_GAP` | text | - | use | app | Offscreen CSV (or -): how far every drawn tyre stands over or sinks into the ground. |
-| `OMSI_GROUND_GAP_RADIUS` | num | 150 | use | app | With OMSI_GROUND_GAP: the radius in metres. |
-| `OMSI_GROUND_LANES` | bool | off | use | app | Along every street lane, every metre, how far the ground lies over or under the lane. |
+| `OMSI_GROUND_GAP` | text | - | use | sim | Offscreen CSV (or -): how far every drawn tyre stands over or sinks into the ground. |
+| `OMSI_GROUND_GAP_RADIUS` | num | 150 | use | sim | With OMSI_GROUND_GAP: the radius in metres. |
+| `OMSI_GROUND_LANES` | bool | off | use | sim | Along every street lane, every metre, how far the ground lies over or under the lane. |
 | `OMSI_LAN_TRACE` | text | - | use | app | LAN CSV file: where the host's people are drawn. |
 | `OMSI_LIST_ALIGNED` | bool | off | use | scene | Log the splines aligned to the terrain. |
 | `OMSI_PROFILE` | bool | off | use | app, render, scene, sim, xr | Time per stage of the frame, logged. |
@@ -190,7 +190,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_MUTE` | bool | off | use | audio | Mix everything as usual but play nothing. |
 | `OMSI_NAV_2D` | bool | off | use | app | Navigator pictures with flat houses (the nav_3d setting off). |
 | `OMSI_NAV_MAP` | bool | off | use | app | Open the navigation map. |
-| `OMSI_NAV_MAP_MPP` | num | 2.5 | use | app | Navigation map zoom in metres per pixel. |
+| `OMSI_NAV_MAP_MPP` | num | 2.5 | use | navigator | Navigation map zoom in metres per pixel. |
 | `OMSI_NAV_PROBE` | text | - | use | mapdraw | x,y[,r]: the network lanes that start or end within r of that point. |
 | `OMSI_NAV_SCHEDULE` | bool | off | use | app | Navigation map shows the schedule. |
 | `OMSI_NO_MAP_CACHE` | bool | off | use | scene | Read the map's navigator layers (houses, ground, paving) again instead of from the cache. |
@@ -371,6 +371,9 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_SAFE_GPU` | num | 0 | use | app | Restarts after a lost graphics device: lighter on the card each time. Set at runtime on Android and by the restart. |
 | `OMSI_SAFE_MODE` | bool | off | use | guard, launcher-api | Safe mode, set by the start guard after failed starts: the basic render pipelines and no plugins. |
 | `OMSI_SCREEN_AT` | text | - | once | app, launcher-core | x,y: the screen (a point on the desktop, pixels) the game window opens on; the launcher sets it to where it stands. |
+| `OMSI_TOMORROW_API_KEY` | text | private key file | use | app, platform | Private Tomorrow.io API key for map-selected weather; never include it in map configs or logs. |
+| `OMSI_TOMORROW_CACHE_DIR` | text | settings/weather-cache | use | platform | Private Tomorrow.io response cache and shared request-budget directory. |
+| `OMSI_TOMORROW_KEY_FILE` | text | settings/tomorrow-api-key.txt | use | app, platform | Private text file containing the player's Tomorrow.io API key. |
 | `OMSI_UPDATE_URL` | text | built-in | use | app, platform | Another release description (URL or file:///...json) for the update check. |
 | `OMSI_WINE` | text | PATH | use | plugin | The Wine binary for Windows plugins. |
 

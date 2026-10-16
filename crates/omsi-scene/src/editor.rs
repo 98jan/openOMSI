@@ -19,7 +19,7 @@
 //! Shift), F flattens it to the height at the middle, [ and ] make the brush smaller and
 //! larger.
 
-use crate::scene::{ObjectEdit, World};
+use crate::{ObjectEdit, World};
 use glam::{DVec3, Vec3};
 use hashbrown::HashMap;
 use std::path::{Path, PathBuf};
@@ -37,7 +37,7 @@ pub struct Added {
     pub moved: DVec3,
     pub turned: f64,
     pub deleted: bool,
-    gpu: Option<crate::scene::TileGpu>,
+    gpu: Option<crate::TileGpu>,
 }
 
 #[derive(Default)]
@@ -314,7 +314,7 @@ impl Editor {
             for ty in ty0..=ty1 {
                 if !edits.contains_key(&(tx, ty)) {
                     let Some(src) = world.tile_source(tx, ty) else { continue };
-                    let t = omsi_map::Terrain::load(&crate::scene::tile_companion(&src, ".terrain")).unwrap_or_else(|_| omsi_map::Terrain::flat());
+                    let t = omsi_map::Terrain::load(&crate::tile_companion(&src, ".terrain")).unwrap_or_else(|_| omsi_map::Terrain::flat());
                     edits.insert((tx, ty), t);
                 }
                 let t = edits.get_mut(&(tx, ty)).unwrap();
@@ -595,41 +595,6 @@ pub fn rewrite_tile(text: &str, edits: &HashMap<i64, ObjectEdit>) -> (String, us
         i += 8;
     }
     (out, changed)
-}
-
-/// The editor's key for `code` (with Shift for the fine steps), as the camera faces `yaw`
-/// (degrees clockwise from north).
-pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: f64) -> Option<Action> {
-    use winit::keyboard::KeyCode as K;
-    let step = if shift { 0.05 } else { 0.5 };
-    let turn = if shift { 0.5 } else { 5.0 };
-    let (s, c) = yaw.to_radians().sin_cos();
-    let fwd = DVec3::new(s, c, 0.0) * step;
-    let right = DVec3::new(c, -s, 0.0) * step;
-    Some(match code {
-        K::Enter | K::NumpadEnter => Action::Pick,
-        K::KeyC if !ctrl => Action::Copy,
-        K::KeyV if !ctrl => Action::Variant,
-        K::Tab => Action::NextPick,
-        K::KeyI => Action::Move(fwd),
-        K::KeyK => Action::Move(-fwd),
-        K::KeyL => Action::Move(right),
-        K::KeyJ => Action::Move(-right),
-        K::KeyO => Action::Move(DVec3::Z * step),
-        K::KeyU => Action::Move(-DVec3::Z * step),
-        K::KeyM => Action::Turn(turn),
-        K::KeyN => Action::Turn(-turn),
-        K::Delete => Action::Delete,
-        K::Backspace => Action::Undo,
-        K::KeyS if ctrl => Action::Save,
-        K::PageUp => Action::Ground(if shift { 0.05 } else { 0.25 }),
-        K::PageDown => Action::Ground(if shift { -0.05 } else { -0.25 }),
-        K::KeyF if !ctrl => Action::Flatten,
-        K::BracketRight => Action::Brush(1.25),
-        K::BracketLeft => Action::Brush(0.8),
-        K::Escape => Action::Leave,
-        _ => return None,
-    })
 }
 
 #[cfg(test)]
