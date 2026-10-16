@@ -15,7 +15,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+mod lines;
 mod places;
+pub use lines::{LineInfo, RouteInfo, GROUP_BRT, GROUP_EXPRESS, GROUP_FEEDER, MODAL_BUS, MODAL_METRO, MODAL_RAIL, MODAL_TRAM};
 pub use places::{Label, Marker, Region, Street};
 
 pub const FOLDER: &str = "openomsi-realmap";
@@ -175,6 +177,7 @@ pub struct Package {
     dir: PathBuf,
     regions: Vec<Region>,
     has_streets: bool,
+    lines: Vec<LineInfo>,
 }
 
 /// Bounds-checked reading: any short or odd file ends in `None`, never a panic.
@@ -270,6 +273,7 @@ impl Package {
         if let Some(p) = p.as_mut() {
             p.dir = dir.clone();
             p.load_places();
+            p.load_lines();
         }
         if p.is_none() {
             log::warn!(
@@ -338,6 +342,7 @@ impl Package {
             dir: PathBuf::new(),
             regions: Vec::new(),
             has_streets: false,
+            lines: Vec::new(),
         })
     }
 
@@ -444,6 +449,30 @@ impl Package {
             });
         }
         Some(())
+    }
+}
+
+#[cfg(test)]
+impl Package {
+    /// An empty package, for the tests of what hangs on one.
+    pub(crate) fn test_stub() -> Package {
+        Package {
+            name: String::new(),
+            credit: String::new(),
+            dark: Palette::dark(),
+            light: Palette::light(),
+            origin: (0.0, 0.0),
+            grid: 300.0,
+            chunk: 2000.0,
+            index: Vec::new(),
+            data: Vec::new(),
+            names: Vec::new(),
+            by_key: HashMap::new(),
+            dir: PathBuf::new(),
+            regions: Vec::new(),
+            has_streets: false,
+            lines: Vec::new(),
+        }
     }
 }
 

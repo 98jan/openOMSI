@@ -327,6 +327,9 @@ impl Offscreen<'_> {
                 nav.set_map(world.navigation_map());
                 nav.set_surface(omsi_map::package::Package::open(&world.map_dir));
                 nav.set_layers(world.map_layers());
+                if let Some(spec) = omsi_cfg::flags::OMSI_NAV_LINES.var() {
+                    nav.debug_lines(spec);
+                }
                 let (line, terminus, stops, trip) = navigator::duty_parts(duty.as_ref());
                 if let (Some((key, name)), Some(sch)) = (trip, schedule.as_ref()) {
                     let lanes = sch.trip_route_in(nav.map_net().unwrap(), &name);
@@ -358,6 +361,7 @@ impl Offscreen<'_> {
                     stop_requested: navigator::stop_requested(&p.vehicle),
                     time: clock.time,
                     weekday: clock.weekday(),
+                    date: clock.date_code(),
                     language: &settings.language,
                     screen: (viewport[2], viewport[3]),
                     ui_scale: settings.ui_scale,

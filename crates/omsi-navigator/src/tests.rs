@@ -307,3 +307,64 @@ fn crowded_stop_markers_and_labels_do_not_overlap() {
     assert!(stop_label_rect(p, 150.0, 1.0, win, &[win]).is_none());
 }
 
+/// A navigator with the synthetic example of the docs (three lines: two buses and a tram) as its package.
+fn with_example_lines() -> Navigator {
+    let mut n = Navigator::new(true, 0.85, "bottom-left");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/examples");
+    n.set_surface(omsi_map::package::Package::open(&dir));
+    assert!(n.surface.is_some(), "the example is a package");
+    n
+}
+
+#[test]
+fn the_lines_panel_lists_the_lines_of_one_kind_of_vehicle_and_one_group() {
+    let mut n = with_example_lines();
+    // buses first: E1 and E2; the BRT tab keeps E2; the tram tab has T1
+    assert_eq!(n.shown_lines(), vec![0, 1]);
+    n.lines_click(LinesHit::Filter(omsi_map::package::GROUP_BRT));
+    assert_eq!(n.shown_lines(), vec![1]);
+    n.lines_click(LinesHit::Modal(omsi_map::package::MODAL_TRAM));
+    assert_eq!(n.shown_lines(), vec![2]);
+}
+
+#[test]
+fn a_line_is_ticked_and_unticked_and_a_double_click_opens_it() {
+    let mut n = with_example_lines();
+    n.lines_click(LinesHit::Toggle(0));
+    assert_eq!(n.city.lines.selected, vec![0]);
+    n.lines_click(LinesHit::Toggle(0));
+    assert!(n.city.lines.selected.is_empty());
+    // a click on a name ticks it; a second one within a moment opens its data
+    n.time = 10.0;
+    n.lines_click(LinesHit::Focus(1));
+    assert_eq!((n.city.lines.selected.clone(), n.city.lines.focus), (vec![1], None));
+    n.time = 10.2;
+    n.lines_click(LinesHit::Focus(1));
+    assert_eq!((n.city.lines.selected.clone(), n.city.lines.focus), (vec![1], Some(1)));
+    // a line that does not exist is left alone
+    n.lines_click(LinesHit::Toggle(99));
+    assert_eq!(n.city.lines.selected, vec![1]);
+}
+
+#[test]
+fn select_all_ticks_what_is_on_show_and_clears_it_the_second_time() {
+    let mut n = with_example_lines();
+    n.lines_click(LinesHit::All);
+    assert_eq!(n.city.lines.selected, vec![0, 1]);
+    n.lines_click(LinesHit::All);
+    assert!(n.city.lines.selected.is_empty());
+}
+
+#[test]
+fn the_route_of_the_line_in_focus_is_picked() {
+    let mut n = with_example_lines();
+    n.debug_lines("E1;1");
+    assert_eq!((n.city.lines.open, n.city.lines.selected.clone(), n.city.lines.focus), (true, vec![0], Some(0)));
+    assert_eq!(n.city.lines.route.get(&0), Some(&1));
+    n.lines_click(LinesHit::RoutePick(0));
+    assert_eq!(n.city.lines.route.get(&0), Some(&0));
+    // an unknown number opens nothing
+    let mut other = with_example_lines();
+    other.debug_lines("nope");
+    assert!(!other.city.lines.open);
+}

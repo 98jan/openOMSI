@@ -23,7 +23,7 @@ pub struct CityMap {
     pub(super) center: DVec2,
     pub(super) mpp: f64,
     /// The view stays on the bus until the map is dragged.
-    follow: bool,
+    pub(super) follow: bool,
     pub(super) drag: Option<(f32, f32)>,
     /// How far the mouse has moved (pixels) since it was pressed on the map: a press let go
     /// without moving is a click.
@@ -38,7 +38,9 @@ pub struct CityMap {
     extent: (DVec2, DVec2),
     /// The buttons (window pixels): 0 centre on the bus, 1 zoom in, 2 zoom out, 3 close,
     /// 4 2D / 3D.
-    buttons: Vec<(Rect, u8)>,
+    pub(super) buttons: Vec<(Rect, u8)>,
+    /// The lines panel: which lines are ticked and what is on show.
+    pub(super) lines: LinesView,
     /// The houses stand up when zoomed in (starts as the `nav_3d` setting; the 2D/3D button).
     pub(super) three_d: Option<bool>,
     /// How far the view is tilted into 3D (0 flat … 1), eased.
@@ -318,7 +320,15 @@ impl Navigator {
         }
         let local = Vec2::new(x - self.city.rect[0], y - self.city.rect[1]);
         let hit = self.city.buttons.iter().find(|(r, _)| r.contains(local)).map(|b| b.1);
+        // the lines panel: its rows and tabs, or its background (never a drag of the map)
+        if hit.is_none() && self.city.lines.has_point(local) {
+            if let Some(h) = self.city.lines.hit(local) {
+                self.lines_click(h);
+            }
+            return;
+        }
         match hit {
+            Some(5) => self.city.lines.toggle(),
             Some(0) => self.city.follow = true,
             Some(1) => self.city.mpp = (self.city.mpp / 1.6).max(MIN_MPP),
             Some(2) => self.city.mpp = (self.city.mpp * 1.6).min(self.max_mpp()),
@@ -373,6 +383,12 @@ impl Navigator {
 
     /// The wheel over the map: zoom, keeping the point under the cursor where it is.
     pub fn map_wheel(&mut self, amount: f32, x: f32, y: f32) {
+        // over the lines list the wheel scrolls it (anywhere else it zooms the map)
+        let r = self.city.rect;
+        if self.city.lines.list_has_point(Vec2::new(x - r[0], y - r[1])) {
+            self.city.lines.scroll_by(-amount * 2.0);
+            return;
+        }
         let before = self.city_world_at(x, y);
         let k = (1.0 - amount as f64 * 0.15).clamp(0.6, 1.6);
         self.city.mpp = (self.city.mpp * k).clamp(MIN_MPP, self.max_mpp());
@@ -388,7 +404,7 @@ impl Navigator {
         }
     }
 
-    fn max_mpp(&self) -> f64 {
+    pub(super) fn max_mpp(&self) -> f64 {
         let (lo, hi) = self.city.extent;
         let span = (hi - lo).max_element().max(2000.0);
         let r = self.city.rect;
@@ -523,6 +539,9 @@ impl Navigator {
         let anchor = self.city.ground.map(|g| g.anchor).unwrap_or(self.city.center);
         let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
         let route_verts = self.city_route(net, f, anchor, s, &pal).map(|p| p.verts);
+        // the ways of the ticked lines (buffer 18)
+        let ln_verts = self.lines_mesh(anchor, w, h, s);
+        let ln_n = self.lines_mesh_len();
         // the camera, relative to the anchor
         let cam = Self::city_cam(self.city.mpp, self.city.tilt, w, h);
         let shift = (self.city.center - anchor).as_vec2();
@@ -562,6 +581,8 @@ impl Navigator {
                 transit.push((v.pos, v.heading, Some(v.line.clone())));
             }
         }
+        // the vehicles on a ticked line ringed in that line's colour (and counted for its card)
+        let on_line = self.ring_ticked_lines(&transit, anchor, &mut dots);
         // (over the route in their order, no depth: see the small map)
         let dots_solid = dots.verts;
         // marks, names, cards
@@ -715,6 +736,8 @@ impl Navigator {
             }
             self.city.buttons.push((r, id));
         }
+        // the Lines button, left of the close button, and its panel, left of the column
+        self.draw_lines_ui(&mut ui, (w, h, s), (pad, bs, bx, close), &on_line);
         if self.show_surface && self.place.has_location() {
             self.place.draw_chips(&mut ui, &mut self.atlas, &self.fonts, head, w, pad, s);
         }
@@ -740,6 +763,9 @@ impl Navigator {
             gpu.upload(device, queue, 4, &solid);
             gpu.upload(device, queue, 11, &ghost);
         }
+        if let Some(v) = ln_verts {
+            gpu.upload(device, queue, 18, &v);
+        }
         let mut all = bg.verts;
         let n_dots = dots_solid.len() as u32;
         all.extend(dots_solid);
@@ -763,6 +789,7 @@ impl Navigator {
             Draw { buffer: 11, range: 0..if stand { route_n } else { 0 }, layer: 1, texture: 0 },
             // (flat from above the route needs no depth: from far it fought with itself)
             Draw { buffer: 4, range: 0..route_n, layer: if stand { 4 } else { 1 }, texture: 0 },
+            Draw { buffer: 18, range: 0..ln_n, layer: if stand { 4 } else { 1 }, texture: 0 },
             Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 1, texture: 0 },
             Draw { buffer: 17, range: 0..icon_n, layer: 0, texture: icon_tex },
             Draw { buffer: 5, range: n_ui..all.len() as u32, layer: 0, texture: 0 },
