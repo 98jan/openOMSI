@@ -114,7 +114,7 @@ mod launcher_link;
 use omsi_lan::mods as lan_mods;
 mod memory;
 mod offscreen;
-mod ground_gap;
+pub(crate) use omsi_sim::ground_gap;
 mod on_foot;
 use omsi_scene::route_arrows;
 mod server;
