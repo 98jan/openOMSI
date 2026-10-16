@@ -343,8 +343,13 @@ pub(crate) struct Tomorrow {
     fresh_until: Option<Instant>,
     applied: Option<(String, u64)>,
     disabled: bool,
+    reported_errors: HashSet<&'static str>,
 }
 impl Tomorrow {
+    /// Report each cause once per weather session; retries still run normally.
+    fn report_error(&mut self, cause: &'static str) -> bool {
+        self.reported_errors.insert(cause)
+    }
     fn poll_due(&mut self, time: Instant) -> bool {
         if self.poll_at.is_some_and(|at| time < at) {
             return false;
@@ -496,8 +501,10 @@ impl crate::App {
                         }
                         Ok(_) => self.session.tomorrow.check = None,
                         Err(e) => {
-                            log::warn!("Tomorrow.io: {e}");
-                            self.service_msg = Some((format!("Tomorrow.io: {e}"), 5.0));
+                            if self.session.tomorrow.report_error(e) {
+                                log::warn!("Tomorrow.io: {e}");
+                                self.service_msg = Some((format!("Tomorrow.io: {e}"), 5.0));
+                            }
                             self.session.tomorrow.check =
                                 Some(Instant::now() + Duration::from_secs(180));
                         }
@@ -547,6 +554,17 @@ impl crate::App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retry_errors_are_reported_once_per_cause_and_session() {
+        let mut state = Tomorrow::default();
+        assert!(state.report_error("offline"));
+        assert!(!state.report_error("offline"));
+        assert!(state.report_error("budget exhausted"));
+        // Returning to a previous cause must not restart the notifications.
+        assert!(!state.report_error("offline"));
+        state = Tomorrow::default();
+        assert!(state.report_error("offline"));
+    }
     #[test]
     fn frame_timers_throttle_response_and_anchor_work() {
         let mut state = Tomorrow::default();

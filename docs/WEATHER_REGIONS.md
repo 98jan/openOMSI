@@ -18,10 +18,13 @@ Maps contain locations; each player supplies their own private API key.
 
 Environment overrides are `OMSI_TOMORROW_API_KEY` and `OMSI_TOMORROW_KEY_FILE`.
 Never include a key in the map config, a shared preset or an issue report.
+The startup environment log masks `OMSI_TOMORROW_API_KEY` as `<set>`.
 Only the configured map area's coordinates and your API key are sent to Tomorrow.io,
 never the player's position.
 Missing config/key or failed downloads preserve fallback/current weather and
-show a message. Switching to a custom weather preset ends this mode.
+show a message. Each request-error cause is reported once per weather session;
+retries continue without repeating the same notification every three minutes.
+Switching to a custom weather preset ends this mode.
 
 ## Map authors: create the config
 
