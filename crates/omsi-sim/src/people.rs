@@ -86,6 +86,8 @@ mod tests;
 mod population_limit_tests;
 #[cfg(test)]
 mod ticket_hook_tests;
+#[cfg(test)]
+mod bad_driving_tests;
 
 use avatar::*;
 use cabin::*;
