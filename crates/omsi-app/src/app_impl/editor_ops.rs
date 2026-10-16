@@ -29,7 +29,7 @@ impl App {
         let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
         let Some(cam) = self.camera.as_ref() else { return false };
         let (eye, fwd, yaw) = (cam.position, cam.forward(), cam.yaw as f64);
-        let Some(action) = crate::editor::action_for(code, shift, ctrl, yaw) else { return false };
+        let Some(action) = action_for(code, shift, ctrl, yaw) else { return false };
         let Some(world) = self.world.clone() else { return false };
         let msg = match action {
             crate::editor::Action::Leave => {
@@ -178,4 +178,41 @@ impl App {
         }
         true
     }
+}
+
+/// The editor's key for `code` (with Shift for the fine steps), as the camera faces `yaw`
+/// (degrees clockwise from north).
+pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: f64) -> Option<crate::editor::Action> {
+    use crate::editor::Action;
+    use winit::keyboard::KeyCode as K;
+    use glam::DVec3;
+    let step = if shift { 0.05 } else { 0.5 };
+    let turn = if shift { 0.5 } else { 5.0 };
+    let (s, c) = yaw.to_radians().sin_cos();
+    let fwd = DVec3::new(s, c, 0.0) * step;
+    let right = DVec3::new(c, -s, 0.0) * step;
+    Some(match code {
+        K::Enter | K::NumpadEnter => Action::Pick,
+        K::KeyC if !ctrl => Action::Copy,
+        K::KeyV if !ctrl => Action::Variant,
+        K::Tab => Action::NextPick,
+        K::KeyI => Action::Move(fwd),
+        K::KeyK => Action::Move(-fwd),
+        K::KeyL => Action::Move(right),
+        K::KeyJ => Action::Move(-right),
+        K::KeyO => Action::Move(DVec3::Z * step),
+        K::KeyU => Action::Move(-DVec3::Z * step),
+        K::KeyM => Action::Turn(turn),
+        K::KeyN => Action::Turn(-turn),
+        K::Delete => Action::Delete,
+        K::Backspace => Action::Undo,
+        K::KeyS if ctrl => Action::Save,
+        K::PageUp => Action::Ground(if shift { 0.05 } else { 0.25 }),
+        K::PageDown => Action::Ground(if shift { -0.05 } else { -0.25 }),
+        K::KeyF if !ctrl => Action::Flatten,
+        K::BracketRight => Action::Brush(1.25),
+        K::BracketLeft => Action::Brush(0.8),
+        K::Escape => Action::Leave,
+        _ => return None,
+    })
 }

@@ -15,7 +15,7 @@ impl Offscreen<'_> {
     /// The ground under the vehicles (`OMSI_GROUND_GAP`).
     pub(super) fn ground_gap_step(&mut self, t_s: f32) {
         if let Some(g) = self.ground_gap.as_mut() {
-            g.frame(&self.world, t_s, self.player.as_ref().map(|p| &p.vehicle), self.traffic.as_ref());
+            g.frame(&self.world.data, t_s, self.player.as_ref().map(|p| &p.vehicle), self.traffic.as_deref());
         }
     }
 

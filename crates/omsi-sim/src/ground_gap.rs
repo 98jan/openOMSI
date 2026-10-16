@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use glam::{DVec3, Mat4, Vec3};
 
-use crate::scene::World;
+use crate::world_data::WorldCell;
 
 /// One wheel of a model: the meshes turned by the same `Wheel_Rotation_*` variable, taken
 /// by the tallest (the tyre, not its hub cap): its centre and half height at rest.
@@ -96,7 +96,7 @@ impl GroundGap {
         Some(g)
     }
 
-    fn wheels_of(&mut self, ty: &Arc<omsi_sim::VehicleType>) -> Arc<Wheels> {
+    fn wheels_of(&mut self, ty: &Arc<crate::VehicleType>) -> Arc<Wheels> {
         let key = Arc::as_ptr(ty) as usize;
         if let Some(w) = self.wheels.get(&key) {
             return w.clone();
@@ -122,7 +122,7 @@ impl GroundGap {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn body(&mut self, world: &World, t: f32, key: u64, ai: bool, ty: &Arc<omsi_sim::VehicleType>, position: DVec3, xf: &dyn Fn(usize) -> Mat4) {
+    fn body(&mut self, world: &WorldCell, t: f32, key: u64, ai: bool, ty: &Arc<crate::VehicleType>, position: DVec3, xf: &dyn Fn(usize) -> Mat4) {
         let wheels = self.wheels_of(ty);
         if wheels.is_empty() {
             return;
@@ -132,8 +132,8 @@ impl GroundGap {
             let tyre = centre.z - r as f64;
             // what is drawn under the tyre, from 2 m over its hub: a tyre sunk into the road
             // is under the road, and asked from the hub that found the ground below it
-            let drawn = world.data.peek().drawn_ground(centre.x, centre.y, centre.z + 2.0);
-            let wheel = world.data.peek().drive_probe(centre.x, centre.y, centre.z).below;
+            let drawn = world.peek().drawn_ground(centre.x, centre.y, centre.z + 2.0);
+            let wheel = world.peek().drive_probe(centre.x, centre.y, centre.z).below;
             let stats = if ai { &mut self.ai } else { &mut self.player };
             match drawn {
                 Some(d) => stats.add(tyre - d, DVec3::new(centre.x, centre.y, tyre), t),
@@ -174,7 +174,7 @@ impl GroundGap {
         }
     }
 
-    pub fn frame(&mut self, world: &World, t: f32, player: Option<&omsi_sim::VehicleInstance>, traffic: Option<&crate::traffic::Traffic>) {
+    pub fn frame(&mut self, world: &WorldCell, t: f32, player: Option<&crate::VehicleInstance>, traffic: Option<&crate::ai_traffic::TrafficSim>) {
         let centre = player.map(|v| v.position);
         if let Some(v) = player {
             self.body(world, t, u64::MAX, false, &v.ty, v.position, &|i| v.mesh_local_transform(i));
@@ -189,7 +189,7 @@ impl GroundGap {
                     continue;
                 }
                 // (a car out of view keeps its animations as they were, and is not drawn)
-                if !matches!(c.body.kind, omsi_sim::ai_motion::MotionKind::Road) || !v.ai_visuals {
+                if !matches!(c.body.kind, crate::ai_motion::MotionKind::Road) || !v.ai_visuals {
                     continue;
                 }
                 let id = c.id * 8;
@@ -222,7 +222,7 @@ impl GroundGap {
 /// `OMSI_GROUND_LANES=1`: along every street lane of the loaded tiles, every metre, how far
 /// the drawn ground (from 3 m over the lane, as Omsi.exe's wheels ask it) lies over or under
 /// the lane's own height - what an AI car's wheels meet where it follows its lane.
-pub fn check_lanes(world: &World, traffic: &crate::traffic::Traffic) {
+pub fn check_lanes(world: &WorldCell, traffic: &crate::ai_traffic::TrafficSim) {
     if !omsi_cfg::flags::OMSI_GROUND_LANES.is_set() {
         return;
     }
@@ -232,13 +232,13 @@ pub fn check_lanes(world: &World, traffic: &crate::traffic::Traffic) {
     let mut places: Vec<(f64, DVec3)> = Vec::new();
     let mut wheel_hist = [0usize; 12];
     let mut wheel_places: Vec<(f64, DVec3)> = Vec::new();
-    for l in traffic.net.lanes.iter().filter(|l| l.kind == omsi_sim::traffic::LaneKind::Street && !l.invisible) {
+    for l in traffic.net.lanes.iter().filter(|l| l.kind == crate::traffic::LaneKind::Street && !l.invisible) {
         let len = l.length();
         let mut s = 0.5f32;
         while s < len {
             let (p, _) = l.at(s);
             s += 1.0;
-            let Some(d) = world.data.peek().drawn_ground(p.x, p.y, p.z + 3.0) else {
+            let Some(d) = world.peek().drawn_ground(p.x, p.y, p.z + 3.0) else {
                 none += 1;
                 continue;
             };
@@ -246,7 +246,7 @@ pub fn check_lanes(world: &World, traffic: &crate::traffic::Traffic) {
             // and what the wheels stand on there (the faces under 3 m over the lane, as
             // Omsi.exe asks), against the window an AI car looks in (0.6 m over its lane,
             // 0.1 m under it)
-            if let Some(w) = world.data.peek().drive_probe(p.x, p.y, p.z + 3.0).below {
+            if let Some(w) = world.peek().drive_probe(p.x, p.y, p.z + 3.0).below {
                 let off = w - p.z;
                 let k = edges.iter().position(|e| off < *e).unwrap_or(edges.len());
                 wheel_hist[k] += 1;
@@ -266,7 +266,7 @@ pub fn check_lanes(world: &World, traffic: &crate::traffic::Traffic) {
     // where lanes run over each other (a bridge, a viaduct): 5 m cells with lane points
     // more than 3 m apart in height
     let mut cells: HashMap<(i64, i64), (f64, f64)> = HashMap::new();
-    for l in traffic.net.lanes.iter().filter(|l| l.kind == omsi_sim::traffic::LaneKind::Street && !l.invisible) {
+    for l in traffic.net.lanes.iter().filter(|l| l.kind == crate::traffic::LaneKind::Street && !l.invisible) {
         let len = l.length();
         let mut s = 0.0f32;
         while s < len {
@@ -294,7 +294,7 @@ pub fn check_lanes(world: &World, traffic: &crate::traffic::Traffic) {
     // all four sides - a ray through a gap between two faces of the road
     let (mut tried, mut cracks) = (0usize, 0usize);
     let mut crack_at: Vec<(DVec3, f64)> = Vec::new();
-    for l in traffic.net.lanes.iter().filter(|l| l.kind == omsi_sim::traffic::LaneKind::Street && !l.invisible) {
+    for l in traffic.net.lanes.iter().filter(|l| l.kind == crate::traffic::LaneKind::Street && !l.invisible) {
         let len = l.length();
         let mut s = 0.05f32;
         while s < len {
@@ -305,7 +305,7 @@ pub fn check_lanes(world: &World, traffic: &crate::traffic::Traffic) {
             for side in [-1.0, 1.0] {
                 let w = p + right * side;
                 tried += 1;
-                let g = |x: f64, y: f64| world.data.peek().drive_probe(x, y, p.z + 1.0).below;
+                let g = |x: f64, y: f64| world.peek().drive_probe(x, y, p.z + 1.0).below;
                 let Some(here) = g(w.x, w.y) else { continue };
                 let around: Vec<f64> = [(0.03, 0.0), (-0.03, 0.0), (0.0, 0.03), (0.0, -0.03)].iter().filter_map(|(dx, dy)| g(w.x + dx, w.y + dy)).collect();
                 if around.len() == 4 {

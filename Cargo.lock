@@ -3708,7 +3708,6 @@ dependencies = [
  "hashbrown 0.17.1",
  "log",
  "omsi-cfg",
- "omsi-lan",
  "omsi-launcher-core",
  "omsi-map",
  "omsi-net",
