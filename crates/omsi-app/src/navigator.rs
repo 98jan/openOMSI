@@ -366,6 +366,8 @@ pub struct Navigator {
     pub light: bool,
     /// The small map's surface mesh (buffer 6): the surface version and anchor it was built for, and its size.
     surface_mesh: Option<(u64, DVec2, u32)>,
+    /// What the package names: icons, names, where the bus is.
+    place: place::PlaceView,
     /// How far the panel has faded in (Shift+N fades it in and out rather than cutting).
     shown: f32,
     /// The trip's next stops (place, name, the bus's heading there) and where the bus is,
@@ -480,6 +482,7 @@ impl Navigator {
             show_surface: true,
             light: false,
             surface_mesh: None,
+            place: Default::default(),
             shown: if enabled { 1.0 } else { 0.0 },
             stop_spots: Vec::new(),
             bus_at: DVec3::ZERO,
@@ -979,6 +982,7 @@ impl Navigator {
                 global.as_deref().and_then(|g| g.nearest_lane_near(f.bus, LaneKind::Street)).filter(|l| l.2 < 10.0).and_then(|l| self.street_of(l.0))
             }
                 .map(str::to_string);
+            self.update_place(f.bus.truncate());
         }
         self.first = false;
         if !self.enabled && self.shown < 0.01 {
@@ -1005,7 +1009,7 @@ impl Navigator {
         let s = pw / 360.0;
         let bars = (34.0 + 46.0) * s;
         let sched = if self.schedule { (f.stops.len().clamp(1, 5) as f32 * 22.0 + 12.0) * s } else { 0.0 };
-        let ph = (map_h + bars + sched).round();
+        let ph = (map_h + bars + self.place_row_height(s) + sched).round();
         let (w, h) = (pw as u32, ph as u32);
         let (x0, y0) = self.panel_origin((sw, sh), (pw, ph), crate::platform::touch_controls(), f.info_rect, f.touch_gap);
 
@@ -1168,6 +1172,7 @@ impl Navigator {
         let pad = self.draw_top_bar(&mut ui, f, &wd, net, pw, top_h, s);
 
         self.draw_bottom_bar(&mut ui, f, &wd, map, pw, pad, s);
+        let icon_verts = self.minimap_icons(vpm, vp, anchor, f.bus.truncate(), map, s);
 
         // --- to the GPU
         let (Some(gpu), device, queue) = (self.gpu.as_mut(), &renderer.device, &renderer.queue) else { return };
@@ -1188,6 +1193,7 @@ impl Navigator {
         let n_ui_start = all.len() as u32;
         all.extend(ui.verts);
         gpu.upload(device, queue, 2, &all);
+        let (icon_n, icon_tex) = self.place.upload(gpu, device, queue, 8, &icon_verts);
         gpu.upload_atlas(queue, &mut self.atlas);
         // (the opacity setting is the background's: the map and the text stay solid)
         let flat = Layer::flat(clip_panel, radius, 1.0);
@@ -1204,6 +1210,7 @@ impl Navigator {
             Draw { buffer: 2, range: n_bg..n_bg + n_traffic, layer: 1, texture: 0 },
             Draw { buffer: 1, range: 0..self.route_mesh.3, layer: 1, texture: 0 },
             Draw { buffer: 2, range: n_bg + n_traffic..n_bg + n_world, layer: 1, texture: 0 },
+            Draw { buffer: 8, range: 0..icon_n, layer: 0, texture: icon_tex },
             Draw { buffer: 2, range: n_ui_start..all.len() as u32, layer: 0, texture: 0 },
         ];
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("navigator") });
@@ -1367,6 +1374,8 @@ impl Navigator {
         // bottom bar: the next stop; its distance, the time to it, the planned time and
         // whether the bus is early or late
         let bottom = Rect::new(0.0, map.bottom(), pw, 46.0 * s);
+        let loc_h = self.place_row_height(s);
+        self.draw_place_row(ui, Rect::new(0.0, bottom.bottom(), pw, loc_h), pad, s);
         ui.rect(bottom, BAR);
         let stop_row = if f.stops.is_empty() {
             Rect::new(pad, bottom.y, pw - 2.0 * pad, bottom.h)
@@ -1432,8 +1441,8 @@ impl Navigator {
         }
         // the schedule: the next stops with their planned times
         if self.schedule && !f.stops.is_empty() {
-            let mut y = bottom.bottom() + 6.0 * s;
-            ui.rect(Rect::new(pad, bottom.bottom(), pw - 2.0 * pad, 1.0), Color::WHITE.alpha(0.06));
+            let mut y = bottom.bottom() + loc_h + 6.0 * s;
+            ui.rect(Rect::new(pad, bottom.bottom() + loc_h, pw - 2.0 * pad, 1.0), Color::WHITE.alpha(0.06));
             let late = f.delay.unwrap_or(0.0);
             for st in f.stops.iter().take(5) {
                 let r = Rect::new(pad, y, pw - 2.0 * pad, 22.0 * s);
@@ -1476,6 +1485,7 @@ impl<'a> NavFrame<'a> {
 
 mod roads;
 pub(crate) use roads::*;
+mod place;
 mod surface;
 use surface::ground;
 mod city_map;
