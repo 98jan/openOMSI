@@ -219,6 +219,17 @@ impl ServerCfg {
 /// (one check for `server.cfg` and the admins: `omsi_admin::passenger_density`)
 pub use omsi_admin::{passenger_density, PASSENGER_DENSITY_MAX};
 
+/// The installed maps as server.cfg names them (`maps/<folder>/global.cfg`), sorted.
+pub fn installed_maps() -> Vec<String> {
+    let mut maps: Vec<String> = omsi_cfg::read_dir_merged("maps")
+        .into_iter()
+        .filter(|d| omsi_cfg::vfs::exists(&d.join("global.cfg")))
+        .filter_map(|d| d.file_name().map(|n| format!("maps/{}/global.cfg", n.to_string_lossy())))
+        .collect();
+    maps.sort_by_key(|m| m.to_lowercase());
+    maps
+}
+
 /// `admin_web`: a wrong word is the default (this machine only), never the open door.
 fn web_mode(v: &str) -> omsi_admin::WebMode {
     omsi_admin::WebMode::parse(v).unwrap_or_else(|| {

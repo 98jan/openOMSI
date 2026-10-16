@@ -64,6 +64,16 @@ impl Status {
         }
     }
 
+    /// The word a player's game shows for it (English: the key of its translations).
+    pub fn label(self) -> &'static str {
+        match self {
+            Status::Applied => "Applied",
+            Status::Pending => "Sent",
+            Status::Rejected => "Refused",
+            Status::Queued => "Waiting",
+        }
+    }
+
     pub fn parse(s: &str) -> Option<Status> {
         [Status::Queued, Status::Applied, Status::Pending, Status::Rejected].into_iter().find(|x| x.name() == s)
     }

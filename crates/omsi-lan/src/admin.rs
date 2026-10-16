@@ -11,6 +11,7 @@ mod action;
 mod exec;
 pub mod panel;
 mod reply;
+pub mod world;
 pub use action::{act_on_session, Action, Admin, Done, WeatherAction, Whom};
 pub use exec::{action_of, exec, hub, install_hub, perm_of, players, publish, report, run_job, split_guard, Exec, WorldJob};
 pub use reply::{esc, parse_player, player_line, unesc};

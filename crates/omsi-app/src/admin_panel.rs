@@ -84,13 +84,7 @@ pub(crate) fn tick(app: &mut App) {
 pub(crate) fn take(app: &mut App, c: &Command) {
     if let Command::AdminResult { status, message, .. } = c {
         log::info!("LAN: the server: {} {message}", status.name());
-        let word = match status {
-            omsi_admin::Status::Applied => "Applied",
-            omsi_admin::Status::Pending => "Sent",
-            omsi_admin::Status::Rejected => "Refused",
-            omsi_admin::Status::Queued => "Waiting",
-        };
-        app.service_msg = Some((format!("{}: {message}", omsi_ui::tr(word)), 4.0));
+        app.service_msg = Some((format!("{}: {message}", omsi_ui::tr(status.label())), 4.0));
     }
     if app.net.admin_panel.take(c) && admin_kind(app.menus.list_kind.as_ref()) {
         refresh_keeping(app);

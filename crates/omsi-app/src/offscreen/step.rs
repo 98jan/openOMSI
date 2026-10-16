@@ -126,10 +126,11 @@ impl Offscreen<'_> {
             // and their part on the server's own world
             let jobs = srv_admin.take_world();
             if !jobs.is_empty() {
-                let mut resync = |t: &mut crate::traffic::Traffic| view_sync::apply_traffic(t, &mut sim_view.traffic, world, renderer, scene);
-                let mut w = crate::server_world::ServerWorld { lan: l, shift: &mut srv_admin.shift, passenger_density: &mut srv_admin.passenger_density, clock: parse_time(&args.time) + *srv_clock, traffic: traffic.as_mut(), resync: &mut resync, traffic_max: crate::game_lists::TRAFFIC_MAX };
+                let resync = |t: &mut crate::traffic::Traffic| view_sync::apply_traffic(t, &mut sim_view.traffic, world, renderer, scene);
+                let mut cars = traffic.as_mut().map(|t| AdminTraffic(t, resync));
+                let mut w = omsi_lan::admin::world::ServerWorld { lan: l, shift: &mut srv_admin.shift, passenger_density: &mut srv_admin.passenger_density, clock: parse_time(&args.time) + *srv_clock, traffic: cars.as_mut().map(|c| c as &mut dyn omsi_lan::admin::world::ServerTraffic), traffic_max: crate::game_lists::TRAFFIC_MAX };
                 for job in jobs {
-                    let out = crate::server_world::apply(&mut w, &job.action);
+                    let out = omsi_lan::admin::world::apply(&mut w, &job.action);
                     omsi_lan::admin::report(w.lan, hub, &job.actor, job.record, &out);
                 }
             }
@@ -904,5 +905,23 @@ impl Offscreen<'_> {
             }
         }
         Ok(())
+    }
+}
+
+/// The server's AI traffic for its admins' operations (`omsi_lan::admin::world`), its look
+/// brought up to date after cars were taken off the road.
+struct AdminTraffic<'a, F: FnMut(&mut crate::traffic::Traffic)>(&'a mut crate::traffic::Traffic, F);
+
+impl<F: FnMut(&mut crate::traffic::Traffic)> omsi_lan::admin::world::ServerTraffic for AdminTraffic<'_, F> {
+    fn set_density(&mut self, n: usize) {
+        self.0.target = n;
+    }
+    fn clear_cars(&mut self) -> usize {
+        let ids: Vec<u64> = self.0.cars.iter().filter(|c| !c.is_bus()).map(|c| c.id).collect();
+        for id in &ids {
+            self.0.remove_car(*id);
+        }
+        (self.1)(self.0);
+        ids.len()
     }
 }
