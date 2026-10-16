@@ -91,7 +91,7 @@ impl MapData {
                 }
                 let (x0, y0) = ((lo.x / PAVED_CELL).floor() as i32, (lo.y / PAVED_CELL).floor() as i32);
                 let (x1, y1) = ((hi.x / PAVED_CELL).floor() as i32, (hi.y / PAVED_CELL).floor() as i32);
-                if (x1 - x0) as i64 * (y1 - y0) as i64 > 40_000 {
+                if (x1 as i64 - x0 as i64 + 1) * (y1 as i64 - y0 as i64 + 1) > 40_000 {
                     continue;
                 }
                 for y in y0..=y1 {

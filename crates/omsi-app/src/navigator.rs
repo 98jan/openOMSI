@@ -584,7 +584,7 @@ impl Navigator {
             std::thread::Builder::new()
                 .name("navigator layers".into())
                 .spawn(move || {
-                    let _ = ltx.send(mapmesh::MapData::new(std::sync::Arc::new(w.map_layers())));
+                    let _ = ltx.send(mapmesh::MapData::new(std::sync::Arc::new(omsi_scene::threads::background_pool().install(|| w.map_layers()))));
                 })
                 .ok();
             self.layers_rx = Some(lrx);
@@ -614,6 +614,10 @@ impl Navigator {
     /// The timetable's stop names (stop object → name) as hints of the streets' names: a stop
     /// named after its street names the street where no sign does. Once, when the map's
     /// network is there.
+    pub fn stop_names_learnt(&self) -> bool {
+        self.stop_names_learnt
+    }
+
     pub fn learn_stop_names(&mut self, names: &HashMap<i64, String>) {
         if self.stop_names_learnt {
             return;

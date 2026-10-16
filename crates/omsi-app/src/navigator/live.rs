@@ -106,6 +106,10 @@ fn trip_path(net: &Network, lanes: &[usize], stops: &[Option<DVec3>]) -> Option<
 impl Navigator {
     /// Where the timetable's vehicles are now (every half second; a few new trips' routes are
     /// worked out each time). `cars`: where the traffic's own buses are, with their lines.
+    pub fn live_due(&self, dt: f32) -> bool {
+        self.live_t - dt <= 0.0
+    }
+
     pub fn update_live(&mut self, sch: &ScheduleSim, now: f64, dt: f32, cars: &[(DVec3, String)]) {
         // (eased towards the last places in between)
         let k = ease(dt, 0.6);

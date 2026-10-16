@@ -204,7 +204,8 @@ impl Navigator {
         let (icon_n, icon_tex) = self.place.upload(gpu, device, queue, 16, &icon_verts);
         gpu.upload_atlas(queue, &mut self.atlas);
         let flat = Layer::flat(clip_panel, radius, 1.0);
-        let mut layers = [flat, map_layer, map_layer.with_shadow(), depth_layer, depth_layer];
+        let backdrop = Layer::flat(clip_panel, radius, if self.cockpit_display { self.opacity } else { crate::ui::backdrop(self.opacity).min(1.0) });
+        let mut layers = [flat, map_layer, map_layer.with_shadow(), depth_layer, depth_layer, backdrop];
         for l in layers.iter_mut() {
             l.opacity *= self.shown;
         }
@@ -212,7 +213,7 @@ impl Navigator {
         let three = self.show_3d;
         let route_n = self.route_mesh.3;
         let draws = [
-            Draw { buffer: 2, range: 0..n_bg, layer: 0, texture: 0 },
+            Draw { buffer: 2, range: 0..n_bg, layer: 5, texture: 0 },
             Draw { buffer: 0, range: 0..ground_n, layer: 1, texture: 0 },
             Draw { buffer: 13, range: 0..if three { 0 } else { flat_n }, layer: 1, texture: 0 },
             Draw { buffer: 12, range: 0..if three { shadow_n } else { 0 }, layer: 2, texture: 0 },
