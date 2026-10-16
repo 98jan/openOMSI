@@ -610,17 +610,13 @@ fn water_of(part: &mut Part, tile: &omsi_map::Tile, path: &Path, terrain: &omsi_
 
 /// A spline's paved profile sections, water and tracks.
 fn spline_of(part: &mut Part, sp: &omsi_map::tile::MapSpline, def: &omsi_scenery::sli::Spline, o2: DVec2, origin: DVec2) {
-    let curve = omsi_geometry::SplineCurve::from_map(sp, o2).with_sli(def);
+    // (the cross-sections the game builds the spline with, shifted by its skew: the map's road
+    // is the road's own mesh, pressed flat)
+    let raw = omsi_geometry::SplineCurve::from_map(sp, o2);
+    let n = omsi_geometry::spline_station_count(def, &raw).max(1);
+    let curve = raw.with_sli(def);
     let side = if sp.mirror { -1.0 } else { 1.0 };
-    // (a straight spline is one quad a section; a curve one every 4 degrees of its turn)
-    let n = if sp.radius.abs() < 1e-6 && sp.skew_start == 0.0 && sp.skew_end == 0.0 {
-        1
-    } else if sp.radius.abs() < 1e-6 {
-        ((curve.length / 8.0).ceil() as usize).clamp(1, 200)
-    } else {
-        ((curve.length / sp.radius.abs()).to_degrees() / 4.0).ceil().clamp(1.0, 400.0) as usize
-    };
-    let at = |s: f64, x: f64| -> Vec2 { (curve.offset_point(s, side * x, 0.0).truncate() - origin).as_vec2() };
+    let at = |s: f64, x: f64| -> Vec2 { (omsi_geometry::skewed_point(&curve, s, side * x, 0.0).0.truncate() - origin).as_vec2() };
     let has_cars = def.paths.iter().any(|p| p.kind == 0);
     let rails: Vec<f32> = def.paths.iter().filter(|p| p.kind == 2).map(|p| p.start[0]).collect();
     let file = stem(&def.path.to_string_lossy());

@@ -377,7 +377,7 @@ fn patchwork(def: &Spline, curve: &SplineCurve, stations: &mut usize) -> Option<
 /// The point of a spline mesh at distance `s` along it, `x` across (right positive, already
 /// mirrored) and `z` up: the cross-section shifted along the spline by the skew (Omsi.exe
 /// sub_5aaef4: `x * (skew_start (1 - s/L) + skew_end s/L)`), and that shifted distance.
-fn skewed_point(curve: &SplineCurve, s: f64, x: f64, z: f64) -> (DVec3, f64) {
+pub fn skewed_point(curve: &SplineCurve, s: f64, x: f64, z: f64) -> (DVec3, f64) {
     let t = if curve.length > 0.0 { s / curve.length } else { 0.0 };
     let skew = curve.skew_start * (1.0 - t) + curve.skew_end * t;
     let s = if skew.is_finite() { s + x * skew.clamp(-32.0, 32.0) } else { s };
