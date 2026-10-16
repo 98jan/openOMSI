@@ -6,6 +6,7 @@ import { call, contentUrl } from './api.js';
 import { S, set, remembered, remember } from './store.js';
 import { applyTheme, LAUNCHER_LAYOUTS } from './data.js';
 import { t } from './i18n.js';
+import { readRouteMap } from './routemap.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -65,7 +66,7 @@ export async function selftest() {
     const tour = S.lines.list?.flatMap((l) => l.tours)[0];
     const trip = tour?.trips[0]?.name || '';
     try {
-      const m = await call('route_map', { map: c.map, date: c.date, trip });
+      const m = await readRouteMap(c.map, c.date, trip);
       check('route map', m.roads?.length > 0 && (!trip || m.route.length > 0), `${m.roads?.length} roads, ${m.route?.length} route lanes, ${m.stops?.length} stops, ${m.entries?.length} entry points`);
     } catch (e) {
       check('route map', false, e.message || String(e));

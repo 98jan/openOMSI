@@ -85,6 +85,14 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   bottom opens the profile. It folds to its icons with the arrow at its bottom, and stays so;
   the numbers on Mods and Running games stay on their icons.
 
+- The launcher's route map opens fast and follows the mouse smoothly on a big map: the
+  roads and the route show at once and the surfaces (paved roads, land, houses) a moment
+  later, read once per map and date, not again with each trip, and only the part in view is
+  prepared; they come from the game as they are instead of being read and written again on the
+  way; dragging and zooming move a picture of the map and draw it anew when the mouse lets
+  go; the roads are drawn in a few strokes instead of one per road. Around the map's tiles
+  the land has the map's own green, no more grey that looked as if it were still loading.
+
 ### Fixes
 
 **Navigator**
