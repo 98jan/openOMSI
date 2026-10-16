@@ -715,7 +715,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             profile_mark: None,
             frame_times: Vec::new(),
             frame_stages: Vec::new(),
-            overlay: Default::default(),
+            overlay: crate::perf_overlay::new(),
             texture_cut_at: None,
         },
         sound: SoundState {

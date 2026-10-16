@@ -69,6 +69,32 @@ pub(crate) fn gloomy_weather(weather: Option<&omsi_content::weather::Weather>) -
     }).unwrap_or(false)
 }
 
+/// Supply date, game time and weather before either spawning or running AI scripts.
+pub(crate) fn set_ai_environment(
+    t: &mut traffic::Traffic,
+    clock: &omsi_sim::SimClock,
+    daylight: omsi_sim::Daylight,
+    weather: Option<&omsi_content::weather::Weather>,
+    wetness: f32,
+    paused: bool,
+    auto_clutch: bool,
+) {
+    let mut host = omsi_sim::VehicleHost::new(clock.clone());
+    host.sun_alt = daylight.altitude_deg;
+    host.clock.paused = paused;
+    host.auto_clutch = if auto_clutch { 1.0 } else { 0.0 };
+    if let Some(w) = weather {
+        let (kind, rate) = precip_of(w);
+        host.precip_type = kind as f32;
+        host.precip_rate = rate;
+        host.temperature = w.temp.0;
+        host.abs_humidity = w.temp.1;
+        host.wind = crate::rain::weather_wind(w);
+        host.street_cond = crate::weather_setup::street_condition(w, wetness);
+    }
+    t.set_script_environment(host.system_values(), host.wind, host.street_cond);
+}
+
 /// The AI's lights (and a bus's saloon lamps, which its scripts switch with them): Omsi
 /// switches them on below a light value of 0.75, before the street lamps (0.6), and off
 /// after them in the morning - and by day when it is `gloomy`.

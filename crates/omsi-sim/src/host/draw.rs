@@ -28,6 +28,7 @@ fn st_load(path: &std::path::Path) -> Result<Arc<crate::image_decode::DecodedIma
 impl VehicleHost {
     /// A drawing callback (see [`VehicleHost::callback`], which hands only those here).
     pub(super) fn draw_callback(&mut self, cb: Option<Cb>, stacks: &mut Stacks) {
+        let draw_script_textures = !self.remote_script_textures;
         match cb {
             Some(Cb::GetFontIndex) => {
                 let font = stacks.pop_str();
@@ -62,19 +63,19 @@ impl VehicleHost {
             // --- script textures (matrix displays)
             Some(Cb::StNewTex) => {
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.renew();
                 }
             }
             Some(Cb::StLock) => {
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.locked = true;
                 }
             }
             Some(Cb::StUnlock) => {
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.unlock();
                 }
             }
@@ -83,7 +84,7 @@ impl VehicleHost {
                 // immediately after STUnlock. Remember that request for the renderer; it
                 // must also refresh the chain when this matrix changes again.
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     if !t.mipmaps {
                         t.mipmaps = true;
                         t.dirty = true;
@@ -96,7 +97,7 @@ impl VehicleHost {
                 let r = stacks.pop();
                 let a = stacks.pop();
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.color = [r, g, b, a].map(|c| arg_i32(c).clamp(0, 255) as u8);
                 }
             }
@@ -104,7 +105,7 @@ impl VehicleHost {
                 let y = arg_i32(stacks.pop());
                 let x = arg_i32(stacks.pop());
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     let c = t.color;
                     t.put(x, y, c);
                 }
@@ -115,7 +116,7 @@ impl VehicleHost {
                 let y1 = arg_i32(stacks.pop());
                 let x1 = arg_i32(stacks.pop());
                 let i = arg_idx(stacks.pop());
-                if let Some(t) = self.script_textures.get_mut(i) {
+                if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                     t.rect(x1, y1, x2, y2);
                 }
             }
@@ -127,11 +128,12 @@ impl VehicleHost {
                 let y = arg_i32(stacks.pop());
                 let x = arg_i32(stacks.pop());
                 let i = arg_idx(stacks.pop());
+                if !draw_script_textures { return; }
                 let atlas = self.font_atlas(font);
                 if debug_text() {
                     log::info!("STTextOut(tex {i}, x {x}, y {y}, font {font}, spacing {spacing}, {text:?}) atlas {:?} from {:?} bitmap {:?} {}x{} E {:?}", atlas.as_ref().map(|a| a.font.name.clone()), atlas.as_ref().map(|a| a.font.path.clone()), atlas.as_ref().map(|a| a.font.alpha.clone()), atlas.as_ref().map(|a| a.width).unwrap_or(0), atlas.as_ref().map(|a| a.height).unwrap_or(0), atlas.as_ref().and_then(|a| a.font.glyph('E').map(|g| (g.x0, g.x1, g.y))));
                 }
-                if let (Some(t), Some(a)) = (self.script_textures.get_mut(i), atlas) {
+                if let (Some(t), Some(a)) = (self.script_textures.get_mut(i).filter(|_| draw_script_textures), atlas) {
                     t.text_out(&a, x, y, spacing, arg_i32(mode) as u8, &text);
                 }
             }
@@ -163,7 +165,7 @@ impl VehicleHost {
                 let b = arg_idx(stacks.pop());
                 let a = arg_idx(stacks.pop());
                 if let Some(c) = self.script_textures.get(a).map(|t| t.color) {
-                    if let Some(t) = self.script_textures.get_mut(b) {
+                    if let Some(t) = self.script_textures.get_mut(b).filter(|_| draw_script_textures) {
                         t.color = c;
                     }
                 }
@@ -171,6 +173,7 @@ impl VehicleHost {
             Some(Cb::StLoadTex) => {
                 let i = arg_idx(stacks.pop());
                 let path = stacks.pop_str();
+                if !draw_script_textures { return; }
                 // relative to the vehicle's texture folder, like every texture name of the
                 // vehicle: the Krüger matrix loads `..\..\Anzeigen\Krueger\<bitmap>`,
                 // which is `Vehicles\Anzeigen\...` seen from `Vehicles\<bus>\Texture`
@@ -185,7 +188,7 @@ impl VehicleHost {
                 // (OMSI pushes nothing: a file it cannot find goes to its log only)
                 match st_load(&full) {
                     Ok(img) => {
-                        if let Some(t) = self.script_textures.get_mut(i) {
+                        if let Some(t) = self.script_textures.get_mut(i).filter(|_| draw_script_textures) {
                             t.load(img.width, img.height, &img.rgba);
                         }
                     }

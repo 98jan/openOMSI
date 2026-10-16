@@ -150,6 +150,7 @@ impl ControlNames {
     /// What a `[mouseevent]` does, for the HUD.
     pub fn control(&self, event: &str) -> String {
         let event = event.trim();
+        if event.eq_ignore_ascii_case("pax_door_request") { return "Passenger: request entry / exit".into(); }
         if let Some(t) = self.official(event) {
             return t;
         }

@@ -118,7 +118,7 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
     let send = |id: &Value, head: Value, body: &[u8]| reply(id, head, body);
     let mut renderer: Option<Renderer> = None;
     let mut showroom = Showroom::new();
-    let pads = super::pads::Pads::start();
+    let pads = super::pads::Pads::start(super::pads::paths());
     let mut last = Instant::now();
     while let Ok(req) = rx.recv() {
         let id = req.get("id").cloned().unwrap_or(Value::Null);

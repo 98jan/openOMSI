@@ -95,7 +95,7 @@ function fixChoice() {
   if (S.vehicles?.length && !S.vehicles.some((v) => v.file === c.bus)) {
     c.bus = S.vehicles[0].file;
     c.paint = '';
-    c.number = '';
+    c.number = randomFleetNumber(S.vehicles[0]);
   }
   if (S.weather && c.weather && !weatherOfItsOwn(c.weather) && !S.weather.some((w) => w.file === c.weather)) c.weather = '';
   Object.assign(c, allowedBus(c));
@@ -185,10 +185,18 @@ export function followClock() {
 }
 
 let saveTimer = 0;
+function randomFleetNumber(vehicle) {
+  const numbers = vehicle?.numbers || [];
+  return numbers.length ? numbers[Math.floor(Math.random() * numbers.length)][0] : '';
+}
+
 /** Change the duty (and keep it on disk a moment later). */
 export function choose(patch) {
   const before = S.choice;
   const c = { ...before, ...patch };
+  if (c.bus !== before.bus && !patch.number) {
+    c.number = randomFleetNumber(S.vehicles?.find((v) => v.file === c.bus));
+  }
   set({ choice: c });
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => call('choice_save', { choice: S.choice }).catch(() => {}), 400);

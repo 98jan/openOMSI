@@ -27,3 +27,8 @@ pub use gpu::{Draw, Gpu, Layer};
 pub use i18n::tr;
 pub use paint::{Color, Painter, Rect, Vertex};
 pub use text::{Fonts, Weight};
+
+pub mod performance;
+
+pub mod profile_times;
+pub mod units;

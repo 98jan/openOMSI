@@ -3629,6 +3629,7 @@ dependencies = [
  "omsi-script",
  "omsi-sim",
  "omsi-vehicle",
+ "serde_json",
  "windows 0.62.2",
  "winit",
 ]
@@ -3644,6 +3645,7 @@ dependencies = [
  "log",
  "omsi-cfg",
  "omsi-map",
+ "omsi-model",
  "omsi-net",
  "omsi-o3d",
  "omsi-script",
@@ -3987,6 +3989,7 @@ dependencies = [
  "image",
  "log",
  "naga",
+ "omsi-cfg",
  "pollster 1.0.1",
  "resvg",
  "wgpu",
