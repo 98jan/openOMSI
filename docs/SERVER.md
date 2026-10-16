@@ -18,6 +18,31 @@ motd, map, date, time, weather, traffic, timetable, passengers, port, web_port,
 max_players, tunnel, radius, the voice chat); `server-icon.png` beside it (64x64, like Minecraft's) is the
 icon the players' list shows.
 
+**The start script that asks** (`run-server.cmd` on Windows, a double click; `run-server.sh`
+on Linux, both beside `openomsi` in the server's zip): the first time it asks for the OMSI 2
+folder (and checks it is a complete installation before going on), then for the main
+settings of `server.cfg` - name, players at most, the UDP and web ports, the tunnel, the admin
+password (typed hidden; 8 characters at least) - with what the file has in brackets, kept
+with Enter. Every time, it lists the installed maps by number (the last one marked, taken
+with Enter) and starts the server on the one picked, without changing `map` in `server.cfg`;
+the output goes to the window and to `server.log`, and when the server stops on an error it
+says what the exit code means. Asked once per map, it makes `start-<map>.cmd` (or `.sh`)
+beside it: that starts the same map again with no question. `run-server.cmd -Setup`
+(`run-server.sh --setup`) asks for the folder and the settings again; `-Map maps/<folder>/global.cfg`
+(`--map …`) starts a map with no question. What it remembers is in `run-server.conf` (the
+folder, the last map, the maps of the `start-` scripts). It speaks Portuguese on a system in
+Portuguese, English otherwise. It needs no rights of an administrator; on Windows it runs in
+the Windows PowerShell every Windows has. `start.cmd` / `start.sh` stay as they were, for a
+service or another launcher.
+
+For a launcher of its own, the program has the two pieces the script uses:
+`openomsi --root <folder> --list-maps` prints the installed maps (one a line, as `server.cfg`
+names them; the content folder's too) and ends - with code 1 and what is missing when the
+folder is not a complete OMSI 2, never another installation found instead; with
+`--server <server.cfg>` it also writes a missing `server.cfg` with its defaults, nothing more
+of a server's start. `--server-map maps/<folder>/global.cfg` starts the server on that map
+instead of `server.cfg`'s.
+
 **When it does not start**, it says why on its output and ends with a code a launcher can
 tell apart:
 
