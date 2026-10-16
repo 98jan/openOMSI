@@ -54,7 +54,7 @@ mod game_controller_menu;
 mod rail_drive;
 use omsi_scene::driver;
 mod export;
-mod hud;
+pub(crate) use omsi_scene::hud;
 mod humans;
 mod journey;
 use omsi_input::keys;
