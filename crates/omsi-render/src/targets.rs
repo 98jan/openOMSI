@@ -275,12 +275,16 @@ impl Renderer {
     /// sizes the least recently used (the window, the scaled picture and the mirrors are
     /// asked for every frame they are drawn).
     pub(crate) fn evict_targets(&mut self) {
-        const STALE: std::time::Duration = std::time::Duration::from_millis(250);
+        self.evict_targets_unused_for(std::time::Duration::from_millis(250));
+    }
+
+    fn evict_targets_unused_for(&mut self, stale: std::time::Duration) {
         const KEEP: usize = 10;
         let now = std::time::Instant::now();
+        self.targets.evicted_at = now;
         let mut uses: Vec<((u32, u32), std::time::Instant)> = self.targets.target_use.iter().map(|(k, t)| (*k, *t)).collect();
         uses.sort_by_key(|(_, t)| std::cmp::Reverse(*t));
-        let keep: std::collections::HashSet<(u32, u32)> = uses.iter().filter(|(_, t)| now.duration_since(*t) < STALE).take(KEEP).map(|(k, _)| *k).collect();
+        let keep: std::collections::HashSet<(u32, u32)> = uses.iter().filter(|(_, t)| now.duration_since(*t) < stale).take(KEEP).map(|(k, _)| *k).collect();
         self.targets.target_use.retain(|k, _| keep.contains(k));
         self.targets.scale_targets.retain(|k, _| keep.contains(k));
         self.targets.msaa_targets.retain(|k, _| keep.contains(k));
@@ -295,6 +299,8 @@ impl Renderer {
         self.targets.target_use.insert((w, h), std::time::Instant::now());
         if !self.targets.msaa_targets.contains_key(&(w, h)) {
             self.evict_targets();
+        } else if self.targets.evicted_at.elapsed() > std::time::Duration::from_secs(1) {
+            self.evict_targets_unused_for(std::time::Duration::from_secs(5));
         }
         let size = wgpu::Extent3d {
             width: w,
@@ -507,6 +513,7 @@ pub(crate) struct Targets {
     pub(crate) glass_picture: Option<wgpu::TextureView>,
     /// When each size of the size-keyed targets (scale, MSAA, HDR) was last asked for.
     pub(crate) target_use: HashMap<(u32, u32), std::time::Instant>,
+    pub(crate) evicted_at: std::time::Instant,
 }
 
 /// The render scale: the pipelines that scale the 3D picture up to the window or copy a panel, and the governor's factor.
