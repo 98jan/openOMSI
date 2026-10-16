@@ -16,7 +16,8 @@ impl App {
         // the game controllers: their axes this frame, their buttons' key actions
         let hwnd = self.window.as_deref().and_then(crate::controllers::window_handle);
         let ctl = self.input.controllers.get_or_insert_with(|| crate::controllers::Controllers::new(&self.args.root, hwnd));
-        ctl.set_focus(self.input.window_focused);
+        ctl.set_background(self.settings.ctrl_background);
+        ctl.set_focus(self.input.window_focused || self.settings.ctrl_background);
         ctl.deadzone = self.settings.ctrl_deadzone;
         ctl.right_stick_look = self.settings.right_stick_look;
         ctl.pad_deadzone = self.settings.pad_deadzone;
@@ -37,6 +38,7 @@ impl App {
         ctl.set_editing(self.menus.game_menu.is_some() || self.menus.chooser.is_some() || self.photo.is_some());
         let analog = ctl.poll();
         let actions = std::mem::take(&mut ctl.actions);
+        self.input.pad_repeat = std::mem::take(&mut ctl.repeating);
         let moved = match (analog.steering, self.input.last_ctl_steer) {
             (Some(x), Some(x0)) => (x - x0).abs() > 0.02,
             _ => false,
@@ -57,7 +59,7 @@ impl App {
             || self.photo.is_some()
             || self.input.look_lock.is_some()
             || !matches!(self.view.as_str(), "driver" | "outside" | "pax");
-        let hide = (moved || actions.iter().any(|a| a.1)) && !needs_mouse && !vr_on;
+        let hide = (moved || actions.iter().any(|a| a.1)) && !needs_mouse && !vr_on && self.input.window_focused;
         if self.xr.vr_nav_edit.is_none() && hide != self.input.cursor_hidden.is_some() && (hide || needs_mouse) {
             if let Some(win) = self.window.as_ref() {
                 win.set_cursor_visible(!hide);
@@ -101,6 +103,7 @@ impl App {
         // listens to a gamepad of its own (`photo::pad`), and a wheel's axes and buttons went
         // on turning the view and switching things while the picture was being framed.
         if self.photo.is_some() {
+            self.input.pad_repeat.clear();
             return (crate::controllers::Analog::default(), Vec::new());
         }
         (analog, actions)
@@ -310,6 +313,13 @@ impl App {
             p.axes.pedal_hold = self.settings.brake_hold;
             p.axes.pedal_speed = self.settings.key_pedal_speed;
             p.analog = analog;
+            if self.menus.game_menu.is_none() && self.menus.chooser.is_none() && !self.paused {
+                for name in std::mem::take(&mut self.input.pad_repeat) {
+                    if p.vehicle.ty.program.trigger(&name).is_some() {
+                        p.vehicle.trigger(&name);
+                    }
+                }
+            }
             for (name, down) in actions {
                 if !down || (self.menus.game_menu.is_none() && self.menus.chooser.is_none()) {
                     // a button on a pedal (the clutch, a throttle or brake button) works the

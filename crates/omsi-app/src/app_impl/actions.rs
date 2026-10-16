@@ -297,6 +297,10 @@ impl App {
             // those is `alt_tap`'s, #2392)
             "open_menue" => self.quick_menu_key(),
             // the radio's own keys, for a keyboard, a wheel's or a pad's buttons (#1293, #1462)
+            "radio_power" => {
+                let msg = self.sound.radio.toggle_power(self.player.as_ref().map(|p| &p.vehicle));
+                self.service_msg = Some((msg, 3.0));
+            }
             "radio_next" | "radio_previous" | "radio_volume_up" | "radio_volume_down" => {
                 let msg = match name {
                     "radio_next" => self.sound.radio.next_station(),

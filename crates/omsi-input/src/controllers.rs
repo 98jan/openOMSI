@@ -19,6 +19,9 @@ use crate::gamepad_profile::{self, PadKind};
 use gilrs::{Axis, EventType, Gilrs};
 use std::path::Path;
 
+mod held;
+use held::HeldButtons;
+
 /// What one axis of a device does.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Func {
@@ -83,11 +86,28 @@ pub struct DeviceCfg {
     /// `[openOMSI.Latching]`: the buttons (from 0) that are latching switches - a turn signal
     /// lever, a lit hazard button - and switch back when they come out.
     pub latching: Vec<usize>,
+    pub more: Vec<(usize, String)>,
 }
 
 impl DeviceCfg {
     pub fn steers(&self) -> bool {
         self.axes.iter().flatten().any(|(f, _)| *f == Func::Steering)
+    }
+
+    pub fn actions_of(&self, button: usize) -> Vec<String> {
+        let first = self.buttons.get(button).map(|b| b.0.clone()).into_iter();
+        let more = self.more.iter().filter(|(b, _)| *b == button).map(|(_, a)| a.clone());
+        let mut out: Vec<String> = Vec::new();
+        for a in first.chain(more).filter(|a| !a.is_empty()) {
+            if !out.iter().any(|o| o.eq_ignore_ascii_case(&a)) {
+                out.push(a);
+            }
+        }
+        out
+    }
+
+    pub fn continuous(&self, button: usize) -> bool {
+        self.buttons.get(button).is_some_and(|b| b.1.trim() == "1")
     }
 }
 
@@ -167,6 +187,19 @@ pub fn parse_cfg(text: &str) -> Vec<DeviceCfg> {
                 }
                 i += 2;
             }
+            "[openOMSI.MoreActions]" => {
+                let n: usize = lines.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(0).min(4096);
+                if let Some(d) = out.last_mut() {
+                    for k in 0..n {
+                        let button = lines.get(i + 2 + k * 2).and_then(|v| v.parse::<usize>().ok()?.checked_sub(1));
+                        let action = lines.get(i + 3 + k * 2).unwrap_or(&"");
+                        if let Some(b) = button.filter(|_| !action.is_empty()) {
+                            d.more.push((b, action.to_string()));
+                        }
+                    }
+                }
+                i += 2 + n * 2;
+            }
             "[openOMSI.FFInvert]" => {
                 if let Some(d) = out.last_mut() {
                     d.ff_invert = lines.get(i + 1).and_then(|v| match *v { "0" => Some(false), "1" => Some(true), _ => None });
@@ -203,6 +236,13 @@ pub fn cfg_text(devices: &[DeviceCfg]) -> String {
         if !d.latching.is_empty() {
             let numbers: Vec<String> = d.latching.iter().map(|b| (b + 1).to_string()).collect();
             t.push_str(&format!("[openOMSI.Latching]\r\n{}\r\n\r\n", numbers.join(" ")));
+        }
+        if !d.more.is_empty() {
+            t.push_str(&format!("[openOMSI.MoreActions]\r\n{}\r\n", d.more.len()));
+            for (b, action) in &d.more {
+                t.push_str(&format!("{}\r\n{action}\r\n", b + 1));
+            }
+            t.push_str("\r\n");
         }
     }
     t
@@ -488,6 +528,17 @@ impl Devices {
         }
         #[cfg(not(windows))]
         let _ = focused;
+    }
+
+    pub fn set_background(&mut self, on: bool) {
+        #[cfg(windows)]
+        if let Some(d) = self.di.as_mut() {
+            d.set_background(on);
+        }
+        #[cfg(target_os = "macos")]
+        crate::mac_game_controller::monitor_background(on);
+        #[cfg(not(any(windows, target_os = "macos")))]
+        let _ = on;
     }
 
     pub fn calibration_pulse(&mut self, name: &str, axis: usize, force: f32) -> bool {
@@ -1031,54 +1082,6 @@ fn lattice(i: i32) -> f32 {
 }
 
 
-/// Button-down actions remember their original mapping until release. Editing a binding
-/// must release that action, rather than sending an unrelated new action's key-up.
-#[derive(Default)]
-struct HeldButtons(Vec<(String, usize, String, bool)>);
-
-impl HeldButtons {
-    fn event(&mut self, cfg: &[DeviceCfg], name: &str, button: usize, down: bool, actions: &mut Vec<(String, bool)>) {
-        if down {
-            if self.0.iter().any(|(n, b, ..)| names_match(n, name) && *b == button) {
-                return;
-            }
-            let Some(d) = find_device_cfg(cfg, name) else { return };
-            let Some((action, _)) = d.buttons.get(button).filter(|a| !a.0.is_empty()) else { return };
-            self.0.push((name.to_string(), button, action.clone(), d.latching.contains(&button)));
-            actions.push((action.clone(), true));
-        } else if let Some(i) = self.0.iter().position(|(n, b, ..)| names_match(n, name) && *b == button) {
-            let (_, _, action, latching) = self.0.remove(i);
-            actions.push((action.clone(), false));
-            if latching {
-                let back = latch_release(&action);
-                actions.push((back.clone(), true));
-                actions.push((back, false));
-            }
-        }
-    }
-
-    fn release(&mut self, actions: &mut Vec<(String, bool)>) {
-        for (_, _, action, _) in self.0.drain(..) {
-            // Do not toggle a latching switch just because its configuration changed.
-            actions.push((action, false));
-        }
-    }
-
-    /// Let go of the buttons held down, but not of the latching switches: a switch stays
-    /// where it is while the pause menu is open or the window is in the background, and
-    /// when it comes out later its release still reaches the bus. Let go of with the rest,
-    /// the switch went out in the game at ESC or alt-tab and only came back once it was
-    /// switched off and on again by hand (#1876).
-    fn release_momentary(&mut self, actions: &mut Vec<(String, bool)>) {
-        self.0.retain(|(_, _, action, latching)| {
-            if !latching {
-                actions.push((action.clone(), false));
-            }
-            *latching
-        });
-    }
-}
-
 /// Save to `~/.openomsi/Inputs`. The original OMSI installation is read-only.
 pub fn save_cfg(devices: &[DeviceCfg]) -> Result<std::path::PathBuf, String> {
     let path = omsi_cfg::own_input("gamectrler.cfg").ok_or("No home folder was found to keep the controllers in")?;
@@ -1146,6 +1149,7 @@ pub struct Controllers {
     settled: Vec<f32>,
     pub devices: Devices,
     focused: bool,
+    background: bool,
     cfg: Vec<DeviceCfg>,
     held: HeldButtons,
     editing: bool,
@@ -1183,6 +1187,7 @@ pub struct Controllers {
     pub steer_gain: f32,
     /// Key actions of buttons pressed (true) and released (false) since the last poll.
     pub actions: Vec<(String, bool)>,
+    pub repeating: Vec<String>,
     /// Devices told about in the log (and on the screen) as not set up.
     announced: Vec<String>,
     /// Devices nobody set up whose X axis has left its centre: only from then on does it
@@ -1256,6 +1261,13 @@ impl Controllers {
         }
     }
 
+    pub fn set_background(&mut self, on: bool) {
+        if self.background != on {
+            self.background = on;
+            self.devices.set_background(on);
+        }
+    }
+
     pub fn new(root: &Path, hwnd: Option<isize>) -> Controllers {
         let devices = Devices::new(hwnd, true);
         let (cfg, unread) = match read_cfg_checked(root) {
@@ -1277,7 +1289,7 @@ impl Controllers {
     }
 
     fn with_devices(devices: Devices, cfg: Vec<DeviceCfg>) -> Controllers {
-        Controllers { settled: Vec::new(), devices, focused: true, cfg, held: HeldButtons::default(), editing: false, raw_buttons: Vec::new(), deadzone: 0.0, right_stick_look: true, pad_deadzone: 0.08, pad_presets: true, pedal_throttle: 1.0, pedal_brake: 1.0, disabled: Vec::new(), ff_invert: false, ff_enabled: true, ff_road: 1.0, ff_engine: 1.0, ff_fade: FF_FADE, steer_gain: 1.0, enabled: true, actions: Vec::new(), announced: Vec::new(), moved: Vec::new(), notice: None, rests: Default::default(), auto_saved: None, cfg_unread: false, steer: None, ff_t: 0.0, ff_lateral: 0.0, ff_bump: 0.0, ff_bump_age: 0.0, ff_micro: Micro::default(), ff_vib: ScriptVib::default(), ff_rumble: 0.0, ff_source_logged: None, rumble: Vec::new(), #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel: None, #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel_tried: None }
+        Controllers { settled: Vec::new(), devices, focused: true, background: false, cfg, held: HeldButtons::default(), editing: false, raw_buttons: Vec::new(), repeating: Vec::new(), deadzone: 0.0, right_stick_look: true, pad_deadzone: 0.08, pad_presets: true, pedal_throttle: 1.0, pedal_brake: 1.0, disabled: Vec::new(), ff_invert: false, ff_enabled: true, ff_road: 1.0, ff_engine: 1.0, ff_fade: FF_FADE, steer_gain: 1.0, enabled: true, actions: Vec::new(), announced: Vec::new(), moved: Vec::new(), notice: None, rests: Default::default(), auto_saved: None, cfg_unread: false, steer: None, ff_t: 0.0, ff_lateral: 0.0, ff_bump: 0.0, ff_bump_age: 0.0, ff_micro: Micro::default(), ff_vib: ScriptVib::default(), ff_rumble: 0.0, ff_source_logged: None, rumble: Vec::new(), #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel: None, #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel_tried: None }
     }
 
     /// Whether this device steers the bus (set up so, or steering now): the photo mode's camera takes none for its gamepad (a wheel turned it).
@@ -1335,6 +1347,7 @@ impl Controllers {
             }
             self.held.event(&self.cfg, name, *n, *down, &mut self.actions);
         }
+        self.repeating = if self.editing || !self.enabled { Vec::new() } else { self.held.repeating() };
         self.preset_buttons();
         if !self.enabled {
             return out;
