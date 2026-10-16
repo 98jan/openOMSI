@@ -152,6 +152,7 @@ impl PeopleSim {
             stroll_timer: 0.0,
             defer_populate: false,
             exact_fare: true,
+            bad_driving: true,
             boarding: "auto".into(),
             stand_chance: 0.05,
             give_ticket: false,

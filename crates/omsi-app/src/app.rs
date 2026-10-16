@@ -594,6 +594,7 @@ impl App {
                         h.set_lan_seed(lan::population_seed(lan));
                     }
                     h.exact_fare = self.settings.exact_fare;
+                    h.bad_driving = self.settings.pax_bad_driving;
                     h.boarding = self.settings.boarding.clone();
                     h.stand_chance = self.settings.standing_chance;
                     h.voices = match self.settings.pax_voices.as_str() { "off" => 2, "tickets" => 1, _ => 0 };
