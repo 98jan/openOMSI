@@ -87,7 +87,7 @@ mod photo;
 mod devtools;
 mod telemetry;
 use omsi_scene::threads;
-mod tiles;
+use omsi_scene::tiles;
 mod traffic;
 mod view_sync;
 mod ui;

@@ -448,6 +448,7 @@ impl App {
                         &start_centers(&self.args, &cam, Some(&w)),
                         distance,
                         700.0,
+                        crate::release_free_memory,
                     ));
                     self.world = Some(w);
                     self.cam.starting = Some(cam);
