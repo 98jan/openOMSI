@@ -6,7 +6,7 @@ import { S, useStore, set, toast } from '../store.js';
 import { t, hhmm, longDate, language } from '../i18n.js';
 import { call, contentUrl } from '../api.js';
 import { Icon } from '../icons.js';
-import { Button, Card, Field, Select, Input, Toggle, Segmented, Slider, Picture, Notice, Spinner, PageHead, Tag, Search, Dialog } from '../ui.js';
+import { Button, Card, Field, Select, Input, Toggle, Segmented, Slider, Picture, Notice, Spinner, PageHead, Tag, Search, Dialog, useConfirm } from '../ui.js';
 import { choose, curMap, curBus, curLine, curTour, pickedTrip, realTime, realDate, start, loadSituations, duty, weatherName, weatherOfItsOwn, mapName, askJoined, noServerBus, busFile, launcherLayout } from '../data.js';
 import { MapPicker } from './map-picker.js';
 import { ClassicDrive } from './drive-classic.js';
@@ -681,17 +681,33 @@ function Summary() {
 /** The situations saved on this map: the last one, and the save slots. */
 function Continue({ go, busy }) {
   const s = useStore();
+  const [ask, dialog] = useConfirm();
+  const [all, setAll] = useState(false);
   useEffect(() => {
     loadSituations();
   }, []);
   if (!s.situations?.length || s.choice.lan_mode === 'join') return null;
-  return html`<${Card} title="Continue">
+  // (a save deleted here is gone from the disk: the game's slots, the quicksave, the last situation - #2556)
+  const remove = async (e, x) => {
+    e.stopPropagation();
+    if (!(await ask({ title: 'Delete the save', text: t('Delete "{name}"? It cannot be brought back.', { name: t(x.name) }), yes: 'Delete', danger: true }))) return;
+    try {
+      await call('delete_situation', { map: s.choice.map, file: x.file });
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    loadSituations();
+  };
+  const shown = all ? s.situations : s.situations.slice(0, 5);
+  return html`<${Card} title="Continue" actions=${s.situations.length > 5 && html`<${Button} small label=${all ? 'Fewer' : t('All {n}', { n: s.situations.length })} onClick=${() => setAll(!all)} />`}>
     <div class="list" style="margin:-6px -8px">
-      ${s.situations.slice(0, 5).map((x) => html`<div class="list-item" onClick=${() => !busy && go({ situation: x.file })}>
+      ${shown.map((x) => html`<div class="list-item" onClick=${() => !busy && go({ situation: x.file })}>
         <${Icon} name="history" />
         <div class="grow"><div class="title ellipsis">${t(x.name)}</div><div class="sub">${new Date(x.saved * 1000).toLocaleString(language())}</div></div>
+        <${Button} kind="ghost" small icon="trash" title="Delete" onClick=${(e) => remove(e, x)} />
         <${Icon} name="play" size=${16} />
       </div>`)}
     </div>
+    ${dialog}
   </${Card}>`;
 }

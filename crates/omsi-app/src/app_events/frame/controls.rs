@@ -65,6 +65,7 @@ impl App {
             }
         }
         if let Some(n) = ctl.notice.take() {
+            let n = controller_notice(&n, |key| omsi_ui::tr(key).into_owned());
             self.service_msg = Some((n, 8.0));
         }
         // a device set up by itself: kept for the next start and the launcher's page
@@ -326,13 +327,41 @@ impl App {
 
 /// Whether the steering keys have the wheel over a gamepad's stick at `x` (its place past the
 /// dead zone): the stick at rest while the keys' own wheel (`keys_steering`) is turned.
+fn controller_notice(text: &str, tr: impl Fn(&str) -> String) -> String {
+    const UNSET: &str = " is not set up: it steers; set up its pedals and buttons in the launcher (Controls → Game controllers)";
+    if let Some(name) = text.strip_suffix(UNSET) {
+        return format!("{name}{}", tr(UNSET));
+    }
+    if let Some(body) = text.strip_suffix("); change it in the launcher (Controls → Game controllers)") {
+        if let Some((name, axes)) = body.rsplit_once(" was set up by itself (") {
+            let axes = axes.split(", ").map(|key| tr(key)).collect::<Vec<_>>().join(", ");
+            return tr("{device} was set up by itself ({axes}); change it in the launcher (Controls → Game controllers)")
+                .replace("{axes}", &axes).replace("{device}", name);
+        }
+    }
+    text.to_owned()
+}
+
 fn keys_steer_over_idle_stick(x: f32, keys_steering: f32) -> bool {
     x == 0.0 && keys_steering != 0.0
 }
 
 #[cfg(test)]
 mod tests {
-    use super::keys_steer_over_idle_stick;
+    use super::{controller_notice, keys_steer_over_idle_stick};
+
+    #[test]
+    fn controller_notices_translate_fixed_text_and_keep_device_name() {
+        let tr = |key: &str| match key {
+            " is not set up: it steers; set up its pedals and buttons in the launcher (Controls → Game controllers)" => "尚未設定".into(),
+            "{device} was set up by itself ({axes}); change it in the launcher (Controls → Game controllers)" => "{device} 已自動完成設定（{axes}）".into(),
+            "steering" => "轉向".into(),
+            "brake" => "煞車".into(),
+            _ => key.to_owned(),
+        };
+        assert_eq!(controller_notice("Wheel is not set up: it steers; set up its pedals and buttons in the launcher (Controls → Game controllers)", tr), "Wheel尚未設定");
+        assert_eq!(controller_notice("Wheel was set up by itself (steering, brake); change it in the launcher (Controls → Game controllers)", tr), "Wheel 已自動完成設定（轉向, 煞車）");
+    }
 
     /// A gamepad lying idle beside the keyboard (#1895): the keys steer; the stick pushed, or
     /// the keys' wheel back in the middle, the stick does.

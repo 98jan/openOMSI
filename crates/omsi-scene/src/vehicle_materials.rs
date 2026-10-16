@@ -198,6 +198,7 @@ pub(super) fn material_extra(
             .map(|o| o.border_color.map(|c| (c / 255.0).clamp(0.0, 1.0))),
         metal_ok: false,
         solid: false,
+        alpha_cut: false,
         glow: glow_strength(ov),
         led_glow: led_glow_effect(ov),
     }
@@ -626,6 +627,34 @@ pub(super) fn texture_is_tint(mask: &[u8]) -> bool {
     let tinted = mask.iter().filter(|&&a| a > 128 && a < 255).count();
     let cut = mask.iter().filter(|&&a| a > 0 && a <= 128).count();
     !mask.is_empty() && tinted * 4 >= mask.len() && cut * 100 <= mask.len()
+}
+
+/// Whether the triangles of an alpha-tested material `slot` lie on a tint of their texture
+/// (`mask`, see [`alpha_mask`]): a tenth of them (and two at least) at an alpha that passes
+/// Omsi.exe's cut but is clearly see-through (129 to 240) at their middle. A livery's window
+/// layer often shares its texture with the body and the clear glass (alpha 128 and less,
+/// the NefAZ 5299 2024), so [`texture_is_tint`] over the whole picture misses it - its panes
+/// were drawn solid black (#2609, #2624). Cut-out pictograms and seat covers are solid
+/// (255) where their faces are.
+pub(super) fn slot_is_tint(mesh: &MeshData, slot: usize, mask: &[u8]) -> bool {
+    let (mut tint, mut all) = (0usize, 0usize);
+    for &(first, count, material) in &mesh.ranges {
+        if material as usize != slot {
+            continue;
+        }
+        let start = first as usize;
+        let end = start.saturating_add(count as usize).min(mesh.indices.len());
+        for tri in mesh.indices.get(start..end).unwrap_or_default().chunks_exact(3) {
+            let Some(uv) = tri.iter().map(|&i| mesh.uvs.get(i as usize).copied()).sum::<Option<glam::Vec2>>() else { continue };
+            let uv = uv / 3.0;
+            let at = |t: f32| ((t.rem_euclid(1.0) * ALPHA_MASK as f32) as usize).min(ALPHA_MASK - 1);
+            all += 1;
+            if (129..=240).contains(&mask[at(uv.y) * ALPHA_MASK + at(uv.x)]) {
+                tint += 1;
+            }
+        }
+    }
+    tint >= 2 && tint * 10 >= all
 }
 
 /// Return whether the triangles of one material occupy a volumetric part of the vehicle.

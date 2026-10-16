@@ -749,8 +749,11 @@ pub(super) fn spline_paint_slots(def: &omsi_scenery::sli::Spline) -> Vec<usize> 
     {
         return Vec::new();
     }
+    // (a blended strip, or a cut-out one - the dashes of a centre line are often an
+    // alpha-tested texture - lying on the road itself: not the top of a kerb)
     let painted = |p: &omsi_scenery::sli::SplineProfile| {
-        if p.points.len() < 2 || def.textures.get(p.texture).is_none_or(|t| t.alpha != 2)
+        let alpha = def.textures.get(p.texture).map_or(0, |t| t.alpha);
+        if p.points.len() < 2 || !(alpha == 1 || alpha == 2)
             || p.points.iter().any(|q| !q.x.is_finite() || !q.z.is_finite())
         {
             return false;
@@ -759,7 +762,8 @@ pub(super) fn spline_paint_slots(def: &omsi_scenery::sli::Spline) -> Vec<usize> 
             (f32::MAX, f32::MIN, f32::MAX, f32::MIN),
             |(x0, x1, z0, z1), p| (x0.min(p.x), x1.max(p.x), z0.min(p.z), z1.max(p.z)),
         );
-        x1 > x0 && x1 - x0 <= 0.5 && z0 >= -0.05 && z1 <= 0.25 && z1 - z0 <= 0.05
+        let top = if alpha == 2 { 0.25 } else { 0.05 };
+        x1 > x0 && x1 - x0 <= 0.5 && z0 >= -0.05 && z1 <= top && z1 - z0 <= 0.05
     };
     let mut slots = Vec::new();
     for p in &def.profiles {

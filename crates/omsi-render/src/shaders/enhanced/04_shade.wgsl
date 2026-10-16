@@ -97,6 +97,9 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             discard;
         }
     }
+    // (a blended slot that keeps Omsi.exe's alpha test, `MaterialExtra::alpha_cut`: a
+    // livery's clear glass is cut away, its tinted glass blended)
+    tex.a = select(tex.a, 0.0, mode > 2.5 && tex.a < ALPHA_REF);
     var alpha = tex.a * material.color.a;
     if (mode < 0.5) {
         alpha = 1.0;
@@ -255,7 +258,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // the pane mirrors as much as there and rises towards grazing as glass does; 4 to
         // 12 % at the normal, and three quarters of that, left the windows showing the
         // saloon where the vanilla picture shows the street.
-        let share = clamp(alpha * min(material.params2.y, 1.0), 0.0, 1.0);
+        let share = clamp(alpha * min(material.params2.y, 1.0), 0.0, 1.0) * camera.cam_pos.w;
         f0 = vec3<f32>(clamp((share - 1.0 / 21.0) * 21.0 / 20.0, 0.04, 0.9));
     } else if (reflective_env) {
         // Paint reflects its few per cent through a smooth clear coat; much more than a few
@@ -383,8 +386,10 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             n = normalize(mix(n, geo_n, puddle) + vec3<f32>(ripple.xy, 0.0));
         }
     } else if (wet_any > 0.0) {
+        // (a body's paint wears a film of water as smooth as glass: the street and the sky
+        // mirror in a wet bus as sharply as in its windows)
         if (!terrain) {
-            rough = mix(rough, rough * 0.6, wet_any);
+            rough = mix(rough, select(rough * 0.6, min(rough, 0.04), reflective_env), select(wet_any, min(wet_any * 2.6, 1.0), reflective_env));
         }
         // Soaked by the rain, a porous surface - soil, a paving stone, plaster, bark -
         // turns darker and deeper in colour: the light that enters the water film and is
@@ -425,6 +430,8 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         let spread = min((dot(dndx, dndx) + dot(dndy, dndy)) * 2.0, 0.4);
         rough = sqrt(min(rough * rough + spread, 1.0));
     }
+    let env_share = select(1.0, camera.cam_pos.w, reflective_env && !glass);
+    metal = metal * env_share;
     var sf: Surface;
     sf.albedo = albedo * (1.0 - metal);
     ambient_albedo = ambient_albedo * (1.0 - metal);
@@ -536,7 +543,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     let avg_e = enh.fog_color.rgb * (PI / 0.9);
     let cab_e = vec3<f32>(dot(avg_e, vec3<f32>(0.2126, 0.7152, 0.0722))) * vec3<f32>(1.0, 0.98, 0.95);
     let e_amb = mix(sh_irradiance(n), cab_e * CAB_AMBIENT, 0.6 * in_cab) * ao_bounce(ao, ambient_albedo);
-    var ambient = e_amb * ambient_albedo / PI * (vec3<f32>(1.0) - fr * (1.0 - rough));
+    var ambient = e_amb * ambient_albedo / PI * (vec3<f32>(1.0) - fr * (1.0 - rough) * env_share);
     // --- reflections: the sky probe, as sharp as the surface is smooth
     var r = reflect(-v, n);
     // a reflection pointing into the surface would show the probe's ground: bend it up
@@ -639,6 +646,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // viewpoint; opaque paint must never receive this boost.
         refl_f = refl_f * (1.0 - 0.85 * own_pane);
     }
+    refl_f = refl_f * env_share;
     var reflection = select(vec3<f32>(0.0), env * refl_f, reflects);
     // Enhanced+: traced instead (rough surfaces keep the probe, which is as good as a
     // ray there): the windows, the chrome and the paint's clear coat mirror the real street

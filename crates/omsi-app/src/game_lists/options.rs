@@ -15,6 +15,7 @@ pub(super) fn option_now(app: &App, verb: &str, arg: &str) -> Option<f32> {
         "volume" => s.volume,
         "led_glow" => s.led_glow as f32,
         "night_brightness" => s.night_brightness,
+        "reflections" => s.reflections,
         "led_mips" => s.led_mips,
         "ctrl_deadzone" => s.ctrl_deadzone,
         "pedal_t" => s.pedal_throttle,
@@ -112,6 +113,10 @@ pub(super) fn option_set(app: &mut App, verb: &str, arg: &str, v: f32) -> Option
         "night_brightness" => {
             app.settings.night_brightness = v.clamp(0.0, 3.0);
             Some(("night_brightness", app.settings.night_brightness.to_string()))
+        }
+        "reflections" => {
+            app.settings.reflections = v.clamp(0.0, 1.0);
+            Some(("reflections", app.settings.reflections.to_string()))
         }
         "led_mips" => {
             app.settings.led_mips = v.clamp(0.0, 4.0);
@@ -360,6 +365,8 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "nav_ai" => app.menus.navigator.as_ref().map_or(s.nav_ai, |n| n.show_ai),
         "nav_surface" => app.menus.navigator.as_ref().map_or(s.nav_surface, |n| n.show_surface),
         "nav_light" => app.menus.navigator.as_ref().map_or(s.nav_light, |n| n.light),
+        "nav_3d" => app.menus.navigator.as_ref().map_or(s.nav_3d, |n| n.show_3d),
+        "nav_widget" => app.menus.navigator.as_ref().map_or(s.nav_widget, |n| n.widget),
         "shadows" => s.shadows,
         "head" => s.head_movement,
         "cam_smooth" => s.driverview_smooth,
@@ -398,7 +405,6 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "collision_pedestrians" => s.collision_pedestrians,
         "ssao" => s.ssao,
         "detail_textures" => s.detail_textures,
-        "reflections" => s.reflections,
         "clouds" => s.clouds,
         "windy_trees" => s.windy_trees,
         "mirror_hud_every_frame" => s.mirror_hud_every_frame,
@@ -470,6 +476,20 @@ pub(super) fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static 
             }
             app.settings.nav_light = on;
             Some(("nav_light", bit))
+        }
+        "nav_3d" => {
+            if let Some(n) = app.menus.navigator.as_mut() {
+                n.show_3d = on;
+            }
+            app.settings.nav_3d = on;
+            Some(("nav_3d", bit))
+        }
+        "nav_widget" => {
+            if let Some(n) = app.menus.navigator.as_mut() {
+                n.widget = on;
+            }
+            app.settings.nav_widget = on;
+            Some(("nav_widget", bit))
         }
         "shadows" => {
             app.settings.shadows = on;
@@ -650,10 +670,6 @@ fn toggle_set_graphics_and_controls(app: &mut App, id: &str, on: bool, bit: Stri
         "detail_textures" => {
             app.settings.detail_textures = on;
             Some(("detail_textures", bit))
-        }
-        "reflections" => {
-            app.settings.reflections = on;
-            Some(("reflections", bit))
         }
         "clouds" => {
             app.settings.clouds = on;

@@ -4,6 +4,7 @@
 use crate::*;
 
 mod instances;
+pub(crate) mod overlay;
 mod upload;
 
 #[derive(Clone, Copy, Default)]
@@ -166,6 +167,25 @@ pub struct Instance {
     /// `[matl_alpha] 2` listed before its interior hides the interior as in the original,
     /// instead of showing it through the paint's alpha).
     pub ordered: bool,
+    /// The draw order's depth step of each material slot (see `draw_order_level`): above 0
+    /// only for a slot lying on an earlier surface of the same object (`overlay`).
+    pub(crate) slot_levels: Vec<u8>,
+}
+
+/// The rain the renderer draws round the camera (rain.wgsl): every drop is worked out on
+/// the GPU from these.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Rainfall {
+    /// How hard it rains (0..1; 0 nothing falls).
+    pub rate: f32,
+    /// The median volume diameter of its drops (mm).
+    pub drop_mm: f32,
+    /// The eye's velocity (m/s, world): the drops' streaks are their way against it.
+    pub eye_velocity: glam::Vec3,
+    /// The wind the drops drift with (m/s, world).
+    pub wind: glam::Vec3,
+    /// The `rain_quality` setting: 2 high, 1 medium, 0 low.
+    pub quality: u8,
 }
 
 pub struct Scene {
@@ -184,6 +204,8 @@ pub struct Scene {
     pub interior_lights: Vec<PointLight>,
     pub(crate) interior_free: Vec<(u32, u32)>,
     pub coronas: Vec<Corona>,
+    /// The rain falling round the camera this frame (rain.wgsl; set by the app every frame).
+    pub rainfall: Rainfall,
     /// Smoke particles for the next frame (set by the app every frame).
     pub smoke: Vec<SmokeParticle>,
     pub(crate) smoke_buf: Option<wgpu::Buffer>,
@@ -206,6 +228,8 @@ pub struct Scene {
     pub(crate) draw_buf: Option<GpuArray>,
     pub(crate) camera_bind_group: Option<wgpu::BindGroup>,
     pub(crate) shadow_bind_group: Option<wgpu::BindGroup>,
+    /// As `shadow_bind_group`, with the precipitation roof map's camera.
+    pub(crate) precip_bind_group: Option<wgpu::BindGroup>,
     pub(crate) sky_bind_group: Option<wgpu::BindGroup>,
     /// HUD images drawn after the scene: (texture, rect in pixels x0,y0,x1,y1).
     pub overlays: Vec<(TextureId, [f32; 4])>,
@@ -224,6 +248,8 @@ pub struct Scene {
     /// are appended to the buffers instead of rebuilding them, as long as they fit.
     pub(crate) uploaded_instances: usize,
     pub(crate) next_instance_order: u64,
+    /// The object whose meshes are being added, for `Instance::slot_levels`.
+    pub(crate) object_run: overlay::ObjectRun,
     pub(crate) uploaded_entries: u32,
     /// Instances whose transform or parameters changed since the last `prepare`: only
     /// their entries are rewritten. Rebuilding the whole per-draw buffer for 17 000 objects
@@ -264,6 +290,9 @@ pub struct Scene {
     pub(crate) grid_sent: Vec<u32>,
     /// The lamps in each cell while a grid is made, and the cells to compare.
     pub(crate) grid_counts: Vec<u8>,
+    /// How strongly each light of a grid cell lights the cell's middle (parallel to the
+    /// grid): a full cell keeps its strongest (see `Renderer::prepare_lights`).
+    pub(crate) grid_strength: Vec<f32>,
     pub(crate) grid_marks: Vec<bool>,
     /// The smoke's sprites, their order and the sorted list of the last `prepare_smoke`,
     /// kept for the next: every car's exhaust is thousands of sprites, and lists made anew

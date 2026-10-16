@@ -103,20 +103,15 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
             let rain_quality = crate::rain::quality_of(&cx.common.settings.rain_quality);
             w.settings.set_rain_quality(rain_quality);
             cx.weather.rain.set(kind, rate, rain_quality);
+            cx.weather.rain.set_temperature(wt.temp.0);
             // [wind] direction (deg) speed (m/s)
             let wind = crate::rain::weather_wind(wt);
             let spray_wind = steps::spray_wind(wt);
-            // every bus one may ride in keeps the weather out: the own, another
-            // player's, a timetable bus - each part of it: an articulated bus's
-            // rear section is a coupled part with its own [boundingbox] (#777)
-            let boxed = crate::rain::vehicle_boxes;
-            let mut buses: Vec<(glam::DVec3, f64, [f32; 6])> = cx.player.player.as_ref().map(|p| boxed(&p.vehicle)).unwrap_or_default();
-            buses.extend(cx.net.remotes.remotes.values().flat_map(|rv| boxed(rv.vehicle())));
-            if let Some(t) = cx.traffic.traffic.as_ref() {
-                buses.extend(t.cars.iter().filter(|c| c.is_bus() && (c.vehicle.position - cam.position).length() < 40.0).flat_map(|c| boxed(&c.vehicle)));
-            }
             let __tr = Instant::now();
-            cx.weather.rain.tick(if *cx.clock.paused { 0.0 } else { dt }, cam.position, wind, scene, &buses);
+            // (the bus the camera rides with: in it or following it, not a free camera)
+            let riding = matches!(cx.view.view.as_str(), "driver" | "pax" | "outside");
+            let carried = cx.player.player.as_ref().filter(|_| riding).map(|p| crate::lights::vehicle_velocity(&p.vehicle)).unwrap_or_default();
+            cx.weather.rain.tick(if *cx.clock.paused { 0.0 } else { dt }, carried, wind, scene);
             // the player's bus's cabin air and the condensation on its glass
             if let Some(p) = cx.player.player.as_ref() {
                 steps::cabin_air_step(&mut cx.weather.cabin_air, if *cx.clock.paused { 0.0 } else { dt }, p, wt, cx.people.humans.as_ref());

@@ -214,8 +214,9 @@ pub fn run() -> Result<()> {
     restart_with_allocator_settings();
     #[cfg(windows)]
     attach_parent_console();
-    // `--check-vehicle <file>`: the loaders' findings as JSON, no window, no log
-    if std::env::args().nth(1).as_deref() == Some("--check-vehicle") {
+    // `--check <file or folder>` (`--check-vehicle`, its old name): the loaders' findings
+    // as JSON, no window, no log
+    if matches!(std::env::args().nth(1).as_deref(), Some("--check" | "--check-vehicle")) {
         let rest: Vec<String> = std::env::args().skip(2).collect();
         return check::run(&rest);
     }
@@ -716,7 +717,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             profile_mark: None,
             frame_times: Vec::new(),
             frame_stages: Vec::new(),
-            overlay: Default::default(),
+            overlay: crate::perf_overlay::new(),
             texture_cut_at: None,
         },
         sound: SoundState {
@@ -783,6 +784,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             plugin_keys: Vec::new(),
             plugin_events: Vec::new(),
             plugin_events_ex: Vec::new(),
+            plugin_ticket_asks: Vec::new(),
             plugin_pointer: Default::default(),
             plugin_voices: Vec::new(),
             plugin_seen: Default::default(),

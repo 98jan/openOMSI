@@ -266,6 +266,12 @@ impl Renderer {
             }
         };
         let supported = |n: u32| targets.iter().all(|&f| takes(flags_of(f), f, n));
+        let wanted = if ray_query && wanted > 4 && !omsi_cfg::flags::OMSI_FULL_GPU.is_set() {
+            log::info!("Enhanced+: {wanted}x MSAA drawn at 4x (8x doubles the ray traced passes' cost and their targets' memory)");
+            4
+        } else {
+            wanted
+        };
         let msaa = [wanted, 8, 4, 2, 1]
             .into_iter()
             .filter(|&n| n <= wanted)
@@ -346,7 +352,12 @@ impl Opened {
     /// lost meanwhile, see below).
     pub async fn finish(self) -> Result<Renderer> {
         let Opened { adapter, info, device, queue, format, options, asked_options, mesh_pages, name } = self;
-        let made = Renderer::build_with_fallbacks(&device, &queue, &info, &name, format, options, mesh_pages).await;
+        let mut made = Renderer::build_with_fallbacks(&device, &queue, &info, &name, format, options, mesh_pages).await;
+        // (its own adapter, asked what the game holds on it: with several renderers in one
+        // process a shared one asked another's)
+        if let Ok(r) = made.as_mut() {
+            r.adapter = Some(adapter.clone());
+        }
         // A driver whose shader compiler fails on a pipeline answers "out of memory" or an
         // unknown error, and wgpu takes that as the device lost: on phones (Adreno, Mali)
         // one of 0.2's new pipelines did so, the renderer was made all the same and every
@@ -505,10 +516,12 @@ impl Renderer {
         let shadows = shadows::build(&device, &scene, shadow_size);
         let defaults = defaults::build(&device, &queue, options.anisotropy);
         let (coronas, corona_texture) = coronas::Coronas::new(&device, &queue, &scene);
-        let snow = coronas::Snow::new(&device, &scene.camera_layout);
+        let precip = crate::passes::PrecipMap::new(&device);
+        let snow = coronas::Precip::snow(&device, &scene.camera_layout, &precip.view);
+        let rain = coronas::Precip::rain(&device, &scene.camera_layout, &precip.view);
         drop(corona_texture);
         let sky = sky::SkyBase::new(&device, &queue, &scene.camera_layout, !leave_out_enhanced);
-        let passes = passes::PassKit { device: &device, scene: &scene, coronas: &coronas, snow: &snow, sky: &sky, msaa }
+        let passes = passes::PassKit { device: &device, scene: &scene, coronas: &coronas, snow: &snow, rain: &rain, sky: &sky, msaa }
             .build(format, hdr_format, leave_out_enhanced);
         let (sky_sampler, sky_mesh) = sky::dome(&device, &queue);
         let overlays = overlays::Overlays::new(&device, format, msaa);
@@ -534,6 +547,7 @@ impl Renderer {
                 triple_targets: None,
                 glass_picture: None,
                 target_use: HashMap::new(),
+                evicted_at: std::time::Instant::now(),
                 hdr_targets: HashMap::new(),
                 ao: None,
                 depth: None,
@@ -575,6 +589,8 @@ impl Renderer {
                 corona_bind_group: coronas.bind_group,
                 snow_buf: snow.buf,
                 snow_bind_group: snow.bind_group,
+                rain_buf: rain.buf,
+                rain_bind_group: rain.bind_group,
                 smoke_bind_group: coronas.smoke_bind_group,
                 corona_textures: Vec::new(),
                 pictures_taken: (0, 0),
@@ -606,6 +622,7 @@ impl Renderer {
                 xr_shadow_cache: std::cell::Cell::new(None),
                 shadow_clear_pipeline: shadows.clear_pipeline,
                 lamp_tiles: Default::default(),
+                precip,
                 shadow_view: shadows.view,
                 shadow_view_far: shadows.view_far,
                 shadow_sampler: shadows.sampler,
@@ -639,6 +656,8 @@ impl Renderer {
             puddles,
             texture_aspect: None,
             last_frame: None,
+            adapter: None,
+            gpu_memory_seen: Default::default(),
             instant_exposure: false,
             depth_readback: false,
             overlay_pipeline_1x,

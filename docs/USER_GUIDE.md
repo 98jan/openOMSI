@@ -359,7 +359,7 @@ lines, as in the game, whose default date is 1989-05-30.
 ## Settings, enhanced graphics, the navigator
 
 `~/.openomsi/settings.cfg` (written by the launcher's settings page, or by hand) holds
-`msaa` (1/2/4/8; a count the GPU cannot do falls back to the next lower one), `anisotropy`
+`msaa` (1/2/4/8; a count the GPU cannot do falls back to the next lower one, and Enhanced+ draws 8 at 4), `anisotropy`
 (1..16), `ssao`, `shadows`, `shadow_size`, `shadow_blobs` (the models' `[isshadow]` shadow
 meshes, OMSI's flat blob under a vehicle, laid on the road its wheels stand on; off, only the
 sun shadow map shades under a vehicle), `navigator`, `ui_opacity` (how much of the interface's backgrounds shows - the navigator's, the
@@ -375,13 +375,16 @@ stop it serves, as in OMSI),
 `boarding`, `detail_textures`, `exact_fare`, `enhanced`, `fullscreen`, `vsync`, `volume`
 and `drive_keys`, plus `render_scale` (`auto` or a fraction: the picture is drawn smaller
 and upscaled), `post_aa` (`fxaa`, the enhanced renderer's, or `off`), `view_distance` (m,
-how far the tiles are kept loaded), `texture_memory` (MB - OMSI's `texmemlimit` is read
-under that name too; an eighth of the machine's memory when unset), `texture_compression`
+how far the tiles are kept loaded), `video_memory` ("Video memory", MB: all the game holds
+on the graphics card - textures, meshes, render targets, the driver's own; when unset, nine
+tenths of a discrete card's memory, and never more than the driver's budget; on a card of
+its own the textures may take half of it; the old
+`texture_memory=` and OMSI's `texmemlimit` were texture budgets and are dropped), `texture_compression`
 (loose pictures compressed to BC1-BC3 on loading, on by default), `gpu_texture_compression`
 (DXT/BC textures kept compressed on the GPU, on by default; off decodes them to RGBA, for a
 driver that mishandles block formats, at four to eight times the memory - as
-`OMSI_NO_BC=1`), `reflections` (the materials' reflection maps,
-`[matl_envmap]` - off, paint, chrome and glass mirror nothing), `led_glow` (0..15: how
+`OMSI_NO_BC=1`), `reflections` (0..1, how strongly the materials' reflection maps,
+`[matl_envmap]`, show on paint, chrome and glass; 0 = off, they mirror nothing), `led_glow` (0..15: how
 bright an LED destination matrix's dots burn in the enhanced picture, 0 = off - they are
 the panel's own light, and the glow draws a halo around them), `led_mips` (0..4, 0.05 steps,
 1.3 by default: how much of the mip chain an LED matrix is held at - its picture and its
@@ -497,7 +500,7 @@ vignette.
 `crates/omsi-render/src/rt.rs`) shows its buffers.
 
 Vanilla, Vanilla+ and Enhanced reflect buses, buildings and scenery in wet road puddles
-when `reflections=1`, each using its own lighting. Depth-aware filtering softens the image;
+when `reflections` is above 0, each using its own lighting. Depth-aware filtering softens the image;
 Enhanced also shades shallow rain ripples.
 The player's nearby bus and up to three coupled sections use one local geometry capture,
 mirrored around the actual road face's height and slope. Its windows are shaded from the
@@ -604,6 +607,17 @@ Depot files can also be placed in a top-level `HOFs/` folder. Every vehicle can 
 `.hof` files without keeping a separate copy in each `Vehicles/<bus>/` folder. If a
 vehicle folder and `HOFs/` contain the same file name, the vehicle's own copy takes
 priority (the launcher's depot list shows the shared ones after the bus's own).
+
+A map names the depot files its buses need in `maps/<map>/ailists.cfg`. When a mod map is
+installed in the openOMSI content folder and one of those files is missing from `HOFs/`, the
+launcher copies it there from the map's folder or from any bus that brought it, so every
+bus, the stock ones included, can use the map's depot without copying `.hof` files by hand.
+The copy belongs to the map's mod: switching the map off or removing it takes the copy with
+it. The original OMSI installation is not changed. A depot file the map needs that no
+installed content provides, or a copy that failed, is shown as a warning on the launcher's
+**Mods** page. The **Add HOF files to buses** button on that page (desktop launcher) copies
+`.hof` files you choose into the content folder's `HOFs/`; files already there are left
+untouched.
 
 Installing a mod: the launcher's **Mods** page opens the system's folder / file picker
 (Finder, Explorer, GTK) for a mod folder or a `.zip`, `.7z` or `.rar` archive and sorts it
@@ -749,7 +763,7 @@ scripts run in parallel. Spandau with traffic, passengers and a storm: 14 → 69
 M4, no frame over 50 ms after start-up.
 
 Big maps are kept within memory by compressed textures, a texture budget
-(`texture_memory`), a timetable fleet read ahead and trimmed again, and tiles that give
+and the video memory (`video_memory`), a timetable fleet read ahead and trimmed again, and tiles that give
 everything back when they unload: Ahlheim V5 at its main station with traffic, passengers
 and the timetable peaks at 1.93 GB instead of 8.75 GB (see `docs/ARCHITECTURE.md`,
 *Memory*). The game's log is `~/.openomsi/game.log` (the launcher's `launcher.log`
@@ -908,11 +922,39 @@ its own on top: **Ctrl + the mouse wheel** over it, or Settings → General → 
 **Every variable of the other buses.** Besides the pose, each game sends all script
 variables of its bus (floats and strings: a gearbox's state, a display's or an IBIS's text,
 a ticket printer, what a plugin or `setvar` set): ten times a second the ones that changed,
-and all of them in turn in between, so a lost datagram is mended within seconds and a
-player who joins late sees the whole state. The copy of another player's bus takes them over
-its own scripts' results (the ones its parts move smoothly by stay smooth); a copy made from
-other files than the sender's (another version of the bus) takes nothing. `OMSI_NO_VAR_SYNC=1`
+and all of them in turn in between, so lost datagrams are repaired and a player who joins
+late receives the whole state. Every numeric and string variable participates,
+including engine-fed names and variables introduced by scripts. Names determine wire indices,
+so differing local compiler IDs do not change their meaning. Strings are not cut at 255 bytes:
+values up to 1 MiB are fragmented and applied only when complete, with periodic recovery of
+lost fragments. Newer string versions reject delayed older packets. The remote copy pins the
+owner's values before and after its scripts, before updating displays; pose display text is
+only a fallback. If complete variable-name tables differ, recovered name manifests compare all typed
+variable references in the model and full interior/AI sound configurations, including
+rear sections. Matching model and sound reference sets allow every common numeric
+and string variable to synchronize by name; variables present in only one version
+are skipped. Different references, changed reference types or unreadable sound configurations
+disable this fallback. References absent from both programs still compare by name. Lost manifest fragments are retried, including for
+late joiners. `OMSI_NO_VAR_SYNC=1`
 switches it off, `OMSI_DEBUG_VAR_SYNC=<variable>` logs what arrives for one variable.
+
+**Request a passenger door.** While on foot, press Ctrl+Alt+S within 3.2 metres of
+an entry point outside a bus, or an exit point inside the bus you are riding.
+The request feeds that door's `PAX_Entry<n>_Req` or `PAX_Exit<n>_Req`, alongside
+simulated passengers. It remains active until the door opens or you leave the point,
+change buses or start stepping through a door. AI buses and other players' buses
+support this; an exit request also asks an AI bus to serve its next stop.
+Change or clear the combination in Controls → Keyboard → Game and camera under
+"Passenger: request entry / exit". Multiplayer requests go to the bus's owner
+(or to the host for AI), repeat while active, and expire if updates stop.
+
+**AI scripts in LAN play.** AI vehicles read the current game date, time, runtime,
+weather and sun through `L.S.*`, including during initialization. Collision inputs and
+wear remain specific to each vehicle. Clients receive the host's AI script context,
+including `schedule_active`, the complete `GetTT*` stop list and times, current stop,
+terminus and delay. Long timetables travel in repeating pages and are installed only
+when complete, before the mirrored vehicle's initialization script runs. Trip changes
+replace the old timetable atomically; lost pages are recovered on subsequent cycles.
 
 **The host's mods.** What the host's session uses that is not in the OMSI 2 folder itself
 (its map, bus, objects, splines, AI vehicles and people from the content folder or archives,
@@ -950,6 +992,39 @@ that player (its AI bus goes, and comes back from the next departure when the pl
 and everybody sees the passengers in everybody's bus: the riders of a player's bus travel
 with the world frames and sit in that bus in every other game (protocol 5). `crates/omsi-net` is the transport, the same on every
 platform.
+
+**Animated variables.** Numeric variables referenced by animations in the bus's model
+configuration (including coupled sections) are sampled with the owner's frame timestamp.
+Remote buses interpolate between received samples on the same playback clock as their
+pose. Unchanged animation values are sampled too, so movement after a pause begins at
+the right time. Packet loss holds the last available state until another sample arrives;
+other numeric variables and strings still update directly. Models with many animation
+inputs use a lower sample rate to keep bandwidth bounded.
+
+**Script textures.** Matrix displays and other `[scripttexture]` surfaces come from the
+player driving that bus. The local scripts of a remote bus cannot redraw or load these
+surfaces. Both games must have the same bus and declared texture slots. If their script
+variable tables differ, texture synchronization uses the same model and sound variable
+compatibility check as variable synchronization; extra internal variables do not prevent
+it. For differing variable tables, incompatible model/sound references prevent transfer.
+Declared slot counts and dimensions must still agree, and a stand-in receives no texture
+data. Initialization sends a losslessly compressed
+RGBA image, then only changed RGBA pixel runs and mipmap settings are sent. Changes are
+fragmented, acknowledged and retried until complete, and applied atomically; a late join,
+recreated vehicle or newly sized surface receives initialization again. Only images
+released by the owner's scripts are published, never an unfinished locked drawing buffer.
+Both games need LAN protocol 14; older versions are rejected rather than showing an empty
+display. Texture transfers have their own rate budget, separate from vehicle movement.
+
+**Script sound events.** `(T.L.name)` and `(T.F.name)` come from the player driving
+that bus; AI vehicles receive their sound events from the host. Remote scripts cannot
+start these sounds themselves. Events are fragmented when necessary, acknowledged,
+retried and delivered in order without duplicate playback. T.L volume curves receive
+the variable values at the instant of the trigger. T.F sends the trigger name and the
+script's file path; the receiving game resolves and plays its own installed audio file.
+Audio files are never transferred. A replacement bus does not receive the old bus's
+events; a stand-in plays none. Sounds retain the local sound configuration's interior,
+exterior and spatial playback rules. New players do not replay earlier sound events.
 
 Windows, macOS and Linux run the same code (wgpu, winit, cpal, std UDP);
 paths are resolved case-insensitively so Windows-style `\` references in mods work

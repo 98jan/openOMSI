@@ -11,6 +11,7 @@
 //! are drawn and heard, and the shared world's mirror, stay in the app.
 
 pub mod admin;
+pub mod commands;
 pub mod config;
 pub mod game;
 pub mod gateway;
@@ -59,3 +60,9 @@ impl Drop for StatusFileGuard {
         }
     }
 }
+
+pub mod animation_sync;
+pub mod variable_schema;
+
+pub mod clock;
+pub mod script_texture;

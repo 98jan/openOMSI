@@ -65,6 +65,9 @@ pub(crate) struct Integrations {
     pub(crate) plugin_events: Vec<omsi_plugin::GameEvent>,
     /// The same for events whose values are tables (see `plugins::queue_event_ex`).
     pub(crate) plugin_events_ex: Vec<(&'static str, Vec<omsi_plugin::api::Value>)>,
+    /// The passengers who decided about their ticket since the plugins' last frame (the
+    /// `passenger_ticket` event, `AccessTicketRequest`).
+    pub(crate) plugin_ticket_asks: Vec<omsi_plugin::TicketAsk>,
     /// The mouse on the script textures `.opl` plugins draw (clicked like a bus's pages).
     pub(crate) plugin_pointer: omsi_plugin::TexturePointer,
     /// The plugins' sounds playing, and whether each moves with the player's bus.

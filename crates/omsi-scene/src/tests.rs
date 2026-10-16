@@ -572,6 +572,14 @@ fn only_flat_blended_ground_strips_draw_after_the_roads() {
     let mut solid = line.clone();
     solid.textures[0].alpha = 0;
     assert_eq!(spline_render_phase(&solid), RenderPhase::Spline);
+    // cut-out dashes lying on the road are paint as well, the top of a kerb is not (#1694)
+    let mut dashes = line.clone();
+    dashes.textures[0].alpha = 1;
+    for p in &mut dashes.profiles[0].points { p.z = 0.002; }
+    assert_eq!(spline_render_phase(&dashes), RenderPhase::BeforeNormal);
+    let mut kerb_top = dashes.clone();
+    for p in &mut kerb_top.profiles[0].points { p.z = 0.15; }
+    assert_eq!(spline_render_phase(&kerb_top), RenderPhase::Spline);
     let mut fence = line.clone();
     fence.profiles[0].points[1].z = 1.0;
     assert_eq!(spline_render_phase(&fence), RenderPhase::Spline);
@@ -1122,4 +1130,77 @@ fn a_trees_cards_turn_against_its_object_as_in_omsi() {
     let card = terrain_paint::tree_card_turn(30.0).transform_vector3(glam::Vec3::X);
     let (s, c) = 30f32.to_radians().sin_cos();
     assert!((card - glam::Vec3::new(c, s, 0.0)).length() < 1e-5, "{card:?}");
+}
+
+#[test]
+fn every_object_a_scenery_step_shows_finds_its_view_behind_a_silenced_one() {
+    let ot = Arc::new(ObjectType {
+        sco: omsi_scenery::sco::SceneryObject::default(),
+        sound_path: Default::default(),
+        model: omsi_model::Model::default(),
+        model_dir: Default::default(),
+        meshes: Vec::new(),
+        mesh_visible: Vec::new(),
+        mesh_def_index: Vec::new(),
+        mesh_pivots: Vec::new(),
+        mesh_shadow: Vec::new(),
+        mesh_casts: Vec::new(),
+        has_mouse_events: false,
+        embedded_lights: Default::default(),
+        program: None,
+        lower_lods: Vec::new(),
+        lod0_min: 0.0,
+        paint_scheme_count: 0,
+        dynamic_textures: Vec::new(),
+        holes: Vec::new(),
+        deform: None,
+        collision: None,
+        paint: false,
+        camera: Default::default(),
+        collision_shape: Default::default(),
+    });
+    let mut set = ScriptedSet::default();
+    for (map_id, x) in [(1, 0.0), (2, 10.0), (3, omsi_sim::scenery::SCRIPT_RANGE + 20.0)] {
+        set.push(ScriptedObject {
+            ty: ot.clone(),
+            pos: DVec3::new(x, 0.0, 0.0),
+            xf: glam::Mat4::IDENTITY,
+            instances: Vec::new(),
+            inst: omsi_sim::scenery::SceneryInstance::new(
+                Arc::new(omsi_script::Program::default()),
+                &[],
+                omsi_sim::SimClock::default(),
+                &[],
+            ),
+            controller: None,
+            light_index: 0,
+            light_parent: None,
+            map_id,
+            variants: Vec::new(),
+            sounds: None,
+            tile: (0, 0),
+            var_parent: None,
+            texts: Vec::new(),
+            arrivals: false,
+            htmls: Vec::new(),
+            alpha_slots: Vec::new(),
+            alpha_last: Vec::new(),
+        });
+    }
+    let mut scenery = omsi_sim::scenery::SceneryState::default();
+    scenery.take_inbox(&set.inbox);
+    let phase = |_: usize, _: usize| (0.0, 0.0);
+    let inputs = omsi_sim::scenery::OwnedSceneryInputs::default();
+    scenery.step(1.0 / 30.0, &inputs.as_inputs(&phase), &mut Default::default());
+    let map_id = |key: u64| view_of(&set.views, key).map(|i| set.views[i].map_id);
+    let found: Vec<(bool, Option<i64>)> = scenery
+        .outputs()
+        .cmds
+        .iter()
+        .map(|c| match c {
+            omsi_sim::scenery::SceneryCmd::Silence(k) => (false, map_id(*k)),
+            omsi_sim::scenery::SceneryCmd::Show(s) => (true, map_id(s.key)),
+        })
+        .collect();
+    assert_eq!(found, vec![(false, Some(3)), (true, Some(1)), (true, Some(2))]);
 }

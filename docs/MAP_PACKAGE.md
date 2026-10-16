@@ -1,5 +1,14 @@
 # Map packages: a pre-built surface under the roads
 
+> **No package is needed any more.** openOMSI reads every map's own picture off its tiles the
+> first time the map is driven (`omsi_scene::mapgen`, kept in `~/.openomsi/cache/mapgen`): the
+> ground by what it is painted with, water, woods and trees, every paved surface as the splines
+> and objects lay it, rail and tram tracks, and the houses from their models' roofs with their
+> heights. A package as described here still adds what lies **outside** the map's tiles (the
+> real town around a map, rivers and borders); inside the tiles the map's own layers are drawn
+> over it. `OMSI_NO_MAP_CACHE=1` reads the layers again; the example `mapgen_dump` (crate
+> `omsi-scene`) draws them into a picture.
+
 A map's author (or anyone) can ship a **pre-built** picture of the map next to the map itself. openOMSI
 does not compute, convert or triangulate anything: it opens the package, picks the chunks near the
 camera and draws them under the roads of the navigator and the city map. All the work (where the data
@@ -21,7 +30,10 @@ as before.**
   global.cfg
   openomsi-realmap/            the package (fixed name, lower case)
     manifest.cfg               required: its presence makes the package count
-    surface.oms                the pre-built surface (section 4)
+    surface.oms                the pre-built surface, the names and the named streets (section 4)
+    markers.cfg                optional: icons on the map (section 7)
+    regions.cfg                optional: municipalities, their names as a watermark, where the bus is (section 8)
+    icons/                     optional: the pictures markers.cfg names
 ```
 
 - The folder name and the file names are fixed; nothing is searched or configured. A missing file is a
@@ -29,8 +41,7 @@ as before.**
 - The folder may lie in the map's own folder or in the same place of another content root: a package for
   a map one does not own goes in the game's content folder (`Maps/<Map>/openomsi-realmap/`), as a mod does,
   so the OMSI 2 installation is never written to. The root with the most priority wins.
-- Other files an author may put in the folder (icons, regions, lines) are not read by this version and
-  are ignored.
+- Other files an author may put in the folder are not read by this version and are ignored.
 
 ## 2. Manifest
 
@@ -83,13 +94,14 @@ finds the chunks near the camera by the index and reads only those. A chunk need
 u32  n_fills   ; n_fills x  { u8 class, u32 n_tri, f32[6*n_tri] }         triangles, ready to draw
 u32  n_lines   ; n_lines x  { u8 class, u8 flags, f32 width_m, u32 name,
                               u32 n_pts, f32[2*n_pts] }                    polylines
-u32  n_labels  ; n_labels x { u8 kind, u8 rank, u32 name, f32 x, f32 y }   names (not read by this version)
+u32  n_labels  ; n_labels x { u8 kind, u8 rank, u32 name, f32 x, f32 y }   names (section 6)
 ```
 
 - Fill `class`: `0 water, 1 green (parks, gardens), 2 built, 3 grass (grass, meadow, scrub), 4 forest (wood,
   forest), 5 sport (pitches, stadiums), 6 farm`.
-- Line `class`: `0 river, 1 rail, 2 border`. A river's `width_m` of 5 or more is a river, less a stream. Other
-  classes are skipped, so a later version can add more without breaking this one.
+- Line `class`: `0 river, 1 rail, 2 border`, drawn; `3 street` and `4 street with limits`, not drawn (section 8). A
+  river's `width_m` of 5 or more is a river, less a stream. Other classes are skipped, so a later version can add
+  more without breaking this one.
 - Triangles are already triangulated; there are no holes to resolve. `name` indexes the string table
   (`u32::MAX`: none).
 - Everything that is wrong ends in "no package": a short file, a wrong magic or version, a chunk outside
@@ -106,12 +118,55 @@ other source and nothing is fetched from the network.
 Settings (`~/.openomsi/settings.cfg`, the launcher's settings page and the pause menu): `nav_surface`
 (on by default) draws the surface; `nav_light` (off) gives the maps a light look.
 
-## 6. Trying it
+## 6. Names
+
+`kind` of a label: `0 district, 1 terminal, 2 town, 3 landmark, 4 water`. `rank` 0 to 255 is how important it is (high
+shows from far away): the city map writes the names of rank 200 and more from far away, 140 and more, 100 and more,
+then all, as the view comes closer, with a dark halo (a light one on the light map), and never one over another. The
+author decides the rank; the game derives nothing.
+
+## 7. Icons: `markers.cfg` and `icons/`
+
+```
+# icon | width in pixels at interface size 1 | x | y | name
+marker = icons/terminal.png | 30 | 1200.5 | 840.0 | Central Terminal
+```
+
+- `icon` is a PNG (straight alpha, up to 1024 x 1024) under the package folder, with no `..` in the path. The
+  pictures are packed into one texture; one that cannot be read leaves out its lines.
+- `x`, `y` are metres of the author's grid (section 3). `name` is for people reading the file.
+- The icons are drawn upright at their place on the small map and the city map, with no text, in the width the
+  second column says.
+
+## 8. Regions and streets: where the bus is
+
+`regions.cfg`, one region (a municipality) a line, metres of the author's grid:
+
+```
+# region = name | label x | label y | box width | box height | polygon x,y x,y ...
+region = Alphaville | 5200.0 | 3100.0 | 4800.0 | 520.0 | 1000.0,1000.0 9000.0,1000.0 9000.0,6000.0 1000.0,6000.0
+```
+
+The polygon says which municipality the bus is in. The box is where and how big the name fits, **computed by the
+author's tools** (the largest letters that fit inside the visible part of the municipality, one cap for all); a box
+width of 0 means no room for a readable name, so none is drawn. The city map writes each name as a big, faint
+watermark in its box while zoomed out.
+
+The named streets are lines of class 3 (the name) or 4 (the name and the limits: `width_m` is the limit in km/h,
+`flags` the limit of heavy vehicles, 0 for the same or none) in `surface.oms`; the nearest piece within 30 m of the
+bus tells the street. With regions or named streets, openOMSI shows a **row under the next stop** of the small map
+with the municipality and the street, and, on the city map, the municipality, "You are on: <street>" and the
+street's limit as a road sign (the heavy vehicles' limit smaller, when it is another). Without them none of it
+appears.
+
+## 9. Trying it
 
 - **The example in this repository**, `docs/examples/openomsi-realmap/`: a few made-up shapes (a lake, a
-  river, a railway, a border, a park, a wood) in the tile grid of the tutorial map **Grundorf**, under 1 KB,
-  with no data of OMSI 2 or OpenStreetMap. Copy the folder to `Maps/Grundorf/openomsi-realmap/` in the
-  content folder, start Grundorf and open the navigator (Shift+N) and the city map (Shift+M).
+  river, a railway, a border, a park, a wood), three names, a street with a 30 km/h limit, two icons (a stop and a
+  station) and one region, in the tile grid of the tutorial map **Grundorf**, about 2.5 KB in all, with no data of
+  OMSI 2 or OpenStreetMap. Copy the folder to `Maps/Grundorf/openomsi-realmap/` in the content folder, start
+  Grundorf and open the navigator (Shift+N) and the city map (Shift+M): near the start of the map the row under the
+  next stop says "Exampleton | Example Street".
 - **Real packages and the generator** that makes them are not in this repository (their data is
   OpenStreetMap's, under the ODbL, a different licence from this project's). They live in
   [lmonteirotech/openomsi-map-packages](https://github.com/lmonteirotech/openomsi-map-packages): its
