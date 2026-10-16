@@ -207,7 +207,8 @@ impl Offscreen<'_> {
             rn.set(kind, rate, world.settings.rain_quality());
             rn.set_temperature(weather.temp.0);
             // ([wind] direction (deg) and speed (m/s), as the window's frame takes it)
-            rn.tick(1.0 / 30.0, camera.position, rain::weather_wind(weather), scene);
+            let carried = player_ref.as_ref().map(|p| crate::lights::vehicle_velocity(&p.vehicle)).unwrap_or_default();
+            rn.tick(1.0 / 30.0, carried, rain::weather_wind(weather), scene);
             // the tyres' spray as the drive left it (OMSI_DRIVE_V0=S moves the bus without a
             // full engine-start sequence)
             spray.sprites(camera.position, &mut scene.smoke);

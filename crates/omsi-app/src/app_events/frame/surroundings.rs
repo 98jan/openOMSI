@@ -107,7 +107,10 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
             let wind = crate::rain::weather_wind(wt);
             let spray_wind = steps::spray_wind(wt);
             let __tr = Instant::now();
-            cx.weather.rain.tick(if *cx.clock.paused { 0.0 } else { dt }, cam.position, wind, scene);
+            // (the bus the camera rides with: in it or following it, not a free camera)
+            let riding = matches!(cx.view.view.as_str(), "driver" | "pax" | "outside");
+            let carried = cx.player.player.as_ref().filter(|_| riding).map(|p| crate::lights::vehicle_velocity(&p.vehicle)).unwrap_or_default();
+            cx.weather.rain.tick(if *cx.clock.paused { 0.0 } else { dt }, carried, wind, scene);
             // the player's bus's cabin air and the condensation on its glass
             if let Some(p) = cx.player.player.as_ref() {
                 steps::cabin_air_step(&mut cx.weather.cabin_air, if *cx.clock.paused { 0.0 } else { dt }, p, wt, cx.people.humans.as_ref());

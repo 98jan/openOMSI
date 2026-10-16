@@ -72,7 +72,6 @@ pub struct Rain {
     quality: u8,
     /// How thick the drops are (mm, their median volume diameter), from the rain's rate.
     drop_mm: f32,
-    camera: Option<DVec3>,
     /// The eye's velocity (m/s), smoothed over a few frames.
     eye: Vec3,
     /// The weather's temperature (°C) and the snow lying from the snowfalls so far (see
@@ -96,7 +95,7 @@ pub fn vehicle_boxes(v: &omsi_sim::VehicleInstance) -> Vec<(DVec3, f64, [f32; 6]
 
 impl Rain {
     pub fn new() -> Rain {
-        Rain { kind: 0, rate: 0.0, quality: 2, drop_mm: 2.0, camera: None, eye: Vec3::ZERO, temp: 10.0, cover: None }
+        Rain { kind: 0, rate: 0.0, quality: 2, drop_mm: 2.0, eye: Vec3::ZERO, temp: 10.0, cover: None }
     }
 
     /// `kind`: 0 none, 1 rain, 2 snow; `rate` 0..1; `quality` the rain's (see [`quality_of`]).
@@ -119,16 +118,15 @@ impl Rain {
         self.cover.unwrap_or(0.0)
     }
 
-    /// Follow the eye by `dt` and hand the renderer this frame's rain (`Scene::rainfall`;
-    /// snow is drawn by the renderer from the weather: render snow.wgsl,
-    /// `Lighting::snowfall`).
-    pub fn tick(&mut self, dt: f32, camera: DVec3, wind: Vec3, scene: &mut Scene) {
-        let moved = self.camera.replace(camera).map_or(Vec3::ZERO, |old| (camera - old).as_vec3());
+    /// Hand the renderer this frame's rain (`Scene::rainfall`; snow is drawn by the renderer
+    /// from the weather: render snow.wgsl, `Lighting::snowfall`). `carried`: the velocity of
+    /// the vehicle the camera rides with (m/s; zero for a free camera or on foot). The
+    /// streaks slant with that alone - not with the camera's own way round the bus or a turn
+    /// of the head: taken from the camera's motion, the whole rain swung and stretched with
+    /// every move of the mouse, which nothing else in the picture does.
+    pub fn tick(&mut self, dt: f32, carried: Vec3, wind: Vec3, scene: &mut Scene) {
         if dt > 0.0 {
-            // (a jump of the camera - a new view, a teleport - is no speed)
-            let seen = moved / dt;
-            let seen = if seen.length() < 80.0 { seen } else { self.eye };
-            self.eye += (seen - self.eye) * (dt / 0.1).min(1.0);
+            self.eye += (carried - self.eye) * (dt / 0.1).min(1.0);
         }
         let start = self.cover.unwrap_or_else(|| initial_snow_cover(self.kind, self.rate, self.temp));
         self.cover = Some(snow_cover(self.kind, self.rate, self.temp, dt, start));
@@ -275,20 +273,18 @@ mod tests {
         let mut scene = renderer.new_scene();
         let mut rain = Rain::new();
         rain.set(1, 1.0, 2);
-        for i in 0..60 {
-            rain.tick(0.05, DVec3::new(i as f64 * 0.5, 0.0, 0.0), Vec3::X * 3.0, &mut scene);
+        for _ in 0..60 {
+            rain.tick(0.05, Vec3::X * 10.0, Vec3::X * 3.0, &mut scene);
         }
         let r = scene.rainfall;
         assert_eq!(r.rate, 1.0);
         assert!((r.eye_velocity - Vec3::X * 10.0).length() < 0.1, "{:?}", r.eye_velocity);
         assert_eq!(r.wind, Vec3::X * 3.0);
-        rain.tick(0.05, DVec3::splat(10000.0), Vec3::ZERO, &mut scene);
-        assert!(scene.rainfall.eye_velocity.length() < 11.0);
         rain.set(2, 1.0, 2);
-        rain.tick(0.05, DVec3::splat(10000.0), Vec3::ZERO, &mut scene);
+        rain.tick(0.05, Vec3::ZERO, Vec3::ZERO, &mut scene);
         assert_eq!(scene.rainfall.rate, 0.0);
         rain.set(0, 1.0, 2);
-        rain.tick(0.05, DVec3::splat(10000.0), Vec3::ZERO, &mut scene);
+        rain.tick(0.05, Vec3::ZERO, Vec3::ZERO, &mut scene);
         assert_eq!(scene.rainfall.rate, 0.0);
     }
 
