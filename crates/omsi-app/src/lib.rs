@@ -35,7 +35,7 @@ mod platform;
 mod touch;
 mod units;
 mod placing;
-mod mt;
+use omsi_mt as mt;
 use omsi_platform::updater;
 mod update_watch;
 use omsi_platform::presence;
