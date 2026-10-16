@@ -204,7 +204,7 @@ impl Navigator {
         let (icon_n, icon_tex) = self.place.upload(gpu, device, queue, 16, &icon_verts);
         gpu.upload_atlas(queue, &mut self.atlas);
         let flat = Layer::flat(clip_panel, radius, 1.0);
-        let backdrop = Layer::flat(clip_panel, radius, if self.cockpit_display { self.opacity } else { crate::ui::backdrop(self.opacity).min(1.0) });
+        let backdrop = Layer::flat(clip_panel, radius, if self.cockpit_display { self.opacity } else { omsi_ui::theme::backdrop(self.opacity).min(1.0) });
         let mut layers = [flat, map_layer, map_layer.with_shadow(), depth_layer, depth_layer, backdrop];
         for l in layers.iter_mut() {
             l.opacity *= self.shown;
@@ -272,7 +272,7 @@ impl Navigator {
     #[allow(clippy::too_many_arguments)]
     fn draw_cards(&mut self, ui: &mut Painter, f: &NavFrame, wd: &Words, net: Option<&Network>, map: Rect, s: f32, pal: &Palette) {
         let pad = 8.0 * s;
-        let units = crate::units::Units::now();
+        let units = omsi_ui::units::Units::now();
         // --- top left: the next turn, or the street the bus is on
         let mut left_w = 0.0;
         if let Some((dir, angle, dist, street)) = self.next_turn.clone() {
@@ -420,7 +420,7 @@ impl Navigator {
         ui.circle(c + Vec2::new(0.0, 1.5 * s), r + 1.0 * s, Color::rgba(0, 0, 0, 0.14));
         ui.circle(c, r, pal.card);
         let sp = format!("{speed:.0}");
-        let unit = if units == crate::units::Units::Metric { wd.kmh } else { unit };
+        let unit = if units == omsi_ui::units::Units::Metric { wd.kmh } else { unit };
         ui.text(&mut self.atlas, &self.fonts, &sp, 17.0 * s, Weight::Bold, Vec2::new(c.x, c.y + 3.0 * s), Align::Center, if over { style::TRAFFIC[2] } else { pal.card_text });
         ui.text(&mut self.atlas, &self.fonts, unit, 7.5 * s, Weight::Medium, Vec2::new(c.x, c.y + 12.0 * s), Align::Center, pal.card_dim);
         if let Some(v) = limit {

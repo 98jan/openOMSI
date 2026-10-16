@@ -342,7 +342,8 @@ impl Offscreen<'_> {
                 }
                 let (outside_temp, inside_temp) = crate::app_events::vehicle_temperatures(p);
                 let frame = navigator::NavFrame {
-                    traffic: traffic.as_ref(),
+                    traffic: traffic.as_deref(),
+                    touch: crate::platform::touch_controls(),
                     players: lan_off.as_ref().map(|l| lan::nav_players(remotes_off, l.my_id)).unwrap_or_default(),
                     bus: p.vehicle.position,
                     heading: p.vehicle.heading,

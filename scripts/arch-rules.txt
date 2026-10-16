@@ -96,6 +96,14 @@ forbid omsi-scene omsi-input
 forbid omsi-scene omsi-xr
 forbid omsi-scene omsi-launcher-*
 
+# The navigator draws what the game tells it each frame (`NavFrame`): no input, sound,
+# network session, plugins or launcher in it.
+forbid omsi-navigator omsi-input
+forbid omsi-navigator omsi-audio
+forbid omsi-navigator omsi-net
+forbid omsi-navigator omsi-plugin
+forbid omsi-navigator omsi-launcher-*
+
 # The input devices read controllers and keys: they neither draw nor sound, nor know the network,
 # the plugins or the launcher.
 forbid omsi-input omsi-render

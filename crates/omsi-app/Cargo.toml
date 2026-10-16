@@ -25,6 +25,7 @@ winresource.workspace = true
 omsi-cfg = { path = "../omsi-cfg" }
 omsi-map = { path = "../omsi-map" }
 omsi-mapdraw = { path = "../omsi-mapdraw" }
+omsi-navigator = { path = "../omsi-navigator" }
 omsi-scenery = { path = "../omsi-scenery" }
 omsi-model = { path = "../omsi-model" }
 omsi-o3d = { path = "../omsi-o3d" }

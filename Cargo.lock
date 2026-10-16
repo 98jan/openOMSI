@@ -3456,6 +3456,7 @@ dependencies = [
  "omsi-map",
  "omsi-mapdraw",
  "omsi-model",
+ "omsi-navigator",
  "omsi-net",
  "omsi-o3d",
  "omsi-photo",
@@ -3748,6 +3749,25 @@ version = "0.1.0"
 dependencies = [
  "log",
  "omsi-cfg",
+]
+
+[[package]]
+name = "omsi-navigator"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
+ "omsi-lan",
+ "omsi-map",
+ "omsi-mapdraw",
+ "omsi-render",
+ "omsi-scene",
+ "omsi-sim",
+ "omsi-texture",
+ "omsi-ui",
+ "wgpu",
 ]
 
 [[package]]
