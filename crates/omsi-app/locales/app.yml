@@ -51641,3 +51641,15 @@ _version: 2
   hi: "दरवाज़ा {} पर चढ़ने का अनुरोध किया गया"
   ca: "Pujada demanada a la porta {}"
   sv: "Påstigning begärd vid dörr {}"
+
+"Start with a full tank":
+  pt: "Começar com o tanque cheio"
+  pt-pt: "Começar com o depósito cheio"
+  es: "Empezar con el depósito lleno"
+  fr: "Commencer avec le plein"
+
+"Each new bus starts with its tank full (many maps have no petrol station); a saved situation keeps its own":
+  pt: "Cada ônibus novo começa com o tanque cheio (muitos mapas não têm posto); uma situação salva mantém o que tinha"
+  pt-pt: "Cada autocarro novo começa com o depósito cheio (muitos mapas não têm bomba de gasolina); uma situação guardada mantém o que tinha"
+  es: "Cada autobús nuevo empieza con el depósito lleno (muchos mapas no tienen gasolinera); una situación guardada conserva el suyo"
+  fr: "Chaque nouveau bus commence avec le plein (beaucoup de cartes n'ont pas de station-service) ; une situation sauvegardée garde le sien"

@@ -406,6 +406,16 @@ pub(crate) fn spawn_player_prepared(
     for _ in 0..3 {
         p.vehicle.update(1.0 / 30.0);
     }
+    // a new bus with its tank full, if the player wants it (many maps have no petrol station):
+    // filled by its own pump, as at one, so each bus takes what its script says it holds; a
+    // situation's bus and a part uncoupled keep what they had (and --setvar, after it,
+    // still sets what a test asks for)
+    if !args.is_resuming() && !args.keep_fuel && crate::settings::Settings::load().full_tank {
+        match p.vehicle.refuel() {
+            Some(l) => log::info!("spawn: tank filled ({l:.0} l)"),
+            None => log::info!("spawn: this vehicle has no fuel pump handling (veh_tank): its tank stays as its script set it"),
+        }
+    }
     if let Some(sv) = &args.setvar {
         for kv in sv.split(',') {
             if let Some((k, v)) = kv.split_once('=') {
