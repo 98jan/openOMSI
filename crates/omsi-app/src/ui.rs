@@ -287,6 +287,8 @@ pub struct TimetableRow {
     pub name: String,
     pub arr: String,
     pub dep: String,
+    /// The planned arrival in seconds since midnight (none at the first stop).
+    pub arr_s: Option<f64>,
     pub state: u8,
 }
 
@@ -821,7 +823,12 @@ impl Ui {
         const INK: [u8; 4] = [237, 237, 237, 0];
         const INK_2: [u8; 4] = [184, 184, 184, 0];
         const MUTED: [u8; 4] = [138, 138, 138, 0];
-        let w = (400.0 * s).min(f.width * 0.42).round();
+        let wb = (400.0 * s).min(f.width * 0.42).round();
+        // two more columns on the right: the planned arrival and the planned arrival plus
+        // the delay (what the bus will really arrive at)
+        let (plan_w, exp_w) = ((52.0 * s).round(), (72.0 * s).round());
+        let extra = (10.0 * s).round() + plan_w + exp_w;
+        let w = wb + extra;
         let x = (f.width - w - 16.0 * s - beside).max(16.0 * s).round();
         let pad = (16.0 * s).round();
         let px = (13.0 * s).round() as u32;
@@ -873,10 +880,12 @@ impl Ui {
         // the table's head
         let col_arr = x + pad;
         let col_stop = x + pad + 58.0 * s;
-        let col_dep = x + w - pad;
+        let col_dep = x + wb - pad;
+        let col_plan = x + wb + 10.0 * s;
+        let col_exp = col_plan + plan_w;
         let hy = top + head_h + th_h * 0.5;
         let hpx = (11.5 * s).round() as u32 | BOLD;
-        for (txt, at, right) in [(omsi_ui::tr("Arrives"), col_arr, false), (omsi_ui::tr("Stop"), col_stop, false), (omsi_ui::tr("Departs"), col_dep, true)] {
+        for (txt, at, right) in [(omsi_ui::tr("Arrives"), col_arr, false), (omsi_ui::tr("Stop"), col_stop, false), (omsi_ui::tr("Departs"), col_dep, true), (omsi_ui::tr("Planned"), col_plan, false), (omsi_ui::tr("Expected"), col_exp, false)] {
             let l = self.text.label_op(r, scene, &txt, hpx, MUTED, 1.0);
             let lx = if right { at - l.w as f32 } else { at };
             let ly = (hy - l.h as f32 * 0.5).round();
@@ -915,6 +924,19 @@ impl Ui {
                 let lx = if right { at - l.w as f32 } else { at };
                 let ly = (cy - l.h as f32 * 0.5).round();
                 scene.overlays.push((l.tex, [lx.round(), ly, lx.round() + l.w as f32, ly + l.h as f32]));
+            }
+            // planned arrival and planned + delay, red when late and blue when early
+            if let (Some(plan), true) = (t.rows.get(k).and_then(|row| row.arr_s), state != 0) {
+                let hms = |v: f64| {
+                    let v = v.rem_euclid(86400.0) as i64;
+                    format!("{:02}:{:02}:{:02}", v / 3600, v % 3600 / 60, v % 60)
+                };
+                let col = if t.delay > 59.0 { [229, 83, 75, 0] } else if t.delay < -59.0 { [96, 160, 232, 0] } else { [76, 183, 130, 0] };
+                for (txt, at) in [(hms(plan)[..5].to_string(), col_plan), (hms(plan + t.delay), col_exp)] {
+                    let l = self.text.label_op(r, scene, &txt, size, col, 1.0);
+                    let ly = (cy - l.h as f32 * 0.5).round();
+                    scene.overlays.push((l.tex, [at.round(), ly, at.round() + l.w as f32, ly + l.h as f32]));
+                }
             }
             let name = clip_to(&self.text, &name, px as f32, col_dep - time_w - 8.0 * s - col_stop);
             let l = self.text.label_op(r, scene, &name, size, ink, 1.0);

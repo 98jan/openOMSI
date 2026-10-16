@@ -227,17 +227,10 @@ impl ApplicationHandler for App {
                 ) {
                     lan::chat_type(&mut self.net.remotes, text);
                 }
-                // (a release is never a repeat, and on Windows the second of Num4 and Left
-                // held together is pressed, not repeated: `keys::key_repeat`, #1830)
-                let pressed = event.state == ElementState::Pressed;
-                let repeat = match event.physical_key {
-                    PhysicalKey::Code(code) => crate::keys::key_repeat(code, pressed, event.repeat, cfg!(windows), |k| self.input.keys.contains(&k)),
-                    _ => event.repeat && pressed,
-                };
                 // (the Lua plugins' `key` event; a key held down repeats nothing)
-                if let (PhysicalKey::Code(code), false) = (event.physical_key, repeat) {
+                if let (PhysicalKey::Code(code), false) = (event.physical_key, event.repeat) {
                     if self.integrations.plugin_keys.len() < 64 {
-                        self.integrations.plugin_keys.push((format!("{code:?}"), pressed));
+                        self.integrations.plugin_keys.push((format!("{code:?}"), event.state == ElementState::Pressed));
                     }
                 }
                 // a phone's back key is Escape (the game menu, out of the city map ...)
@@ -246,7 +239,12 @@ impl ApplicationHandler for App {
                     k => k,
                 };
                 if let PhysicalKey::Code(code) = physical {
-                    self.on_key(event_loop, code, pressed, repeat);
+                    self.on_key(
+                        event_loop,
+                        code,
+                        event.state == ElementState::Pressed,
+                        event.repeat,
+                    );
                 }
             }
             // In VR right-click zooms; with mouse steering it first releases the steering.
@@ -857,6 +855,7 @@ fn timetable_rows(duty: Option<&crate::schedule::PlayerDuty>, delay: Option<f64>
             name: s.name.trim().to_string(),
             arr: if Some(k) == first { String::new() } else { hm(s.arr) },
             dep: if Some(k) == last { String::new() } else { hm(s.dep) },
+            arr_s: if Some(k) == first { None } else { Some(s.arr) },
             state: if k < d.next_stop { 0 } else if k == d.next_stop { 1 } else { 2 },
         })
         .collect();
