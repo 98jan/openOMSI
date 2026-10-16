@@ -1075,7 +1075,7 @@ impl Navigator {
         }
         let start = scene.overlays.len();
         self.frame(renderer, scene, f);
-        crate::ui::shift_overlays(scene, start, origin_x);
+        scene.shift_overlays(start, origin_x);
         for rect in [&mut self.panel_rect, &mut self.city.rect] {
             rect[0] += origin_x;
             rect[2] += origin_x;

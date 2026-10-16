@@ -457,13 +457,6 @@ pub(crate) fn info_rows(line: &str, room: f32, width: impl Fn(&str) -> f32) -> V
     rows
 }
 
-pub(crate) fn shift_overlays(scene: &mut Scene, start: usize, x: f32) {
-    for (_, rect) in &mut scene.overlays[start..] {
-        rect[0] += x;
-        rect[2] += x;
-    }
-}
-
 impl Ui {
     /// Lay out at panel resolution, then move both pixels and mouse targets to
     /// that panel's position in the spanning window.
@@ -471,7 +464,7 @@ impl Ui {
         self.shift_hitboxes(-self.origin_x);
         let start = scene.overlays.len();
         self.draw(r, scene, f, dt);
-        shift_overlays(scene, start, origin_x);
+        scene.shift_overlays(start, origin_x);
         self.shift_hitboxes(origin_x);
         self.origin_x = origin_x;
     }

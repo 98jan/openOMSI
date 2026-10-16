@@ -344,6 +344,15 @@ impl Scene {
 }
 
 impl Scene {
+    /// Move the overlays from `start` on by `x` pixels across: a panel laid out at its own
+    /// origin, put where it shows.
+    pub fn shift_overlays(&mut self, start: usize, x: f32) {
+        for (_, rect) in &mut self.overlays[start..] {
+            rect[0] += x;
+            rect[2] += x;
+        }
+    }
+
     /// Bytes of one texture on the GPU (0 for a freed slot or an unknown id).
     pub fn texture_bytes_of(&self, id: TextureId) -> u64 {
         self.textures.get(id).map(|t| t.bytes).unwrap_or(0)

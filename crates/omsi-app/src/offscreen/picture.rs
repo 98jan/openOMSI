@@ -304,7 +304,7 @@ impl Offscreen<'_> {
             let viewport = settings.hud_viewport((w, h));
             let overlay_start = scene.overlays.len();
             hud.update(renderer, scene, &lines);
-            crate::ui::shift_overlays(scene, overlay_start, viewport[0]);
+            scene.shift_overlays(overlay_start, viewport[0]);
             // the navigator, as the window shows it (its camera settled first)
             if settings.navigator {
                 let mut nav = navigator::Navigator::new(true, settings.ui_opacity, &settings.navigator_corner);
