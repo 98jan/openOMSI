@@ -11,6 +11,7 @@ omsi-cfg = { path = "../omsi-cfg" }
 omsi-launcher-core = { path = "../omsi-launcher-core" }
 anyhow.workspace = true
 log.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 ureq.workspace = true
 sha2.workspace = true

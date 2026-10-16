@@ -15,6 +15,12 @@ pub(crate) fn load_weather(args: &Args) -> omsi_content::weather::Weather {
 /// [`load_weather`], and the physical model's run when the weather is the model's, for the
 /// session to keep in its `SkyState` and carry on with its clock.
 pub(crate) fn load_weather_run(args: &Args) -> (omsi_content::weather::Weather, Option<crate::weather_model::ModelRun>) {
+    if crate::weather_tomorrow::selected(args.weather.as_deref()) {
+        let w = CustomWeather::default().to_weather();
+        omsi_sim::host::set_ambient_weather(w.temp.0, w.temp.1);
+        publish_page_weather(&w);
+        return (w, None);
+    }
     // no weather chosen, or `natural`: the physical model (weather_model.rs)
     if crate::weather_model::is_natural(args.weather.as_deref()) {
         let (run, w) = crate::weather_model::ModelRun::start(&crate::situation::start_clock(args));
@@ -603,6 +609,16 @@ pub(crate) fn from_report(s: &str) -> Option<omsi_content::weather::Weather> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tomorrow_starts_with_fallback_without_a_natural_model() {
+        let args = Args::try_parse_from(["openomsi", "--weather", "tomorrow"]).unwrap();
+        let (weather, model) = load_weather_run(&args);
+        assert!(model.is_none(), "natural weather must not overwrite observations");
+        assert_eq!(weather.name, "Custom weather");
+        assert!(!weather.snow);
+        assert!(weather.temp.0.is_finite());
+    }
 
     #[test]
     fn the_weather_drifts_the_classic_clouds_over_the_renderers_tiling() {

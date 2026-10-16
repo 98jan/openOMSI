@@ -3795,6 +3795,7 @@ dependencies = [
  "log",
  "omsi-cfg",
  "omsi-launcher-core",
+ "serde",
  "serde_json",
  "sha2",
  "ureq",
