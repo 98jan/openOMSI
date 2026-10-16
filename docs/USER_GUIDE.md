@@ -613,9 +613,10 @@ launcher copies it there from the map's folder or from any bus that brought it, 
 bus, the stock ones included, can use the map's depot without copying `.hof` files by hand.
 The copy belongs to the map's mod: switching the map off or removing it takes the copy with
 it. The original OMSI installation is not changed. A depot file the map needs that no
-installed content provides is shown as a warning on the launcher's **Mods** page. The
-**Add HOF files to buses** button on that page copies `.hof` files you choose into the
-content folder's `HOFs/`; files already there are left untouched.
+installed content provides, or a copy that failed, is shown as a warning on the launcher's
+**Mods** page. The **Add HOF files to buses** button on that page (desktop launcher) copies
+`.hof` files you choose into the content folder's `HOFs/`; files already there are left
+untouched.
 
 Installing a mod: the launcher's **Mods** page opens the system's folder / file picker
 (Finder, Explorer, GTK) for a mod folder or a `.zip`, `.7z` or `.rar` archive and sorts it

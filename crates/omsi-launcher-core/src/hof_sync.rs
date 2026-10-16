@@ -1,23 +1,34 @@
 use super::*;
 use anyhow::bail;
 
-#[derive(Default)]
-struct MapHofSyncState {
-    stamp: Option<String>,
-    warnings: Vec<String>,
+fn last_stamp() -> &'static std::sync::Mutex<Option<String>> {
+    static STAMP: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+    &STAMP
 }
 
-fn map_hof_sync_state() -> &'static std::sync::Mutex<MapHofSyncState> {
-    static STATE: std::sync::OnceLock<std::sync::Mutex<MapHofSyncState>> = std::sync::OnceLock::new();
-    STATE.get_or_init(Default::default)
+fn last_warnings() -> &'static std::sync::Mutex<Vec<String>> {
+    static WARNINGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+    &WARNINGS
 }
 
-fn writable_content() -> Option<PathBuf> {
+fn writable_content() -> Option<(PathBuf, PathBuf)> {
     let content = content_dir()?;
     let original = root().ok()?;
     let canonical_content = std::fs::canonicalize(&content).unwrap_or_else(|_| content.clone());
-    let canonical_original = std::fs::canonicalize(&original).unwrap_or(original);
-    (canonical_content != canonical_original).then_some(content)
+    let canonical_original = std::fs::canonicalize(&original).unwrap_or_else(|_| original.clone());
+    (canonical_content != canonical_original).then_some((content, original))
+}
+
+fn relative(base: &Path, path: &Path) -> String {
+    path.strip_prefix(base).unwrap_or(path).components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
+}
+
+fn install_unit(map_rel: &str) -> String {
+    let mut parts = map_rel.split('/');
+    match (parts.next(), parts.next()) {
+        (Some(top), Some(archive)) if top.eq_ignore_ascii_case(install::ARCHIVES) => format!("{top}/{archive}"),
+        _ => map_rel.to_string(),
+    }
 }
 
 fn sync_stamp() -> String {
@@ -75,20 +86,22 @@ fn copy_to_shared(content: &Path, file_name: &str, bytes: &[u8]) -> Result<Optio
 }
 
 pub(super) fn sync_map_hofs() {
-    let Some(content) = writable_content() else { return };
+    let Some((content, original)) = writable_content() else { return };
+    if install::jobs().iter().any(|j| j.finished.is_none()) {
+        return;
+    }
+    let Ok(mut last) = last_stamp().try_lock() else { return };
     let stamp = sync_stamp();
-    let mut state = map_hof_sync_state().lock().unwrap_or_else(|e| e.into_inner());
-    if state.stamp.as_deref() == Some(stamp.as_str()) {
+    if last.as_deref() == Some(stamp.as_str()) {
         return;
     }
     omsi_cfg::content_changed();
 
     let mut shared: Vec<PathBuf> = omsi_cfg::read_dir_merged("HOFs").into_iter().filter(|p| is_hof(p)).collect();
     let mut copied = 0usize;
-    let mut retry = false;
     let mut warnings = Vec::new();
     for (folder, dirs) in merged_folders("maps") {
-        let Some(map) = dirs.into_iter().find(|d| in_content(d) && omsi_cfg::vfs::is_file(&d.join("global.cfg"))) else { continue };
+        let Some(map) = dirs.into_iter().find(|d| in_content(d) && !d.starts_with(&original) && omsi_cfg::vfs::is_file(&d.join("global.cfg"))) else { continue };
         let ailists_path = map.join("ailists.cfg");
         if !omsi_cfg::vfs::is_file(&ailists_path) {
             continue;
@@ -97,11 +110,9 @@ pub(super) fn sync_map_hofs() {
             Ok(ailists) => ailists,
             Err(e) => {
                 warnings.push(format!("{folder}: couldn't read ailists.cfg: {e}"));
-                retry = true;
                 continue;
             }
         };
-        let map_rel = map.strip_prefix(&content).unwrap_or(&map).components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
         let mut names: Vec<&str> = ailists.groups.iter().filter_map(|g| g.hof.as_deref()).map(depot_name).filter(|n| !n.is_empty()).collect();
         names.sort_by_key(|n| n.to_ascii_lowercase());
         names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
@@ -122,15 +133,12 @@ pub(super) fn sync_map_hofs() {
                     added.push(rel);
                     copied += 1;
                 }
-                Ok(None) => {}
-                Err(e) => {
-                    warnings.push(format!("{folder}: couldn't share {file_name} with every bus: {e}"));
-                    retry = true;
-                }
+                Ok(None) => warnings.push(format!("{folder}: HOFs/{file_name} already holds another depot than '{name}'.")),
+                Err(e) => warnings.push(format!("{folder}: couldn't share {file_name} with every bus: {e}")),
             }
         }
         if !added.is_empty() {
-            mods::attach(&content, &map_rel, &added);
+            mods::attach(&content, &install_unit(&relative(&content, &map)), &added);
         }
     }
 
@@ -143,12 +151,12 @@ pub(super) fn sync_map_hofs() {
     for warning in &warnings {
         log_line(&format!("maps: HOF sync warning: {warning}"));
     }
-    state.warnings = warnings;
-    state.stamp = if retry { None } else { Some(sync_stamp()) };
+    *last_warnings().lock().unwrap_or_else(|e| e.into_inner()) = warnings;
+    *last = (copied == 0).then_some(stamp);
 }
 
-pub fn add_shared_hofs(files: &[PathBuf]) -> Result<String> {
-    let Some(content) = writable_content() else {
+pub fn add_shared_hofs(files: &[PathBuf]) -> Result<usize> {
+    let Some((content, _)) = writable_content() else {
         bail!("the writable content folder is the original OMSI folder; HOF files were not copied");
     };
     if files.is_empty() {
@@ -178,7 +186,7 @@ pub fn add_shared_hofs(files: &[PathBuf]) -> Result<String> {
     if !failures.is_empty() {
         bail!("added {copied} file(s), {skipped} already there; {}", failures.join("; "));
     }
-    Ok(format!("added {copied} HOF file(s) for every bus; {skipped} already there"))
+    Ok(copied)
 }
 
 fn content_case_path(base: &Path, rel: &str) -> PathBuf {
@@ -206,5 +214,5 @@ fn path_stays_in_content(content: &Path, path: &Path) -> bool {
 }
 
 pub(super) fn warnings() -> Vec<String> {
-    map_hof_sync_state().lock().unwrap_or_else(|e| e.into_inner()).warnings.clone()
+    last_warnings().lock().unwrap_or_else(|e| e.into_inner()).clone()
 }

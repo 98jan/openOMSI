@@ -37,15 +37,15 @@ export function ModsPage() {
   };
   const addHofs = async () => {
     try {
-      const files = await call('pick_hofs', { title: t('Choose HOF files'), filter: t('OMSI depot files') });
+      const files = await call('pick_hofs', { title: t('Choose HOF files'), filter: t('OMSI depot files') }).catch(() => null);
       if (!files?.length) return;
-      await call('add_hofs', { files });
-      toast(t('HOF files added for every bus.'), 'ok');
-      read();
-      loadContent();
+      const added = await call('add_hofs', { files });
+      toast(added > 0 ? t('HOF files added for every bus.') : t('These HOF files were already there.'), 'ok');
     } catch (e) {
       toast(e.message, 'error');
     }
+    read();
+    loadContent();
   };
   const jobs = s.poll.jobs || [];
   const all = status?.installed || [];
@@ -133,7 +133,7 @@ export function ModsPage() {
         ${status?.waiting?.length > 0 && html`<${Card} title="Waiting for their bus" hint="Packs installed before the bus they belong to: they go in once it is there.">
           <div class="row wrap">${status.waiting.map((w) => html`<${Tag}>${w}</${Tag}>`)}</div>
         </${Card}>`}
-        ${status?.hof_warnings?.length > 0 && html`<${Notice} kind="warn"><b>${t('Map HOF issue')}</b><div>${t('Some map HOF files could not be added. Check launcher.log for details.')}</div><ul>${status.hof_warnings.map((warning) => html`<li>${warning}</li>`)}</ul></${Notice}>`}
+        ${status?.hof_warnings?.length > 0 && html`<${Notice} kind="warn"><b>${t('Map HOF issue')}</b><div>${t('Some map HOF files could not be added. Check launcher.log for details.')}</div><ul class="small selectable" style="margin:4px 0 0;padding-left:18px">${status.hof_warnings.slice(0, 10).map((warning) => html`<li>${warning}</li>`)}</ul></${Notice}>`}
         ${status?.archives?.length > 0 && html`<${Card} title="Archives" hint="Read in place by the game, without unpacking.">
           <table class="table"><tbody>${status.archives.map(([n, b]) => html`<tr><td>${n}</td><td class="num muted" style="text-align:right">${bytes(b)}</td></tr>`)}</tbody></table>
         </${Card}>`}
@@ -141,11 +141,11 @@ export function ModsPage() {
       <div class="side">
         <${Card} title="Install a mod">
           <div class="stack">
-            ${!onPhone && html`<${Button} icon="download" label=${t('Add HOF files to buses')} onClick=${addHofs} />`}
             <div class="grid-2" style="gap:8px">
               <${Button} icon="folder" label="Choose a folder" onClick=${() => pick(false)} />
               <${Button} icon="download" label="Choose archive" onClick=${() => pick(true)} />
             </div>
+            ${!onPhone && html`<${Button} icon="file" label="Add HOF files to buses" onClick=${addHofs} />`}
             <div class="field"><span class="label">${t('Archive install mode')}</span>
               <${Select} value=${mode} options=${[['auto', 'Auto'], ['extract', 'Unpacked'], ['inplace', 'Used in place']]} onChange=${(v) => set({ modMode: v })} />
             </div>
