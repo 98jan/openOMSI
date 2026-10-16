@@ -3,10 +3,16 @@
 //! and the pieces the host's own game menu shares with it - the password's answer, a duty's
 //! argument, whom a notice is for.
 
+use omsi_admin::{Hub, Role};
 use omsi_net::LanSession;
+use std::collections::HashMap;
 
 mod action;
+mod exec;
+mod reply;
 pub use action::{act_on_session, Action, Admin, Done, WeatherAction, Whom};
+pub use exec::{action_of, exec, hub, install_hub, perm_of, players, publish, report, run_job, split_guard, Exec, WorldJob};
+pub use reply::{esc, parse_player, player_line, unesc};
 
 /// What of the game a dedicated server's administration goes by.
 pub struct ServerRules<'a> {
@@ -16,6 +22,8 @@ pub struct ServerRules<'a> {
     pub traffic_max: usize,
     /// Whether a notice (`notify`) is one a game can show.
     pub notice_ok: &'a dyn Fn(&str) -> bool,
+    /// The weather follows a METAR report: no admin changes it.
+    pub metar: bool,
 }
 
 /// A finite number (NaN passes `clamp` through and would stop everybody's clock).
@@ -117,18 +125,16 @@ pub fn notice_targets(who: &str, others: impl Iterator<Item = u32>, my_id: u32) 
 #[derive(Default)]
 pub struct ServerAdmin {
     pub password: String,
-    pub admins: std::collections::HashSet<u32>,
+    /// `moderator_password` (empty: none): its players see and moderate, and leave the world
+    /// alone (`omsi_admin::Role`).
+    pub moderator_password: String,
+    /// Who administers the server from their game, with their role (and the machine's own
+    /// tool, `LOCAL_ADMIN`, while it says something).
+    pub admins: HashMap<u32, Role>,
     /// The clock moved by an admin (s).
     pub shift: f64,
-    /// An admin asked for the next weather.
-    pub next_weather: bool,
-    /// An admin set the clock to this time of day (s).
-    pub set_clock: Option<f64>,
-    /// An admin chose this weather (`Weather/….owt`, checked against the installed ones by
-    /// the host loop).
-    pub set_weather: Option<String>,
-    /// An admin's traffic order, for the host loop (`traffic <density>`, `traffic clear`).
-    pub traffic: Option<TrafficOrder>,
+    /// The operations on the server's own world, for the host loop (`take_world`).
+    world: Vec<WorldJob>,
     /// The server has people at all (`passengers` of `server.cfg`; switched at start only).
     pub passengers_on: bool,
     /// The passenger density the server applies (its `passenger_density`, or an admin's
@@ -141,8 +147,17 @@ pub struct ServerAdmin {
     /// When wrong answers came lately (the lock counts them, whoever sent them: a player
     /// who reconnects is somebody new).
     failures: Vec<std::time::Instant>,
-    kdf: Option<(String, [u8; 16], [u8; 32])>,
-    admin_at: std::collections::HashMap<u32, Option<std::net::SocketAddr>>,
+    /// The passwords' keys for the challenges (both with one salt), and the passwords they
+    /// were made of.
+    kdf: Option<Kdf>,
+    admin_at: HashMap<u32, Option<std::net::SocketAddr>>,
+}
+
+struct Kdf {
+    of: (String, String),
+    salt: [u8; 16],
+    admin: [u8; 32],
+    moderator: Option<[u8; 32]>,
 }
 
 /// A dedicated server admin's order for the AI traffic.
@@ -170,9 +185,9 @@ const LOCK_WINDOW: std::time::Duration = std::time::Duration::from_secs(120);
 impl ServerAdmin {
     /// Forget the rights and challenges of players no longer in the session.
     pub fn prune(&mut self, lan: &LanSession) {
-        let here: std::collections::HashMap<u32, Option<std::net::SocketAddr>> = lan.peers().map(|p| (p.pose.id, p.addr)).collect();
+        let here: HashMap<u32, Option<std::net::SocketAddr>> = lan.peers().map(|p| (p.pose.id, p.addr)).collect();
         let at = &self.admin_at;
-        self.admins.retain(|id| {
+        self.admins.retain(|id, _| {
             let moved = matches!((at.get(id), here.get(id)), (Some(a), Some(h)) if a != h);
             if moved {
                 log::warn!("server: player {id} talks from another address now: no longer an admin until the password is given again");
@@ -180,17 +195,41 @@ impl ServerAdmin {
             here.contains_key(id) && !moved
         });
         let admins = &self.admins;
-        self.admin_at.retain(|id, _| admins.contains(id));
+        self.admin_at.retain(|id, _| admins.contains_key(id));
         self.challenges.retain(|id, _| here.contains_key(id));
     }
 
-    fn derived(&mut self) -> ([u8; 16], [u8; 32]) {
-        if self.kdf.as_ref().map(|k| &k.0) != Some(&self.password) {
+    /// Whether a password lets anybody in.
+    fn enabled(&self) -> bool {
+        !self.password.is_empty() || !self.moderator_password.is_empty()
+    }
+
+    /// The keys of the passwords (made once: slow on purpose), with their salt.
+    fn derived(&mut self) -> &Kdf {
+        let of = (self.password.clone(), self.moderator_password.clone());
+        if self.kdf.as_ref().map(|k| &k.of) != Some(&of) {
             let salt = fresh_salt();
-            self.kdf = Some((self.password.clone(), salt, derive(&self.password, &salt, KDF_ROUNDS)));
+            let admin = derive(&self.password, &salt, KDF_ROUNDS);
+            // (a moderator's password equal to the admin's gives the admin's role)
+            let moderator = (!self.moderator_password.is_empty() && self.moderator_password != self.password).then(|| derive(&self.moderator_password, &salt, KDF_ROUNDS));
+            self.kdf = Some(Kdf { of, salt, admin, moderator });
         }
-        let k = self.kdf.as_ref().expect("just made");
-        (k.1, k.2)
+        self.kdf.as_ref().expect("just made")
+    }
+
+    /// The role an answer to `challenge` proves, if any.
+    fn role_of(&mut self, challenge: &str, response: &str) -> Option<Role> {
+        let has_admin = !self.password.is_empty();
+        let k = self.derived();
+        if has_admin && same(response, &keyed_response(&k.admin, challenge)) {
+            return Some(Role::Admin);
+        }
+        k.moderator.as_ref().filter(|m| same(response, &keyed_response(m, challenge))).map(|_| Role::Moderator)
+    }
+
+    /// The operations on the server's world asked since the last time, in order.
+    pub fn take_world(&mut self) -> Vec<WorldJob> {
+        std::mem::take(&mut self.world)
     }
 
     fn locked(&mut self) -> bool {
@@ -199,29 +238,25 @@ impl ServerAdmin {
     }
 }
 
-/// A weather file an admin may choose: a `Weather/….owt` path, nothing above it.
-fn weather_file_ok(file: &str) -> bool {
-    let f = file.replace('\\', "/").to_ascii_lowercase();
-    f.starts_with("weather/") && f.ends_with(".owt") && !f.contains("..") && f.matches('/').count() == 1
-}
-
 /// Who the commands of the web gateway's `POST /admin` come from: no player has this id.
 pub const LOCAL_ADMIN: u32 = u32::MAX;
 
-/// A command a player sent the dedicated server.
-pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut ServerAdmin, positions: &dyn Fn(u32) -> Option<(glam::DVec3, f64)>, rules: &ServerRules) {
+/// A command a player sent the dedicated server (`hub`: the administration's records, see
+/// `exec`).
+#[allow(clippy::too_many_arguments)]
+pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut ServerAdmin, positions: &dyn Fn(u32) -> Option<(glam::DVec3, f64)>, rules: &ServerRules, hub: Option<&Hub>) {
     let (verb, arg) = text.split_once(' ').unwrap_or((text, ""));
     match verb {
         // a joining game asks which voice server the session talks on (`voice`)
         "voice?" => lan.command(from, &crate::voice::VoiceServer::command(crate::voice::hosted().as_ref())),
         "auth?" => {
-            if adm.password.is_empty() {
+            if !adm.enabled() {
                 lan.command(from, "admin-no");
             } else if adm.locked() {
                 lan.command(from, "admin-locked");
             } else {
                 let c = format!("{:016x}{:016x}", omsi_net::random_session_id(), omsi_net::random_session_id());
-                let (salt, _) = adm.derived();
+                let salt = adm.derived().salt;
                 adm.challenges.insert(from, c.clone());
                 lan.command(from, &format!("admin-challenge {c} {} {KDF_ROUNDS}", hex(&salt)));
             }
@@ -230,60 +265,56 @@ pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut Ser
             let challenge = adm.challenges.remove(&from);
             if adm.locked() {
                 lan.command(from, "admin-locked");
-            } else if let (false, Some(c)) = (adm.password.is_empty(), challenge) {
-                if same(arg.trim(), &keyed_response(&adm.derived().1, &c)) {
-                    adm.admins.insert(from);
-                    adm.admin_at.insert(from, lan.peers().find(|p| p.pose.id == from).and_then(|p| p.addr));
-                    log::info!("server: player {from} administers the server now");
-                    lan.command(from, "admin-ok");
-                } else {
-                    adm.failures.push(std::time::Instant::now());
-                    log::warn!("server: player {from} gave a wrong admin password");
-                    lan.command(from, "admin-no");
+            } else if let (true, Some(c)) = (adm.enabled(), challenge) {
+                match adm.role_of(&c, arg.trim()) {
+                    Some(role) => {
+                        adm.admins.insert(from, role);
+                        adm.admin_at.insert(from, lan.peers().find(|p| p.pose.id == from).and_then(|p| p.addr));
+                        let who = reply::player_label(lan, from);
+                        log::info!("server: {who} administers the server now ({})", role.name());
+                        if let Some(h) = hub {
+                            h.note(&who, Some(role), "login", "ok", "the game's Administration menu");
+                        }
+                        // (a game before the roles reads the first word only)
+                        lan.command(from, &format!("admin-ok {}", role.name()));
+                    }
+                    None => {
+                        adm.failures.push(std::time::Instant::now());
+                        let who = reply::player_label(lan, from);
+                        log::warn!("server: {who} gave a wrong admin password");
+                        if let Some(h) = hub {
+                            h.note(&who, None, "login", "refused", "wrong password (the game's Administration menu)");
+                        }
+                        lan.command(from, "admin-no");
+                    }
                 }
             } else {
                 lan.command(from, "admin-no");
             }
         }
-        "admin" if adm.admins.contains(&from) => {
-            log::info!("server: admin {from}: {arg}");
-            let Some(action) = Action::parse(arg) else { return };
-            // (what the action asks of the session: the same as in a hosting game's menu)
-            let admin = Admin { id: Some(from), at: positions(from), sent_away: "sent away by an admin", notice_ok: rules.notice_ok };
-            if act_on_session(lan, &action, &admin) != Done::World {
-                return;
+        // an admin's game stops administering (its menu's "log out")
+        "admin-logout" => {
+            if let Some(role) = adm.admins.remove(&from) {
+                adm.admin_at.remove(&from);
+                let who = reply::player_label(lan, from);
+                if let Some(h) = hub {
+                    h.note(&who, Some(role), "logout", "ok", "the game's Administration menu");
+                }
+                lan.command(from, "admin-result 0 applied you no longer administer this server");
             }
-            // the server's own world: it goes to a player for its admin, and keeps its
-            // clock and speed while on the real time
-            match action {
-                Action::Goto(id) => {
-                    if let Some((pos, h)) = positions(id) {
-                        let (x, y) = beside(pos, h, 8.0);
-                        lan.command(from, &format!("teleport {x:.2} {y:.2} {:.2} {h:.1}", pos.z));
-                    }
+        }
+        "admin" | "admin-list" | "admin-state" => {
+            let Some(role) = adm.admins.get(&from).copied() else {
+                // (the machine's own tool is always let in by the gateway; a player is told)
+                if from != LOCAL_ADMIN {
+                    lan.command(from, "admin-result 0 rejected you do not administer this server: say /admin <password> in the chat");
                 }
-                Action::Time(s) if !rules.real_time => adm.shift += s,
-                Action::Speed(s) if !rules.real_time => lan.clock_speed = s,
-                Action::Clock(s) if !rules.real_time => adm.set_clock = Some(s),
-                // (the menu offers "weather next" and "weather set <file>" for each installed
-                // weather; a server took every one of them for "next")
-                Action::Weather(WeatherAction::Set(file)) if weather_file_ok(&file) => adm.set_weather = Some(file.replace('\\', "/")),
-                Action::Weather(_) => adm.next_weather = true,
-                // the AI traffic: `traffic <density>` (as server.cfg's `traffic`) or `traffic
-                // clear` (every AI car off the road, a jam; the timetable's buses stay)
-                Action::Traffic(arg) => {
-                    if let Some(o) = TrafficOrder::parse(&arg, rules.traffic_max) {
-                        adm.traffic = Some(o);
-                    }
-                }
-                // the people the stops and pavements get from now on: those already waiting,
-                // walking or aboard stay where they are
-                Action::PassengerDensity(d) if adm.passengers_on => {
-                    log::info!("server: passenger density now {d}");
-                    adm.passenger_density = Some(d);
-                }
-                Action::PassengerDensity(_) => log::info!("server: no passenger density to change: passengers = 0 in server.cfg"),
-                _ => {}
+                return;
+            };
+            match verb {
+                "admin-list" => reply::players_list(lan, from, &players(lan, adm), arg),
+                "admin-state" => reply::state(lan, from, hub, role),
+                _ => exec::from_game(lan, from, role, arg, adm, positions, rules, hub),
             }
         }
         // a player's game took the duty it was given (`duty`), or could not: said for the tool
@@ -317,10 +348,30 @@ mod password_tests {
     #[test]
     fn the_server_keeps_its_key_until_the_password_changes() {
         let mut adm = ServerAdmin { password: "a long password".into(), ..Default::default() };
-        let first = adm.derived();
-        assert_eq!(adm.derived(), first);
+        let first = (adm.derived().salt, adm.derived().admin);
+        assert_eq!((adm.derived().salt, adm.derived().admin), first);
         adm.password = "another long one".into();
-        assert_ne!(adm.derived(), first);
+        assert_ne!((adm.derived().salt, adm.derived().admin), first);
+    }
+
+    /// The answer proves the role of the password it was made with, and nothing else: one
+    /// key for each, with one salt; a moderator's password like the admin's is the admin's.
+    #[test]
+    fn the_answer_proves_its_role() {
+        let mut adm = ServerAdmin { password: "admin secret".into(), moderator_password: "mod secret".into(), ..Default::default() };
+        let k = adm.derived();
+        let challenge = format!("c0ffee {} {KDF_ROUNDS}", hex(&k.salt));
+        let (a, m) = (answer(&challenge, "admin secret").unwrap(), answer(&challenge, "mod secret").unwrap());
+        assert_eq!(adm.role_of("c0ffee", &a), Some(Role::Admin));
+        assert_eq!(adm.role_of("c0ffee", &m), Some(Role::Moderator));
+        assert_eq!(adm.role_of("c0ffee", &answer(&challenge, "guess").unwrap()), None);
+        // the same answer for another challenge proves nothing
+        assert_eq!(adm.role_of("c0ffef", &a), None);
+        // no admin password: the moderator's alone
+        let mut adm = ServerAdmin { moderator_password: "mod secret".into(), ..Default::default() };
+        let challenge = format!("c0ffee {} {KDF_ROUNDS}", hex(&adm.derived().salt));
+        assert_eq!(adm.role_of("c0ffee", &answer(&challenge, "mod secret").unwrap()), Some(Role::Moderator));
+        assert_eq!(adm.role_of("c0ffee", &answer(&challenge, "").unwrap()), None);
     }
 }
 
@@ -361,21 +412,6 @@ mod notice_target_tests {
 }
 
 #[cfg(test)]
-mod weather_file_tests {
-    use super::weather_file_ok;
-
-    #[test]
-    fn only_a_weather_file() {
-        assert!(weather_file_ok("Weather/#CAVOK.owt"));
-        assert!(weather_file_ok("weather\\Bodennebel.OWT"));
-        assert!(!weather_file_ok("Weather/../server.cfg"));
-        assert!(!weather_file_ok("Weather/sub/x.owt"));
-        assert!(!weather_file_ok("maps/x.owt"));
-        assert!(!weather_file_ok("Weather/x.cfg"));
-    }
-}
-
-#[cfg(test)]
 mod passenger_density_command_tests {
     use super::*;
 
@@ -386,9 +422,15 @@ mod passenger_density_command_tests {
     }
 
     fn run(lan: &mut LanSession, adm: &mut ServerAdmin, text: &str) {
-        let rules = ServerRules { real_time: false, traffic_max: 120, notice_ok: &|_| true };
-        adm.admins.insert(LOCAL_ADMIN);
-        server_command(lan, LOCAL_ADMIN, &format!("admin {text}"), adm, &|_| None, &rules);
+        let rules = ServerRules { real_time: false, traffic_max: 120, notice_ok: &|_| true, metar: false };
+        adm.admins.insert(LOCAL_ADMIN, Role::Admin);
+        server_command(lan, LOCAL_ADMIN, &format!("admin {text}"), adm, &|_| None, &rules, None);
+        // (the host loop's part: the world's operations)
+        for job in adm.take_world() {
+            if let Action::PassengerDensity(d) = job.action {
+                adm.passenger_density = Some(d);
+            }
+        }
     }
 
     /// `passengers <factor>` sets the density the host loop applies from then on; a wrong
@@ -410,8 +452,9 @@ mod passenger_density_command_tests {
         assert_eq!(off.passenger_density, None);
         // (not an admin: nothing)
         let mut adm = ServerAdmin { passengers_on: true, ..Default::default() };
-        let rules = ServerRules { real_time: false, traffic_max: 120, notice_ok: &|_| true };
-        server_command(&mut lan, 5, "admin passengers 2", &mut adm, &|_| None, &rules);
+        let rules = ServerRules { real_time: false, traffic_max: 120, notice_ok: &|_| true, metar: false };
+        server_command(&mut lan, 5, "admin passengers 2", &mut adm, &|_| None, &rules, None);
+        assert!(adm.take_world().is_empty());
         assert_eq!(adm.passenger_density, None);
     }
 }

@@ -30,6 +30,9 @@ pub struct ServerCfg {
     pub icon: Vec<u8>,
     /// Players who say `/admin <password>` in the chat administer the server (empty: nobody).
     pub admin_password: String,
+    /// The same with this password gives the moderator's role: the players and the chat,
+    /// not the world (empty: none; one equal to `admin_password` is the admin's).
+    pub moderator_password: String,
     /// How fast the server's clock runs (1 real time).
     pub time_speed: f64,
     /// The clock follows the server machine's real date and time (the speed and the
@@ -88,9 +91,13 @@ tunnel = 1
 radius = 0
 
 # players who say \"/admin <password>\" in the chat get the Administration menu (Esc):
-# send players away, bring them, the clock, its speed, the weather. The password needs at
-# least 8 characters; empty: nobody
+# send players away, bring them, the clock, its speed, the weather, the traffic and the
+# passengers. The password needs at least 8 characters; empty: nobody
 admin_password =
+# the same with this password: a moderator, who sees the players and sends them away, talks
+# to them, but leaves the clock, the weather, the traffic and the passengers alone
+# (at least 8 characters; empty: no moderators)
+moderator_password =
 
 # how fast the clock runs (1 = real time, 2 = twice as fast, up to 30)
 time_speed = 1
@@ -171,6 +178,7 @@ impl ServerCfg {
             radius: num("radius", 0) as i32,
             icon,
             admin_password: admin_password(kv.get("admin_password").cloned().unwrap_or_default()),
+            moderator_password: checked_password(kv.get("moderator_password").cloned().unwrap_or_default(), "moderator_password"),
             time_speed: kv.get("time_speed").and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite()).unwrap_or(1.0).clamp(1.0, 30.0),
             real_time: flag("real_time", false),
             metar_sync: flag("metar_sync", false),
@@ -182,29 +190,17 @@ impl ServerCfg {
     }
 }
 
-/// The highest `passenger_density` (the game's own passengers setting goes to 3 as well).
-pub const PASSENGER_DENSITY_MAX: f32 = 3.0;
-
-/// A passenger density as `server.cfg` and the admins give it: a number from 0 to
-/// `PASSENGER_DENSITY_MAX`. Anything else is refused with the reason, never bent into range:
-/// a typo should not quietly fill the map or empty it.
-pub fn passenger_density(text: &str) -> Result<f32, String> {
-    let v = text.trim().parse::<f32>().map_err(|_| format!("'{}' is not a number", text.trim().chars().take(20).collect::<String>()))?;
-    if !v.is_finite() {
-        return Err("not a finite number".into());
-    }
-    if v < 0.0 {
-        return Err("cannot be negative".into());
-    }
-    if v > PASSENGER_DENSITY_MAX {
-        return Err(format!("at most {PASSENGER_DENSITY_MAX}"));
-    }
-    Ok(v)
-}
+/// (one check for `server.cfg` and the admins: `omsi_admin::passenger_density`)
+pub use omsi_admin::{passenger_density, PASSENGER_DENSITY_MAX};
 
 fn admin_password(password: String) -> String {
+    checked_password(password, "admin_password")
+}
+
+/// A password of `server.cfg` (`key`), or none when it is too short (and the log says so).
+fn checked_password(password: String, key: &str) -> String {
     if !password.is_empty() && password.chars().count() < crate::admin::MIN_PASSWORD {
-        log::warn!("server.cfg: admin_password has fewer than {} characters: nobody administers this server until it is longer", crate::admin::MIN_PASSWORD);
+        log::warn!("server.cfg: {key} has fewer than {} characters: it lets nobody in until it is longer", crate::admin::MIN_PASSWORD);
         return String::new();
     }
     password
@@ -269,18 +265,7 @@ pub fn player_info<'a>(q: &omsi_net::Pose, pose_of: impl Fn(u32) -> Option<&'a o
 
 #[cfg(test)]
 mod passenger_density_tests {
-    use super::{passenger_density, ServerCfg, PASSENGER_DENSITY_MAX};
-
-    #[test]
-    fn a_density_is_a_number_from_0_to_the_maximum() {
-        assert_eq!(passenger_density("1"), Ok(1.0));
-        assert_eq!(passenger_density(" 0.5 "), Ok(0.5));
-        assert_eq!(passenger_density("0"), Ok(0.0));
-        assert_eq!(passenger_density("3"), Ok(PASSENGER_DENSITY_MAX));
-        for bad in ["", "abc", "-0.1", "3.01", "50", "NaN", "inf", "-inf", "1e40", "1;say hi"] {
-            assert!(passenger_density(bad).is_err(), "{bad}");
-        }
-    }
+    use super::ServerCfg;
 
     fn load(text: &str) -> ServerCfg {
         static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);

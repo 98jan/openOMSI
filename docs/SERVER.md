@@ -96,11 +96,85 @@ The same gateway and tunnel open for a player hosting by **code** (Connect by Co
 address goes to the rendezvous topic, and a joining game that gets no answer from the
 addresses in the code (routers that cannot be punched through) joins through the tunnel.
 
-What is still to come from the plan below: a world without the renderer's data structures
-(the server keeps the tiles' meshes in memory for nothing), tiles streamed by the players'
-interest (today `radius = 0` loads the whole map), a password, admin commands.
+## Administration
 
-# Dedicated server - the original concept
+A server administers itself with passwords of `server.cfg`, at least 8 characters each (a
+shorter one lets nobody in, and the log says so):
+
+| key | role | may |
+|---|---|---|
+| `admin_password` | admin | everything below, and the world: the clock and its speed, the weather, the AI traffic, the passengers |
+| `moderator_password` | moderator | see the server and its players, send a player away (not an admin), the chat, a word to one player, duties, services |
+
+The role comes from the password that was given and is decided by the server alone: nothing a
+game or a page sends names or raises it, and every operation is checked on the server, whether
+a menu showed it or not. A `moderator_password` equal to the `admin_password` gives the admin's
+role. No password: no administration.
+
+**In the game.** A player says `/admin <password>` in the chat; the password never goes over the
+network (the game asks `auth?`, the server answers with a fresh challenge, its salt and rounds,
+and the game proves it knows the password: PBKDF2 and an HMAC of the challenge). Five wrong
+answers in two minutes lock it for everybody for a while. The server answers `admin-ok admin`
+or `admin-ok moderator` (a game before the roles reads the first word), and the Esc menu's
+*Administration* sends every line to the server as `admin <action>`. The rights end when the
+player leaves or talks from another address.
+
+A game from before the roles, given the moderator's password, shows the admin's whole old menu:
+the server still refuses the world's actions, but that game does not read the answer
+(`admin-result`), so nothing happens on its screen. Moderators should play a current game.
+
+**One way of doing it.** Whatever way an operation comes - a player's menu, the machine's own
+tool (`POST /admin`, see above: the admin's role), the web panel - it is checked against the
+role, done by the server's own loop on its tick (never by a web request's thread), and
+recorded with what became of it: `applied` (done: a player sent away is gone from the session,
+the clock reads the new time), `pending` (the server did its part, the rest is a player's game:
+a word or a duty sent to it), `rejected` with the reason (no such player, not the player picked
+any more, not allowed for the role, the clock follows the real time, the weather follows the
+METAR report, a weather that is not installed, a number out of range), or `queued` while the
+loop has not come to it. A player's game that asked is told `admin-result <record> <status>
+<message>`. A request taken is not a request done.
+
+**Picking a player.** A player is named by number *and* connection: `kick 3#17 reason` (the
+connection is the session's own number for that join, which the admins' list gives). A player
+who left, or left and came back - the same number, a new connection - or somebody else who has
+the number now is not the one picked: the operation is refused and nobody else is touched. The
+older menus' `kick 3` still works and names the number alone. The players' list for an admin
+(`admin-list [search]` → an `admin-p <id> <conn> <state> <role> <aboard> <online s> <vehicle>
+<name>` line each, then `admin-end <found> <total>`) needs no `share_positions`: it gives no
+position and no address. A search finds every name that holds the text, whatever the case
+(`pichau` finds `Pichau` and `pichau_fan`, the exact name first), as text - no pattern, no
+command - and never picks one by itself: the admin picks. `admin-state` answers `admin-s` with
+the clock, its speed, the weather, the traffic, the passengers' density and counts, the players
+and the locks (`rt=1`: real time, `metar=`: the METAR station).
+
+**Sending away.** A player sent away (`kick`) reads the reason given, or "sent away by an admin",
+and may join again. `ban` keeps them out for the rest of this server run, by their game's random
+nonce and the address they came from. That is not an identity: a player name is whatever the
+game says, an address changes (and many players can share one), and the session knows nothing
+that outlives a run and could not be made up. So there is no permanent ban - it would be a ban
+of a name or of an address, neither of which says who somebody is.
+
+**Bringing players, going to them.** `bring`, `bringall` and `goto` stay in the game's menu for
+an admin who drives on the server: the player's game puts its bus beside the admin's (with its
+trailers; a player on foot is put back at the wheel first, so walking is not kept). What
+becomes of other players sitting in a bus that is moved is not checked. They need the admin's
+bus, and are not safe for every case, so the web panel and the new panels offer none of them.
+
+**The audit log.** Every login, refused password, operation and what became of it is written to
+`admin-audit.log` beside `server.cfg` (a JSON object a line: when, who - `player 3 'Name'`,
+`local tool (POST /admin)`, `web#2 (address)` -, the role, the action, the player, the result),
+put aside as `admin-audit.log.1` past 1 MB, so it never takes more than about 2 MB. No password
+or token is ever written to it; names, reasons and chat lines are kept as cleaned text.
+
+## What is still to come
+
+A world without the renderer's data structures (the server keeps the tiles' meshes in memory
+for nothing), and tiles streamed by the players' interest (today `radius = 0` loads the whole
+map). The section below is the plan the server was first written from: what it says about
+`omsi-server`, `password`, `admins` and `public` is not what runs today - the server is
+`openomsi --server`, and its keys are those of the `server.cfg` it writes.
+
+# Dedicated server - the original concept (a plan, not the current server)
 
 Today a session is hosted by a player's game: the host simulates the shared world (AI
 traffic, timetable buses, people, traffic lights) around every player and streams it to the

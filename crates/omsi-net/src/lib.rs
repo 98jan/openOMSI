@@ -1323,7 +1323,16 @@ pub struct Peer {
     /// The latest states as they came (arrival, state), oldest first: the game draws the
     /// player's bus between two of them (`Pose::sent_ms`), not only the newest.
     pub history: std::collections::VecDeque<(Instant, Pose)>,
+    /// This connection's own number, never given to another in this process (a player who
+    /// leaves and comes back gets a new one, even with the same player number): what an
+    /// administration's choice of a player holds on to.
+    pub conn: u64,
+    /// When the player joined.
+    pub joined: Instant,
 }
+
+/// The connections counted (`Peer::conn`, from 1).
+static CONNECTIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl Peer {
     fn new(addr: Option<SocketAddr>, pose: Pose) -> Peer {
@@ -1349,6 +1358,8 @@ impl Peer {
             secret: admission::random_bytes(),
             home: addr,
             settled: false,
+            conn: CONNECTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+            joined: now,
         }
     }
 

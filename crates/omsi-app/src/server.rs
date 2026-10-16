@@ -42,7 +42,8 @@ pub(crate) fn info_of(cfg: &ServerCfg) -> omsi_net::ws::ServerInfo {
 pub(crate) fn prepare(args: &mut Args, path: &Path) -> Result<ServerCfg> {
     let cfg = ServerCfg::load(path, crate::game_lists::TRAFFIC_MAX)?;
     SERVER_MODE.store(true, std::sync::atomic::Ordering::Relaxed);
-    let _ = SERVER_ADMIN.set((cfg.admin_password.clone(), if cfg.real_time { 1.0 } else { cfg.time_speed }));
+    let _ = SERVER_ADMIN.set((cfg.admin_password.clone(), cfg.moderator_password.clone(), if cfg.real_time { 1.0 } else { cfg.time_speed }));
+    start_administration(&cfg, path);
     crate::real_time::set_server_real(cfg.real_time);
     let _ = SERVER_VEHICLES.set(cfg.vehicles.clone());
     let _ = SERVER_VOICE.set(cfg.voice.clone());
@@ -93,8 +94,56 @@ pub(crate) static SERVER_METAR: std::sync::OnceLock<Option<String>> = std::sync:
 /// A dedicated server's voice server (`voice_*` of `server.cfg`).
 pub(crate) use omsi_lan::voice::SERVER_VOICE;
 
-/// A dedicated server's admin password and clock speed (for the host loop).
-pub(crate) static SERVER_ADMIN: std::sync::OnceLock<(String, f64)> = std::sync::OnceLock::new();
+/// A dedicated server's admin and moderator passwords and clock speed (for the host loop).
+pub(crate) static SERVER_ADMIN: std::sync::OnceLock<(String, String, f64)> = std::sync::OnceLock::new();
+
+/// What of a dedicated server's state stays as `server.cfg` says (the rest is the loop's).
+static SERVER_STATE: std::sync::OnceLock<omsi_admin::ServerState> = std::sync::OnceLock::new();
+
+/// The administration's hub (see `omsi_admin`): its records, its sessions, its audit log
+/// (`admin-audit.log` beside `server.cfg`, put aside at 1 MB).
+fn start_administration(cfg: &ServerCfg, path: &Path) {
+    if !cfg.moderator_password.is_empty() && cfg.moderator_password == cfg.admin_password {
+        log::warn!("server.cfg: moderator_password is the admin_password: it gives the admin's role");
+    }
+    let pw = omsi_admin::Passwords { admin: cfg.admin_password.clone(), moderator: cfg.moderator_password.clone() };
+    let audit = path.parent().map(|d| d.join("admin-audit.log"));
+    let hub = omsi_admin::Hub::new(omsi_admin::Auth::new(pw, Default::default()), omsi_admin::Audit::new(audit, 1 << 20));
+    omsi_lan::admin::install_hub(std::sync::Arc::new(hub));
+    let _ = SERVER_STATE.set(omsi_admin::ServerState {
+        name: cfg.name.clone(),
+        map: cfg.map.clone(),
+        version: format!("{} ({})", omsi_platform::VERSION, BUILD),
+        max_players: cfg.max_players,
+        real_time: cfg.real_time,
+        traffic_max: crate::game_lists::TRAFFIC_MAX,
+        timetable: cfg.timetable,
+        passenger_density_max: omsi_admin::PASSENGER_DENSITY_MAX,
+        ..Default::default()
+    });
+}
+
+/// The server's state for the admins' panels now (`time`: the clock, s; `world`: as for
+/// `GET /status`).
+pub(crate) fn admin_state(time: f64, speed: f64, weather: &str, metar: Option<&str>, world: omsi_net::ws::WorldCounts) -> omsi_admin::ServerState {
+    let clock = time.rem_euclid(86_400.0);
+    omsi_admin::ServerState {
+        time: crate::schedule::hhmm(clock),
+        clock,
+        clock_speed: speed,
+        weather: weather.to_string(),
+        metar: metar.map(str::to_string),
+        traffic: world.traffic,
+        passengers: world.passengers,
+        passenger_density: world.passenger_density,
+        waiting: world.waiting,
+        walking: world.walking,
+        aboard: world.aboard,
+        cars: world.cars,
+        buses: world.buses,
+        ..SERVER_STATE.get().cloned().unwrap_or_default()
+    }
+}
 
 /// A dedicated server run: graphics without a device, the whole world by interest.
 pub(crate) static SERVER_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

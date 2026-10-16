@@ -21,9 +21,9 @@
 //! `weather cycle`, `weather set <Weather/file.owt>`.
 
 use crate::App;
-use omsi_net::{LanSession, Role};
+use omsi_net::Role;
 
-pub(crate) use omsi_lan::admin::{duty_arg, ServerAdmin, TrafficOrder, LOCAL_ADMIN};
+pub(crate) use omsi_lan::admin::{duty_arg, ServerAdmin, LOCAL_ADMIN};
 use omsi_lan::admin::{act_on_session, answer, beside, Action, Admin, Done, WeatherAction};
 use omsi_lan::commands::Command;
 
@@ -354,14 +354,13 @@ pub(crate) fn carry_out(app: &mut App, from: u32, command: Command) {
     }
 }
 
-/// A command a player sent the dedicated server (see `omsi_lan::admin::server_command`).
-pub(crate) fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut ServerAdmin, positions: &dyn Fn(u32) -> Option<(glam::DVec3, f64)>) {
-    let rules = omsi_lan::admin::ServerRules {
-        real_time: crate::real_time::server_real(),
-        traffic_max: crate::game_lists::TRAFFIC_MAX,
-        notice_ok: &|text| crate::ui::Notice::parse(text).is_some(),
-    };
-    omsi_lan::admin::server_command(lan, from, text, adm, positions, &rules);
+/// What of the game a dedicated server's administration goes by (`metar`: its weather
+/// follows a METAR report).
+pub(crate) fn server_rules(metar: bool) -> omsi_lan::admin::ServerRules<'static> {
+    fn notice_ok(text: &str) -> bool {
+        crate::ui::Notice::parse(text).is_some()
+    }
+    omsi_lan::admin::ServerRules { real_time: crate::real_time::server_real(), traffic_max: crate::game_lists::TRAFFIC_MAX, notice_ok: &notice_ok, metar }
 }
 
 /// The bus fallen through the world (a hole in the ground, a tile that was not there yet,
@@ -403,7 +402,7 @@ pub(crate) fn guard_fall(app: &mut App, dt: f32) {
 
 #[cfg(test)]
 mod traffic_order_tests {
-    use super::TrafficOrder;
+    use omsi_lan::admin::TrafficOrder;
 
     #[test]
     fn a_traffic_order_is_read() {

@@ -221,8 +221,9 @@ impl<'a> Offscreen<'a> {
         } else {
             weather.path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
         };
-        if let (true, Some((pw, speed))) = (server, crate::server::SERVER_ADMIN.get()) {
+        if let (true, Some((pw, moderator, speed))) = (server, crate::server::SERVER_ADMIN.get()) {
             srv_admin.password = pw.clone();
+            srv_admin.moderator_password = moderator.clone();
             if let Some((on, density)) = crate::server::SERVER_PASSENGERS.get() {
                 (srv_admin.passengers_on, srv_admin.passenger_density) = (*on, *density);
             }
