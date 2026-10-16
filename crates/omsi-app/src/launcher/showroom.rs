@@ -454,7 +454,7 @@ impl Showroom {
             centre.y = bb[4] + bb[1] * 0.5 - total * 0.5;
             length = total;
         }
-        add_studio(renderer, &mut scene, centre.y, length, super::showroom_enhanced(&crate::settings::Settings::load()));
+        add_studio(renderer, &mut scene, glam::Vec2::new(centre.x, centre.y), length, super::showroom_enhanced(&crate::settings::Settings::load()));
         let lighting = lighting_for(&args, &weather, &sky);
         log::info!("showroom: {} ({} meshes, {:.1} m long) placed in {:.2} s", r.look.bus, render.instances.len(), length, t0.elapsed().as_secs_f64());
         let _ = std::fs::remove_file(placing_mark());
@@ -522,6 +522,9 @@ impl Showroom {
         let dir = DVec3::new((sy * cp) as f64, (cy * cp) as f64, -sp as f64);
         let mut pos = target_pt - dir * dist as f64;
         pos.z = pos.z.max(0.6);
+        let cove = Cove::of(s.length);
+        let off = glam::Vec2::new(pos.x as f32 - s.centre.x, pos.y as f32 - s.centre.y).length();
+        pos.z = pos.z.max(cove.height_at(off.min(cove.flat + cove.round - 2.0)) as f64 + 1.0);
         // the bus stands in the free part of the window: the camera looks past it to the
         // side by as much
         let side = (focus - 0.5) * 2.0 * half_v * aspect;
@@ -648,6 +651,15 @@ impl Quality {
 mod tests {
     use super::*;
     use std::mem::ManuallyDrop;
+
+    #[test]
+    fn the_cove_rises_from_the_floor_to_its_wall() {
+        let cove = Cove::of(12.0);
+        assert!((cove.height_at(0.0) - cove.floor).abs() < 1e-3);
+        assert!((cove.height_at(cove.flat) - cove.floor).abs() < 1e-3);
+        assert!((cove.height_at(cove.flat + cove.round) - (cove.floor + cove.round)).abs() < 1e-3);
+        assert!(cove.height_at(cove.flat + 50.0) > cove.floor);
+    }
 
     #[test]
     fn the_podium_holds_the_whole_bus() {
@@ -783,16 +795,35 @@ fn podium(length: f32) -> (f32, f32) {
     ((length * 0.5 + 1.4).max(6.5), 0.32)
 }
 
+struct Cove {
+    floor: f32,
+    flat: f32,
+    round: f32,
+    wall: f32,
+}
+
+impl Cove {
+    fn of(length: f32) -> Cove {
+        let (r, h) = podium(length);
+        Cove { floor: -h, flat: r + 30.0, round: 200.0, wall: 400.0 }
+    }
+
+    fn height_at(&self, d: f32) -> f32 {
+        let x = (d - self.flat).clamp(0.0, self.round);
+        self.floor + self.round - (self.round * self.round - x * x).sqrt()
+    }
+}
+
 type Ring = (f32, f32, f32, f32, f32);
 
-fn lathe(profile: &[Ring], centre_y: f32) -> omsi_geometry::MeshData {
+fn lathe(profile: &[Ring], centre: glam::Vec2) -> omsi_geometry::MeshData {
     let n = 128;
     let (mut positions, mut normals, mut uvs, mut indices) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     for &(r, z, nr, nz, shade) in profile {
         for k in 0..=n {
             let a = std::f32::consts::TAU * k as f32 / n as f32;
             let (sa, ca) = a.sin_cos();
-            positions.push(glam::Vec3::new(ca * r, centre_y + sa * r, z));
+            positions.push(glam::Vec3::new(centre.x + ca * r, centre.y + sa * r, z));
             normals.push(glam::Vec3::new(ca * nr, sa * nr, nz).normalize_or_zero());
             uvs.push(glam::Vec2::new(shade, k as f32 / n as f32));
         }
@@ -807,15 +838,15 @@ fn lathe(profile: &[Ring], centre_y: f32) -> omsi_geometry::MeshData {
     omsi_geometry::MeshData { positions, normals, uvs, ranges: vec![(0, indices.len() as u32, 0)], indices, one_sided: false }
 }
 
-fn add_lathe(renderer: &Renderer, scene: &mut Scene, profile: &[Ring], centre_y: f32, texture: Option<usize>, color: [f32; 3], glow: bool) {
-    let mesh = renderer.add_mesh(scene, &lathe(profile, centre_y));
+fn add_lathe(renderer: &Renderer, scene: &mut Scene, profile: &[Ring], centre: glam::Vec2, texture: Option<usize>, color: [f32; 3], glow: bool, unlit: bool) {
+    let mesh = renderer.add_mesh(scene, &lathe(profile, centre));
     let rgba = [color[0], color[1], color[2], 1.0];
     let mat = if glow {
         renderer.add_material_all(scene, None, omsi_render::AlphaMode::Opaque, rgba, true, None, None, None, None, color)
     } else {
-        renderer.add_material(scene, texture, omsi_render::AlphaMode::Opaque, rgba, false)
+        renderer.add_material(scene, texture, omsi_render::AlphaMode::Opaque, rgba, unlit)
     };
-    let i = renderer.add_instance(scene, mesh, DVec3::ZERO, glam::Mat4::IDENTITY, vec![mat]);
+    let i = renderer.add_instance(scene, mesh, DVec3::new(0.0, 0.0, -0.005), glam::Mat4::IDENTITY, vec![mat]);
     renderer.set_casts_shadow(scene, i, texture.is_none() && !glow);
     renderer.set_object_culling(scene, i, 0.0, 1.0, true);
 }
@@ -829,30 +860,30 @@ fn studio_ramp() -> omsi_texture::Image {
     omsi_texture::Image { width: n, height: 1, rgba: rgba.collect(), has_alpha: false }
 }
 
-fn add_studio(renderer: &Renderer, scene: &mut Scene, centre_y: f32, length: f32, enhanced: bool) {
+fn add_studio(renderer: &Renderer, scene: &mut Scene, centre: glam::Vec2, length: f32, enhanced: bool) {
     let (r, h) = podium(length);
     let dim = if enhanced { 0.4 } else { 1.0 };
     let bevel = 0.06;
     let top = [(0.0, 0.0, 0.0, 1.0, 0.0), (r - bevel, 0.0, 0.0, 1.0, 0.0), (r - bevel, 0.0, 0.7, 0.7, 0.0), (r, -bevel, 0.7, 0.7, 0.0), (r, -bevel, 1.0, 0.0, 0.0), (r, -h * 0.55, 1.0, 0.0, 0.0)];
-    add_lathe(renderer, scene, &top, centre_y, None, [0.09 * dim, 0.092 * dim, 0.1 * dim], false);
+    add_lathe(renderer, scene, &top, centre, None, [0.09 * dim, 0.092 * dim, 0.1 * dim], false, false);
     let rim = [(r + 0.002, -h * 0.55, 1.0, 0.0, 0.0), (r + 0.002, -h * 0.7, 1.0, 0.0, 0.0)];
-    add_lathe(renderer, scene, &rim, centre_y, None, [0.75, 0.85, 1.0], true);
+    add_lathe(renderer, scene, &rim, centre, None, [0.75, 0.85, 1.0], true, true);
     let base = [(r, -h * 0.7, 1.0, 0.0, 0.0), (r, -h, 1.0, 0.0, 0.0)];
-    add_lathe(renderer, scene, &base, centre_y, None, [0.03 * dim, 0.031 * dim, 0.034 * dim], false);
+    add_lathe(renderer, scene, &base, centre, None, [0.03 * dim, 0.031 * dim, 0.034 * dim], false, false);
     let ramp = renderer.add_texture(scene, &studio_ramp(), false);
-    let (flat, round, wall) = (r + 30.0, 90.0, 170.0);
+    let Cove { flat, round, wall, .. } = Cove::of(length);
     let mut cove = vec![(0.0, -h, 0.0, 1.0, 0.99), (r + 1.5, -h, 0.0, 1.0, 0.95), (r + 8.0, -h, 0.0, 1.0, 0.7), (flat, -h, 0.0, 1.0, 0.45)];
-    for k in 1..=24 {
-        let a = std::f32::consts::FRAC_PI_2 * k as f32 / 24.0;
-        cove.push((flat + a.sin() * round, -h + (1.0 - a.cos()) * round, -a.sin(), a.cos(), 0.45 - 0.15 * k as f32 / 24.0));
+    for k in 1..=32 {
+        let a = std::f32::consts::FRAC_PI_2 * k as f32 / 32.0;
+        cove.push((flat + a.sin() * round, -h + (1.0 - a.cos()) * round, -a.sin(), a.cos(), 0.45 - 0.17 * k as f32 / 32.0));
     }
     let rim_z = -h + round;
     for k in 1..=24 {
         let a = std::f32::consts::FRAC_PI_2 * k as f32 / 24.0;
-        cove.push(((flat + round) * a.cos(), rim_z + a.sin() * wall, -a.cos() / (flat + round), -a.sin() / wall, 0.3 - 0.2 * k as f32 / 24.0));
+        cove.push(((flat + round) * a.cos(), rim_z + a.sin() * wall, -a.cos() / (flat + round), -a.sin() / wall, 0.28 - 0.18 * k as f32 / 24.0));
     }
-    let k = 0.3 * dim;
-    add_lathe(renderer, scene, &cove, centre_y, Some(ramp), [k, k * 1.02, k * 1.08], false);
+    let k = if enhanced { 0.24 } else { 0.3 };
+    add_lathe(renderer, scene, &cove, centre, Some(ramp), [k, k * 1.02, k * 1.08], false, enhanced);
 }
 
 #[cfg(test)]
