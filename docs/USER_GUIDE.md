@@ -539,6 +539,14 @@ glass 15 times a second, keeps only your own bus's spray and draws half the stre
 shows OMSI 2's own texture rain on the glass instead of the drops (from the next bus loaded),
 throws no spray and draws a quarter of the streaks.
 
+The wet roads' reflections - the puddles mirroring the street, in every graphics mode once
+the roads are wet and the reflection maps are on - cost a good share of a weak card's frame
+too: Graphics → *Puddles* (`puddles`) **High** (the default) traces them up to 100 m in rays
+at half the picture's size and mirrors your own bus in them; **Low** traces them only within
+40 m (near the bus), at a quarter of the size and in half the steps, and leaves your bus to
+the rays; **Off** draws none (the reflections on paint and glass stay). It takes effect at
+once.
+
 The vanilla look stays the default. The navigator (`crates/omsi-app/src/navigator.rs`) sits in a corner of the screen (lower
 left by default), after the Route Advisor of Euro Truck Simulator 2: small, dark and half
 transparent, a tilted 3D map that turns with the bus and zooms out with speed - the roads

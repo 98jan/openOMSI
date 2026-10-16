@@ -102,6 +102,8 @@ const graphics = {
         // (only the enhanced modes march volumetric clouds; the vanilla ones are a texture)
         { type: 'select', key: 'cloud_quality', label: 'Cloud quality', options: [['high', 'High'], ['low', 'Low']], when: (s) => enhanced(s) && s.clouds !== false },
         { type: 'select', key: 'rain_quality', label: 'Rain quality', options: [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']] },
+        // (the wet roads' reflections need the reflection maps on)
+        { type: 'select', key: 'puddles', label: 'Puddles', options: [['high', 'High'], ['low', 'Low'], ['off', 'Off']], when: (s) => Number(s.reflections ?? 1) > 0.005 },
         { type: 'toggle', key: 'windy_trees', label: 'Windy trees' },
       ],
     },
@@ -111,6 +113,7 @@ const graphics = {
         { type: 'toggle', key: 'fullscreen', label: 'Fullscreen' },
         { type: 'select', key: 'resolution', label: 'Window size', options: RESOLUTIONS },
         { type: 'toggle', key: 'vsync', label: 'V-sync' },
+        { type: 'toggle', key: 'sim_thread', label: 'Simulation on its own thread' },
         { type: 'select', key: 'max_fps', label: 'Frame limit', options: [['0', 'Screen refresh rate'], ['30', '30 fps'], ['45', '45 fps'], ['60', '60 fps'], ['120', '120 fps'], ['144', '144 fps'], ['1000', 'Unlimited']] },
         // (a Mac has Metal only; ANGLE is Windows' path for a chip with none of the others)
         { type: 'select', key: 'graphics_api', label: 'Graphics API', options: [['auto', 'Automatic'], ['vulkan', 'Vulkan'], ['dx12', 'DirectX 12'], ['gl', 'OpenGL'], ['angle', 'ANGLE (DirectX 11)']], when: windows },
@@ -433,6 +436,6 @@ export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, genera
 
 /** The settings a saved graphics profile holds (`GRAPHICS_PROFILE_KEYS`). */
 export const GRAPHICS_PROFILE_KEYS = [
-  'graphics', 'msaa', 'render_scale', 'anisotropy', 'shadow_size', 'ssao', 'shadows', 'shadow_casters', 'detail_textures', 'night_brightness', 'led_glow', 'led_mips', 'shadow_blobs', 'reflections', 'clouds', 'cloud_quality', 'rain_quality', 'windy_trees',
+  'graphics', 'msaa', 'render_scale', 'anisotropy', 'shadow_size', 'ssao', 'shadows', 'shadow_casters', 'detail_textures', 'night_brightness', 'led_glow', 'led_mips', 'shadow_blobs', 'reflections', 'clouds', 'cloud_quality', 'rain_quality', 'puddles', 'windy_trees',
   'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_quality', 'mirror_hud_every_frame', 'video_memory', 'texture_compression', 'gpu_texture_compression',
 ];

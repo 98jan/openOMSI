@@ -867,9 +867,12 @@ impl Offscreen<'_> {
         }
         // the tyres' spray, frame by frame as the window throws it (the camera that matters
         // for its detail: the followed car's, else the player's bus): the puddles and the wet
-        // asphalt the renderer draws (none under snow, OMSI_WETNESS as the picture takes it)
+        // asphalt the renderer draws (none under snow, OMSI_WETNESS as the picture takes it).
+        // A dedicated server's picture (a 64x36 offscreen one) is never looked at: no spray
+        // to throw for every AI car in the rain
         let spray_wet = puddles::road_wetness(*wetness, weather.snow);
-        if (spray_wet > 0.0 || !spray.is_empty()) && !omsi_cfg::flags::OMSI_NO_SPRAY.is_set() {
+        let server = crate::server::SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed);
+        if !server && (spray_wet > 0.0 || !spray.is_empty()) && !omsi_cfg::flags::OMSI_NO_SPRAY.is_set() {
             let eye = traffic
                 .as_ref()
                 .and_then(|t| follow_id(args, Some(t)).and_then(|id| follow_camera(Some(t), id)))
