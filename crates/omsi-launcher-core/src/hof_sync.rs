@@ -90,7 +90,11 @@ pub(super) fn sync_map_hofs() {
     if install::jobs().iter().any(|j| j.finished.is_none()) {
         return;
     }
-    let Ok(mut last) = last_stamp().try_lock() else { return };
+    let mut last = match last_stamp().try_lock() {
+        Ok(last) => last,
+        Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+        Err(std::sync::TryLockError::WouldBlock) => return,
+    };
     let stamp = sync_stamp();
     if last.as_deref() == Some(stamp.as_str()) {
         return;
@@ -101,7 +105,7 @@ pub(super) fn sync_map_hofs() {
     let mut copied = 0usize;
     let mut warnings = Vec::new();
     for (folder, dirs) in merged_folders("maps") {
-        let Some(map) = dirs.into_iter().find(|d| in_content(d) && !d.starts_with(&original) && omsi_cfg::vfs::is_file(&d.join("global.cfg"))) else { continue };
+        let Some(map) = dirs.into_iter().find(|d| in_content(d) && !(original.starts_with(&content) && d.starts_with(&original)) && omsi_cfg::vfs::is_file(&d.join("global.cfg"))) else { continue };
         let ailists_path = map.join("ailists.cfg");
         if !omsi_cfg::vfs::is_file(&ailists_path) {
             continue;
