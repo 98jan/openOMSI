@@ -69,6 +69,7 @@ impl App {
             trip: None,
             autostart: false,
             paint: None,
+            keep_fuel: true,
             ..self.args.clone()
         };
         match spawn_player(&one, &w, r, scene) {
