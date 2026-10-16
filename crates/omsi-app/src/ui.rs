@@ -226,12 +226,7 @@ pub fn size_factor(height_px: f32, dpi: f32, size: f32, window: bool) -> f32 {
     grown * size
 }
 
-/// How strongly the interface's backgrounds are drawn for the opacity setting
-/// (`Settings::ui_opacity`): 1 at its default of 85 %, as designed; lower, the picture shows
-/// through them (never less than 0.3), higher a little darker. The texts stay solid.
-pub fn backdrop(opacity: f32) -> f32 {
-    (opacity / 0.85).clamp(0.3, 1.3)
-}
+pub use omsi_ui::theme::backdrop;
 
 /// Which menu is open: its layout follows from it.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -1691,15 +1686,6 @@ mod tests {
         assert_eq!(outline_for([20, 20, 20, 0], 0.47), 0);
         // (texts with an outline of their own keep it)
         assert_eq!(outline_for([255, 255, 255, 235], 0.47), 235);
-    }
-
-    /// The opacity's default is the design; below it the backgrounds fade, never quite away.
-    #[test]
-    fn backgrounds_follow_the_opacity_setting() {
-        assert_eq!(backdrop(0.85), 1.0);
-        assert!((backdrop(0.425) - 0.5).abs() < 1e-6);
-        assert_eq!(backdrop(0.2), 0.3);
-        assert!(backdrop(1.0) > 1.0);
     }
 
     #[test]
