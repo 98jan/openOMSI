@@ -422,6 +422,7 @@ fn new_humans(
         // the map's camera they filled the whole pool, and the players met nobody)
         h.players_only = args.server.is_some() && player.is_none();
         h.exact_fare = settings.exact_fare;
+        h.bad_driving = settings.pax_bad_driving;
         h.boarding = settings.boarding.clone();
         h.stand_chance = settings.standing_chance;
         h.voices = match settings.pax_voices.as_str() { "off" => 2, "tickets" => 1, _ => 0 };

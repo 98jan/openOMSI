@@ -39,6 +39,7 @@ function onRoute(d) {
 // The map package's surface (`d.package`, see docs/MAP_PACKAGE.md): its triangles and lines as
 // Path2D objects in map metres, made once and drawn under a transform that follows the view.
 const FILL_KEYS = ['water', 'green', 'built', 'grass', 'forest', 'sport', 'farm']; // by class
+const FILL_LOOK = ['water', 'park', 'built', 'grass', 'forest', 'sport', 'field'];
 const FILL_ORDER = [2, 6, 3, 1, 4, 5, 0]; // under everything: built-up land first, water last
 
 function surfacePaths(pkg) {
@@ -65,7 +66,7 @@ function surfacePaths(pkg) {
 
 /** The surface under the roads: ground, areas, then rivers, rail and borders. */
 function drawSurface(g, pkg, v, W, H) {
-  const c = pkg.colors;
+  const c = LOOK === LOOKS.light && pkg.colors;
   const { fills, lines } = surfacePaths(pkg);
   g.save();
   // map metres (y up) onto the canvas: widths below are pixels, so they are scaled by `mpp`
@@ -73,7 +74,7 @@ function drawSurface(g, pkg, v, W, H) {
   g.scale(1 / v.mpp, -1 / v.mpp);
   g.lineCap = g.lineJoin = 'round';
   for (const k of FILL_ORDER) {
-    g.fillStyle = g.strokeStyle = c[FILL_KEYS[k]];
+    g.fillStyle = g.strokeStyle = c ? c[FILL_KEYS[k]] : LOOK[FILL_LOOK[k]];
     g.fill(fills[k]);
     g.lineWidth = 0.8 * v.mpp; // (no seams between neighbouring triangles)
     g.stroke(fills[k]);
@@ -83,51 +84,70 @@ function drawSurface(g, pkg, v, W, H) {
     g.lineWidth = px * v.mpp;
     g.stroke(path);
   };
-  stroke(lines.river, c.river, 6);
-  stroke(lines.stream, c.river, 2.4);
-  stroke(lines.rail, c.rail_edge, 3.4);
-  stroke(lines.rail, c.rail, 1.6);
+  stroke(lines.river, c ? c.river : LOOK.river, 6);
+  stroke(lines.stream, c ? c.river : LOOK.river, 2.4);
+  stroke(lines.rail, c ? c.rail_edge : LOOK.rail, 3.4);
+  stroke(lines.rail, c ? c.rail : LOOK.railDash, 1.6);
   g.globalAlpha = 0.7;
-  stroke(lines.border, c.border, 1.2);
+  stroke(lines.border, c ? c.border : LOOK.border, 1.2);
   g.restore();
 }
 
-// The look of the game's light map (navigator/style.rs), after Apple Maps.
-const LOOK = {
-  land: '#dcebcb', grass: '#dcebcb', forest: '#bcdba5', field: '#ebebcf', paved: '#edebe6', sand: '#f1e8cf', water: '#9fcff2',
-  road: '#ffffff', roadEdge: '#cfccc4', foot: '#f6f4ef', footEdge: '#e1ded6', area: '#efeef0', areaEdge: '#d8d6da',
-  roof: '#faf9f6', roofEdge: '#d6d1c7', shadow: 'rgba(40,58,46,0.16)', rail: '#a7a59f', tram: '#9a95a6',
-  route: '#2f7cf6', routeEdge: '#1a5fcf', card: 'rgba(255,255,255,0.95)', text: '#1c1c1e', dim: '#6e6e73',
+const LOOKS = {
+  light: {
+    land: '#f3f1ea', grass: '#d8ecc8', forest: '#c3e0ae', field: '#eef0d8', paved: '#eceae4', sand: '#f3ead2', water: '#a6d3f5',
+    park: '#d3eac1', built: '#efebe3', sport: '#cfe9c8', river: '#a6d3f5', border: '#b9a9c9',
+    road: '#ffffff', roadEdge: '#dcd8cf', main: '#fbe08a', mainEdge: '#e5bd55', foot: '#f8f7f3', footEdge: '#e4e1d9', area: '#efedea', areaEdge: '#dedbd6',
+    roof: '#e9e6df', roofEdge: '#d6d1c7', shadow: 'rgba(60,64,52,0.10)', rail: '#b2afa8', railDash: '#ffffff', tram: '#a59fb2',
+    route: '#0a84ff', routeEdge: '#0060df', pin: '#ffffff', card: 'rgba(255,255,255,0.96)', cardShadow: 'rgba(0,0,0,0.16)', text: '#1c1c1e', dim: '#6e6e73', entry: '#ff9f0a',
+  },
+  dark: {
+    land: '#26282b', grass: '#22322a', forest: '#1f3527', field: '#2b2f29', paved: '#2e3033', sand: '#36332b', water: '#1d3550',
+    park: '#213628', built: '#2c2d31', sport: '#22362b', river: '#1d3550', border: '#6b5d7a',
+    road: '#4a4d53', roadEdge: '#323438', main: '#8a7a4e', mainEdge: '#5c5236', foot: '#34363a', footEdge: '#2c2e31', area: '#313337', areaEdge: '#2a2c2f',
+    roof: '#3a3c41', roofEdge: '#46494f', shadow: 'rgba(0,0,0,0.28)', rail: '#5d5f64', railDash: '#2f3134', tram: '#6a6478',
+    route: '#0a84ff', routeEdge: '#0a5bd1', pin: '#f2f2f7', card: 'rgba(44,44,46,0.96)', cardShadow: 'rgba(0,0,0,0.5)', text: '#f2f2f7', dim: '#98989d', entry: '#ff9f0a',
+  },
 };
+let LOOK = LOOKS.light;
 // land classes in the order they are laid: grass, field, sand, paved, forest, water
+const CHUNK = 1024;
 const LAND = [[0, 'grass'], [2, 'field'], [4, 'sand'], [3, 'paved'], [1, 'forest'], [5, 'water']];
 
 /** The layers' triangles and outlines as Path2D objects in map metres, made once. */
 function layerPaths(l) {
   if (l.paths) return l.paths;
   const tris = (t) => {
-    const path = new Path2D();
-    for (let i = 0; i + 5 < t.length; i += 6) {
-      path.moveTo(t[i], t[i + 1]);
-      path.lineTo(t[i + 2], t[i + 3]);
-      path.lineTo(t[i + 4], t[i + 5]);
-      path.closePath();
+    const out = [];
+    for (let s = 0; s + 5 < t.length; s += CHUNK * 6) {
+      const path = new Path2D();
+      const lo = [Infinity, Infinity];
+      const hi = [-Infinity, -Infinity];
+      for (let i = s; i < s + CHUNK * 6 && i + 5 < t.length; i += 6) {
+        path.moveTo(t[i], t[i + 1]);
+        path.lineTo(t[i + 2], t[i + 3]);
+        path.lineTo(t[i + 4], t[i + 5]);
+        path.closePath();
+        lo[0] = Math.min(lo[0], t[i], t[i + 2], t[i + 4]);
+        lo[1] = Math.min(lo[1], t[i + 1], t[i + 3], t[i + 5]);
+        hi[0] = Math.max(hi[0], t[i], t[i + 2], t[i + 4]);
+        hi[1] = Math.max(hi[1], t[i + 1], t[i + 3], t[i + 5]);
+      }
+      out.push({ path, lo, hi });
     }
-    return path;
+    return out;
   };
-  const poly = (p, dx = 0, dy = 0) => {
-    const path = new Path2D();
+  const ring = (path, p, dx = 0, dy = 0) => {
     for (let i = 0; i + 1 < p.length; i += 2) (i ? path.lineTo : path.moveTo).call(path, p[i] + dx, p[i + 1] + dy);
     path.closePath();
-    return path;
   };
   const houses = new Path2D();
   const shadows = new Path2D();
   for (const h of l.houses) {
-    houses.addPath(poly(h.p));
+    ring(houses, h.p);
     // (the shadow falls south-east, longer for a taller house)
     const k = Math.min(h.h, 40) * 0.12;
-    shadows.addPath(poly(h.p, k, -k));
+    ring(shadows, h.p, k, -k);
   }
   const rail = new Path2D();
   const tram = new Path2D();
@@ -146,21 +166,27 @@ function drawLayers(g, l, v, W, H) {
   g.translate(W / 2 - v.cx / v.mpp, H / 2 + v.cy / v.mpp);
   g.scale(1 / v.mpp, -1 / v.mpp);
   g.lineCap = g.lineJoin = 'round';
-  const fill = (path, color, seam = 0.8) => {
+  const x0 = v.cx - (W / 2 + 4) * v.mpp;
+  const x1 = v.cx + (W / 2 + 4) * v.mpp;
+  const y0 = v.cy - (H / 2 + 4) * v.mpp;
+  const y1 = v.cy + (H / 2 + 4) * v.mpp;
+  const seen = (chunks) => (chunks || []).filter((c) => c.hi[0] >= x0 && c.lo[0] <= x1 && c.hi[1] >= y0 && c.lo[1] <= y1);
+  const fill = (chunks, color, seam = 0.8) => {
     g.fillStyle = g.strokeStyle = color;
-    g.fill(path);
     g.lineWidth = seam * v.mpp; // (no seams between neighbouring triangles)
-    g.stroke(path);
+    for (const c of seen(chunks)) {
+      g.fill(c.path);
+      g.stroke(c.path);
+    }
   };
-  for (const [k, key] of LAND) if (P.land[k]) fill(P.land[k], LOOK[key]);
+  for (const [k, key] of LAND) fill(P.land[k], LOOK[key]);
   const near = v.mpp < 2.5;
   // pavements and yards (near), carriageways: an edge, then the surface
   const paved = near ? [[1, 'foot', 'footEdge'], [2, 'area', 'areaEdge'], [0, 'road', 'roadEdge']] : [[2, 'area', 'areaEdge'], [0, 'road', 'roadEdge']];
   for (const [k, f, e] of paved) {
-    if (!P.paved[k]) continue;
     g.strokeStyle = LOOK[e];
     g.lineWidth = 2 * v.mpp;
-    g.stroke(P.paved[k]);
+    for (const c of seen(P.paved[k])) g.stroke(c.path);
     fill(P.paved[k], LOOK[f]);
   }
   g.strokeStyle = LOOK.rail;
@@ -168,7 +194,7 @@ function drawLayers(g, l, v, W, H) {
   g.stroke(P.rail);
   if (near) {
     g.setLineDash([9, 9]);
-    g.strokeStyle = '#ffffff';
+    g.strokeStyle = LOOK.railDash;
     g.lineWidth = Math.max(1.4, 1.3 / v.mpp) * v.mpp;
     g.stroke(P.rail);
     g.setLineDash([]);
@@ -194,7 +220,7 @@ function load(map, date, trip) {
   return cache.get(key);
 }
 
-export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, height = 340 }) {
+export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, height = 340, inset }) {
   const box = useRef();
   const cv = useRef();
   const [data, setData] = useState(null);
@@ -218,6 +244,7 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
     const d = data;
     if (!c || !d || d.error) return;
     const dpr = window.devicePixelRatio || 1;
+    LOOK = document.documentElement.dataset.theme === 'light' ? LOOKS.light : LOOKS.dark;
     const W = box.current.clientWidth;
     const H = box.current.clientHeight;
     if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) Object.assign(c, { width: Math.round(W * dpr), height: Math.round(H * dpr) });
@@ -233,8 +260,13 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
           hi = [Math.max(hi[0], p[i]), Math.max(hi[1], p[i + 1])];
         }
       }
-      const span = Math.max((hi[0] - lo[0]) / (W - 80), (hi[1] - lo[1]) / (H - 60), 0.2);
-      view.current = { cx: (lo[0] + hi[0]) / 2, cy: (lo[1] + hi[1]) / 2, mpp: span };
+      const k = inset?.(box.current) || { l: 0, t: 0, r: 0, b: 0 };
+      const fw = Math.max(W - k.l - k.r, W / 3);
+      const fh = Math.max(H - k.t - k.b, H / 3);
+      const span = Math.max((hi[0] - lo[0]) / Math.max(fw - (inset ? 220 : 80), fw / 2), (hi[1] - lo[1]) / Math.max(fh - (inset ? 90 : 60), fh / 2), 0.2);
+      const ox = Math.min(k.l, W - fw) + fw / 2 - W / 2;
+      const oy = Math.min(k.t, H - fh) + fh / 2 - H / 2;
+      view.current = { cx: (lo[0] + hi[0]) / 2 - ox * span, cy: (lo[1] + hi[1]) / 2 + oy * span, mpp: span };
     }
     const v = view.current;
     const g = c.getContext('2d');
@@ -254,12 +286,16 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
     // the roads' middles: where a road has a paved surface it lies under it, where not it is
     // the road (its edge, then the white)
     const paved = !!d.layers && v.mpp < 2.5;
-    for (let pass = 0; pass < 2; pass++) {
+    for (let pass = 0; pass < 4; pass++) {
+      const main = pass % 2 === 1;
+      const top = pass > 1;
       for (const r of d.roads) {
+        if (!!r.main !== main) continue;
         line(r.p);
-        g.strokeStyle = pass ? LOOK.road : LOOK.roadEdge;
+        const gold = main && !paved;
+        g.strokeStyle = top ? (gold ? LOOK.main : LOOK.road) : gold ? LOOK.mainEdge : LOOK.roadEdge;
         const w = paved ? Math.max(r.w - 1.2, 1.5) : r.w;
-        g.lineWidth = Math.max((w + (pass ? 0 : paved ? 0 : 1.2)) / v.mpp, pass ? (r.main ? 2.2 : 1.4) : r.main ? 3.4 : 2.6);
+        g.lineWidth = Math.max((w + (top ? 0 : paved ? 0 : 1.2)) / v.mpp, top ? (r.main ? 2.2 : 1.4) : r.main ? 3.4 : 2.6);
         g.stroke();
       }
     }
@@ -279,7 +315,7 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
     for (const s of d.stops) {
       const x = X(s.at[0]);
       const y = Y(s.at[1]);
-      g.fillStyle = '#ffffff';
+      g.fillStyle = LOOK.pin;
       g.beginPath();
       g.arc(x, y, 5.5, 0, Math.PI * 2);
       g.fill();
@@ -295,7 +331,7 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
         if (lx === undefined) continue;
         taken.push([lx, y - 10, w]);
         g.save();
-        g.shadowColor = 'rgba(0,0,0,0.18)';
+        g.shadowColor = LOOK.cardShadow;
         g.shadowBlur = 6;
         g.fillStyle = LOOK.card;
         g.beginPath();
@@ -312,11 +348,11 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
     d.entries.forEach((e, i) => {
       const x = X(e.at[0]);
       const y = Y(e.at[1]);
-      g.fillStyle = '#ffffff';
+      g.fillStyle = LOOK.pin;
       g.beginPath();
       g.arc(x, y, 5.5, 0, Math.PI * 2);
       g.fill();
-      g.fillStyle = '#ff9f0a';
+      g.fillStyle = LOOK.entry;
       g.beginPath();
       g.arc(x, y, 3.8, 0, Math.PI * 2);
       g.fill();
@@ -348,10 +384,13 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
     const ro = new ResizeObserver(redraw);
     ro.observe(box.current);
     document.fonts?.ready.then(redraw);
+    const theme = new MutationObserver(redraw);
+    theme.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     const scale = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
     scale.addEventListener('change', redraw);
     return () => {
       ro.disconnect();
+      theme.disconnect();
       scale.removeEventListener('change', redraw);
     };
   }, []);
