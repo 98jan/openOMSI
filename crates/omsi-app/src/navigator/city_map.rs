@@ -459,6 +459,32 @@ impl Navigator {
     }
 
     /// Draw the city map and lay it over the picture.
+    /// The whole route for the city map (buffers 4 and 11), when it changed: the part driven
+    /// pale, the rest by its traffic, with chevrons about 90 pixels apart.
+    fn city_route(&mut self, net: Option<&Network>, f: &NavFrame, anchor: DVec2, s: f32, pal: &Palette) -> Option<Painter> {
+        let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
+        let every = 2f64.powf((90.0 * s as f64 * self.city.mpp).log2().round()) as f32;
+        let stamp = (self.route.version, self.jam_version, every.to_bits(), self.look_key());
+        if self.city.route.0 == stamp && self.city.route.1 == anchor {
+            return None;
+        }
+        let mut p = Painter::new();
+        if let Some(n) = net {
+            let r = &self.route;
+            let done = r.progress.min(r.lanes.len());
+            for &l in &r.lanes[..done] {
+                let Some(lane) = n.lanes.get(l) else { continue };
+                let pts: Vec<Vec3> = lane.points.iter().map(|q| rel(*q)).collect();
+                p.ribbon(&pts, lane.width.max(3.0), 4.0, pal.driven, true);
+            }
+            let style = RouteStyle { extra_m: 0.0, min_px: 6.0, arrows: Some((every, f32::MAX)), max_len: f32::MAX, near: None };
+            let bus_lane = r.lanes.get(done).map(|&l| lane_from_right(n, l, f.bus)).unwrap_or(0);
+            build_route(&mut p, n, &r.lanes[done..], anchor, r.s, &self.route_jam, &style, bus_lane, pal);
+        }
+        self.city.route = (stamp, anchor, p.len());
+        Some(p)
+    }
+
     pub(super) fn city(&mut self, renderer: &Renderer, scene: &mut Scene, f: &NavFrame) {
         self.atlas.begin_frame();
         let pal = *style::palette(self.light);
@@ -496,28 +522,7 @@ impl Navigator {
         let built = self.city_ground(net, w, h, &pal);
         let anchor = self.city.ground.map(|g| g.anchor).unwrap_or(self.city.center);
         let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
-        // the whole route (buffers 4 and 11): the part driven pale, the rest by its traffic,
-        // with chevrons about 90 pixels apart
-        let mut route_verts = None;
-        let every = 2f64.powf((90.0 * s as f64 * self.city.mpp).log2().round()) as f32;
-        let key = (self.route.version, self.jam_version, every.to_bits(), self.look_key());
-        if self.city.route.0 != key || self.city.route.1 != anchor {
-            let mut p = Painter::new();
-            if let Some(n) = net {
-                let r = &self.route;
-                let done = r.progress.min(r.lanes.len());
-                for &l in &r.lanes[..done] {
-                    let Some(lane) = n.lanes.get(l) else { continue };
-                    let pts: Vec<Vec3> = lane.points.iter().map(|q| rel(*q)).collect();
-                    p.ribbon(&pts, lane.width.max(3.0), 4.0, pal.driven, true);
-                }
-                let style = RouteStyle { extra_m: 0.0, min_px: 6.0, arrows: Some((every, f32::MAX)), max_len: f32::MAX, near: None };
-                let bus_lane = r.lanes.get(done).map(|&l| lane_from_right(n, l, f.bus)).unwrap_or(0);
-                build_route(&mut p, n, &r.lanes[done..], anchor, r.s, &self.route_jam, &style, bus_lane, &pal);
-            }
-            self.city.route = (key, anchor, p.len());
-            route_verts = Some(p.verts);
-        }
+        let route_verts = self.city_route(net, f, anchor, s, &pal).map(|p| p.verts);
         // the camera, relative to the anchor
         let cam = Self::city_cam(self.city.mpp, self.city.tilt, w, h);
         let shift = (self.city.center - anchor).as_vec2();
