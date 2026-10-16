@@ -270,7 +270,7 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
             }
             Lights => {
                 let daylight = self.daylight.expect(NO_DAYLIGHT);
-                let behind = app.drawn_behind();
+                let behind = app.traffic_drawn_behind();
                 let sim = app.player_to_drawn_pose();
                 super::surroundings::lights(super::surroundings::LightsCx::of(&mut app.parts()), dt(), daylight, behind);
                 app.player_back_to_sim_pose(sim);

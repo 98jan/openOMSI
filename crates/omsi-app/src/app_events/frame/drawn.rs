@@ -5,7 +5,7 @@ use omsi_sim::people::{remote_bus_player, BusId};
 impl App {
     pub(super) fn frame_drawn(&mut self) {
         let sim = self.player_to_drawn_pose();
-        let behind = self.drawn_behind();
+        let behind = self.traffic_drawn_behind();
         if let (Some(r), Some(scene)) = (self.renderer.as_ref(), self.scene.as_mut()) {
             if let Some(t) = self.session.traffic.as_mut() {
                 t.sim.show_between_at(behind);
