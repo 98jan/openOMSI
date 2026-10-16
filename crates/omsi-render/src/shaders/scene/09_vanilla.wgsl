@@ -293,7 +293,7 @@ fn shade_vanilla(in: FsIn, puddle_weight: ptr<function, f32>, eye: vec3<f32>) ->
         // more by that light, as a photograph lit by the night, the reflection went twice
         // and the paint and the windows lost their shine at dusk and by night, which they
         // keep in OMSI (#2284).
-        lit = srgb_decode(mix(srgb_encode(lit), srgb_encode(env.rgb), kk));
+        lit = srgb_decode(mix(srgb_encode(lit), srgb_encode(env.rgb), kk * camera.cam_pos.w));
     }
     // wet road: a surface whose texture carries [moisture] darkens under rain and starts
     // to mirror the sky, strongest where you look along it (the Fresnel sheen that makes a

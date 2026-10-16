@@ -417,6 +417,29 @@ impl Renderer {
     }
 }
 
+impl Renderer {
+    pub fn allocator_summary(&self) -> Option<String> {
+        let report = self.device.generate_allocator_report()?;
+        let mut by_name = std::collections::HashMap::<&str, (u64, usize)>::new();
+        for a in &report.allocations {
+            let e = by_name.entry(if a.name.is_empty() { "unnamed" } else { a.name.as_str() }).or_default();
+            e.0 += a.size;
+            e.1 += 1;
+        }
+        let mut names: Vec<_> = by_name.into_iter().collect();
+        names.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+        let top: Vec<String> = names.iter().take(12).map(|(n, (bytes, count))| format!("{n}: {} MB in {count}", bytes >> 20)).collect();
+        Some(format!(
+            "{} MB in {} allocations, {} MB reserved in {} blocks; {}",
+            report.total_allocated_bytes >> 20,
+            report.allocations.len(),
+            report.total_reserved_bytes >> 20,
+            report.blocks.len(),
+            top.join(", ")
+        ))
+    }
+}
+
 #[cfg(all(test, not(target_os = "android")))]
 mod tests {
     use super::{chip_name, dxgi_names_card, one_card, picture, rest_of_card, shared_chip_by_name, GpuMemory, Picture};
