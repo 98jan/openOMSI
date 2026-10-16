@@ -240,6 +240,19 @@ impl App {
                 }
                 _ => nav.clear_route(),
             }
+            if let Some(sch) = self.session.schedule.as_ref() {
+                if nav.map_net().is_some() && !nav.stop_names_learnt() {
+                    nav.learn_stop_names(&sch.stop_names());
+                }
+            }
+            // the timetable's vehicles the traffic does not drive, where the timetable has them
+            if let (Some(sch), true) = (self.session.schedule.as_ref(), nav.show_ai && (nav.enabled || nav.map_open())) {
+                let cars: Vec<(DVec3, String)> = match self.session.traffic.as_ref().filter(|_| nav.live_due(dt)) {
+                    Some(t) => t.cars.iter().filter(|c| !c.gone && c.bus.is_some()).map(|c| (c.vehicle.position, c.vehicle.host.tt_line.clone())).collect(),
+                    None => Vec::new(),
+                };
+                nav.update_live(sch, self.clock.time, dt, &cars);
+            }
             let (outside_temp, inside_temp) = match p {
                 Some(p) => vehicle_temperatures(p),
                 None => {

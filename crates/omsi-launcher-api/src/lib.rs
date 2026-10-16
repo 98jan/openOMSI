@@ -339,6 +339,11 @@ fn mods_status() -> Answer {
     to_json(core::mods_status().map_err(err)?)
 }
 
+fn add_hofs(files: Vec<String>) -> Answer {
+    let files: Vec<PathBuf> = files.into_iter().map(PathBuf::from).collect();
+    Ok(json!(core::add_shared_hofs(&files).map_err(err)?))
+}
+
 fn mod_set_enabled(id: String, on: bool) -> Answer {
     Ok(json!(core::mod_set_enabled(&id, on).map_err(err)?))
 }
@@ -688,6 +693,7 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "radio_stations" => radio_stations(),
         "radio_stations_save" => radio_stations_save(arg::<Vec<Value>>(args, "list")?),
         "mods_status" => mods_status(),
+        "add_hofs" => add_hofs(arg::<Vec<String>>(args, "files")?),
         "mod_set_enabled" => mod_set_enabled(arg::<String>(args, "id")?, arg::<bool>(args, "on")?),
         "mod_remove" => mod_remove(arg::<String>(args, "id")?),
         "mod_inspect" => mod_inspect(arg::<String>(args, "path")?),

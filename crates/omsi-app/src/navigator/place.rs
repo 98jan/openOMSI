@@ -6,6 +6,11 @@ use super::*;
 use omsi_map::package::{Label, Marker, Package};
 use omsi_ui::Vertex;
 
+// (the place row's and the chips' own colours: they lie on dark bars in both looks)
+const BAR: Color = Color::rgba(18, 18, 18, 0.55);
+const TEXT: Color = Color::rgba(237, 237, 237, 1.0);
+const TEXT_DIM: Color = Color::rgba(184, 184, 184, 1.0);
+
 /// The marker pictures packed into one: its size and pixels (straight alpha) and, per picture, where it lies
 /// (texture coordinates) and its height over its width.
 struct Sheet {

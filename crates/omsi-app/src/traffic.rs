@@ -64,6 +64,8 @@ pub struct Traffic {
     pub(crate) riding_sounds: Option<(u64, omsi_audio::SoundSet)>,
     /// `[sound_ai]` configurations by file.
     pub(crate) sound_cfgs: HashMap<std::path::PathBuf, Option<Arc<omsi_vehicle::SoundCfg>>>,
+    /// Shared script environment for existing AI and for their next `{init}`.
+    pub script_environment: Option<([f32; 22], glam::Vec3, f32)>,
     /// What each vehicle definition (by its file) is heard with, its paths resolved once:
     /// a car waiting for its clips looked them all up on the disk again every frame, and a
     /// car without a usable sound configuration did so as long as it was near.
@@ -101,6 +103,7 @@ impl Traffic {
             orphan_sounds: Vec::new(),
             riding_sounds: None,
             sound_cfgs: HashMap::new(),
+            script_environment: None,
             sound_plans: HashMap::new(),
             lamp_turn: 0,
             lamp_owed: HashMap::new(),
@@ -123,6 +126,18 @@ impl Traffic {
         for id in std::mem::take(&mut self.sim.retired) {
             self.orphan_sounds.extend(self.sounds.remove(&id));
             self.events.push(TrafficEvent::Retired { id });
+        }
+    }
+
+    /// Refresh shared script inputs even while paused, and keep them for new vehicles.
+    pub fn set_script_environment(&mut self, values: [f32; 22], wind: glam::Vec3, street: f32) {
+        self.script_environment = Some((values, wind, street));
+        if !self.sim.mirror {
+            for car in &mut self.sim.cars {
+                car.vehicle.host.apply_ai_globals(&values);
+                car.vehicle.host.wind = wind;
+                car.vehicle.host.street_cond = street;
+            }
         }
     }
 

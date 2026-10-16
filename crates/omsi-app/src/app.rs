@@ -434,7 +434,8 @@ impl App {
                         .unwrap_or(1200.0)
                         .max(omsi_map::tile_size());
                     w.set_fast_texture_loads(true);
-                    let (textures, video) = (texture_budget(), video_memory_limit(&self.settings));
+                    let video = video_memory_limit(&self.settings);
+                    let textures = texture_budget(video);
                     w.set_texture_budget(textures);
                     w.set_video_memory_limit(video);
                     log::info!(
@@ -578,6 +579,9 @@ impl App {
                     n.show_ai = self.settings.nav_ai;
                     n.show_surface = self.settings.nav_surface;
                     n.light = self.settings.nav_light;
+                    n.show_3d = self.settings.nav_3d;
+                    n.widget = self.settings.nav_widget;
+                    n.size = self.settings.nav_size;
                 }
                 if let Some(d) = self.args.driver.as_deref() {
                     self.session.career = career::Career::load(&self.args.root, d);

@@ -209,6 +209,7 @@ impl Offscreen<'_> {
             ref run_clock,
             ref envir,
             ref weather,
+            ref wetness,
             ref sky,
             ..
         } = *self;
@@ -226,6 +227,8 @@ impl Offscreen<'_> {
                 player.as_ref(),
                 &renderer.options,
             );
+            let daylight = omsi_sim::Daylight::compute(run_clock, envir.as_ref());
+            steps::set_ai_environment(t, run_clock, daylight, Some(weather), *wetness, false, settings.auto_clutch);
             if i.is_multiple_of(super::steps_in(2.0)) {
                 // (following a car, the population goes with the camera)
                 let pc = if args.follow.is_some() { view_cam.position } else { center };
@@ -288,6 +291,8 @@ impl Offscreen<'_> {
             let daylight = omsi_sim::Daylight::compute(run_clock, envir.as_ref());
             steps::set_ai_daylight(t, daylight, steps::gloomy_weather(Some(weather)));
             let rail = player.as_ref().and_then(|p| p.rail.as_ref()).map(|r| (r.lane, r.along));
+            let capture = self.lan_off.as_ref().is_some_and(|lan| lan.role == omsi_net::Role::Host);
+            for c in &mut t.sim.cars { c.vehicle.host.capture_sound_triggers = capture; }
             steps::traffic_tick(t, world, scenery, dt, false, player.as_ref(), remotes_off, &[], rail);
             steps::traffic_boxes(t, player.as_mut(), settings.collision_vehicles);
         }
@@ -790,10 +795,15 @@ impl Offscreen<'_> {
             };
             let config = args.lan_config();
             let host = lan::AppLanHost { args, world: Some(world) };
+            if l.role == omsi_net::Role::Host {
+                if let Some(t) = traffic.as_mut() {
+                    for c in &mut t.sim.cars { remotes_off.publish_vehicle_sounds(l, &mut c.vehicle, c.id, &config); }
+                }
+            }
             let sent = {
                 let traffic = traffic.as_ref();
                 let cars = || traffic.map(|t| t.cars.iter().map(|c| lan::car_footprint(&c.vehicle)).collect()).unwrap_or_default();
-                lan::tick_send(l, remotes_off, dt, &config, player.as_ref().map(|p| &p.vehicle), &cars, None, &frame)
+                lan::tick_send(l, remotes_off, dt, &config, player.as_mut().map(|p| &mut p.vehicle), &cars, None, &frame)
             };
             lan_world_off.tick(
                 l,
@@ -807,6 +817,12 @@ impl Offscreen<'_> {
                 sim_view,
                 player.as_ref().map(|p| p.vehicle.position),
             );
+            if let Some(t) = traffic.as_mut().filter(|t| t.sim.mirror) {
+                let ready: Vec<_> = t.sim.cars.iter().filter(|c| t.has_sound_set(c.id)).map(|c| c.id).collect();
+                for c in &mut t.sim.cars {
+                    if ready.contains(&c.id) { remotes_off.apply_ai_sounds(&mut c.vehicle, c.id, &config.root); }
+                }
+            }
             let updates = lan::tick_receive(
                 l,
                 remotes_off,

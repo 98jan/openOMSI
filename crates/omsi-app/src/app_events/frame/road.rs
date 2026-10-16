@@ -43,6 +43,8 @@ pub(super) fn traffic(cx: TrafficCx, dt: f32) {
             cx.player.player.as_ref(),
             &r.options,
         );
+        let daylight = omsi_sim::Daylight::compute(&*cx.clock.clock, cx.weather.envir.as_ref());
+        steps::set_ai_environment(t, cx.clock.clock, daylight, cx.weather.weather.as_ref(), *cx.weather.wetness, *cx.clock.paused, cx.common.settings.auto_clutch);
         // The population every 2 s and the timetable's departures on their own clock
         // (every 2 s, every 0.1 s while a backlog of departures waits), never both in
         // one frame: each is a heavy frame of its own. (Together on one clock, a backlog
@@ -99,6 +101,8 @@ pub(super) fn traffic(cx: TrafficCx, dt: f32) {
             t.scripts_due = cx.clock.fixed_tick.view_due();
             dt
         };
+        let capture = cx.net.lan.as_ref().is_some_and(|lan| lan.role == omsi_net::Role::Host);
+        for c in &mut t.sim.cars { c.vehicle.host.capture_sound_triggers = capture; }
         let signals = steps::traffic_tick(t, w, &mut *cx.world.scenery, step_dt, *cx.clock.paused, cx.player.player.as_ref(), &cx.net.remotes, &cx.player.placed, rail);
         cx.perf.profile.add(crate::profile_keys::ProfKey::TrafficTickSignals, signals);
         cx.perf.profile.add(crate::profile_keys::ProfKey::TrafficTick, __t2.elapsed().as_secs_f64());

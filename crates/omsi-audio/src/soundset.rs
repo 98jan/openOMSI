@@ -357,10 +357,11 @@ impl SoundSet {
         var: &dyn Fn(&str) -> Option<f32>,
         part_to_world: &dyn Fn(usize) -> Option<Mat4>,
         triggers: &[String],
+        at_fire: &dyn Fn(&str, &str) -> Option<f32>,
     ) {
         for (i, p) in &mut self.parts {
             match part_to_world(*i) {
-                Some(xf) => p.update(engine, var, &xf, triggers),
+                Some(xf) => p.update_fired(engine, var, &xf, triggers, at_fire),
                 None => p.stop_all(engine),
             }
         }
@@ -400,7 +401,7 @@ impl SoundSet {
         var: &dyn Fn(&str) -> Option<f32>,
         object_to_world: &Mat4,
     ) {
-        if !engine.enabled || file.trim().is_empty() {
+        if !engine.enabled || file.trim().is_empty() || !self.sounds.iter().any(|s| s.def.triggers.iter().any(|d| d.trim().eq_ignore_ascii_case(trigger))) {
             return;
         }
         let path = omsi_cfg::resolve_path(&self.dir, &file_trigger_name(file));
@@ -1202,6 +1203,28 @@ mod tests {
 
     /// The door hit keeps the volume it fired with to its end, though `doorSpeed_0` is 0
     /// from the next frame on (#611, #1268); fired again, it reads the curves anew.
+    #[test]
+    fn articulated_parts_use_trigger_time_curves_and_keep_them() {
+        let _g = globals();
+        let engine = AudioEngine::capture(48_000);
+        let clip = Arc::new(Clip { sample_rate: 48_000, channels: 1, samples: vec![1000; 4800] });
+        let entry = SoundEntry {
+            volume: 1.0, triggers: vec!["door_hit".into()],
+            vol_curves: vec![VolCurve { variable: "door_speed".into(), points: vec![(-1.0, 1.0), (0.0, 0.0)] }],
+            ..Default::default()
+        };
+        let make = || SoundSet { sounds: vec![RuntimeSound::new(entry.clone(), Some(clip.clone()))], master: 1.0,
+            dir: Default::default(), inside: false, amount: 0.0, ai: false, listener_vehicle: false,
+            muffled: false, parts: Vec::new(), vars: None };
+        let mut set = make();
+        set.add_part(0, make());
+        set.update_parts(&engine, &|_| Some(0.0), &|_| Some(Mat4::IDENTITY),
+            &["door_hit".into()], &|t, n| (t == "door_hit" && n == "door_speed").then_some(-1.0));
+        assert_eq!(set.parts[0].1.sounds[0].fired_curves, Some(1.0));
+        set.update_parts(&engine, &|_| Some(0.0), &|_| Some(Mat4::IDENTITY), &[], &|_, _| None);
+        assert_eq!(set.parts[0].1.sounds[0].fired_curves, Some(1.0));
+    }
+
     #[test]
     fn a_triggered_sound_keeps_the_volume_it_started_with() {
         let _g = globals();

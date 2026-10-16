@@ -23,7 +23,8 @@ pub trait LanHost {
     fn depot_of(&self, cfg: &LanConfig, ty: &omsi_sim::VehicleType) -> Option<Arc<omsi_vehicle::Hof>>;
     /// Another player's vehicle of type `ty` in paint scheme `scheme`, made as the game
     /// makes its vehicles (fonts, text textures, coupled rear sections), on `clock`; and
-    /// the depot file its destination display is set from.
+    /// the depot file its destination display is set from. Set the owner-only script texture
+    /// and sound flags on its host before running its init scripts.
     fn remote_vehicle(
         &self,
         cfg: &LanConfig,
