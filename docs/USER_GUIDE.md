@@ -198,7 +198,7 @@ LAN session. Esc opens the game menu: drive the next placed vehicle, place any v
 the installation in front of the camera (or beside the bus), couple what stands close behind
 the bus and uncouple it again, save the situation or load the quicksave, the next weather, the clock an hour on or back, refuel and wash (only at a
 petrol station, as in OMSI), repair (the team needs the map's travel time when the bus stands
-in no depot yard), the photo mode (below), timetable, skip the duty's next stop (also **Ctrl+Shift+H**: for a
+in no depot yard), a screenshot, the photo mode (below), timetable, skip the duty's next stop (also **Ctrl+Shift+H**: for a
 stop the bus cannot reach or never registers at), the object editor (below), quit. The menu is a
 page of the launcher: its rail on the left (the menu's lines as its pages, the picture of the
 game beside it with a card of what is being driven and **Resume**), and *Options*, *Controls*,
