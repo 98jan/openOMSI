@@ -589,7 +589,9 @@ impl Navigator {
                 if !far {
                     vehicle_icon(&mut dots, rel(v.pos), v.heading, color, v.rail, 7.5);
                 }
-                lines.push((v.pos, color, v.line.clone()));
+                if !v.line.trim().is_empty() {
+                    lines.push((v.pos, color, v.line.clone()));
+                }
             }
         }
         let (dots_solid, _) = solid_and_ghost(&dots.verts, 1.0);

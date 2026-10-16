@@ -66,6 +66,10 @@ impl Host for AppHost {
         let (roads, net) = crate::navigator::city_roads(lanes, &road_surfaces);
         CityMap { roads: roads.into_iter().map(|r| MapRoad { points: r.points, width: r.width, main: r.main }).collect(), net, places: places.into_iter().collect() }
     }
+    fn map_layers(&self, root: &Path, map_dir: &Path, tiles: &[(i32, i32, PathBuf)], chrono: &[PathBuf]) -> Option<omsi_map::layers::Layers> {
+        let global = omsi_map::GlobalCfg::load(&map_dir.join("global.cfg")).ok()?;
+        Some(crate::scene::mapgen::cached(root, map_dir, &global.ground_textures, tiles, chrono))
+    }
     fn city_map_colors(&self) -> [[f32; 4]; 4] {
         use crate::navigator::{ROAD, ROAD_CASING, ROAD_MAIN, ROUTE};
         [ROAD_CASING.0, ROAD.0, ROAD_MAIN.0, ROUTE.0]

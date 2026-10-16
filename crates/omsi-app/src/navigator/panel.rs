@@ -186,7 +186,9 @@ impl Navigator {
                 }
                 let color = if v.rail { TRAM } else { BUS };
                 vehicle_icon(&mut dy, rel(v.pos), v.heading, color, v.rail, 7.0);
-                lines.push((v.pos, color, v.line.clone()));
+                if !v.line.trim().is_empty() {
+                    lines.push((v.pos, color, v.line.clone()));
+                }
             }
         }
         let (dy_solid, _) = solid_and_ghost(&dy.verts, 1.0);

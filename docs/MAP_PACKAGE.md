@@ -1,5 +1,14 @@
 # Map packages: a pre-built surface under the roads
 
+> **No package is needed any more.** openOMSI reads every map's own picture off its tiles the
+> first time the map is driven (`omsi_scene::mapgen`, kept in `~/.openomsi/cache/mapgen`): the
+> ground by what it is painted with, water, woods and trees, every paved surface as the splines
+> and objects lay it, rail and tram tracks, and the houses from their models' roofs with their
+> heights. A package as described here still adds what lies **outside** the map's tiles (the
+> real town around a map, rivers and borders); inside the tiles the map's own layers are drawn
+> over it. `OMSI_NO_MAP_CACHE=1` reads the layers again; the example `mapgen_dump` (crate
+> `omsi-scene`) draws them into a picture.
+
 A map's author (or anyone) can ship a **pre-built** picture of the map next to the map itself. openOMSI
 does not compute, convert or triangulate anything: it opens the package, picks the chunks near the
 camera and draws them under the roads of the navigator and the city map. All the work (where the data

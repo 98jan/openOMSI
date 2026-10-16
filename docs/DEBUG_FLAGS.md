@@ -188,10 +188,12 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_LAN_SAY` | text | - | use | lan | "30=Hallo;45=Bye": LAN chat lines said at these seconds of the session. |
 | `OMSI_MOBILE` | bool | off | use | app | The phone layout on a computer (screen cut-outs). |
 | `OMSI_MUTE` | bool | off | use | audio | Mix everything as usual but play nothing. |
+| `OMSI_NAV_2D` | bool | off | use | app | Navigator pictures with flat houses (the nav_3d setting off). |
 | `OMSI_NAV_MAP` | bool | off | use | app | Open the navigation map. |
 | `OMSI_NAV_MAP_MPP` | num | 2.5 | use | app | Navigation map zoom in metres per pixel. |
 | `OMSI_NAV_PROBE` | text | - | use | app | x,y[,r]: the network lanes that start or end within r of that point. |
 | `OMSI_NAV_SCHEDULE` | bool | off | use | app | Navigation map shows the schedule. |
+| `OMSI_NO_MAP_CACHE` | bool | off | use | scene | Read the map's navigator layers (houses, ground, paving) again instead of from the cache. |
 | `OMSI_ONLY_MESH` | text | - | use | scene | a\|b: draw only the meshes whose file names contain one of the parts. |
 | `OMSI_ONLY_OBJECT` | text | - | use | scene | Load only the objects whose file name contains this text. |
 | `OMSI_ONLY_SURFACES` | bool | off | frame | render | Draw only the surfaces. |
