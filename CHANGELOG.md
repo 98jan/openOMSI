@@ -8,6 +8,33 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 ### New
 
+**Navigator and city map**
+
+- The navigator and the city map draw every map in the style of Apple Maps, from the map
+  itself: no map package is needed. On a map's first visit its layers are read off its tiles
+  (some seconds on a big map, then from `~/.openomsi/cache/mapgen`): green land, painted
+  fields, sand and paved yards, water where a tile's water stands over its ground, woods
+  where trees stand close and the single trees, rail lines drawn as Google Maps draws them,
+  tram tracks, and every paved surface as it lies, from the splines' road profiles and the
+  junctions' and car parks' own flat faces, so a car park is one grey yard with a fine
+  edge instead of ten road ribbons. Outside the map's tiles the land is green.
+- The houses stand in 3D with lit walls and soft shadows, taken from the roofs of the map's
+  own models: on the navigator always, on the city map when zoomed in, where it tilts into 3D,
+  and flat from above when zoomed out (the `3D buildings on the map` setting, and the city
+  map's 2D/3D button). The route shows faintly through a house that hides it.
+- The navigator is a rounded map with floating cards: the next turn and its street top left,
+  the time, day and temperatures top right, the speed with the limit sign bottom left (red
+  when too fast), the next stop with its line, distance, time and delay at the bottom.
+- The navigator is a widget: drag it anywhere and size it at its bottom right corner (the
+  `Navigator as a widget` setting; the size is kept, and in the launcher's settings).
+- Every bus, tram and train of the timetable is on the maps where the timetable has it now,
+  anywhere on the map, gliding along its route; from far the city map shows them as their
+  lines' badges. The other players of a LAN session or server show as markers with names.
+- Street names on maps without the stock street name signs: an add-on's own name plates and
+  the stops named after their street name the street.
+- The launcher's route preview draws the same picture: ground, water, rail, paved surfaces
+  and houses, the route in blue, the stops on white cards.
+
 - **Content test** in Settings, in place of the launcher's Model test page: any content is
   loaded the way the game loads it and every warning of its files is listed - a bus with the
   parts coupled behind it, a whole map (every tile, object and spline it places, what of it
@@ -42,6 +69,17 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   the body (the dirt overlay), mud in the wet in a few minutes, dust in the dry more slowly.
 
 ### Fixes
+
+**Navigator**
+
+- Traffic on the navigator follows how fast the traffic flows: busy streets that move are no
+  longer amber, and two cars waiting at a red light or a bus at its stop are no jam; slow,
+  heavy and standing traffic show amber, red and dark red. Junction paths take the colour of
+  their traffic too (they were always blue).
+- A way back to the route is the quickest to the end of the route, counted in time with turns
+  and turning round, and may change lanes on the way: it no longer leads back to a part of
+  the route already driven, nor round a block to reach a lane beside the bus. The way to a
+  stop before the route is there comes to the stop on its own side of the road.
 
 **Graphics**
 
