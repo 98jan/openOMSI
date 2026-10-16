@@ -413,6 +413,38 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
     x.to_string_lossy().eq_ignore_ascii_case(&y.to_string_lossy())
 }
 
+/// The next vehicle of a consist from one with definition `def` (turned round: `rev`),
+/// towards the back of the train or its front, and whether that one is turned round - as
+/// Omsi.exe builds a consist (0x70a174): towards the back a vehicle goes on with its
+/// `[couple_back]`, or with its `[couple_front]` when it is itself turned round (towards the
+/// front the other way about); the coupled one is turned round when the coupling says so,
+/// against the one it hangs on; a coupling back to its own file that turns nothing round
+/// is not followed. (Following `[couple_back]` whatever the way, the Berlin A3's unit - the
+/// S car and its K car turned round, whose `[couple_back]` names the S car - went on S, K,
+/// S, K, S, none of them turned.)
+pub fn next_coupled(def: &Vehicle, rev: bool, toward_back: bool) -> Option<(PathBuf, bool)> {
+    let (file, flag) = if toward_back != rev { def.couple_back.as_ref() } else { def.couple_front.as_ref() }?;
+    let path = omsi_cfg::resolve_path(def.dir(), file);
+    let same = path.file_name().map(|f| f.to_ascii_lowercase()) == def.path.file_name().map(|f| f.to_ascii_lowercase());
+    if !flag && same {
+        return None;
+    }
+    Some((path, flag ^ rev))
+}
+
+/// How many coupled parts one vehicle may have behind it. A consist that closes on itself
+/// stops on its own (see [`chain_has_part`]); this only guards against a coupling chain that
+/// keeps growing through different files.
+pub const MAX_COUPLED_PARTS: usize = 32;
+
+/// Whether the vehicle file `path` is already one of the parts of the consist `seen` - the
+/// same file, not the same spelling, so a chain that comes round again ends there instead of
+/// growing. The NF6D tram closes on itself: its rear cab car `[couple_back]`s the
+/// articulation its front car starts with, and the whole unit is eleven parts long.
+pub fn chain_has_part(seen: &[PathBuf], path: &Path) -> bool {
+    seen.iter().any(|s| same_file(s, path))
+}
+
 /// Of the vehicle files of one vehicle folder (every content root's copy together), the
 /// ones offered for driving, loaded and in the given order: those with a `[friendlyname]`
 /// - OMSI's own rule - that no other file of the folder couples behind itself. The second

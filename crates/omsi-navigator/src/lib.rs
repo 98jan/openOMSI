@@ -30,7 +30,7 @@ use omsi_sim::traffic::{LaneKind, Network};
 use omsi_ui::paint::Align;
 use omsi_ui::{Atlas, Color, Draw, Fonts, Gpu, Layer, Painter, Rect, Weight};
 
-use crate::traffic::Traffic;
+use omsi_sim::ai_traffic::TrafficSim;
 
 // --- colours (sRGB) -------------------------------------------------------------------
 
@@ -42,10 +42,10 @@ const NAV_REDRAW_S: f32 = 1.0 / 30.0;
 /// fps), against 0.6 ms on Vulkan. Every other frame halves that where frames are slow.
 const NAV_REDRAW_FRAMES: u32 = 2;
 // (the launcher's map picture draws with these too, so the two maps cannot look apart)
-pub(crate) const ROAD_CASING: Color = style::LIGHT.road_edge;
-pub(crate) const ROAD: Color = style::LIGHT.road;
-pub(crate) const ROAD_MAIN: Color = style::LIGHT.road;
-pub(crate) const ROUTE: Color = style::LIGHT.route;
+pub const ROAD_CASING: Color = style::LIGHT.road_edge;
+pub const ROAD: Color = style::LIGHT.road;
+pub const ROAD_MAIN: Color = style::LIGHT.road;
+pub const ROUTE: Color = style::LIGHT.route;
 const DOT: Color = Color::rgba(70, 140, 255, 1.0);
 /// The public transport's kinds: trolleybuses, buses, trams.
 const TROLLEY: Color = Color::rgba(46, 184, 92, 1.0);
@@ -60,14 +60,14 @@ const PLAYER: Color = Color::rgba(190, 96, 255, 1.0);
 
 /// An aircraft of the timetable (Spandau's approaches into Tegel run as line `TXL` on the
 /// map's air paths): no vehicle of the streets, left off the maps.
-pub(crate) fn in_the_air(c: &crate::traffic::AiCar, net: &Network) -> bool {
+pub fn in_the_air(c: &omsi_sim::ai_traffic::model::AiCar, net: &Network) -> bool {
     net.lanes.get(c.state.lane).is_some_and(|l| l.kind == LaneKind::Air)
 }
 
 /// What a traffic vehicle is on the map: a trolleybus (its model has trolley poles to
 /// raise, `cp_SHTANGALEV` or `shtanga_lev_rot`), a tram, a bus (one on a timetable or
 /// showing a line), or any other car; and the line it shows, if it is public transport.
-fn traffic_kind(c: &crate::traffic::AiCar) -> (Color, Option<String>) {
+fn traffic_kind(c: &omsi_sim::ai_traffic::model::AiCar) -> (Color, Option<String>) {
     let v = &c.vehicle;
     let line = v
         .ty
@@ -136,7 +136,7 @@ const ON_TIME: Color = Color::rgba(110, 200, 120, 1.0);
 const WARN: Color = Color::rgba(235, 170, 60, 1.0);
 const STOP_REQUEST: Color = Color::hex(0xF0A030);
 
-pub(crate) fn stop_requested(vehicle: &omsi_sim::vehicle::VehicleInstance) -> bool {
+pub fn stop_requested(vehicle: &omsi_sim::vehicle::VehicleInstance) -> bool {
     ["haltewunsch", "haltewunschlampe"].iter().any(|name| vehicle.var(name).is_some_and(|v| v > 0.5))
 }
 
@@ -175,7 +175,10 @@ pub use omsi_lan::game::NavPlayer;
 
 /// What the navigator is told each frame.
 pub struct NavFrame<'a> {
-    pub traffic: Option<&'a Traffic>,
+    pub traffic: Option<&'a TrafficSim>,
+    /// The game shows on-screen touch controls (a phone or tablet, or `OMSI_TOUCH`): the panel
+    /// keeps clear of their row.
+    pub touch: bool,
     /// The other players of a LAN session or server, on both maps (#1011, #1080).
     pub players: Vec<NavPlayer>,
     pub bus: DVec3,
@@ -287,7 +290,7 @@ pub struct Navigator {
     pub panel_overlay: Option<usize>,
     pub cockpit_display: bool,
     /// The speed limit (km/h) the top bar showed last, for the information bar (#2476).
-    pub(crate) speed_limit: Option<f32>,
+    pub speed_limit: Option<f32>,
     drawn_at: f32,
     /// Frames since the last drawing (see `NAV_REDRAW_FRAMES`).
     frames_since_drawn: u32,
@@ -371,7 +374,7 @@ pub struct Navigator {
     pub light: bool,
     /// The map's own layers (houses, ground, paving: `omsi_scene::mapgen`), once read, and a
     /// number that changes when they arrive.
-    pub(crate) map_data: Option<std::sync::Arc<mapmesh::MapData>>,
+    pub map_data: Option<std::sync::Arc<mapmesh::MapData>>,
     map_version: u64,
     layers_rx: Option<std::sync::mpsc::Receiver<mapmesh::MapData>>,
     /// Houses standing in 3D (the `nav_3d` setting); flat roofs otherwise.
@@ -421,7 +424,7 @@ pub struct Navigator {
 /// The duty as the navigator shows it: line, terminus, the stops from the next one on,
 /// and the current trip (a key that changes with it, and its name).
 #[allow(clippy::type_complexity)]
-pub fn duty_parts(duty: Option<&crate::schedule::PlayerDuty>) -> (Option<String>, Option<String>, Vec<NavStop>, Option<(String, String)>) {
+pub fn duty_parts(duty: Option<&omsi_sim::timetable_run::PlayerDuty>) -> (Option<String>, Option<String>, Vec<NavStop>, Option<(String, String)>) {
     let Some(d) = duty else { return (None, None, Vec::new(), None) };
     let Some(trip) = d.trips.get(d.trip_index) else { return (None, None, Vec::new(), None) };
     let line = if trip.line.trim().is_empty() { d.line.trim() } else { trip.line.trim() };
@@ -460,7 +463,7 @@ fn ease(dt: f32, tau: f32) -> f64 {
 }
 
 /// A `navigator_corner` of the form `at x,y` (where the navigator was dragged to, #940).
-pub(crate) fn placed_at(corner: &str) -> Option<[f32; 2]> {
+pub fn placed_at(corner: &str) -> Option<[f32; 2]> {
     let (x, y) = corner.trim().strip_prefix("at")?.trim().split_once(',')?;
     let (x, y) = (x.trim().parse::<f32>().ok()?, y.trim().parse::<f32>().ok()?);
     (x.is_finite() && y.is_finite()).then(|| [x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)])
@@ -554,7 +557,7 @@ impl Navigator {
     }
 
     /// Read the whole map's road network on a worker (once per session).
-    pub fn start_map(&mut self, world: std::sync::Arc<crate::scene::World>) {
+    pub fn start_map(&mut self, world: std::sync::Arc<omsi_scene::World>) {
         if self.building.is_some() || self.global.is_some() {
             return;
         }
@@ -598,7 +601,7 @@ impl Navigator {
     }
 
     /// The map's network given at once (an offscreen picture reads it on its own thread).
-    pub fn set_map(&mut self, map: crate::scene::NavigationMap) {
+    pub fn set_map(&mut self, map: omsi_scene::NavigationMap) {
         let mut net = Network { lanes: map.lanes, ..Default::default() };
         net.link(1.5);
         confirm_road_surfaces(&mut net, &map.road_surfaces);
@@ -627,7 +630,7 @@ impl Navigator {
         let mut hints = self.name_hints.1.clone();
         let before = hints.len();
         for (id, name) in names {
-            if let (Some(p), Some(n)) = (self.stop_pos.get(id), crate::scene::street_name_of(name)) {
+            if let (Some(p), Some(n)) = (self.stop_pos.get(id), omsi_scene::street_name_of(name)) {
                 hints.push((*p, n));
             }
         }
@@ -889,7 +892,7 @@ impl Navigator {
     }
 
     /// Where a vehicle of the traffic is drawn (see `update_drawn_cars`).
-    fn smoothed_position(&self, c: &crate::traffic::AiCar) -> DVec3 {
+    fn smoothed_position(&self, c: &omsi_sim::ai_traffic::model::AiCar) -> DVec3 {
         self.drawn_cars.get(&c.id).map(|v| v.0).unwrap_or(c.vehicle.position)
     }
 
@@ -1075,7 +1078,7 @@ impl Navigator {
         }
         let start = scene.overlays.len();
         self.frame(renderer, scene, f);
-        crate::ui::shift_overlays(scene, start, origin_x);
+        scene.shift_overlays(start, origin_x);
         for rect in [&mut self.panel_rect, &mut self.city.rect] {
             rect[0] += origin_x;
             rect[2] += origin_x;
@@ -1196,7 +1199,7 @@ impl Navigator {
         let sched = if self.schedule { (f.stops.len().clamp(1, 5) as f32 * 22.0 + 12.0) * s } else { 0.0 };
         let ph = (map_h + self.place_row_height(s) + sched).round();
         let (w, h) = (pw as u32, ph as u32);
-        let (x0, y0) = self.panel_origin((sw, sh), (pw, ph), crate::platform::touch_controls(), f.info_rect, f.touch_gap);
+        let (x0, y0) = self.panel_origin((sw, sh), (pw, ph), f.touch, f.info_rect, f.touch_gap);
 
         if self.gpu.is_none() {
             self.gpu = Some(Gpu::with_depth(&renderer.device, renderer.format(), map_samples(renderer.format()), self.atlas.size));
@@ -1258,16 +1261,16 @@ fn same_paths(net: &Network, traffic: &Network, l: usize) -> Vec<usize> {
 
 impl<'a> NavFrame<'a> {
     fn clone_ref(&self) -> NavFrame<'a> {
-        NavFrame { traffic: self.traffic, players: self.players.clone(), bus: self.bus, heading: self.heading, speed_kmh: self.speed_kmh, outside_temp: self.outside_temp, inside_temp: self.inside_temp, line: self.line.clone(), terminus: self.terminus.clone(), stops: self.stops.clone(), delay: self.delay, passengers: self.passengers, time: self.time, weekday: self.weekday, language: self.language, screen: self.screen, ui_scale: self.ui_scale, follow_window: self.follow_window, dt: self.dt, stop_requested: self.stop_requested, info_rect: self.info_rect, touch_gap: self.touch_gap }
+        NavFrame { traffic: self.traffic, touch: self.touch, players: self.players.clone(), bus: self.bus, heading: self.heading, speed_kmh: self.speed_kmh, outside_temp: self.outside_temp, inside_temp: self.inside_temp, line: self.line.clone(), terminus: self.terminus.clone(), stops: self.stops.clone(), delay: self.delay, passengers: self.passengers, time: self.time, weekday: self.weekday, language: self.language, screen: self.screen, ui_scale: self.ui_scale, follow_window: self.follow_window, dt: self.dt, stop_requested: self.stop_requested, info_rect: self.info_rect, touch_gap: self.touch_gap }
     }
 }
 
 
-pub(crate) use omsi_mapdraw::roads::{self, *};
+pub use omsi_mapdraw::roads::{self, *};
 mod place;
 mod surface;
-pub(crate) use omsi_mapdraw::style;
-pub(crate) use omsi_mapdraw as mapmesh;
+pub use omsi_mapdraw::style;
+pub use omsi_mapdraw as mapmesh;
 mod panel;
 mod live;
 mod build;

@@ -4,7 +4,7 @@
 //! bitmap named by that string; openOMSI makes it from the player's current duty and keeps
 //! it in its own cache so the original installation remains read-only.
 
-use crate::schedule::PlayerDuty;
+use omsi_sim::timetable_run::PlayerDuty;
 use ab_glyph::{Font as _, FontVec, PxScale, ScaleFont};
 use anyhow::{anyhow, Context, Result};
 use omsi_content::font::{Font, FontAtlas, FontChar, TextAlign};
@@ -32,12 +32,14 @@ struct PaperRow {
     time: String,
 }
 
-/// Update `file_schedule` to a cached drawing of the current trip. The renderer already
+/// Update `file_schedule` to a cached drawing of the current trip. `language`: the game's
+/// language (`DEU`, `ENG`...), asked once, the first time a paper is drawn. The renderer already
 /// handles the model's `[matl_freetex]` slot, so switching this string updates the paper.
-pub(crate) fn update_vehicle(
+pub fn update_vehicle(
     vehicle: &mut VehicleInstance,
     duty: &PlayerDuty,
     fonts: &mut omsi_sim::texttex::FontLibrary,
+    language: impl FnOnce() -> String,
 ) -> Result<()> {
     // A model without the string has no paper to show: nothing to draw, nothing to look
     // for on the disk (this ran, file check included, on every frame of such a bus).
@@ -56,7 +58,7 @@ pub(crate) fn update_vehicle(
             }
         }
     }
-    let (arr, dep) = tt_labels();
+    let (arr, dep) = tt_labels(language);
     let (title, rows) = paper_content(&duty.line, &duty.tour, &duty.trips, duty.trip_index, (arr, dep));
     let lines = paper_lines(&title, &rows);
     let signature = content_signature(&lines);
@@ -285,10 +287,10 @@ fn gdi_line_height(ascent: f32, descent: f32) -> u32 {
 
 /// `TT_Arr` and `TT_Dep` of the game's language (`Languages/<LANG>_basic.olf`), as
 /// Omsi.exe translates them for the paper: "Arrival " and "Depart." in English.
-fn tt_labels() -> &'static (String, String) {
+fn tt_labels(language: impl FnOnce() -> String) -> &'static (String, String) {
     static LABELS: OnceLock<(String, String)> = OnceLock::new();
     LABELS.get_or_init(|| {
-        let lang = crate::settings::Settings::load().language;
+        let lang = language();
         let find = |lang: &str| {
             omsi_cfg::content_dirs("Languages").into_iter().find_map(|dir| {
                 omsi_content::language::Language::load(&dir.join(format!("{lang}_basic.olf"))).ok()
@@ -313,7 +315,7 @@ fn tt_labels() -> &'static (String, String) {
 fn paper_content(
     duty_line: &str,
     duty_tour: &str,
-    trips: &[crate::schedule::PlannedTrip],
+    trips: &[omsi_sim::timetable_run::PlannedTrip],
     trip_index: usize,
     (arr_label, dep_label): (&str, &str),
 ) -> (String, Vec<PaperRow>) {
@@ -462,7 +464,7 @@ fn save_png(image: &Image, path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schedule::{PlannedStop, PlannedTrip, StopDir};
+    use omsi_sim::timetable_run::{PlannedStop, PlannedTrip, StopDir};
 
     const FONT_HEIGHT: u32 = 24;
     use omsi_content::font::FontChar;
