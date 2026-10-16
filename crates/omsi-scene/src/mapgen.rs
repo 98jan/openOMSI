@@ -608,7 +608,14 @@ fn water_of(part: &mut Part, tile: &omsi_map::Tile, path: &Path, terrain: &omsi_
 fn spline_of(part: &mut Part, sp: &omsi_map::tile::MapSpline, def: &omsi_scenery::sli::Spline, o2: DVec2, origin: DVec2) {
     let curve = omsi_geometry::SplineCurve::from_map(sp, o2).with_sli(def);
     let side = if sp.mirror { -1.0 } else { 1.0 };
-    let n = ((curve.length / 3.0).ceil() as usize).clamp(1, 600);
+    // (a straight spline is one quad a section; a curve one every 4 degrees of its turn)
+    let n = if sp.radius.abs() < 1e-6 && sp.skew_start == 0.0 && sp.skew_end == 0.0 {
+        1
+    } else if sp.radius.abs() < 1e-6 {
+        ((curve.length / 8.0).ceil() as usize).clamp(1, 200)
+    } else {
+        ((curve.length / sp.radius.abs()).to_degrees() / 4.0).ceil().clamp(1.0, 400.0) as usize
+    };
     let at = |s: f64, x: f64| -> Vec2 { (curve.offset_point(s, side * x, 0.0).truncate() - origin).as_vec2() };
     let has_cars = def.paths.iter().any(|p| p.kind == 0);
     let rails: Vec<f32> = def.paths.iter().filter(|p| p.kind == 2).map(|p| p.start[0]).collect();
@@ -745,6 +752,16 @@ mod tests {
         let mut out = Vec::new();
         iso_fill(&[1.0; 9], 3, 3, 2.0, Vec2::ZERO, 0.5, &mut out);
         assert_eq!(out.len(), 12);
+    }
+
+    #[test]
+    fn street_names_are_told_from_stations_and_crossings() {
+        for n in ["Hoher Steinweg", "Moritzstr", "Falkenseer Chaussee", "Hauptstraße", "Station Road", "ul. Piotrkowska", "Rue de Rivoli", "Westerwaldstraße", "улица Ленина"] {
+            assert!(crate::street_name_of(n).is_some(), "{n}");
+        }
+        for n in ["U Rathaus Spandau", "Heerstr/Wilhelmstr", "S+U Bf. Zoo", "Am Omnibushof", "Kino", "Maxim-Kolbe"] {
+            assert!(crate::street_name_of(n).is_none(), "{n}");
+        }
     }
 
     #[test]

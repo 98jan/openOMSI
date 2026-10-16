@@ -41,25 +41,22 @@ const NAV_REDRAW_S: f32 = 1.0 / 30.0;
 /// wgpu makes the GL calls in the submit, 4.2 ms of a 43 ms frame (a Radeon R7 200, 23
 /// fps), against 0.6 ms on Vulkan. Every other frame halves that where frames are slow.
 const NAV_REDRAW_FRAMES: u32 = 2;
-// (the launcher's graphite surface, a little see-through over the cab; no edge round it)
-const PANEL: Color = Color::rgba(28, 28, 28, 0.88);
-// (the bars under the texts: the panel's own grey a step darker, which also keeps whatever the
-// opacity setting leaves of the panel readable - at a third the cab showed through behind the
-// next stop)
-const BAR: Color = Color::rgba(18, 18, 18, 0.55);
-/// The plates over the map (the next turn, the street): the launcher's raised surface.
-const PLATE: Color = Color::rgba(37, 37, 37, 0.92);
 // (the launcher's map picture draws with these too, so the two maps cannot look apart)
-pub(crate) const ROAD_CASING: Color = Color::rgba(30, 30, 30, 0.9);
-pub(crate) const ROAD: Color = Color::rgba(92, 92, 92, 1.0);
-pub(crate) const ROAD_MAIN: Color = Color::rgba(112, 112, 112, 1.0);
-pub(crate) const ROUTE: Color = Color::rgba(214, 48, 40, 1.0);
+pub(crate) const ROAD_CASING: Color = style::LIGHT.road_edge;
+pub(crate) const ROAD: Color = style::LIGHT.road;
+pub(crate) const ROAD_MAIN: Color = style::LIGHT.road;
+pub(crate) const ROUTE: Color = style::LIGHT.route;
 const DOT: Color = Color::rgba(70, 140, 255, 1.0);
 /// The public transport's dots: trolleybuses, buses, trams, and the text on their line tags.
 const TROLLEY: Color = Color::rgba(46, 184, 92, 1.0);
 const BUS: Color = Color::rgba(226, 58, 52, 1.0);
 const TRAM: Color = Color::rgba(240, 190, 30, 1.0);
 const LINE_TEXT: Color = Color::rgba(15, 15, 15, 1.0);
+
+/// The text on a line's tag: white on the red and the green, dark on the yellow.
+fn line_text(c: Color) -> Color {
+    if c == TRAM { LINE_TEXT } else { Color::WHITE }
+}
 /// The other players of a LAN session or server: an arrow the way they face, with their name.
 const PLAYER: Color = Color::rgba(190, 96, 255, 1.0);
 
@@ -106,41 +103,16 @@ fn vehicle_icon(p: &mut Painter, at: Vec3, heading: f64, color: Color, long: boo
     p.world_shape(at, &glass, m, px, Color::rgba(240, 244, 248, 0.9));
 }
 
-/// The route by how busy its roads are: empty, light, busy, heavy, jammed.
-const LEVEL: [Color; 5] = [
-    Color::rgba(46, 116, 240, 1.0),
-    Color::rgba(56, 178, 86, 1.0),
-    Color::rgba(236, 192, 40, 1.0),
-    Color::rgba(224, 56, 44, 1.0),
-    Color::rgba(122, 16, 22, 1.0),
-];
-/// The arrows on it, in a colour that stands out from each.
-const ARROW: [Color; 5] = [
-    Color::rgba(236, 244, 255, 1.0),
-    Color::rgba(12, 66, 28, 1.0),
-    Color::rgba(92, 58, 0, 1.0),
-    Color::rgba(150, 240, 150, 1.0),
-    Color::rgba(255, 206, 80, 1.0),
-];
-/// The part of the route already driven (city map).
-const DRIVEN: Color = Color::rgba(62, 70, 86, 1.0);
-const STREET: Color = Color::rgba(178, 178, 178, 1.0);
 
-/// How busy a road is (0 empty … 4 jammed) from its congestion score.
+/// How busy a road is from its congestion score: 0 flowing, 2 slow, 3 heavy, 4 standing.
 fn level(score: f32) -> usize {
     match score {
-        s if s < 0.12 => 0,
-        s if s < 0.40 => 1,
-        s if s < 0.60 => 2,
-        s if s < 0.80 => 3,
+        s if s < 0.42 => 0,
+        s if s < 0.66 => 2,
+        s if s < 0.85 => 3,
         _ => 4,
     }
 }
-const TEXT: Color = Color::rgba(237, 237, 237, 1.0);
-// (the second texts - units, the day, the times - bright enough to read on a lit cab)
-const TEXT_DIM: Color = Color::rgba(184, 184, 184, 1.0);
-const LATE: Color = Color::rgba(235, 85, 70, 1.0);
-const EARLY: Color = Color::rgba(90, 160, 240, 1.0);
 const ON_TIME: Color = Color::rgba(110, 200, 120, 1.0);
 const WARN: Color = Color::rgba(235, 170, 60, 1.0);
 const STOP_REQUEST: Color = Color::hex(0xF0A030);
@@ -224,6 +196,9 @@ pub struct NavFrame<'a> {
     pub touch_gap: Option<[f32; 3]>,
 }
 
+/// Street name signs (place, heading, name) and weaker hints (place, name).
+type NameHints = (Vec<(DVec3, f64, String)>, Vec<(DVec3, String)>);
+
 /// The texts, per language.
 struct Words {
     kmh: &'static str,
@@ -277,10 +252,13 @@ struct Route {
 
 /// Roads around a centre, built into vertex buffer 0.
 struct Roads {
-    light: bool,
+    /// `Navigator::look_key` it was built for.
+    look: u64,
     anchor: DVec2,
     lanes_seen: usize,
+    /// Vertices of the ground (buffer 0) and of the houses (buffer 8).
     verts: usize,
+    houses: usize,
     built_at: f32,
 }
 
@@ -329,13 +307,17 @@ pub struct Navigator {
     /// Street names of the map's lanes (from its street name signs).
     streets: Option<std::sync::Arc<Streets>>,
     #[allow(clippy::type_complexity)]
-    building: Option<std::sync::mpsc::Receiver<(Network, HashMap<i64, DVec3>, Streets, Option<omsi_map::package::Package>)>>,
+    building: Option<std::sync::mpsc::Receiver<(Network, HashMap<i64, DVec3>, Streets, Option<omsi_map::package::Package>, NameHints)>>,
+    /// What the street names were made from (signs and weaker hints), to make them again
+    /// when the timetable's stop names add hints; and whether those were added.
+    name_hints: NameHints,
+    stop_names_learnt: bool,
     pub global_version: u64,
     roads: Option<Roads>,
     route: Route,
-    /// The route mesh (buffer 1): the route and traffic versions and the anchor it was
-    /// built for, and its size.
-    route_mesh: (u64, u64, DVec2, u32, usize),
+    /// The route mesh (buffers 1 and 9): the route and traffic versions, the anchor, its
+    /// size, the bus's lane and the look it was built for.
+    route_mesh: (u64, u64, DVec2, u32, usize, u64),
     /// Per lane of the traffic: how congested it is (0 free … 1 standing), smoothed.
     congestion: HashMap<usize, f32>,
     /// The same for the route's lanes ahead (in the route's network), and a version that
@@ -343,6 +325,9 @@ pub struct Navigator {
     route_jam: HashMap<usize, f32>,
     jam_version: u64,
     congestion_t: f32,
+    /// Traffic lane → the same lanes of the map's network, and the versions it is for.
+    lane_map: HashMap<usize, Vec<usize>>,
+    lane_map_gen: (u64, u64),
     /// Map camera: distance, heading, both smoothed.
     zoom: f64,
     cam_heading: f64,
@@ -364,8 +349,27 @@ pub struct Navigator {
     pub show_surface: bool,
     /// The light look of the maps (the `nav_light` setting).
     pub light: bool,
-    /// The small map's surface mesh (buffer 6): the surface version and anchor it was built for, and its size.
-    surface_mesh: Option<(u64, DVec2, u32)>,
+    /// The map's own layers (houses, ground, paving: `omsi_scene::mapgen`), once read, and a
+    /// number that changes when they arrive.
+    pub(crate) map_data: Option<std::sync::Arc<mapmesh::MapData>>,
+    map_version: u64,
+    layers_rx: Option<std::sync::mpsc::Receiver<omsi_map::layers::Layers>>,
+    /// Houses standing in 3D (the `nav_3d` setting); flat roofs otherwise.
+    pub show_3d: bool,
+    /// The navigator is a widget: dragged anywhere and resized by its corner (`nav_widget`).
+    pub widget: bool,
+    /// Its size against the usual one (`nav_size`, 0.6 - 2).
+    pub size: f32,
+    /// A press on the navigator's corner: the size, the cursor and the panel's width then.
+    resizing: Option<(f32, [f32; 2], f32)>,
+    /// Where each car was drawn last (eased towards where it is, so they glide).
+    drawn_cars: HashMap<u64, (DVec3, f32)>,
+    /// The timetable's vehicles the traffic does not drive: where they are, where they are
+    /// drawn, when to look again, and the trips' routes worked out so far.
+    live: Vec<live::LiveVehicle>,
+    live_drawn: Vec<live::LiveVehicle>,
+    live_t: f32,
+    trip_paths: HashMap<usize, Option<std::sync::Arc<live::TripPath>>>,
     /// How far the panel has faded in (Shift+N fades it in and out rather than cutting).
     shown: f32,
     /// The trip's next stops (place, name, the bus's heading there) and where the bus is,
@@ -461,14 +465,18 @@ impl Navigator {
             stop_pos: Default::default(),
             streets: None,
             building: None,
+            name_hints: Default::default(),
+            stop_names_learnt: false,
             global_version: 0,
             roads: None,
             route: Route::default(),
-            route_mesh: (u64::MAX, 0, DVec2::ZERO, 0, 0),
+            route_mesh: (u64::MAX, 0, DVec2::ZERO, 0, 0, 0),
             congestion: HashMap::new(),
             route_jam: HashMap::new(),
             jam_version: 0,
             congestion_t: 0.0,
+            lane_map: HashMap::new(),
+            lane_map_gen: (u64::MAX, u64::MAX),
             zoom: 120.0,
             cam_heading: 0.0,
             time: 0.0,
@@ -479,7 +487,18 @@ impl Navigator {
             surface_version: 0,
             show_surface: true,
             light: false,
-            surface_mesh: None,
+            map_data: None,
+            map_version: 0,
+            layers_rx: None,
+            show_3d: true,
+            widget: true,
+            size: 1.0,
+            resizing: None,
+            drawn_cars: HashMap::new(),
+            live: Vec::new(),
+            live_drawn: Vec::new(),
+            live_t: 0.0,
+            trip_paths: HashMap::new(),
             shown: if enabled { 1.0 } else { 0.0 },
             stop_spots: Vec::new(),
             bus_at: DVec3::ZERO,
@@ -497,9 +516,11 @@ impl Navigator {
             return;
         }
         let (tx, rx) = std::sync::mpsc::channel();
+        let wm = world.clone();
         std::thread::Builder::new()
             .name("navigator map".into())
             .spawn(move || {
+                let world = wm;
                 // (the map's package: Maps/<Map>/openomsi-realmap, if it has one)
                 let surface = omsi_map::package::Package::open(&world.map_dir);
                 let m = world.navigation_map();
@@ -507,11 +528,30 @@ impl Navigator {
                 net.link(1.5);
                 confirm_road_surfaces(&mut net, &m.road_surfaces);
                 probe_lanes(&net);
-                let streets = build_streets(&net, &m.signs);
-                let _ = tx.send((net, m.places, streets, surface));
+                let streets = build_streets(&net, &m.signs, &m.names);
+                let _ = tx.send((net, m.places, streets, surface, (m.signs, m.names)));
             })
             .ok();
         self.building = Some(rx);
+        // the map's own layers: a second worker, they take longer the first time (then come
+        // from the cache in a moment)
+        if self.map_data.is_none() && self.layers_rx.is_none() {
+            let (ltx, lrx) = std::sync::mpsc::channel();
+            let w = world.clone();
+            std::thread::Builder::new()
+                .name("navigator layers".into())
+                .spawn(move || {
+                    let _ = ltx.send(w.map_layers());
+                })
+                .ok();
+            self.layers_rx = Some(lrx);
+        }
+    }
+
+    /// The map's layers, given at once (an offscreen picture reads them on its own thread).
+    pub fn set_layers(&mut self, layers: omsi_map::layers::Layers) {
+        self.map_data = Some(std::sync::Arc::new(mapmesh::MapData::new(std::sync::Arc::new(layers))));
+        self.map_version += 1;
     }
 
     /// The map's network given at once (an offscreen picture reads it on its own thread).
@@ -520,11 +560,34 @@ impl Navigator {
         net.link(1.5);
         confirm_road_surfaces(&mut net, &map.road_surfaces);
         probe_lanes(&net);
-        self.streets = Some(std::sync::Arc::new(build_streets(&net, &map.signs)));
+        self.streets = Some(std::sync::Arc::new(build_streets(&net, &map.signs, &map.names)));
+        self.name_hints = (map.signs.clone(), map.names.clone());
         let global = std::sync::Arc::new(net);
         self.global = Some(global);
         self.stop_pos = std::sync::Arc::new(map.places);
         self.global_version += 1;
+    }
+
+    /// The timetable's stop names (stop object → name) as hints of the streets' names: a stop
+    /// named after its street names the street where no sign does. Once, when the map's
+    /// network is there.
+    pub fn learn_stop_names(&mut self, names: &HashMap<i64, String>) {
+        if self.stop_names_learnt {
+            return;
+        }
+        let Some(net) = self.global.clone() else { return };
+        self.stop_names_learnt = true;
+        let mut hints = self.name_hints.1.clone();
+        let before = hints.len();
+        for (id, name) in names {
+            if let (Some(p), Some(n)) = (self.stop_pos.get(id), crate::scene::street_name_of(name)) {
+                hints.push((*p, n));
+            }
+        }
+        if hints.len() > before {
+            self.streets = Some(std::sync::Arc::new(build_streets(&net, &self.name_hints.0, &hints)));
+            self.name_hints.1 = hints;
+        }
     }
 
     /// The places of every object on the map (stops beyond the loaded tiles), once read.
@@ -612,11 +675,13 @@ impl Navigator {
                 return;
             }
             r.retry_in = REROUTE_EVERY * 2.0;
+            // (the lanes that pass the stop on its side of the road: a way that came to the
+            // stop on the far side turned round in front of it)
             let targets: Vec<usize> = lanes_near(net, stop.position.truncate(), 40.0)
                 .into_iter()
-                .filter(|&i| net.lanes[i].kind == LaneKind::Street && net.lanes[i].nearest_point(stop.position).map(|p| p.1 < 20.0).unwrap_or(false))
+                .filter(|&i| net.lanes[i].kind == LaneKind::Street && passes_on_its_side(net, i, stop.position, 20.0))
                 .collect();
-            if let Some((mut path, k)) = way_back(net, f.bus, f.heading, &targets, 30_000.0) {
+            if let Some((mut path, k)) = way_to_any(net, f.bus, f.heading, &targets, 30_000.0) {
                 path.push(targets[k]);
                 log::info!("navigator: no route of the trip here yet; {} lanes to the next stop '{}'", path.len(), stop.name.trim());
                 r.lanes = path;
@@ -716,7 +781,7 @@ impl Navigator {
                         && l.nearest_point(st.position).map(|(s, d)| d < 20.0 && angle_diff(l.at(s).1 as f64, h as f64).abs() < 60.0).unwrap_or(false)
                 })
                 .collect();
-            let (mut path, j) = way_back(net, f.bus, f.heading, &near, max)?;
+            let (mut path, j) = way_to_any(net, f.bus, f.heading, &near, max)?;
             path.push(near[j]);
             log::info!("navigator: the route before stop '{}' cannot be reached; led onto the road past it", st.name.trim());
             Some((path, k + 1))
@@ -753,9 +818,45 @@ impl Navigator {
         }
     }
 
-    /// How congested the lanes near the bus are: a lane with cars on it is light traffic,
-    /// more so the fuller it is; cars crawling or standing in a row make it heavy or a jam
-    /// (one car waiting at a light is not a jam). Smoothed over seconds.
+    /// Where each vehicle of the traffic is drawn: eased towards where it is, so that one the
+    /// traffic steps seldom (far from the bus) glides instead of jumping; a long way (a car put
+    /// back on the road elsewhere) is taken at once.
+    fn update_drawn_cars(&mut self, f: &NavFrame) {
+        let Some(t) = f.traffic else {
+            self.drawn_cars.clear();
+            return;
+        };
+        let k = ease(f.dt, 0.12);
+        let stamp = self.time;
+        for c in t.cars.iter().filter(|c| !c.gone) {
+            let now = c.vehicle.position;
+            let e = self.drawn_cars.entry(c.id).or_insert((now, stamp));
+            if (e.0 - now).truncate().length() > 40.0 {
+                e.0 = now;
+            } else {
+                e.0 += (now - e.0) * k;
+            }
+            e.1 = stamp;
+        }
+        self.drawn_cars.retain(|_, v| v.1 == stamp);
+    }
+
+    /// Where a vehicle of the traffic is drawn (see `update_drawn_cars`).
+    fn smoothed_position(&self, c: &crate::traffic::AiCar) -> DVec3 {
+        self.drawn_cars.get(&c.id).map(|v| v.0).unwrap_or(c.vehicle.position)
+    }
+
+    /// How congested the lanes near the bus are, from how fast the traffic on them flows
+    /// against how fast it could (0 free … 1 standing), smoothed over seconds:
+    ///
+    /// * a car waiting at a red light, a bus at its stop, a car parked or pulling out is no
+    ///   evidence of a jam - only cars held for longer than a light's cycle count as standing;
+    /// * one car is no evidence either way: a lane needs two moving or standing in it;
+    /// * a full lane that moves is free (the old count of cars made busy streets amber and
+    ///   two cars at a light red).
+    ///
+    /// The route's own lanes take the levels of the traffic's lanes they are (by their key,
+    /// else by place and heading: junction paths have no key, and were never coloured).
     fn update_congestion(&mut self, f: &NavFrame) {
         self.congestion_t -= f.dt;
         if self.congestion_t > 0.0 {
@@ -764,35 +865,64 @@ impl Navigator {
         let step = 0.25f32;
         self.congestion_t = step;
         let Some(t) = f.traffic else { return };
-        let mut by_lane: HashMap<usize, (f32, u32)> = HashMap::new();
+        // per lane: the sum of the cars' speed against the lane's free speed, how many, and
+        // how many stand for long
+        let mut by_lane: HashMap<usize, (f32, u32, u32)> = HashMap::new();
         for c in &t.cars {
-            if c.gone || (c.vehicle.position - f.bus).truncate().length() > 1200.0 {
+            if c.gone || (c.vehicle.position - f.bus).truncate().length() > 1500.0 {
                 continue;
             }
-            let e = by_lane.entry(c.state.lane).or_insert((0.0, 0));
-            e.0 += c.state.speed.max(0.0);
+            // (a bus at its stop, or a car standing as part of the furniture)
+            if c.bus.as_ref().is_some_and(|b| !matches!(b.phase, omsi_sim::ai_traffic::bus_service::Phase::Running)) {
+                continue;
+            }
+            let Some(l) = t.net.lanes.get(c.state.lane) else { continue };
+            let free = (l.speed_limit_kmh.clamp(20.0, 60.0) / 3.6) * 0.8;
+            let v = c.state.speed.max(0.0);
+            // (waiting at a light up to a cycle is how traffic flows there)
+            let ratio = if v < 0.8 && c.stopped < 35.0 { 0.75 } else { (v / free).min(1.0) };
+            let e = by_lane.entry(c.state.lane).or_insert((0.0, 0, 0));
+            e.0 += ratio;
             e.1 += 1;
+            if c.stopped > 45.0 {
+                e.2 += 1;
+            }
         }
-        let k = ease(step, 4.0) as f32;
+        let k = ease(step, 6.0) as f32;
+        // (no cars: back to free, slowly)
         for v in self.congestion.values_mut() {
-            *v -= *v * k;
+            *v -= *v * k * 0.5;
         }
-        for (lane, (sum, n)) in by_lane {
-            let Some(l) = t.net.lanes.get(lane) else { continue };
-            let expected = (l.speed_limit_kmh.clamp(20.0, 70.0) / 3.6) * 0.75;
-            let slow = (1.0 - (sum / n as f32) / expected).clamp(0.0, 1.0);
-            let full = (n as f32 * 7.5 / l.length().max(25.0)).min(1.0);
-            let light = 0.22 + 0.33 * full;
-            let jam = slow * (n as f32 / 3.0).min(1.0);
-            let score = if jam > 0.2 { light.max(0.3 + 0.7 * jam) } else { light };
+        for (lane, (sum, n, standing)) in by_lane {
+            if n < 2 && standing == 0 {
+                continue;
+            }
+            let flow = sum / n as f32;
+            let mut score = (1.0 - flow).clamp(0.0, 1.0);
+            if standing >= 2 {
+                score = score.max(0.9);
+            }
             let v = self.congestion.entry(lane).or_insert(0.0);
             *v += (score - *v) * k;
         }
         self.congestion.retain(|_, v| *v > 0.03);
         // the same for the route ahead, in the route's own network
         let global = self.global.clone();
+        if t.lanes_generation != self.lane_map_gen.0 || self.global_version != self.lane_map_gen.1 {
+            self.lane_map.clear();
+            self.lane_map_gen = (t.lanes_generation, self.global_version);
+        }
         let jam = match global.as_deref() {
-            Some(g) => congestion_on(g, &t.net, &self.congestion),
+            Some(g) => {
+                let mut out = HashMap::new();
+                for (&l, &v) in &self.congestion {
+                    let targets = self.lane_map.entry(l).or_insert_with(|| same_paths(g, &t.net, l));
+                    for &gi in targets.iter() {
+                        out.insert(gi, v);
+                    }
+                }
+                out
+            }
             None => self.congestion.clone(),
         };
         let net = global.as_deref().unwrap_or(&t.net);
@@ -802,11 +932,11 @@ impl Navigator {
         for &l in r.lanes.iter().skip(r.progress).take(600) {
             let Some(&c) = jam.get(&l) else { continue };
             route_jam.insert(l, c);
-            // the time the jams ahead cost
+            // the time the slow stretches ahead cost
             if let Some(lane) = net.lanes.get(l) {
-                if c > 0.6 {
-                    let v_free = lane.speed_limit_kmh.clamp(20.0, 70.0) / 3.6;
-                    let v = (v_free * (1.0 - c)).max(1.2);
+                if level(c) >= 2 {
+                    let v_free = lane.speed_limit_kmh.clamp(20.0, 60.0) / 3.6;
+                    let v = (v_free * (1.0 - c)).max(1.0);
                     cost += lane.length() / v - lane.length() / v_free;
                 }
             }
@@ -919,7 +1049,8 @@ impl Navigator {
         }
         self.time += f.dt;
         if let Some(rx) = self.building.as_ref() {
-            if let Ok((net, pos, streets, surface)) = rx.try_recv() {
+            if let Ok((net, pos, streets, surface, hints)) = rx.try_recv() {
+                self.name_hints = hints;
                 log::info!("navigator: the map's road network is there ({} lanes, {} streets named)", net.lanes.len(), streets.names.len());
                 self.streets = Some(std::sync::Arc::new(streets));
                 self.set_surface(surface);
@@ -932,6 +1063,13 @@ impl Navigator {
                 self.route = Route { version: self.route.version + 1, ..Route::default() };
                 self.route_mesh.0 = u64::MAX;
                 self.route_jam.clear();
+            }
+        }
+        if let Some(rx) = self.layers_rx.as_ref() {
+            if let Ok(l) = rx.try_recv() {
+                log::info!("navigator: the map's layers are there ({} houses, {} trees)", l.buildings.len(), l.trees.len());
+                self.set_layers(l);
+                self.layers_rx = None;
             }
         }
         // stops whose tiles are not loaded: their place from the map
@@ -952,8 +1090,9 @@ impl Navigator {
             log::info!("navigator: route {} lanes (complete {}, provisional {}, at {}, on it {}, off for {:.1} s), {} stops ahead, next {:?}, key {:?}", self.route.lanes.len(), self.route.complete, self.route.provisional, self.route.progress, self.route.on_route, self.route.off_for, f.stops.len(), f.stops.first().map(|s| (s.name.clone(), s.position.x.round(), s.position.y.round())), self.route.key);
         }
         self.update_congestion(f);
+        self.update_drawn_cars(f);
         // camera: zoomed out with speed, turned with the bus (both eased)
-        let want = (110.0 + f.speed_kmh as f64 * 2.2).clamp(110.0, 280.0);
+        let want = (150.0 + f.speed_kmh as f64 * 2.4).clamp(150.0, 320.0);
         if self.first {
             self.zoom = want;
             self.cam_heading = f.heading;
@@ -1000,17 +1139,17 @@ impl Navigator {
         // the on-screen buttons along the top)
         let base = (sh.min(sw) * 0.33).max(300.0);
         let base = if f.follow_window { base } else { base.min(480.0) };
-        let pw = (base * f.ui_scale).min((sh * 0.7).max(300.0)).round();
-        let map_h = (pw * 0.62).round();
+        // (the widget's own size on top: `nav_size`, dragged at its corner)
+        let pw = (base * f.ui_scale * self.size.clamp(0.6, 2.0)).min((sh * 0.7).max(300.0) * self.size.clamp(1.0, 2.0)).min(sw * 0.92).round();
+        let map_h = (pw * 0.8).round();
         let s = pw / 360.0;
-        let bars = (34.0 + 46.0) * s;
         let sched = if self.schedule { (f.stops.len().clamp(1, 5) as f32 * 22.0 + 12.0) * s } else { 0.0 };
-        let ph = (map_h + bars + sched).round();
+        let ph = (map_h + sched).round();
         let (w, h) = (pw as u32, ph as u32);
         let (x0, y0) = self.panel_origin((sw, sh), (pw, ph), crate::platform::touch_controls(), f.info_rect, f.touch_gap);
 
         if self.gpu.is_none() {
-            self.gpu = Some(Gpu::new(&renderer.device, renderer.format(), map_samples(renderer.format()), self.atlas.size));
+            self.gpu = Some(Gpu::with_depth(&renderer.device, renderer.format(), map_samples(renderer.format()), self.atlas.size));
         }
         let resized = self.target.map(|t| (t.1, t.2) != (w, h)).unwrap_or(true);
         if resized {
@@ -1042,429 +1181,46 @@ impl Navigator {
         }
     }
 
-    fn draw(&mut self, renderer: &Renderer, target: &wgpu::TextureView, size: (u32, u32), map_h: f32, f: &NavFrame) {
-        let (pw, ph) = (size.0 as f32, size.1 as f32);
-        let s = pw / 360.0;
-        let wd = words(f.language);
-        self.atlas.begin_frame();
-        let panel = Rect::new(0.0, 0.0, pw, ph);
-        // (the corners of the other panels: 8 px at their size, never less)
-        let radius = (8.0 * s).max(8.0);
-        let top_h = (34.0 * s).round();
-        let map = Rect::new(0.0, top_h, pw, map_h);
-        let vp = [map.x, map.y, map.w, map.h];
-
-        // --- roads (buffer 0): rebuilt when the bus went far or tiles brought lanes
-        let own = self.own_net.clone();
-        let global = self.global.clone();
-        let net = global.as_deref().or(f.traffic.map(|t| &t.net)).or(own.as_deref());
-        let lanes_now = net.map(|n| n.lanes.len()).unwrap_or(0);
-        let rebuild = match &self.roads {
-            None => lanes_now > 0,
-            Some(r) => r.light != self.light || (r.anchor - f.bus.truncate()).length() > ROAD_RADIUS * 0.45 || (r.lanes_seen != lanes_now && self.time - r.built_at > 1.5),
-        };
-        let mut road_verts = None;
-        if rebuild {
-            if let Some(net) = net {
-                let anchor = f.bus.truncate();
-                let mut p = Painter::new();
-                let t0 = std::time::Instant::now();
-                build_roads(&mut p, net, anchor, self.light);
-                if omsi_cfg::flags::OMSI_DEBUG_NAV.is_set() {
-                    log::info!("navigator: roads around ({:.0}, {:.0}) in {:.1} ms: {} vertices", anchor.x, anchor.y, t0.elapsed().as_secs_f64() * 1000.0, p.verts.len());
-                }
-                road_verts = Some(p.verts);
-                self.roads = Some(Roads { light: self.light, anchor, lanes_seen: lanes_now, verts: 0, built_at: self.time });
-            }
-        }
-
-        // --- the map camera (world coordinates relative to the anchor)
-        let anchor = self.roads.as_ref().map(|r| r.anchor).unwrap_or(f.bus.truncate());
-        // --- the map's surface (buffer 6)
-        let surface_verts = self.minimap_surface(anchor);
-        let surface_n = if self.show_surface { self.surface_mesh.map(|m| m.2).unwrap_or(0) } else { 0 };
-        let rel = |p: DVec3| Vec3::new((p.x - anchor.x) as f32, (p.y - anchor.y) as f32, 0.0);
-        let hd = self.cam_heading.to_radians();
-        let fwd = DVec2::new(hd.sin(), hd.cos());
-        let look_at = f.bus.truncate() - anchor + fwd * self.zoom * 0.28;
-        let pitch = PITCH.to_radians();
-        let back = fwd * self.zoom * pitch.cos();
-        let eye = DVec3::new(look_at.x - back.x, look_at.y - back.y, self.zoom * pitch.sin());
-        let view = Mat4::look_at_rh(eye.as_vec3(), Vec3::new(look_at.x as f32, look_at.y as f32, 0.0), Vec3::Z);
-        let clip_panel = [0.0, 0.0, pw, ph];
-        let map_layer = Layer::world(view, FOV.to_radians(), vp, [map.x, map.y, map.right(), map.bottom()], 0.0, 1.0);
-        let vpm = map_layer.view_proj;
-
-        // --- the route (buffer 1): rebuilt when it or the lane the bus is on changed
-        let mut route_verts = None;
-        let route_net = global.as_deref().or(f.traffic.map(|t| &t.net));
-        if let (Some(rn), true) = (route_net, !self.route.lanes.is_empty()) {
-            let first = self.route.lanes.get(self.route.progress.min(self.route.lanes.len().saturating_sub(1))).copied();
-            let bus_lane = first.map(|l| lane_from_right(rn, l, f.bus)).unwrap_or(0);
-            if self.route_mesh.0 != self.route.version || self.route_mesh.1 != self.jam_version || self.route_mesh.2 != anchor || self.route_mesh.4 != bus_lane {
-                let mut p = Painter::new();
-                // (one lane wide: a little narrower than the lane, so that it never spills onto the next)
-                let style = RouteStyle { extra_m: -0.9, min_px: 4.0, arrows: Some((28.0, 900.0)), max_len: 12_000.0, near: Some((anchor, ROAD_RADIUS * 1.6)) };
-                build_route(&mut p, rn, &self.route.lanes[self.route.progress.min(self.route.lanes.len())..], anchor, self.route.s, &self.route_jam, &style, bus_lane);
-                self.route_mesh = (self.route.version, self.jam_version, anchor, p.len(), bus_lane);
-                route_verts = Some(p.verts);
-            }
-        } else if self.route_mesh.3 != 0 {
-            route_verts = Some(Vec::new());
-            self.route_mesh = (self.route.version, self.jam_version, anchor, 0, 0);
-        }
-
-        // --- background (half transparent), traffic, markers, text
-        let mut bg = Painter::new();
-        bg.rounded(panel, radius, if self.cockpit_display { Color::rgba(28, 28, 28, 1.0) } else { PANEL });
-        // the map's own ground under the roads (the panel's opacity setting dims it as it does the panel)
-        if let (true, Some(sf)) = (self.show_surface, self.surface.as_ref()) {
-            bg.rect(map, ground(sf, self.light));
-        }
-        let n_bg = bg.len();
-
-        let mut dy = Painter::new();
-        // other roads where the traffic is heavy or stands
-        if let Some(net) = f.traffic.map(|t| &t.net) {
-            for (&lane, &c) in &self.congestion {
-                let lv = level(c);
-                if lv < 3 {
-                    continue;
-                }
-                let Some(l) = net.lanes.get(lane) else { continue };
-                if (l.start() - f.bus).truncate().length() > 900.0 {
-                    continue;
-                }
-                let pts: Vec<Vec3> = l.points.iter().map(|p| rel(*p)).collect();
-                dy.ribbon(&pts, l.width.max(2.5) * 0.6, 2.0, LEVEL[lv].alpha(0.8), true);
-            }
-        }
-        let n_traffic = dy.len();
-        // the other vehicles: blue dots, as the other drivers in ETS2; the public transport in
-        // its own colours (trolleybus, bus, tram), a little bigger, its line beside it
-        let mut lines: Vec<(DVec3, Color, String)> = Vec::new();
-        if let Some(t) = f.traffic.filter(|_| self.show_ai) {
-            for c in &t.cars {
-                if c.gone || (c.vehicle.position - f.bus).truncate().length() > self.zoom * 3.5 + 150.0 {
-                    continue;
-                }
-                let (color, line) = traffic_kind(c);
-                if color == DOT {
-                    dy.world_disc(rel(c.vehicle.position), 1.7, 3.6, Color::rgba(8, 8, 8, 0.9));
-                    dy.world_disc(rel(c.vehicle.position), 1.2, 2.6, color);
-                } else {
-                    vehicle_icon(&mut dy, rel(c.vehicle.position), c.vehicle.heading, color, c.is_rail(), 7.0);
-                }
-                if let Some(l) = line {
-                    lines.push((c.vehicle.position, color, l));
-                }
-            }
-        }
-        let n_world = dy.len();
-
-        let mut ui = Painter::new();
-        self.draw_map_marks(&mut ui, f, map, vpm, vp, anchor, s, lines);
-
-        let pad = self.draw_top_bar(&mut ui, f, &wd, net, pw, top_h, s);
-
-        self.draw_bottom_bar(&mut ui, f, &wd, map, pw, pad, s);
-
-        // --- to the GPU
-        let (Some(gpu), device, queue) = (self.gpu.as_mut(), &renderer.device, &renderer.queue) else { return };
-        if let Some(v) = road_verts {
-            if let Some(r) = self.roads.as_mut() {
-                r.verts = v.len();
-            }
-            gpu.upload(device, queue, 0, &v);
-        }
-        if let Some(v) = surface_verts {
-            gpu.upload(device, queue, 6, &v);
-        }
-        if let Some(v) = route_verts {
-            gpu.upload(device, queue, 1, &v);
-        }
-        let mut all = bg.verts;
-        all.extend(dy.verts);
-        let n_ui_start = all.len() as u32;
-        all.extend(ui.verts);
-        gpu.upload(device, queue, 2, &all);
-        gpu.upload_atlas(queue, &mut self.atlas);
-        // (the opacity setting is the background's: the map and the text stay solid)
-        let flat = Layer::flat(clip_panel, radius, 1.0);
-        let backdrop = Layer::flat(clip_panel, radius, if self.cockpit_display { self.opacity } else { crate::ui::backdrop(self.opacity).min(1.0) });
-        let mut layers = [flat, map_layer, backdrop];
-        for l in layers.iter_mut() {
-            l.opacity *= self.shown;
-        }
-        let roads_n = self.roads.as_ref().map(|r| r.verts as u32).unwrap_or(0);
-        let draws = [
-            Draw { buffer: 2, range: 0..n_bg, layer: 2, texture: 0 },
-            Draw { buffer: 6, range: 0..surface_n, layer: 1, texture: 0 },
-            Draw { buffer: 0, range: 0..roads_n, layer: 1, texture: 0 },
-            Draw { buffer: 2, range: n_bg..n_bg + n_traffic, layer: 1, texture: 0 },
-            Draw { buffer: 1, range: 0..self.route_mesh.3, layer: 1, texture: 0 },
-            Draw { buffer: 2, range: n_bg + n_traffic..n_bg + n_world, layer: 1, texture: 0 },
-            Draw { buffer: 2, range: n_ui_start..all.len() as u32, layer: 0, texture: 0 },
-        ];
-        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("navigator") });
-        gpu.render(device, queue, &mut enc, target, size, Some(wgpu::Color::TRANSPARENT), &layers, &draws);
-        queue.submit([enc.finish()]);
-    }
-
-    /// The map's marks over the roads: the next turn, the street the bus is on, the stops
-    /// ahead, the other players, the public transport's lines and the bus itself.
-    #[allow(clippy::too_many_arguments)]
-    fn draw_map_marks(&mut self, ui: &mut Painter, f: &NavFrame, map: Rect, vpm: Mat4, vp: [f32; 4], anchor: DVec2, s: f32, mut lines: Vec<(DVec3, Color, String)>) {
-        let rel = |p: DVec3| Vec3::new((p.x - anchor.x) as f32, (p.y - anchor.y) as f32, 0.0);
-        // the far end of the map fades into the panel
-        ui.gradient(Rect::new(map.x, map.y, map.w, map.h * 0.3), Color::rgba(28, 28, 28, 0.75), Color::rgba(28, 28, 28, 0.0));
-        // the next turn: an arrow and how far, top left of the map
-        if let Some((dir, angle, dist, street)) = self.next_turn.as_ref() {
-            let icon = match *dir {
-                2 => "u_turn_left",
-                -1 if *angle < 60.0 => "turn_slight_left",
-                1 if *angle < 60.0 => "turn_slight_right",
-                -1 => "turn_left",
-                _ => "turn_right",
-            };
-            let t = crate::units::Units::now().distance(*dist as f64);
-            let tw = self.fonts.width(&t, 14.0 * s, Weight::Bold);
-            // with the street it turns into, when the map names it
-            let street = street.as_deref().map(|n| self.fonts.fit(n, 12.0 * s, Weight::Medium, map.w * 0.62 - 50.0 * s - tw));
-            let sw_ = street.as_deref().map(|n| self.fonts.width(n, 12.0 * s, Weight::Medium) + 10.0 * s).unwrap_or(0.0);
-            let b = Rect::new(map.x + 8.0 * s, map.y + 8.0 * s, 44.0 * s + tw + sw_, 34.0 * s);
-            ui.rounded(b, 6.0 * s, PLATE);
-            ui.icon(&mut self.atlas, icon, Vec2::new(b.x + 18.0 * s, b.center().y), 24.0 * s, TEXT);
-            ui.text_in(&mut self.atlas, &self.fonts, &t, 14.0 * s, Weight::Bold, Rect::new(b.x + 34.0 * s, b.y, tw + 4.0, b.h), Align::Left, TEXT);
-            if let Some(n) = street.as_deref() {
-                ui.text_in(&mut self.atlas, &self.fonts, n, 12.0 * s, Weight::Medium, Rect::new(b.x + 42.0 * s + tw, b.y, sw_, b.h), Align::Left, TEXT_DIM);
-            }
-        }
-        // the street the bus is on, bottom middle of the map
-        if let Some(n) = self.street_here.as_deref() {
-            let px = 11.5 * s;
-            let n = self.fonts.fit(n, px, Weight::Medium, map.w * 0.7);
-            let w = self.fonts.width(&n, px, Weight::Medium) + 14.0 * s;
-            let r = Rect::new(map.center().x - w * 0.5, map.bottom() - 24.0 * s, w, 18.0 * s);
-            ui.rounded(r, 9.0 * s, PLATE);
-            ui.text_in(&mut self.atlas, &self.fonts, &n, px, Weight::Medium, r, Align::Center, STREET);
-        }
-        // Stops ahead use a bus badge so they read as stops, not generic route dots.
-        let n_stops = f.stops.len();
-        let markers = spaced_markers(f.stops.iter().enumerate().filter_map(|(k, st)| project(vpm, vp, rel(st.position)).filter(|p| map.contains(*p)).map(|p| (k, p))), 20.0 * s);
-        for (k, sp) in markers.into_iter().rev() {
-            if k + 1 == n_stops {
-                ui.icon(&mut self.atlas, "sports_score", sp - Vec2::new(0.0, 12.0 * s), 14.0 * s, TEXT);
-            }
-            let next = k == 0;
-            let badge = if next { 8.0 } else { 6.5 } * s;
-            let fill = if next { Color::rgba(45, 116, 205, 1.0) } else if k + 1 == n_stops { ROUTE } else { Color::rgba(76, 91, 112, 0.98) };
-            ui.circle(sp, badge, fill);
-            ui.icon(&mut self.atlas, "directions_bus", sp, if next { 12.5 } else { 10.5 } * s, TEXT);
-        }
-        // the public transport's lines: a tag in its colour above its dot (the nearest first,
-        // none on top of another)
-        lines.sort_by(|a, b| (a.0 - f.bus).length().total_cmp(&(b.0 - f.bus).length()));
-        let mut taken: Vec<Rect> = Vec::new();
-        // the other players: an arrow each, their name above it (before the lines' tags)
-        for pl in &f.players {
-            let Some(p) = project(vpm, vp, rel(pl.position)).filter(|p| map.contains(*p)) else { continue };
-            let a = (angle_diff(self.cam_heading, pl.heading) as f32).to_radians();
-            arrow(ui, p, a, 7.5 * s, 1.25, Color::rgba(10, 10, 10, 0.8), PLAYER);
-            let px = 9.5 * s;
-            let name = self.fonts.fit(&pl.name, px, Weight::Bold, 90.0 * s);
-            let w = self.fonts.width(&name, px, Weight::Bold) + 8.0 * s;
-            let r = Rect::new(p.x - w * 0.5, p.y - 23.0 * s, w, 13.0 * s);
-            if taken.iter().any(|o| rects_overlap(o, &r)) {
-                continue;
-            }
-            taken.push(r);
-            ui.rounded(r, 3.5 * s, PLAYER);
-            ui.text_in(&mut self.atlas, &self.fonts, &name, px, Weight::Bold, r, Align::Center, LINE_TEXT);
-        }
-        for (pos, color, l) in &lines {
-            let Some(p) = project(vpm, vp, rel(*pos)).filter(|p| map.contains(*p)) else { continue };
-            let px = 9.5 * s;
-            let l = self.fonts.fit(l, px, Weight::Bold, 40.0 * s);
-            let w = self.fonts.width(&l, px, Weight::Bold) + 8.0 * s;
-            let r = Rect::new(p.x - w * 0.5, p.y - 19.0 * s, w, 13.0 * s);
-            if taken.iter().any(|o| o.x < r.right() && r.x < o.right() && o.y < r.bottom() && r.y < o.bottom()) {
-                continue;
-            }
-            taken.push(r);
-            ui.rounded(r, 3.5 * s, *color);
-            ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, LINE_TEXT);
-        }
-        // the bus: a plain white arrow
-        if let Some(bp) = project(vpm, vp, rel(f.bus)) {
-            let a = (angle_diff(self.cam_heading, f.heading) as f32).to_radians();
-            arrow(ui, bp, a, 9.0 * s, 1.25, Color::rgba(10, 10, 10, 0.8), TEXT);
-        }
-    }
-
-    /// The top bar: speed (and the limit), temperatures and line, day and game time. Gives
-    /// the bars' side padding.
-    #[allow(clippy::too_many_arguments)]
-    fn draw_top_bar(&mut self, ui: &mut Painter, f: &NavFrame, wd: &Words, net: Option<&Network>, pw: f32, top_h: f32, s: f32) -> f32 {
-        // top bar: speed (and the limit) · line ……… game time
-        let top = Rect::new(0.0, 0.0, pw, top_h);
-        ui.rect(top, BAR);
-        let pad = 11.0 * s;
-        let base = top.y + top.h * 0.5 + self.fonts.cap_height(17.0 * s, Weight::Bold) * 0.5;
-        let mut x = pad;
-        let units = crate::units::Units::now();
-        let (speed, unit) = units.speed(f.speed_kmh.abs());
-        x += ui.text(&mut self.atlas, &self.fonts, &format!("{speed:.0}"), 17.0 * s, Weight::Bold, Vec2::new(x, base), Align::Left, TEXT);
-        x += 4.0 * s;
-        let unit = if units == crate::units::Units::Metric { wd.kmh } else { unit };
-        x += ui.text(&mut self.atlas, &self.fonts, unit, 12.0 * s, Weight::Medium, Vec2::new(x, base), Align::Left, TEXT_DIM);
-        let limit = net.and_then(|n| {
-            let lane = if self.route.on_route { self.route.lanes.get(self.route.progress).copied() } else { None };
-            let lane = lane.or_else(|| n.nearest_lane_near(f.bus, LaneKind::Street).filter(|l| l.2 < 8.0).map(|l| l.0))?;
-            let v = n.lanes.get(lane)?.speed_limit_kmh;
-            (v > 1.0 && v < 200.0).then_some(v)
-        });
-        self.speed_limit = limit;
-        if let Some(v) = limit {
-            x += 10.0 * s;
-            let c = Vec2::new(x + 10.0 * s, top.center().y);
-            ui.circle(c, 10.5 * s, Color::rgba(200, 40, 40, 1.0));
-            ui.circle(c, 8.3 * s, Color::rgba(235, 235, 235, 1.0));
-            let t = format!("{:.0}", units.speed_limit(v));
-            let px = if t.len() > 2 { 7.5 } else { 9.0 } * s;
-            ui.text(&mut self.atlas, &self.fonts, &t, px, Weight::Black, Vec2::new(c.x, c.y + self.fonts.cap_height(px, Weight::Black) * 0.5), Align::Center, Color::rgba(15, 15, 15, 1.0));
-        }
-        let hh = (f.time / 3600.0) as i32 % 24;
-        let mm = ((f.time % 3600.0) / 60.0) as i32;
-        let time_text = format!("{hh:02}:{mm:02}");
-        let day_text = wd.days[f.weekday.clamp(0, 6) as usize];
-        let time_w = self.fonts.width(&time_text, 14.0 * s, Weight::Bold);
-        let day_w = self.fonts.width(day_text, 12.0 * s, Weight::Medium);
-        ui.text(&mut self.atlas, &self.fonts, &time_text, 14.0 * s, Weight::Bold, Vec2::new(pw - pad, base), Align::Right, TEXT);
-        ui.text(&mut self.atlas, &self.fonts, day_text, 12.0 * s, Weight::Medium, Vec2::new(pw - pad - time_w - 5.0 * s, base), Align::Right, TEXT_DIM);
-
-        // Temperatures stay in the navigator header on every bus. The simulator always keeps
-        // Cabinair_Temp, while scripts that model heating/air conditioning can overwrite it.
-        let temp = format!("EXT {:.0}°C | INT {:.0}°C", f.outside_temp, f.inside_temp);
-        let center = match f.line.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
-            Some(line) => format!("{temp} | {line}"),
-            None => temp,
-        };
-        let left_edge = (if limit.is_some() { x + 24.0 * s } else { x }) + 6.0 * s;
-        let right_edge = pw - pad - time_w - 5.0 * s - day_w - 6.0 * s;
-        if right_edge > left_edge {
-            let rect = Rect::new(left_edge, top.y, right_edge - left_edge, top.h);
-            let center = self.fonts.fit(&center, 11.5 * s, Weight::Bold, rect.w);
-            ui.text_in(&mut self.atlas, &self.fonts, &center, 11.5 * s, Weight::Bold, rect, Align::Center, TEXT_DIM);
-        }
-        pad
-    }
-
-    /// The bottom bar with the next stop, and under it the schedule of the next stops.
-    #[allow(clippy::too_many_arguments)]
-    fn draw_bottom_bar(&mut self, ui: &mut Painter, f: &NavFrame, wd: &Words, map: Rect, pw: f32, pad: f32, s: f32) {
-        let n_stops = f.stops.len();
-        // bottom bar: the next stop; its distance, the time to it, the planned time and
-        // whether the bus is early or late
-        let bottom = Rect::new(0.0, map.bottom(), pw, 46.0 * s);
-        ui.rect(bottom, BAR);
-        let stop_row = if f.stops.is_empty() {
-            Rect::new(pad, bottom.y, pw - 2.0 * pad, bottom.h)
-        } else {
-            Rect::new(pad, bottom.y + 4.0 * s, pw - 2.0 * pad, 20.0 * s)
-        };
-        let stop_row = stop_request_icon(ui, &mut self.atlas, f.stop_requested, stop_row, s);
-        let note = if self.route.note > 0.0 {
-            Some((wd.recalculated, ON_TIME))
-        } else if self.route.joined && !self.route.lanes.is_empty() && !self.route.on_route && self.route.off_for > OFF_ROUTE_AFTER {
-            // (no way back found after a while: it says so instead of recalculating for ever)
-            Some((if self.route.off_for < OFF_ROUTE_AFTER + 20.0 { wd.rerouting } else { wd.off_route }, WARN))
-        } else {
-            None
-        };
-        // what the traffic on the route ahead costs, as the module promises: a jam from a
-        // minute on, slow traffic from half of one
-        let jam_note = (self.jam_cost >= 30.0).then(|| {
-            let what = if self.jam_cost >= 60.0 { wd.jam } else { wd.slow };
-            (format!("{what} +{:.0} min", (self.jam_cost / 60.0).max(1.0).round()), if self.jam_cost >= 60.0 { LATE } else { WARN })
-        });
-        match f.stops.first() {
-            Some(st) => {
-                let name = if n_stops == 1 { format!("{} | {}", st.name.trim(), wd.last_stop) } else { st.name.trim().to_string() };
-                ui.text_in(&mut self.atlas, &self.fonts, &name, 13.5 * s, Weight::Bold, stop_row, Align::Left, TEXT);
-                let mut parts = Vec::new();
-                if let Some(d) = self.next_dist {
-                    parts.push(crate::units::Units::now().distance(d as f64));
-                    let secs = d / (self.speed_avg.max(5.0) as f64);
-                    parts.push(if secs < 60.0 { "<1 min".to_string() } else { format!("{:.0} min", (secs / 60.0).round()) });
-                }
-                parts.push(format!("{:02}:{:02}", (st.arrival / 3600.0) as i32 % 24, ((st.arrival % 3600.0) / 60.0) as i32));
-                let line2 = parts.join("  |  ");
-                let y2 = Rect::new(pad, bottom.y + 24.0 * s, pw - 2.0 * pad, 18.0 * s);
-                match note {
-                    Some((t, c)) => {
-                        ui.text_in(&mut self.atlas, &self.fonts, t, 12.5 * s, Weight::Medium, y2, Align::Left, c);
-                    }
-                    None => match &jam_note {
-                        Some((t, c)) => {
-                            ui.text_in(&mut self.atlas, &self.fonts, &format!("{line2}  |  {t}"), 12.5 * s, Weight::Medium, y2, Align::Left, *c);
-                        }
-                        None => {
-                            ui.text_in(&mut self.atlas, &self.fonts, &line2, 12.5 * s, Weight::Medium, y2, Align::Left, TEXT_DIM);
-                        }
-                    },
-                }
-                if let Some(d) = f.delay {
-                    let (txt, c) = if d > 59.0 {
-                        (format!("+{}:{:02}", (d / 60.0) as i32, (d % 60.0) as i32), LATE)
-                    } else if d < -59.0 {
-                        (format!("-{}:{:02}", (-d / 60.0) as i32, (-d % 60.0) as i32), EARLY)
-                    } else {
-                        (wd.on_time.to_string(), ON_TIME)
-                    };
-                    ui.text_in(&mut self.atlas, &self.fonts, &txt, 12.5 * s, Weight::Bold, y2, Align::Right, c);
-                }
-            }
-            None => {
-                let t = f.terminus.clone().filter(|t| !t.trim().is_empty()).unwrap_or_else(|| wd.no_duty.to_string());
-                ui.text_in(&mut self.atlas, &self.fonts, &t, 13.0 * s, Weight::Medium, stop_row, Align::Left, TEXT_DIM);
-            }
-        }
-        // the schedule: the next stops with their planned times
-        if self.schedule && !f.stops.is_empty() {
-            let mut y = bottom.bottom() + 6.0 * s;
-            ui.rect(Rect::new(pad, bottom.bottom(), pw - 2.0 * pad, 1.0), Color::WHITE.alpha(0.06));
-            let late = f.delay.unwrap_or(0.0);
-            for st in f.stops.iter().take(5) {
-                let r = Rect::new(pad, y, pw - 2.0 * pad, 22.0 * s);
-                let planned = format!("{:02}:{:02}", (st.arrival / 3600.0) as i32 % 24, ((st.arrival % 3600.0) / 60.0) as i32);
-                ui.text_in(&mut self.atlas, &self.fonts, &planned, 12.5 * s, Weight::Bold, r, Align::Left, TEXT_DIM);
-                ui.text_in(&mut self.atlas, &self.fonts, st.name.trim(), 13.0 * s, Weight::Medium, Rect::new(r.x + 46.0 * s, r.y, r.w - 100.0 * s, r.h), Align::Left, TEXT);
-                // when the bus will be there at this lateness
-                let exp = st.arrival + late;
-                let e = format!("{:02}:{:02}", (exp / 3600.0).rem_euclid(24.0) as i32, ((exp.rem_euclid(3600.0)) / 60.0) as i32);
-                ui.text_in(&mut self.atlas, &self.fonts, &e, 12.5 * s, Weight::Medium, r, Align::Right, if late > 59.0 { LATE } else if late < -59.0 { EARLY } else { TEXT_DIM });
-                y += 22.0 * s;
-            }
-        }
-    }
 }
 
-/// Congestion of the traffic's lanes carried over to the same paths of `net`.
-fn congestion_on(net: &Network, traffic: &Network, c: &HashMap<usize, f32>) -> HashMap<usize, f32> {
-    let mut out = HashMap::new();
-    for (&l, &v) in c {
-        let Some(lane) = traffic.lanes.get(l) else { continue };
-        let Some(key) = lane.key else { continue };
-        if let Some(cands) = net.by_key.get(&key) {
-            for &g in cands {
-                if net.lanes[g].reversed == lane.reversed {
-                    out.insert(g, v);
-                }
-            }
+/// Lane `i` passes `stop` within `reach` metres with the stop on its kerb side (the right, or
+/// the left on a left-hand-traffic map), or right on it.
+fn passes_on_its_side(net: &Network, i: usize, stop: DVec3, reach: f64) -> bool {
+    let l = &net.lanes[i];
+    let Some((s, d)) = l.nearest_point(stop) else { return false };
+    if d > reach {
+        return false;
+    }
+    if d < 2.5 {
+        return true;
+    }
+    let (p, h) = l.at(s);
+    let dir = DVec2::new((h as f64).to_radians().sin(), (h as f64).to_radians().cos());
+    let side = dir.perp_dot((stop - p).truncate());
+    if net.left_hand { side > 0.0 } else { side < 0.0 }
+}
+
+/// The lanes of `net` that are traffic lane `l`: the same path by its key, else (a junction's
+/// paths have none) the lane of `net` that starts and ends where it does, the same way.
+fn same_paths(net: &Network, traffic: &Network, l: usize) -> Vec<usize> {
+    let Some(lane) = traffic.lanes.get(l) else { return Vec::new() };
+    if let Some(cands) = lane.key.and_then(|k| net.by_key.get(&k)) {
+        let v: Vec<usize> = cands.iter().copied().filter(|&g| net.lanes[g].reversed == lane.reversed).collect();
+        if !v.is_empty() {
+            return v;
         }
     }
-    out
+    let mid = lane.at(lane.length() * 0.5);
+    roads::lanes_near(net, mid.0.truncate(), 20.0)
+        .into_iter()
+        .filter(|&g| {
+            let o = &net.lanes[g];
+            o.kind == lane.kind
+                && (o.start() - lane.start()).truncate().length() < 3.0
+                && (o.end() - lane.end()).truncate().length() < 3.0
+                && angle_diff(o.start_heading() as f64, lane.start_heading() as f64).abs() < 30.0
+        })
+        .collect()
 }
 
 impl<'a> NavFrame<'a> {
@@ -1477,7 +1233,10 @@ impl<'a> NavFrame<'a> {
 mod roads;
 pub(crate) use roads::*;
 mod surface;
-use surface::ground;
+pub(crate) mod style;
+pub(crate) mod mapmesh;
+mod panel;
+mod live;
 mod city_map;
 pub use city_map::*;
 #[cfg(test)]

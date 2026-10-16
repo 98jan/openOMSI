@@ -321,6 +321,12 @@ impl Offscreen<'_> {
                 nav.show_ai = settings.nav_ai;
                 nav.show_surface = settings.nav_surface;
                 nav.light = settings.nav_light;
+                nav.show_3d = settings.nav_3d;
+                nav.widget = settings.nav_widget;
+                nav.size = settings.nav_size;
+                if omsi_cfg::flags::OMSI_NAV_2D.is_set() {
+                    nav.show_3d = false;
+                }
                 if omsi_cfg::flags::OMSI_NAV_MAP.is_set() {
                     nav.toggle_map();
                 }
@@ -329,11 +335,19 @@ impl Offscreen<'_> {
                 }
                 nav.set_map(world.navigation_map());
                 nav.set_surface(omsi_map::package::Package::open(&world.map_dir));
+                nav.set_layers(world.map_layers());
                 let (line, terminus, stops, trip) = navigator::duty_parts(duty.as_ref());
                 if let (Some((key, name)), Some(sch)) = (trip, schedule.as_ref()) {
                     let lanes = sch.trip_route_in(nav.map_net().unwrap(), &name);
                     let g = nav.global_version + (1 << 40);
                     nav.set_route(&key, lanes, true, g);
+                }
+                if let Some(sch) = schedule.as_ref() {
+                    let cars: Vec<(glam::DVec3, String)> = traffic.as_ref().map(|t| t.cars.iter().filter(|c| !c.gone && c.bus.is_some()).map(|c| (c.vehicle.position, c.vehicle.host.tt_line.clone())).collect()).unwrap_or_default();
+                    // (a few trips' routes a call: called until they all are there)
+                    for _ in 0..80 {
+                        nav.update_live(sch, clock.time, 0.6, &cars);
+                    }
                 }
                 let (outside_temp, inside_temp) = crate::app_events::vehicle_temperatures(p);
                 let frame = navigator::NavFrame {

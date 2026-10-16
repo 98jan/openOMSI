@@ -360,6 +360,8 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "nav_ai" => app.menus.navigator.as_ref().map_or(s.nav_ai, |n| n.show_ai),
         "nav_surface" => app.menus.navigator.as_ref().map_or(s.nav_surface, |n| n.show_surface),
         "nav_light" => app.menus.navigator.as_ref().map_or(s.nav_light, |n| n.light),
+        "nav_3d" => app.menus.navigator.as_ref().map_or(s.nav_3d, |n| n.show_3d),
+        "nav_widget" => app.menus.navigator.as_ref().map_or(s.nav_widget, |n| n.widget),
         "shadows" => s.shadows,
         "head" => s.head_movement,
         "cam_smooth" => s.driverview_smooth,
@@ -470,6 +472,20 @@ pub(super) fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static 
             }
             app.settings.nav_light = on;
             Some(("nav_light", bit))
+        }
+        "nav_3d" => {
+            if let Some(n) = app.menus.navigator.as_mut() {
+                n.show_3d = on;
+            }
+            app.settings.nav_3d = on;
+            Some(("nav_3d", bit))
+        }
+        "nav_widget" => {
+            if let Some(n) = app.menus.navigator.as_mut() {
+                n.widget = on;
+            }
+            app.settings.nav_widget = on;
+            Some(("nav_widget", bit))
         }
         "shadows" => {
             app.settings.shadows = on;

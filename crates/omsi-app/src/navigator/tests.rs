@@ -13,7 +13,11 @@ fn centre_panel_map_click_and_drag_use_window_coordinates() {
     n.city.rect = [2100.0, 100.0, 3700.0, 900.0];
     n.city.center = DVec2::new(100.0, 200.0);
     n.city.mpp = 2.0;
-    assert_eq!(n.map_point(2900.0, 500.0), Some(n.city.center));
+    // (flat from above at this zoom: the middle is the centre, 100 px right is 200 m east)
+    let mid = n.map_point(2900.0, 500.0).expect("on the map");
+    assert!((mid - n.city.center).length() < 0.05, "{mid:?}");
+    let east = n.map_point(3000.0, 500.0).expect("on the map") - n.city.center;
+    assert!((east.x - 200.0).abs() < 0.5 && east.y.abs() < 0.5, "{east:?}");
     assert_eq!(n.map_point(1000.0, 500.0), None);
 }
 /// A press and a small wobble is a click (the city map), a longer move drags the
@@ -122,6 +126,55 @@ fn a_way_back_joins_the_route_ahead() {
     // round the block back to the route's second corner: it goes on east on lane 2
     assert_eq!(route[1..][join], 2, "{path:?} join {join}");
     assert!(heading_vec(90.0).x > 0.99);
+}
+
+/// The bus went along a road beside the route. A short cut back leads onto the route
+/// behind (it would drive that part of the route again); going on a little leads onto it
+/// further on. The way back is the quickest to the end of the route, not to its nearest lane.
+#[test]
+fn a_way_back_does_not_lead_back_along_the_route() {
+    let lanes = vec![
+        straight((0.0, 0.0), (100.0, 0.0)),    // 0 route
+        straight((100.0, 0.0), (200.0, 0.0)),  // 1 route
+        straight((200.0, 0.0), (300.0, 0.0)),  // 2 route
+        straight((300.0, 0.0), (400.0, 0.0)),  // 3 route
+        straight((100.0, 50.0), (200.0, 50.0)), // 4 the road beside, the bus on it
+        straight((200.0, 50.0), (300.0, 50.0)), // 5
+        straight((300.0, 50.0), (300.0, 0.0)),  // 6 down onto lane 3
+        straight((200.0, 50.0), (100.0, 0.0)),  // 7 a short cut back onto lane 1
+    ];
+    let mut net = Network { lanes, ..Default::default() };
+    for (a, n) in [(0, vec![1]), (1, vec![2]), (2, vec![3]), (4, vec![5, 7]), (5, vec![6]), (6, vec![3]), (7, vec![1])] {
+        net.lanes[a].next = n;
+    }
+    net.build_grid();
+    let route = [1usize, 2, 3];
+    let (path, join) = way_back(&net, DVec3::new(150.0, 50.0, 0.0), 90.0, &route, 6000.0).expect("a way");
+    assert_eq!(route[join], 3, "{path:?} join {join}");
+    assert!(!path.contains(&7), "{path:?}");
+}
+
+/// A turn off the left lane of a two-lane road: the bus in the right lane changes over rather
+/// than being sent round the block (lanes beside each other are joined by `left`/`right`).
+#[test]
+fn a_way_may_change_lanes() {
+    let lanes = vec![
+        straight((0.0, 0.0), (0.0, 100.0)),    // 0 right lane, the bus
+        straight((-3.5, 0.0), (-3.5, 100.0)),  // 1 left lane
+        straight((0.0, 100.0), (0.0, 200.0)),  // 2 straight on from the right lane
+        straight((-3.5, 100.0), (-100.0, 100.0)), // 3 left turn from the left lane
+        straight((-100.0, 100.0), (-200.0, 100.0)), // 4 the route
+    ];
+    let mut net = Network { lanes, ..Default::default() };
+    for (a, n) in [(0, vec![2]), (1, vec![3]), (3, vec![4])] {
+        net.lanes[a].next = n;
+    }
+    net.lanes[0].left = Some(1);
+    net.lanes[1].right = Some(0);
+    net.build_grid();
+    let (path, join) = way_back(&net, DVec3::new(0.0, 20.0, 0.0), 0.0, &[4], 6000.0).expect("a way");
+    assert_eq!(join, 0);
+    assert_eq!(path, vec![1, 3], "the bus's own lane is left for the one beside it");
 }
 
 #[test]

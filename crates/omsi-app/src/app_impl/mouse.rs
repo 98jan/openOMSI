@@ -458,6 +458,11 @@ impl App {
                         let at = n.placement();
                         self.settings.navigator_corner = at.clone();
                         crate::game_lists::remember_setting("navigator_corner", &at);
+                        // (and its size, when it was pulled at its corner)
+                        if (n.size - self.settings.nav_size).abs() > 1e-3 {
+                            self.settings.nav_size = n.size;
+                            crate::game_lists::remember_setting("nav_size", &format!("{:.2}", n.size));
+                        }
                         return;
                     }
                     None => {}

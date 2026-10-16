@@ -578,6 +578,9 @@ impl App {
                     n.show_ai = self.settings.nav_ai;
                     n.show_surface = self.settings.nav_surface;
                     n.light = self.settings.nav_light;
+                    n.show_3d = self.settings.nav_3d;
+                    n.widget = self.settings.nav_widget;
+                    n.size = self.settings.nav_size;
                 }
                 if let Some(d) = self.args.driver.as_deref() {
                     self.session.career = career::Career::load(&self.args.root, d);

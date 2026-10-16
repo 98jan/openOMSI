@@ -20,7 +20,8 @@ pub struct Vertex {
     pub uv: [f32; 2],
     /// sRGB, straight alpha.
     pub color: [f32; 4],
-    /// x: 0 pixels, 1 world; y: 1 = multiplied by the texture.
+    /// x: 0 pixels, 1 world (flat), 2 world at its own depth (solid 3D), 3 world shadow
+    /// (see `ui.wgsl`); y: 1 = multiplied by the texture.
     pub mode: [f32; 2],
 }
 
@@ -500,6 +501,38 @@ impl Painter {
     pub fn world_shape(&mut self, p: Vec3, shape: &[Vec2], s_m: f32, s_px: f32, c: Color) {
         for k in 1..shape.len().saturating_sub(1) {
             self.verts.extend([Self::wv(p, shape[0], s_m, s_px, c), Self::wv(p, shape[k], s_m, s_px, c), Self::wv(p, shape[k + 1], s_m, s_px, c)]);
+        }
+    }
+
+    /// A triangle in the world at its own depth (a [`crate::Layer::depth`] layer: walls and
+    /// roofs), one colour per corner.
+    pub fn solid_tri(&mut self, a: Vec3, b: Vec3, c: Vec3, ca: Color, cb: Color, cc: Color) {
+        let v = |p: Vec3, col: Color| Vertex { pos: p.to_array(), color: col.0, mode: [2.0, 0.0], ..Default::default() };
+        self.verts.extend([v(a, ca), v(b, cb), v(c, cc)]);
+    }
+
+    /// A shadow triangle on the ground (see `Vertex::mode`).
+    pub fn shadow_tri(&mut self, a: Vec3, b: Vec3, c: Vec3, col: Color) {
+        let v = |p: Vec3| Vertex { pos: p.to_array(), color: col.0, mode: [3.0, 0.0], ..Default::default() };
+        self.verts.extend([v(a), v(b), v(c)]);
+    }
+
+    /// A world triangle grown by `w_px` pixels (at least `w_m` metres) all round: drawn
+    /// under the same triangles at their own size, a seamless outline of any shape made of
+    /// triangles (the casing of the roads' surfaces).
+    pub fn grown_tri(&mut self, p: [Vec3; 3], w_m: f32, w_px: f32, c: Color) {
+        let mut ext = [Vec2::ZERO; 3];
+        for i in 0..3 {
+            let (a, b, q) = (p[i].truncate(), p[(i + 1) % 3].truncate(), p[(i + 2) % 3].truncate());
+            let (e1, e2) = ((a - b).normalize_or_zero(), (a - q).normalize_or_zero());
+            let bis = (e1 + e2).normalize_or_zero();
+            // (as far along the bisector as keeps both edges a whole width out; a sliver's
+            // sharp corner is held to three widths)
+            let s = (1.0 - e1.dot(bis).powi(2)).max(1e-4).sqrt();
+            ext[i] = bis * (1.0 / s).min(3.0);
+        }
+        for i in 0..3 {
+            self.verts.push(Self::wv(p[i], ext[i], w_m, w_px, c));
         }
     }
 

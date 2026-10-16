@@ -1,12 +1,19 @@
-//! The city map: the whole map from above in a large window over the game, and the
-//! navigator panel's placement and dragging.
+//! The city map: the whole map in a large window over the game, after Apple Maps - flat from
+//! above when zoomed out, tilting into 3D with the houses standing as it zooms in (the `nav_3d`
+//! setting, and its own 2D/3D button) - every road and paved surface, the trip's route with its
+//! traffic, its stops with their names, the street names, the bus, the other players and every
+//! vehicle of the traffic; and the navigator panel's placement, dragging and sizing.
 
+use super::mapmesh::GroundLook;
+use super::panel::{car_icon, puck, solid_and_ghost, stop_pin};
+use super::style::{self, Palette};
 use super::*;
 
-/// The city map: the whole map from above in a large window over the game (after ETS2's
-/// map screen, but not full-screen) - every road, the trip's route, its stops with their
-/// names, the bus and the traffic. Dragged to move, the wheel zooms at the cursor, Escape
-/// or a click outside closes it.
+/// The vertical field of view of the city map's camera (degrees).
+const CITY_FOV: f32 = 36.0;
+/// Closest and farthest zoom (metres a pixel at the middle of the view).
+const MIN_MPP: f64 = 0.1;
+
 #[derive(Default)]
 pub struct CityMap {
     pub open: bool,
@@ -22,21 +29,49 @@ pub struct CityMap {
     /// without moving is a click.
     travel: f32,
     target: Option<(TextureId, u32, u32)>,
-    /// The roads mesh (buffer 3): the map version it was built for, its size and anchor.
-    roads: Option<(u64, u32, DVec2)>,
-    /// The surface mesh (buffer 7): the surface version it was built for, its size and anchor.
-    pub(super) surface: Option<(u64, u32, DVec2)>,
-    /// The route mesh (buffer 4): the route, traffic, arrow spacing and roads versions it
-    /// was built for, and its size.
-    route: ((u64, u64, u32, u64), u32),
+    /// The roads of the whole network (built once per network version): its version and the
+    /// carriageways.
+    roads: Option<(u64, std::sync::Arc<Vec<MapRoad>>)>,
+    /// The ground (buffer 7) and houses (buffer 10): what they were built for and their sizes.
+    ground: Option<CityGround>,
+    /// The route meshes (buffers 4 and 11): the route, traffic, arrow spacing and look they
+    /// were built for, their anchor, and their size.
+    route: ((u64, u64, u32, u64), DVec2, u32),
     /// The map's extent (world), for the zoom limits.
     extent: (DVec2, DVec2),
-    /// "Centre on the bus" and zoom buttons (window pixels).
+    /// The buttons (window pixels): 0 centre on the bus, 1 zoom in, 2 zoom out, 3 close,
+    /// 4 2D / 3D.
     buttons: Vec<(Rect, u8)>,
+    /// The houses stand up when zoomed in (starts as the `nav_3d` setting; the 2D/3D button).
+    pub(super) three_d: Option<bool>,
+    /// How far the view is tilted into 3D (0 flat … 1), eased.
+    tilt: f32,
+}
+
+#[derive(Clone, Copy)]
+struct CityGround {
+    key: u64,
+    anchor: DVec2,
+    centre: DVec2,
+    radius: f64,
+    mpp: f64,
+    verts: u32,
+    houses: u32,
+    height: f32,
+}
+
+/// The city map's camera: its view-projection (relative to `centre`) and its inverse.
+struct CityCam {
+    vp: Mat4,
+    inv: Mat4,
+}
+
+fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
 
 impl Navigator {
-    /// Open or close the city map.
     /// Where OMSI 2's dynamic route arrows stand on the route ahead (the `nav_arrows`
     /// setting): every junction lane of the next `reach` metres with the way through it
     /// (`L`, `R`, or `dn` for straight on), and the stops of the trip ahead with their
@@ -98,14 +133,16 @@ impl Navigator {
         out
     }
 
+    /// Open or close the city map.
     pub fn toggle_map(&mut self) {
         self.city.open = !self.city.open;
         if self.city.open {
             self.city.follow = true;
             if self.city.mpp <= 0.0 {
                 // For repeatable offscreen GPS comparisons at a chosen zoom.
-                self.city.mpp = omsi_cfg::flags::OMSI_NAV_MAP_MPP.parse::<f64>().filter(|v| v.is_finite() && (0.25..=20.0).contains(v)).unwrap_or(2.5);
+                self.city.mpp = omsi_cfg::flags::OMSI_NAV_MAP_MPP.parse::<f64>().filter(|v| v.is_finite() && (MIN_MPP..=20.0).contains(v)).unwrap_or(2.5);
             }
+            self.city.tilt = self.tilt_for(self.city.mpp);
         }
         self.city.drag = None;
     }
@@ -163,6 +200,12 @@ impl Navigator {
     /// The mouse button went down on the small navigator: a click opens the city map, a
     /// drag moves the navigator (see [`Navigator::panel_move`]).
     pub fn panel_press(&mut self, x: f32, y: f32) {
+        // (the widget's corner: pulled, it sizes the navigator)
+        let r = self.panel_rect;
+        let grip = 22.0 * ((r[2] - r[0]) / 360.0).max(0.8);
+        if self.widget && x > r[2] - grip && y > r[3] - grip {
+            self.resizing = Some((self.size, [x, y], (r[2] - r[0]).max(100.0)));
+        }
         self.panel_drag = Some((
             [x, y],
             [self.panel_rect[0] - self.origin_x, self.panel_rect[1]],
@@ -178,7 +221,16 @@ impl Navigator {
         if !*moved && dx.hypot(dy) < 6.0 {
             return false;
         }
+        // (not a widget: it stays in its corner, a press only opens the city map)
+        if !self.widget {
+            return false;
+        }
         *moved = true;
+        if let Some((size0, at, w0)) = self.resizing {
+            let grow = ((x - at[0]) + (y - at[1])) * 0.5;
+            self.size = (size0 * (w0 + grow) / w0).clamp(0.6, 2.0);
+            return true;
+        }
         let room = self.panel_room;
         let share = |p: f32, r: f32| if r > 0.0 { (p / r).clamp(0.0, 1.0) } else { 0.0 };
         self.at = Some([share(rect[0] + dx, room[0]), share(rect[1] + dy, room[1])]);
@@ -188,6 +240,7 @@ impl Navigator {
     /// The button came up after a press on the navigator: Some(true) when it was dragged
     /// (the place is then the setting's, [`Navigator::placement`]), Some(false) for a click.
     pub fn panel_release(&mut self) -> Option<bool> {
+        self.resizing = None;
         self.panel_drag.take().map(|d| d.2)
     }
 
@@ -204,6 +257,54 @@ impl Navigator {
         x >= r[0] && y >= r[1] && x < r[2] && y < r[3]
     }
 
+    /// How far the view should tilt at a zoom (0 flat from above … 1 in 3D).
+    fn tilt_for(&self, mpp: f64) -> f32 {
+        if !self.city.three_d.unwrap_or(self.show_3d) || self.map_data.is_none() {
+            return 0.0;
+        }
+        smoothstep(1.3, 0.45, mpp as f32)
+    }
+
+    /// The camera at `mpp` with the view `tilt`ed, looking at `centre` (relative to it), for a
+    /// window of `w` x `h` pixels: north up.
+    fn city_cam(mpp: f64, tilt: f32, w: f32, h: f32) -> CityCam {
+        let t = (CITY_FOV.to_radians() * 0.5).tan();
+        let dist = (mpp * h as f64 / (2.0 * t as f64)) as f32;
+        let pitch = (90.0 - 40.0 * tilt).to_radians();
+        let eye = Vec3::new(0.0, -dist * pitch.cos(), dist * pitch.sin());
+        let up = Vec3::new(0.0, pitch.sin(), pitch.cos());
+        let view = Mat4::look_at_rh(eye, Vec3::ZERO, up);
+        let proj = Mat4::perspective_rh(CITY_FOV.to_radians(), w / h.max(1.0), (dist * 0.02).max(0.5), dist * 6.0 + 4000.0);
+        let vp = proj * view;
+        CityCam { vp, inv: vp.inverse() }
+    }
+
+    /// The ground point under a window point (pixels from the map's top left), relative to the
+    /// view's centre.
+    fn unproject(cam: &CityCam, w: f32, h: f32, x: f32, y: f32) -> Option<DVec2> {
+        let ndc = Vec2::new(x / w * 2.0 - 1.0, 1.0 - y / h * 2.0);
+        let a = cam.inv.project_point3(ndc.extend(0.0));
+        let b = cam.inv.project_point3(ndc.extend(1.0));
+        let d = b - a;
+        if d.z.abs() < 1e-6 {
+            return None;
+        }
+        let k = -a.z / d.z;
+        (k > 0.0).then(|| (a + d * k).truncate().as_dvec2())
+    }
+
+    fn city_size(&self) -> (f32, f32) {
+        let r = self.city.rect;
+        ((r[2] - r[0]).max(1.0), (r[3] - r[1]).max(1.0))
+    }
+
+    /// The world point under a window point at the view as it is.
+    fn city_world_at(&self, x: f32, y: f32) -> Option<DVec2> {
+        let (w, h) = self.city_size();
+        let cam = Self::city_cam(self.city.mpp, self.city.tilt, w, h);
+        Self::unproject(&cam, w, h, x - self.city.rect[0], y - self.city.rect[1]).map(|d| self.city.center + d)
+    }
+
     /// A mouse press while the map is open: on it, a drag or a button; outside, it closes.
     pub fn map_press(&mut self, x: f32, y: f32) {
         if !self.map_hit(x, y) {
@@ -214,9 +315,17 @@ impl Navigator {
         let hit = self.city.buttons.iter().find(|(r, _)| r.contains(local)).map(|b| b.1);
         match hit {
             Some(0) => self.city.follow = true,
-            Some(1) => self.city.mpp = (self.city.mpp / 1.6).max(0.25),
+            Some(1) => self.city.mpp = (self.city.mpp / 1.6).max(MIN_MPP),
             Some(2) => self.city.mpp = (self.city.mpp * 1.6).min(self.max_mpp()),
             Some(3) => self.city.open = false,
+            Some(4) => {
+                let on = !self.city.three_d.unwrap_or(self.show_3d);
+                self.city.three_d = Some(on);
+                // (switched on far out: zoomed in to where the houses stand)
+                if on && self.city.mpp > 0.9 {
+                    self.city.mpp = 0.6;
+                }
+            }
             _ => {
                 self.city.drag = Some((x, y));
                 self.city.travel = 0.0;
@@ -230,10 +339,7 @@ impl Navigator {
         if !self.city.open || !self.map_hit(x, y) {
             return None;
         }
-        let r = self.city.rect;
-        let (w, h) = ((r[2] - r[0]) as f64, (r[3] - r[1]) as f64);
-        let (lx, ly) = ((x - r[0]) as f64 - w * 0.5, (y - r[1]) as f64 - h * 0.5);
-        Some(self.city.center + DVec2::new(lx, -ly) * self.city.mpp)
+        self.city_world_at(x, y)
     }
 
     /// The mouse let go over the map: true when the press was a click on the map itself
@@ -242,29 +348,36 @@ impl Navigator {
         self.city.drag.take().is_some() && self.city.travel < 6.0
     }
 
+    /// The cursor moved with the button held: the ground under it stays under it.
     pub fn map_move(&mut self, x: f32, y: f32) {
         if let Some((px, py)) = self.city.drag {
-            let (dx, dy) = ((x - px) as f64, (y - py) as f64);
-            self.city.travel += (dx.abs() + dy.abs()) as f32;
+            let (dx, dy) = (x - px, y - py);
+            self.city.travel += dx.abs() + dy.abs();
             if dx.abs() + dy.abs() > 0.5 {
                 self.city.follow = false;
             }
-            self.city.center.x -= dx * self.city.mpp;
-            self.city.center.y += dy * self.city.mpp;
+            if let (Some(a), Some(b)) = (self.city_world_at(px, py), self.city_world_at(x, y)) {
+                let d = a - b;
+                // (dragged towards the horizon of a tilted view: never more than a screen at once)
+                let cap = self.city.mpp * self.city_size().0 as f64;
+                self.city.center += if d.length() > cap { d.normalize() * cap } else { d };
+            }
             self.city.drag = Some((x, y));
         }
     }
 
     /// The wheel over the map: zoom, keeping the point under the cursor where it is.
     pub fn map_wheel(&mut self, amount: f32, x: f32, y: f32) {
-        let r = self.city.rect;
-        let (w, h) = ((r[2] - r[0]) as f64, (r[3] - r[1]) as f64);
-        let (lx, ly) = ((x - r[0]) as f64 - w * 0.5, (y - r[1]) as f64 - h * 0.5);
-        let before = self.city.center + DVec2::new(lx, -ly) * self.city.mpp;
+        let before = self.city_world_at(x, y);
         let k = (1.0 - amount as f64 * 0.15).clamp(0.6, 1.6);
-        self.city.mpp = (self.city.mpp * k).clamp(0.25, self.max_mpp());
-        let after = self.city.center + DVec2::new(lx, -ly) * self.city.mpp;
-        self.city.center += before - after;
+        self.city.mpp = (self.city.mpp * k).clamp(MIN_MPP, self.max_mpp());
+        self.city.tilt = self.tilt_for(self.city.mpp);
+        let after = self.city_world_at(x, y);
+        if let (Some(b), Some(a)) = (before, after) {
+            self.city.center += b - a;
+        }
+        let r = self.city.rect;
+        let (lx, ly) = (x - (r[0] + r[2]) * 0.5, y - (r[1] + r[3]) * 0.5);
         if amount.abs() > 0.0 && (lx.abs() > 40.0 || ly.abs() > 40.0) {
             self.city.follow = false;
         }
@@ -277,16 +390,117 @@ impl Navigator {
         span / ((r[2] - r[0]).max(200.0) as f64) * 1.2
     }
 
+    /// The carriageways of the whole network, once per version of it.
+    fn city_roads(&mut self, net: &Network) -> std::sync::Arc<Vec<MapRoad>> {
+        let version = self.global_version * 1_000_000 + net.lanes.len() as u64;
+        if let Some((v, r)) = self.city.roads.as_ref().filter(|r| r.0 == version) {
+            let _ = v;
+            return r.clone();
+        }
+        let roads = std::sync::Arc::new(road_geometry(net));
+        let (mut lo, mut hi) = (DVec2::splat(f64::MAX), DVec2::splat(f64::MIN));
+        for l in roads.iter() {
+            for p in &l.points {
+                lo = lo.min(p.truncate());
+                hi = hi.max(p.truncate());
+            }
+        }
+        if let Some((a, b)) = self.map_data.as_ref().and_then(|m| m.extent()) {
+            lo = lo.min(a);
+            hi = hi.max(b);
+        }
+        if lo.x <= hi.x {
+            self.city.extent = (lo, hi);
+        }
+        self.city.roads = Some((version, roads.clone()));
+        roads
+    }
+
+    /// The city map's ground and houses around the view, when the view left what was built.
+    fn city_ground(&mut self, net: Option<&Network>, w: f32, h: f32, pal: &Palette) -> (Option<Vec<omsi_ui::Vertex>>, Option<Vec<omsi_ui::Vertex>>) {
+        let mpp = self.city.mpp;
+        let tilt = self.city.tilt;
+        let centre = self.city.center;
+        // (tilted, the far part of the view reaches well beyond the middle's scale)
+        let radius = (w.max(h) as f64 * mpp * (0.8 + 1.4 * tilt as f64)).max(500.0);
+        let detail = (mpp < 0.7) as u64 | ((mpp < 2.2) as u64) << 1 | ((mpp < 3.5) as u64) << 2 | ((mpp < 6.0) as u64) << 3;
+        let key = self.look_key() ^ detail << 40 ^ self.global_version << 48;
+        let height = tilt;
+        let stale = match self.city.ground {
+            None => true,
+            Some(g) => g.key != key || (g.centre - centre).length() > g.radius * 0.35 || g.mpp / mpp > 1.7 || mpp / g.mpp > 1.7,
+        };
+        let houses_stale = self.city.ground.map(|g| (g.height - height).abs() > 0.03).unwrap_or(true);
+        if !stale && !houses_stale {
+            return (None, None);
+        }
+        let anchor = if stale { centre } else { self.city.ground.map(|g| g.anchor).unwrap_or(centre) };
+        let (radius_b, mpp_b) = if stale { (radius, mpp) } else { self.city.ground.map(|g| (g.radius, g.mpp)).unwrap_or((radius, mpp)) };
+        let mut ground = None;
+        if stale {
+            let look = GroundLook { surfaces: mpp < 0.7, trees: mpp < 0.7, dashes: mpp < 3.5 };
+            let mut p = Painter::new();
+            if let (true, Some(sf)) = (self.show_surface, self.surface.as_ref()) {
+                surface::build_surface(&mut p, sf, anchor, Some((anchor, radius)), pal);
+            }
+            if let Some(md) = self.map_data.as_ref() {
+                md.build_land(&mut p, anchor, anchor, radius, pal, look);
+            }
+            let roads = net.map(|n| self.city_roads(n));
+            let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
+            let near: Vec<(&MapRoad, Vec<Vec3>)> = roads
+                .as_deref()
+                .map(|rs| {
+                    rs.iter()
+                        .filter(|l| l.points.iter().any(|q| (q.truncate() - anchor).length() < radius))
+                        .map(|l| (l, simplify(&l.points.iter().map(|q| rel(*q)).collect::<Vec<_>>(), (mpp as f32 * 0.4).max(0.12))))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let paved = self.map_data.is_some() && mpp < 2.2;
+            for (l, pts) in &near {
+                p.ribbon(pts, l.width + if paved { 0.0 } else { 1.2 }, if l.main { 3.4 } else { 2.6 }, pal.road_edge, true);
+            }
+            if let (true, Some(md)) = (paved, self.map_data.as_ref()) {
+                md.build_paved(&mut p, anchor, anchor, radius, pal, look);
+            }
+            for (l, pts) in &near {
+                p.ribbon(pts, if paved { (l.width - 1.2).max(1.5) } else { l.width }, if l.main { 2.2 } else { 1.4 }, pal.road, true);
+            }
+            if let Some(md) = self.map_data.as_ref() {
+                md.build_lines(&mut p, anchor, anchor, radius, pal, look);
+            }
+            ground = Some(p.verts);
+        }
+        let mut houses = Painter::new();
+        if let (true, Some(md)) = (mpp < 6.0, self.map_data.as_ref()) {
+            md.build_houses(&mut houses, anchor, anchor, radius_b, pal, height);
+        }
+        let g = CityGround {
+            key,
+            anchor,
+            centre: if stale { centre } else { self.city.ground.map(|g| g.centre).unwrap_or(centre) },
+            radius: radius_b,
+            mpp: mpp_b,
+            verts: ground.as_ref().map(|v| v.len() as u32).unwrap_or_else(|| self.city.ground.map(|g| g.verts).unwrap_or(0)),
+            houses: houses.verts.len() as u32,
+            height,
+        };
+        self.city.ground = Some(g);
+        (ground, Some(houses.verts))
+    }
+
     /// Draw the city map and lay it over the picture.
     pub(super) fn city(&mut self, renderer: &Renderer, scene: &mut Scene, f: &NavFrame) {
         self.atlas.begin_frame();
+        let pal = *style::palette(self.light);
         let (sw, sh) = f.screen;
-        let (w, h) = ((sw * 0.8).round(), (sh * 0.82).round());
+        let (w, h) = ((sw * 0.86).round(), (sh * 0.86).round());
         let (x0, y0) = (((sw - w) * 0.5).round(), ((sh - h) * 0.5).round());
         self.city.rect = [x0, y0, x0 + w, y0 + h];
         let (tw, th) = (w as u32, h as u32);
         if self.gpu.is_none() {
-            self.gpu = Some(Gpu::new(&renderer.device, renderer.format(), map_samples(renderer.format()), self.atlas.size));
+            self.gpu = Some(Gpu::with_depth(&renderer.device, renderer.format(), map_samples(renderer.format()), self.atlas.size));
         }
         if self.city.target.map(|t| (t.1, t.2) != (tw, th)).unwrap_or(true) {
             if let Some((t, _, _)) = self.city.target.take() {
@@ -300,57 +514,26 @@ impl Navigator {
         if self.city.follow {
             self.city.center = f.bus.truncate();
         }
+        let want_tilt = self.tilt_for(self.city.mpp);
+        self.city.tilt += (want_tilt - self.city.tilt) * (1.0 - (-f.dt * 7.0).exp());
+        if (self.city.tilt - want_tilt).abs() < 0.01 {
+            self.city.tilt = want_tilt;
+        }
         let s = (h / 760.0).clamp(0.95, 2.0) * f.ui_scale;
         let global = self.global.clone();
         let net = global.as_deref().or(f.traffic.map(|t| &t.net));
-        // roads of the whole map (buffer 3), once per map version
-        let mut roads_verts = None;
         if let Some(n) = net {
-            let version = (self.global_version * 1_000_000 + n.lanes.len() as u64) * 2 + self.light as u64;
-            if self.city.roads.map(|r| r.0 != version).unwrap_or(true) {
-                let (mut lo, mut hi) = (DVec2::splat(f64::MAX), DVec2::splat(f64::MIN));
-                let road_lanes = road_geometry(n);
-                for l in &road_lanes {
-                    for p in &l.points {
-                        lo = lo.min(p.truncate());
-                        hi = hi.max(p.truncate());
-                    }
-                }
-                if lo.x == f64::MAX {
-                    lo = f.bus.truncate();
-                    hi = lo;
-                }
-                let anchor = (lo + hi) * 0.5;
-                self.city.extent = (lo, hi);
-                let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
-                let mut p = Painter::new();
-                let (edge, road, main) = road_colors(self.light);
-                let edge = if self.light { edge } else { Color::rgba(26, 26, 26, 1.0) };
-                for pass in 0..2 {
-                    for l in &road_lanes {
-                        let pts = simplify(&l.points.iter().map(|q| rel(*q)).collect::<Vec<_>>(), 0.12);
-                        if pass == 0 {
-                            p.ribbon(&pts, l.width + 2.0, 2.4, edge, true);
-                        } else {
-                            p.ribbon(&pts, l.width, 1.4, if l.main { main } else { road }, true);
-                        }
-                    }
-                }
-                self.city.roads = Some((version, p.len(), anchor));
-                roads_verts = Some(p.verts);
-            }
+            self.city_roads(n);
         }
-        let anchor = self.city.roads.map(|r| r.2).unwrap_or(f.bus.truncate());
-        // the map's surface (buffer 7)
-        let surface_verts = self.city_surface(anchor);
-        let surface_n = if self.show_surface { self.city.surface.map(|m| m.1).unwrap_or(0) } else { 0 };
+        let (ground_verts, house_verts) = self.city_ground(net, w, h, &pal);
+        let anchor = self.city.ground.map(|g| g.anchor).unwrap_or(self.city.center);
         let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
-        // the whole route (buffer 4): the part driven grey, the rest by how busy it is,
-        // with arrows about 90 pixels apart (built again when the zoom changes that much)
+        // the whole route (buffers 4 and 11): the part driven pale, the rest by its traffic,
+        // with chevrons about 90 pixels apart
         let mut route_verts = None;
         let every = 2f64.powf((90.0 * s as f64 * self.city.mpp).log2().round()) as f32;
-        let key = (self.route.version, self.jam_version, every.to_bits(), self.city.roads.map(|r| r.0).unwrap_or(0));
-        if self.city.route.0 != key {
+        let key = (self.route.version, self.jam_version, every.to_bits(), self.look_key());
+        if self.city.route.0 != key || self.city.route.1 != anchor {
             let mut p = Painter::new();
             if let Some(n) = net {
                 let r = &self.route;
@@ -358,218 +541,274 @@ impl Navigator {
                 for &l in &r.lanes[..done] {
                     let Some(lane) = n.lanes.get(l) else { continue };
                     let pts: Vec<Vec3> = lane.points.iter().map(|q| rel(*q)).collect();
-                    p.ribbon(&pts, lane.width.max(3.0) + 2.0, 5.0, DRIVEN, true);
+                    p.ribbon(&pts, lane.width.max(3.0), 4.0, pal.driven, true);
                 }
                 let style = RouteStyle { extra_m: 0.0, min_px: 6.0, arrows: Some((every, f32::MAX)), max_len: f32::MAX, near: None };
                 let bus_lane = r.lanes.get(done).map(|&l| lane_from_right(n, l, f.bus)).unwrap_or(0);
-                build_route(&mut p, n, &r.lanes[done..], anchor, r.s, &self.route_jam, &style, bus_lane);
+                build_route(&mut p, n, &r.lanes[done..], anchor, r.s, &self.route_jam, &style, bus_lane, &pal);
             }
-            self.city.route = (key, p.len());
+            self.city.route = (key, anchor, p.len());
             route_verts = Some(p.verts);
         }
-        // the view: north up, `mpp` metres a pixel
-        let c = self.city.center - anchor;
-        let (hw, hh) = (w as f64 * 0.5 * self.city.mpp, h as f64 * 0.5 * self.city.mpp);
-        let proj = Mat4::orthographic_rh((c.x - hw) as f32, (c.x + hw) as f32, (c.y - hh) as f32, (c.y + hh) as f32, -1000.0, 1000.0);
+        // the camera, relative to the anchor
+        let cam = Self::city_cam(self.city.mpp, self.city.tilt, w, h);
+        let shift = (self.city.center - anchor).as_vec2();
+        let vpm = cam.vp * Mat4::from_translation(-shift.extend(0.0));
         let vp = [0.0, 0.0, w, h];
-        let world = Layer { view_proj: proj, viewport: vp, clip: [0.0, 0.0, w, h], radius: 8.0 * s, opacity: 1.0, px_scale: self.city.mpp as f32 };
-        let to_screen = |q: DVec3| -> Vec2 {
-            let d = q.truncate() - self.city.center;
-            Vec2::new((w as f64 * 0.5 + d.x / self.city.mpp) as f32, (h as f64 * 0.5 - d.y / self.city.mpp) as f32)
-        };
+        let world = Layer { view_proj: vpm, viewport: vp, clip: [0.0, 0.0, w, h], radius: 14.0 * s, opacity: 1.0, px_scale: 2.0 * (CITY_FOV.to_radians() * 0.5).tan() / h, depth: false };
+        let depth = world.with_depth();
+        let to_screen = |q: DVec3| -> Option<Vec2> { project(vpm, vp, rel(q)) };
         let win = Rect::new(0.0, 0.0, w, h);
         let mut bg = Painter::new();
-        // (the opacity setting the map's ground too; the roads, names and header stay solid)
-        bg.rounded(win, 8.0 * s, self.city_ground());
+        bg.rounded(win, 14.0 * s, pal.land);
         let n_bg = bg.len();
-        // traffic: blue dots, the public transport in its colours with its line (as on the
-        // small map)
+        // the traffic: every car, the public transport in its colours with its line
         let mut dots = Painter::new();
         let mut lines: Vec<(DVec3, Color, String)> = Vec::new();
+        // (from far the public transport is its line's badge alone, the cars are left out)
+        let far = self.city.mpp > 1.6;
         if let Some(t) = f.traffic.filter(|_| self.show_ai) {
             for car in t.cars.iter().filter(|c| !c.gone) {
                 let (color, line) = traffic_kind(car);
+                let at = self.smoothed_position(car);
                 if color == DOT {
-                    dots.world_disc(rel(car.vehicle.position), 2.2, 3.4, Color::rgba(8, 8, 8, 0.9));
-                    dots.world_disc(rel(car.vehicle.position), 1.5, 2.3, color);
-                } else {
-                    vehicle_icon(&mut dots, rel(car.vehicle.position), car.vehicle.heading, color, car.is_rail(), 7.5);
+                    if !far {
+                        car_icon(&mut dots, rel(at), car.vehicle.heading, self.light);
+                    }
+                } else if !far || line.is_none() {
+                    vehicle_icon(&mut dots, rel(at), car.vehicle.heading, color, car.is_rail(), 7.5);
                 }
                 if let Some(l) = line {
-                    lines.push((car.vehicle.position, color, l));
+                    lines.push((at, color, l));
                 }
             }
         }
-        let n_dots = dots.len();
-        // stops with their names, the bus, the frame and the header
+        if self.show_ai {
+            for v in self.live_vehicles() {
+                let color = if v.rail { TRAM } else { BUS };
+                if !far {
+                    vehicle_icon(&mut dots, rel(v.pos), v.heading, color, v.rail, 7.5);
+                }
+                lines.push((v.pos, color, v.line.clone()));
+            }
+        }
+        let (dots_solid, _) = solid_and_ghost(&dots.verts, 1.0);
+        // marks, names, cards
         let mut ui = Painter::new();
         let n_stops = f.stops.len();
-        // street names along their roads, where there is room (stops' names go first)
-        let markers = spaced_markers(f.stops.iter().enumerate().map(|(k, st)| (k, to_screen(st.position))).filter(|(_, p)| win.contains(*p) && p.y > 50.0 * s), 20.0 * s);
-        let mut taken: Vec<Rect> = markers.iter().map(|(_, p)| Rect::new(p.x - 9.0 * s, p.y - 9.0 * s, 18.0 * s, 18.0 * s)).collect();
-        taken.push(Rect::new(0.0, 0.0, w, 50.0 * s));
+        let markers = spaced_markers(f.stops.iter().enumerate().filter_map(|(k, st)| to_screen(st.position).map(|p| (k, p))).filter(|(_, p)| win.contains(*p)), 20.0 * s);
+        let mut taken: Vec<Rect> = markers.iter().map(|(_, p)| Rect::new(p.x - 10.0 * s, p.y - 10.0 * s, 20.0 * s, 20.0 * s)).collect();
+        taken.push(Rect::new(0.0, 0.0, w * 0.55, 70.0 * s));
+        taken.push(Rect::new(w - 70.0 * s, 0.0, 70.0 * s, 230.0 * s));
         let mut stop_labels = Vec::new();
         for &(k, p) in &markers {
-            if self.city.mpp >= 4.0 && k != 0 && k + 1 != n_stops { continue; }
+            if self.city.mpp >= 4.0 && k != 0 && k + 1 != n_stops {
+                continue;
+            }
             let st = &f.stops[k];
             let weight = if k == 0 { Weight::Bold } else { Weight::Medium };
             let name = format!("{}  {:02}:{:02}", st.name.trim(), (st.arrival / 3600.0) as i32 % 24, ((st.arrival % 3600.0) / 60.0) as i32);
             let name = self.fonts.fit(&name, 12.5 * s, weight, (300.0 * s).min(w * 0.3));
-            let lw = self.fonts.width(&name, 12.5 * s, weight) + 14.0 * s;
+            let lw = self.fonts.width(&name, 12.5 * s, weight) + 16.0 * s;
             if let Some(r) = stop_label_rect(p, lw, s, win, &taken) {
                 taken.push(r);
                 stop_labels.push((k, name, r));
             }
         }
-        // the public transport's line tags, above their dots, where there is room
         for (pos, color, l) in &lines {
-            let p = to_screen(*pos);
-            if !win.contains(p) {
-                continue;
-            }
+            let Some(p) = to_screen(*pos).filter(|p| win.contains(*p)) else { continue };
             let px = 11.0 * s;
             let l = self.fonts.fit(l, px, Weight::Bold, 50.0 * s);
-            let tw = self.fonts.width(&l, px, Weight::Bold) + 9.0 * s;
-            let r = Rect::new(p.x - tw * 0.5, p.y - 22.0 * s, tw, 15.0 * s);
-            if taken.iter().any(|o| o.x < r.right() && r.x < o.right() && o.y < r.bottom() && r.y < o.bottom()) {
+            let tw = (self.fonts.width(&l, px, Weight::Bold) + 10.0 * s).max(18.0 * s);
+            // (from far the badge is the vehicle: on its place, with a white ring)
+            let r = if far { Rect::new(p.x - tw * 0.5, p.y - 8.0 * s, tw, 16.0 * s) } else { Rect::new(p.x - tw * 0.5, p.y - 23.0 * s, tw, 15.0 * s) };
+            if taken.iter().any(|o| rects_overlap(o, &r)) {
+                if far {
+                    ui.circle(p, 4.0 * s, Color::WHITE);
+                    ui.circle(p, 2.8 * s, *color);
+                }
                 continue;
             }
             taken.push(r);
-            ui.rounded(r, 4.0 * s, *color);
-            ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, LINE_TEXT);
+            if far {
+                ui.shadow(r, 8.0 * s, 3.0 * s, Color::rgba(0, 0, 0, 0.18));
+                ui.rounded(r.pad(1.5 * s, 1.5 * s), 9.5 * s, Color::WHITE);
+            }
+            ui.rounded(r, if far { 8.0 } else { 4.0 } * s, *color);
+            ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, line_text(*color));
         }
-        if let (Some(st), true) = (self.streets.clone(), self.city.mpp < 3.2 && self.global.is_some()) {
+        // street names along their roads, with a halo, where there is room
+        if let (Some(st), true) = (self.streets.clone(), self.city.mpp < 3.2) {
             let px = 12.0 * s;
             for (q, a, id) in &st.labels {
-                let p = to_screen(q.extend(0.0));
+                let Some(p) = to_screen(q.extend(0.0)) else { continue };
                 if !win.pad(60.0 * s, 30.0 * s).contains(p) {
                     continue;
                 }
-                let name = &st.names[*id as usize];
-                let tw = self.fonts.width(name, px, Weight::Medium);
-                // (upright: turned at most a quarter either way)
-                let mut ang = -*a;
+                // the road's direction on the screen (tilted views turn it)
+                let d = DVec2::new(a.cos() as f64, a.sin() as f64);
+                let Some(ahead) = to_screen((*q + d * 10.0).extend(0.0)) else { continue };
+                let dir = ahead - p;
+                let mut ang = dir.y.atan2(dir.x);
                 if ang > std::f32::consts::FRAC_PI_2 {
                     ang -= std::f32::consts::PI;
                 } else if ang <= -std::f32::consts::FRAC_PI_2 {
                     ang += std::f32::consts::PI;
                 }
-                // beside the road, not on it
-                let side = Vec2::new(-ang.sin(), ang.cos()) * (px * 0.9 + 2.0 * s);
-                let c = p + side;
+                let name = &st.names[*id as usize];
+                let tw = self.fonts.width(name, px, Weight::Medium);
                 let (hx, hy) = ((ang.cos() * tw * 0.5).abs() + (ang.sin() * px * 0.6).abs(), (ang.sin() * tw * 0.5).abs() + (ang.cos() * px * 0.6).abs());
-                let bb = Rect::new(c.x - hx, c.y - hy, hx * 2.0, hy * 2.0);
+                let bb = Rect::new(p.x - hx, p.y - hy, hx * 2.0, hy * 2.0);
                 if taken.iter().any(|t| rects_overlap(t, &bb)) {
                     continue;
                 }
                 taken.push(bb);
-                ui.text_rotated(&mut self.atlas, &self.fonts, name, px, Weight::Medium, c, ang, STREET);
+                for o in [Vec2::new(1.2, 0.0), Vec2::new(-1.2, 0.0), Vec2::new(0.0, 1.2), Vec2::new(0.0, -1.2)] {
+                    ui.text_rotated(&mut self.atlas, &self.fonts, name, px, Weight::Medium, p + o * s, ang, pal.label_halo);
+                }
+                ui.text_rotated(&mut self.atlas, &self.fonts, name, px, Weight::Medium, p, ang, pal.label);
             }
         }
         for (k, p) in markers.into_iter().rev() {
-            let next = k == 0;
-            if self.city.mpp < 4.0 || next || k + 1 == n_stops {
-                let badge = if next { 7.0 } else { 5.5 } * s;
-                let fill = if next { Color::rgba(45, 116, 205, 1.0) } else if k + 1 == n_stops { ROUTE } else { Color::rgba(76, 91, 112, 0.98) };
-                ui.circle(p, badge, fill);
-                ui.icon(&mut self.atlas, "directions_bus", p, if next { 11.5 } else { 9.5 } * s, TEXT);
+            if self.city.mpp < 4.0 || k == 0 || k + 1 == n_stops {
+                stop_pin(&mut ui, &mut self.atlas, p, k == 0, k + 1 == n_stops, s);
             } else {
-                ui.circle(p, 5.0 * s, Color::rgba(12, 12, 12, 0.95));
-                ui.circle(p, 3.2 * s, TEXT_DIM);
+                ui.circle(p, 5.0 * s, Color::WHITE);
+                ui.circle(p, 3.4 * s, Color::hex(0x5d6b80));
             }
         }
         for (k, name, r) in stop_labels {
-            ui.rounded(r, 4.0 * s, Color::rgba(37, 37, 37, 0.92));
-            ui.text_in(&mut self.atlas, &self.fonts, &name, 12.5 * s, if k == 0 { Weight::Bold } else { Weight::Medium }, r.pad(6.0 * s, 0.0), Align::Left, if k == 0 { TEXT } else { TEXT_DIM });
+            ui.shadow(r, 7.0 * s, 4.0 * s, Color::rgba(0, 0, 0, 0.12));
+            ui.rounded(r, 7.0 * s, pal.card);
+            ui.text_in(&mut self.atlas, &self.fonts, &name, 12.5 * s, if k == 0 { Weight::Bold } else { Weight::Medium }, r.pad(8.0 * s, 0.0), Align::Left, if k == 0 { pal.card_text } else { pal.card_dim });
         }
-        // the other players: an arrow the way they face and their name (as on the small map)
         for pl in &f.players {
-            let p = to_screen(pl.position);
-            if !win.contains(p) || p.y < 44.0 * s {
-                continue;
-            }
-            arrow(&mut ui, p, (pl.heading as f32).to_radians(), 8.5 * s, 1.3, Color::rgba(10, 10, 10, 0.9), PLAYER);
+            let Some(p) = to_screen(pl.position).filter(|p| win.contains(*p)) else { continue };
+            puck(&mut ui, p, (pl.heading as f32).to_radians(), 8.5 * s, PLAYER);
             let px = 11.0 * s;
             let name = self.fonts.fit(&pl.name, px, Weight::Bold, 140.0 * s);
-            let tw = self.fonts.width(&name, px, Weight::Bold) + 9.0 * s;
-            let r = Rect::new(p.x - tw * 0.5, p.y - 27.0 * s, tw, 15.0 * s);
+            let tw = self.fonts.width(&name, px, Weight::Bold) + 12.0 * s;
+            let r = Rect::new(p.x - tw * 0.5, p.y - 30.0 * s, tw, 16.0 * s);
             if taken.iter().any(|o| rects_overlap(o, &r)) {
                 continue;
             }
             taken.push(r);
-            ui.rounded(r, 4.0 * s, PLAYER);
-            ui.text_in(&mut self.atlas, &self.fonts, &name, px, Weight::Bold, r, Align::Center, LINE_TEXT);
+            ui.rounded(r, 8.0 * s, PLAYER);
+            ui.text_in(&mut self.atlas, &self.fonts, &name, px, Weight::Bold, r, Align::Center, Color::WHITE);
         }
-        arrow(&mut ui, to_screen(f.bus), (f.heading as f32).to_radians(), 10.0 * s, 1.3, Color::rgba(10, 10, 10, 0.9), TEXT);
-        // header: the line and where it goes, the next stop; buttons on the right
-        // (opaque: the route and the stops showed through behind its text)
-        let head = Rect::new(0.0, 0.0, w, 44.0 * s);
-        ui.rect(head, Color::rgba(28, 28, 28, 0.96));
-        let pad = 16.0 * s;
+        if let Some(bp) = to_screen(f.bus) {
+            puck(&mut ui, bp, (f.heading as f32).to_radians(), 10.0 * s, pal.route);
+        }
+        // --- the cards: the trip top left, the buttons top right, the scale bottom left
+        let pad = 14.0 * s;
         let wd = words(f.language);
-        let title = match (&f.line, &f.terminus) {
-            (Some(l), Some(t)) => format!("{}  ›  {}", l.trim(), t.trim()),
-            _ => wd.no_duty.to_string(),
-        };
-        let title_w = ui.text_in(&mut self.atlas, &self.fonts, &title, 15.0 * s, Weight::Bold, Rect::new(pad, head.y, w * 0.4, head.h), Align::Left, TEXT);
-        if let Some(st) = f.stops.first() {
-            let d = self.next_dist.map(|d| if d >= 1000.0 { format!("{:.1} km", d / 1000.0) } else { format!("{:.0} m", d) }).unwrap_or_default();
-            let t = format!("{}  |  {}  |  {:02}:{:02}", st.name.trim(), d, (st.arrival / 3600.0) as i32 % 24, ((st.arrival % 3600.0) / 60.0) as i32);
-            ui.text_in(&mut self.atlas, &self.fonts, &t, 13.5 * s, Weight::Medium, Rect::new(pad + title_w + 24.0 * s, head.y, w * 0.45, head.h), Align::Left, TEXT_DIM);
+        let head = Rect::new(pad, pad, (w * 0.5).min(520.0 * s), 58.0 * s);
+        ui.shadow(head, 14.0 * s, 10.0 * s, Color::rgba(0, 0, 0, 0.14));
+        ui.rounded(head, 14.0 * s, pal.card);
+        let mut x = head.x + 14.0 * s;
+        if let Some(l) = f.line.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+            let px = 13.0 * s;
+            let l = self.fonts.fit(l, px, Weight::Bold, 60.0 * s);
+            let lw = self.fonts.width(&l, px, Weight::Bold) + 14.0 * s;
+            let r = Rect::new(x, head.y + 10.0 * s, lw, 20.0 * s);
+            ui.rounded(r, 5.0 * s, BUS);
+            ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, Color::WHITE);
+            x += lw + 9.0 * s;
         }
+        let title = f.terminus.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(str::to_string).unwrap_or_else(|| wd.no_duty.to_string());
+        let title = self.fonts.fit(&title, 15.0 * s, Weight::Bold, head.right() - x - 12.0 * s);
+        ui.text_in(&mut self.atlas, &self.fonts, &title, 15.0 * s, Weight::Bold, Rect::new(x, head.y + 8.0 * s, head.right() - x - 12.0 * s, 24.0 * s), Align::Left, pal.card_text);
+        let sub = match f.stops.first() {
+            Some(st) => {
+                let d = self.next_dist.map(|d| crate::units::Units::now().distance(d)).unwrap_or_default();
+                format!("{}  ·  {}  ·  {:02}:{:02}", st.name.trim(), d, (st.arrival / 3600.0) as i32 % 24, ((st.arrival % 3600.0) / 60.0) as i32)
+            }
+            None => self.street_here.clone().unwrap_or_default(),
+        };
+        let sub = self.fonts.fit(&sub, 12.5 * s, Weight::Medium, head.w - 28.0 * s);
+        ui.text_in(&mut self.atlas, &self.fonts, &sub, 12.5 * s, Weight::Medium, Rect::new(head.x + 14.0 * s, head.y + 32.0 * s, head.w - 28.0 * s, 20.0 * s), Align::Left, pal.card_dim);
+        // buttons: close apart, then a column (2D/3D, zoom in, zoom out, the bus)
         self.city.buttons.clear();
-        let bs = 30.0 * s;
-        let mut bx = w - pad - bs;
-        for (icon, id) in [("close", 3u8), ("zoom_out", 2), ("zoom_in", 1), ("my_location", 0)] {
-            let r = Rect::new(bx, head.y + (head.h - bs) * 0.5, bs, bs);
-            ui.rounded(r, 6.0 * s, if id == 0 && self.city.follow { Color::rgba(47, 47, 47, 1.0) } else { Color::rgba(37, 37, 37, 1.0) });
-            ui.icon(&mut self.atlas, icon, r.center(), 18.0 * s, TEXT);
+        let bs = 38.0 * s;
+        let bx = w - pad - bs;
+        let close = Rect::new(bx, pad, bs, bs);
+        ui.shadow(close, bs * 0.5, 8.0 * s, Color::rgba(0, 0, 0, 0.14));
+        ui.rounded(close, bs * 0.5, pal.card);
+        ui.icon(&mut self.atlas, "close", close.center(), 20.0 * s, pal.card_text);
+        self.city.buttons.push((close, 3));
+        let col = Rect::new(bx, close.bottom() + 12.0 * s, bs, bs * 4.0);
+        ui.shadow(col, 12.0 * s, 8.0 * s, Color::rgba(0, 0, 0, 0.14));
+        ui.rounded(col, 12.0 * s, pal.card);
+        let three = self.city.three_d.unwrap_or(self.show_3d);
+        for (k, id) in [4u8, 1, 2, 0].into_iter().enumerate() {
+            let r = Rect::new(col.x, col.y + k as f32 * bs, bs, bs);
+            if k > 0 {
+                ui.rect(Rect::new(r.x + 8.0 * s, r.y, r.w - 16.0 * s, 1.0), pal.card_dim.alpha(0.25));
+            }
+            match id {
+                4 => {
+                    ui.text_in(&mut self.atlas, &self.fonts, if three { "3D" } else { "2D" }, 13.0 * s, Weight::Bold, r, Align::Center, if three { pal.route } else { pal.card_text });
+                }
+                0 => ui.icon(&mut self.atlas, if self.city.follow { "navigation" } else { "near_me" }, r.center(), 20.0 * s, if self.city.follow { pal.route } else { pal.card_text }),
+                1 => ui.icon(&mut self.atlas, "add", r.center(), 22.0 * s, pal.card_text),
+                _ => ui.icon(&mut self.atlas, "remove", r.center(), 22.0 * s, pal.card_text),
+            }
             self.city.buttons.push((r, id));
-            bx -= bs + 8.0 * s;
         }
         self.draw_credit(&mut ui, w, h, s);
-        // a scale bar, bottom left
-        let nice = [10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0];
-        let metres = nice.iter().copied().find(|m| m / self.city.mpp > 70.0 * s as f64).unwrap_or(5000.0);
+        // a scale bar, bottom left (of the middle of the view)
+        let nice = [5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0];
+        let metres = nice.iter().copied().find(|m| m / self.city.mpp > 60.0 * s as f64).unwrap_or(5000.0);
         let len = (metres / self.city.mpp) as f32;
-        let by = h - 22.0 * s;
-        ui.rect(Rect::new(pad, by, len, 2.0 * s), TEXT_DIM);
-        ui.text(&mut self.atlas, &self.fonts, &if metres >= 1000.0 { format!("{:.0} km", metres / 1000.0) } else { format!("{metres:.0} m") }, 12.0 * s, Weight::Medium, Vec2::new(pad + len + 8.0 * s, by + 4.0 * s), Align::Left, TEXT_DIM);
+        let units = crate::units::Units::now();
+        let label = units.distance(metres);
+        let lw = self.fonts.width(&label, 11.5 * s, Weight::Medium);
+        let card = Rect::new(pad, h - pad - 26.0 * s, len + lw + 30.0 * s, 26.0 * s);
+        ui.rounded(card, 13.0 * s, pal.card);
+        let by = card.center().y;
+        ui.rect(Rect::new(card.x + 10.0 * s, by - 1.0 * s, len, 2.0 * s), pal.card_text);
+        ui.rect(Rect::new(card.x + 10.0 * s, by - 4.0 * s, 1.5 * s, 8.0 * s), pal.card_text);
+        ui.rect(Rect::new(card.x + 10.0 * s + len - 1.5 * s, by - 4.0 * s, 1.5 * s, 8.0 * s), pal.card_text);
+        ui.text(&mut self.atlas, &self.fonts, &label, 11.5 * s, Weight::Medium, Vec2::new(card.x + 18.0 * s + len, by + 4.0 * s), Align::Left, pal.card_text);
 
         // --- to the GPU
         let (tex, _, _) = self.city.target.unwrap();
         let Some(view) = renderer.texture_view(scene, tex) else { return };
         let (Some(gpu), device, queue) = (self.gpu.as_mut(), &renderer.device, &renderer.queue) else { return };
-        if let Some(v) = roads_verts {
-            gpu.upload(device, queue, 3, &v);
-        }
-        if let Some(v) = surface_verts {
+        if let Some(v) = ground_verts {
             gpu.upload(device, queue, 7, &v);
         }
+        if let Some(v) = house_verts {
+            gpu.upload(device, queue, 10, &v);
+        }
         if let Some(v) = route_verts {
-            gpu.upload(device, queue, 4, &v);
+            let (solid, ghost) = solid_and_ghost(&v, 0.3);
+            gpu.upload(device, queue, 4, &solid);
+            gpu.upload(device, queue, 11, &ghost);
         }
         let mut all = bg.verts;
-        all.extend(dots.verts);
+        let n_dots = dots_solid.len() as u32;
+        all.extend(dots_solid);
         let n_ui = all.len() as u32;
         all.extend(ui.verts);
         gpu.upload(device, queue, 5, &all);
         gpu.upload_atlas(queue, &mut self.atlas);
-        let flat = Layer::flat([0.0, 0.0, w, h], 8.0 * s, 1.0);
-        let layers = [flat, world];
-        let roads_n = self.city.roads.map(|r| r.1).unwrap_or(0);
+        let flat = Layer::flat([0.0, 0.0, w, h], 14.0 * s, 1.0);
+        let layers = [flat, world, depth];
+        let (ground_n, houses_n) = self.city.ground.map(|g| (g.verts, g.houses)).unwrap_or((0, 0));
+        let route_n = self.city.route.2;
         let draws = [
             Draw { buffer: 5, range: 0..n_bg, layer: 0, texture: 0 },
-            Draw { buffer: 7, range: 0..surface_n, layer: 1, texture: 0 },
-            Draw { buffer: 3, range: 0..roads_n, layer: 1, texture: 0 },
-            Draw { buffer: 4, range: 0..self.city.route.1, layer: 1, texture: 0 },
-            Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 1, texture: 0 },
+            Draw { buffer: 7, range: 0..ground_n, layer: 1, texture: 0 },
+            Draw { buffer: 10, range: 0..houses_n, layer: 2, texture: 0 },
+            Draw { buffer: 11, range: 0..if self.city.tilt > 0.01 { route_n } else { 0 }, layer: 1, texture: 0 },
+            Draw { buffer: 4, range: 0..route_n, layer: 2, texture: 0 },
+            Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 2, texture: 0 },
             Draw { buffer: 5, range: n_ui..all.len() as u32, layer: 0, texture: 0 },
         ];
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("city map") });
         gpu.render(device, queue, &mut enc, &view, (tw, th), Some(wgpu::Color::TRANSPARENT), &layers, &draws);
         queue.submit([enc.finish()]);
-        let _ = n_dots;
         scene.overlays.push((tex, [x0, y0, x0 + w, y0 + h]));
     }
 }
