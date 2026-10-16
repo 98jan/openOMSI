@@ -12,7 +12,7 @@ use std::path::PathBuf;
 /// preparation took.
 /// A finished batch: the tiles asked for, what was made of them (a tile that could not be
 /// made is missing), statistics and seconds.
-type Batch = (Vec<(i32, i32)>, Vec<crate::scene::Prepared>, crate::scene::LoadStats, f64);
+type Batch = (Vec<(i32, i32)>, Vec<crate::Prepared>, crate::LoadStats, f64);
 
 /// The threads tiles are prepared on while the game runs: a pool of their own, a third of
 /// the cores, so that the frame's parallel work (culling, the AI scripts) never waits for a
@@ -77,7 +77,7 @@ fn initial_stall_due(
 /// frame, and the tiles beyond `unload_radius` of all of them are taken away again, so the
 /// memory a map needs is bounded by the view distance and not by the size of the map.
 pub struct Streamer {
-    world: std::sync::Arc<crate::scene::World>,
+    world: std::sync::Arc<crate::World>,
     tiles: Vec<(i32, i32, PathBuf)>,
     /// Indices into `tiles`, including duplicate coordinates, in map-file order.
     tile_lookup: hashbrown::HashMap<(i32, i32), Vec<usize>>,
@@ -86,14 +86,14 @@ pub struct Streamer {
     tx: std::sync::mpsc::Sender<Batch>,
     rx: std::sync::mpsc::Receiver<Batch>,
     inflight: bool,
-    queue: std::collections::VecDeque<crate::scene::PendingUpload>,
+    queue: std::collections::VecDeque<crate::PendingUpload>,
     /// Tiles in flight or waiting for upload.
     requested: hashbrown::HashSet<(i32, i32)>,
     /// Tiles that could not be made (a damaged file): not asked for again.
     failed: hashbrown::HashSet<(i32, i32)>,
     /// The first area around the start: (tiles, of which uploaded).
     initial: Option<(hashbrown::HashSet<(i32, i32)>, usize)>,
-    pub stats: crate::scene::LoadStats,
+    pub stats: crate::LoadStats,
     pub loaded_total: usize,
     pub unloaded_total: usize,
     /// Seconds the worker spent preparing, and the longest upload work of one frame.
@@ -116,6 +116,9 @@ pub struct Streamer {
     initial_upload: Option<((i32, i32), std::time::Instant)>,
     /// Tiles loaded and unloaded when the heap's free pages were last given back, and when.
     relieved_at: (usize, usize, std::time::Instant),
+    /// Hands memory the allocator holds free back to the system after tiles were let
+    /// go (the game's own, per platform: see `new`).
+    relieve: fn(),
     /// Since when tiles came in whose stops, obstacles and lights are not in the world's
     /// lists yet (see `update`).
     lists_due: Option<std::time::Instant>,
@@ -131,7 +134,7 @@ const LISTS_AFTER_LOADS: std::time::Duration = std::time::Duration::from_millis(
 impl Streamer {
     /// Start streaming around `centers`: the tiles within `initial_radius` of them form the
     /// first area, which is what the loading screen waits for.
-    pub fn new(world: std::sync::Arc<crate::scene::World>, centers: &[DVec3], load_radius: f64, initial_radius: f64) -> Streamer {
+    pub fn new(world: std::sync::Arc<crate::World>, centers: &[DVec3], load_radius: f64, initial_radius: f64, relieve: fn()) -> Streamer {
         let tiles = world.select_tiles(None, None);
         let mut tile_lookup: hashbrown::HashMap<(i32, i32), Vec<usize>> = hashbrown::HashMap::new();
         for (i, t) in tiles.iter().enumerate() {
@@ -166,6 +169,7 @@ impl Streamer {
             inflight_batch: None,
             initial_upload: None,
             relieved_at: (0, 0, std::time::Instant::now()),
+            relieve,
             lists_due: None,
             stale: Default::default(),
         };
@@ -305,7 +309,7 @@ impl Streamer {
                     log::info!("tile loading: uploaded/placed tile {},{} in {:.2} s", key.0, key.1, secs);
                 }
             }
-            let mut stats = crate::scene::LoadStats::default();
+            let mut stats = crate::LoadStats::default();
             self.world.commit_upload(p, &mut stats);
             self.stats.objects += stats.objects;
             self.stats.trees += stats.trees;
@@ -382,7 +386,7 @@ impl Streamer {
         if (self.loaded_total, self.unloaded_total) != (self.relieved_at.0, self.relieved_at.1) && self.relieved_at.2.elapsed().as_secs_f32() >= 4.0 && self.queue.is_empty() && !self.inflight {
             self.relieved_at = (self.loaded_total, self.unloaded_total, std::time::Instant::now());
             self.world.compact_slots(renderer, scene);
-            crate::release_free_memory();
+            (self.relieve)();
         }
         if self.last_summary.elapsed().as_secs_f32() >= 10.0 && omsi_cfg::flags::OMSI_PROFILE.is_set() {
             self.last_summary = std::time::Instant::now();

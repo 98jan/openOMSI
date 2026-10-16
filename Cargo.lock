@@ -3869,6 +3869,7 @@ dependencies = [
 name = "omsi-scene"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "glam",
  "hashbrown 0.17.1",
@@ -3893,8 +3894,10 @@ dependencies = [
  "omsi-weather",
  "omsi-world",
  "parking_lot",
+ "png",
  "pollster 1.0.1",
  "rayon",
+ "serde_json",
  "wgpu",
  "zip",
 ]

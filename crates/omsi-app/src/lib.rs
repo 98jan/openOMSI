@@ -12,7 +12,7 @@
 //! launcher knows through `apple_bridge`.
 
 mod admin;
-mod check;
+use omsi_scene::check;
 use omsi_platform::discord;
 #[cfg(steam)]
 mod steam;
@@ -53,7 +53,7 @@ mod game_panels;
 mod game_controller_menu;
 mod rail_drive;
 use omsi_scene::driver;
-mod export;
+use omsi_scene::export;
 pub(crate) use omsi_scene::hud;
 mod humans;
 use omsi_career::journey;
@@ -79,7 +79,16 @@ use omsi_scene::{rain, window_wipers};
 mod scene;
 mod season_phase;
 mod schedule;
-mod schedule_paper;
+/// The cab's paper timetable (`omsi_scene::schedule_paper`) in the game's language.
+mod schedule_paper {
+    pub(crate) fn update_vehicle(
+        vehicle: &mut omsi_sim::VehicleInstance,
+        duty: &omsi_sim::timetable_run::PlayerDuty,
+        fonts: &mut omsi_sim::texttex::FontLibrary,
+    ) -> anyhow::Result<()> {
+        omsi_scene::schedule_paper::update_vehicle(vehicle, duty, fonts, || crate::settings::Settings::load().language)
+    }
+}
 mod real_time;
 mod settings;
 mod shell;
@@ -87,7 +96,7 @@ mod photo;
 mod devtools;
 mod telemetry;
 use omsi_scene::threads;
-mod tiles;
+use omsi_scene::tiles;
 mod traffic;
 mod view_sync;
 mod ui;
@@ -218,7 +227,7 @@ pub fn run() -> Result<()> {
     // as JSON, no window, no log
     if matches!(std::env::args().nth(1).as_deref(), Some("--check" | "--check-vehicle")) {
         let rest: Vec<String> = std::env::args().skip(2).collect();
-        return check::run(&rest);
+        return check::run(&rest, crate::startup::find_root);
     }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     // a panic goes into the log (which the launcher keeps per session) with where it

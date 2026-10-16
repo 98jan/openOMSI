@@ -65,6 +65,10 @@ pub mod host;
 pub mod head_idle;
 pub mod hud;
 pub mod editor;
+pub mod tiles;
+pub mod schedule_paper;
+pub mod check;
+pub mod export;
 
 pub use staging::*;
 pub use batching::*;
