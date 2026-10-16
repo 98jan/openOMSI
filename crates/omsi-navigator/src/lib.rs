@@ -35,12 +35,8 @@ use omsi_sim::ai_traffic::TrafficSim;
 // --- colours (sRGB) -------------------------------------------------------------------
 
 // neutral dark, half transparent, calm
-const NAV_REDRAW_S: f32 = 1.0 / 30.0;
-/// Frames between two drawings of the navigator at least. Below 30 fps it was drawn every
-/// frame, and a drawing is a pass of its own (4x MSAA, its own submit): on OpenGL, where
-/// wgpu makes the GL calls in the submit, 4.2 ms of a 43 ms frame (a Radeon R7 200, 23
-/// fps), against 0.6 ms on Vulkan. Every other frame halves that where frames are slow.
-const NAV_REDRAW_FRAMES: u32 = 2;
+const NAV_SLOW_FPS: f32 = 30.0;
+const NAV_MAX_FPS: f32 = 75.0;
 // (the launcher's map picture draws with these too, so the two maps cannot look apart)
 pub const ROAD_CASING: Color = style::LIGHT.road_edge;
 pub const ROAD: Color = style::LIGHT.road;
@@ -291,8 +287,8 @@ pub struct Navigator {
     pub cockpit_display: bool,
     /// The speed limit (km/h) the top bar showed last, for the information bar (#2476).
     pub speed_limit: Option<f32>,
-    drawn_at: f32,
-    /// Frames since the last drawing (see `NAV_REDRAW_FRAMES`).
+    frame_dt: f32,
+    last_frame: Option<std::time::Instant>,
     frames_since_drawn: u32,
     pub enabled: bool,
     /// The next stops with their times under the map (Shift+N cycles map, map and
@@ -480,7 +476,8 @@ impl Navigator {
             panel_overlay: None,
             cockpit_display: false,
             speed_limit: None,
-            drawn_at: f32::MIN,
+            frame_dt: 1.0 / 60.0,
+            last_frame: None,
             frames_since_drawn: u32::MAX,
             enabled,
             schedule: false,
@@ -1216,10 +1213,14 @@ impl Navigator {
         }
         let (tex, _, _) = self.target.unwrap();
         let Some(view) = renderer.texture_view(scene, tex) else { return };
+        let now = std::time::Instant::now();
+        if let Some(t) = self.last_frame.replace(now) {
+            let dt = (now - t).as_secs_f32().min(0.25);
+            self.frame_dt += (dt - self.frame_dt) * ease(dt, 0.5) as f32;
+        }
         self.frames_since_drawn = self.frames_since_drawn.saturating_add(1);
-        let due = self.time - self.drawn_at >= NAV_REDRAW_S && self.frames_since_drawn >= NAV_REDRAW_FRAMES;
-        if !self.city.open && (resized || due) {
-            self.drawn_at = self.time;
+        let every = if self.frame_dt > 1.0 / NAV_SLOW_FPS { 2 } else { (1.0 / (NAV_MAX_FPS * self.frame_dt.max(1e-4))).ceil().clamp(1.0, 4.0) as u32 };
+        if !self.city.open && (resized || self.frames_since_drawn >= every) {
             self.frames_since_drawn = 0;
             self.draw(renderer, &view, (w, h), map_h, f);
         }
