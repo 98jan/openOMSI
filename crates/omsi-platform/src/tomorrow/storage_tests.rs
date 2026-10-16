@@ -29,6 +29,11 @@ fn read(path: &Path) -> Cache {
 fn no_request() -> Result<ureq::Response, ureq::Error> {
     panic!("a cache hit, invalid store or exhausted budget must not send HTTP")
 }
+fn temperature(v: &Value) -> Result<f64, &'static str> {
+    v.get("temperature")
+        .and_then(Value::as_f64)
+        .ok_or("response has no valid temperature")
+}
 fn values() -> Value {
     serde_json::json!({"temperature":12,"humidity":80,"windSpeed":6.6})
 }
@@ -69,7 +74,7 @@ fn private_key_file_is_trimmed_validated_and_overridden() {
 fn failed_call_reserves_budget_on_disk_before_transport_and_after_restart() {
     let dir = Directory::new();
     let path = dir.cache();
-    let result = fetch_in(&path, "50,14", 900, 100000, || {
+    let result = fetch_in(&path, "50,14", 900, 100000, temperature, || {
         assert_eq!(read(&path).requests, [100000]);
         Err(ureq::Error::Status(
             500,
@@ -78,7 +83,7 @@ fn failed_call_reserves_budget_on_disk_before_transport_and_after_restart() {
     });
     assert_eq!(result.err(), Some("Tomorrow.io returned an HTTP error"));
     assert_eq!(read(&path).requests, [100000]);
-    assert!(fetch_in(&path, "51,15", 900, 100179, no_request).is_err());
+    assert!(fetch_in(&path, "51,15", 900, 100179, temperature, no_request).is_err());
     assert!(!path.with_extension("tmp").exists());
     assert!(!path.with_extension("lock").exists());
 }
@@ -89,7 +94,7 @@ fn quota_and_auth_cooldown_survive_reopening_the_store() {
         let dir = Directory::new();
         let path = dir.cache();
         assert!(
-            fetch_in(&path, "50,14", 900, 100000, || {
+            fetch_in(&path, "50,14", 900, 100000, temperature, || {
                 Err(ureq::Error::Status(
                     status,
                     ureq::Response::new(status, "error", "").unwrap(),
@@ -98,7 +103,7 @@ fn quota_and_auth_cooldown_survive_reopening_the_store() {
             .is_err()
         );
         assert_eq!(read(&path).blocked_until, 103600);
-        assert!(fetch_in(&path, "51,15", 900, 103599, no_request).is_err());
+        assert!(fetch_in(&path, "51,15", 900, 103599, temperature, no_request).is_err());
         assert!(read(&path).reserve(103600).is_ok());
     }
 }
@@ -116,7 +121,7 @@ fn hourly_and_daily_limits_survive_restart_and_expire() {
             ..Cache::default()
         };
         write_cache(&path, &cache).unwrap();
-        assert!(fetch_in(&path, "50,14", 900, time, no_request).is_err());
+        assert!(fetch_in(&path, "50,14", 900, time, temperature, no_request).is_err());
         assert!(read(&path).reserve(expires).is_ok());
     }
 }
@@ -139,11 +144,11 @@ fn fresh_shared_response_works_during_cooldown_without_spending_budget() {
     );
     write_cache(&path, &cache).unwrap();
     for _ in 0..2 {
-        let loaded = fetch_in(&path, "50,14", 900, 100100, no_request).unwrap();
-        assert_eq!(loaded.observed.temperature_c, 12.0);
+        let loaded = fetch_in(&path, "50,14", 900, 100100, temperature, no_request).unwrap();
+        assert_eq!(loaded.observed, 12.0);
         assert_eq!(read(&path).requests, [100000]);
     }
-    assert!(fetch_in(&path, "50,14", 900, 100900, no_request).is_err());
+    assert!(fetch_in(&path, "50,14", 900, 100900, temperature, no_request).is_err());
 }
 
 #[test]
@@ -151,18 +156,18 @@ fn successful_response_reopens_with_budget_and_without_credentials() {
     let dir = Directory::new();
     let path = dir.cache();
     let body = serde_json::json!({"data":{"values":values()}}).to_string();
-    let loaded = fetch_in(&path, "50,14", 900, 100000, || {
+    let loaded = fetch_in(&path, "50,14", 900, 100000, temperature, || {
         Ok(ureq::Response::new(200, "OK", &body).unwrap())
     })
     .unwrap();
-    assert_eq!(loaded.observed.temperature_c, 12.0);
+    assert_eq!(loaded.observed, 12.0);
     assert_eq!(read(&path).requests, [100000]);
     assert!(!std::fs::read_to_string(&path).unwrap().contains("test-key"));
-    assert!(fetch_in(&path, "50,14", 900, 100001, no_request).is_ok());
-    assert!(fetch_in(&path, "51,15", 900, 100001, no_request).is_err());
+    assert!(fetch_in(&path, "50,14", 900, 100001, temperature, no_request).is_ok());
+    assert!(fetch_in(&path, "51,15", 900, 100001, temperature, no_request).is_err());
     // Replacing an existing cache must keep the earlier call in the ledger.
     assert!(
-        fetch_in(&path, "51,15", 900, 100180, || {
+        fetch_in(&path, "51,15", 900, 100180, temperature, || {
             Ok(ureq::Response::new(200, "OK", &body).unwrap())
         })
         .is_ok()
@@ -177,7 +182,7 @@ fn corrupt_cache_and_concurrent_request_do_not_reset_the_budget() {
     let path = dir.cache();
     std::fs::write(&path, "broken JSON").unwrap();
     assert_eq!(
-        fetch_in(&path, "50,14", 900, 100000, no_request).err(),
+        fetch_in(&path, "50,14", 900, 100000, temperature, no_request).err(),
         Some("weather cache is invalid; no request sent")
     );
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "broken JSON");
@@ -190,7 +195,7 @@ fn corrupt_cache_and_concurrent_request_do_not_reset_the_budget() {
     let lock = path.with_extension("lock");
     std::fs::write(&lock, "").unwrap();
     assert_eq!(
-        fetch_in(&path, "50,14", 900, 100180, no_request).err(),
+        fetch_in(&path, "50,14", 900, 100180, temperature, no_request).err(),
         Some("another weather request is running")
     );
     assert_eq!(read(&path).requests, [100000]);
