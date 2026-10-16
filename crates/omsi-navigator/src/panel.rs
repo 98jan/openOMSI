@@ -8,8 +8,8 @@ use super::style::{self, Palette};
 use super::*;
 use omsi_ui::Vertex;
 
-const PANEL_REACH: f64 = 560.0;
-const PANEL_REBUILD: f64 = 180.0;
+const PANEL_REACH: f64 = 640.0;
+const PANEL_REBUILD: f64 = 150.0;
 
 /// The card behind the next turn (dark in both looks, as a car's guidance banner is).
 const BANNER: Color = Color::rgba(28, 30, 33, 0.95);
@@ -105,7 +105,7 @@ impl Navigator {
             let bus_lane = first.map(|l| lane_from_right(rn, l, f.bus)).unwrap_or(0);
             if self.route_mesh.0 != self.route.version || self.route_mesh.1 != self.jam_version || self.route_mesh.2 != anchor || self.route_mesh.4 != bus_lane || self.route_mesh.5 != look_key {
                 let mut p = Painter::new();
-                let style = RouteStyle { extra_m: -0.6, min_px: 5.0, arrows: Some((32.0, 900.0)), max_len: 12_000.0, near: Some((anchor, ROAD_RADIUS * 1.6)) };
+                let style = RouteStyle { extra_m: -0.6, min_px: 5.0, arrows: Some((32.0, 900.0)), max_len: 12_000.0, near: Some((anchor, PANEL_REACH)) };
                 build_route(&mut p, rn, &self.route.lanes[self.route.progress.min(self.route.lanes.len())..], anchor, self.route.s, &self.route_jam, &style, bus_lane, &pal);
                 self.route_mesh = (self.route.version, self.jam_version, anchor, p.len(), bus_lane, look_key);
                 route_verts = Some(p.verts);

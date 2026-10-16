@@ -289,6 +289,7 @@ pub struct Navigator {
     pub speed_limit: Option<f32>,
     frame_dt: f32,
     last_frame: Option<std::time::Instant>,
+    draw_every: u32,
     frames_since_drawn: u32,
     pub enabled: bool,
     /// The next stops with their times under the map (Shift+N cycles map, map and
@@ -454,6 +455,19 @@ fn angle_diff(a: f64, b: f64) -> f64 {
     d
 }
 
+fn draw_every(now: u32, frame_dt: f32) -> u32 {
+    let slow = 1.0 / (NAV_SLOW_FPS * frame_dt.max(1e-4));
+    let ideal = 1.0 / (NAV_MAX_FPS * frame_dt.max(1e-4));
+    if slow < 0.92 || (now == 2 && slow < 1.08) {
+        return 2;
+    }
+    let n = now as f32;
+    if ideal > n - 1.0 - 0.08 && ideal <= n + 0.08 {
+        return now;
+    }
+    (ideal.ceil() as u32).clamp(1, 4)
+}
+
 fn ease(dt: f32, tau: f32) -> f64 {
     (1.0 - (-dt / tau.max(1e-3)).exp()) as f64
 }
@@ -478,6 +492,7 @@ impl Navigator {
             speed_limit: None,
             frame_dt: 1.0 / 60.0,
             last_frame: None,
+            draw_every: 1,
             frames_since_drawn: u32::MAX,
             enabled,
             schedule: false,
@@ -1214,13 +1229,12 @@ impl Navigator {
         let (tex, _, _) = self.target.unwrap();
         let Some(view) = renderer.texture_view(scene, tex) else { return };
         let now = std::time::Instant::now();
-        if let Some(t) = self.last_frame.replace(now) {
-            let dt = (now - t).as_secs_f32().min(0.25);
+        if let Some(dt) = self.last_frame.replace(now).map(|t| (now - t).as_secs_f32()).filter(|dt| *dt < 0.1) {
             self.frame_dt += (dt - self.frame_dt) * ease(dt, 0.5) as f32;
         }
+        self.draw_every = draw_every(self.draw_every, self.frame_dt);
         self.frames_since_drawn = self.frames_since_drawn.saturating_add(1);
-        let every = if self.frame_dt > 1.0 / NAV_SLOW_FPS { 2 } else { (1.0 / (NAV_MAX_FPS * self.frame_dt.max(1e-4))).ceil().clamp(1.0, 4.0) as u32 };
-        if !self.city.open && (resized || self.frames_since_drawn >= every) {
+        if !self.city.open && (resized || self.frames_since_drawn >= self.draw_every) {
             self.frames_since_drawn = 0;
             self.draw(renderer, &view, (w, h), map_h, f);
         }

@@ -307,3 +307,17 @@ fn crowded_stop_markers_and_labels_do_not_overlap() {
     assert!(stop_label_rect(p, 150.0, 1.0, win, &[win]).is_none());
 }
 
+
+#[test]
+fn redraw_rate_holds_steady_at_its_edges() {
+    let run = |fps: &[f32]| fps.iter().fold(1, |n, f| draw_every(n, 1.0 / f));
+    assert_eq!(run(&[60.0]), 1);
+    assert_eq!(run(&[74.0, 76.5, 74.5, 77.0]), 1);
+    assert_eq!(run(&[144.0]), 2);
+    assert_eq!(run(&[144.0, 148.0, 152.0, 147.0]), 2);
+    assert_eq!(run(&[240.0]), 4);
+    assert_eq!(run(&[25.0]), 2);
+    assert_eq!(run(&[25.0, 31.0, 29.5, 31.5]), 2);
+    assert_eq!(run(&[31.0, 29.0, 31.0]), 1);
+    assert_eq!(run(&[25.0, 40.0]), 1);
+}
