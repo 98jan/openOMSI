@@ -260,7 +260,6 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
                     app.frame_duty(frame_step());
                 }
             }
-
             Integrations => app.frame_integrations(el, dt()),
             ViewKeys => super::view_keys::view_keys(super::view_keys::ViewKeysCx::of(&mut app.parts()), dt()),
             Drawn => app.frame_drawn(),

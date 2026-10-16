@@ -185,12 +185,12 @@ export function followClock() {
 }
 
 let saveTimer = 0;
-/** Change the duty (and keep it on disk a moment later). */
 function randomFleetNumber(vehicle) {
   const numbers = vehicle?.numbers || [];
   return numbers.length ? numbers[Math.floor(Math.random() * numbers.length)][0] : '';
 }
 
+/** Change the duty (and keep it on disk a moment later). */
 export function choose(patch) {
   const before = S.choice;
   const c = { ...before, ...patch };

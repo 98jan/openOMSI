@@ -40,7 +40,7 @@ impl App {
             });
         let Some(target) = target else {
             self.service_msg = Some((
-                "Stand near a bus entry outside, or an exit inside, to request the door".into(),
+                omsi_ui::tr("Stand near a bus entry outside, or an exit inside, to request the door").into_owned(),
                 3.0,
             ));
             return;
@@ -50,11 +50,8 @@ impl App {
             f.door_request_send = 0.0;
         }
         self.service_msg = Some((
-            format!(
-                "{} requested at door {}",
-                if target.exit { "Exit" } else { "Entry" },
-                target.index + 1
-            ),
+            omsi_ui::tr(if target.exit { "Exit requested at door {}" } else { "Entry requested at door {}" })
+                .replacen("{}", &(target.index + 1).to_string(), 1),
             3.0,
         ));
     }

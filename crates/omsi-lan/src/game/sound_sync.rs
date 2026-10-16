@@ -81,6 +81,9 @@ fn same_bus(a: &str, b: &str) -> bool {
 }
 fn apply(v: &mut omsi_sim::VehicleInstance, event: &Event) {
     if let Some(file) = &event.file {
+        if file.len() > 260 || !omsi_net::remote_text::freetex_ok(file) {
+            return;
+        }
         v.host
             .fired_file_triggers
             .push((event.trigger.clone(), file.clone()));

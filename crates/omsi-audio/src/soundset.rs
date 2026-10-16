@@ -401,7 +401,7 @@ impl SoundSet {
         var: &dyn Fn(&str) -> Option<f32>,
         object_to_world: &Mat4,
     ) {
-        if !engine.enabled || file.trim().is_empty() {
+        if !engine.enabled || file.trim().is_empty() || !self.sounds.iter().any(|s| s.def.triggers.iter().any(|d| d.trim().eq_ignore_ascii_case(trigger))) {
             return;
         }
         let path = omsi_cfg::resolve_path(&self.dir, &file_trigger_name(file));

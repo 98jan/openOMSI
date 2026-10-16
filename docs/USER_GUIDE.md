@@ -995,7 +995,7 @@ RGBA image, then only changed RGBA pixel runs and mipmap settings are sent. Chan
 fragmented, acknowledged and retried until complete, and applied atomically; a late join,
 recreated vehicle or newly sized surface receives initialization again. Only images
 released by the owner's scripts are published, never an unfinished locked drawing buffer.
-Both games need LAN protocol 13; older versions are rejected rather than showing an empty
+Both games need LAN protocol 14; older versions are rejected rather than showing an empty
 display. Texture transfers have their own rate budget, separate from vehicle movement.
 
 **Script sound events.** `(T.L.name)` and `(T.F.name)` come from the player driving
