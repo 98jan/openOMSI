@@ -1,11 +1,16 @@
 //! The navigator's roads from the traffic network: which lanes are drawn, their meshes, the
 //! route on them with its arrows and colours, the street names, and the way back to the route.
 
-use super::*;
+use crate::style;
+use omsi_sim::crowd::angle_diff;
+use glam::{DMat3, DVec2, DVec3, Vec2, Vec3};
+use hashbrown::HashMap;
+use omsi_sim::traffic::{LaneKey, LaneKind, Network};
+use omsi_ui::{Color, Painter, Rect};
 
 /// Street lanes that stand for drawn roads, including editor-only paths corroborated by
 /// road surfaces. Uncorroborated helpers must not make a phantom road on the GPS.
-pub(super) fn visible_road_lanes(net: &Network) -> Vec<(usize, &omsi_sim::traffic::Lane)> {
+pub fn visible_road_lanes(net: &Network) -> Vec<(usize, &omsi_sim::traffic::Lane)> {
     let mut seen = hashbrown::HashSet::<(LaneKey, u32)>::new();
     net.lanes
         .iter()
@@ -27,7 +32,7 @@ pub(super) fn visible_road_lanes(net: &Network) -> Vec<(usize, &omsi_sim::traffi
 /// asphalt, then grouped into carriageways with their real widths. The navigator's city map
 /// and the launcher's map picture draw the same roads this way, so the two cannot drift
 /// apart; the second value is the linked network the caller may walk (a trip's own lanes).
-pub(crate) fn city_roads(lanes: Vec<omsi_sim::traffic::Lane>, surfaces: &[(Vec<DVec3>, f32)]) -> (Vec<MapRoad>, Network) {
+pub fn city_roads(lanes: Vec<omsi_sim::traffic::Lane>, surfaces: &[(Vec<DVec3>, f32)]) -> (Vec<MapRoad>, Network) {
     let mut net = Network { lanes, ..Default::default() };
     net.link(1.5);
     confirm_road_surfaces(&mut net, surfaces);
@@ -36,7 +41,7 @@ pub(crate) fn city_roads(lanes: Vec<omsi_sim::traffic::Lane>, surfaces: &[(Vec<D
 }
 
 /// A road of the city map: the centre line of a carriageway, as wide as the map makes it.
-pub(crate) struct MapRoad {
+pub struct MapRoad {
     pub points: Vec<DVec3>,
     pub width: f32,
     /// A road cars drive far along (the map's own speed limits say so): drawn brighter.
@@ -46,7 +51,7 @@ pub(crate) struct MapRoad {
 /// Some maps separate the asphalt mesh from their editor-only traffic splines. Use the
 /// actual road footprint to distinguish those paths from invisible scenery helpers. This
 /// changes only the navigator's copy of the network; driving still uses the original data.
-pub(super) fn confirm_road_surfaces(net: &mut Network, surfaces: &[(Vec<DVec3>, f32)]) {
+pub fn confirm_road_surfaces(net: &mut Network, surfaces: &[(Vec<DVec3>, f32)]) {
     let mut segments = Vec::new();
     let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
     for (pts, width) in surfaces {
@@ -114,7 +119,7 @@ pub(super) fn confirm_road_surfaces(net: &mut Network, surfaces: &[(Vec<DVec3>, 
 /// Traffic paths are lane centres, not separate streets. Adjacent paths on one spline
 /// describe one carriageway; combine their footprints without filling a median. Align
 /// opposing directions before averaging so bends, mirrors and ramps retain their shape.
-pub(super) fn road_geometry(net: &Network) -> Vec<MapRoad> {
+pub fn road_geometry(net: &Network) -> Vec<MapRoad> {
     let mut roads = Vec::new();
     let mut splines = std::collections::BTreeMap::<((i32, i32), i64), Vec<&omsi_sim::traffic::Lane>>::new();
     for (_, lane) in visible_road_lanes(net) {
@@ -164,28 +169,13 @@ pub(super) fn road_geometry(net: &Network) -> Vec<MapRoad> {
     roads
 }
 
-/// An arrow at `at` pointing `angle` (radians, clockwise from up on the screen), `k` px from
-/// its middle to its tip, on a dark outline `grow` times its size: the bus and the players.
-pub(super) fn arrow(ui: &mut Painter, at: Vec2, angle: f32, k: f32, grow: f32, dark: Color, fill: Color) {
-    let rot = |v: Vec2| Vec2::new(v.x * angle.cos() - v.y * angle.sin(), v.x * angle.sin() + v.y * angle.cos());
-    let tip = at + rot(Vec2::new(0.0, -1.0) * k);
-    let l = at + rot(Vec2::new(-0.7, 0.8) * k);
-    let m = at + rot(Vec2::new(0.0, 0.4) * k);
-    let r = at + rot(Vec2::new(0.7, 0.8) * k);
-    let g = |p: Vec2| at + (p - at) * grow;
-    ui.tri(g(tip), g(l), g(m), dark, dark, dark);
-    ui.tri(g(tip), g(m), g(r), dark, dark, dark);
-    ui.tri(tip, l, m, fill, fill, fill);
-    ui.tri(tip, m, r, fill, fill, fill);
-}
-
-pub(super) fn rects_overlap(a: &Rect, b: &Rect) -> bool {
+pub fn rects_overlap(a: &Rect, b: &Rect) -> bool {
     a.x < b.right() && b.x < a.right() && a.y < b.bottom() && b.y < a.bottom()
 }
 
 /// Stop positions stay on the route. Move only their labels, or omit a label if none of
 /// the nearby positions fits. Call in route order so the next stop has first choice.
-pub(super) fn stop_label_rect(p: Vec2, width: f32, s: f32, win: Rect, taken: &[Rect]) -> Option<Rect> {
+pub fn stop_label_rect(p: Vec2, width: f32, s: f32, win: Rect, taken: &[Rect]) -> Option<Rect> {
     let h = 20.0 * s;
     let gap = 10.0 * s;
     let positions = [
@@ -202,7 +192,7 @@ pub(super) fn stop_label_rect(p: Vec2, width: f32, s: f32, win: Rect, taken: &[R
     })
 }
 
-pub(super) fn spaced_markers(points: impl IntoIterator<Item = (usize, Vec2)>, gap: f32) -> Vec<(usize, Vec2)> {
+pub fn spaced_markers(points: impl IntoIterator<Item = (usize, Vec2)>, gap: f32) -> Vec<(usize, Vec2)> {
     let mut kept: Vec<(usize, Vec2)> = Vec::new();
     for (k, p) in points {
         if kept.iter().all(|(_, q)| p.distance(*q) >= gap) { kept.push((k, p)); }
@@ -210,37 +200,10 @@ pub(super) fn spaced_markers(points: impl IntoIterator<Item = (usize, Vec2)>, ga
     kept
 }
 
-/// The colours of a road on the dark map and on the light one: the edge, the road, the main road.
-pub(super) fn road_colors(light: bool) -> (Color, Color, Color) {
-    if light {
-        (Color::hex(0xa8a397), Color::hex(0xffffff), Color::hex(0xf3d98b))
-    } else {
-        (ROAD_CASING, ROAD, ROAD_MAIN)
-    }
-}
-
-/// Street lanes within `ROAD_RADIUS` of `anchor`: casings first, then surfaces (so that a
-/// junction's surfaces cover each other's casings).
-pub(super) fn build_roads(p: &mut Painter, net: &Network, anchor: DVec2, light: bool) {
-    let (casing, road, main) = road_colors(light);
-    let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
-    let lanes: Vec<(MapRoad, Vec<Vec3>)> = road_geometry(net)
-        .into_iter()
-        .filter(|l| l.points.iter().any(|q| (q.truncate() - anchor).length() < ROAD_RADIUS))
-        .map(|l| { let pts = simplify(&l.points.iter().map(|q| rel(*q)).collect::<Vec<_>>(), 0.12); (l, pts) })
-        .collect();
-    for (l, pts) in &lanes {
-        p.ribbon(pts, l.width + 1.6, 3.6, casing, true);
-    }
-    for (l, pts) in &lanes {
-        p.ribbon(pts, l.width + 0.2, 2.4, if l.main { main } else { road }, true);
-    }
-}
-
 /// `pts` with the points dropped that lie within `tol` metres of the line through their
 /// neighbours kept (Douglas-Peucker): a lane is sampled every metre or two, a ribbon needs
 /// only its bends. The launcher's map picture draws its roads with this too.
-pub(crate) fn simplify(pts: &[Vec3], tol: f32) -> Vec<Vec3> {
+pub fn simplify(pts: &[Vec3], tol: f32) -> Vec<Vec3> {
     if pts.len() < 3 {
         return pts.to_vec();
     }
@@ -268,29 +231,9 @@ pub(crate) fn simplify(pts: &[Vec3], tol: f32) -> Vec<Vec3> {
     pts.iter().zip(keep).filter(|(_, k)| *k).map(|(p, _)| *p).collect()
 }
 
-/// Lanes with a point within `radius` of `c` (by the network's 50 m grid).
-pub(super) fn lanes_near(net: &Network, c: DVec2, radius: f64) -> Vec<usize> {
-    let mut seen = hashbrown::HashSet::new();
-    let (cx, cy) = Network::grid_cell(c.extend(0.0));
-    let r = (radius / 50.0).ceil() as i32;
-    if net.grid.is_empty() {
-        return (0..net.lanes.len()).filter(|&i| net.lanes[i].points.iter().any(|q| (q.truncate() - c).length() < radius)).collect();
-    }
-    for gx in cx - r..=cx + r {
-        for gy in cy - r..=cy + r {
-            if let Some(v) = net.grid.get(&(gx, gy)) {
-                seen.extend(v.iter().copied());
-            }
-        }
-    }
-    let mut v: Vec<usize> = seen.into_iter().collect();
-    v.sort_unstable();
-    v
-}
-
 /// `OMSI_NAV_PROBE=x,y[,r]`: the lanes of the map's network that start or end within r
 /// metres (25) of a point - how they link, to see why a route cannot reach a place.
-pub(super) fn probe_lanes(net: &Network) {
+pub fn probe_lanes(net: &Network) {
     let Some(v) = omsi_cfg::flags::OMSI_NAV_PROBE.var() else { return };
     let f: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
     if f.len() < 2 {
@@ -313,18 +256,18 @@ pub(super) fn probe_lanes(net: &Network) {
 
 /// How a route is drawn: its width (lane width plus `extra_m`, at least `min_px`), arrows
 /// every so many metres for so far, how much of it, and only near a point.
-pub(super) struct RouteStyle {
-    pub(super) extra_m: f32,
-    pub(super) min_px: f32,
-    pub(super) arrows: Option<(f32, f32)>,
-    pub(super) max_len: f32,
-    pub(super) near: Option<(DVec2, f64)>,
+pub struct RouteStyle {
+    pub extra_m: f32,
+    pub min_px: f32,
+    pub arrows: Option<(f32, f32)>,
+    pub max_len: f32,
+    pub near: Option<(DVec2, f64)>,
 }
 
 /// Which lane of `lane`'s road (the lanes beside it going the same way) the bus at `bus`
 /// is in, counted from the kerb (0 = the kerb lane: the rightmost, the leftmost on a
 /// left-hand-traffic map).
-pub(super) fn lane_from_right(net: &Network, lane: usize, bus: DVec3) -> usize {
+pub fn lane_from_right(net: &Network, lane: usize, bus: DVec3) -> usize {
     let Some(mut cur) = net.lanes.get(lane).map(|_| lane) else { return 0 };
     let kerb = |l: &omsi_sim::traffic::Lane| if net.left_hand { l.left } else { l.right };
     let away = |l: &omsi_sim::traffic::Lane| if net.left_hand { l.right } else { l.left };
@@ -356,7 +299,7 @@ pub(super) fn lane_from_right(net: &Network, lane: usize, bus: DVec3) -> usize {
 /// The route from the bus on: one band, coloured stretch by stretch by how busy the road
 /// is (`jam`: congestion per lane), with arrows along it in a colour that stands out.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn build_route(p: &mut Painter, net: &Network, lanes: &[usize], anchor: DVec2, s0: f32, jam: &HashMap<usize, f32>, style: &RouteStyle, bus_lane: usize) {
+pub fn build_route(p: &mut Painter, net: &Network, lanes: &[usize], anchor: DVec2, s0: f32, jam: &HashMap<usize, f32>, style: &RouteStyle, bus_lane: usize, pal: &style::Palette) {
     let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
     // runs of one colour: the lanes' points joined up, the first lane cut where the bus is
     let mut runs: Vec<(Vec<Vec3>, f32, usize)> = Vec::new();
@@ -432,6 +375,39 @@ pub(super) fn build_route(p: &mut Painter, net: &Network, lanes: &[usize], ancho
                 pts.push(rel(*q));
             }
         }
+        // a change of lane (the lane shown beside the last one): a smooth curve over to the
+        // new lane rather than a step sideways at the junction of the two
+        let mut skip_arrows = 0.0f32;
+        if let Some(prev) = runs.last().map(|r| &r.0).filter(|r| r.len() >= 2) {
+            let p0 = prev[prev.len() - 1];
+            if pts.first().is_some_and(|q| (*q - p0).truncate().length() > 0.8) {
+                let t0 = (p0 - prev[prev.len() - 2]).truncate().normalize_or_zero();
+                let blend = (lane.length() * 0.6).min(28.0);
+                let mut acc = 0.0;
+                let mut cut = pts.len() - 1;
+                for i in 1..pts.len() {
+                    acc += (pts[i] - pts[i - 1]).truncate().length();
+                    if acc >= blend {
+                        cut = i;
+                        break;
+                    }
+                }
+                let p1 = pts[cut];
+                let t1 = if cut + 1 < pts.len() { (pts[cut + 1] - p1).truncate().normalize_or_zero() } else { (p1 - pts[cut.saturating_sub(1)]).truncate().normalize_or_zero() };
+                let l = (p1 - p0).truncate().length();
+                let (c0, c1) = (p0 + (t0 * l / 3.0).extend(0.0), p1 - (t1 * l / 3.0).extend(0.0));
+                let mut curve: Vec<Vec3> = (1..=10)
+                    .map(|i| {
+                        let t = i as f32 / 10.0;
+                        let u = 1.0 - t;
+                        p0 * (u * u * u) + c0 * (3.0 * u * u * t) + c1 * (3.0 * u * t * t) + p1 * (t * t * t)
+                    })
+                    .collect();
+                curve.extend_from_slice(&pts[cut + 1..]);
+                pts = curve;
+                skip_arrows = blend;
+            }
+        }
         let lv = level(jam.get(&route_l).copied().unwrap_or(0.0));
         let w = lane.width.max(2.6);
         match runs.last_mut() {
@@ -456,7 +432,7 @@ pub(super) fn build_route(p: &mut Painter, net: &Network, lanes: &[usize], ancho
                 let step = len / n;
                 for i in 0..n as usize {
                     let at = step * (i as f32 + 0.5);
-                    if at > from + 4.0 && total + at - from < reach {
+                    if at > from + 4.0 && at > skip_arrows && total + at - from < reach {
                         let (q, h) = lane.at(at);
                         arrows.push((q, h, lv, w));
                     }
@@ -468,17 +444,28 @@ pub(super) fn build_route(p: &mut Painter, net: &Network, lanes: &[usize], ancho
             break;
         }
     }
-    for (pts, w, lv) in &runs {
-        p.ribbon(pts, w + style.extra_m, style.min_px, LEVEL[*lv], true);
+    // the edge under the whole route, then each stretch in its colour: the route's blue where
+    // the traffic flows, amber where it is slow, red where it is heavy, dark red where it stands
+    let colour = |lv: usize| match lv {
+        0 | 1 => pal.route,
+        2 => style::TRAFFIC[1],
+        3 => style::TRAFFIC[2],
+        _ => style::TRAFFIC[3],
+    };
+    for (pts, w, _) in &runs {
+        p.ribbon(pts, w + style.extra_m + 1.0, style.min_px + 2.4, pal.route_edge, true);
     }
-    for (q, h, lv, w) in arrows {
+    for (pts, w, lv) in &runs {
+        p.ribbon(pts, w + style.extra_m, style.min_px, colour(*lv), true);
+    }
+    for (q, h, _, w) in arrows {
         let hr = h.to_radians();
         let d = Vec2::new(hr.sin(), hr.cos());
         let n = Vec2::new(-d.y, d.x);
-        let (tip, bl, br) = (d * 0.55, -d * 0.45 + n * 0.75, -d * 0.45 - n * 0.75);
-        let t = -d * 0.42;
+        let (tip, bl, br) = (d * 0.42, -d * 0.36 + n * 0.6, -d * 0.36 - n * 0.6);
+        let t = -d * 0.4;
         let (sm, spx) = ((w + style.extra_m) * 0.5 * 0.8, style.min_px * 0.5 * 1.05);
-        let c = ARROW[lv];
+        let c = Color::rgba(255, 255, 255, 0.92);
         p.world_shape(rel(q), &[tip, bl, bl + t, tip + t], sm, spx, c);
         p.world_shape(rel(q), &[tip, br, br + t, tip + t], sm, spx, c);
     }
@@ -489,19 +476,19 @@ pub(super) fn build_route(p: &mut Painter, net: &Network, lanes: &[usize], ancho
 /// but their street name signs carry them: a sign names the road its plate runs along,
 /// and the name is carried on along that road until it turns or meets another name.
 pub struct Streets {
-    pub(super) names: Vec<String>,
+    pub names: Vec<String>,
     /// Per lane: index into `names`, or `u32::MAX`.
-    pub(super) of_lane: Vec<u32>,
+    pub of_lane: Vec<u32>,
     /// A place to write a name: the point, the road's direction (radians, world, from +x
     /// anticlockwise) and the name.
-    pub(super) labels: Vec<(DVec2, f32, u32)>,
+    pub labels: Vec<(DVec2, f32, u32)>,
 }
 
 /// The heading of a sign whose plate runs along its road, relative to the road (degrees;
 /// settled on the stock Verkehrszeichen_MC signs of Berlin-Spandau, see `build_streets`).
-pub(super) const SIGN_ALONG: f64 = 90.0;
+pub const SIGN_ALONG: f64 = 90.0;
 
-pub(super) fn build_streets(net: &Network, signs: &[(DVec3, f64, String)]) -> Streets {
+pub fn build_streets(net: &Network, signs: &[(DVec3, f64, String)], hints: &[(DVec3, String)]) -> Streets {
     let t0 = std::time::Instant::now();
     let n = net.lanes.len();
     let mut names: Vec<String> = Vec::new();
@@ -611,6 +598,54 @@ pub(super) fn build_streets(net: &Network, signs: &[(DVec3, f64, String)]) -> St
             }
         }
     }
+    // the weaker hints (a stop named after its street): the street lane passing it on its
+    // side, carried along that street as far as no sign has named it, 800 m each way at most
+    for (pos, name) in hints {
+        let Some(seed) = lanes_near(net, pos.truncate(), 30.0)
+            .into_iter()
+            .filter(|&i| straight(&net.lanes[i]) && net.lanes[i].length() >= 12.0 && of_lane[i] == u32::MAX && passes_on_its_side(net, i, *pos, 22.0))
+            .min_by(|&a, &b| {
+                let d = |i: usize| net.lanes[i].nearest_point(*pos).map(|p| p.1).unwrap_or(f64::MAX);
+                d(a).total_cmp(&d(b))
+            })
+        else {
+            continue;
+        };
+        let id = *index.entry(name.clone()).or_insert_with(|| {
+            names.push(name.clone());
+            (names.len() - 1) as u32
+        });
+        let mut queue = vec![(seed, 0.0f32)];
+        while let Some((i, far)) = queue.pop() {
+            if of_lane[i] != u32::MAX {
+                continue;
+            }
+            of_lane[i] = id;
+            let l = &net.lanes[i];
+            if let Some(k) = l.key {
+                for &j in net.by_key.get(&k).map(|v| v.as_slice()).unwrap_or(&[]) {
+                    if of_lane[j] == u32::MAX {
+                        of_lane[j] = id;
+                    }
+                }
+            }
+            if far > 800.0 {
+                continue;
+            }
+            for &j in l.next.iter() {
+                let m = &net.lanes[j];
+                if of_lane[j] == u32::MAX && straight(m) && omsi_sim::traffic::wrap_deg(m.start_heading() - l.end_heading()).abs() < 20.0 {
+                    queue.push((j, far + m.length()));
+                }
+            }
+            for &j in &prev[i] {
+                let m = &net.lanes[j];
+                if of_lane[j] == u32::MAX && straight(m) && omsi_sim::traffic::wrap_deg(l.start_heading() - m.end_heading()).abs() < 20.0 {
+                    queue.push((j, far + m.length()));
+                }
+            }
+        }
+    }
     // where to write them: the middle of long named lanes, a name every 350 m at most
     let mut order: Vec<usize> = (0..n).filter(|&i| of_lane[i] != u32::MAX && !net.lanes[i].reversed && net.lanes[i].length() > 30.0).collect();
     order.sort_by(|a, b| net.lanes[*b].length().total_cmp(&net.lanes[*a].length()));
@@ -630,96 +665,39 @@ pub(super) fn build_streets(net: &Network, signs: &[(DVec3, f64, String)]) -> St
     Streets { names, of_lane, labels }
 }
 
-/// A way from where the bus is back onto `ahead` (the route from the lane it was last
-/// on): the lanes to drive up to the route, and the index in `ahead` of the route lane it
-/// reaches (the route goes on from there). Dijkstra over
-/// the street lanes, from the lane under the bus that runs its way, to the first route
-/// lane reached (the search stops at 6 km).
-pub(crate) fn way_back(net: &Network, bus: DVec3, heading: f64, ahead: &[usize], max_cost: f32) -> Option<(Vec<usize>, usize)> {
-    use std::cmp::Ordering;
-    use std::collections::BinaryHeap;
-    // the lane under the bus going its way; else (a depot, a car park, the grass) the
-    // nearest street lane that does not point back at the bus, else any near
-    let cands: Vec<(usize, f64, f64)> = lanes_near(net, bus.truncate(), 90.0)
-        .into_iter()
-        .filter_map(|i| {
-            let l = net.lanes.get(i)?;
-            if l.kind != LaneKind::Street {
-                return None;
-            }
-            let (s, d) = l.nearest_point(bus)?;
-            let (_, h) = l.at(s);
-            Some((i, d, angle_diff(heading, h as f64).abs()))
-        })
-        .collect();
-    let pick = |max_d: f64, max_a: f64| cands.iter().filter(|c| c.1 < max_d && c.2 < max_a).min_by(|a, b| (a.1 + a.2 * 0.1).total_cmp(&(b.1 + b.2 * 0.1))).map(|c| c.0);
-    let start = pick(14.0, 70.0).or_else(|| pick(80.0, 100.0)).or_else(|| pick(80.0, 181.0));
-    if omsi_cfg::flags::OMSI_DEBUG_NAV.is_set() {
-        log::info!("navigator: way search from {:?} ({} street lanes within 90 m) to {} route lanes", start, cands.len(), ahead.len());
-    }
-    let start = start?;
-    let targets: HashMap<usize, usize> = ahead.iter().take(120).enumerate().map(|(k, &l)| (l, k)).collect();
-    #[derive(PartialEq)]
-    struct Node(f32, usize);
-    impl Eq for Node {}
-    impl Ord for Node {
-        fn cmp(&self, o: &Self) -> Ordering {
-            o.0.total_cmp(&self.0)
-        }
-    }
-    impl PartialOrd for Node {
-        fn partial_cmp(&self, o: &Self) -> Option<Ordering> {
-            Some(self.cmp(o))
-        }
-    }
-    let mut dist: HashMap<usize, f32> = HashMap::new();
-    let mut parent: HashMap<usize, usize> = HashMap::new();
-    let mut heap = BinaryHeap::new();
-    dist.insert(start, 0.0);
-    heap.push(Node(0.0, start));
-    while let Some(Node(cost, lane)) = heap.pop() {
-        if cost > dist.get(&lane).copied().unwrap_or(f32::INFINITY) {
-            continue;
-        }
-        if lane != start {
-            if let Some(&k) = targets.get(&lane) {
-                let mut path = vec![lane];
-                let mut c = lane;
-                while let Some(&p) = parent.get(&c) {
-                    path.push(p);
-                    c = p;
-                }
-                path.reverse();
-                // (the route lane reached is where the route goes on)
-                path.pop();
-                return Some((path, k));
-            }
-        }
-        if cost > max_cost {
-            break;
-        }
-        let Some(l) = net.lanes.get(lane) else { continue };
-        for &n in &l.next {
-            let Some(nl) = net.lanes.get(n) else { continue };
-            if nl.kind != LaneKind::Street {
-                continue;
-            }
-            // turning back is the last resort
-            let u_turn = angle_diff(l.end_heading() as f64, nl.start_heading() as f64).abs() > 150.0;
-            let c = cost + nl.length() + if u_turn { 400.0 } else { 0.0 };
-            if c < dist.get(&n).copied().unwrap_or(f32::INFINITY) {
-                dist.insert(n, c);
-                parent.insert(n, lane);
-                heap.push(Node(c, n));
-            }
-        }
-    }
-    None
-}
+// (the way back to the route and to a stop: `omsi_sim::traffic::way`)
+pub use omsi_sim::traffic::way::{lanes_near, way_back, way_to_any};
 
 /// Rotation of a 2D direction by a compass heading (for tests).
 #[allow(dead_code)]
-pub(super) fn heading_vec(h: f64) -> DVec2 {
+pub fn heading_vec(h: f64) -> DVec2 {
     let m = DMat3::from_rotation_z(-h.to_radians());
     m.transform_vector2(DVec2::Y)
+}
+
+/// Lane `i` passes `stop` within `reach` metres with the stop on its kerb side (the right, or
+/// the left on a left-hand-traffic map), or right on it.
+pub fn passes_on_its_side(net: &Network, i: usize, stop: DVec3, reach: f64) -> bool {
+    let l = &net.lanes[i];
+    let Some((s, d)) = l.nearest_point(stop) else { return false };
+    if d > reach {
+        return false;
+    }
+    if d < 2.5 {
+        return true;
+    }
+    let (p, h) = l.at(s);
+    let dir = DVec2::new((h as f64).to_radians().sin(), (h as f64).to_radians().cos());
+    let side = dir.perp_dot((stop - p).truncate());
+    if net.left_hand { side > 0.0 } else { side < 0.0 }
+}
+
+/// How busy a road is from its congestion score: 0 flowing, 2 slow, 3 heavy, 4 standing.
+pub fn level(score: f32) -> usize {
+    match score {
+        s if s < 0.42 => 0,
+        s if s < 0.66 => 2,
+        s if s < 0.85 => 3,
+        _ => 4,
+    }
 }

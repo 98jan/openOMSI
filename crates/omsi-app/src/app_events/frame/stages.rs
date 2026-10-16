@@ -241,7 +241,10 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
             PlayerView => app.frame_player_view(dt()),
             Audio => super::driving::audio(super::driving::AudioCx::of(&mut app.parts()), dt()),
             Lan => app.frame_lan(dt()),
-            OnFoot => super::people::on_foot(crate::on_foot::OnFootCx::of(&mut app.parts()), dt()),
+            OnFoot => {
+                super::people::on_foot(crate::on_foot::OnFootCx::of(&mut app.parts()), dt());
+                app.tick_passenger_door_request(dt());
+            },
             Humans => {
                 if once_a_frame {
                     super::people::humans(super::people::HumansCx::of(&mut app.parts()), frame_step());

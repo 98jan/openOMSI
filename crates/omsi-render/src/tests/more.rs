@@ -457,10 +457,13 @@ fn omsi_render_phases_are_monotonic_and_complete() {
 
 #[test]
 fn metric_lifted_surfaces_keep_shading_class_without_view_space_pull() {
-    assert_eq!(surface_instance_code(false, false, false, true, false), 0.9);
-    assert_eq!(surface_instance_code(false, false, false, true, true), 1.0);
-    assert_eq!(surface_instance_code(false, false, true, false, false), 0.9);
-    assert_eq!(surface_instance_code(false, true, false, true, false), 0.75);
+    assert_eq!(surface_instance_code(false, false, false, true, false, false), 0.9);
+    assert_eq!(surface_instance_code(false, false, false, true, true, false), 1.0);
+    assert_eq!(surface_instance_code(false, false, true, false, false, false), 0.9);
+    assert_eq!(surface_instance_code(false, true, false, true, false, false), 0.75);
+    // a road's painted lines go over the crossings laid on the road (#1694)
+    assert_eq!(surface_instance_code(false, false, false, true, true, true), 1.4);
+    assert_eq!(surface_instance_code(false, false, true, true, true, true), 1.25);
 }
 
 #[test]
@@ -598,6 +601,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("corona", corona_shader_source()),
         ("fog lamps", fog_lamps_shader_source()),
         ("snow", snow_shader_source()),
+        ("rain", rain_shader_source()),
         ("post", include_str!("../post.wgsl").to_string()),
         ("ssao", include_str!("../ssao.wgsl").to_string()),
         ("puddles", puddles::shader_source()),
@@ -617,6 +621,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("PostParams", std::mem::size_of::<PostUniform>()),
         ("FogLampParams", std::mem::size_of::<FogLampUniform>()),
         ("SnowParams", std::mem::size_of::<SnowUniform>()),
+        ("RainParams", std::mem::size_of::<RainUniform>()),
         ("PuddleParams", std::mem::size_of::<puddles::Uniform>()),
         ("Sight", std::mem::size_of::<SightUniform>()),
         ("VehicleReflection", std::mem::size_of::<puddles::VehicleUniform>()),

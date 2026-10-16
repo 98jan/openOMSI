@@ -133,6 +133,7 @@ mod startup;
 mod traffic_link;
 mod tutorial;
 mod weather_setup;
+mod weather_tomorrow;
 use omsi_weather::{weather_cycle, weather_model};
 mod world_load;
 
@@ -213,8 +214,9 @@ pub fn run() -> Result<()> {
     restart_with_allocator_settings();
     #[cfg(windows)]
     attach_parent_console();
-    // `--check-vehicle <file>`: the loaders' findings as JSON, no window, no log
-    if std::env::args().nth(1).as_deref() == Some("--check-vehicle") {
+    // `--check <file or folder>` (`--check-vehicle`, its old name): the loaders' findings
+    // as JSON, no window, no log
+    if matches!(std::env::args().nth(1).as_deref(), Some("--check" | "--check-vehicle")) {
         let rest: Vec<String> = std::env::args().skip(2).collect();
         return check::run(&rest);
     }
@@ -623,6 +625,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             metar_rx: None,
             metar_once: false,
             metar_next: 0.0,
+            tomorrow: Default::default(),
             sky,
         },
         menus: MenuState {
@@ -714,7 +717,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             profile_mark: None,
             frame_times: Vec::new(),
             frame_stages: Vec::new(),
-            overlay: Default::default(),
+            overlay: crate::perf_overlay::new(),
             texture_cut_at: None,
         },
         sound: SoundState {

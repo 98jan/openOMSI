@@ -26,11 +26,46 @@ pub(crate) fn log_system(settings: &crate::settings::Settings) {
     if let Ok(d) = std::env::current_dir() {
         log::info!("working folder: {}", d.display());
     }
-    let env: Vec<String> = std::env::vars().filter(|(k, _)| k.starts_with("OMSI_") || k == "RUST_LOG" || k == "WGPU_BACKEND").map(|(k, v)| format!("{k}={v}")).collect();
+    let env: Vec<String> = std::env::vars().filter_map(|(k, v)| environment_entry(&k, &v)).collect();
     if !env.is_empty() {
         log::info!("environment: {}", env.join(" "));
     }
     log::info!("all settings: {settings:?}");
+}
+
+/// Keep diagnostic switches readable, but never put a player's credential in a log.
+fn environment_entry(key: &str, value: &str) -> Option<String> {
+    if !(key.starts_with("OMSI_") || key == "RUST_LOG" || key == "WGPU_BACKEND") {
+        return None;
+    }
+    // Environment names are case-insensitive on Windows.
+    let value = if key.eq_ignore_ascii_case("OMSI_TOMORROW_API_KEY") { "<set>" } else { value };
+    Some(format!("{key}={value}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::environment_entry;
+
+    #[test]
+    fn startup_environment_masks_credentials_and_keeps_diagnostic_values() {
+        let entries = [
+            ("OMSI_TOMORROW_API_KEY", "synthetic-private-credential"),
+            ("OMSI_TOMORROW_KEY_FILE", "private/key.txt"),
+            ("OMSI_BACKEND", "vulkan"),
+            ("RUST_LOG", "info"),
+            ("WGPU_BACKEND", "vulkan"),
+            ("UNRELATED", "not-logged"),
+        ];
+        let log = entries.into_iter().filter_map(|(k, v)| environment_entry(k, v)).collect::<Vec<_>>().join(" ");
+        assert!(log.contains("OMSI_TOMORROW_API_KEY=<set>"));
+        assert!(!log.contains("synthetic-private-credential"));
+        assert!(!log.contains("not-logged"));
+        for diagnostic in ["OMSI_TOMORROW_KEY_FILE=private/key.txt", "OMSI_BACKEND=vulkan", "RUST_LOG=info", "WGPU_BACKEND=vulkan"] {
+            assert!(log.contains(diagnostic));
+        }
+        assert_eq!(environment_entry("OMSI_tomorrow_api_key", "synthetic-private-credential").as_deref(), Some("OMSI_tomorrow_api_key=<set>"));
+    }
 }
 
 /// The system's name and version (asked once: on macOS and Windows a program is run for it).

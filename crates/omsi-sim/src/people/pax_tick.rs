@@ -63,6 +63,7 @@ impl PeopleSim {
                 self.scratch.refile_blocker(i, was, now);
             }
         }
+        self.merge_manual_door_requests(dt, buses);
         self.scratch.drop_blockers();
         self.scratch.gone = gone;
         // (where every passenger stands: in a bus's frame, or the world's - and the people

@@ -69,6 +69,32 @@ pub(crate) fn gloomy_weather(weather: Option<&omsi_content::weather::Weather>) -
     }).unwrap_or(false)
 }
 
+/// Supply date, game time and weather before either spawning or running AI scripts.
+pub(crate) fn set_ai_environment(
+    t: &mut traffic::Traffic,
+    clock: &omsi_sim::SimClock,
+    daylight: omsi_sim::Daylight,
+    weather: Option<&omsi_content::weather::Weather>,
+    wetness: f32,
+    paused: bool,
+    auto_clutch: bool,
+) {
+    let mut host = omsi_sim::VehicleHost::new(clock.clone());
+    host.sun_alt = daylight.altitude_deg;
+    host.clock.paused = paused;
+    host.auto_clutch = if auto_clutch { 1.0 } else { 0.0 };
+    if let Some(w) = weather {
+        let (kind, rate) = precip_of(w);
+        host.precip_type = kind as f32;
+        host.precip_rate = rate;
+        host.temperature = w.temp.0;
+        host.abs_humidity = w.temp.1;
+        host.wind = crate::rain::weather_wind(w);
+        host.street_cond = crate::weather_setup::street_condition(w, wetness);
+    }
+    t.set_script_environment(host.system_values(), host.wind, host.street_cond);
+}
+
 /// The AI's lights (and a bus's saloon lamps, which its scripts switch with them): Omsi
 /// switches them on below a light value of 0.75, before the street lamps (0.6), and off
 /// after them in the morning - and by day when it is `gloomy`.
@@ -429,6 +455,7 @@ pub(crate) fn picture_lighting(
     weather: Option<&omsi_content::weather::Weather>,
     cloud_drift: [f64; 4],
     wetness: f32,
+    snow_cover: f32,
     world: Option<&World>,
     inside: Option<&omsi_sim::VehicleInstance>,
     driven: Option<&omsi_sim::VehicleInstance>,
@@ -438,7 +465,7 @@ pub(crate) fn picture_lighting(
     sky: &crate::weather_setup::SkyState,
 ) -> omsi_render::Lighting {
     let mut lighting = match weather {
-        Some(w) => weather_lighting(daylight, w, cloud_drift, wetness, settings.shadows, sky),
+        Some(w) => weather_lighting(daylight, w, cloud_drift, wetness, snow_cover, settings.shadows, sky),
         None => lights::lighting_from(daylight, 50000.0),
     };
     lighting.wetness = omsi_cfg::flags::OMSI_WETNESS.parse()

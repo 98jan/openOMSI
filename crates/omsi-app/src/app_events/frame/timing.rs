@@ -72,7 +72,7 @@ impl App {
         self.log_frame(raw_dt);
         let draws = self.renderer.as_mut().map_or((0, 0), |r| std::mem::take(&mut r.frame_draws));
         if self.settings.perf_overlay_on() {
-            self.perf.overlay.sample(raw_dt, &self.perf.profile, draws);
+            self.perf.overlay.sample(raw_dt, self.perf.profile.iter().map(|(key, value)| (key.name(), value)), draws);
         } else if self.perf.overlay.started() {
             self.perf.overlay.reset();
         }

@@ -14,6 +14,7 @@ mod extend;
 mod lane;
 mod lights;
 mod network;
+pub mod way;
 #[cfg(test)]
 mod extend_tests;
 

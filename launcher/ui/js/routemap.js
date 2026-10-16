@@ -1,7 +1,8 @@
-// The route preview: the map's roads as the game's own city map draws them (read by the
-// game program, `route_map`), the trip's route in the map's red on the very lanes the game
-// drives, its stops with their times, and the entry points - one clicked is where the bus
-// starts. Dragged to move, the wheel to zoom where the mouse is.
+// The route preview, drawn as the game's own city map draws it (read by the game program,
+// `route_map`): the map's ground, water, woods and houses (its layers, `d.layers`), every paved
+// surface and road, the trip's route in blue on the very lanes the game drives, its stops with
+// their times, and the entry points - one clicked is where the bus starts. Dragged to move,
+// the wheel to zoom where the mouse is.
 
 import { html, useEffect, useRef, useState } from '../vendor/preact-htm.js';
 import { call } from './api.js';
@@ -66,8 +67,6 @@ function surfacePaths(pkg) {
 function drawSurface(g, pkg, v, W, H) {
   const c = pkg.colors;
   const { fills, lines } = surfacePaths(pkg);
-  g.fillStyle = c.land;
-  g.fillRect(0, 0, W, H);
   g.save();
   // map metres (y up) onto the canvas: widths below are pixels, so they are scaled by `mpp`
   g.translate(W / 2 - v.cx / v.mpp, H / 2 + v.cy / v.mpp);
@@ -90,6 +89,102 @@ function drawSurface(g, pkg, v, W, H) {
   stroke(lines.rail, c.rail, 1.6);
   g.globalAlpha = 0.7;
   stroke(lines.border, c.border, 1.2);
+  g.restore();
+}
+
+// The look of the game's light map (navigator/style.rs), after Apple Maps.
+const LOOK = {
+  land: '#dcebcb', grass: '#dcebcb', forest: '#bcdba5', field: '#ebebcf', paved: '#edebe6', sand: '#f1e8cf', water: '#9fcff2',
+  road: '#ffffff', roadEdge: '#cfccc4', foot: '#f6f4ef', footEdge: '#e1ded6', area: '#efeef0', areaEdge: '#d8d6da',
+  roof: '#faf9f6', roofEdge: '#d6d1c7', shadow: 'rgba(40,58,46,0.16)', rail: '#a7a59f', tram: '#9a95a6',
+  route: '#2f7cf6', routeEdge: '#1a5fcf', card: 'rgba(255,255,255,0.95)', text: '#1c1c1e', dim: '#6e6e73',
+};
+// land classes in the order they are laid: grass, field, sand, paved, forest, water
+const LAND = [[0, 'grass'], [2, 'field'], [4, 'sand'], [3, 'paved'], [1, 'forest'], [5, 'water']];
+
+/** The layers' triangles and outlines as Path2D objects in map metres, made once. */
+function layerPaths(l) {
+  if (l.paths) return l.paths;
+  const tris = (t) => {
+    const path = new Path2D();
+    for (let i = 0; i + 5 < t.length; i += 6) {
+      path.moveTo(t[i], t[i + 1]);
+      path.lineTo(t[i + 2], t[i + 3]);
+      path.lineTo(t[i + 4], t[i + 5]);
+      path.closePath();
+    }
+    return path;
+  };
+  const poly = (p, dx = 0, dy = 0) => {
+    const path = new Path2D();
+    for (let i = 0; i + 1 < p.length; i += 2) (i ? path.lineTo : path.moveTo).call(path, p[i] + dx, p[i + 1] + dy);
+    path.closePath();
+    return path;
+  };
+  const houses = new Path2D();
+  const shadows = new Path2D();
+  for (const h of l.houses) {
+    houses.addPath(poly(h.p));
+    // (the shadow falls south-east, longer for a taller house)
+    const k = Math.min(h.h, 40) * 0.12;
+    shadows.addPath(poly(h.p, k, -k));
+  }
+  const rail = new Path2D();
+  const tram = new Path2D();
+  for (const x of l.lines) {
+    const path = x.c === 0 ? rail : x.c === 1 ? tram : null;
+    if (!path) continue;
+    for (let i = 0; i + 1 < x.p.length; i += 2) (i ? path.lineTo : path.moveTo).call(path, x.p[i], x.p[i + 1]);
+  }
+  return (l.paths = { land: l.land.map(tris), paved: l.paved.map(tris), houses, shadows, rail, tram });
+}
+
+/** The ground, the paved surfaces, the tracks and the houses, under the roads' middles. */
+function drawLayers(g, l, v, W, H) {
+  const P = layerPaths(l);
+  g.save();
+  g.translate(W / 2 - v.cx / v.mpp, H / 2 + v.cy / v.mpp);
+  g.scale(1 / v.mpp, -1 / v.mpp);
+  g.lineCap = g.lineJoin = 'round';
+  const fill = (path, color, seam = 0.8) => {
+    g.fillStyle = g.strokeStyle = color;
+    g.fill(path);
+    g.lineWidth = seam * v.mpp; // (no seams between neighbouring triangles)
+    g.stroke(path);
+  };
+  for (const [k, key] of LAND) if (P.land[k]) fill(P.land[k], LOOK[key]);
+  const near = v.mpp < 2.5;
+  // pavements and yards (near), carriageways: an edge, then the surface
+  const paved = near ? [[1, 'foot', 'footEdge'], [2, 'area', 'areaEdge'], [0, 'road', 'roadEdge']] : [[2, 'area', 'areaEdge'], [0, 'road', 'roadEdge']];
+  for (const [k, f, e] of paved) {
+    if (!P.paved[k]) continue;
+    g.strokeStyle = LOOK[e];
+    g.lineWidth = 2 * v.mpp;
+    g.stroke(P.paved[k]);
+    fill(P.paved[k], LOOK[f]);
+  }
+  g.strokeStyle = LOOK.rail;
+  g.lineWidth = Math.max(3.4, 3.6 / v.mpp) * v.mpp;
+  g.stroke(P.rail);
+  if (near) {
+    g.setLineDash([9, 9]);
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = Math.max(1.4, 1.3 / v.mpp) * v.mpp;
+    g.stroke(P.rail);
+    g.setLineDash([]);
+  }
+  g.strokeStyle = LOOK.tram;
+  g.lineWidth = 1.3 * v.mpp;
+  g.stroke(P.tram);
+  if (v.mpp < 6) {
+    g.fillStyle = LOOK.shadow;
+    g.fill(P.shadows);
+    g.fillStyle = LOOK.roof;
+    g.strokeStyle = LOOK.roofEdge;
+    g.lineWidth = 0.8 * v.mpp;
+    g.fill(P.houses);
+    g.stroke(P.houses);
+  }
   g.restore();
 }
 
@@ -151,24 +246,32 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
       g.beginPath();
       for (let i = 0; i < p.length; i += 2) (i ? g.lineTo : g.moveTo).call(g, X(p[i]), Y(p[i + 1]));
     };
+    g.fillStyle = LOOK.land;
+    g.fillRect(0, 0, W, H);
     if (d.package) drawSurface(g, d.package, v, W, H);
+    if (d.layers) drawLayers(g, d.layers, v, W, H);
     g.lineCap = g.lineJoin = 'round';
-    const [casing, road, main, red] = d.colors;
+    // the roads' middles: where a road has a paved surface it lies under it, where not it is
+    // the road (its edge, then the white)
+    const paved = !!d.layers && v.mpp < 2.5;
     for (let pass = 0; pass < 2; pass++) {
       for (const r of d.roads) {
         line(r.p);
-        g.strokeStyle = pass ? (r.main ? main : road) : casing;
-        g.lineWidth = Math.max((r.w + (pass ? 0 : 2)) / v.mpp, pass ? 1.4 : 2.4);
+        g.strokeStyle = pass ? LOOK.road : LOOK.roadEdge;
+        const w = paved ? Math.max(r.w - 1.2, 1.5) : r.w;
+        g.lineWidth = Math.max((w + (pass ? 0 : paved ? 0 : 1.2)) / v.mpp, pass ? (r.main ? 2.2 : 1.4) : r.main ? 3.4 : 2.6);
         g.stroke();
       }
     }
-    g.strokeStyle = red;
-    g.lineWidth = 4.5;
-    for (const p of d.route) {
-      line(p);
-      g.stroke();
+    for (const [color, wide] of [[LOOK.routeEdge, 7], [LOOK.route, 4.6]]) {
+      g.strokeStyle = color;
+      g.lineWidth = wide;
+      for (const p of d.route) {
+        line(p);
+        g.stroke();
+      }
     }
-    // stops, with their times and names
+    // stops: white pins with the bus's blue, a card with the time and name beside
     g.font = '600 11.5px Inter, sans-serif';
     // (a label that would cover one already written goes to the left of its stop, else away)
     const taken = [];
@@ -176,37 +279,49 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
     for (const s of d.stops) {
       const x = X(s.at[0]);
       const y = Y(s.at[1]);
-      g.fillStyle = '#f0f0f0';
+      g.fillStyle = '#ffffff';
       g.beginPath();
-      g.arc(x, y, 3.2, 0, Math.PI * 2);
+      g.arc(x, y, 5.5, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = LOOK.route;
+      g.beginPath();
+      g.arc(x, y, 3.6, 0, Math.PI * 2);
       g.fill();
       const st = stops[s.k];
       if (st) {
         const label = `${st.time}  ${st.name}`;
-        const w = g.measureText(label).width + 10;
-        const lx = [x + 8, x - 8 - w].find((lx) => free(lx, y - 10, w));
+        const w = g.measureText(label).width + 14;
+        const lx = [x + 10, x - 10 - w].find((lx) => free(lx, y - 10, w));
         if (lx === undefined) continue;
         taken.push([lx, y - 10, w]);
-        g.fillStyle = 'rgba(14,14,14,0.86)';
+        g.save();
+        g.shadowColor = 'rgba(0,0,0,0.18)';
+        g.shadowBlur = 6;
+        g.fillStyle = LOOK.card;
         g.beginPath();
-        g.roundRect(lx, y - 10, w, 20, 4);
+        g.roundRect(lx, y - 10, w, 20, 7);
         g.fill();
-        g.fillStyle = '#e8a030';
-        g.fillText(plain(st.time), lx + 5, y + 4);
-        g.fillStyle = '#ececec';
-        g.fillText(plain(st.name), lx + 5 + g.measureText(`${st.time}  `).width, y + 4);
+        g.restore();
+        g.fillStyle = LOOK.route;
+        g.fillText(plain(st.time), lx + 7, y + 4);
+        g.fillStyle = LOOK.text;
+        g.fillText(plain(st.name), lx + 7 + g.measureText(`${st.time}  `).width, y + 4);
       }
     }
     // entry points: amber, the hovered one ringed grey, the chosen one white
     d.entries.forEach((e, i) => {
       const x = X(e.at[0]);
       const y = Y(e.at[1]);
-      g.fillStyle = '#e8a030';
+      g.fillStyle = '#ffffff';
       g.beginPath();
-      g.arc(x, y, 4, 0, Math.PI * 2);
+      g.arc(x, y, 5.5, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#ff9f0a';
+      g.beginPath();
+      g.arc(x, y, 3.8, 0, Math.PI * 2);
       g.fill();
       if (i === hover || e.index === entry) {
-        g.strokeStyle = e.index === entry ? '#ffffff' : '#a0a0a0';
+        g.strokeStyle = e.index === entry ? LOOK.route : '#8e8e93';
         g.lineWidth = 2;
         g.beginPath();
         g.arc(x, y, e.index === entry ? 10 : 7.5, 0, Math.PI * 2);
@@ -217,9 +332,9 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
       const e = d.entries[hover];
       g.font = '500 12px Inter, sans-serif';
       const w = g.measureText(e.name).width + 12;
-      g.fillStyle = 'rgba(14,14,14,0.9)';
+      g.fillStyle = 'rgba(28,30,33,0.94)';
       g.beginPath();
-      g.roundRect(X(e.at[0]) - w / 2, Y(e.at[1]) - 34, w, 22, 4);
+      g.roundRect(X(e.at[0]) - w / 2, Y(e.at[1]) - 34, w, 22, 8);
       g.fill();
       g.fillStyle = '#ffffff';
       g.fillText(plain(e.name), X(e.at[0]) - w / 2 + 6, Y(e.at[1]) - 19);

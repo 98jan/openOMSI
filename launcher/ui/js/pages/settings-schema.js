@@ -143,6 +143,8 @@ const driving = {
       rows: [
         { type: 'section', title: 'Touch controls', when: mobile },
         { type: 'select', key: 'touch_door_mode', label: 'Door buttons', options: [['standard', 'Standard (physical doors)'], ['direct', 'Direct OMSI triggers']], when: mobile },
+        { type: 'slider', key: 'touch_pedal_length', label: 'Pedal length', min: 0.8, max: 1.6, step: 0.05, def: 1, format: pct, store: r2, when: mobile },
+        { type: 'slider', key: 'touch_pedal_deadzone', label: 'Pedal rest zone (a finger at the foot presses nothing)', min: 0, max: 0.4, step: 0.01, def: 0.15, format: pct, store: r2, when: mobile },
         { type: 'section', title: 'Keyboard & mouse', when: mobile },
         { type: 'select', key: 'drive_keys', label: 'Driving keys', options: [['omsi', 'Custom controls (Controls page)'], ['simple', 'W A S D + arrows'], ['wasd', 'W A S D only'], ['arrows', 'Arrow keys only']] },
         { type: 'toggle', key: 'steering_linear', label: "Steering linearity (keys at OMSI's steady pace)" },
@@ -394,6 +396,9 @@ const general = {
         { type: 'toggle', key: 'nav_ai', label: 'AI vehicles on the map' },
         { type: 'toggle', key: 'nav_surface', label: 'Map surface under the roads' },
         { type: 'toggle', key: 'nav_light', label: 'Light map' },
+        { type: 'toggle', key: 'nav_3d', label: '3D buildings on the map' },
+        { type: 'toggle', key: 'nav_widget', label: 'Navigator as a widget (drag it anywhere, size it at its corner)' },
+        { type: 'slider', key: 'nav_size', label: 'Navigator size', min: 0.6, max: 2, step: 0.05, def: 1, format: (v) => `${Math.round(v * 100)} %` },
         { type: 'custom', id: 'corner' },
       ],
     },
@@ -417,7 +422,10 @@ const general = {
   ],
 };
 
-export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, general];
+/** Content test: no settings - the page draws the test itself (content-test.js). */
+const contentTest = { id: 'content', label: 'Content test', page: 'content', cols: [], when: (s, p) => !mobile(s, p) };
+
+export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, general, contentTest];
 
 /** The settings a saved graphics profile holds (`GRAPHICS_PROFILE_KEYS`). */
 export const GRAPHICS_PROFILE_KEYS = [

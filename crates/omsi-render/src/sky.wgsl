@@ -154,6 +154,19 @@ struct VanillaSkyUniform {
 };
 @group(1) @binding(9) var t_vclouds: texture_2d<f32>;
 @group(1) @binding(10) var<uniform> vsky: VanillaSkyUniform;
+@group(1) @binding(11) var t_sun: texture_2d<f32>;
+
+fn vanilla_sun(d: vec3<f32>) -> vec3<f32> {
+    let s = normalize(camera.sun_dir.xyz);
+    let c = dot(d, s);
+    let right = normalize(select(vec3<f32>(s.y, -s.x, 0.0), vec3<f32>(1.0, 0.0, 0.0), length(s.xy) < 1e-4));
+    let up = cross(right, s);
+    let p = d * (3.0 / max(c, 1e-4));
+    let uv = vec2<f32>((dot(p, right) + 0.0803) / 0.1606, (0.0821 - dot(p, up)) / 0.1606);
+    let t = srgb_encode(textureSampleLevel(t_sun, s_sky, clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).rgb);
+    let inside = c > 0.0 && all(uv >= vec2<f32>(0.0)) && all(uv <= vec2<f32>(1.0));
+    return select(vec3<f32>(0.0), t * vec3<f32>(1.0, 1.0, 0.0), inside);
+}
 
 // The v of the sky textures towards elevation `e` (rad), as Omsi.exe's dome
 // (helper\skybox.x) has it: rings at the horizon, at 45 degrees and at the zenith with v
@@ -264,7 +277,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // Vanilla+ in linear light
     let encoded = camera.sky_color.w > 0.5;
     let fog = camera.fog.xyz;
-    var col = select(sky, srgb_encode(sky), encoded);
+    let lit = min(srgb_encode(sky) + vanilla_sun(d), vec3<f32>(1.0));
+    var col = select(srgb_decode(lit), lit, encoded);
     col = mix(col, fog, vanilla_haze(v));
     if (reach.y > 0.5) {
         let c = vanilla_clouds(d, fog, ctex, reach.x, encoded);

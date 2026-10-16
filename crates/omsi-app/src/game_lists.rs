@@ -55,6 +55,8 @@ pub(crate) enum ListKind {
     PlaceType(String),
     PlaceLivery(String),
     PlaceHof(String, String),
+    /// Where to save the situation: a new slot, or one of the map's slots to save over (#2556).
+    SaveSlots,
 }
 
 /// The lists with a search line on top: the vehicles to place, the depot files and the
@@ -581,6 +583,12 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
                 out.push((tr("No route numbers in the depot file or the timetable"), "back".into()));
             }
         }
+        ListKind::SaveSlots => {
+            out.push((tr("A new slot"), "new".into()));
+            for slot in app.save_slots() {
+                out.push((format!("{} {}", tr("Save over:"), slot.name), format!("over {}", slot.file.to_string_lossy())));
+            }
+        }
         ListKind::Hofs => {
             if let Some(p) = app.player.as_ref() {
                 let now = p.vehicle.host.hof.as_ref().map(|h| h.path.clone());
@@ -844,6 +852,7 @@ pub(crate) fn menu_extras(
         ListKind::Destinations => (MenuKind::List, head("Destination display..."), None),
         ListKind::RouteNumbers => (MenuKind::List, Some((tr("Route number"), String::new())), None),
         ListKind::Hofs => (MenuKind::List, head("Depot file (HOF)..."), None),
+        ListKind::SaveSlots => (MenuKind::List, head("Save to a slot..."), None),
         ListKind::Spots => (MenuKind::List, head("Teleport to a start point..."), None),
         ListKind::PlaceMaker | ListKind::PlaceType(_) | ListKind::PlaceLivery(_) | ListKind::PlaceHof(..) => (MenuKind::List, head("Place a vehicle..."), None),
         ListKind::Admin => (MenuKind::List, Some((tr("Administration"), String::new())), None),
@@ -1011,6 +1020,15 @@ pub(crate) fn run_move(app: &mut App, kind: &ListKind, action: &str, mv: Move) -
         ListKind::Drivers => {
             switch_driver(app, arg);
             Some(ListKind::Drivers)
+        }
+        ListKind::SaveSlots => {
+            match verb {
+                "new" => app.save_slot_to(None),
+                "over" => app.save_slot_to(Some(std::path::PathBuf::from(arg))),
+                _ => return Some(ListKind::SaveSlots),
+            }
+            app.close_game_menu();
+            None
         }
         ListKind::Hofs => {
             if let Some(p) = app.player.as_mut() {

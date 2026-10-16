@@ -32,7 +32,7 @@ function Weather() {
     if (metarOn && !airports.length) call('metar_airports').then(setAirports).catch(() => {});
   }, [c.weather]);
   const custom = isCustomWeather(c.weather);
-  const other = weatherOfItsOwn(c.weather) && !custom && !metarOn && c.weather !== 'cycle';
+  const other = weatherOfItsOwn(c.weather) && !custom && !metarOn && c.weather !== 'cycle' && c.weather !== 'tomorrow';
   const pick = (weather) => (isCustomWeather(weather) ? setEditing(weather) : choose({ weather }));
   return html`<div class="stack" style="gap:10px">
     <div class="section-title">${t('Weather')}</div>
@@ -41,6 +41,7 @@ function Weather() {
       <${WeatherTile} on=${custom} icon="sliders" name=${t('Custom weather')} sub=${t('Set visibility, wind, clouds, rain, temperature and road state')} onClick=${() => setEditing(custom ? c.weather : 'custom:')} />
       ${metar && html`<${WeatherTile} on=${metarOn} icon="globe" name=${t('Current weather')} sub=${t('METAR of {} (fetched at the start)', [metar])} onClick=${() => pick(`metar:${metar}`)} />`}
       <${WeatherTile} on=${c.weather === 'cycle'} icon="refresh" name=${t('Weather cycle')} sub=${t('Changes every 25-60 minutes, as the month allows')} onClick=${() => pick('cycle')} />
+      <${WeatherTile} on=${c.weather === 'tomorrow'} icon="globe" name="Tomorrow.io" sub=${t('Current weather')} onClick=${() => pick('tomorrow')} />
       ${other && html`<${WeatherTile} on icon="cloud" name=${weatherName(c.weather)} onClick=${() => {}} />`}
       ${w.map((x) => html`<${WeatherTile} on=${c.weather === x.file} icon="cloud" name=${x.name} sub=${x.description} onClick=${() => pick(x.file)} />`)}
     </div>

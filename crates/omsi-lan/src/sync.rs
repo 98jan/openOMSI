@@ -1,6 +1,4 @@
-//! What of a vehicle goes over the network beyond its pose: the sync table of a vehicle type
-//! (its lamps, switches, moving parts, doors and outside sounds, the same on every machine for
-//! the same files) and the table of every variable its scripts declare (`omsi_net::vars`).
+//! Vehicle sync tables, canonical variable indices and sound configuration.
 
 use omsi_script::VarId;
 use std::path::PathBuf;
@@ -19,6 +17,8 @@ pub struct SyncTable {
     pub values: Vec<(String, VarId)>,
     /// `door_0`, `door_1` … as far as the scripts have them.
     pub doors: Vec<VarId>,
+    /// All model animation inputs, independently of the capped pose values list.
+    pub animations: hashbrown::HashSet<VarId>,
     pub hash: u32,
     /// Variables of the horn: its switch and the volume its sound follows.
     pub horn: Vec<VarId>,
@@ -58,35 +58,29 @@ pub fn engine_fed(name: &str) -> bool {
         || matches!(n.as_str(), "n_wheel" | "wetness" | "time" | "timegap")
 }
 
-/// Every variable of a vehicle type that goes to the others (`omsi_net::vars`): the
-/// variables its own varlists declare - not those every copy works out for itself
-/// (`engine_fed`), nor the engine's own (the view, the weather) - and all its strings, by
-/// their ids, with a hash of their names that tells two copies made from the same files.
+/// Canonical wire indices are sorted by name, independently of local compiler IDs.
+/// All numeric and string variables participate, including engine-fed and implicit ones.
 pub struct VarTable {
     pub hash: u32,
-    pub floats: Vec<u16>,
-    pub strings: Vec<u16>,
+    pub floats: Vec<u32>,
+    pub strings: Vec<u32>,
 }
 
 pub fn var_table(program: &omsi_script::Program) -> VarTable {
     let mut h: u32 = 0x811c_9dc5;
-    let mut eat = |s: &str| {
-        for b in s.bytes().chain(std::iter::once(0)) {
-            h = (h ^ b.to_ascii_lowercase() as u32).wrapping_mul(0x0100_0193);
-        }
+    let mut collect = |names: &[String], kind: u8| {
+        h = (h ^ kind as u32).wrapping_mul(0x0100_0193);
+        let mut entries: Vec<_> = names.iter().enumerate().map(|(id, name)| (name.to_ascii_lowercase(), id as u32)).collect();
+        entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        entries.into_iter().take(u16::MAX as usize + 1).map(|(name, id)| {
+            for b in name.bytes().chain(std::iter::once(0)) {
+                h = (h ^ b as u32).wrapping_mul(0x0100_0193);
+            }
+            id
+        }).collect()
     };
-    let mut floats = Vec::new();
-    for (k, n) in program.var_names.iter().enumerate().take(u16::MAX as usize) {
-        if program.script_vars.contains(&n.to_ascii_lowercase()) && !engine_fed(n) {
-            eat(n);
-            floats.push(k as u16);
-        }
-    }
-    let mut strings = Vec::new();
-    for (k, n) in program.str_var_names.iter().enumerate().take(u16::MAX as usize) {
-        eat(n);
-        strings.push(k as u16);
-    }
+    let floats = collect(&program.var_names, 0);
+    let strings = collect(&program.str_var_names, 1);
     VarTable { hash: h, floats, strings }
 }
 
@@ -102,6 +96,17 @@ pub fn outside_entry(e: &omsi_vehicle::SoundEntry) -> bool {
     e.triggers.iter().any(|t| hit(t))
         || e.vol_curves.iter().any(|c| hit(&c.variable))
         || e.conditions.iter().any(|c| hit(&c.variable))
+}
+
+/// Supplement sound_ai without losing the other names of a multi-trigger entry.
+fn supplemental_sound_entry(
+    entry: &omsi_vehicle::SoundEntry,
+    present: &dyn Fn(&str) -> bool,
+) -> Option<omsi_vehicle::SoundEntry> {
+    if entry.triggers.is_empty() { return outside_entry(entry).then(|| entry.clone()); }
+    let mut entry = entry.clone();
+    entry.triggers.retain(|t| !present(t));
+    (!entry.triggers.is_empty()).then_some(entry)
 }
 
 pub fn fnv1a(data: &[u8]) -> u32 {
@@ -121,6 +126,7 @@ impl SyncTable {
     pub fn new(ty: &omsi_sim::VehicleType, parts: &[Arc<omsi_sim::VehicleType>]) -> SyncTable {
         let program = &ty.program;
         let types: Vec<&omsi_sim::VehicleType> = std::iter::once(ty).chain(parts.iter().map(|p| p.as_ref())).collect();
+        let animations = crate::animation_sync::model_variables(program, types.iter().map(|t| &t.model));
         let var = |n: &str| -> Option<VarId> {
             let n = n.trim();
             if n.is_empty() || n.parse::<f32>().is_ok() {
@@ -173,7 +179,7 @@ impl SyncTable {
         let switch_names: Vec<String> = types
             .iter()
             .flat_map(|t| t.model.meshes.iter())
-            .filter_map(|m| m.visible.as_ref().map(|v| v.0.clone()))
+            .flat_map(|m| m.visible_groups().flatten().map(|c| c.variable.clone()))
             .collect();
         let lamp_set: Vec<VarId> = lamps.iter().map(|l| l.1).collect();
         let switches = collect(
@@ -210,8 +216,9 @@ impl SyncTable {
                 let entries: Vec<omsi_vehicle::SoundEntry> = cfg
                     .sounds
                     .iter()
-                    .filter(|e| outside_entry(e))
-                    .cloned()
+                    .filter_map(|entry| supplemental_sound_entry(entry, &|trigger| sounds.iter().any(|(ai, _)| {
+                        ai.sounds.iter().any(|entry| entry.triggers.iter().any(|t| t.trim().eq_ignore_ascii_case(trigger.trim())))
+                    })))
                     .collect();
                 if !entries.is_empty() {
                     sounds.push((
@@ -340,6 +347,7 @@ impl SyncTable {
         }
         key.push_str(&format!("doors:{}", doors.len()));
         SyncTable {
+            animations,
             hash: fnv1a(key.as_bytes()).max(1),
             lamps,
             switches,
@@ -377,7 +385,44 @@ impl SyncTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    #[test]
+    fn exterior_sound_supplements_keep_each_missing_trigger_without_duplicate_voices() {
+        let entry = omsi_vehicle::SoundEntry {
+            triggers: vec!["horn".into(), "door_hit".into(), "announcement".into()],
+            ..Default::default()
+        };
+        let added = supplemental_sound_entry(&entry, &|t| t.eq_ignore_ascii_case("HORN")).unwrap();
+        assert_eq!(added.triggers, vec!["door_hit", "announcement"]);
+        assert!(supplemental_sound_entry(&entry, &|_| true).is_none());
+        assert!(supplemental_sound_entry(&omsi_vehicle::SoundEntry::default(), &|_| false).is_none());
+    }
+    #[test]
+    fn all_variables_sync_by_name_independently_of_local_ids() {
+        let mut a = omsi_script::Program::default();
+        let mut b = omsi_script::Program::default();
+        let names = ["door_0", "pax_custom", "AI_Light", "implicit", "Velocity", "engine_n"];
+        for name in names { a.declare_var(name); }
+        for name in names.into_iter().rev() { b.declare_var(name); }
+        a.declare_str_var("display");
+        a.declare_str_var("path");
+        b.declare_str_var("path");
+        b.declare_str_var("DISPLAY");
+        let ta = var_table(&a);
+        let tb = var_table(&b);
+        assert_eq!(ta.hash, tb.hash);
+        assert_eq!(ta.floats.len(), names.len());
+        for (&local_a, &local_b) in ta.floats.iter().zip(&tb.floats) {
+            assert_eq!(a.var_names[local_a as usize].to_ascii_lowercase(), b.var_names[local_b as usize].to_ascii_lowercase());
+        }
+        for (&local_a, &local_b) in ta.strings.iter().zip(&tb.strings) {
+            assert_eq!(a.str_var_names[local_a as usize].to_ascii_lowercase(), b.str_var_names[local_b as usize].to_ascii_lowercase());
+        }
+        let mut different_kind = omsi_script::Program::default();
+        different_kind.declare_str_var("door_0");
+        let mut numeric = omsi_script::Program::default();
+        numeric.declare_var("door_0");
+        assert_ne!(var_table(&numeric).hash, var_table(&different_kind).hash);
+    }
     #[test]
     fn engine_fed_names() {
         for n in [
