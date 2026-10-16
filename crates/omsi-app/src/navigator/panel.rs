@@ -130,10 +130,12 @@ impl Navigator {
                 dy.ribbon(&pts, (l.width * 0.45).max(1.4), 2.4, style::TRAFFIC[(lv - 1).min(3)], true);
             }
         }
-        let mut lines: Vec<(DVec3, Color, String)> = Vec::new();
+        // the public transport as drops with their lines (over the map's marks, on the screen);
+        // the map's own timetabled trains are left out
+        let mut transit: Vec<(DVec3, f64, Option<String>)> = Vec::new();
         if let Some(t) = f.traffic.filter(|_| self.show_ai) {
             for c in &t.cars {
-                if c.gone || in_the_air(c, &t.net) || (c.vehicle.position - f.bus).truncate().length() > self.zoom * 3.5 + 150.0 {
+                if c.gone || c.is_rail() || in_the_air(c, &t.net) || (c.vehicle.position - f.bus).truncate().length() > self.zoom * 3.5 + 150.0 {
                     continue;
                 }
                 let (color, line) = traffic_kind(c);
@@ -141,23 +143,16 @@ impl Navigator {
                 if color == DOT {
                     car_dot(&mut dy, rel(at), self.light);
                 } else {
-                    vehicle_icon(&mut dy, rel(at), c.vehicle.heading, color, c.is_rail(), 7.0);
-                }
-                if let Some(l) = line {
-                    lines.push((at, color, l));
+                    transit.push((at, c.vehicle.heading, line));
                 }
             }
         }
         if self.show_ai {
-            for v in self.live_vehicles() {
+            for v in self.live_vehicles().into_iter().filter(|v| !v.rail) {
                 if (v.pos - f.bus).truncate().length() > self.zoom * 3.5 + 150.0 {
                     continue;
                 }
-                let color = if v.rail { TRAM } else { BUS };
-                vehicle_icon(&mut dy, rel(v.pos), v.heading, color, v.rail, 7.0);
-                if !v.line.trim().is_empty() {
-                    lines.push((v.pos, color, v.line.clone()));
-                }
+                transit.push((v.pos, v.heading, Some(v.line.clone())));
             }
         }
         // (drawn over the route and the houses in their order, with no depth: a vehicle's edge,
@@ -168,7 +163,7 @@ impl Navigator {
         let mut ui = Painter::new();
         // the far end of the map: a haze into the land's colour
         ui.gradient(Rect::new(map.x, map.y, map.w, map.h * 0.16), pal.land.alpha(0.7), pal.land.alpha(0.0));
-        self.draw_map_marks(&mut ui, f, map, vpm, vp, anchor, s, lines, &pal);
+        self.draw_map_marks(&mut ui, f, map, vpm, vp, anchor, s, transit, &pal);
         self.draw_cards(&mut ui, f, &wd, net, map, s, &pal);
         if self.schedule {
             self.draw_schedule(&mut ui, f, Rect::new(0.0, map.bottom(), pw, ph - map.bottom()), s, &pal);
@@ -230,14 +225,14 @@ impl Navigator {
     /// The marks over the map: the stops ahead, the other players, the public transport's line
     /// tags and the bus itself.
     #[allow(clippy::too_many_arguments)]
-    fn draw_map_marks(&mut self, ui: &mut Painter, f: &NavFrame, map: Rect, vpm: Mat4, vp: [f32; 4], anchor: DVec2, s: f32, mut lines: Vec<(DVec3, Color, String)>, pal: &Palette) {
+    fn draw_map_marks(&mut self, ui: &mut Painter, f: &NavFrame, map: Rect, vpm: Mat4, vp: [f32; 4], anchor: DVec2, s: f32, mut transit: Vec<(DVec3, f64, Option<String>)>, pal: &Palette) {
         let rel = |p: DVec3| Vec3::new((p.x - anchor.x) as f32, (p.y - anchor.y) as f32, 0.0);
         let n_stops = f.stops.len();
         let markers = spaced_markers(f.stops.iter().enumerate().filter_map(|(k, st)| project(vpm, vp, rel(st.position)).filter(|p| map.contains(*p)).map(|p| (k, p))), 20.0 * s);
         for (k, sp) in markers.into_iter().rev() {
             stop_pin(ui, &mut self.atlas, sp, k == 0, k + 1 == n_stops, s);
         }
-        lines.sort_by(|a, b| (a.0 - f.bus).length().total_cmp(&(b.0 - f.bus).length()));
+        transit.sort_by(|a, b| (a.0 - f.bus).length().total_cmp(&(b.0 - f.bus).length()));
         let mut taken: Vec<Rect> = Vec::new();
         for pl in &f.players {
             let Some(p) = project(vpm, vp, rel(pl.position)).filter(|p| map.contains(*p)) else { continue };
@@ -254,20 +249,12 @@ impl Navigator {
             ui.rounded(r, 7.0 * s, PLAYER);
             ui.text_in(&mut self.atlas, &self.fonts, &name, px, Weight::Bold, r, Align::Center, Color::WHITE);
         }
-        for (pos, color, l) in &lines {
+        for (pos, heading, line) in &transit {
             let Some(p) = project(vpm, vp, rel(*pos)).filter(|p| map.contains(*p)) else { continue };
-            let px = 9.5 * s;
-            let l = self.fonts.fit(l, px, Weight::Bold, 40.0 * s);
-            let w = self.fonts.width(&l, px, Weight::Bold) + 9.0 * s;
-            let r = Rect::new(p.x - w * 0.5, p.y - 21.0 * s, w, 13.5 * s);
-            if taken.iter().any(|o| rects_overlap(o, &r)) {
-                continue;
-            }
-            taken.push(r);
-            ui.rounded(r, 4.0 * s, *color);
-            ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, line_text(*color));
+            let h = heading.to_radians();
+            let Some(ahead) = project(vpm, vp, rel(*pos + DVec3::new(h.sin(), h.cos(), 0.0) * 5.0)) else { continue };
+            transit_drop(ui, &mut self.atlas, &self.fonts, p, ahead - p, line.as_deref(), s, &mut taken, pal);
         }
-        let _ = pal;
         if let Some(bp) = project(vpm, vp, rel(f.bus)) {
             let a = (angle_diff(self.cam_heading, f.heading) as f32).to_radians();
             puck(ui, bp, a, 10.0 * s, style::LIGHT.route);

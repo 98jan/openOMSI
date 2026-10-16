@@ -534,34 +534,25 @@ impl Navigator {
         let n_bg = bg.len();
         // the traffic: every car, the public transport in its colours with its line
         let mut dots = Painter::new();
-        let mut lines: Vec<(DVec3, Color, String)> = Vec::new();
-        // (from far the public transport is its line's badge alone, the cars are left out)
+        let mut transit: Vec<(DVec3, f64, Option<String>)> = Vec::new();
+        // (from far the cars are left out; the map's own timetabled trains always)
         let far = self.city.mpp > 1.6;
         if let Some(t) = f.traffic.filter(|_| self.show_ai) {
-            for car in t.cars.iter().filter(|c| !c.gone && !in_the_air(c, &t.net)) {
+            for car in t.cars.iter().filter(|c| !c.gone && !c.is_rail() && !in_the_air(c, &t.net)) {
                 let (color, line) = traffic_kind(car);
                 let at = self.smoothed_position(car);
                 if color == DOT {
                     if !far {
                         car_dot(&mut dots, rel(at), self.light);
                     }
-                } else if !far || line.is_none() {
-                    vehicle_icon(&mut dots, rel(at), car.vehicle.heading, color, car.is_rail(), 7.5);
-                }
-                if let Some(l) = line {
-                    lines.push((at, color, l));
+                } else {
+                    transit.push((at, car.vehicle.heading, line));
                 }
             }
         }
         if self.show_ai {
-            for v in self.live_vehicles() {
-                let color = if v.rail { TRAM } else { BUS };
-                if !far {
-                    vehicle_icon(&mut dots, rel(v.pos), v.heading, color, v.rail, 7.5);
-                }
-                if !v.line.trim().is_empty() {
-                    lines.push((v.pos, color, v.line.clone()));
-                }
+            for v in self.live_vehicles().into_iter().filter(|v| !v.rail) {
+                transit.push((v.pos, v.heading, Some(v.line.clone())));
             }
         }
         // (over the route in their order, no depth: see the small map)
@@ -588,27 +579,12 @@ impl Navigator {
                 stop_labels.push((k, name, r));
             }
         }
-        for (pos, color, l) in &lines {
+        transit.sort_by(|a, b| (a.0 - f.bus).length().total_cmp(&(b.0 - f.bus).length()));
+        for (pos, heading, line) in &transit {
             let Some(p) = to_screen(*pos).filter(|p| win.contains(*p)) else { continue };
-            let px = 11.0 * s;
-            let l = self.fonts.fit(l, px, Weight::Bold, 50.0 * s);
-            let tw = (self.fonts.width(&l, px, Weight::Bold) + 10.0 * s).max(18.0 * s);
-            // (from far the badge is the vehicle: on its place, with a white ring)
-            let r = if far { Rect::new(p.x - tw * 0.5, p.y - 8.0 * s, tw, 16.0 * s) } else { Rect::new(p.x - tw * 0.5, p.y - 23.0 * s, tw, 15.0 * s) };
-            if taken.iter().any(|o| rects_overlap(o, &r)) {
-                if far {
-                    ui.circle(p, 4.0 * s, Color::WHITE);
-                    ui.circle(p, 2.8 * s, *color);
-                }
-                continue;
-            }
-            taken.push(r);
-            if far {
-                ui.shadow(r, 8.0 * s, 3.0 * s, Color::rgba(0, 0, 0, 0.18));
-                ui.rounded(r.pad(1.5 * s, 1.5 * s), 9.5 * s, Color::WHITE);
-            }
-            ui.rounded(r, if far { 8.0 } else { 4.0 } * s, *color);
-            ui.text_in(&mut self.atlas, &self.fonts, &l, px, Weight::Bold, r, Align::Center, line_text(*color));
+            let h = heading.to_radians();
+            let Some(ahead) = to_screen(*pos + DVec3::new(h.sin(), h.cos(), 0.0) * 5.0) else { continue };
+            transit_drop(&mut ui, &mut self.atlas, &self.fonts, p, ahead - p, line.as_deref(), s, &mut taken, &pal);
         }
         // street names along their roads, with a halo, where there is room
         if let (Some(st), true) = (self.streets.clone(), self.city.mpp < 3.2) {

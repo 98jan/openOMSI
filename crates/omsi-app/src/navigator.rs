@@ -47,16 +47,14 @@ pub(crate) const ROAD: Color = style::LIGHT.road;
 pub(crate) const ROAD_MAIN: Color = style::LIGHT.road;
 pub(crate) const ROUTE: Color = style::LIGHT.route;
 const DOT: Color = Color::rgba(70, 140, 255, 1.0);
-/// The public transport's dots: trolleybuses, buses, trams, and the text on their line tags.
+/// The public transport's kinds: trolleybuses, buses, trams.
 const TROLLEY: Color = Color::rgba(46, 184, 92, 1.0);
+/// The public transport's drops and their line numbers.
+const TRANSIT: Color = Color::rgba(52, 168, 83, 1.0);
+const TRANSIT_TEXT: Color = Color::rgba(80, 200, 110, 1.0);
 const BUS: Color = Color::rgba(226, 58, 52, 1.0);
 const TRAM: Color = Color::rgba(240, 190, 30, 1.0);
-const LINE_TEXT: Color = Color::rgba(15, 15, 15, 1.0);
 
-/// The text on a line's tag: white on the red and the green, dark on the yellow.
-fn line_text(c: Color) -> Color {
-    if c == TRAM { LINE_TEXT } else { Color::WHITE }
-}
 /// The other players of a LAN session or server: an arrow the way they face, with their name.
 const PLAYER: Color = Color::rgba(190, 96, 255, 1.0);
 
@@ -90,25 +88,49 @@ fn traffic_kind(c: &crate::traffic::AiCar) -> (Color, Option<String>) {
     };
     (color, line)
 }
-/// A bus, trolleybus or tram on the map as a pictogram, not a dot: a body with a cut front and
-/// a windscreen, turned to the way it heads (`heading`: degrees clockwise from north), a dark
-/// edge round it. `min_px` keeps it readable from far away; the line number is drawn beside it.
-fn vehicle_icon(p: &mut Painter, at: Vec3, heading: f64, color: Color, long: bool, min_px: f32) {
-    let h = heading.to_radians() as f32;
-    let (sn, cs) = h.sin_cos();
-    // local: x to the right, y forward; turned onto the world (x east, y north)
-    let turn = |v: Vec2| Vec2::new(v.x * cs + v.y * sn, -v.x * sn + v.y * cs);
-    let l = if long { 1.5 } else { 1.0 };
-    let body = |k: f32| -> Vec<Vec2> {
-        [(-0.34, -1.0), (0.34, -1.0), (0.34, 0.55), (0.2, 1.0), (-0.2, 1.0), (-0.34, 0.55)].iter().map(|&(x, y)| turn(Vec2::new(x * k, y * l * k))).collect()
+/// The public transport's mark, as the city transport maps draw it: a green drop with a bus
+/// in it, its point the way the vehicle heads (`dir`, on the screen), and the line beside it
+/// in green on a dark tag where there is room (`taken`: what is drawn there already).
+#[allow(clippy::too_many_arguments)]
+fn transit_drop(ui: &mut Painter, atlas: &mut Atlas, fonts: &Fonts, p: Vec2, dir: Vec2, line: Option<&str>, s: f32, taken: &mut Vec<Rect>, pal: &style::Palette) {
+    let r = 8.5 * s;
+    let d = dir.normalize_or(Vec2::new(0.0, -1.0));
+    let drop = |r: f32| -> Vec<Vec2> {
+        // the circle from where the point's sides touch it, round to the other side
+        let tip = 1.75 * r;
+        let side = (r / tip).acos();
+        let a0 = d.y.atan2(d.x);
+        let mut pts = vec![p + d * tip];
+        let k = 20;
+        for i in 0..=k {
+            let a = a0 + side + (std::f32::consts::TAU - 2.0 * side) * i as f32 / k as f32;
+            pts.push(p + Vec2::new(a.cos(), a.sin()) * r);
+        }
+        pts
     };
-    let (m, px) = (3.2, min_px * 0.8);
-    p.world_shape(at, &body(1.28), m, px * 1.28, Color::rgba(8, 8, 8, 0.92));
-    p.world_shape(at, &body(1.0), m, px, color);
-    let glass: Vec<Vec2> = [(-0.24, 0.5), (0.24, 0.5), (0.15, 0.8), (-0.15, 0.8)].iter().map(|&(x, y)| turn(Vec2::new(x, y * l))).collect();
-    p.world_shape(at, &glass, m, px, Color::rgba(240, 244, 248, 0.9));
+    ui.convex(&drop(r + 1.6 * s), Color::rgba(255, 255, 255, 0.95));
+    ui.convex(&drop(r), TRANSIT);
+    ui.icon(atlas, "directions_bus", p, 11.5 * s, Color::WHITE);
+    taken.push(Rect::new(p.x - r, p.y - r, 2.0 * r, 2.0 * r));
+    let Some(line) = line.map(str::trim).filter(|l| !l.is_empty()) else { return };
+    let px = 11.5 * s;
+    let l = fonts.fit(line, px, Weight::Bold, 54.0 * s);
+    let w = fonts.width(&l, px, Weight::Bold) + 10.0 * s;
+    let h = 17.0 * s;
+    // (beside the drop, away from its point)
+    let right = d.x <= 0.3;
+    for side in if right { [1.0f32, -1.0] } else { [-1.0, 1.0] } {
+        let x = if side > 0.0 { p.x + r + 4.0 * s } else { p.x - r - 4.0 * s - w };
+        let tag = Rect::new(x, p.y - h * 0.5, w, h);
+        if taken.iter().any(|o| roads::rects_overlap(o, &tag)) {
+            continue;
+        }
+        taken.push(tag);
+        ui.rounded(tag, 4.0 * s, pal.card);
+        ui.text_in(atlas, fonts, &l, px, Weight::Bold, tag, Align::Center, TRANSIT_TEXT);
+        return;
+    }
 }
-
 
 /// How busy a road is from its congestion score: 0 flowing, 2 slow, 3 heavy, 4 standing.
 fn level(score: f32) -> usize {
