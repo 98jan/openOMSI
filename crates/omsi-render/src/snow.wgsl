@@ -9,40 +9,6 @@
 // second (aggregates at 0.8 D^0.16 m/s, Locatelli and Hobbs 1974), sway as they go and
 // drift with the wind; opaque and lit by what lights them - the classic picture's
 // envir.cfg light, or the enhanced picture's sky, sun and lamps (`precip_light`).
-struct Camera {
-    view_proj: mat4x4<f32>,
-    cam_pos: vec4<f32>,
-    // (kept in lockstep with `CameraUniform` in lib.rs, as sky.wgsl's)
-    world_origin: vec4<f32>,
-    sun_dir: vec4<f32>,
-    ambient: vec4<f32>,
-    fog: vec4<f32>,
-    sun_color: vec4<f32>,
-    sky_color: vec4<f32>,
-    light_grid: vec4<f32>,
-    sky: vec4<f32>,
-    cam_right: vec4<f32>,
-    cam_up: vec4<f32>,
-    clouds: vec4<f32>,
-    light_view_proj: mat4x4<f32>,
-    light_view_proj_far: mat4x4<f32>,
-    shadow: vec4<f32>,
-    post: vec4<f32>,
-    inside_a: vec4<f32>,
-    inside_b: vec4<f32>,
-    inside_c: vec4<f32>,
-    flags: vec4<f32>,
-    light_view_proj_close: mat4x4<f32>,
-    wind: vec4<f32>,
-    lamp_view_proj: array<mat4x4<f32>, 4>,
-    lamp_shadow: vec4<f32>,
-    tree_wind: vec4<f32>,
-    inside2_a: vec4<f32>,
-    inside2_b: vec4<f32>,
-    inside2_c: vec4<f32>,
-    cookies: array<vec4<f32>, 8>,
-};
-@group(0) @binding(0) var<uniform> camera: Camera;
 
 struct SnowParams {
     // xyz the wind the flakes drift with (m/s), w the time (s)
@@ -50,6 +16,9 @@ struct SnowParams {
     // x how hard it snows (0..1), y the flakes' mean diameter (m), zw how many flakes the
     // first two layers hold (the rest are the third's)
     fall: vec4<f32>,
+    // the precipitation's roof map: its matrix, and x 1 when there is one
+    roof: mat4x4<f32>,
+    roof_on: vec4<f32>,
 };
 @group(1) @binding(0) var<uniform> sp: SnowParams;
 
@@ -63,38 +32,6 @@ struct SnowOut {
 
 // The layers round the camera: half width, bottom and top (m).
 const LAYER_H = array<vec3<f32>, 3>(vec3<f32>(4.0, -2.5, 5.5), vec3<f32>(10.0, -3.0, 9.0), vec3<f32>(24.0, -3.0, 16.0));
-
-fn hash4(n: u32) -> vec4<f32> {
-    var x = vec4<u32>(n, n * 747796405u + 2891336453u, n ^ 0x9e3779b9u, n * 1664525u + 1013904223u);
-    x = x * 1664525u + 1013904223u;
-    x.x = x.x + x.y * x.w;
-    x.y = x.y + x.z * x.x;
-    x.z = x.z + x.x * x.y;
-    x.w = x.w + x.y * x.z;
-    x = x ^ (x >> vec4<u32>(16u));
-    x.x = x.x + x.y * x.w;
-    x.y = x.y + x.z * x.x;
-    x.z = x.z + x.x * x.y;
-    return vec4<f32>(x & vec4<u32>(0xffffffu)) / 16777216.0;
-}
-
-// 1 inside the player's own vehicle (its box, a little wider): no snow falls in the cab
-fn in_own_vehicle(p: vec3<f32>) -> bool {
-    // (the front and, of an articulated bus, the rear section: it snowed in the back, #1967;
-    // without branches - two boxes tested with early returns and short-circuits brought
-    // Apple's M4 shader compiler service down, XPC_ERROR_CONNECTION_INTERRUPTED, and the
-    // game fell back to no snowfall)
-    return any(vec2<bool>(in_box(p, camera.inside_a, camera.inside_b, camera.inside_c), in_box(p, camera.inside2_a, camera.inside2_b, camera.inside2_c)));
-}
-
-fn in_box(p: vec3<f32>, a: vec4<f32>, b: vec4<f32>, c: vec4<f32>) -> bool {
-    let d = p - a.xyz;
-    let sh = a.w;
-    let ch = b.x;
-    let q = vec3<f32>(d.x * ch - d.y * sh - c.x, d.x * sh + d.y * ch - c.y, d.z - c.z);
-    let h = b.yzw + vec3<f32>(0.3);
-    return select(false, all(abs(q) < h), c.w >= 0.5);
-}
 
 @vertex
 fn vs_snow(@builtin(vertex_index) vid: u32, @builtin(instance_index) k: u32) -> SnowOut {
@@ -131,7 +68,7 @@ fn vs_snow(@builtin(vertex_index) vid: u32, @builtin(instance_index) k: u32) -> 
     let lo = world_cam + vec3<f32>(-lh.x, -lh.x, lh.y);
     let q = lo + (((start + drift - lo) % size) + size) % size;
     let p = q - vec3<f32>(camera.world_origin.xy, 0.0);
-    if (in_own_vehicle(p)) {
+    if (in_own_vehicle(p) || under_roof(p, sp.roof, sp.roof_on.x)) {
         return out;
     }
     // a denser layer fades out towards its edges, into the thinner one round it

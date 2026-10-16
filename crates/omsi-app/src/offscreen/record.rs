@@ -84,6 +84,10 @@ impl Offscreen<'_> {
             Some(&self.weather),
             cloud_drift_at(&self.weather, self.run_clock.time),
             self.wetness,
+            {
+                let (kind, rate) = crate::weather_setup::precip_of(&self.weather);
+                crate::rain::initial_snow_cover(kind, rate, self.weather.temp.0)
+            },
             Some(&self.world),
             driven,
             driven,

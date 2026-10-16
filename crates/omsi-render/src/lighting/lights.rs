@@ -218,7 +218,9 @@ pub(crate) const LIGHT_CELL: f32 = 25.0;
 pub(crate) const LAMP_SHADOWS: usize = 4;
 /// The shadow casters' lists of a frame: the near, far and close cascades, then one per
 /// street lamp's map (each lamp's own: an embedded source leaves its own fixture out).
-pub(crate) const SHADOW_LISTS: usize = 3 + LAMP_SHADOWS;
+/// (and last the precipitation's roof map, `passes::precip_map`)
+pub(crate) const SHADOW_LISTS: usize = 4 + LAMP_SHADOWS;
+pub(crate) const PRECIP_LIST: usize = 3 + LAMP_SHADOWS;
 pub(crate) const LAMP_SHADOW_REACH: f32 = 45.0;
 /// The far map's height over its width: the lamps' tiles take the quarter under it.
 pub(crate) const FAR_MAP_ASPECT: f32 = 1.25;
@@ -753,6 +755,9 @@ pub(crate) struct LightRes {
     /// The snowfall's parameters (snow.wgsl `SnowParams`) and their bind group.
     pub(crate) snow_buf: wgpu::Buffer,
     pub(crate) snow_bind_group: wgpu::BindGroup,
+    /// The rainfall's (rain.wgsl `RainParams`).
+    pub(crate) rain_buf: wgpu::Buffer,
+    pub(crate) rain_bind_group: wgpu::BindGroup,
     /// The smoke texture (`Texture/rauch.tga`, see [`Renderer::set_smoke_texture`]).
     pub(crate) smoke_bind_group: wgpu::BindGroup,
     /// The coronas' pictures besides the standard glow (index = `Corona::texture`; entry 0

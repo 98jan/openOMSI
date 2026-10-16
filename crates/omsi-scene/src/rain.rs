@@ -1,21 +1,9 @@
-//! Precipitation: rain streaks / snow flakes falling around the camera, drawn through the
-//! corona sprite pipeline (cone value -2 marks a streak), and the picture the film on the
-//! glass wears in a snow weather.
+//! Precipitation: the rain falling round the camera - what it is (how hard, how big its
+//! drops) and how the eye moves through it; the renderer works every drop out on the GPU
+//! (rain.wgsl) - and the picture the film on the glass wears in a snow weather.
 
 use glam::{DVec3, Vec3};
-use omsi_render::{Corona, Scene};
-
-const HALF_WIDTH: f32 = 16.0;
-/// The box round the eye the near drops fill: as much rain as the eye can tell apart is
-/// close by (a 2 mm drop 15 m away is a tenth of a pixel), so the near ones are as many as
-/// the far again in a fraction of the room, and a downpour is a curtain, not a few lines.
-const NEAR_HALF_WIDTH: f32 = 7.0;
-const NEAR_HEIGHT: f32 = 12.0;
-
-/// How long the eye sees a falling drop as one streak (s): the length of a streak is the
-/// way the drop goes in that time against the eye - short and upright standing, long and
-/// slanting at the windscreen of a bus at speed (#1412).
-const STREAK_TIME: f32 = 1.0 / 30.0;
+use omsi_render::{Rainfall, Scene};
 
 /// The rain rate (mm/h) of OMSI's precipitation strength (0..1 of its 255): a drizzle at
 /// the bottom, a cloudburst (60 mm/h) at the top.
@@ -32,6 +20,7 @@ pub fn median_drop_mm(r: f32) -> f32 {
 
 /// The speed (m/s) a raindrop of `d` mm falls at in still air at sea level (Atlas, Srivastava
 /// and Sekhon 1973): a drizzle drifts down at 2-4 m/s, the big drops of a cloudburst at 7-8.
+/// (rain.wgsl gives every drop its own.)
 pub fn terminal_speed(d: f32) -> f32 {
     (9.65 - 10.3 * (-0.6 * d.max(0.0)).exp()).max(0.5)
 }
@@ -51,22 +40,50 @@ pub fn weather_wind(weather: &omsi_content::weather::Weather) -> Vec3 {
     Vec3::new(heading.sin(), heading.cos(), 0.0) * weather.wind.1
 }
 
-pub struct Rain {
-    /// The far drops (`..near_from`) in the wide box, the near ones after them.
-    particles: Vec<Vec3>,
-    near_from: usize,
-    kind: i32,
-    rate: f32,
-    /// How fast the drops fall (m/s) and how thick they are (mm), from the rain's rate.
-    fall: f32,
-    drop_mm: f32,
-    rng: u64,
-    camera: Option<DVec3>,
+/// How much of the ground and of what faces up the snow covers (0..1) after `secs` more of
+/// this weather (`kind` and `rate` as `Rain::set` takes them, `temp` °C), from `start`. A
+/// heavy snowfall lays a few centimetres an hour - a white cover in a quarter of an hour, a
+/// light one in an hour or two; flakes landing above +2 °C melt where they land. Without
+/// snow falling it lies on below zero, thaws in the warmth (half an hour at +5 °C) and
+/// faster in the rain.
+pub fn snow_cover(kind: i32, rate: f32, temp: f32, secs: f32, start: f32) -> f32 {
+    let rate = rate.clamp(0.0, 1.0);
+    let change = if kind == 2 && rate > 0.0 && temp < 2.0 {
+        (0.05 + rate) / 900.0
+    } else {
+        -(temp.max(0.0) / 9000.0 + if kind == 1 { rate / 600.0 } else { 0.0 })
+    };
+    (start + change * secs).clamp(0.0, 1.0)
 }
 
-/// The boxes a vehicle keeps the weather out of, as `Rain::tick` takes them: its own
-/// `[boundingbox]` and each coupled part's (an articulated bus's rear section is a part of
-/// its own, with its own box: without it, it rained in the rear saloon, #777).
+/// The snow cover a session starts with: a snowfall that is falling now has been for a
+/// while.
+pub fn initial_snow_cover(kind: i32, rate: f32, temp: f32) -> f32 {
+    if kind == 2 && rate > 0.0 && temp < 2.0 {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+pub struct Rain {
+    kind: i32,
+    rate: f32,
+    quality: u8,
+    /// How thick the drops are (mm, their median volume diameter), from the rain's rate.
+    drop_mm: f32,
+    camera: Option<DVec3>,
+    /// The eye's velocity (m/s), smoothed over a few frames.
+    eye: Vec3,
+    /// The weather's temperature (°C) and the snow lying from the snowfalls so far (see
+    /// [`snow_cover`]; `None` before the first weather).
+    temp: f32,
+    cover: Option<f32>,
+}
+
+/// The boxes a vehicle keeps the weather out of: its own `[boundingbox]` and each coupled
+/// part's (an articulated bus's rear section is a part of its own, with its own box:
+/// without it, it rained in the rear saloon, #777).
 pub fn vehicle_boxes(v: &omsi_sim::VehicleInstance) -> Vec<(DVec3, f64, [f32; 6])> {
     let front = v.ty.def.bounding_box.map(|bb| (v.position, v.heading, bb));
     let parts = v.trailers.iter().filter_map(|t| {
@@ -79,139 +96,50 @@ pub fn vehicle_boxes(v: &omsi_sim::VehicleInstance) -> Vec<(DVec3, f64, [f32; 6]
 
 impl Rain {
     pub fn new() -> Rain {
-        Rain {
-            particles: Vec::new(),
-            near_from: 0,
-            kind: 0,
-            rate: 0.0,
-            fall: 9.0,
-            drop_mm: 2.0,
-            rng: 0xABCDEF12345,
-            camera: None,
-        }
-    }
-
-    fn rand(&mut self) -> f32 {
-        self.rng ^= self.rng << 13;
-        self.rng ^= self.rng >> 7;
-        self.rng ^= self.rng << 17;
-        (self.rng >> 40) as f32 / (1u64 << 24) as f32
+        Rain { kind: 0, rate: 0.0, quality: 2, drop_mm: 2.0, camera: None, eye: Vec3::ZERO, temp: 10.0, cover: None }
     }
 
     /// `kind`: 0 none, 1 rain, 2 snow; `rate` 0..1; `quality` the rain's (see [`quality_of`]).
     pub fn set(&mut self, kind: i32, rate: f32, quality: u8) {
         self.kind = kind;
         self.rate = rate.clamp(0.0, 1.0);
+        self.quality = quality;
         // the drops of this rain: small and slow in a drizzle, big and fast in a downpour
         // (they all looked the same whatever the rain, #1412)
         self.drop_mm = median_drop_mm(rain_rate_mm_h(self.rate));
-        self.fall = terminal_speed(self.drop_mm);
-        // (snow is drawn by the renderer itself, from the weather: render snow.wgsl,
-        // `Lighting::snowfall`); no particles either while nothing falls
-        let (far, near) = if kind == 0 || kind == 2 || self.rate == 0.0 {
-            (0, 0)
-        } else {
-            // (fewer streaks at a lower rain quality: they are drawn as sprites each frame)
-            let share = [0.25, 0.5, 1.0][quality.min(2) as usize];
-            (((300.0 + 2700.0 * self.rate) * share) as usize, ((200.0 + 2800.0 * self.rate) * share) as usize)
-        };
-        if self.particles.len() != far + near || self.near_from != far {
-            self.particles.clear();
-            for i in 0..far + near {
-                let (half, height) = if i < far { (HALF_WIDTH, 20.0) } else { (NEAR_HALF_WIDTH, NEAR_HEIGHT) };
-                let p = Vec3::new(self.rand() * (half * 2.0) - half, self.rand() * (half * 2.0) - half, self.rand() * height);
-                self.particles.push(p);
-            }
-            self.near_from = far;
-        }
     }
 
-    /// Move the drops by `dt`; the drops' velocity against the eye (m/s).
-    fn advance(&mut self, dt: f32, camera: DVec3, wind: Vec3) -> Vec3 {
-        // Keep drops in the world as the camera moves through them. Recentring the box
-        // used to carry every drop along with the bus, even at motorway speed.
-        let movement = self.camera.replace(camera).map_or(Vec3::ZERO, |old| (camera - old).as_vec3());
-        let velocity = wind - Vec3::Z * if self.kind == 2 { 1.5 } else { self.fall };
-        for (i, p) in self.particles.iter_mut().enumerate() {
-            *p += velocity * dt - movement;
-            let (half, height) = if i < self.near_from { (HALF_WIDTH, 20.0) } else { (NEAR_HALF_WIDTH, NEAR_HEIGHT) };
-            p.x = (p.x + half).rem_euclid(half * 2.0) - half;
-            p.y = (p.y + half).rem_euclid(half * 2.0) - half;
-            p.z = (p.z + 2.0).rem_euclid(height + 2.0) - 2.0;
-        }
-        // (a jump of the camera - a new view, a teleport - is no speed)
-        let seen = movement / dt.max(0.001);
-        velocity - if seen.length() < 80.0 { seen } else { Vec3::ZERO }
+    /// The weather's temperature (°C), for the snow lying.
+    pub fn set_temperature(&mut self, temp: f32) {
+        self.temp = temp;
     }
 
-    /// Move the particles (camera-relative box) and push them as sprites.
-    /// `inside`: the buses near the camera as (origin, heading in degrees, `[boundingbox]`),
-    /// the player's first; no drop or flake is drawn within any, so that it does not rain
-    /// in a cab (only the player's own had been left dry: riding in another player's bus or
-    /// a timetable bus it snowed in the saloon).
-    pub fn tick(
-        &mut self,
-        dt: f32,
-        camera: DVec3,
-        wind: Vec3,
-        scene: &mut Scene,
-        inside: &[(DVec3, f64, [f32; 6])],
-    ) {
-        if self.particles.is_empty() {
-            self.camera = Some(camera);
-            return;
+    /// How much of what faces up the snow covers now (0..1, see [`snow_cover`]).
+    pub fn snow_cover(&self) -> f32 {
+        self.cover.unwrap_or(0.0)
+    }
+
+    /// Follow the eye by `dt` and hand the renderer this frame's rain (`Scene::rainfall`;
+    /// snow is drawn by the renderer from the weather: render snow.wgsl,
+    /// `Lighting::snowfall`).
+    pub fn tick(&mut self, dt: f32, camera: DVec3, wind: Vec3, scene: &mut Scene) {
+        let moved = self.camera.replace(camera).map_or(Vec3::ZERO, |old| (camera - old).as_vec3());
+        if dt > 0.0 {
+            // (a jump of the camera - a new view, a teleport - is no speed)
+            let seen = moved / dt;
+            let seen = if seen.length() < 80.0 { seen } else { self.eye };
+            self.eye += (seen - self.eye) * (dt / 0.1).min(1.0);
         }
-        let relative = self.advance(dt, camera, wind);
-        let streak = relative.normalize_or_zero();
-        // the streak: the way the drop goes against the eye while the eye sees it as one
-        // (`size` is a quarter of its half length, see corona.wgsl), at least the drop
-        let length = (relative.length() * STREAK_TIME).clamp(0.06, 1.4);
-        let buses: Vec<(DVec3, f64, [f32; 6])> = inside.iter().filter(|b| (b.0 - camera).length() < 40.0).map(|&(o, h, bb)| (o, h.to_radians(), bb)).collect();
-        let in_one = |p: DVec3, (o, h, bb): (DVec3, f64, [f32; 6])| -> bool {
-            let d = p - o;
-            let (sh, ch) = (h.sin(), h.cos());
-            let x = d.x * ch - d.y * sh;
-            let y = d.x * sh + d.y * ch;
-            let z = d.z;
-            // a flat 0.3 m margin left flakes rendering on the inside of the glass near a
-            // window sill (the ledge below a side window sits close to the body's outer
-            // envelope, closer than the margin covered): widened so the whole cabin,
-            // ledges included, sits inside the excluded box.
-            (x - bb[3] as f64).abs() < bb[0] as f64 * 0.5 + 0.6
-                && (y - bb[4] as f64).abs() < bb[1] as f64 * 0.5 + 0.6
-                && (z - bb[5] as f64).abs() < bb[2] as f64 * 0.5 + 0.6
+        let start = self.cover.unwrap_or_else(|| initial_snow_cover(self.kind, self.rate, self.temp));
+        self.cover = Some(snow_cover(self.kind, self.rate, self.temp, dt, start));
+        let raining = self.kind == 1 && self.rate > 0.0;
+        scene.rainfall = Rainfall {
+            rate: if raining { self.rate } else { 0.0 },
+            drop_mm: self.drop_mm,
+            eye_velocity: self.eye,
+            wind,
+            quality: self.quality,
         };
-        let in_bus = |p: DVec3| buses.iter().any(|b| in_one(p, *b));
-        // (a bigger drop catches more of the light: a drizzle is a haze of faint lines)
-        let (size, color, brightness) = if self.kind == 2 {
-            (0.06, [1.0, 1.0, 1.0], 0.9)
-        } else {
-            (length / 8.0, [0.75, 0.8, 0.9], (0.18 + 0.1 * self.drop_mm).min(0.45))
-        };
-        let mut excluded = 0usize;
-        for p in &self.particles {
-            let w = camera + p.as_dvec3();
-            if in_bus(w) {
-                excluded += 1;
-                continue;
-            }
-            scene.coronas.push(Corona {
-                position: w,
-                size,
-                color,
-                brightness,
-                direction: if self.kind == 2 { Vec3::ZERO } else { streak },
-                cone_cos: if self.kind == 2 { -1.0 } else { -2.0 },
-                ..Default::default()
-            });
-        }
-        if omsi_cfg::flags::OMSI_DEBUG_RAIN.is_set() {
-            log::info!(
-                "rain: {} particles, {excluded} inside the buses (boxes {:?})",
-                self.particles.len(),
-                buses.iter().map(|b| (b.0, b.1.to_degrees(), b.2)).collect::<Vec<_>>()
-            );
-        }
     }
 }
 
@@ -329,35 +257,39 @@ mod tests {
         assert_eq!(renderer.texture_levels(&scene, id), Some((512, 512, 10)));
     }
 
+    /// The renderer is handed the eye's way through the rain (the streaks are the drops' way
+    /// against it), no rain in a dry or a snow weather, and no speed of a jump of the camera.
     #[test]
-    fn rain_stays_in_the_world_and_streaks_follow_relative_velocity() {
+    fn the_rainfall_follows_the_eye_and_the_weather() {
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        descriptor.backends = wgpu::Backends::NOOP;
+        descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
+        let instance = wgpu::Instance::new(descriptor);
+        let renderer = pollster::block_on(omsi_render::Renderer::new_with(
+            &instance,
+            None,
+            Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+            omsi_render::RenderOptions { msaa: 1, shadow_size: 1024, ..Default::default() },
+        ))
+        .expect("noop renderer");
+        let mut scene = renderer.new_scene();
         let mut rain = Rain::new();
         rain.set(1, 1.0, 2);
-        rain.particles = vec![Vec3::new(0.0, 0.0, 10.0)];
-        rain.camera = Some(DVec3::ZERO);
-        let camera = DVec3::new(0.0, 2.0, 0.0);
-        rain.near_from = 1;
-        let fall = rain.fall;
-        let direction = rain.advance(0.1, camera, Vec3::X * 3.0).normalize();
-        let world = camera + rain.particles[0].as_dvec3();
-        assert!((world - DVec3::new(0.3, 0.0, 10.0 - fall as f64 * 0.1)).length() < 1e-5);
-        assert!(direction.abs_diff_eq(Vec3::new(3.0, -20.0, -fall).normalize(), 1e-5));
-        rain.advance(0.0, DVec3::splat(10000.0), Vec3::ZERO);
-        let p = rain.particles[0];
-        assert!(p.is_finite() && p.x.abs() <= HALF_WIDTH && p.y.abs() <= HALF_WIDTH && p.z >= -2.0 && p.z < 20.0);
-    }
-
-    #[test]
-    fn dry_weather_has_no_particles_and_heavy_rain_keeps_the_budget() {
-        let mut rain = Rain::new();
-        rain.set(1, 1.0, 2);
-        assert_eq!(rain.particles.len(), 6000);
-        assert_eq!(rain.near_from, 3000);
-        rain.set(1, 0.0, 2);
-        assert!(rain.particles.is_empty());
+        for i in 0..60 {
+            rain.tick(0.05, DVec3::new(i as f64 * 0.5, 0.0, 0.0), Vec3::X * 3.0, &mut scene);
+        }
+        let r = scene.rainfall;
+        assert_eq!(r.rate, 1.0);
+        assert!((r.eye_velocity - Vec3::X * 10.0).length() < 0.1, "{:?}", r.eye_velocity);
+        assert_eq!(r.wind, Vec3::X * 3.0);
+        rain.tick(0.05, DVec3::splat(10000.0), Vec3::ZERO, &mut scene);
+        assert!(scene.rainfall.eye_velocity.length() < 11.0);
         rain.set(2, 1.0, 2);
+        rain.tick(0.05, DVec3::splat(10000.0), Vec3::ZERO, &mut scene);
+        assert_eq!(scene.rainfall.rate, 0.0);
         rain.set(0, 1.0, 2);
-        assert!(rain.particles.is_empty());
+        rain.tick(0.05, DVec3::splat(10000.0), Vec3::ZERO, &mut scene);
+        assert_eq!(scene.rainfall.rate, 0.0);
     }
 
     /// A drizzle falls slower and in smaller drops than a downpour (#1412), as measured.
@@ -371,9 +303,26 @@ mod tests {
         assert!(terminal_speed(downpour) > 6.5 && terminal_speed(downpour) < 8.0);
         let mut rain = Rain::new();
         rain.set(1, 0.05, 2);
-        let slow = rain.fall;
+        let small = rain.drop_mm;
         rain.set(1, 1.0, 2);
-        assert!(rain.fall > slow + 2.0);
+        assert!(rain.drop_mm > small + 1.0);
+    }
+
+    /// Snow lies on in the cold, builds up in a snowfall (faster in a heavy one), melts as
+    /// it lands in the warmth and thaws without a snowfall above zero.
+    #[test]
+    fn the_snow_cover_builds_up_and_thaws() {
+        let heavy = snow_cover(2, 1.0, -3.0, 600.0, 0.0);
+        let light = snow_cover(2, 0.1, -3.0, 600.0, 0.0);
+        assert!(heavy > 0.6 && heavy < 0.8 && light < heavy / 3.0, "{heavy} {light}");
+        assert_eq!(snow_cover(2, 1.0, -3.0, 2000.0, 0.0), 1.0);
+        assert_eq!(snow_cover(2, 1.0, 5.0, 600.0, 0.0), 0.0);
+        assert_eq!(snow_cover(0, 0.0, -5.0, 3600.0, 0.8), 0.8);
+        let thaw = snow_cover(0, 0.0, 5.0, 900.0, 1.0);
+        assert!(thaw > 0.4 && thaw < 0.6, "{thaw}");
+        assert!(snow_cover(1, 0.5, 5.0, 900.0, 1.0) < thaw);
+        assert_eq!(initial_snow_cover(2, 0.5, -1.0), 1.0);
+        assert_eq!(initial_snow_cover(1, 0.5, -1.0), 0.0);
     }
 
     #[test]

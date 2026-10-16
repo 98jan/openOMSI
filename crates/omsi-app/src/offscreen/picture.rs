@@ -95,6 +95,10 @@ impl Offscreen<'_> {
             Some(weather),
             cloud_drift_at(weather, clock.time),
             wetness,
+            {
+                let (kind, rate) = precip_of(weather);
+                rain::initial_snow_cover(kind, rate, weather.temp.0)
+            },
             Some(world),
             driven,
             driven,
@@ -185,7 +189,6 @@ impl Offscreen<'_> {
     fn final_lights(&mut self, daylight: &omsi_sim::Daylight, lighting: &omsi_render::Lighting) {
         let Self {
             ref player_ref,
-            ref player,
             ref traffic,
             ref remotes_off,
             ref weather,
@@ -202,19 +205,9 @@ impl Offscreen<'_> {
             let (kind, rate) = precip_of(weather);
             let mut rn = rain::Rain::new();
             rn.set(kind, rate, world.settings.rain_quality());
-            for _ in 0..30 {
-                scene
-                    .coronas
-                    .retain(|c| c.cone_cos > -1.5 && !(c.size < 0.07 && c.brightness < 0.95));
-                rn.tick(
-                    1.0 / 30.0,
-                    camera.position,
-                    // ([wind] direction (deg) and speed (m/s), as the window's frame takes it)
-                    rain::weather_wind(weather),
-                    scene,
-                    &player_ref.as_ref().or(player.as_ref()).map(|p| rain::vehicle_boxes(&p.vehicle)).unwrap_or_default(),
-                );
-            }
+            rn.set_temperature(weather.temp.0);
+            // ([wind] direction (deg) and speed (m/s), as the window's frame takes it)
+            rn.tick(1.0 / 30.0, camera.position, rain::weather_wind(weather), scene);
             // the tyres' spray as the drive left it (OMSI_DRIVE_V0=S moves the bus without a
             // full engine-start sequence)
             spray.sprites(camera.position, &mut scene.smoke);

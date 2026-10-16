@@ -172,6 +172,22 @@ pub struct Instance {
     pub(crate) slot_levels: Vec<u8>,
 }
 
+/// The rain the renderer draws round the camera (rain.wgsl): every drop is worked out on
+/// the GPU from these.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Rainfall {
+    /// How hard it rains (0..1; 0 nothing falls).
+    pub rate: f32,
+    /// The median volume diameter of its drops (mm).
+    pub drop_mm: f32,
+    /// The eye's velocity (m/s, world): the drops' streaks are their way against it.
+    pub eye_velocity: glam::Vec3,
+    /// The wind the drops drift with (m/s, world).
+    pub wind: glam::Vec3,
+    /// The `rain_quality` setting: 2 high, 1 medium, 0 low.
+    pub quality: u8,
+}
+
 pub struct Scene {
     pub meshes: Vec<GpuMesh>,
     pub textures: Vec<GpuTexture>,
@@ -188,6 +204,8 @@ pub struct Scene {
     pub interior_lights: Vec<PointLight>,
     pub(crate) interior_free: Vec<(u32, u32)>,
     pub coronas: Vec<Corona>,
+    /// The rain falling round the camera this frame (rain.wgsl; set by the app every frame).
+    pub rainfall: Rainfall,
     /// Smoke particles for the next frame (set by the app every frame).
     pub smoke: Vec<SmokeParticle>,
     pub(crate) smoke_buf: Option<wgpu::Buffer>,
@@ -210,6 +228,8 @@ pub struct Scene {
     pub(crate) draw_buf: Option<GpuArray>,
     pub(crate) camera_bind_group: Option<wgpu::BindGroup>,
     pub(crate) shadow_bind_group: Option<wgpu::BindGroup>,
+    /// As `shadow_bind_group`, with the precipitation roof map's camera.
+    pub(crate) precip_bind_group: Option<wgpu::BindGroup>,
     pub(crate) sky_bind_group: Option<wgpu::BindGroup>,
     /// HUD images drawn after the scene: (texture, rect in pixels x0,y0,x1,y1).
     pub overlays: Vec<(TextureId, [f32; 4])>,

@@ -396,6 +396,16 @@ impl Renderer {
             ],
         });
         scene.shadow_bind_group = Some(sbg);
+        scene.precip_bind_group = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("precipitation roof camera"),
+            layout: &self.shadows.shadow_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: self.shadows.precip.camera_buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: model_buf.binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: params_buf.binding() },
+                wgpu::BindGroupEntry { binding: 10, resource: draw_buf.binding() },
+            ],
+        }));
     }
 
     /// Upload the frame's draw list, growing its buffer (and the bind groups that hold it)

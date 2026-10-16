@@ -700,7 +700,7 @@ fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather, sky: &cra
     let clock = start_clock(args);
     let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
     let daylight = omsi_sim::Daylight::compute(&clock, envir.as_ref());
-    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, true, sky);
+    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, 0.0, true, sky);
     l.shadows = daylight.altitude_deg > 2.0;
     l.enhanced = false;
     l.classic = false;

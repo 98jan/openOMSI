@@ -14,6 +14,9 @@ pub(crate) struct ShadowPlan {
     pub light_view_proj: Mat4,
     pub light_view_proj_far: Mat4,
     pub light_view_proj_close: Mat4,
+    /// The precipitation's roof map this frame (`passes::precip_map`): the window's own
+    /// frame while it rains or snows.
+    pub precip: Option<Mat4>,
 }
 
 /// The light matrix of a cascade: an orthographic box `range` metres either side of the
@@ -149,7 +152,10 @@ impl Renderer {
                 light_view_proj_close,
             )));
         }
+        let falling = scene.rainfall.rate > 0.001 || lighting.snowfall > 0.01;
+        let precip = (falling && f.with_overlays && projection.is_none() && f.exclude_texture.is_none() && !basic_pipelines() && !f.env.no_precip_roof).then(|| precip_matrix(cam_rel));
         ShadowPlan {
+            precip,
             moon_shadows,
             shadows,
             draw_shadows,
@@ -185,6 +191,8 @@ impl Renderer {
         };
         let active = [draw_shadows && redraw_near, draw_shadows && redraw_far, draw_shadows];
         let boxes = [(SHADOW_RANGE, light_view_proj, 0.4f32), (SHADOW_RANGE_FAR, light_view_proj_far, 6.0), (SHADOW_RANGE_CLOSE, light_view_proj_close, 0.1)];
+        // (the precipitation's roof map: what stands over the ground round the camera)
+        let precip_box = sh.precip;
         let dbg_shadow = f.env.debug_shadow;
         let dbg_r: f32 = f
             .env
@@ -252,7 +260,13 @@ impl Renderer {
                     }
                     hits[cascade] = true;
                 }
-                if !lamp_hit && hits == [false; 3] {
+                // (a pole or a sign is no roof: only what is a fair size)
+                let roof_hit = precip_box.is_some_and(|pm| {
+                    let lc = pm.project_point3(c);
+                    let rr = r / PRECIP_RANGE;
+                    !(m.bounds_radius > 0.0 && m.bounds_radius < 0.25) && lc.x.abs() <= 1.0 + rr && lc.y.abs() <= 1.0 + rr
+                });
+                if !lamp_hit && !roof_hit && hits == [false; 3] {
                     continue;
                 }
                 ranges.clear();
@@ -297,6 +311,13 @@ impl Renderer {
                         }
                     }
                 }
+                if roof_hit {
+                    for &(kind, ri, slot, mat_id, look) in ranges.iter() {
+                        let kind = if kind == PIPE_KINDS { PIPE_OPAQUE } else { kind };
+                        let (material, look) = depth_only_material(kind, mat_id, look);
+                        out[PRECIP_LIST].push(DrawItem { pipe: kind, mesh: inst.mesh as u32, range: ri, material, look, entry: inst.base + slot });
+                    }
+                }
                 for cascade in 0..3 {
                     if !hits[cascade] {
                         continue;
@@ -327,7 +348,7 @@ impl Renderer {
                 }
             }
         };
-        if active.iter().any(|a| *a) || !lamp_shadows.is_empty() {
+        if active.iter().any(|a| *a) || !lamp_shadows.is_empty() || precip_box.is_some() {
             let n = scene.instances.len();
             let parts = (n / 8192).clamp(1, self.encoding_pool.as_ref().map_or(3, |p| p.current_num_threads()) + 1);
             let chunk = n.div_ceil(parts).div_ceil(CULL_BLOCK) * CULL_BLOCK;
@@ -335,7 +356,11 @@ impl Renderer {
             let lit = |b: usize| {
                 blocks.as_ref().is_none_or(|bl| {
                     let (c, r) = bl[b];
-                    lamp_reach(c, r) || boxes.iter().enumerate().any(|(k, &(range, lvp, _))| {
+                    lamp_reach(c, r) || precip_box.is_some_and(|pm| {
+                        let lc = pm.project_point3(c);
+                        let rr = r / PRECIP_RANGE;
+                        lc.x.abs() <= 1.0 + rr && lc.y.abs() <= 1.0 + rr
+                    }) || boxes.iter().enumerate().any(|(k, &(range, lvp, _))| {
                         let lc = lvp.project_point3(c);
                         let rr = r / range;
                         active[k] && lc.x.abs() <= 1.0 + rr && lc.y.abs() <= 1.0 + rr

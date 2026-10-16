@@ -22,10 +22,23 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   `||` line between blocks gives either-or (docs/MODDING.md) [#729](https://github.com/openOMSI-org/openOMSI/issues/729).
 - Touch pedals: a rest zone at the foot of the pedals (a finger laid there presses nothing),
   a softer start of their travel, and their length in the settings [#1458](https://github.com/openOMSI-org/openOMSI/issues/1458).
-- Rain: the drops are as big and fall as fast as the rain is heavy (Marshall-Palmer drop
-  sizes, their measured fall speeds), a downpour fills the air close by, and the streaks are
-  as long as the drop's way against the eye - short and upright standing, long and slanting
-  at the windscreen while driving [#1412](https://github.com/openOMSI-org/openOMSI/issues/1412).
+- Rain, made anew: a quarter of a million drops worked out on the GPU each frame instead of
+  a few thousand sprites - a downpour is a veil of many short, fine, faint lines, not a few
+  long thick ones. Each streak is the drop's way against the eye in a seventieth of a
+  second, as wide as the drop (fainter where that is less than a pixel) and as faint as it
+  is long; the drops are as big and fall as fast as the rain is heavy (Marshall-Palmer drop
+  sizes, their measured fall speeds), upright standing, slanting at the windscreen while
+  driving [#1412](https://github.com/openOMSI-org/openOMSI/issues/1412).
+- Rain and snow stop at roofs: a map of what stands over the ground round the camera, seen
+  from above, keeps them out of every bus and car, under bridges, shelters and eaves - from
+  the outside view as well, where it rained and snowed in the saloon.
+- Snow builds up while it falls - a white cover in a quarter of an hour of a heavy snowfall,
+  an hour or two of a light one - on the roofs of the buses, the cars and the houses, the
+  verges and the ground, and thaws above zero and in the rain; the roads stay clear unless
+  the weather lays snow on them.
+- Enhanced: a wet bus mirrors the street - the water on its paint is as smooth as glass.
+- Driving off the road soils the bus: the wheels on earth, grass or gravel throw it up onto
+  the body (the dirt overlay), mud in the wet in a few minutes, dust in the dry more slowly.
 
 ### Fixes
 

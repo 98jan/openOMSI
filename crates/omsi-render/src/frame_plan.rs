@@ -468,6 +468,8 @@ pub(crate) struct ShadowRes {
     pub(crate) shadow_clear_pipeline: wgpu::RenderPipeline,
     /// What the street lamps' shadow tiles hold, kept while nothing in them changes.
     pub(crate) lamp_tiles: std::cell::Cell<passes::LampTiles>,
+    /// What stands over the ground round the camera, for the rain and the snow.
+    pub(crate) precip: passes::PrecipMap,
 }
 
 /// What the views drew in their last frames, which the next frame's culling and bundles go by.
