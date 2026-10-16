@@ -1971,6 +1971,11 @@ pub fn graphics_presets_for(mode: &str) -> [(&'static str, Value); 4] {
     })
 }
 
+/// The wet roads' reflections: `off` or `low`, else `high` (as the game reads its `puddles`).
+pub fn puddles(x: &str) -> &'static str {
+    match x.trim().to_ascii_lowercase().as_str() { "off" | "0" | "none" => "off", "low" => "low", _ => "high" }
+}
+
 /// The enhanced clouds' quality: `low`, else `high` (as the game's `settings::cloud_quality`).
 fn cloud_quality(x: &str) -> &'static str {
     if x.trim().eq_ignore_ascii_case("low") { "low" } else { "high" }
@@ -2021,6 +2026,7 @@ pub fn settings_from_text(text: Option<&str>) -> Value {
 
 pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
     let mut v = json!({ "msaa": 4, "anisotropy": 8, "ssao": true, "shadows": true, "shadow_size": 2048, "navigator": true, "ui_opacity": 0.85, "navigator_corner": "bottom-left", "boarding": "auto", "detail_textures": true, "exact_fare": true, "enhanced": false, "graphics": "vanilla_plus", "fullscreen": false, "vsync": true, "volume": 0.6, "drive_keys": "simple", "render_scale": "auto", "view_distance": "auto", "language": "ENG", "video_memory": 0, "texture_compression": true, "gpu_texture_compression": true, "chat": true, "tooltips": true, "name_tags": true, "show_fps": false, "clouds": true, "cloud_quality": "high", "rain_quality": "high", "pax_density": 1.0, "vol_ai": 1.0, "vol_scenery": 1.0, "ambient": true, "vol_ambient": 0.8, "mirror_size": 256, "doppler": true, "driver": true, "max_fps": 0, "min_obj_size": 0.013, "max_obj_dist": "auto" });
+    v["puddles"] = json!("high"); // (apart: the literal above is at the json! macro's recursion limit)
     if phone {
         for (k, d) in [("msaa", json!(2)), ("anisotropy", json!(4)), ("ssao", json!(false)), ("shadow_size", json!(1024)), ("mirror_size", json!(128)), ("max_fps", json!(60)), ("max_obj_dist", json!("900")), ("pax_density", json!(0.7)), ("navigator_corner", json!("top-center"))] {
             v[k] = d;
@@ -2070,6 +2076,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
     v["units"] = json!("metric");
     // the trees' foliage bends and sways in the weather's wind
     v["windy_trees"] = json!(true);
+    v["sim_thread"] = json!(false); // (switched in the game's Display menu, saved through this writer)
     v["mirror_hud_every_frame"] = json!(false);
     // an early timetable bus waits only at the stops the timetable times (off: at every
     // stop, as in OMSI; #1773)
@@ -2088,6 +2095,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
     v["look_smoothing_ms"] = json!(0.0);
     v["pad_steer_smooth"] = json!(120.0);
     v["pad_steer_linear"] = json!(false);
+    v["ctrl_background"] = json!(false);
     v["pad_steer_speed"] = json!(2.0);
     v["pad_deadzone"] = json!(0.08);
     v["pad_type"] = json!("auto");
@@ -2133,6 +2141,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
             "mirror_quality" => v[&k] = json!(mirror_quality(val)),
             "cloud_quality" => v[&k] = json!(cloud_quality(val)),
             "rain_quality" => v[&k] = json!(rain_quality(val)),
+            "puddles" => v[&k] = json!(puddles(val)),
             "gpu_texture_compression" => v[&k] = json!(!matches!(val.trim().to_ascii_lowercase().as_str(), "0" | "off" | "no" | "false" | "disabled")),
             "max_fps" => v[&k] = json!(val.parse::<f64>().map(|x| x as i64).unwrap_or(0)),
             "max_obj_dist" => v[&k] = if val.eq_ignore_ascii_case("auto") { json!("auto") } else { json!(val.parse::<f64>().map(|m| (m.round() as i64).to_string()).unwrap_or_else(|_| "auto".into())) },
@@ -2176,7 +2185,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
             "pad_steer_speed" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.8, 5.0)).unwrap_or(2.0)),
             "pad_deadzone" => v[&k] = json!(val.parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.0, 0.4)).unwrap_or(0.08)),
             "pad_type" => v[&k] = json!(match val.trim().to_ascii_lowercase().as_str() { "xbox" => "xbox", "ps4" => "ps4", "ps5" => "ps5", _ => "auto" }),
-            "camera_collision" | "right_stick_look" | "pad_steer_linear" | "pad_buttons" | "arrows_switch_cams" | "steer_look" | "head_tracking" | "head_tracking_invert_yaw" | "head_tracking_invert_pitch" | "head_tracking_invert_roll" | "head_tracking_invert_x" | "head_tracking_invert_y" | "head_tracking_invert_z" | "discord_status" | "voice_chat" | "launcher_rest" | "cross_platform_launcher" => v[&k] = json!(b(val)),
+            "camera_collision" | "right_stick_look" | "ctrl_background" | "pad_steer_linear" | "pad_buttons" | "arrows_switch_cams" | "steer_look" | "head_tracking" | "head_tracking_invert_yaw" | "head_tracking_invert_pitch" | "head_tracking_invert_roll" | "head_tracking_invert_x" | "head_tracking_invert_y" | "head_tracking_invert_z" | "discord_status" | "voice_chat" | "launcher_rest" | "cross_platform_launcher" => v[&k] = json!(b(val)),
             // (how much of the mip chain an LED panel is held at, 0..4; a file from before
             // it was a number says 1 or 0)
             "led_mips" => v[&k] = json!(val.trim().parse::<f64>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.0, 4.0)).unwrap_or(1.3)),
@@ -2200,6 +2209,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
             "nav_arrows" | "nav_ai" | "nav_surface" | "nav_light" | "nav_3d" | "nav_widget" | "get_up" | "time_sync" | "metar_sync" | "ui_scale_window" | "notes" | "machine_translation" | "update_check" | "update_auto" | "update_notify" | "presence" | "steering_linear" | "old_steering" | "red_steer_spd" | "ff_invert" | "ff_enabled" | "brake_hold" | "auto_clutch" | "momentary_gears" | "auto_shift" | "mouse_steering" | "mouse_right_off" | "mouse_smooth" | "mouse_hold" | "mouse_pedals" | "blinker_cancel" => v[&k] = json!(b(val)),
             "info_bar" => v[&k] = json!(b(val)),
             "perf_overlay" => v[&k] = json!(perf_overlay_mode(val)),
+            "sim_thread" => v[&k] = json!(b(val)),
             "windy_trees" | "mirror_hud_every_frame" | "ai_wait_timed_stops_only" | "pax_bad_driving" | "ambient" => v[&k] = json!(b(val)),
             "time_speed" => v[&k] = json!(val.trim_start_matches(['x', 'X']).parse::<f64>().map(|x| x.clamp(1.0, 30.0)).map(|x| if x.fract() == 0.0 { format!("{}", x as i64) } else { x.to_string() }).unwrap_or_else(|_| "1".into())),
             "language" => v[&k] = json!(language_code(val)),
@@ -2311,8 +2321,8 @@ pub fn save_settings(v: &Value) -> Result<()> {
 
 /// The settings a graphics profile holds: what the Graphics tab shows, except the machine's
 /// own (fullscreen, graphics API).
-pub const GRAPHICS_PROFILE_KEYS: [&str; 30] = [
-    "graphics", "msaa", "render_scale", "anisotropy", "shadow_size", "ssao", "shadows", "shadow_casters", "detail_textures", "night_brightness", "led_glow", "led_mips", "shadow_blobs", "reflections", "clouds", "cloud_quality", "rain_quality", "windy_trees",
+pub const GRAPHICS_PROFILE_KEYS: [&str; 31] = [
+    "graphics", "msaa", "render_scale", "anisotropy", "shadow_size", "ssao", "shadows", "shadow_casters", "detail_textures", "night_brightness", "led_glow", "led_mips", "shadow_blobs", "reflections", "clouds", "cloud_quality", "rain_quality", "puddles", "windy_trees",
     "vsync", "max_fps", "view_distance", "max_obj_dist", "min_obj_size", "mirror_size", "mirror_refresh", "mirror_quality", "mirror_hud_every_frame", "video_memory", "texture_compression", "gpu_texture_compression",
 ];
 
@@ -2543,6 +2553,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     let mut text = text;
     text.push_str(&format!("right_stick_look={}\n", b("right_stick_look", true)));
     text.push_str(&format!("pad_steer_linear={}\n", b("pad_steer_linear", false)));
+    text.push_str(&format!("ctrl_background={}\n", b("ctrl_background", false)));
     text.push_str(&format!("pad_steer_speed={}\npad_deadzone={}\npad_buttons={}\n", f("pad_steer_speed", 2.0).clamp(0.8, 5.0), f("pad_deadzone", 0.08).clamp(0.0, 0.4), b("pad_buttons", true)));
     text.push_str(&format!("pad_type={}\n", match v.get("pad_type").and_then(|x| x.as_str()).unwrap_or("auto") { t @ ("xbox" | "ps4" | "ps5") => t, _ => "auto" }));
     text.push_str(&format!("touch_door_mode={}\n", if v.get("touch_door_mode").and_then(|x| x.as_str()) == Some("direct") { "direct" } else { "standard" }));
@@ -2555,6 +2566,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("gpu_texture_compression={}\n", b("gpu_texture_compression", true)));
     text.push_str(&format!("cloud_quality={}\n", cloud_quality(v.get("cloud_quality").and_then(|x| x.as_str()).unwrap_or("high"))));
     text.push_str(&format!("rain_quality={}\n", rain_quality(v.get("rain_quality").and_then(|x| x.as_str()).unwrap_or("high"))));
+    text.push_str(&format!("puddles={}\n", puddles(v.get("puddles").and_then(|x| x.as_str()).unwrap_or("high"))));
     text.push_str(&format!("mirror_refresh={}\n", mirror_refresh(v.get("mirror_refresh").and_then(|x| x.as_str()).unwrap_or("full"))));
     text.push_str(&format!("mirror_quality={}\n", mirror_quality(v.get("mirror_quality").and_then(|x| x.as_str()).unwrap_or("standard"))));
     text.push_str(&format!("look_sens={}\nlook_smoothing_ms={}\nsteer_look_angle={}\nsteer_look_response={}\nhead_idle={}\nhead_idle_pace={}\ntime_sync={}\nmetar_sync={}\nmetar_station={}\n", f("look_sens", 1.0).clamp(0.1, 2.0), f("look_smoothing_ms", 0.0).clamp(0.0, 200.0), f("steer_look_angle", 30.0).clamp(0.0, 60.0), f("steer_look_response", 0.25).clamp(0.05, 1.0), f("head_idle", 0.0).clamp(0.0, 1.0), f("head_idle_pace", 1.0).clamp(0.5, 2.0), b("time_sync", false), b("metar_sync", false), v.get("metar_station").and_then(|x| x.as_str()).unwrap_or("").chars().filter(|c| c.is_ascii_alphabetic()).take(4).collect::<String>().to_ascii_uppercase()));
@@ -2565,6 +2577,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("triple_width_mm={}\ntriple_distance_mm={}\ntriple_bezel_mm={}\n", f("triple_width_mm", 600.0).clamp(200.0, 2000.0), f("triple_distance_mm", 650.0).clamp(200.0, 3000.0), f("triple_bezel_mm", 0.0).clamp(0.0, 100.0)));
     text.push_str(&format!("info_bar={}\nperf_overlay={}\n", b("info_bar", false), perf_overlay_mode(&v.get("perf_overlay").map(|x| x.as_str().map_or_else(|| x.to_string(), str::to_string)).unwrap_or_default())));
     text.push_str(&format!("windy_trees={}\n", b("windy_trees", true)));
+    text.push_str(&format!("sim_thread={}\n", b("sim_thread", false)));
     text.push_str(&format!("mirror_hud_every_frame={}\n", b("mirror_hud_every_frame", false)));
     text.push_str(&format!("standing_chance={}\n", n("standing_chance", 5).clamp(0, 100)));
     text.push_str(&format!("ambient={}\nvol_ambient={}\n", b("ambient", true), f("vol_ambient", 0.8).clamp(0.0, 1.0)));

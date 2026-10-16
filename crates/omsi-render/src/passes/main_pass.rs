@@ -144,7 +144,10 @@ impl Renderer {
             for g in 0..parts.saturating_sub(1) {
                 let first = g == 0;
                 let mut part = lead.take().unwrap_or_else(|| self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("main part") }));
-                self.encode_main_part(&mut part, scene, f, &mt, &main_bundles[g * per_part..((g + 1) * per_part).min(main_bundles.len())], first);
+                // (OMSI_GPU_TIMERS: the first part timed too - the sky and the first bundles;
+                // ahead of every other timed pass, it was counted nowhere)
+                let stamp = if first { pass_timer(timers.set.as_ref(), &mut timers.timed, if f.with_overlays { "main part" } else { "mirror part" }) } else { None };
+                self.encode_main_part(&mut part, scene, f, &mt, &main_bundles[g * per_part..((g + 1) * per_part).min(main_bundles.len())], first, stamp);
                 main_parts.push(part);
             }
             self.encode_main(encoder, scene, f, plan, &mt, timers);
@@ -183,7 +186,7 @@ impl Renderer {
     }
 
     /// One part of a split main pass (the first one with the sky), its bundles executed.
-    fn encode_main_part(&self, part: &mut wgpu::CommandEncoder, scene: &Scene, f: &FrameCtx, mt: &MainTargets, bundles: &[wgpu::RenderBundle], first: bool) {
+    fn encode_main_part(&self, part: &mut wgpu::CommandEncoder, scene: &Scene, f: &FrameCtx, mt: &MainTargets, bundles: &[wgpu::RenderBundle], first: bool, stamp: Option<wgpu::RenderPassTimestampWrites<'_>>) {
         let MainTargets { draw_view, depth_view, hdr, sky_pipe, sky_clear, depth_first, prefill, .. } = *mt;
         let part_colors = [
             Some(wgpu::RenderPassColorAttachment {
@@ -219,7 +222,7 @@ impl Renderer {
                 depth_ops: Some(wgpu::Operations { load: if first { depth_first } else { wgpu::LoadOp::Load }, store: wgpu::StoreOp::Store }),
                 stencil_ops: None,
             }),
-            timestamp_writes: None,
+            timestamp_writes: stamp,
             occlusion_query_set: None,
             multiview_mask: None,
         });

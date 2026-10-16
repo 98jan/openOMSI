@@ -84,7 +84,8 @@ Bottom up:
   keeps its own list of the voices playing and never waits for a block being mixed. The
   cpal stream lives on the "audio device" thread, which also follows the default output.
   The internet radio's frames come through a ring as well (`stream::StreamBuf`).
-* The sim thread (`omsi_sim::sim_thread`, `OMSI_SIM_THREAD`, off unless set): the main
+* The sim thread (`omsi_sim::sim_thread`; the `sim_thread` setting, off by default, decided
+  once as the game starts; `OMSI_SIM_THREAD=0` / `=1` over it): the main
   thread keeps the window, the input and the surface, and with the switch on the AI
   traffic's steps (`TrafficSim::advance`, one for each tick of the frame) run on a thread of
   its own while the main thread draws and presents the frame's picture; the traffic stage

@@ -381,6 +381,7 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "fps" => s.show_fps,
         "get_up" => s.get_up,
         "trip_summary" => s.trip_summary,
+        "sim_thread" => s.sim_thread,
         "full_tank" => s.full_tank,
         "time_sync" => s.time_sync,
         "metar_sync" => s.metar_sync,
@@ -427,6 +428,7 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "pad_steer_linear" => s.pad_steer_linear,
         "pad_buttons" => s.pad_buttons,
         "right_stick_look" => s.right_stick_look,
+        "ctrl_background" => s.ctrl_background,
         "arrows_switch_cams" => s.arrows_switch_cams,
         "old_steering" => s.old_steering,
         "red_steer_spd" => s.red_steer_spd,
@@ -553,6 +555,8 @@ pub(super) fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static 
             Some(("get_up", bit))
         }
         "trip_summary" => { app.settings.trip_summary = on; Some(("trip_summary", bit)) }
+        // (taken at the next start: never in the middle of a session)
+        "sim_thread" => { app.settings.sim_thread = on; Some(("sim_thread", bit)) }
         "full_tank" => { app.settings.full_tank = on; Some(("full_tank", bit)) }
         // the real-time sync: the clock takes the device's date and time at once (a host's
         // clock runs at real time while it is on, at its time speed again after)
@@ -756,6 +760,10 @@ fn toggle_set_graphics_and_controls(app: &mut App, id: &str, on: bool, bit: Stri
         "right_stick_look" => {
             app.settings.right_stick_look = on;
             Some(("right_stick_look", bit))
+        }
+        "ctrl_background" => {
+            app.settings.ctrl_background = on;
+            Some(("ctrl_background", bit))
         }
         "arrows_switch_cams" => {
             app.settings.arrows_switch_cams = on;

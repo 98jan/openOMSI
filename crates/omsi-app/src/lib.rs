@@ -436,6 +436,12 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
 /// The game for `args`, ready for its window; None when there is no window to open (a
 /// picture or a model was written instead).
 pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) -> Result<Option<App>> {
+    // the window's simulation beside the picture or inline, for the whole session (an
+    // offscreen run - a dedicated server, a picture - steps inline and never asks)
+    if args.offscreen.is_none() {
+        let sim_thread = omsi_sim::sim_thread::set_enabled(settings::Settings::load().sim_thread);
+        log::info!("sim thread: {}", if sim_thread { "the AI traffic, the people and the scenery scripts step beside the picture" } else { "off: every step on the main thread" });
+    }
     let _lan_status = lan::StatusFileGuard;
     // OMSI's tutorials: the lesson's own situation
     if let Some(n) = args.tutorial.filter(|n| (1..=4).contains(n)) {
@@ -700,6 +706,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             admin_list: None,
             list_kind: None,
             key_capture: None,
+            ctrl_add_action: false,
             menu_prev_pause: false,
             info_bar,
             timetable: false,
@@ -784,6 +791,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             both_drag: None,
             clock_hold: 0.0,
             pad_look: [false; 4],
+            pad_repeat: Vec::new(),
             pad_voice_radio: false,
             arrow_glance: false,
             headtrack: None,

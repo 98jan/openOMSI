@@ -629,6 +629,9 @@ impl Renderer {
         }
         // OMSI_GPU_TIMERS: GPU time per pass, one frame at a time
         self.collect_gpu_timers();
+        let mut pictures = self.pictures.get();
+        pictures[with_overlays as usize] += 1;
+        self.pictures.set(pictures);
         let mut timers = PassTimers {
             set: self.gpu_timers[with_overlays as usize]
                 .as_ref()

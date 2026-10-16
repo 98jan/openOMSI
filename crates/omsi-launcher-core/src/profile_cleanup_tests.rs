@@ -121,6 +121,19 @@ fn a_graphics_profile_holds_the_whole_graphics_tab() {
     assert_eq!(saved["language"], "ENG");
 }
 
+/// The wet roads' reflections are saved by the launcher, kept in graphics profiles, and
+/// high in a file that has none (as they were).
+#[test]
+fn puddles_are_saved_and_kept_in_graphics_profiles() {
+    assert_eq!(settings_from_text(None)["puddles"], "high");
+    for q in ["off", "low", "high"] {
+        let v = settings_from_text(Some(&format!("puddles={q}\n")));
+        assert_eq!(settings_from_text(Some(&settings_to_text(&v, None)))["puddles"], q);
+    }
+    assert_eq!(settings_from_text(Some("puddles=ultra"))["puddles"], "high");
+    assert!(GRAPHICS_PROFILE_KEYS.contains(&"puddles"));
+}
+
 /// The enhanced clouds' quality is saved by the launcher and kept in graphics profiles.
 #[test]
 fn cloud_quality_is_saved_and_kept_in_graphics_profiles() {

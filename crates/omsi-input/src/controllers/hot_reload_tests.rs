@@ -125,6 +125,23 @@ fn a_latching_switch_stays_in_through_the_menu_and_the_focus() {
 }
 
 #[test]
+fn a_latching_continuous_switch_stops_repeating_when_the_focus_goes() {
+    let mut cfg = DeviceCfg { name: "Test wheel".into(), buttons: vec![("retarder_up".into(), "1".into())], latching: vec![0], ..Default::default() };
+    cfg.more = vec![(0, "gear_up".into())];
+    let mut c = Controllers::with_devices(no_hardware(), vec![cfg]);
+    c.held.event(&c.cfg, "Test wheel", 0, true, &mut c.actions);
+    c.poll();
+    c.poll();
+    assert_eq!(c.repeating, ["retarder_up", "gear_up"]);
+    c.set_focus(false);
+    c.poll();
+    assert!(c.repeating.is_empty());
+    c.set_focus(true);
+    c.poll();
+    assert_eq!(c.repeating, ["retarder_up", "gear_up"]);
+}
+
+#[test]
 fn hot_reload_releases_original_held_gear_and_does_not_press_new_binding() {
     let mut held = HeldButtons::default();
     let mut cfg = vec![wheel()];

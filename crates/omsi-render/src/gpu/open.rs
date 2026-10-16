@@ -696,6 +696,7 @@ impl Renderer {
             env_heading: Default::default(),
             blend_by_origin: false,
             gpu_timers,
+            pictures: Default::default(),
             stats: Default::default(),
             counts: Default::default(),
             frame_draws: (0, 0),
