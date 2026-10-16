@@ -23,6 +23,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use crate::ws_http::{header, last_header, peek_head, read_body, read_head, refuse, REQUEST_TIME};
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{Message, WebSocket};
 
@@ -537,52 +538,17 @@ impl WsGateway {
 const ADMIN_LOCK_AFTER: usize = 5;
 const ADMIN_LOCK_WINDOW: Duration = Duration::from_secs(120);
 
-/// The rest of a request's body, up to its `Content-Length` (4 KiB at most).
-/// The longest request head read (the headers a browser and a proxy send fit well).
-const HEAD_MAX: usize = 8192;
-
-/// Read on until the head's end (`\r\n\r\n`): Err with the answer when it never comes
-/// (too long, or the connection ended first).
-fn read_head(s: &mut impl Read, request: &mut Vec<u8>) -> Result<(), &'static str> {
-    let mut buf = [0u8; 1024];
-    loop {
-        if request.windows(4).any(|w| w == b"\r\n\r\n") {
-            return Ok(());
-        }
-        if request.len() >= HEAD_MAX {
-            return Err("431 Request Header Fields Too Large");
-        }
-        match s.read(&mut buf) {
-            Ok(0) | Err(_) => return Err("400 Bad Request"),
-            Ok(n) => request.extend_from_slice(&buf[..n]),
-        }
-    }
-}
-
-fn read_body(s: &mut TcpStream, request: &mut Vec<u8>) {
-    let text = String::from_utf8_lossy(request).to_string();
-    let Some(head_end) = text.find("\r\n\r\n") else { return };
-    let want = header(&text[..head_end], "content-length").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0).min(4096);
-    let mut buf = [0u8; 1024];
-    while request.len() < head_end + 4 + want {
-        match s.read(&mut buf) {
-            Ok(0) | Err(_) => break,
-            Ok(n) => request.extend_from_slice(&buf[..n]),
-        }
-    }
-}
-
-fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
-    head.lines().skip(1).find_map(|l| l.split_once(':').filter(|(k, _)| k.trim().eq_ignore_ascii_case(name)).map(|(_, v)| v.trim()))
-}
-
 fn client_ip(head: &str, peer: Option<SocketAddr>) -> Option<std::net::IpAddr> {
     let peer = peer?;
     if !peer.ip().is_loopback() {
         return Some(peer.ip());
     }
-    header(head, "cf-connecting-ip")
-        .or_else(|| header(head, "x-forwarded-for").and_then(|v| v.rsplit(',').next()))
+    // (the address the proxy added - the last of X-Forwarded-For: a CF-Connecting-IP or an
+    // earlier address may be the client's own, passed on by a proxy on this machine; Cloudflare
+    // writes both, the same)
+    last_header(head, "x-forwarded-for")
+        .and_then(|v| v.rsplit(',').next())
+        .or_else(|| header(head, "cf-connecting-ip"))
         .map(str::trim)
         .and_then(|v| v.parse::<std::net::IpAddr>().ok())
         .filter(|ip| !ip.is_loopback())
@@ -655,9 +621,11 @@ fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: 
     let peer = stream.peer_addr().ok();
     stream.set_nonblocking(false).map_err(|e| e.to_string())?;
     stream.set_read_timeout(Some(HEAD_WAIT)).map_err(|e| e.to_string())?;
-    let mut head = [0u8; 2048];
-    let n = stream.peek(&mut head).map_err(|e| e.to_string())?;
-    let req = String::from_utf8_lossy(&head[..n]).to_string();
+    let mut first = [0u8; 1];
+    stream.peek(&mut first).map_err(|e| e.to_string())?;
+    let deadline = Instant::now() + REQUEST_TIME;
+    let req = String::from_utf8_lossy(&peek_head(&stream, deadline)).to_string();
+    stream.set_read_timeout(Some(HEAD_WAIT)).map_err(|e| e.to_string())?;
     let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
     let upgrade = req.to_ascii_lowercase().contains("upgrade: websocket");
     let client = client_ip(&req, peer);
@@ -677,8 +645,7 @@ fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: 
             Some(place) => Some(place),
             None => {
                 log::debug!("ws gateway: {source}: {MAX_ORDINARY} players and requests carried already; one more told to come back");
-                let mut s = stream;
-                let _ = s.write_all(b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 2\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                refuse(stream, "503 Service Unavailable", "Retry-After: 2\r\n");
                 return Ok(());
             }
         }
@@ -688,18 +655,17 @@ fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: 
     }
     if !upgrade {
         let mut s = stream;
-        // (the request is read off the socket before the answer: some proxies wait)
-        let got = s.read(&mut head).unwrap_or(0);
-        let mut request = head[..got].to_vec();
-        // the whole head, however it came in pieces: one cut short would lose the headers
-        // past the cut - a tunnel's or a proxy's marks, the Authorization
-        if let Err(status) = read_head(&mut s, &mut request) {
-            let _ = s.write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes());
+        // (the request is read off the socket before the answer: some proxies wait) - the
+        // whole head, however it came in pieces: one cut short would lose the headers past
+        // the cut - a tunnel's or a proxy's marks, the Authorization
+        let mut request = Vec::new();
+        if let Err(status) = read_head(&mut s, &mut request, deadline) {
+            refuse(s, status, "");
             return Ok(());
         }
         // a dedicated server's administration (`ws_api`): its own answer and headers
         if crate::ws_api::wants(&path) {
-            read_body(&mut s, &mut request);
+            read_body(&mut s, &mut request, deadline);
             let r = crate::ws_api::answer(&request, peer);
             let mut hdr = format!("HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n", r.status, r.content_type, r.body.len());
             for (k, v) in &r.headers {
@@ -712,7 +678,7 @@ fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: 
         }
         let (status, ctype, body): (&str, &str, Vec<u8>) = match path.as_str() {
             "/admin" => {
-                read_body(&mut s, &mut request);
+                read_body(&mut s, &mut request, deadline);
                 let (status, text) = local_admin(&request, peer, info);
                 (status, "text/plain; charset=utf-8", text.into_bytes())
             }
@@ -1113,7 +1079,11 @@ mod tests {
         let ip = |s: &str| Some(s.parse::<std::net::IpAddr>().unwrap());
         assert_eq!(client_ip(&req("X-Forwarded-For: 10.0.0.1, 198.51.100.4\r\n"), Some(local)), ip("198.51.100.4"));
         assert_eq!(client_ip(&req("X-Real-IP: 2001:db8::1\r\n"), Some(local)), None);
-        assert_eq!(client_ip(&req("CF-Connecting-IP: 192.0.2.9\r\nX-Forwarded-For: 198.51.100.4\r\n"), Some(local)), ip("192.0.2.9"));
+        // (the proxy's own address, the last X-Forwarded-For: a CF-Connecting-IP through a
+        // proxy on this machine may be the client's own)
+        assert_eq!(client_ip(&req("CF-Connecting-IP: 192.0.2.9\r\nX-Forwarded-For: 198.51.100.4\r\n"), Some(local)), ip("198.51.100.4"));
+        assert_eq!(client_ip(&req("X-Forwarded-For: 192.0.2.9\r\nX-Forwarded-For: 198.51.100.4\r\n"), Some(local)), ip("198.51.100.4"));
+        assert_eq!(client_ip(&req("CF-Connecting-IP: 192.0.2.9\r\n"), Some(local)), ip("192.0.2.9"));
         // no proxy: the peer; a header from the internet is not believed
         assert_eq!(client_ip(&req(""), Some(local)), None);
         assert_eq!(client_ip(&req("X-Forwarded-For: 127.0.0.1\r\n"), Some(local)), None);
@@ -1194,9 +1164,26 @@ mod tests {
         let out = ask(&[start.into_bytes(), b"Content-Length: 6\r\n".to_vec(), b"\r\nsay hi".to_vec()]);
         assert!(out.starts_with("HTTP/1.1 202"), "{out}");
         // past the cap
-        let out = ask(&[format!("GET /status HTTP/1.1\r\nX-Pad: {}\r\n\r\n", "a".repeat(HEAD_MAX)).into_bytes()]);
+        let out = ask(&[format!("GET /status HTTP/1.1\r\nX-Pad: {}\r\n\r\n", "a".repeat(crate::ws_http::HEAD_MAX)).into_bytes()]);
         assert!(out.starts_with("HTTP/1.1 431"), "{out}");
+        // who the client is, from the whole head: a proxy's mark past a padded first part
+        let pad = format!("X-Pad: {}\r\n", "a".repeat(3000));
+        let peeked = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let mut c = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+            let (srv, _) = listener.accept().unwrap();
+            c.write_all(format!("GET /ws HTTP/1.1\r\nHost: x\r\n{pad}").as_bytes()).unwrap();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(60));
+                let _ = c.write_all(b"X-Forwarded-For: 198.51.100.4\r\nUpgrade: websocket\r\n\r\n");
+                std::thread::sleep(Duration::from_millis(500));
+            });
+            String::from_utf8_lossy(&peek_head(&srv, Instant::now() + Duration::from_secs(5))).to_string()
+        };
+        assert!(peeked.contains("Upgrade: websocket"), "{}", peeked.len());
+        assert_eq!(client_ip(&peeked, Some(SocketAddr::from(([127, 0, 0, 1], 1)))), Some("198.51.100.4".parse().unwrap()));
     }
+
 
     #[test]
     fn players_list() {

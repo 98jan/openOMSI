@@ -92,6 +92,7 @@ pub mod ai_context;
 pub mod sounds;
 pub mod ws;
 pub mod ws_api;
+mod ws_http;
 pub mod tunnel;
 pub mod official;
 pub mod hostkey;

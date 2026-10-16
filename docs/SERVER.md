@@ -294,8 +294,15 @@ a browser).
   from is believed of them alone, and only in the header they write: `admin_proxy_header`, the
   last address of `X-Forwarded-For` by default (Caddy, nginx, Cloudflare), or `x-real-ip`, or
   `cf-connecting-ip` - the other headers may be the client's own, passed on. That address counts
-  its wrong passwords and names it in the records; a request the proxy names nobody for is
-  refused. A plain HTTP request from another machine is refused. Mind
+  its wrong passwords and names it in the records; a request the proxy names nobody for, or
+  names this machine for, is refused. Which header to choose:
+  * Caddy: the default (it adds the client to `X-Forwarded-For`).
+  * nginx: either `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` with the
+    default, or `proxy_set_header X-Real-IP $remote_addr;` with `admin_proxy_header =
+    x-real-ip` - nginx passes the client's own `X-Forwarded-For` on unchanged otherwise.
+  * Cloudflare's proxy (the orange cloud) in front of your own proxy: `cf-connecting-ip` - the
+    last `X-Forwarded-For` address is then Cloudflare's, and every client would share a few
+    addresses for the locks. A plain HTTP request from another machine is refused. Mind
   that with `tunnel = 1` the local cloudflared is such a proxy: the panel is then on the public
   tunnel address, guarded by the passwords alone. A proxy of your own (Caddy, nginx with a
   certificate) in front of `127.0.0.1:<web_port>` is the safer way; it must not pass `/admin`

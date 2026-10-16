@@ -164,8 +164,9 @@ fn error(status: &'static str, msg: impl Into<String>) -> Response {
 }
 
 /// Where a request may come from, and from whom it says it comes: the source to count wrong
-/// passwords by and to name in the records - or the answer that turns it away.
-fn admitted(req: &Request, cfg: &WebCfg) -> Result<IpAddr, Response> {
+/// passwords by and to name in the records, and whether it came straight from this machine
+/// (its own peer, through no proxy) - or the answer that turns it away.
+fn admitted(req: &Request, cfg: &WebCfg) -> Result<(IpAddr, bool), Response> {
     let Some(peer) = req.peer else { return Err(error("403 Forbidden", "no peer address")) };
     let proxied = ["cf-connecting-ip", "cf-ray", "x-forwarded-for", "forwarded", "x-real-ip", "x-forwarded-proto"].iter().any(|h| req.header(h).is_some());
     match cfg.mode {
@@ -173,7 +174,7 @@ fn admitted(req: &Request, cfg: &WebCfg) -> Result<IpAddr, Response> {
         // (a page of another site whose name was turned to this machine - DNS rebinding -
         // still names its own site)
         _ if peer.ip().is_loopback() && !proxied && !local_host(req.header("host").unwrap_or("")) => Err(error("403 Forbidden", "reach the administration as 127.0.0.1 or localhost on this machine")),
-        _ if peer.ip().is_loopback() && !proxied => Ok(peer.ip()),
+        _ if peer.ip().is_loopback() && !proxied => Ok((peer.ip(), true)),
         WebMode::Local => Err(error("403 Forbidden", "the administration is reached from the server's own machine only (admin_web = local), not through a tunnel or a proxy")),
         WebMode::Remote => {
             if !cfg.trusted_proxies.contains(&peer.ip()) {
@@ -189,7 +190,13 @@ fn admitted(req: &Request, cfg: &WebCfg) -> Result<IpAddr, Response> {
                 ProxyHeader::RealIp => req.last_header("x-real-ip"),
                 ProxyHeader::CfConnectingIp => req.last_header("cf-connecting-ip"),
             };
-            said.and_then(|v| v.trim().parse::<IpAddr>().ok()).ok_or_else(|| error("403 Forbidden", "the proxy did not say whose request it is (admin_proxy_header)"))
+            let said = said.and_then(|v| v.trim().parse::<IpAddr>().ok()).ok_or_else(|| error("403 Forbidden", "the proxy did not say whose request it is (admin_proxy_header)"))?;
+            // (this machine comes straight, never through the proxy: a proxy saying so passes
+            // on what its client wrote - a tunnel below HTTP, a proxy that adds no address)
+            if said.is_loopback() || said.is_unspecified() {
+                return Err(error("403 Forbidden", "a request through the proxy that says it comes from this machine"));
+            }
+            Ok((said, false))
         }
     }
 }
@@ -260,7 +267,7 @@ pub fn handle(hub: &Hub, cfg: &WebCfg, req: &Request) -> Option<Response> {
     if !req.path.starts_with("/api/admin/") && req.path != "/api/admin" && !panel {
         return None;
     }
-    let source = match admitted(req, cfg) {
+    let (source, direct) = match admitted(req, cfg) {
         Ok(s) => s,
         Err(r) => return Some(r),
     };
@@ -279,7 +286,7 @@ pub fn handle(hub: &Hub, cfg: &WebCfg, req: &Request) -> Option<Response> {
     }
     let body: Value = if post { serde_json::from_slice(req.body).unwrap_or(Value::Null) } else { Value::Null };
     Some(match (req.method, req.path) {
-        ("POST", "/api/admin/login") => login(hub, source, &body),
+        ("POST", "/api/admin/login") => login(hub, source, direct, &body),
         ("POST", "/api/admin/logout") => {
             if let Some(t) = bearer(req) {
                 let info = hub.auth().check(t, Instant::now());
@@ -302,9 +309,9 @@ pub fn handle(hub: &Hub, cfg: &WebCfg, req: &Request) -> Option<Response> {
     })
 }
 
-fn login(hub: &Hub, source: IpAddr, body: &Value) -> Response {
+fn login(hub: &Hub, source: IpAddr, direct: bool, body: &Value) -> Response {
     let password = body.get("password").and_then(Value::as_str).unwrap_or("");
-    let r = hub.auth().login(password, source, Instant::now());
+    let r = hub.auth().login_from(password, source, direct, Instant::now());
     match r {
         Ok((token, info)) => {
             hub.note(&info.actor, Some(info.role), "login", "ok", "web");
@@ -518,6 +525,27 @@ mod tests {
         assert_eq!(ProxyHeader::parse("CF-Connecting-IP"), Some(ProxyHeader::CfConnectingIp));
         assert_eq!(ProxyHeader::parse(""), Some(ProxyHeader::ForwardedFor));
         assert_eq!(ProxyHeader::parse("forwarded"), None);
+    }
+
+    /// Through the proxy no request comes from this machine: one that says so (a TCP tunnel,
+    /// a proxy that adds no address, the client writing the headers) is refused, so a new
+    /// loopback address on each try neither has its own count nor slips past the lock for
+    /// everybody - which keeps applying to all but this machine's own direct requests.
+    #[test]
+    fn a_proxy_cannot_say_this_machine() {
+        let h = hub();
+        let cfg = WebCfg { mode: WebMode::Remote, ..WebCfg::default() };
+        let pw = |p: &str| R::post("/api/admin/login", json!({ "password": p })).with("X-Forwarded-Proto: https");
+        for said in ["127.0.0.1", "127.9.8.7", "::1", "0.0.0.0"] {
+            assert_eq!(pw("admin secret").with(&format!("X-Forwarded-For: {said}")).send(&h, &cfg).0, "403 Forbidden", "{said}");
+        }
+        // thirty wrong passwords from afar lock the door for everybody through the proxy ...
+        for n in 0..30 {
+            let _ = pw("nope").with(&format!("X-Forwarded-For: 198.51.100.{n}")).send(&h, &cfg);
+        }
+        assert_eq!(pw("admin secret").with("X-Forwarded-For: 203.0.113.50").send(&h, &cfg).0, "429 Too Many Requests");
+        // ... and leave the operator's own direct login alone
+        assert_eq!(R::post("/api/admin/login", json!({ "password": "admin secret" })).send(&h, &cfg).0, "200 OK");
     }
 
     /// A page of another site whose name was turned to this machine (DNS rebinding) still

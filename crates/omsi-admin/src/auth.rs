@@ -148,9 +148,10 @@ impl Auth {
     }
 
     /// The door's lock for `source`: seconds until it opens again, and which lock (whose, and
-    /// the wrong password that began it). The lock for everybody leaves this machine's own
-    /// requests alone: a flood from afar cannot keep the operator out of their own panel.
-    fn locked(&mut self, source: IpAddr, now: Instant) -> Option<(u64, Option<IpAddr>, Instant)> {
+    /// the wrong password that began it). The lock for everybody leaves a request straight
+    /// from this machine alone (`direct`: its own peer, through no proxy): a flood from afar
+    /// cannot keep the operator out of their own panel.
+    fn locked(&mut self, source: IpAddr, direct: bool, now: Instant) -> Option<(u64, Option<IpAddr>, Instant)> {
         let window = self.cfg.window;
         let keep = |v: &mut Vec<Instant>| v.retain(|t| now.saturating_duration_since(*t) < window);
         keep(&mut self.all_fails);
@@ -159,7 +160,7 @@ impl Auth {
             !v.is_empty()
         });
         let wait = |v: &[Instant], whose: Option<IpAddr>| v.first().map(|t| (window.saturating_sub(now.saturating_duration_since(*t)).as_secs().max(1), whose, *t));
-        if self.all_fails.len() >= self.cfg.overall && !source.is_loopback() {
+        if self.all_fails.len() >= self.cfg.overall && !direct {
             return wait(&self.all_fails, None);
         }
         match self.fails.get(&source) {
@@ -170,10 +171,15 @@ impl Auth {
 
     /// A password for a session: its token (to give the client once) and what it may do.
     pub fn login(&mut self, password: &str, source: IpAddr, now: Instant) -> Result<(String, SessionInfo), LoginError> {
+        self.login_from(password, source, false, now)
+    }
+
+    /// `login`, for a request that came straight from this machine (`direct`) or not.
+    pub fn login_from(&mut self, password: &str, source: IpAddr, direct: bool, now: Instant) -> Result<(String, SessionInfo), LoginError> {
         if !self.enabled() {
             return Err(LoginError::Disabled);
         }
-        if let Some((wait, whose, began)) = self.locked(source, now) {
+        if let Some((wait, whose, began)) = self.locked(source, direct, now) {
             if self.told.len() >= 1024 {
                 self.told.clear();
             }
@@ -347,12 +353,14 @@ mod tests {
         assert!(matches!(a.login("admin-secret", ip(201), now), Err(LoginError::Locked { first: false, .. })));
         // but not for this machine itself: a flood from afar keeps no operator out
         let here = IpAddr::from([127, 0, 0, 1]);
-        assert!(a.login("admin-secret", here, now).is_ok());
+        assert!(a.login_from("admin-secret", here, true, now).is_ok());
+        // (a loopback address said by a proxy is not this machine: locked like the rest)
+        assert!(matches!(a.login("admin-secret", here, now), Err(LoginError::Locked { .. })));
         // (its own wrong passwords still lock it)
         for _ in 0..5 {
-            let _ = a.login("nope", here, now);
+            let _ = a.login_from("nope", here, true, now);
         }
-        assert!(matches!(a.login("admin-secret", here, now), Err(LoginError::Locked { .. })));
+        assert!(matches!(a.login_from("admin-secret", here, true, now), Err(LoginError::Locked { .. })));
         // a new lock is told of again
         let later = now + Duration::from_secs(121);
         for _ in 0..5 {
