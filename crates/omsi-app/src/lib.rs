@@ -67,7 +67,7 @@ use omsi_scene::lights;
 mod launcher;
 mod menu;
 mod mirror_hud;
-mod navigator;
+use omsi_navigator as navigator;
 mod vr_navigator;
 use omsi_scene::money;
 mod radio;

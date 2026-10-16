@@ -680,7 +680,7 @@ impl Navigator {
         ui.text_in(&mut self.atlas, &self.fonts, &title, 15.0 * s, Weight::Bold, Rect::new(x, head.y + 8.0 * s, head.right() - x - 12.0 * s, 24.0 * s), Align::Left, pal.card_text);
         let sub = match f.stops.first() {
             Some(st) => {
-                let d = self.next_dist.map(|d| crate::units::Units::now().distance(d)).unwrap_or_default();
+                let d = self.next_dist.map(|d| omsi_ui::units::Units::now().distance(d)).unwrap_or_default();
                 format!("{}  ·  {}  ·  {:02}:{:02}", st.name.trim(), d, (st.arrival / 3600.0) as i32 % 24, ((st.arrival % 3600.0) / 60.0) as i32)
             }
             None => self.street_here.clone().unwrap_or_default(),
@@ -778,7 +778,7 @@ impl Navigator {
         let nice = [5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0];
         let metres = nice.iter().copied().find(|m| m / self.city.mpp > 60.0 * s as f64).unwrap_or(5000.0);
         let len = (metres / self.city.mpp) as f32;
-        let units = crate::units::Units::now();
+        let units = omsi_ui::units::Units::now();
         let label = units.distance(metres);
         let lw = self.fonts.width(&label, 11.5 * s, Weight::Medium);
         let card = Rect::new(pad, h - pad - 26.0 * s, len + lw + 30.0 * s, 26.0 * s);

@@ -42,3 +42,24 @@ pub const ROW: f32 = 36.0;
 pub const GAP: f32 = 12.0;
 /// Width of the left rail (points).
 pub const RAIL_W: f32 = 236.0;
+
+/// How strongly the interface's backgrounds are drawn for the opacity setting
+/// (the game's `ui_opacity`): 1 at its default of 85 %, as designed; lower, the picture shows
+/// through them (never less than 0.3), higher a little darker. The texts stay solid.
+pub fn backdrop(opacity: f32) -> f32 {
+    (opacity / 0.85).clamp(0.3, 1.3)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The opacity's default is the design; below it the backgrounds fade, never quite away.
+    #[test]
+    fn backgrounds_follow_the_opacity_setting() {
+        assert_eq!(backdrop(0.85), 1.0);
+        assert!((backdrop(0.425) - 0.5).abs() < 1e-6);
+        assert_eq!(backdrop(0.2), 0.3);
+        assert!(backdrop(1.0) > 1.0);
+    }
+}

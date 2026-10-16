@@ -538,5 +538,5 @@ pub(crate) fn push_mirror_hud(
 ) {
     let start = scene.overlays.len();
     hud.push(scene, world, viewport[2], viewport[3], cursor);
-    crate::ui::shift_overlays(scene, start, viewport[0]);
+    scene.shift_overlays(start, viewport[0]);
 }

@@ -270,7 +270,8 @@ impl App {
                 (None, None) => return,
             };
             let frame = navigator::NavFrame {
-                traffic: self.session.traffic.as_ref(),
+                traffic: self.session.traffic.as_deref(),
+                touch: crate::platform::touch_controls(),
                 players: self.net.lan.as_ref().map(|l| crate::lan::nav_players(&self.net.remotes, l.my_id)).unwrap_or_default(),
                 bus: at,
                 heading,

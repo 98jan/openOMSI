@@ -226,12 +226,7 @@ pub fn size_factor(height_px: f32, dpi: f32, size: f32, window: bool) -> f32 {
     grown * size
 }
 
-/// How strongly the interface's backgrounds are drawn for the opacity setting
-/// (`Settings::ui_opacity`): 1 at its default of 85 %, as designed; lower, the picture shows
-/// through them (never less than 0.3), higher a little darker. The texts stay solid.
-pub fn backdrop(opacity: f32) -> f32 {
-    (opacity / 0.85).clamp(0.3, 1.3)
-}
+pub use omsi_ui::theme::backdrop;
 
 /// Which menu is open: its layout follows from it.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
@@ -463,13 +458,6 @@ pub(crate) fn info_rows(line: &str, room: f32, width: impl Fn(&str) -> f32) -> V
     rows
 }
 
-pub(crate) fn shift_overlays(scene: &mut Scene, start: usize, x: f32) {
-    for (_, rect) in &mut scene.overlays[start..] {
-        rect[0] += x;
-        rect[2] += x;
-    }
-}
-
 impl Ui {
     /// Lay out at panel resolution, then move both pixels and mouse targets to
     /// that panel's position in the spanning window.
@@ -477,7 +465,7 @@ impl Ui {
         self.shift_hitboxes(-self.origin_x);
         let start = scene.overlays.len();
         self.draw(r, scene, f, dt);
-        shift_overlays(scene, start, origin_x);
+        scene.shift_overlays(start, origin_x);
         self.shift_hitboxes(origin_x);
         self.origin_x = origin_x;
     }
@@ -1697,15 +1685,6 @@ mod tests {
         assert_eq!(outline_for([20, 20, 20, 0], 0.47), 0);
         // (texts with an outline of their own keep it)
         assert_eq!(outline_for([255, 255, 255, 235], 0.47), 235);
-    }
-
-    /// The opacity's default is the design; below it the backgrounds fade, never quite away.
-    #[test]
-    fn backgrounds_follow_the_opacity_setting() {
-        assert_eq!(backdrop(0.85), 1.0);
-        assert!((backdrop(0.425) - 0.5).abs() < 1e-6);
-        assert_eq!(backdrop(0.2), 0.3);
-        assert!(backdrop(1.0) > 1.0);
     }
 
     #[test]
