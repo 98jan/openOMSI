@@ -40,7 +40,7 @@ struct TypeInfo {
 /// Cells of the ground's class grid per tile edge (some 4.7 m on a 300 m tile).
 const LAND_CELLS: usize = 64;
 /// Cell of a house's footprint raster (m).
-const HOUSE_CELL: f32 = 0.5;
+const HOUSE_CELL: f32 = 0.4;
 
 fn has_any(name: &str, keys: &[&str]) -> bool {
     keys.iter().any(|k| name.contains(k))
@@ -282,7 +282,7 @@ fn type_info(root: &Path, file: &str) -> Option<TypeInfo> {
     }
     let rings: Vec<Vec<Vec2>> = layers::trace_cells(&cells, w, h)
         .into_iter()
-        .map(|r| layers::simplify_ring(&r, 0.75).into_iter().map(|p| org + p * HOUSE_CELL).collect::<Vec<Vec2>>())
+        .map(|r| layers::simplify_ring(&r, 1.3).into_iter().map(|p| org + p * HOUSE_CELL).collect::<Vec<Vec2>>())
         .filter(|r: &Vec<Vec2>| r.len() >= 3 && layers::area2(r).abs() * 0.5 >= 4.0)
         .collect();
     if rings.is_empty() {
@@ -759,6 +759,8 @@ mod tests {
         for n in ["Hoher Steinweg", "Moritzstr", "Falkenseer Chaussee", "Hauptstraße", "Station Road", "ul. Piotrkowska", "Rue de Rivoli", "Westerwaldstraße", "улица Ленина"] {
             assert!(crate::street_name_of(n).is_some(), "{n}");
         }
+        assert_eq!(crate::clean_sign_text("F_Hamburger Str"), "Hamburger Str");
+        assert_eq!(crate::street_name_of("B_Moritzstr").as_deref(), Some("Moritzstr"));
         for n in ["U Rathaus Spandau", "Heerstr/Wilhelmstr", "S+U Bf. Zoo", "Am Omnibushof", "Kino", "Maxim-Kolbe"] {
             assert!(crate::street_name_of(n).is_none(), "{n}");
         }

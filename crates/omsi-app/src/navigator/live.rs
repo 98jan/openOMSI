@@ -76,8 +76,17 @@ fn trip_path(net: &Network, lanes: &[usize], stops: &[Option<DVec3>]) -> Option<
                 break;
             }
         }
+        // (a stop the route does not pass: the route is not this trip's, or the map lacks it -
+        // the vehicle would run where it never goes, as the airport bus out over the fields)
+        if best.0 > 60.0 {
+            return None;
+        }
         from = best.1;
         out.push(along[best.1] + (along[best.1 + 1] - along[best.1]) * best.2);
+    }
+    // (and a route that knows none of its stops' places says nothing either)
+    if stops.iter().all(|s| s.is_none()) {
+        return None;
     }
     let rail = lanes.first().and_then(|&l| net.lanes.get(l)).is_some_and(|l| l.kind == LaneKind::Rail);
     Some(TripPath { pts, along, stops: out, rail })
@@ -101,11 +110,19 @@ impl Navigator {
         }
         self.live_t = 0.5;
         let Some(net) = self.global.clone() else { return };
+        // the departures on the road, looked for every few seconds (a day has thousands)
+        self.live_list_t -= 0.5;
+        if self.live_list_t <= 0.0 {
+            self.live_list_t = 5.0;
+            self.live_list = sch.upcoming(now, 30.0);
+            let keep: hashbrown::HashSet<usize> = self.live_list.iter().copied().collect();
+            self.live_tt.retain(|k, _| keep.contains(k));
+        }
         let mut out = Vec::new();
         let mut made = 0;
-        for i in sch.upcoming(now, 0.0) {
+        for i in self.live_list.clone() {
             let ti = sch.trip_index(i);
-            let tt = sch.ai_timetable(i);
+            let tt = self.live_tt.entry(i).or_insert_with(|| std::sync::Arc::new(sch.ai_timetable(i))).clone();
             let (Some(first), Some(last)) = (tt.stops.first(), tt.stops.last()) else { continue };
             // (on the road from a minute before its first departure until it arrives)
             if now < first.3 as f64 - 60.0 || now > last.2 as f64 + 30.0 {

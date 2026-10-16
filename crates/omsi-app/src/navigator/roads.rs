@@ -390,6 +390,39 @@ pub(super) fn build_route(p: &mut Painter, net: &Network, lanes: &[usize], ancho
                 pts.push(rel(*q));
             }
         }
+        // a change of lane (the lane shown beside the last one): a smooth curve over to the
+        // new lane rather than a step sideways at the junction of the two
+        let mut skip_arrows = 0.0f32;
+        if let Some(prev) = runs.last().map(|r| &r.0).filter(|r| r.len() >= 2) {
+            let p0 = prev[prev.len() - 1];
+            if pts.first().is_some_and(|q| (*q - p0).truncate().length() > 0.8) {
+                let t0 = (p0 - prev[prev.len() - 2]).truncate().normalize_or_zero();
+                let blend = (lane.length() * 0.6).min(28.0);
+                let mut acc = 0.0;
+                let mut cut = pts.len() - 1;
+                for i in 1..pts.len() {
+                    acc += (pts[i] - pts[i - 1]).truncate().length();
+                    if acc >= blend {
+                        cut = i;
+                        break;
+                    }
+                }
+                let p1 = pts[cut];
+                let t1 = if cut + 1 < pts.len() { (pts[cut + 1] - p1).truncate().normalize_or_zero() } else { (p1 - pts[cut.saturating_sub(1)]).truncate().normalize_or_zero() };
+                let l = (p1 - p0).truncate().length();
+                let (c0, c1) = (p0 + (t0 * l / 3.0).extend(0.0), p1 - (t1 * l / 3.0).extend(0.0));
+                let mut curve: Vec<Vec3> = (1..=10)
+                    .map(|i| {
+                        let t = i as f32 / 10.0;
+                        let u = 1.0 - t;
+                        p0 * (u * u * u) + c0 * (3.0 * u * u * t) + c1 * (3.0 * u * t * t) + p1 * (t * t * t)
+                    })
+                    .collect();
+                curve.extend_from_slice(&pts[cut + 1..]);
+                pts = curve;
+                skip_arrows = blend;
+            }
+        }
         let lv = level(jam.get(&route_l).copied().unwrap_or(0.0));
         let w = lane.width.max(2.6);
         match runs.last_mut() {
@@ -414,7 +447,7 @@ pub(super) fn build_route(p: &mut Painter, net: &Network, lanes: &[usize], ancho
                 let step = len / n;
                 for i in 0..n as usize {
                     let at = step * (i as f32 + 0.5);
-                    if at > from + 4.0 && total + at - from < reach {
+                    if at > from + 4.0 && at > skip_arrows && total + at - from < reach {
                         let (q, h) = lane.at(at);
                         arrows.push((q, h, lv, w));
                     }
@@ -444,8 +477,8 @@ pub(super) fn build_route(p: &mut Painter, net: &Network, lanes: &[usize], ancho
         let hr = h.to_radians();
         let d = Vec2::new(hr.sin(), hr.cos());
         let n = Vec2::new(-d.y, d.x);
-        let (tip, bl, br) = (d * 0.42, -d * 0.38 + n * 0.62, -d * 0.38 - n * 0.62);
-        let t = -d * 0.3;
+        let (tip, bl, br) = (d * 0.42, -d * 0.36 + n * 0.6, -d * 0.36 - n * 0.6);
+        let t = -d * 0.4;
         let (sm, spx) = ((w + style.extra_m) * 0.5 * 0.8, style.min_px * 0.5 * 1.05);
         let c = Color::rgba(255, 255, 255, 0.92);
         p.world_shape(rel(q), &[tip, bl, bl + t, tip + t], sm, spx, c);

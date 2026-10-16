@@ -637,8 +637,8 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
                 };
                 // street name signs carry the street's name as their text
                 if is_street_sign(&o.file) {
-                    if let Some(name) = o.extra.first().map(|t| t.trim()).filter(|t| t.chars().filter(|c| c.is_alphabetic()).count() >= 3) {
-                        signs.push((DVec3::new(x, y, o.pos[2] + ground()), o.rot[0], name.to_string()));
+                    if let Some(name) = o.extra.first().map(|t| clean_sign_text(t)).filter(|t| t.chars().filter(|c| c.is_alphabetic()).count() >= 3) {
+                        signs.push((DVec3::new(x, y, o.pos[2] + ground()), o.rot[0], name));
                     }
                 }
                 let Some(sco) = sco_of(&o.file) else {
@@ -716,11 +716,24 @@ pub struct NavigationMap {
     pub names: Vec<(DVec3, String)>,
 }
 
+/// A sign's text without the codes the sign's script reads off it: Berlin's plates write
+/// "F_Hamburger Str" (the `F_` picks the plate's face), others an underscore for a space.
+pub fn clean_sign_text(text: &str) -> String {
+    let t = text.trim();
+    let mut c = t.chars();
+    let t = match (c.next(), c.next()) {
+        (Some(a), Some('_')) if a.is_ascii_alphabetic() => &t[2..],
+        _ => t,
+    };
+    t.replace('_', " ").split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// A text that reads as a street's name, cleaned (a stop's "U Rathaus Spandau" is no street,
 /// "Heerstr/Wilhelmstr" names a crossing, "S+U Bf. Zoo" a station): the words maps write
 /// streets with, in the languages OMSI maps are made in.
 pub fn street_name_of(text: &str) -> Option<String> {
-    let t = text.trim().trim_matches(|c: char| c == '"' || c == '\'');
+    let cleaned = clean_sign_text(text);
+    let t = cleaned.trim_matches(|c: char| c == '"' || c == '\'');
     if t.contains('/') || t.contains('|') || t.chars().filter(|c| c.is_alphabetic()).count() < 4 || t.chars().count() > 48 {
         return None;
     }

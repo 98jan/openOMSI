@@ -14,7 +14,12 @@ pub(crate) struct MapData {
     cells: HashMap<(i32, i32), Cell>,
     /// Lines with their boxes (they run across many cells).
     lines: Vec<(Vec2, Vec2, usize)>,
+    /// The 2 m cells a carriageway, a yard or a car park covers.
+    paved_cells: hashbrown::HashSet<(i32, i32)>,
 }
+
+/// Cell of `MapData::paved_cells` (m).
+const PAVED_CELL: f32 = 2.0;
 
 #[derive(Default)]
 struct Cell {
@@ -73,7 +78,56 @@ impl MapData {
                 (lo, hi, i)
             })
             .collect();
-        MapData { layers, cells, lines }
+        let mut paved_cells = hashbrown::HashSet::new();
+        for class in [layers::PAVE_ROAD, layers::PAVE_AREA] {
+            for t in layers.paved[class].chunks_exact(3) {
+                let lo = t[0].min(t[1]).min(t[2]);
+                let hi = t[0].max(t[1]).max(t[2]);
+                let a = (t[1] - t[0]).perp_dot(t[2] - t[0]);
+                if a.abs() < 1e-3 {
+                    continue;
+                }
+                let (x0, y0) = ((lo.x / PAVED_CELL).floor() as i32, (lo.y / PAVED_CELL).floor() as i32);
+                let (x1, y1) = ((hi.x / PAVED_CELL).floor() as i32, (hi.y / PAVED_CELL).floor() as i32);
+                if (x1 - x0) as i64 * (y1 - y0) as i64 > 40_000 {
+                    continue;
+                }
+                for y in y0..=y1 {
+                    for x in x0..=x1 {
+                        let q = Vec2::new((x as f32 + 0.5) * PAVED_CELL, (y as f32 + 0.5) * PAVED_CELL);
+                        let sgn = a.signum();
+                        let e = |u: Vec2, v: Vec2| (v - u).perp_dot(q - u) * sgn >= -PAVED_CELL;
+                        if e(t[0], t[1]) && e(t[1], t[2]) && e(t[2], t[0]) {
+                            paved_cells.insert((x, y));
+                        }
+                    }
+                }
+            }
+        }
+        MapData { layers, cells, lines, paved_cells }
+    }
+
+    /// The map's paving lies under most of `road` (its middle sampled every 4 m): the road is
+    /// drawn as its paving, and a path across a junction or a median is no road of its own.
+    pub fn covers(&self, road: &MapRoad) -> bool {
+        let o = self.layers.origin;
+        let (mut n, mut hit, mut len) = (0u32, 0u32, 0.0f64);
+        for ab in road.points.windows(2) {
+            let (a, b) = (ab[0].truncate() - o, ab[1].truncate() - o);
+            let d = (b - a).length();
+            len += d;
+            let k = (d / 4.0).ceil().max(1.0) as usize;
+            for i in 0..k {
+                let q = a.lerp(b, (i as f64 + 0.5) / k as f64).as_vec2();
+                n += 1;
+                if self.paved_cells.contains(&((q.x / PAVED_CELL).floor() as i32, (q.y / PAVED_CELL).floor() as i32)) {
+                    hit += 1;
+                }
+            }
+        }
+        // (a short piece - a turn across a junction - counts as covered sooner)
+        let need = if len < 60.0 { 0.35 } else { 0.6 };
+        n > 0 && hit as f64 >= n as f64 * need
     }
 
     /// The cells within `r` metres of `c` (layer coordinates).
@@ -122,8 +176,7 @@ impl MapData {
                 for &i in &cell.trees {
                     let t = self.layers.trees[i as usize];
                     let q = v(Vec2::new(t[0], t[1]));
-                    p.world_disc(q, t[2] * 0.95 + 0.35, 0.0, pal.tree_edge);
-                    p.world_disc(q, t[2] * 0.95, 0.0, pal.tree);
+                    crown(p, q, t[2] * 0.95, pal.tree, pal.tree_edge);
                 }
             }
         }
@@ -189,57 +242,36 @@ impl MapData {
         }
     }
 
-    /// The houses within `radius` of `centre`, relative to `anchor`, `height` times as tall as
-    /// they are (0: flat roofs from above, the city map zoomed out): shadows first, then walls
-    /// lit by which way they face, then roofs with a fine edge. Into `p` for a depth-tested layer.
-    pub fn build_houses(&self, p: &mut Painter, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette, height: f32) {
+    /// The houses within `radius` of `centre`, relative to `anchor`, three ways: their shadows
+    /// on the ground (`shadows`, for a shadow layer), their walls lit by which way they face
+    /// and their roofs with a fine edge (`solid`, for a depth-tested layer), both at full height
+    /// (the layer's `height` raises them), and their roofs flat from above (`flat`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_houses(&self, shadows: &mut Painter, solid: &mut Painter, flat: &mut Painter, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette) {
         let k = self.shift(anchor);
         let c = (centre - self.layers.origin).as_vec2();
-        let r = radius as f32;
-        let ids: Vec<u32> = self.cells_near(c, r).flat_map(|cell| cell.buildings.iter().copied()).collect();
-        let flat = height < 0.04;
+        let ids: Vec<u32> = self.cells_near(c, radius as f32).flat_map(|cell| cell.buildings.iter().copied()).collect();
         let light = -Vec2::from(SHADOW_DIR).normalize();
         let sd = Vec2::from(SHADOW_DIR);
         for &i in &ids {
             let b = &self.layers.buildings[i as usize];
             let o: Vec<Vec2> = b.outline.iter().map(|q| *q + k).collect();
-            if flat {
-                for t in &b.roof {
-                    let tri = [o[t[0] as usize].extend(0.0), o[t[1] as usize].extend(0.0), o[t[2] as usize].extend(0.0)];
-                    p.grown_tri(tri, 0.15, 0.7, pal.roof_edge);
-                }
-                continue;
-            }
-            let h = b.height * height;
-            let d = sd * h;
+            let h = b.height;
+            // (a tall block's shadow is held short: a map is lit from high up)
+            let d = sd * h.min(30.0);
+            let z = Vec2::ZERO;
             // the shadow: the footprint swept along the light
             for t in &b.roof {
                 let (a, bb, cc) = (o[t[0] as usize], o[t[1] as usize], o[t[2] as usize]);
-                p.shadow_tri((a + d).extend(0.0), (bb + d).extend(0.0), (cc + d).extend(0.0), pal.shadow);
-                p.shadow_tri(a.extend(0.0), bb.extend(0.0), cc.extend(0.0), pal.shadow);
+                shadows.shadow_tri([(a, d), (bb, d), (cc, d)], pal.shadow);
+                shadows.shadow_tri([(a, z), (bb, z), (cc, z)], pal.shadow);
             }
             let n = o.len();
             for j in 0..n {
                 let (a, bb) = (o[j], o[(j + 1) % n]);
-                p.shadow_tri(a.extend(0.0), bb.extend(0.0), (bb + d).extend(0.0), pal.shadow);
-                p.shadow_tri(a.extend(0.0), (bb + d).extend(0.0), (a + d).extend(0.0), pal.shadow);
+                shadows.shadow_tri([(a, z), (bb, z), (bb, d)], pal.shadow);
+                shadows.shadow_tri([(a, z), (bb, d), (a, d)], pal.shadow);
             }
-        }
-        if flat {
-            for &i in &ids {
-                let b = &self.layers.buildings[i as usize];
-                for t in &b.roof {
-                    let q = |m: u16| (b.outline[m as usize] + k).extend(0.0);
-                    p.world_poly(&[q(t[0]), q(t[1]), q(t[2])], pal.roof);
-                }
-            }
-            return;
-        }
-        for &i in &ids {
-            let b = &self.layers.buildings[i as usize];
-            let o: Vec<Vec2> = b.outline.iter().map(|q| *q + k).collect();
-            let h = b.height * height;
-            let n = o.len();
             // walls: outward normal of an anticlockwise outline is to the right of each edge
             for j in 0..n {
                 let (a, bb) = (o[j], o[(j + 1) % n]);
@@ -250,23 +282,26 @@ impl MapData {
                 let nrm = Vec2::new(e.y, -e.x).normalize();
                 let lit = (0.5 + 0.5 * nrm.dot(light)).clamp(0.0, 1.0);
                 let col = pal.wall_dark.mix(pal.wall_lit, lit);
-                let foot = col.darken(0.07);
+                let foot = col.darken(0.06);
                 let (a0, b0, a1, b1) = (a.extend(0.0), bb.extend(0.0), a.extend(h), bb.extend(h));
-                p.solid_tri(a0, b0, b1, foot, foot, col);
-                p.solid_tri(a0, b1, a1, foot, col, col);
-            }
-            // the roof, a little edge round it just under it
-            let start = p.verts.len();
-            for t in &b.roof {
-                let tri = [o[t[0] as usize].extend(h - 0.05), o[t[1] as usize].extend(h - 0.05), o[t[2] as usize].extend(h - 0.05)];
-                p.grown_tri(tri, 0.12, 0.6, pal.roof_edge);
-            }
-            for v in &mut p.verts[start..] {
-                v.mode[0] = 2.0;
+                solid.solid_tri(a0, b0, b1, foot, foot, col);
+                solid.solid_tri(a0, b1, a1, foot, col, col);
             }
             for t in &b.roof {
                 let q = |m: u16| o[m as usize].extend(h);
-                p.solid_tri(q(t[0]), q(t[1]), q(t[2]), pal.roof, pal.roof, pal.roof);
+                solid.solid_tri(q(t[0]), q(t[1]), q(t[2]), pal.roof, pal.roof, pal.roof);
+            }
+            // flat: an edge, then the roof
+            for t in &b.roof {
+                let tri = [o[t[0] as usize].extend(0.0), o[t[1] as usize].extend(0.0), o[t[2] as usize].extend(0.0)];
+                flat.grown_tri(tri, 0.15, 0.7, pal.roof_edge);
+            }
+        }
+        for &i in &ids {
+            let b = &self.layers.buildings[i as usize];
+            for t in &b.roof {
+                let q = |m: u16| (b.outline[m as usize] + k).extend(0.0);
+                flat.world_poly(&[q(t[0]), q(t[1]), q(t[2])], pal.roof);
             }
         }
     }
@@ -276,6 +311,34 @@ impl MapData {
         let (lo, hi) = self.layers.bounds()?;
         Some((self.layers.origin + lo.as_dvec2(), self.layers.origin + hi.as_dvec2()))
     }
+}
+
+/// The tracks the map lays with objects rather than splines (points and crossings - switches,
+/// a tram's junction): the rail lanes of `net` that come from objects, as the railway or the
+/// tram is drawn (a track beside a street is the tram's).
+pub(crate) fn build_switches(p: &mut Painter, net: &Network, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette) {
+    let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
+    for l in net.lanes.iter().filter(|l| l.kind == LaneKind::Rail && l.source != 1 && l.points.len() >= 2) {
+        if (l.start().truncate() - centre).length() > radius {
+            continue;
+        }
+        let pts: Vec<Vec3> = l.points.iter().map(|q| rel(*q)).collect();
+        let mid = l.at(l.length() * 0.5).0;
+        let street = net.nearest_lane_near(mid, LaneKind::Street).is_some_and(|s| s.2 < 4.0);
+        if street {
+            p.ribbon(&pts, 0.9, 1.3, pal.tram, false);
+        } else {
+            p.ribbon(&pts, 3.6, 3.4, pal.rail, false);
+        }
+    }
+}
+
+/// A tree's crown: a ten-sided disc with a darker rim (a full circle each was most of the
+/// vertices of a leafy suburb).
+fn crown(p: &mut Painter, at: Vec3, r: f32, fill: Color, edge: Color) {
+    let ring = |r: f32| -> Vec<Vec3> { (0..10).map(|k| { let a = std::f32::consts::TAU * k as f32 / 10.0; at + Vec3::new(a.cos() * r, a.sin() * r, 0.0) }).collect() };
+    p.world_poly(&ring(r + 0.35), edge);
+    p.world_poly(&ring(r), fill);
 }
 
 /// Dashes along a polyline: `on` metres drawn, `off` left, `w_m` wide (at least `w_px`).

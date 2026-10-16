@@ -378,6 +378,19 @@ impl Offscreen<'_> {
                     nav.frame_at(renderer, scene, &frame, viewport[0]);
                     scene.overlays.pop();
                 }
+                // (and until the parts built on workers are there)
+                for _ in 0..1500 {
+                    if !nav.building() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    nav.frame_at(renderer, scene, &frame, viewport[0]);
+                    scene.overlays.pop();
+                }
+                for _ in 0..3 {
+                    nav.frame_at(renderer, scene, &frame, viewport[0]);
+                    scene.overlays.pop();
+                }
                 nav.frame_at(renderer, scene, &frame, viewport[0]);
             }
         }

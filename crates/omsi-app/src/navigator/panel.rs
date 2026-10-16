@@ -25,48 +25,6 @@ pub(super) fn solid_and_ghost(v: &[Vertex], ghost: f32) -> (Vec<Vertex>, Vec<Ver
 }
 
 impl Navigator {
-    /// The ground under the small map (buffer 0): the map's package, the map's own layers and the
-    /// roads of its network, around `anchor`.
-    pub(super) fn build_panel_ground(&self, net: Option<&Network>, anchor: DVec2, pal: &Palette) -> Vec<Vertex> {
-        let mut p = Painter::new();
-        let reach = ROAD_RADIUS * 1.25;
-        if let (true, Some(sf)) = (self.show_surface, self.surface.as_ref()) {
-            surface::build_surface(&mut p, sf, anchor, Some((anchor, reach)), pal);
-        }
-        let look = GroundLook { surfaces: true, trees: true, dashes: true };
-        if let Some(md) = self.map_data.as_ref() {
-            md.build_land(&mut p, anchor, anchor, reach, pal, look);
-        }
-        // the network's roads: under the paved surfaces (where a road has none, its band shows)
-        let roads: Vec<(MapRoad, Vec<Vec3>)> = net
-            .map(|net| {
-                let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
-                road_geometry(net)
-                    .into_iter()
-                    .filter(|l| l.points.iter().any(|q| (q.truncate() - anchor).length() < reach))
-                    .map(|l| {
-                        let pts = simplify(&l.points.iter().map(|q| rel(*q)).collect::<Vec<_>>(), 0.12);
-                        (l, pts)
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let paved = self.map_data.is_some();
-        for (l, pts) in &roads {
-            p.ribbon(pts, l.width + if paved { 0.0 } else { 0.9 }, 3.0, pal.road_edge, true);
-        }
-        if let Some(md) = self.map_data.as_ref() {
-            md.build_paved(&mut p, anchor, anchor, reach, pal, look);
-        }
-        for (l, pts) in &roads {
-            p.ribbon(pts, if paved { (l.width - 1.2).max(1.5) } else { l.width }, 2.0, if l.main && !self.light { pal.road.lighten(0.08) } else { pal.road }, true);
-        }
-        if let Some(md) = self.map_data.as_ref() {
-            md.build_lines(&mut p, anchor, anchor, reach, pal, look);
-        }
-        p.verts
-    }
-
     pub(super) fn draw(&mut self, renderer: &Renderer, target: &wgpu::TextureView, size: (u32, u32), map_h: f32, f: &NavFrame) {
         let (pw, ph) = (size.0 as f32, size.1 as f32);
         let s = pw / 360.0;
@@ -89,22 +47,33 @@ impl Navigator {
             None => lanes_now > 0 || self.map_data.is_some(),
             Some(r) => r.look != look_key || (r.anchor - f.bus.truncate()).length() > ROAD_RADIUS * 0.45 || (r.lanes_seen != lanes_now && self.time - r.built_at > 1.5),
         };
-        let mut ground_verts = None;
-        let mut house_verts = None;
-        if rebuild {
+        // (on a worker when the map's network is there; the picture keeps the old part meanwhile)
+        let mut built = None;
+        if let Some(job) = self.panel_job.as_ref() {
+            match job.poll() {
+                Ok(Some(b)) => {
+                    let (look, lanes) = job.meta;
+                    self.roads = Some(Roads { look, anchor: b.anchor, lanes_seen: lanes, verts: b.ground.len(), houses: [b.houses[0].len(), b.houses[1].len(), b.houses[2].len()], built_at: self.time });
+                    built = Some(b);
+                    self.panel_job = None;
+                }
+                Ok(None) => {}
+                Err(()) => self.panel_job = None,
+            }
+        }
+        if rebuild && self.panel_job.is_none() && built.is_none() {
             let anchor = f.bus.truncate();
-            let t0 = std::time::Instant::now();
-            let v = self.build_panel_ground(net, anchor, &pal);
-            let mut h = Painter::new();
-            if let Some(md) = self.map_data.as_ref() {
-                md.build_houses(&mut h, anchor, anchor, ROAD_RADIUS * 1.25, &pal, if self.show_3d { 1.0 } else { 0.0 });
+            let parts = self.ground_parts(net);
+            let look = GroundLook { surfaces: true, trees: true, dashes: true };
+            let reach = ROAD_RADIUS * 1.25;
+            if self.global.is_some() {
+                let pal2 = pal;
+                self.panel_job = Some(super::build::Job::start((look_key, lanes_now), move || super::build::build(&parts, anchor, reach, &pal2, look, true, true)));
+            } else {
+                let b = super::build::build(&parts, anchor, reach, &pal, look, true, true);
+                self.roads = Some(Roads { look: look_key, anchor, lanes_seen: lanes_now, verts: b.ground.len(), houses: [b.houses[0].len(), b.houses[1].len(), b.houses[2].len()], built_at: self.time });
+                built = Some(b);
             }
-            if omsi_cfg::flags::OMSI_DEBUG_NAV.is_set() {
-                log::info!("navigator: ground around ({:.0}, {:.0}) in {:.1} ms: {} + {} vertices", anchor.x, anchor.y, t0.elapsed().as_secs_f64() * 1000.0, v.len(), h.verts.len());
-            }
-            self.roads = Some(Roads { look: look_key, anchor, lanes_seen: lanes_now, verts: v.len(), houses: h.verts.len(), built_at: self.time });
-            ground_verts = Some(v);
-            house_verts = Some(h.verts);
         }
 
         // --- the camera (world relative to the anchor), behind and above the bus
@@ -170,7 +139,7 @@ impl Navigator {
                 let (color, line) = traffic_kind(c);
                 let at = self.smoothed_position(c);
                 if color == DOT {
-                    car_icon(&mut dy, rel(at), c.vehicle.heading, self.light);
+                    car_dot(&mut dy, rel(at), self.light);
                 } else {
                     vehicle_icon(&mut dy, rel(at), c.vehicle.heading, color, c.is_rail(), 7.0);
                 }
@@ -191,7 +160,8 @@ impl Navigator {
                 }
             }
         }
-        let (dy_solid, _) = solid_and_ghost(&dy.verts, 1.0);
+        // (over the route: the traffic stands on it, it is not painted over)
+        let dy_solid = lifted(&dy.verts, 0.6);
 
         let mut ui = Painter::new();
         // the far end of the map: a haze into the land's colour
@@ -212,11 +182,12 @@ impl Navigator {
 
         // --- to the GPU
         let (Some(gpu), device, queue) = (self.gpu.as_mut(), &renderer.device, &renderer.queue) else { return };
-        if let Some(v) = ground_verts {
-            gpu.upload(device, queue, 0, &v);
-        }
-        if let Some(v) = house_verts {
-            gpu.upload(device, queue, 8, &v);
+        if let Some(b) = built {
+            let [sh, so, fl] = &b.houses;
+            gpu.upload(device, queue, 0, &b.ground);
+            gpu.upload(device, queue, 12, sh);
+            gpu.upload(device, queue, 8, so);
+            gpu.upload(device, queue, 13, fl);
         }
         if let Some(v) = route_verts {
             let (solid, ghost) = solid_and_ghost(&v, 0.3);
@@ -231,19 +202,22 @@ impl Navigator {
         gpu.upload(device, queue, 2, &all);
         gpu.upload_atlas(queue, &mut self.atlas);
         let flat = Layer::flat(clip_panel, radius, 1.0);
-        let mut layers = [flat, map_layer, depth_layer];
+        let mut layers = [flat, map_layer, map_layer.with_shadow(), depth_layer, depth_layer];
         for l in layers.iter_mut() {
             l.opacity *= self.shown;
         }
-        let (ground_n, houses_n) = self.roads.as_ref().map(|r| (r.verts as u32, r.houses as u32)).unwrap_or((0, 0));
+        let (ground_n, [shadow_n, solid_n, flat_n]) = self.roads.as_ref().map(|r| (r.verts as u32, r.houses.map(|n| n as u32))).unwrap_or((0, [0; 3]));
+        let three = self.show_3d;
         let route_n = self.route_mesh.3;
         let draws = [
             Draw { buffer: 2, range: 0..n_bg, layer: 0, texture: 0 },
             Draw { buffer: 0, range: 0..ground_n, layer: 1, texture: 0 },
-            Draw { buffer: 8, range: 0..houses_n, layer: 2, texture: 0 },
-            Draw { buffer: 9, range: 0..if houses_n > 0 { route_n } else { 0 }, layer: 1, texture: 0 },
-            Draw { buffer: 1, range: 0..route_n, layer: 2, texture: 0 },
-            Draw { buffer: 2, range: n_bg..n_bg + n_dy, layer: 2, texture: 0 },
+            Draw { buffer: 13, range: 0..if three { 0 } else { flat_n }, layer: 1, texture: 0 },
+            Draw { buffer: 12, range: 0..if three { shadow_n } else { 0 }, layer: 2, texture: 0 },
+            Draw { buffer: 8, range: 0..if three { solid_n } else { 0 }, layer: 3, texture: 0 },
+            Draw { buffer: 9, range: 0..if three && solid_n > 0 { route_n } else { 0 }, layer: 1, texture: 0 },
+            Draw { buffer: 1, range: 0..route_n, layer: 4, texture: 0 },
+            Draw { buffer: 2, range: n_bg..n_bg + n_dy, layer: 4, texture: 0 },
             Draw { buffer: 2, range: n_ui_start..all.len() as u32, layer: 0, texture: 0 },
         ];
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("navigator") });
@@ -492,7 +466,7 @@ impl Navigator {
 
     /// A key that changes with everything the ground's look depends on.
     pub(super) fn look_key(&self) -> u64 {
-        (self.light as u64) | (self.show_3d as u64) << 1 | (self.show_surface as u64) << 2 | self.surface_version << 3 | (self.map_version << 20)
+        (self.light as u64) | (self.show_3d as u64) << 1 | (self.show_surface as u64) << 2 | self.surface_version << 3 | (self.map_version << 20) | (self.roads_version << 36)
     }
 }
 
@@ -523,13 +497,14 @@ pub(super) fn puck(ui: &mut Painter, at: Vec2, angle: f32, r: f32, fill: Color) 
     ui.tri(tip, m, rr, Color::WHITE, Color::WHITE, Color::WHITE);
 }
 
-/// A car on the map: a small rounded body the way it heads, in a calm grey-blue.
-pub(super) fn car_icon(p: &mut Painter, at: Vec3, heading: f64, light: bool) {
-    let h = heading.to_radians() as f32;
-    let (sn, cs) = h.sin_cos();
-    let turn = |v: Vec2| Vec2::new(v.x * cs + v.y * sn, -v.x * sn + v.y * cs);
-    let body = |k: f32| -> Vec<Vec2> { [(-0.42, -1.0), (0.42, -1.0), (0.42, 0.7), (0.25, 1.0), (-0.25, 1.0), (-0.42, 0.7)].iter().map(|&(x, y)| turn(Vec2::new(x * k, y * k))).collect() };
-    let (edge, fill) = if light { (Color::rgba(255, 255, 255, 0.95), Color::hex(0x6b7a90)) } else { (Color::rgba(10, 12, 16, 0.9), Color::hex(0x9fb0c8)) };
-    p.world_shape(at, &body(1.3), 2.4, 5.2, edge);
-    p.world_shape(at, &body(1.0), 2.4, 4.0, fill);
+/// A car on the map: a small dot with a pale ring (as the other drivers were always shown).
+pub(super) fn car_dot(p: &mut Painter, at: Vec3, light: bool) {
+    let (edge, fill) = if light { (Color::rgba(255, 255, 255, 0.95), Color::hex(0x5b6b84)) } else { (Color::rgba(14, 16, 20, 0.9), Color::hex(0x9fb0c8)) };
+    p.world_disc(at, 1.9, 4.2, edge);
+    p.world_disc(at, 1.35, 3.0, fill);
+}
+
+/// The vertices standing `dz` metres higher at their own depth (drawn over the route).
+pub(super) fn lifted(v: &[Vertex], dz: f32) -> Vec<Vertex> {
+    v.iter().map(|x| Vertex { mode: [2.0, x.mode[1]], pos: [x.pos[0], x.pos[1], x.pos[2] + dz], ..*x }).collect()
 }

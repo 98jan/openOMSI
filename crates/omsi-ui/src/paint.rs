@@ -20,8 +20,8 @@ pub struct Vertex {
     pub uv: [f32; 2],
     /// sRGB, straight alpha.
     pub color: [f32; 4],
-    /// x: 0 pixels, 1 world (flat), 2 world at its own depth (solid 3D), 3 world shadow
-    /// (see `ui.wgsl`); y: 1 = multiplied by the texture.
+    /// x: 0 pixels, 1 world (flat), 2 world at its own depth (solid 3D, its height scaled by
+    /// the layer's), 3 world shadow (`uv` its offset); y: 1 = multiplied by the texture.
     pub mode: [f32; 2],
 }
 
@@ -511,10 +511,11 @@ impl Painter {
         self.verts.extend([v(a, ca), v(b, cb), v(c, cc)]);
     }
 
-    /// A shadow triangle on the ground (see `Vertex::mode`).
-    pub fn shadow_tri(&mut self, a: Vec3, b: Vec3, c: Vec3, col: Color) {
-        let v = |p: Vec3| Vertex { pos: p.to_array(), color: col.0, mode: [3.0, 0.0], ..Default::default() };
-        self.verts.extend([v(a), v(b), v(c)]);
+    /// A shadow triangle on the ground (see `Vertex::mode`): each corner a point and how far
+    /// the shadow moves it (scaled with the layer's `height`).
+    pub fn shadow_tri(&mut self, p: [(Vec2, Vec2); 3], col: Color) {
+        let v = |(q, d): (Vec2, Vec2)| Vertex { pos: [q.x, q.y, 0.0], uv: d.to_array(), color: col.0, mode: [3.0, 0.0], ..Default::default() };
+        self.verts.extend([v(p[0]), v(p[1]), v(p[2])]);
     }
 
     /// A world triangle grown by `w_px` pixels (at least `w_m` metres) all round: drawn

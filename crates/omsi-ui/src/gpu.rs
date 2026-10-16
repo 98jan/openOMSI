@@ -23,22 +23,39 @@ pub struct Layer {
     /// Drawn depth-tested and writing depth (a [`Gpu::with_depth`] only): solid 3D shapes
     /// (the navigator's houses) hide what is behind them whatever order they come in.
     pub depth: bool,
+    /// Shadows on the ground (a [`Gpu::with_depth`] only): each pixel darkened once however
+    /// many shadow triangles cover it (the stencil counts them).
+    pub shadow: bool,
+    /// How tall the solid shapes stand (their heights and shadows scaled by it: 1 as built,
+    /// 0 flat), so that a view tilting into 3D raises its houses without building them again.
+    pub height: f32,
 }
 
 impl Layer {
     /// Pixels only, clipped to `clip`.
     pub fn flat(clip: [f32; 4], radius: f32, opacity: f32) -> Layer {
-        Layer { view_proj: Mat4::IDENTITY, viewport: [0.0; 4], clip, radius, opacity, px_scale: 0.0, depth: false }
+        Layer { view_proj: Mat4::IDENTITY, viewport: [0.0; 4], clip, radius, opacity, px_scale: 0.0, depth: false, shadow: false, height: 1.0 }
     }
     /// A perspective view of a world drawn into `viewport`.
     pub fn world(view: Mat4, fov_y: f32, viewport: [f32; 4], clip: [f32; 4], radius: f32, opacity: f32) -> Layer {
         let aspect = viewport[2] / viewport[3].max(1.0);
         let proj = Mat4::perspective_rh(fov_y, aspect, 1.0, 20000.0);
-        Layer { view_proj: proj * view, viewport, clip, radius, opacity, px_scale: 2.0 * (fov_y * 0.5).tan() / viewport[3].max(1.0), depth: false }
+        Layer { view_proj: proj * view, viewport, clip, radius, opacity, px_scale: 2.0 * (fov_y * 0.5).tan() / viewport[3].max(1.0), depth: false, shadow: false, height: 1.0 }
     }
     /// The same layer drawn depth-tested (see `depth`).
     pub fn with_depth(mut self) -> Layer {
         self.depth = true;
+        self
+    }
+    /// The same layer drawing shadows (see `shadow`).
+    pub fn with_shadow(mut self) -> Layer {
+        self.shadow = true;
+        self.depth = false;
+        self
+    }
+    /// The same layer with its solid shapes `k` times as tall (see `height`).
+    pub fn with_height(mut self, k: f32) -> Layer {
+        self.height = k;
         self
     }
 }
@@ -64,7 +81,7 @@ struct Uniform {
 }
 
 const SLOT: u64 = 256;
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
 const MAX_LAYERS: u64 = 256;
 
 struct Tex {
@@ -77,6 +94,7 @@ pub struct Gpu {
     pipeline: wgpu::RenderPipeline,
     /// With a depth buffer: the pipeline of the depth-tested layers, and the buffer.
     pipeline_depth: Option<wgpu::RenderPipeline>,
+    pipeline_shadow: Option<wgpu::RenderPipeline>,
     depth: Option<(wgpu::TextureView, u32, u32)>,
     tex_layout: wgpu::BindGroupLayout,
     uniform: wgpu::Buffer,
@@ -153,15 +171,19 @@ impl Gpu {
             multiview_mask: None,
             cache: None,
         });
-        let depth_state = |test: bool| wgpu::DepthStencilState {
+        let depth_state = |test: bool, stencil: wgpu::StencilState| wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
             depth_write_enabled: Some(test),
             depth_compare: Some(if test { wgpu::CompareFunction::Less } else { wgpu::CompareFunction::Always }),
-            stencil: Default::default(),
+            stencil,
             bias: Default::default(),
         };
-        let pipeline = make_pipeline(with_depth.then(|| depth_state(false)));
-        let pipeline_depth = with_depth.then(|| make_pipeline(Some(depth_state(true))));
+        // (a shadow pixel is drawn where the stencil is still 0, and counts it up)
+        let once = wgpu::StencilFaceState { compare: wgpu::CompareFunction::Equal, fail_op: wgpu::StencilOperation::Keep, depth_fail_op: wgpu::StencilOperation::Keep, pass_op: wgpu::StencilOperation::IncrementClamp };
+        let shadow_stencil = wgpu::StencilState { front: once, back: once, read_mask: 0xff, write_mask: 0xff };
+        let pipeline = make_pipeline(with_depth.then(|| depth_state(false, Default::default())));
+        let pipeline_depth = with_depth.then(|| make_pipeline(Some(depth_state(true, Default::default()))));
+        let pipeline_shadow = with_depth.then(|| make_pipeline(Some(depth_state(false, shadow_stencil))));
         let uniform = device.create_buffer(&wgpu::BufferDescriptor { label: Some("omsi-ui uniform"), size: SLOT * MAX_LAYERS, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let uniform_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("omsi-ui uniform"),
@@ -177,7 +199,7 @@ impl Gpu {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
-        let mut g = Gpu { pipeline, pipeline_depth, depth: None, tex_layout, uniform, uniform_group, sampler, buffers: Vec::new(), textures: Vec::new(), msaa: None, samples, format, atlas_size: atlas_size.max(1), device: device.clone() };
+        let mut g = Gpu { pipeline, pipeline_depth, pipeline_shadow, depth: None, tex_layout, uniform, uniform_group, sampler, buffers: Vec::new(), textures: Vec::new(), msaa: None, samples, format, atlas_size: atlas_size.max(1), device: device.clone() };
         let atlas = vec![0u8; (atlas_size * atlas_size * 4) as usize];
         g.add_texture_internal(device, None, atlas_size, atlas_size, &atlas);
         g
@@ -344,7 +366,7 @@ impl Gpu {
         let mut data = vec![0u8; (SLOT * MAX_LAYERS) as usize];
         for (k, l) in layers.iter().take(MAX_LAYERS as usize).enumerate() {
             let vp = if l.viewport[2] > 0.0 { l.viewport } else { [0.0, 0.0, w as f32, h as f32] };
-            let u = Uniform { view_proj: l.view_proj.to_cols_array_2d(), viewport: vp, target: [w as f32, h as f32, 0.0, 0.0], clip: l.clip, params: [l.radius, l.opacity, l.px_scale, 0.0] };
+            let u = Uniform { view_proj: l.view_proj.to_cols_array_2d(), viewport: vp, target: [w as f32, h as f32, l.height, 0.0], clip: l.clip, params: [l.radius, l.opacity, l.px_scale, 0.0] };
             let at = k * SLOT as usize;
             data[at..at + std::mem::size_of::<Uniform>()].copy_from_slice(bytemuck::bytes_of(&u));
         }
@@ -388,12 +410,16 @@ impl Gpu {
                 resolve_target: resolve,
                 ops: wgpu::Operations { load: match (clear, resolve.is_some()) { (Some(c), _) => wgpu::LoadOp::Clear(c), (None, true) => wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), (None, false) => wgpu::LoadOp::Load }, store: if resolve.is_some() { wgpu::StoreOp::Discard } else { wgpu::StoreOp::Store } },
             })],
-            depth_stencil_attachment: depth_view.map(|view| wgpu::RenderPassDepthStencilAttachment { view, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }), stencil_ops: None }),
+            depth_stencil_attachment: depth_view.map(|view| wgpu::RenderPassDepthStencilAttachment {
+                view,
+                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }),
+                stencil_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(0), store: wgpu::StoreOp::Discard }),
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        let mut depth_on: Option<bool> = None;
+        let mut depth_on: Option<u8> = None;
         for d in draws {
             let (Some((Some(buf), _)), Some(l)) = (self.buffers.get(d.buffer), layers.get(d.layer)) else { continue };
             // (a texture that is not there - one freed, or a number kept from another device -
@@ -402,9 +428,17 @@ impl Gpu {
             if d.range.is_empty() || d.layer as u64 >= MAX_LAYERS {
                 continue;
             }
-            let want = l.depth && self.pipeline_depth.is_some();
+            let want = match (&self.pipeline_depth, &self.pipeline_shadow) {
+                (Some(_), Some(_)) if l.shadow => 2u8,
+                (Some(_), _) if l.depth => 1,
+                _ => 0,
+            };
             if depth_on != Some(want) {
-                pass.set_pipeline(if want { self.pipeline_depth.as_ref().unwrap_or(&self.pipeline) } else { &self.pipeline });
+                pass.set_pipeline(match want {
+                    2 => self.pipeline_shadow.as_ref().unwrap_or(&self.pipeline),
+                    1 => self.pipeline_depth.as_ref().unwrap_or(&self.pipeline),
+                    _ => &self.pipeline,
+                });
                 depth_on = Some(want);
             }
             pass.set_bind_group(0, &self.uniform_group, &[(d.layer as u64 * SLOT) as u32]);

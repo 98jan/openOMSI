@@ -68,7 +68,7 @@ pub(crate) const LIGHT: Palette = Palette {
     roof_edge: hex(0xdcd8d0),
     wall_lit: hex(0xe9e5de),
     wall_dark: hex(0xc3bcb0),
-    shadow: Color::rgba(40, 58, 46, 0.2),
+    shadow: Color::rgba(40, 58, 46, 0.15),
     tree: hex(0xa9d38f),
     tree_edge: hex(0x92c27a),
     rail: hex(0xa7a59f),
@@ -102,7 +102,7 @@ pub(crate) const DARK: Palette = Palette {
     roof_edge: hex(0x3a3d43),
     wall_lit: hex(0x41454c),
     wall_dark: hex(0x2c2f34),
-    shadow: Color::rgba(0, 0, 0, 0.28),
+    shadow: Color::rgba(0, 0, 0, 0.22),
     tree: hex(0x2f4a35),
     tree_edge: hex(0x26402c),
     rail: hex(0x6d6f75),
@@ -131,4 +131,4 @@ pub(crate) const TRAFFIC: [Color; 4] = [hex(0x2f7cf6), hex(0xff9f0a), hex(0xff45
 
 /// Which way the shadows fall, per metre of height (world, x east, y north): the light comes
 /// from the north-west, as on a printed map lit from its top left corner.
-pub(crate) const SHADOW_DIR: [f32; 2] = [0.5, -0.42];
+pub(crate) const SHADOW_DIR: [f32; 2] = [0.34, -0.28];

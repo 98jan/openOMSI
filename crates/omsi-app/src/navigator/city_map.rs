@@ -5,7 +5,7 @@
 //! vehicle of the traffic; and the navigator panel's placement, dragging and sizing.
 
 use super::mapmesh::GroundLook;
-use super::panel::{car_icon, puck, solid_and_ghost, stop_pin};
+use super::panel::{car_dot, lifted, puck, solid_and_ghost, stop_pin};
 use super::style::{self, Palette};
 use super::*;
 
@@ -29,9 +29,6 @@ pub struct CityMap {
     /// without moving is a click.
     travel: f32,
     target: Option<(TextureId, u32, u32)>,
-    /// The roads of the whole network (built once per network version): its version and the
-    /// carriageways.
-    roads: Option<(u64, std::sync::Arc<Vec<MapRoad>>)>,
     /// The ground (buffer 7) and houses (buffer 10): what they were built for and their sizes.
     ground: Option<CityGround>,
     /// The route meshes (buffers 4 and 11): the route, traffic, arrow spacing and look they
@@ -48,6 +45,14 @@ pub struct CityMap {
     tilt: f32,
 }
 
+/// A city map ground being built: what for.
+pub struct CityJob {
+    key: u64,
+    centre: DVec2,
+    radius: f64,
+    mpp: f64,
+}
+
 #[derive(Clone, Copy)]
 struct CityGround {
     key: u64,
@@ -56,8 +61,8 @@ struct CityGround {
     radius: f64,
     mpp: f64,
     verts: u32,
-    houses: u32,
-    height: f32,
+    /// The houses' shadows, standing and flat (buffers 14, 10 and 15).
+    houses: [u32; 3],
 }
 
 /// The city map's camera: its view-projection (relative to `centre`) and its inverse.
@@ -390,17 +395,12 @@ impl Navigator {
         span / ((r[2] - r[0]).max(200.0) as f64) * 1.2
     }
 
-    /// The carriageways of the whole network, once per version of it.
-    fn city_roads(&mut self, net: &Network) -> std::sync::Arc<Vec<MapRoad>> {
-        let version = self.global_version * 1_000_000 + net.lanes.len() as u64;
-        if let Some((v, r)) = self.city.roads.as_ref().filter(|r| r.0 == version) {
-            let _ = v;
-            return r.clone();
-        }
-        let roads = std::sync::Arc::new(road_geometry(net));
+    /// The map's extent (for the zoom limits): its layers' tiles, and its carriageways.
+    fn city_extent(&mut self, net: &Network) {
+        let roads = self.road_list(net);
         let (mut lo, mut hi) = (DVec2::splat(f64::MAX), DVec2::splat(f64::MIN));
-        for l in roads.iter() {
-            for p in &l.points {
+        for (l, _) in roads.iter() {
+            for p in [l.points.first(), l.points.last()].into_iter().flatten() {
                 lo = lo.min(p.truncate());
                 hi = hi.max(p.truncate());
             }
@@ -412,12 +412,11 @@ impl Navigator {
         if lo.x <= hi.x {
             self.city.extent = (lo, hi);
         }
-        self.city.roads = Some((version, roads.clone()));
-        roads
     }
 
-    /// The city map's ground and houses around the view, when the view left what was built.
-    fn city_ground(&mut self, net: Option<&Network>, w: f32, h: f32, pal: &Palette) -> (Option<Vec<omsi_ui::Vertex>>, Option<Vec<omsi_ui::Vertex>>) {
+    /// The city map's ground and houses around the view, built on a worker when the view left
+    /// what was built (the picture keeps the old part meanwhile): what has just arrived.
+    fn city_ground(&mut self, net: Option<&Network>, w: f32, h: f32, pal: &Palette) -> Option<super::build::Built> {
         let mpp = self.city.mpp;
         let tilt = self.city.tilt;
         let centre = self.city.center;
@@ -425,69 +424,38 @@ impl Navigator {
         let radius = (w.max(h) as f64 * mpp * (0.8 + 1.4 * tilt as f64)).max(500.0);
         let detail = (mpp < 0.7) as u64 | ((mpp < 2.2) as u64) << 1 | ((mpp < 3.5) as u64) << 2 | ((mpp < 6.0) as u64) << 3;
         let key = self.look_key() ^ detail << 40 ^ self.global_version << 48;
-        let height = tilt;
+        let mut arrived = None;
+        if let Some(job) = self.city_job.as_ref() {
+            match job.poll() {
+                Ok(Some(b)) => {
+                    let m = &job.meta;
+                    self.city.ground = Some(CityGround { key: m.key, anchor: b.anchor, centre: m.centre, radius: m.radius, mpp: m.mpp, verts: b.ground.len() as u32, houses: [b.houses[0].len() as u32, b.houses[1].len() as u32, b.houses[2].len() as u32] });
+                    arrived = Some(b);
+                    self.city_job = None;
+                }
+                Ok(None) => return None,
+                Err(()) => self.city_job = None,
+            }
+        }
         let stale = match self.city.ground {
             None => true,
             Some(g) => g.key != key || (g.centre - centre).length() > g.radius * 0.35 || g.mpp / mpp > 1.7 || mpp / g.mpp > 1.7,
         };
-        let houses_stale = self.city.ground.map(|g| (g.height - height).abs() > 0.03).unwrap_or(true);
-        if !stale && !houses_stale {
-            return (None, None);
-        }
-        let anchor = if stale { centre } else { self.city.ground.map(|g| g.anchor).unwrap_or(centre) };
-        let (radius_b, mpp_b) = if stale { (radius, mpp) } else { self.city.ground.map(|g| (g.radius, g.mpp)).unwrap_or((radius, mpp)) };
-        let mut ground = None;
-        if stale {
+        if stale && arrived.is_none() {
             let look = GroundLook { surfaces: mpp < 0.7, trees: mpp < 0.7, dashes: mpp < 3.5 };
-            let mut p = Painter::new();
-            if let (true, Some(sf)) = (self.show_surface, self.surface.as_ref()) {
-                surface::build_surface(&mut p, sf, anchor, Some((anchor, radius)), pal);
+            let parts = self.ground_parts(net);
+            let pal2 = *pal;
+            let houses = mpp < 6.0;
+            let job = move || super::build::build(&parts, centre, radius, &pal2, look, mpp < 2.2, houses);
+            if self.city.ground.is_none() {
+                // (the first picture at once: nothing to show meanwhile)
+                let b = job();
+                self.city.ground = Some(CityGround { key, anchor: b.anchor, centre, radius, mpp, verts: b.ground.len() as u32, houses: [b.houses[0].len() as u32, b.houses[1].len() as u32, b.houses[2].len() as u32] });
+                return Some(b);
             }
-            if let Some(md) = self.map_data.as_ref() {
-                md.build_land(&mut p, anchor, anchor, radius, pal, look);
-            }
-            let roads = net.map(|n| self.city_roads(n));
-            let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
-            let near: Vec<(&MapRoad, Vec<Vec3>)> = roads
-                .as_deref()
-                .map(|rs| {
-                    rs.iter()
-                        .filter(|l| l.points.iter().any(|q| (q.truncate() - anchor).length() < radius))
-                        .map(|l| (l, simplify(&l.points.iter().map(|q| rel(*q)).collect::<Vec<_>>(), (mpp as f32 * 0.4).max(0.12))))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let paved = self.map_data.is_some() && mpp < 2.2;
-            for (l, pts) in &near {
-                p.ribbon(pts, l.width + if paved { 0.0 } else { 1.2 }, if l.main { 3.4 } else { 2.6 }, pal.road_edge, true);
-            }
-            if let (true, Some(md)) = (paved, self.map_data.as_ref()) {
-                md.build_paved(&mut p, anchor, anchor, radius, pal, look);
-            }
-            for (l, pts) in &near {
-                p.ribbon(pts, if paved { (l.width - 1.2).max(1.5) } else { l.width }, if l.main { 2.2 } else { 1.4 }, pal.road, true);
-            }
-            if let Some(md) = self.map_data.as_ref() {
-                md.build_lines(&mut p, anchor, anchor, radius, pal, look);
-            }
-            ground = Some(p.verts);
+            self.city_job = Some(super::build::Job::start(CityJob { key, centre, radius, mpp }, job));
         }
-        let mut houses = Painter::new();
-        if let (true, Some(md)) = (mpp < 6.0, self.map_data.as_ref()) {
-            md.build_houses(&mut houses, anchor, anchor, radius_b, pal, height);
-        }
-        let g = CityGround {
-            key,
-            anchor,
-            centre: if stale { centre } else { self.city.ground.map(|g| g.centre).unwrap_or(centre) },
-            radius: radius_b,
-            mpp: mpp_b,
-            verts: ground.as_ref().map(|v| v.len() as u32).unwrap_or_else(|| self.city.ground.map(|g| g.verts).unwrap_or(0)),
-            houses: houses.verts.len() as u32,
-            height,
-        };
-        self.city.ground = Some(g);
-        (ground, Some(houses.verts))
+        arrived
     }
 
     /// Draw the city map and lay it over the picture.
@@ -523,9 +491,9 @@ impl Navigator {
         let global = self.global.clone();
         let net = global.as_deref().or(f.traffic.map(|t| &t.net));
         if let Some(n) = net {
-            self.city_roads(n);
+            self.city_extent(n);
         }
-        let (ground_verts, house_verts) = self.city_ground(net, w, h, &pal);
+        let built = self.city_ground(net, w, h, &pal);
         let anchor = self.city.ground.map(|g| g.anchor).unwrap_or(self.city.center);
         let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
         // the whole route (buffers 4 and 11): the part driven pale, the rest by its traffic,
@@ -555,8 +523,10 @@ impl Navigator {
         let shift = (self.city.center - anchor).as_vec2();
         let vpm = cam.vp * Mat4::from_translation(-shift.extend(0.0));
         let vp = [0.0, 0.0, w, h];
-        let world = Layer { view_proj: vpm, viewport: vp, clip: [0.0, 0.0, w, h], radius: 14.0 * s, opacity: 1.0, px_scale: 2.0 * (CITY_FOV.to_radians() * 0.5).tan() / h, depth: false };
+        let world = Layer { view_proj: vpm, viewport: vp, clip: [0.0, 0.0, w, h], radius: 14.0 * s, opacity: 1.0, px_scale: 2.0 * (CITY_FOV.to_radians() * 0.5).tan() / h, depth: false, shadow: false, height: 1.0 };
         let depth = world.with_depth();
+        let houses = depth.with_height(self.city.tilt);
+        let shadows = world.with_shadow().with_height(self.city.tilt);
         let to_screen = |q: DVec3| -> Option<Vec2> { project(vpm, vp, rel(q)) };
         let win = Rect::new(0.0, 0.0, w, h);
         let mut bg = Painter::new();
@@ -573,7 +543,7 @@ impl Navigator {
                 let at = self.smoothed_position(car);
                 if color == DOT {
                     if !far {
-                        car_icon(&mut dots, rel(at), car.vehicle.heading, self.light);
+                        car_dot(&mut dots, rel(at), self.light);
                     }
                 } else if !far || line.is_none() {
                     vehicle_icon(&mut dots, rel(at), car.vehicle.heading, color, car.is_rail(), 7.5);
@@ -594,7 +564,7 @@ impl Navigator {
                 }
             }
         }
-        let (dots_solid, _) = solid_and_ghost(&dots.verts, 1.0);
+        let dots_solid = lifted(&dots.verts, 0.6);
         // marks, names, cards
         let mut ui = Painter::new();
         let n_stops = f.stops.len();
@@ -777,11 +747,12 @@ impl Navigator {
         let (tex, _, _) = self.city.target.unwrap();
         let Some(view) = renderer.texture_view(scene, tex) else { return };
         let (Some(gpu), device, queue) = (self.gpu.as_mut(), &renderer.device, &renderer.queue) else { return };
-        if let Some(v) = ground_verts {
-            gpu.upload(device, queue, 7, &v);
-        }
-        if let Some(v) = house_verts {
-            gpu.upload(device, queue, 10, &v);
+        if let Some(b) = built {
+            let [sh, so, fl] = &b.houses;
+            gpu.upload(device, queue, 7, &b.ground);
+            gpu.upload(device, queue, 14, sh);
+            gpu.upload(device, queue, 10, so);
+            gpu.upload(device, queue, 15, fl);
         }
         if let Some(v) = route_verts {
             let (solid, ghost) = solid_and_ghost(&v, 0.3);
@@ -796,16 +767,20 @@ impl Navigator {
         gpu.upload(device, queue, 5, &all);
         gpu.upload_atlas(queue, &mut self.atlas);
         let flat = Layer::flat([0.0, 0.0, w, h], 14.0 * s, 1.0);
-        let layers = [flat, world, depth];
-        let (ground_n, houses_n) = self.city.ground.map(|g| (g.verts, g.houses)).unwrap_or((0, 0));
+        let layers = [flat, world, shadows, houses, depth];
+        let (ground_n, [shadow_n, solid_n, flat_n]) = self.city.ground.map(|g| (g.verts, g.houses)).unwrap_or((0, [0; 3]));
         let route_n = self.city.route.2;
+        // (from the 2D view the houses are their flat roofs; as it tilts they rise)
+        let stand = self.city.tilt > 0.03;
         let draws = [
             Draw { buffer: 5, range: 0..n_bg, layer: 0, texture: 0 },
             Draw { buffer: 7, range: 0..ground_n, layer: 1, texture: 0 },
-            Draw { buffer: 10, range: 0..houses_n, layer: 2, texture: 0 },
-            Draw { buffer: 11, range: 0..if self.city.tilt > 0.01 { route_n } else { 0 }, layer: 1, texture: 0 },
-            Draw { buffer: 4, range: 0..route_n, layer: 2, texture: 0 },
-            Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 2, texture: 0 },
+            Draw { buffer: 15, range: 0..if stand { 0 } else { flat_n }, layer: 1, texture: 0 },
+            Draw { buffer: 14, range: 0..if stand { shadow_n } else { 0 }, layer: 2, texture: 0 },
+            Draw { buffer: 10, range: 0..if stand { solid_n } else { 0 }, layer: 3, texture: 0 },
+            Draw { buffer: 11, range: 0..if stand { route_n } else { 0 }, layer: 1, texture: 0 },
+            Draw { buffer: 4, range: 0..route_n, layer: 4, texture: 0 },
+            Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 4, texture: 0 },
             Draw { buffer: 5, range: n_ui..all.len() as u32, layer: 0, texture: 0 },
         ];
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("city map") });

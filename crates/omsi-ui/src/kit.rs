@@ -334,6 +334,8 @@ impl Ui {
             opacity: 1.0,
             px_scale: 0.0,
             depth: false,
+            shadow: false,
+            height: 1.0,
         };
         self.layers.push((layer, Painter::with_scale(s), 0));
     }

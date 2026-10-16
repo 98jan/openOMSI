@@ -96,7 +96,7 @@ fn vehicle_icon(p: &mut Painter, at: Vec3, heading: f64, color: Color, long: boo
     let body = |k: f32| -> Vec<Vec2> {
         [(-0.34, -1.0), (0.34, -1.0), (0.34, 0.55), (0.2, 1.0), (-0.2, 1.0), (-0.34, 0.55)].iter().map(|&(x, y)| turn(Vec2::new(x * k, y * l * k))).collect()
     };
-    let (m, px) = (6.0, min_px);
+    let (m, px) = (3.2, min_px * 0.8);
     p.world_shape(at, &body(1.28), m, px * 1.28, Color::rgba(8, 8, 8, 0.92));
     p.world_shape(at, &body(1.0), m, px, color);
     let glass: Vec<Vec2> = [(-0.24, 0.5), (0.24, 0.5), (0.15, 0.8), (-0.15, 0.8)].iter().map(|&(x, y)| turn(Vec2::new(x, y * l))).collect();
@@ -256,9 +256,10 @@ struct Roads {
     look: u64,
     anchor: DVec2,
     lanes_seen: usize,
-    /// Vertices of the ground (buffer 0) and of the houses (buffer 8).
+    /// Vertices of the ground (buffer 0) and of the houses: their shadows (buffer 12), standing
+    /// (8) and flat (13).
     verts: usize,
-    houses: usize,
+    houses: [usize; 3],
     built_at: f32,
 }
 
@@ -353,7 +354,7 @@ pub struct Navigator {
     /// number that changes when they arrive.
     pub(crate) map_data: Option<std::sync::Arc<mapmesh::MapData>>,
     map_version: u64,
-    layers_rx: Option<std::sync::mpsc::Receiver<omsi_map::layers::Layers>>,
+    layers_rx: Option<std::sync::mpsc::Receiver<mapmesh::MapData>>,
     /// Houses standing in 3D (the `nav_3d` setting); flat roofs otherwise.
     pub show_3d: bool,
     /// The navigator is a widget: dragged anywhere and resized by its corner (`nav_widget`).
@@ -362,6 +363,14 @@ pub struct Navigator {
     pub size: f32,
     /// A press on the navigator's corner: the size, the cursor and the panel's width then.
     resizing: Option<(f32, [f32; 2], f32)>,
+    /// The ground being built on a worker for the small map (its look and lane count) and for
+    /// the city map, and the network's carriageways with whether the paving covers each.
+    panel_job: Option<build::Job<(u64, usize)>>,
+    city_job: Option<build::Job<CityJob>>,
+    road_cache: Option<(u64, std::sync::Arc<Vec<(MapRoad, bool)>>)>,
+    road_job: Option<(u64, std::sync::mpsc::Receiver<std::sync::Arc<Vec<(MapRoad, bool)>>>)>,
+    /// Bumped when a new list of carriageways arrives (the ground is built again).
+    roads_version: u64,
     /// Where each car was drawn last (eased towards where it is, so they glide).
     drawn_cars: HashMap<u64, (DVec3, f32)>,
     /// The timetable's vehicles the traffic does not drive: where they are, where they are
@@ -369,6 +378,10 @@ pub struct Navigator {
     live: Vec<live::LiveVehicle>,
     live_drawn: Vec<live::LiveVehicle>,
     live_t: f32,
+    /// The departures on the road (looked for every few seconds) and their timetables.
+    live_list: Vec<usize>,
+    live_list_t: f32,
+    live_tt: HashMap<usize, std::sync::Arc<omsi_sim::ai_traffic::bus_service::AiTimetable>>,
     trip_paths: HashMap<usize, Option<std::sync::Arc<live::TripPath>>>,
     /// How far the panel has faded in (Shift+N fades it in and out rather than cutting).
     shown: f32,
@@ -495,9 +508,17 @@ impl Navigator {
             size: 1.0,
             resizing: None,
             drawn_cars: HashMap::new(),
+            panel_job: None,
+            city_job: None,
+            road_cache: None,
+            road_job: None,
+            roads_version: 0,
             live: Vec::new(),
             live_drawn: Vec::new(),
             live_t: 0.0,
+            live_list: Vec::new(),
+            live_list_t: 0.0,
+            live_tt: HashMap::new(),
             trip_paths: HashMap::new(),
             shown: if enabled { 1.0 } else { 0.0 },
             stop_spots: Vec::new(),
@@ -541,7 +562,7 @@ impl Navigator {
             std::thread::Builder::new()
                 .name("navigator layers".into())
                 .spawn(move || {
-                    let _ = ltx.send(w.map_layers());
+                    let _ = ltx.send(mapmesh::MapData::new(std::sync::Arc::new(w.map_layers())));
                 })
                 .ok();
             self.layers_rx = Some(lrx);
@@ -1066,9 +1087,10 @@ impl Navigator {
             }
         }
         if let Some(rx) = self.layers_rx.as_ref() {
-            if let Ok(l) = rx.try_recv() {
-                log::info!("navigator: the map's layers are there ({} houses, {} trees)", l.buildings.len(), l.trees.len());
-                self.set_layers(l);
+            if let Ok(m) = rx.try_recv() {
+                log::info!("navigator: the map's layers are there ({} houses, {} trees)", m.layers.buildings.len(), m.layers.trees.len());
+                self.map_data = Some(std::sync::Arc::new(m));
+                self.map_version += 1;
                 self.layers_rx = None;
             }
         }
@@ -1091,6 +1113,7 @@ impl Navigator {
         }
         self.update_congestion(f);
         self.update_drawn_cars(f);
+        self.poll_road_job();
         // camera: zoomed out with speed, turned with the bus (both eased)
         let want = (150.0 + f.speed_kmh as f64 * 2.4).clamp(150.0, 320.0);
         if self.first {
@@ -1237,6 +1260,7 @@ pub(crate) mod style;
 pub(crate) mod mapmesh;
 mod panel;
 mod live;
+mod build;
 mod city_map;
 pub use city_map::*;
 #[cfg(test)]
