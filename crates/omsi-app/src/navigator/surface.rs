@@ -58,6 +58,7 @@ impl Navigator {
     /// The map's package, given at once (an offscreen picture reads it on its own thread).
     pub fn set_surface(&mut self, surface: Option<Package>) {
         if let Some(s) = surface {
+            self.place = super::place::PlaceView::of(&s);
             self.surface = Some(std::sync::Arc::new(s));
             self.surface_version += 1;
         }
