@@ -68,6 +68,23 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 - Driving off the road soils the bus: the wheels on earth, grass or gravel throw it up onto
   the body (the dirt overlay), mud in the wet in a few minutes, dust in the dry more slowly.
 
+**Launcher**
+
+- The Drive page puts the map, the line and tour, the roadbook, the bus and the start on one
+  screen, in the layout the community chose: **Big Map** (the default) lays the route map over
+  the whole page with the rest floating on it, framed in the part the panels leave free;
+  **Control Room**, **Classic+** and **Classic** (in steps) are in **Settings > Launcher
+  layout**. The page with cards, where the map came far down, is gone; its tour buses, next
+  departures, map note, date calendar and save deletion are on every layout.
+- The route map has a light and a dark look after Apple Maps, as the launcher's theme.
+- A big map's route preview shows in about a second where it took over a minute (Berlin-Spandau
+  with its paved surfaces: 88 s before), and only the part in view is drawn when zoomed in.
+- Each tour says how long its trips take.
+- The menu on the left is in parts - Play (Drive, Multiplayer, Running games), Content (Mods,
+  Timetable), Options (Settings, Controls, Setup) and Help (Tutorials); the driver at its
+  bottom opens the profile. It folds to its icons with the arrow at its bottom, and stays so;
+  the numbers on Mods and Running games stay on their icons.
+
 ### Fixes
 
 **Navigator**
