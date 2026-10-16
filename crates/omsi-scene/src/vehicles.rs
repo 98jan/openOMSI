@@ -1039,8 +1039,8 @@ impl World {
             Some((id, has_alpha))
         });
         let cx = SlotCx { vt, mesh_index, vm, def, slot, m, dirs_ref, subst: &subst, settings: &self.settings };
-        let SlotAlpha { alpha, declared_alpha, dirt_overlay, cover, see_through, transparent_layer_hint, named_body, repair_body_depth } =
-            slot_alpha(&cx, &ov, tex, transmap);
+        let sa = slot_alpha(&cx, &ov, tex, transmap);
+        let SlotAlpha { alpha, repair_body_depth, .. } = sa;
         // (a night or light map named as a [CTCTexture] is the paint scheme's
         // picture as well, like the diffuse texture and the transparency map:
         // looked up by the model's own name, a destination display lit by its own
@@ -1086,7 +1086,7 @@ impl World {
         let (color, emissive, extra) = slot_extra(
             &cx,
             &ov,
-            &SlotAlpha { alpha, declared_alpha, dirt_overlay, cover, see_through, transparent_layer_hint, named_body, repair_body_depth },
+            &sa,
             textured,
             (night, envmap, env_mask, bump),
             (script_slot, script_trans, rain_layer, transmap.is_some()),
@@ -1277,6 +1277,8 @@ struct SlotAlpha {
     transparent_layer_hint: bool,
     named_body: bool,
     repair_body_depth: bool,
+    /// Blended, and cut below Omsi.exe's alpha reference as well (see `MaterialExtra::alpha_cut`).
+    tint_cut: bool,
 }
 
 /// The alpha mode of a vehicle's material slot: what the model.cfg declares, mended for dirt films, shadow decals, panes and (on request) bodies.
@@ -1352,7 +1354,15 @@ fn slot_alpha(cx: &SlotCx, ov: &[&MaterialDef], tex: Option<TextureId>, transmap
     if see_through {
         log::debug!("  {} slot {slot} '{}': see-through by its texture's alpha, writes no depth", def.file, m.texture);
     }
-    if declared_alpha == AlphaMode::Test && coverage.as_ref().is_some_and(|mask| texture_is_tint(mask)) { alpha = AlphaMode::Blend; } // (a livery's tinted glass)
+    // a livery's tinted glass on an alpha-tested layer: blended where it passes the cut, as
+    // Omsi.exe draws it (it leaves the blend state on), its clear glass still cut away
+    let tint_cut = declared_alpha == AlphaMode::Test
+        && !dirt_overlay
+        && coverage.as_ref().is_some_and(|mask| texture_is_tint(mask) || slot_is_tint(&vm.data, slot, mask));
+    if tint_cut {
+        alpha = AlphaMode::Blend;
+        log::debug!("  {} slot {slot} '{}': alpha-tested tint, blended above the cut", def.file, m.texture);
+    }
     // (the name alone still says what is drawn as glass: the same test finds
     // a gauge's needle film, a blind's net and the shadow under the bus)
     let transparent_layer_hint = named_pane;
@@ -1397,7 +1407,7 @@ fn slot_alpha(cx: &SlotCx, ov: &[&MaterialDef], tex: Option<TextureId>, transmap
     if omsi_cfg::flags::OMSI_FORCE_OPAQUE.is_set() && !dirt_overlay {
         alpha = AlphaMode::Opaque;
     }
-    SlotAlpha { alpha, declared_alpha, dirt_overlay, cover, see_through, transparent_layer_hint, named_body, repair_body_depth }
+    SlotAlpha { alpha, declared_alpha, dirt_overlay, cover, see_through, transparent_layer_hint, named_body, repair_body_depth, tint_cut }
 }
 
 /// The colours and the shader flags (`MaterialExtra`) of a vehicle's material slot.
@@ -1413,7 +1423,7 @@ fn slot_extra(
     lm_white: &dyn Fn(&[&MaterialDef]) -> bool,
 ) -> ([f32; 4], [f32; 3], MaterialExtra) {
     let SlotCx { vm, def, slot, m, .. } = *cx;
-    let SlotAlpha { alpha, declared_alpha, dirt_overlay, cover, see_through, transparent_layer_hint, named_body, repair_body_depth } = *a;
+    let SlotAlpha { alpha, declared_alpha, dirt_overlay, cover, see_through, transparent_layer_hint, named_body, repair_body_depth, tint_cut } = *a;
     let (color, emissive, specular, ambient) = d3d_material(m, ov.iter().find_map(|o| o.allcolor), textured);
     let mut extra = material_extra(ov, env_mask, bump, specular);
     extra.ambient = Some(ambient);
@@ -1440,6 +1450,7 @@ fn slot_extra(
     if dirt_overlay {
         extra.no_z_write = true;
     }
+    extra.alpha_cut = tint_cut && alpha == AlphaMode::Blend;
     // (chrome: a small opaque part with a sphere map, not the body - see
     // `MaterialExtra::metal_ok`)
     extra.metal_ok = envmap.is_some() && alpha == AlphaMode::Opaque && !named_body && !material_has_vehicle_volume(&vm.data, slot);

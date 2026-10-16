@@ -97,6 +97,11 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             discard;
         }
     }
+    // (a blended slot that keeps Omsi.exe's alpha test, `MaterialExtra::alpha_cut`: a
+    // livery's clear glass is cut away, its tinted glass blended)
+    if (mode > 2.5 && tex.a < ALPHA_REF) {
+        discard;
+    }
     var alpha = tex.a * material.color.a;
     if (mode < 0.5) {
         alpha = 1.0;
@@ -345,7 +350,11 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     // (not under snow: a snowy road took the rain's gloss and the snow on it shone like
     // plastic in every headlight)
     let dry_snow = 1.0 - clamp(enh.weather.y, 0.0, 1.0);
-    let wet_road = camera.shadow.w * material.params2.z * outside * dry_snow;
+    // (the surface's wetness kind, `TextureCfg::wetness_kind`: a film of water over a
+    // sealed surface - pools as well on one with [puddles] - or, on grass and earth, water
+    // soaked up: a lawn wet through mirrors no lamps)
+    let moist = material.params2.z;
+    let wet_road = camera.shadow.w * select(0.0, 1.0, moist > 0.4) * outside * dry_snow;
     let wet_any = camera.shadow.w * outside * select(0.35, 0.0, glass) * dry_snow;
     var puddle = 0.0;
     if (wet_road > 0.0) {
@@ -364,7 +373,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // half of the wheel splashes in `puddles.rs`.
         let pattern_xy = world_pattern_xy(in.world);
         // (the pools: see `road_puddle_coverage`, shared with the classic picture)
-        puddle = road_puddle_coverage(in.world, n, wet_road);
+        puddle = select(0.0, road_puddle_coverage(in.world, n, wet_road), moist > 0.75);
         if (puddle > 0.001) {
             // A drop is a few millimetres across and its ring dies away within a hand's
             // breadth, so the shared ripple grid is 12.5 cm wide and a ring grows
@@ -852,7 +861,25 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     }
     // water hides what lies under it as far as it reflects (Fresnel): see-through from
     // above, a mirror of the sky towards the horizon
-    let a_out = select(alpha, clamp(alpha + (1.0 - alpha) * fr.g, alpha, 1.0), is_water);
+    var a_out = select(alpha, clamp(alpha + (1.0 - alpha) * fr.g, alpha, 1.0), is_water);
+    // ... and as far as the light has water to cross: at the shore the water is a film over
+    // the bank, clear, and it thickens with the way through it (Beer-Lambert, a turbid
+    // river's 2 per metre), the bed seen through the shallows - not a plane cut hard into
+    // the bank (#1822). The way is read off the opaque depth behind the pixel, which the
+    // ambient occlusion keeps (its `g`, view depth); without it the water is as it was.
+    if (is_water && !capture && camera.clouds.w > 0.5 && camera.clouds.w < 1.5) {
+        let size = vec2<i32>(textureDimensions(t_ao));
+        if (size.x > 4) {
+            let c = clamp(vec2<i32>(in.clip.xy * 0.5), vec2<i32>(0), size - vec2<i32>(1));
+            let behind = textureLoad(t_ao, c, 0).g;
+            let z = (camera.view_proj * vec4<f32>(in.world, 1.0)).w;
+            if (behind > 0.0) {
+                // (the way along the line of sight, from the difference of the view depths)
+                let way = max(behind - z, 0.0) / max(abs(dot(v, normalize(cross(camera.cam_up.xyz, camera.cam_right.xyz)))), 0.2);
+                a_out = a_out * (1.0 - exp(-2.0 * way));
+            }
+        }
+    }
     return vec4<f32>(rgb * aer.a + aer.rgb * pre, a_out);
 }
 

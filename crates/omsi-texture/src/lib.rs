@@ -73,6 +73,23 @@ pub struct TextureCfg {
 }
 
 impl TextureCfg {
+    /// How the rain wets the surface, as the materials carry it (`MaterialExtra::moisture`):
+    /// 1 a sealed surface water stands on in pools (`[puddles]`), 0.5 one a film of water
+    /// runs over (`[moisture]` on asphalt, concrete, cobbles), 0.25 one that only soaks it
+    /// up (`[moisture]` on grass, earth, gravel - `[surface]` 3 to 5: a lawn holds no film to
+    /// mirror the lamps in, it turned the grass strips into glowing mirrors at night), 0 dry.
+    pub fn wetness_kind(&self) -> f32 {
+        if self.puddles {
+            1.0
+        } else if self.moisture && self.surface_given && (3..=5).contains(&self.surface) {
+            0.25
+        } else if self.moisture {
+            0.5
+        } else {
+            0.0
+        }
+    }
+
     pub fn load(path: &Path) -> TextureCfg {
         let mut c = TextureCfg::default();
         if let Ok(f) = omsi_cfg::CfgFile::read(path) {

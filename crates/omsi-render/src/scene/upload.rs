@@ -36,7 +36,7 @@ impl Renderer {
                     i.interior.min(0.99)
                 },
                 // the surface flag: 1 ground, 2 a vehicle's shadow blob (no snow on it),
-                // 1.25 a legacy pulled decal, 0.9 an OMSI-ordered surface (weather
+                // 1.25 a legacy pulled decal, 1.4 a road's painted lines, 0.9 an OMSI-ordered surface (weather
                 // classification without view-space pull), 0.75 a painted ground layer;
                 // below -500 a vehicle part, -(5000 + the roof height relative to origin)
                 if let Some(code) = Self::roof_code(i, ro) {
@@ -48,6 +48,7 @@ impl Renderer {
                         i.decal,
                         i.surface,
                         i.surface_bias,
+                        i.render_phase == RenderPhase::BeforeNormal,
                     )
                 },
             ]);

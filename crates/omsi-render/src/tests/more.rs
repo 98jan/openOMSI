@@ -457,10 +457,13 @@ fn omsi_render_phases_are_monotonic_and_complete() {
 
 #[test]
 fn metric_lifted_surfaces_keep_shading_class_without_view_space_pull() {
-    assert_eq!(surface_instance_code(false, false, false, true, false), 0.9);
-    assert_eq!(surface_instance_code(false, false, false, true, true), 1.0);
-    assert_eq!(surface_instance_code(false, false, true, false, false), 0.9);
-    assert_eq!(surface_instance_code(false, true, false, true, false), 0.75);
+    assert_eq!(surface_instance_code(false, false, false, true, false, false), 0.9);
+    assert_eq!(surface_instance_code(false, false, false, true, true, false), 1.0);
+    assert_eq!(surface_instance_code(false, false, true, false, false, false), 0.9);
+    assert_eq!(surface_instance_code(false, true, false, true, false, false), 0.75);
+    // a road's painted lines go over the crossings laid on the road (#1694)
+    assert_eq!(surface_instance_code(false, false, false, true, true, true), 1.4);
+    assert_eq!(surface_instance_code(false, false, true, true, true, true), 1.25);
 }
 
 #[test]

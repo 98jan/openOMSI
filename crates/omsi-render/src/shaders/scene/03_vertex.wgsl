@@ -197,8 +197,13 @@ fn scene_clip(e: u32, wp: vec4<f32>) -> vec4<f32> {
         // beside. Capped, the pole stays behind what it stands by, and the depth a road
         // needs over flush ground is a few millimetres at most (a floor raised 3 cm above
         // the road is still seen - `surface_bias_keeps_raised_floors_visible_at_a_distance`).
-        let share = select(select(0.003, 0.004, surf > 1.1 && surf < 1.5), 0.005, surf > 1.5);
-        let fixed = select(select(0.0, 0.01, surf > 1.1 && surf < 1.5), 0.05, surf > 1.5);
+        // (a road's painted lines, 1.4, a little more again: a crossing object laid over
+        // the road covered the lines it overlaps, which in Omsi.exe lie a millimetre over
+        // the road and win the depth test against it - #1694)
+        let decal = surf > 1.1 && surf < 1.35;
+        let paint = surf > 1.35 && surf < 1.5;
+        let share = select(select(select(0.003, 0.004, decal), 0.0045, paint), 0.005, surf > 1.5);
+        let fixed = select(select(select(0.0, 0.01, decal), 0.015, paint), 0.05, surf > 1.5);
         let pull = min(min(share * d, 0.05) + fixed, d * 0.3);
         cp = wp.xyz - to / max(d, 1e-3) * pull;
     }

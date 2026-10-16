@@ -25,17 +25,21 @@ fn point_lights(p: vec3<f32>, n: vec3<f32>, map_k: f32) -> vec3<f32> {
             }
             let l = lights[li];
             let d = l.pos.xyz - p;
-            let dist = length(d);
-            if (dist >= l.pos.w) {
+            // (out of reach, or a map lamp on a surface that takes none: nothing to work out -
+            // in a city at night every pixel looked at a cell's dozens of lamps, #1467)
+            let dist2 = dot(d, d);
+            let own = l.dir.x > 0.5 && l.dir.w < -1.5;
+            if (dist2 >= l.pos.w * l.pos.w || (map_k <= 0.0 && !own && l.dir.w < -1.5)) {
                 continue;
             }
+            let dist = sqrt(dist2);
             // full intensity within 1/8 of the range, then inverse-square, cut off at the range;
             // the strength was set by eye while a street lamp was still counted about three
             // times (see above), so it is three times what it was, to keep the lamp pools
             let r0 = l.pos.w * 0.125;
-            let att = min(1.0, (r0 * r0) / max(dist * dist, 0.01)) * clamp(1.0 - dist / l.pos.w, 0.0, 1.0) * 3.75;
+            let att = min(1.0, (r0 * r0) / max(dist2, 0.01)) * clamp(1.0 - dist / l.pos.w, 0.0, 1.0) * 3.75;
             let ndl = max(dot(n, d / max(dist, 0.01)), 0.15);
-            var k = select(map_k, 1.0, l.dir.x > 0.5 && l.dir.w < -1.5);
+            var k = select(map_k, 1.0, own);
             if (l.dir.w >= -1.5) {
                 // a spot (a vehicle's [spotlight], as Direct3D lights with it): full inside
                 // the inner cone, fading to nothing at the outer one; nothing behind it

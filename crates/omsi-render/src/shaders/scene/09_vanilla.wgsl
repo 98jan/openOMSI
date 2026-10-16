@@ -99,6 +99,11 @@ fn shade_vanilla(in: FsIn, puddle_weight: ptr<function, f32>, eye: vec3<f32>) ->
             discard;
         }
     }
+    // (a blended slot that keeps Omsi.exe's alpha test, `MaterialExtra::alpha_cut`: a
+    // livery's clear glass is cut away, its tinted glass blended)
+    if (mode > 2.5 && tex.a < ALPHA_REF) {
+        discard;
+    }
     let n = safe_normal(in.normal);
     let ndl = max(dot(n, camera.sun_dir.xyz), 0.0);
     // three lights like the original: direct sun (A), light from above (B), ambient (C)
@@ -299,12 +304,15 @@ fn shade_vanilla(in: FsIn, puddle_weight: ptr<function, f32>, eye: vec3<f32>) ->
     // to mirror the sky, strongest where you look along it (the Fresnel sheen that makes a
     // wet street read as wet)
     let outside = weather_outside_n(in.world, n, material.extra.x > 0.5, in.params2.w);
-    let wet = camera.shadow.w * material.params2.z * outside * (1.0 - clamp(camera.ambient.w, 0.0, 1.0));
+    // (a film over a sealed surface - pools only with [puddles] - not on grass and earth,
+    // which soak it up: `TextureCfg::wetness_kind`)
+    let moist = material.params2.z;
+    let wet = camera.shadow.w * select(0.0, 1.0, moist > 0.4) * outside * (1.0 - clamp(camera.ambient.w, 0.0, 1.0));
     if (wet > 0.0) {
         let vdir = normalize(in.world - eye);
         let facing = clamp(-dot(vdir, n), 0.0, 1.0);
         let fresnel = pow(1.0 - facing, 4.0);
-        let puddle = road_puddle_coverage(in.world, n, wet);
+        let puddle = select(0.0, road_puddle_coverage(in.world, n, wet), moist > 0.75);
         let water = 0.02 + 0.98 * pow(1.0 - facing, 5.0);
         let weight = clamp(mix(fresnel * wet * 0.85, water * wet, puddle), 0.0, 0.9);
         let sheen = camera.sky_color.rgb * 0.5 + camera.sun_color.rgb * camera.sun_dir.w * 0.35;

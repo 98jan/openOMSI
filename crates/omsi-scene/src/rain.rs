@@ -6,6 +6,35 @@ use glam::{DVec3, Vec3};
 use omsi_render::{Corona, Scene};
 
 const HALF_WIDTH: f32 = 16.0;
+/// The box round the eye the near drops fill: as much rain as the eye can tell apart is
+/// close by (a 2 mm drop 15 m away is a tenth of a pixel), so the near ones are as many as
+/// the far again in a fraction of the room, and a downpour is a curtain, not a few lines.
+const NEAR_HALF_WIDTH: f32 = 7.0;
+const NEAR_HEIGHT: f32 = 12.0;
+
+/// How long the eye sees a falling drop as one streak (s): the length of a streak is the
+/// way the drop goes in that time against the eye - short and upright standing, long and
+/// slanting at the windscreen of a bus at speed (#1412).
+const STREAK_TIME: f32 = 1.0 / 30.0;
+
+/// The rain rate (mm/h) of OMSI's precipitation strength (0..1 of its 255): a drizzle at
+/// the bottom, a cloudburst (60 mm/h) at the top.
+pub fn rain_rate_mm_h(rate: f32) -> f32 {
+    0.3 + 60.0 * rate.clamp(0.0, 1.0).powi(2)
+}
+
+/// The median drop diameter (mm) of rain falling at `r` mm/h: Marshall and Palmer's drop
+/// sizes (1948), `N(D) = 8000 e^(-ΛD)` with `Λ = 4.1 R^-0.21` per mm, whose median volume
+/// diameter is 3.67 / Λ.
+pub fn median_drop_mm(r: f32) -> f32 {
+    3.67 / (4.1 * r.max(0.01).powf(-0.21))
+}
+
+/// The speed (m/s) a raindrop of `d` mm falls at in still air at sea level (Atlas, Srivastava
+/// and Sekhon 1973): a drizzle drifts down at 2-4 m/s, the big drops of a cloudburst at 7-8.
+pub fn terminal_speed(d: f32) -> f32 {
+    (9.65 - 10.3 * (-0.6 * d.max(0.0)).exp()).max(0.5)
+}
 
 /// The rain's quality of a `rain_quality` setting (`high`, `medium`, `low`): 2 high, 1
 /// medium, 0 low.
@@ -23,9 +52,14 @@ pub fn weather_wind(weather: &omsi_content::weather::Weather) -> Vec3 {
 }
 
 pub struct Rain {
+    /// The far drops (`..near_from`) in the wide box, the near ones after them.
     particles: Vec<Vec3>,
+    near_from: usize,
     kind: i32,
     rate: f32,
+    /// How fast the drops fall (m/s) and how thick they are (mm), from the rain's rate.
+    fall: f32,
+    drop_mm: f32,
     rng: u64,
     camera: Option<DVec3>,
 }
@@ -47,8 +81,11 @@ impl Rain {
     pub fn new() -> Rain {
         Rain {
             particles: Vec::new(),
+            near_from: 0,
             kind: 0,
             rate: 0.0,
+            fall: 9.0,
+            drop_mm: 2.0,
             rng: 0xABCDEF12345,
             camera: None,
         }
@@ -65,38 +102,46 @@ impl Rain {
     pub fn set(&mut self, kind: i32, rate: f32, quality: u8) {
         self.kind = kind;
         self.rate = rate.clamp(0.0, 1.0);
+        // the drops of this rain: small and slow in a drizzle, big and fast in a downpour
+        // (they all looked the same whatever the rain, #1412)
+        self.drop_mm = median_drop_mm(rain_rate_mm_h(self.rate));
+        self.fall = terminal_speed(self.drop_mm);
         // (snow is drawn by the renderer itself, from the weather: render snow.wgsl,
         // `Lighting::snowfall`); no particles either while nothing falls
-        let n = if kind == 0 || kind == 2 || self.rate == 0.0 {
-            0
+        let (far, near) = if kind == 0 || kind == 2 || self.rate == 0.0 {
+            (0, 0)
         } else {
             // (fewer streaks at a lower rain quality: they are drawn as sprites each frame)
             let share = [0.25, 0.5, 1.0][quality.min(2) as usize];
-            ((400.0 + 2600.0 * self.rate) * share) as usize
+            (((300.0 + 2700.0 * self.rate) * share) as usize, ((200.0 + 2800.0 * self.rate) * share) as usize)
         };
-        while self.particles.len() < n {
-            let p = Vec3::new(
-                self.rand() * (HALF_WIDTH * 2.0) - HALF_WIDTH,
-                self.rand() * (HALF_WIDTH * 2.0) - HALF_WIDTH,
-                self.rand() * 20.0,
-            );
-            self.particles.push(p);
+        if self.particles.len() != far + near || self.near_from != far {
+            self.particles.clear();
+            for i in 0..far + near {
+                let (half, height) = if i < far { (HALF_WIDTH, 20.0) } else { (NEAR_HALF_WIDTH, NEAR_HEIGHT) };
+                let p = Vec3::new(self.rand() * (half * 2.0) - half, self.rand() * (half * 2.0) - half, self.rand() * height);
+                self.particles.push(p);
+            }
+            self.near_from = far;
         }
-        self.particles.truncate(n);
     }
 
+    /// Move the drops by `dt`; the drops' velocity against the eye (m/s).
     fn advance(&mut self, dt: f32, camera: DVec3, wind: Vec3) -> Vec3 {
         // Keep drops in the world as the camera moves through them. Recentring the box
         // used to carry every drop along with the bus, even at motorway speed.
         let movement = self.camera.replace(camera).map_or(Vec3::ZERO, |old| (camera - old).as_vec3());
-        let velocity = wind - Vec3::Z * if self.kind == 2 { 1.5 } else { 9.0 };
-        for p in &mut self.particles {
+        let velocity = wind - Vec3::Z * if self.kind == 2 { 1.5 } else { self.fall };
+        for (i, p) in self.particles.iter_mut().enumerate() {
             *p += velocity * dt - movement;
-            p.x = (p.x + HALF_WIDTH).rem_euclid(HALF_WIDTH * 2.0) - HALF_WIDTH;
-            p.y = (p.y + HALF_WIDTH).rem_euclid(HALF_WIDTH * 2.0) - HALF_WIDTH;
-            p.z = (p.z + 2.0).rem_euclid(22.0) - 2.0;
+            let (half, height) = if i < self.near_from { (HALF_WIDTH, 20.0) } else { (NEAR_HALF_WIDTH, NEAR_HEIGHT) };
+            p.x = (p.x + half).rem_euclid(half * 2.0) - half;
+            p.y = (p.y + half).rem_euclid(half * 2.0) - half;
+            p.z = (p.z + 2.0).rem_euclid(height + 2.0) - 2.0;
         }
-        (velocity - movement / dt.max(0.001)).normalize_or_zero()
+        // (a jump of the camera - a new view, a teleport - is no speed)
+        let seen = movement / dt.max(0.001);
+        velocity - if seen.length() < 80.0 { seen } else { Vec3::ZERO }
     }
 
     /// Move the particles (camera-relative box) and push them as sprites.
@@ -116,7 +161,11 @@ impl Rain {
             self.camera = Some(camera);
             return;
         }
-        let streak = self.advance(dt, camera, wind);
+        let relative = self.advance(dt, camera, wind);
+        let streak = relative.normalize_or_zero();
+        // the streak: the way the drop goes against the eye while the eye sees it as one
+        // (`size` is a quarter of its half length, see corona.wgsl), at least the drop
+        let length = (relative.length() * STREAK_TIME).clamp(0.06, 1.4);
         let buses: Vec<(DVec3, f64, [f32; 6])> = inside.iter().filter(|b| (b.0 - camera).length() < 40.0).map(|&(o, h, bb)| (o, h.to_radians(), bb)).collect();
         let in_one = |p: DVec3, (o, h, bb): (DVec3, f64, [f32; 6])| -> bool {
             let d = p - o;
@@ -133,10 +182,11 @@ impl Rain {
                 && (z - bb[5] as f64).abs() < bb[2] as f64 * 0.5 + 0.6
         };
         let in_bus = |p: DVec3| buses.iter().any(|b| in_one(p, *b));
+        // (a bigger drop catches more of the light: a drizzle is a haze of faint lines)
         let (size, color, brightness) = if self.kind == 2 {
             (0.06, [1.0, 1.0, 1.0], 0.9)
         } else {
-            (0.05, [0.75, 0.8, 0.9], 0.35)
+            (length / 8.0, [0.75, 0.8, 0.9], (0.18 + 0.1 * self.drop_mm).min(0.45))
         };
         let mut excluded = 0usize;
         for p in &self.particles {
@@ -286,10 +336,12 @@ mod tests {
         rain.particles = vec![Vec3::new(0.0, 0.0, 10.0)];
         rain.camera = Some(DVec3::ZERO);
         let camera = DVec3::new(0.0, 2.0, 0.0);
-        let direction = rain.advance(0.1, camera, Vec3::X * 3.0);
+        rain.near_from = 1;
+        let fall = rain.fall;
+        let direction = rain.advance(0.1, camera, Vec3::X * 3.0).normalize();
         let world = camera + rain.particles[0].as_dvec3();
-        assert!((world - DVec3::new(0.3, 0.0, 9.1)).length() < 1e-5);
-        assert!(direction.abs_diff_eq(Vec3::new(3.0, -20.0, -9.0).normalize(), 1e-5));
+        assert!((world - DVec3::new(0.3, 0.0, 10.0 - fall as f64 * 0.1)).length() < 1e-5);
+        assert!(direction.abs_diff_eq(Vec3::new(3.0, -20.0, -fall).normalize(), 1e-5));
         rain.advance(0.0, DVec3::splat(10000.0), Vec3::ZERO);
         let p = rain.particles[0];
         assert!(p.is_finite() && p.x.abs() <= HALF_WIDTH && p.y.abs() <= HALF_WIDTH && p.z >= -2.0 && p.z < 20.0);
@@ -299,12 +351,29 @@ mod tests {
     fn dry_weather_has_no_particles_and_heavy_rain_keeps_the_budget() {
         let mut rain = Rain::new();
         rain.set(1, 1.0, 2);
-        assert_eq!(rain.particles.len(), 3000);
+        assert_eq!(rain.particles.len(), 6000);
+        assert_eq!(rain.near_from, 3000);
         rain.set(1, 0.0, 2);
         assert!(rain.particles.is_empty());
         rain.set(2, 1.0, 2);
         rain.set(0, 1.0, 2);
         assert!(rain.particles.is_empty());
+    }
+
+    /// A drizzle falls slower and in smaller drops than a downpour (#1412), as measured.
+    #[test]
+    fn a_downpour_falls_faster_in_bigger_drops_than_a_drizzle() {
+        let drizzle = median_drop_mm(rain_rate_mm_h(0.05));
+        let downpour = median_drop_mm(rain_rate_mm_h(1.0));
+        assert!(drizzle > 0.5 && drizzle < 1.0, "{drizzle}");
+        assert!(downpour > 2.0 && downpour < 2.5, "{downpour}");
+        assert!(terminal_speed(drizzle) > 2.0 && terminal_speed(drizzle) < 4.5);
+        assert!(terminal_speed(downpour) > 6.5 && terminal_speed(downpour) < 8.0);
+        let mut rain = Rain::new();
+        rain.set(1, 0.05, 2);
+        let slow = rain.fall;
+        rain.set(1, 1.0, 2);
+        assert!(rain.fall > slow + 2.0);
     }
 
     #[test]

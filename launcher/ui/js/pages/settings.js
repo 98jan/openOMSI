@@ -12,6 +12,7 @@ import { UpdateRow, checkUpdates } from '../updates.js';
 import { SETTINGS_TABS, GRAPHICS_PROFILE_KEYS } from './settings-schema.js';
 import { VersionsDialog } from './versions.js';
 import { RadioStations } from './radio-stations.js';
+import { ContentTest } from './content-test.js';
 
 const REPO_URL = 'https://github.com/openOmsi-project/openOMSI';
 
@@ -62,11 +63,13 @@ export function SettingsPage() {
   return html`
     <${PageHead} title="Settings" text="Every change is saved at once; the game reads them when it starts." />
     <${Tabs} value=${tab} options=${SETTINGS_TABS.map((x) => [x.id, x.label])} onChange=${pick} />
-    <div class="settings-grid" key=${tab}>
+    ${current.page === 'content'
+      ? html`<div key=${tab}><${ContentTest} /></div>`
+      : html`<div class="settings-grid" key=${tab}>
       ${current.cols.map((col) => html`<${Card} title=${col.title}>
         ${col.rows.filter((row) => visible(row, s.settings, platform)).map((row, i) => html`<${Row} key=${i + (row.key || row.id || row.label || row.title || '')} row=${row} ask=${ask} />`)}
       </${Card}>`)}
-    </div>
+    </div>`}
     ${dialog}
   `;
 }

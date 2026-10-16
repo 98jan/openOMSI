@@ -62,6 +62,7 @@ impl Renderer {
             grid_filled: Vec::new(),
             grid_sent: Vec::new(),
             grid_counts: Vec::new(),
+            grid_strength: Vec::new(),
             grid_marks: Vec::new(),
             smoke_scratch: Default::default(),
             lamp_shadow_last: Vec::new(),

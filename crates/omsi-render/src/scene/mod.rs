@@ -264,6 +264,9 @@ pub struct Scene {
     pub(crate) grid_sent: Vec<u32>,
     /// The lamps in each cell while a grid is made, and the cells to compare.
     pub(crate) grid_counts: Vec<u8>,
+    /// How strongly each light of a grid cell lights the cell's middle (parallel to the
+    /// grid): a full cell keeps its strongest (see `Renderer::prepare_lights`).
+    pub(crate) grid_strength: Vec<f32>,
     pub(crate) grid_marks: Vec<bool>,
     /// The smoke's sprites, their order and the sorted list of the last `prepare_smoke`,
     /// kept for the next: every car's exhaust is thousands of sprites, and lists made anew

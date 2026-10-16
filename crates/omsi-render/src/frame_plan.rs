@@ -303,9 +303,16 @@ pub(crate) fn surface_instance_code(
     decal: bool,
     surface: bool,
     surface_bias: bool,
+    paint: bool,
 ) -> f32 {
     if blob {
         2.0
+    } else if paint && surface && surface_bias && !decal {
+        // a road's painted lines (`RenderPhase::BeforeNormal` spline paint): pulled a little
+        // more than the surface objects, so that a crossing laid over the road - drawn after
+        // them, and losing the depth test to the paint a millimetre over the road in
+        // Omsi.exe - does not cover the lines it overlaps (#1694)
+        1.4
     } else if ground_layer {
         0.75
     } else if decal {

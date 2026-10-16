@@ -256,6 +256,18 @@ impl LampShadow {
 pub(crate) const LIGHT_GRID_SIDE: usize = 64;
 /// (32: a depot or a bus interior with many lamps lost the farthest past 16 in a cell)
 pub(crate) const LIGHT_CELL_CAP: usize = 32;
+/// The lights a cell holds for the classic picture: Omsi.exe lights a draw with at most the
+/// eight Direct3D lights nearest it, and the classic shader working through a cell's 32
+/// for every pixel of a city at night halved the frame rate on small graphics chips (#1467).
+pub(crate) const VANILLA_CELL_CAP: usize = 8;
+
+/// How strongly light `l` (at `p`, radius `r`) lights a point `d2` (squared metres) away -
+/// the classic shader's falloff - by which a full grid cell keeps its strongest lights.
+fn cell_strength(intensity: f32, color: [f32; 3], r: f32, d2: f32) -> f32 {
+    let r0 = r * 0.125;
+    let d = d2.sqrt();
+    intensity * (color[0] + color[1] + color[2]) * (r0 * r0 / d2.max(0.01)).min(1.0) * (1.0 - d / r.max(0.01)).max(0.0)
+}
 
 /// Does this path draw the light? (See `Renderer::prepare_lights`.)
 pub(crate) fn drawn_by(l: &PointLight, enhanced: bool) -> bool {
@@ -347,6 +359,9 @@ impl Renderer {
         let mut counts = std::mem::take(&mut scene.grid_counts);
         counts.clear();
         counts.resize(cells, 0);
+        let mut strength = std::mem::take(&mut scene.grid_strength);
+        strength.resize(cells * LIGHT_CELL_CAP, 0.0);
+        let cap = if enhanced { LIGHT_CELL_CAP } else { VANILLA_CELL_CAP };
         for l in &scene.lights {
             // Every light the grid reaches is in the list, the other path's too (a headlight
             // is three points for the plain shader and one spot for the enhanced): only the
@@ -405,12 +420,26 @@ impl Renderer {
                 for x in (x0.max(0.0) as usize)..=(x1.min(side as f32 - 1.0) as usize) {
                     let cell = y * side + x;
                     let n = counts[cell] as usize;
-                    if n < LIGHT_CELL_CAP {
+                    // (its light at the cell's middle, or at its nearest point when the
+                    // light stands in the cell)
+                    let cx = (origin[0] + (x as f32 + 0.5) * LIGHT_CELL - p.x).abs().max(0.0) - LIGHT_CELL * 0.5;
+                    let cy = (origin[1] + (y as f32 + 0.5) * LIGHT_CELL - p.y).abs().max(0.0) - LIGHT_CELL * 0.5;
+                    let d2 = cx.max(0.0).powi(2) + cy.max(0.0).powi(2);
+                    // (a spot - a headlight - always counts as strong: it is the player's or a
+                    // car's own light, which Omsi.exe gives a light of its own)
+                    let s = if l.direction.length_squared() > 1e-6 { f32::MAX } else { cell_strength(l.intensity, l.color, l.radius, d2) };
+                    let base = cell * LIGHT_CELL_CAP;
+                    if n < cap {
                         if n == 0 {
                             scene.grid_filled.push(cell as u32);
                         }
-                        grid[cell * LIGHT_CELL_CAP + n] = idx;
+                        grid[base + n] = idx;
+                        strength[base + n] = s;
                         counts[cell] += 1;
+                    } else if let Some(weakest) = (0..cap).min_by(|&a, &b| strength[base + a].total_cmp(&strength[base + b])).filter(|&k| strength[base + k] < s) {
+                        // a full cell keeps the lights that light it most, not the first ones
+                        grid[base + weakest] = idx;
+                        strength[base + weakest] = s;
                     } else if omsi_cfg::flags::OMSI_DEBUG_LIGHT_GRID.is_set() {
                         log::info!("light grid: cell ({x}, {y}) full, light at ({:.1}, {:.1}) radius {:.0} {} left out", p.x, p.y, l.radius, if l.direction.length_squared() > 0.5 { "spot" } else { "point" });
                     }
@@ -428,6 +457,7 @@ impl Renderer {
             });
         }
         scene.grid_counts = counts;
+        scene.grid_strength = strength;
         let lbytes: &[u8] = bytemuck::cast_slice(&gpu_lights);
         let mut rebuilt = false;
         match &scene.light_buf {
