@@ -232,9 +232,49 @@ plugins loaded. In a LAN game `omsi.lan.send(player, text)` reaches the same plu
 another player's game (`lan_message(from, text)`): short texts (120 characters), about ten
 a second, carried in the session's own messages - a game without the plugin ignores them.
 
+#### Passengers' tickets
+
+What a passenger asks for at the cash desk is the ticket pack's choice - unless a plugin
+says otherwise. Everybody boarding the player's bus is reported once, on their way to the
+door, as the `passenger_ticket` event: who they are (`id`, `age`), what they do about a
+ticket (`kind`: `"none"`, `"stamp"`, `"buy"`), the pack's ticket and price, the stop they
+board at and the stop they ride to, with where both are in the duty's trip. They wait in the
+doorway, and their request at the desk waits, until the plugins have had that frame
+(normally the next one; 5 s of game time at most), so a plugin has time to work out a fare of its own - a tariff of zones, a table of fare units, a pass - and hand it
+over with `omsi.people.set_ticket`:
+
+```lua
+omsi.on("passenger_ticket", function(p)
+  if p.kind ~= "buy" or not p.destination_number then return end
+  local stops = p.destination_number - p.stop_number
+  omsi.people.set_ticket(p.id, {
+    name = stops <= 3 and "Short hop" or "Single",
+    price = stops <= 3 and 1.5 or 3,
+    voice = "Zone_" .. stops,   -- Zone_<n>.wav of the passenger's voice folder, else the usual line
+    tag = "my_tariff",          -- kept with the passenger: omsi.people.get(id).tag
+  })
+end)
+```
+
+* `kind` changes only until the passenger is in the bus; the ticket, the name, the price
+  and the voice until they have asked for it (`omsi.people.get(id).ticket_asked`).
+* `ticket` picks another ticket of the pack (its name, price and `GivenTicket` number with
+  it); `name` and `price` alone keep the pack's number, so a bus's ticket printer and the
+  driver's ticket key go on working.
+* A buyer always has a ticket of the pack the driver can give: `ticket = 0` is refused for
+  them, and somebody made a buyer without `ticket` gets the pack's ticket for their age (or,
+  when none is for their age, the change is refused).
+* A voice line the passenger's voice folder does not have falls back to `Ticket_<n>_<k>`.
+* `omsi.people.get(id)` shows the passenger's ticket now and which plugin changed it
+  (`ticket_by`). Without a plugin listening the passengers do as before, and nobody waits.
+
+[`reduced_tickets.lua`](examples/plugins/reduced_tickets.lua) has every adult ask for the
+reduced fare of the stock Berlin ticket packs; [`passenger_log.lua`](examples/plugins/passenger_log.lua)
+writes what a plugin learns of each passenger into `game.log`.
+
 ### On-screen panels
 
-`omsi.ui` puts panels of the plugin's own on the screen, in the game's look: Roboto, the
+`omsi.ui` puts panels of the plugin's own on the screen, in the game's look: Inter, the
 game's icons, dark rounded cards with a shadow, as large as the rest of the interface (the
 interface size setting and the window's height scale them). A plugin describes a panel as a
 table once and sets it again when its content changes - every half second, say, not every
@@ -343,6 +383,8 @@ Complete plugins to start from (each runs in the tests against a stand-in game):
 | [`trip_panel.lua`](examples/plugins/trip_panel.lua) | a panel with the line, the next stop and a button |
 | [`dispatcher/`](examples/plugins/dispatcher/main.lua) | a dispatcher and a small career: a draggable panel with tabs, the duty's next stops in a table, a chart of the delays, pay for stops and trips kept in the storage, today's duties offered and taken with a click, settings, hotkeys |
 | [`telemetry_hud.lua`](examples/plugins/telemetry_hud.lua) | a HUD: the speed with a chart of the last minute, gear, rpm, fuel, passengers, the speed limit and the traffic light ahead; a warning before a red light; the values as JSON over UDP for a program beside the game |
+| [`passenger_log.lua`](examples/plugins/passenger_log.lua) | every passenger boarding the bus in `game.log`: age, boarding stop and destination, the ticket they will ask for (`passenger_ticket`, `people.get`) |
+| [`reduced_tickets.lua`](examples/plugins/reduced_tickets.lua) | every adult asks for the reduced fare instead of the full one (`passenger_ticket`, `people.set_ticket`) |
 | [`weather_controller.lua`](examples/plugins/weather_controller.lua) | the weather files as tabs, sliders for temperature, visibility and rain, snow cover, the clock moved by buttons, and a day cycle of its own |
 
 ### Safety and errors
@@ -528,8 +570,10 @@ declared to call the function (a plain `.lua` file has them all).
 | --- | --- | --- | --- |
 | `omsi.people.counts()` | walking, waiting, riding | The people of the map near the camera: walking, waiting at stops, riding a bus. | 0.2.22 |
 | `omsi.people.density()` | number or nil | The people setting: 0 to 3, 1 the map's own amount. | 0.2.22 |
-| `omsi.people.list([radius])` | list of tables | The people (within `radius` m of the player's bus, when given): `{id, x, y, z, state, aboard, ai_bus, stop, destination, ticket, complaint}`. `state`: `"strolling"`, `"idle"`, `"standing"`, `"waiting"`, `"to_bus"`, `"boarding"`, `"riding"`, `"seated"`, `"leaving"`, `"to_stop"`; `aboard` in the player's bus; `complaint` 0 to 3 (3: they leave). | 0.2.22 |
+| `omsi.people.get(id)` | table or nil | One person by id, as `people.list` gives them, and more: `stop_name` (the timetable's name of the stop they wait or waited at), `ticket` (the name of the ticket they ask for), `ticket_kind` (`"none"`, `"stamp"`, `"buy"`), `ticket_index` (the ticket pack's, from 1; 0 none), `ticket_price`, `ticket_voice`, `ticket_by` (the plugin that changed it), `ticket_asked` (asked for at the cash desk already), `tag` (`people.set_ticket`'s), `age`, `model` (the `.hum` file), `voice` (its voice folder). `people.list` gives the same fields. | 0.3 |
+| `omsi.people.list([radius])` | list of tables | The people (within `radius` m of the player's bus, when given): `{id, x, y, z, state, aboard, ai_bus, stop, destination, ticket, complaint}`. `state`: `"strolling"`, `"idle"`, `"standing"`, `"waiting"`, `"to_bus"`, `"boarding"`, `"riding"`, `"seated"`, `"leaving"`, `"to_stop"`; `aboard` in the player's bus; `complaint` 0 to 3 (3: they leave); and the fields `people.get` describes. | 0.2.22 |
 | `omsi.people.set_density(value)` | boolean | Changes the people setting (0 to 3). *Permission: `traffic_write`.* | 0.2.22 |
+| `omsi.people.set_ticket(id, ticket)` | true, or false and the reason | Changes the ticket of a passenger boarding the player's bus (the `passenger_ticket` event names them): `{kind, ticket, name, price, voice, tag}`, each optional. `kind` (`"none"`: a pass, `"stamp"`, `"buy"`) only until they are in the bus; `ticket` another ticket of the pack (from 1, its name and price with it; a buyer always has one: 0 is refused for them, and somebody made a buyer without `ticket` gets the pack's ticket for their age), `name` and `price` what they ask for and pay, `voice` a line of their voice folder said instead of `Ticket_<n>_<k>` (`"Zone_4"`: `Zone_4.wav`; where it is missing the usual line, `""` back to it) - until they have asked at the cash desk. `tag` is a text of the plugin's own kept with the person (`people.get`), at any time. `false` and the reason when nothing changed. *Permission: `traffic_write`.* | 0.3 |
 | `omsi.people.stops()` | list of tables | The stops near the camera where people wait: `{id, name, x, y, z, waiting}`. | 0.2.22 |
 | `omsi.people.waiting(stop)` | integer | How many people wait at a stop (its map object id). | 0.2.22 |
 
@@ -782,6 +826,7 @@ declared to call the function (a plain `.lua` file has them all).
 | `passengers` | `count`, `old` | The number of passengers aboard the player's bus changed. | 0.2.22 |
 | `passenger_board` | `count`, `stop_id` | People got into the player's bus: how many, and the stop they waited at (its map object id, `nil` when none). | 0.2.22 |
 | `passenger_alight` | `count` | People got out of the player's bus. | 0.2.22 |
+| `passenger_ticket` | `passenger` | Somebody boarding the player's bus has decided about their ticket, on their way to the door - they wait in the doorway for this frame, so it can still change before they get in and ask for it at the cash desk: `{id, age, kind, ticket, name, price, stop, stop_name, destination, stop_number, destination_number}` - `kind` `"none"`, `"stamp"` or `"buy"`, `ticket` the ticket pack's (from 1; 0 none fits their age - the desk then asks for the pack's first) with the `name` and `price` they will ask for, `stop` the map object id they board at and `stop_name` its timetable name, `destination` the stop they ride to, and where both are in the duty's trip (from 1, `nil` where the trip does not have them). `people.set_ticket(id, ...)` changes it. | 0.3 |
 | `stop_arrive` | `name`, `id`, `number`, `delay` | The bus came to the duty's next stop (within 25 m of it): its name, map object id, number in the trip (from 1) and the delay in seconds (late positive). | 0.2.22 |
 | `stop_depart` | `name`, `id`, `number`, `delay` | The bus left the stop it stood at (more than 35 m from it, or the duty moved on): the same values, the delay as it left. | 0.2.22 |
 | `trip_start` | `trip`, `name`, `terminus` | The duty moved on to another trip: its number in the duty (from 1), the timetable's name of the trip and its terminus. | 0.2.22 |
@@ -926,6 +971,101 @@ openOMSI does the same (`crates/omsi-plugin`, driven from `crates/omsi-app/src/p
   left out for the rest of the session.
 * `PluginStart` gets a nil owner: there is no Delphi application object. Plugins that
   open their own windows do so without a parent.
+
+### Script textures (openOMSI only)
+
+OMSI 2 gives plugins no way into the vehicle's `[scripttexture]`s; tools such as OmsiHook
+reach them in Omsi.exe's memory, which does not exist here. openOMSI adds one optional
+procedure and one `.opl` tag for it. OMSI skips both, so one DLL and `.opl` serve both
+games.
+
+```
+[scripttexturelist]
+2
+0
+3
+```
+
+lists the player's vehicle's script textures the plugin draws, by number (0-based, as
+`[useScriptTexture]` and `\S:n` count them). Every frame, after the triggers, the game calls
+for each entry the vehicle has:
+
+```pascal
+procedure AccessScriptTexture(index: Word; width, height: Integer; pixels: Pointer;
+  var write: Boolean); stdcall;
+```
+
+* `index` is the entry's position in the list (as for the other `Access*` procedures), not
+  the texture's number.
+* `pixels` is `width` x `height` x 4 bytes: RGBA, top row first, rows `width * 4` bytes
+  apart, straight (not premultiplied) alpha. The size is the texture's own (its
+  `[scripttexture]` entry, or what `STLoadTex` made it).
+* The buffer belongs to that entry and keeps what the plugin drew last, so a plugin may
+  redraw only what changed; it starts zeroed and is zeroed again when the texture's size
+  changes. It is valid only during the call.
+* Set `write` to show the buffer: the texture shows it from the next picture on. Leave it
+  false while nothing changed: a written picture is copied, and through
+  `omsi-plugin-host32.exe` it travels over a pipe (a 512 x 256 texture is 512 KiB).
+* A script drawing into the same texture (`STLock` ... `STUnlock`) and the plugin take
+  turns: the last to let go is what shows. Give the plugin textures the scripts leave alone.
+* No player vehicle, or a number the vehicle has no texture for: the entry is skipped.
+
+#### The mouse on those textures
+
+```pascal
+procedure AccessScriptTexturePointer(index: Word; kind: Integer; x, y: Single); stdcall;
+```
+
+A library that also exports this hears the mouse on its `[scripttexturelist]` textures. The
+game finds where a click lands on the bus's meshes the way it does for `[htmltexture]` pages
+(the nearest mesh slot whose material shows the texture with `[useScriptTexture]`) and calls
+it in the next frame, before `AccessScriptTexture`, so the picture drawn then can already
+answer:
+
+* `kind` 0: the button went down on the texture; 1: the cursor moved while it is held (at
+  most one a frame, the latest); 2: it came up (off the texture: where it was last on it).
+* `x`, `y`: the place in the texture's pixels, from its top left (`0..width`, `0..height`,
+  fractional).
+* `index` is the entry's position in the list, as for `AccessScriptTexture`.
+
+A press on such a texture is the plugin's: a `[mouseevent]` mesh under it does not fire, as
+for a page. Events are not kept while the game is paused.
+
+A 64-bit DLL loads in-process in the 64-bit game, without the pipe; a 32-bit one runs in
+the host, which keeps the buffers on its side. A host from before this keeps working for
+every plugin without `AccessScriptTexture` (the textures are on the wire only for a library
+that has it).
+
+### Passengers' tickets (openOMSI only)
+
+```pascal
+procedure AccessTicketRequest(person: Cardinal; age: Single;
+  stop, destination: PWideChar; stopNumber, destinationNumber: Integer;
+  var kind, ticket: Integer; var price: Single; name, voice: PWideChar;
+  var write: Boolean); stdcall;
+```
+
+A library that exports this hears every passenger boarding the player's bus once, in the
+frame after they decided about their ticket (the Lua plugins' `passenger_ticket`), and may
+change what they ask for at the cash desk - they wait in the doorway for that frame:
+
+* `person`: the passenger's id (as the Lua plugins' `omsi.people` know it); `age` in years.
+* `stop`, `destination`: the timetable's names of the stop they board at and the one they
+  ride to (`""` when not known); `stopNumber`, `destinationNumber`: where those are in the
+  duty's trip, from 1 (0: not in it).
+* `kind`: 0 nothing to do (a pass), 1 validates a ticket, 2 buys one at the cash desk;
+  `ticket` the ticket pack's (from 1; 0 none fits their age, and the desk then asks for
+  the pack's first, as in OMSI), `price` the price asked. A buyer keeps a ticket of the
+  pack: 0 is not taken for them.
+* `name` is a buffer of 256 wide characters (the terminating zero included) holding the
+  ticket's name; `voice` one as long, empty: a line of the passenger's voice folder said at
+  the desk instead of `Ticket_<n>_<k>` (`Zone_4001` for `Zone_4001.wav`).
+* Set `write` to take what the plugin changed of them: only what differs is applied, the
+  kind only while the passenger is not in the bus yet. The plugin's name (the DLL's) is
+  kept as who changed it.
+
+`omsi-plugin-host32.exe` passes the call through; a host from before it does not report the
+procedure, and the plugin then does not hear of the passengers.
 
 ### Building the host
 

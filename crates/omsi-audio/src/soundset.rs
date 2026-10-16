@@ -37,11 +37,75 @@ struct RuntimeSound {
     last_gain: f32,
     /// The buffer's playback rate relative to the clip, as last taken by `SetFrequency`.
     last_pitch: f32,
+    /// What each of the entry's `[volcurve]`s reads (see [`SoundSet::curve_input`]), worked
+    /// out once from its variable's name instead of every frame.
+    curve_inputs: Vec<CurveInput>,
+    /// Where the variables the entry reads stand in its set's table (see `SoundSet::vars`).
+    ix: VarIx,
+    /// A triggered entry: what its volume curves gave when the trigger last fired, kept
+    /// for as long as that sound plays (None: read them now).
+    fired_curves: Option<f32>,
+}
+
+/// The places of an entry's variables in its set's table of variables read each frame: its
+/// conditions', its volume curves' and its pitch's.
+#[derive(Default)]
+struct VarIx {
+    conds: Vec<u16>,
+    curves: Vec<u16>,
+    pitch: u16,
+}
+
+/// Where an entry's variables come from: by name (as the scripts are asked), or from the
+/// set's table read once this frame (`ix`: the place there).
+trait Vars {
+    fn read(&self, name: &str, ix: u16) -> Option<f32>;
+}
+
+struct ByName<'a>(&'a dyn Fn(&str) -> Option<f32>);
+
+impl Vars for ByName<'_> {
+    fn read(&self, name: &str, _: u16) -> Option<f32> {
+        (self.0)(name)
+    }
+}
+
+struct Table<'a>(&'a [Option<f32>]);
+
+impl Vars for Table<'_> {
+    fn read(&self, _: &str, ix: u16) -> Option<f32> {
+        self.0.get(ix as usize).copied().flatten()
+    }
+}
+
+/// What a `[volcurve]` reads, by its variable's name (see [`SoundSet::curve_input`]).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum CurveInput {
+    /// -1: seconds since the sound became active.
+    Active,
+    /// -2: how much the sound faces the listener.
+    Facing,
+    /// Any other negative number: skipped.
+    Skip,
+    /// A variable.
+    Var,
+}
+
+impl CurveInput {
+    fn of(vc: &omsi_vehicle::VolCurve) -> CurveInput {
+        match vc.variable.trim().parse::<i32>() {
+            Ok(-1) => CurveInput::Active,
+            Ok(-2) => CurveInput::Facing,
+            Ok(n) if n < 0 => CurveInput::Skip,
+            _ => CurveInput::Var,
+        }
+    }
 }
 
 impl RuntimeSound {
     fn new(def: SoundEntry, clip: Option<Arc<Clip>>) -> RuntimeSound {
-        RuntimeSound { def, clip, voice: None, held: false, active_since: None, last_gain: 1.0, last_pitch: 1.0 }
+        let curve_inputs = def.vol_curves.iter().map(CurveInput::of).collect();
+        RuntimeSound { def, clip, voice: None, held: false, active_since: None, last_gain: 1.0, last_pitch: 1.0, curve_inputs, ix: VarIx::default(), fired_curves: None }
     }
 }
 
@@ -69,6 +133,11 @@ pub struct SoundSet {
     /// pusher like the MB C2 G that is where the engine is - and plays it on the triggers
     /// and variables of the scripts it shares with the front (see [`SoundSet::update_parts`]).
     pub parts: Vec<(usize, SoundSet)>,
+    /// The variables the entries read (each name once) and their values this frame: a
+    /// vehicle's sounds read the same few variables many times over (an engine's dozen
+    /// loops its revolutions and throttle), and every read was a lookup by name. Made at
+    /// the first update.
+    vars: Option<(Vec<String>, Vec<Option<f32>>)>,
 }
 
 /// The file a `(T.F.)` trigger names, as Omsi.exe opens it (0x74f2e8 through 0x7eed78): the
@@ -199,7 +268,29 @@ impl SoundSet {
             listener_vehicle: false,
             muffled: false,
             parts: Vec::new(),
+            vars: None,
         }
+    }
+
+    /// The table of variables the entries read, each name once, and each entry's places in it.
+    fn index_vars(sounds: &mut [RuntimeSound]) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        let mut at = |n: &str| -> u16 {
+            match names.iter().position(|x| x == n) {
+                Some(k) => k as u16,
+                None => {
+                    names.push(n.to_string());
+                    (names.len() - 1) as u16
+                }
+            }
+        };
+        for s in sounds.iter_mut() {
+            let conds = s.def.conditions.iter().map(|c| at(&c.variable)).collect();
+            let curves = s.def.vol_curves.iter().zip(&s.curve_inputs).map(|(vc, k)| if *k == CurveInput::Var { at(&vc.variable) } else { 0 }).collect();
+            let pitch = if s.def.is_loop { at(&s.def.pitch_variable) } else { 0 };
+            s.ix = VarIx { conds, curves, pitch };
+        }
+        names
     }
 
     /// Where the listener is, for the `[viewpoint]` of an entry: `true` while the camera is
@@ -336,7 +427,7 @@ impl SoundSet {
     }
 
     fn ctx(&self, engine: &AudioEngine) -> Ctx {
-        Ctx { listener: engine.listener_position(), ..self.ctx_without_engine() }
+        Ctx { listener: engine.listener_position(), now: engine.clock(), ..self.ctx_without_engine() }
     }
 
     /// What a `[volcurve]` reads. The exe (`TSound` load, 0x74e408) looks the name up in the
@@ -353,11 +444,24 @@ impl SoundSet {
         active: f32,
         facing: f32,
     ) -> Option<f32> {
-        match vc.variable.trim().parse::<i32>() {
-            Ok(-1) => Some(active),
-            Ok(-2) => Some(facing),
-            Ok(n) if n < 0 => None,
-            _ => Some(var(&vc.variable).unwrap_or(0.0)),
+        Self::curve_input_as(CurveInput::of(vc), vc, 0, &ByName(var), active, facing)
+    }
+
+    /// [`SoundSet::curve_input`] with what the curve reads already known (`ix`: its place
+    /// in the set's table).
+    fn curve_input_as<V: Vars + ?Sized>(
+        kind: CurveInput,
+        vc: &omsi_vehicle::VolCurve,
+        ix: u16,
+        var: &V,
+        active: f32,
+        facing: f32,
+    ) -> Option<f32> {
+        match kind {
+            CurveInput::Active => Some(active),
+            CurveInput::Facing => Some(facing),
+            CurveInput::Skip => None,
+            CurveInput::Var => Some(var.read(&vc.variable, ix).unwrap_or(0.0)),
         }
     }
 
@@ -365,6 +469,15 @@ impl SoundSet {
         def.conditions
             .iter()
             .all(|c| c.holds(var(&c.variable).unwrap_or(0.0)))
+    }
+
+    /// [`SoundSet::conditions_hold`] of entry `s`, its variables read from `var`.
+    fn conditions_hold_in<V: Vars + ?Sized>(s: &RuntimeSound, var: &V) -> bool {
+        s.def
+            .conditions
+            .iter()
+            .enumerate()
+            .all(|(k, c)| c.holds(var.read(&c.variable, s.ix.conds.get(k).copied().unwrap_or(0)).unwrap_or(0.0)))
     }
 
     /// A `[loopsound]`'s frequency request in Hz (`rate * |variable| / reference`), `None`
@@ -406,8 +519,8 @@ impl SoundSet {
     /// the trigger fired (None: as it is now). Omsi.exe starts a trigger's sounds in the
     /// middle of the script (0x74f2e8), so the volume they start with is that of the moment:
     /// the SD200's door hits read `doorSpeed_<n>`, which the door script reverses right
-    /// after firing them - read at the frame's end they were silent (#676). From the next
-    /// frame on the volume follows the curves as they stand, like every other entry's.
+    /// after firing them - read at the frame's end they were silent (#676). What the curves
+    /// gave then stays the sound's until it ends (#611).
     pub fn update_fired(
         &mut self,
         engine: &AudioEngine,
@@ -420,6 +533,15 @@ impl SoundSet {
             return;
         }
         let ctx = self.ctx(engine);
+        // (every variable the entries read, once)
+        if self.vars.is_none() {
+            let names = Self::index_vars(&mut self.sounds);
+            self.vars = Some((names, Vec::new()));
+        }
+        let (names, values) = self.vars.as_mut().expect("the table of variables");
+        values.clear();
+        values.extend(names.iter().map(|n| var(n)));
+        let table = Table(values);
         for s in self.sounds.iter_mut() {
             // How the exe plays an entry (`TSound` update, 2.2.032):
             // * with a `[trigger]`: once each time the trigger fires, from the start, never
@@ -428,14 +550,14 @@ impl SoundSet {
             //   conditions hold and it can be heard - `[sound]` and `[loopsound]` both loop;
             // * without one but with `[noloop]`: once, when its conditions start to hold.
             let triggered = !s.def.triggers.is_empty();
-            let holds = triggered || Self::conditions_hold(&s.def, var);
+            let holds = triggered || Self::conditions_hold_in(s, &table);
             let rising = !triggered && holds && !s.held;
             s.held = holds;
             if !triggered {
                 if !holds {
                     s.active_since = None;
                 } else if s.active_since.is_none() {
-                    s.active_since = Some(std::time::Instant::now());
+                    s.active_since = Some(ctx.now);
                 }
             }
             let Some(clip) = s.clip.clone() else { continue };
@@ -452,12 +574,16 @@ impl SoundSet {
             // not at all - #1851, #611, #1268, #1311, #1515, #1900, #1418).
             let looping = !triggered && !s.def.no_loop;
             let idle = s.voice.is_none_or(|id| !engine.is_playing(id));
+            let gain_before = s.last_gain;
             if fired || rising || (looping && idle) {
                 s.last_gain = 1.0;
             }
+            // (fired: its curves are read anew, as they stand now)
+            let before = if fired { s.fired_curves.take() } else { None };
+            // (the conditions as read above: not read again)
             let e = match fired_by {
-                Some(t) => ctx.eval(s, &|n| at_fire(t, n).or_else(|| var(n)), object_to_world),
-                None => ctx.eval(s, var, object_to_world),
+                Some(t) => ctx.eval_holding(s, &|n| at_fire(t, n).or_else(|| var(n)), object_to_world, holds),
+                None => ctx.eval_with(s, &table, object_to_world, holds),
             };
             if e.wrong_view {
                 // "Stopped Sound ... globalstop/wrongview"
@@ -487,7 +613,15 @@ impl SoundSet {
                 continue;
             }
             // one-shot: started by its trigger or by its conditions starting to hold; the
-            // volume follows the curves while it plays
+            // volume follows the curves while it plays (a triggered one's: those of the
+            // moment it fired)
+            // Fired again at a volume that is not heard - a door leaf bouncing back off its
+            // stop hits it a second time, slowly - the hit that is playing plays on as it was.
+            if fired && !e.audible && s.voice.is_some_and(|id| engine.is_playing(id)) {
+                s.fired_curves = before;
+                s.last_gain = gain_before;
+                continue;
+            }
             let params = ctx.params(s, &e, false, object_to_world);
             if (fired || rising) && e.audible {
                 if let Some(id) = s.voice {
@@ -556,7 +690,7 @@ impl SoundSet {
             {
                 why = format!("condition {} = {:?}", c.variable, var(&c.variable));
             } else if let Some(vc) = s.def.vol_curves.iter().find(|vc| {
-                let active = s.active_since.map_or(0.0, |t| t.elapsed().as_secs_f32());
+                let active = s.active_since.map_or(0.0, |t| ctx.now.saturating_duration_since(t).as_secs_f32());
                 Self::curve_input(vc, var, active, 1.0).is_some_and(|x| curve(&vc.points, x) <= 1.0e-5)
             }) {
                 why = format!("volcurve {} = {:?}", vc.variable, var(&vc.variable));
@@ -589,7 +723,7 @@ impl SoundSet {
             .iter_mut()
             .map(|s| {
                 if !s.def.triggers.is_empty() || Self::conditions_hold(&s.def, var) {
-                    s.active_since.get_or_insert_with(|| std::time::Instant::now() - std::time::Duration::from_secs(5));
+                    s.active_since.get_or_insert_with(|| ctx.now - std::time::Duration::from_secs(5));
                 }
                 let e = ctx.eval(s, var, object_to_world);
                 let dist = s
@@ -604,7 +738,7 @@ impl SoundSet {
     }
 
     fn ctx_without_engine(&self) -> Ctx {
-        Ctx { view: self.view_mask(), amount: self.amount, cab: self.muffled, master: self.master, doppler: !self.listener_vehicle, listener: Vec3::ZERO }
+        Ctx { view: self.view_mask(), amount: self.amount, cab: self.muffled, master: self.master, doppler: !self.listener_vehicle, listener: Vec3::ZERO, now: std::time::Instant::now() }
     }
 
     pub fn stop_all(&mut self, engine: &AudioEngine) {
@@ -629,6 +763,9 @@ struct Ctx {
     master: f32,
     doppler: bool,
     listener: Vec3,
+    /// The engine's clock now (`AudioEngine::clock`): the wall clock, or a recording's
+    /// own - what `[volcurve] -1` counts its seconds in.
+    now: std::time::Instant,
 }
 
 impl Ctx {
@@ -662,6 +799,17 @@ impl Ctx {
     /// One entry this frame (`TSound` update 0x750340): its volume and pitch as DirectSound
     /// takes them, and whether it can be started.
     fn eval(&self, s: &mut RuntimeSound, var: &dyn Fn(&str) -> Option<f32>, object_to_world: &Mat4) -> Eval {
+        let holds = !s.def.triggers.is_empty() || SoundSet::conditions_hold(&s.def, var);
+        self.eval_holding(s, var, object_to_world, holds)
+    }
+
+    /// [`Ctx::eval`] with whether the entry is triggered or its conditions hold already known.
+    fn eval_holding(&self, s: &mut RuntimeSound, var: &dyn Fn(&str) -> Option<f32>, object_to_world: &Mat4, holds: bool) -> Eval {
+        self.eval_with(s, &ByName(var), object_to_world, holds)
+    }
+
+    /// [`Ctx::eval_holding`] with the variables read from `var`.
+    fn eval_with<V: Vars + ?Sized>(&self, s: &mut RuntimeSound, var: &V, object_to_world: &Mat4, holds: bool) -> Eval {
         let def = &s.def;
         if !self.view_lets_through(def.viewpoint) {
             return Eval { gain: 0.0, audible: false, pitch: s.last_pitch, wrong_view: true };
@@ -671,7 +819,7 @@ impl Ctx {
         let active = if triggered {
             TRIGGERED_ACTIVE
         } else {
-            s.active_since.map_or(0.0, |t| t.elapsed().as_secs_f32())
+            s.active_since.map_or(0.0, |t| self.now.saturating_duration_since(t).as_secs_f32())
         };
         let facing = match (pos, def.dir) {
             (Some(at), Some(d)) => {
@@ -682,12 +830,31 @@ impl Ctx {
             (None, _) => 0.0,
         };
         // (an untriggered entry whose conditions fail is at volume 0)
-        let mut vol = if triggered || SoundSet::conditions_hold(def, var) { def.volume * self.master } else { 0.0 };
-        for vc in &def.vol_curves {
-            if let Some(x) = SoundSet::curve_input(vc, var, active, facing) {
-                vol *= curve(&vc.points, x);
+        let mut vol = if holds { def.volume * self.master } else { 0.0 };
+        // A triggered sound takes the volume its curves give when it starts and keeps it
+        // to its end, as the stock sound.cfg says of `[trigger]` entries ("Volumen und Pitch
+        // [werden] nur einmalig beim Abspielstart zugewiesen"): the door hits of the SD200/
+        // SD202 and of Kajosoft's buses read `doorSpeed_<n>`, which is 0 once the leaf has
+        // stopped, and were cut to a short click a frame after they started (#611, #1268).
+        // Where it is and how far away still change while it plays. What it keeps is the
+        // loudest its curves have given since it fired: a sound fired while its variable is
+        // still at rest and rising right after (the Thüringer Wald buses' steering pump,
+        // whose start reads the steering's speed) was held at the silence of the moment it
+        // fired, from 0.2.46 on, and never heard (#2552).
+        let mut now = 1.0;
+        for (k, (vc, &kind)) in def.vol_curves.iter().zip(&s.curve_inputs).enumerate() {
+            if let Some(x) = SoundSet::curve_input_as(kind, vc, s.ix.curves.get(k).copied().unwrap_or(0), var, active, facing) {
+                now *= curve(&vc.points, x);
             }
         }
+        let curves = if triggered {
+            let c = s.fired_curves.map_or(now, |kept| kept.max(now));
+            s.fired_curves = Some(c);
+            c
+        } else {
+            now
+        };
+        vol *= curves;
         // `[3d]`: full up to the range, then range / distance
         let dist_gain = pos.map(|p| crate::mixer::distance_gain(def.range, (p - self.listener).length()));
         if let Some(g) = dist_gain {
@@ -709,7 +876,8 @@ impl Ctx {
         s.last_gain = gain;
         let mut audible = audible;
         let mut pitch = s.last_pitch;
-        if let (Some(f), Some(clip)) = (SoundSet::frequency(def, var), s.clip.as_ref()) {
+        let freq = def.is_loop.then(|| def.sample_rate.trunc() * var.read(&def.pitch_variable, s.ix.pitch).unwrap_or(0.0).abs() / def.pitch_ref);
+        if let (Some(f), Some(clip)) = (freq, s.clip.as_ref()) {
             // (not started below DirectSound's minimum; a request outside its range is
             // refused and the buffer keeps its rate)
             audible &= f >= FREQ_MIN;
@@ -837,7 +1005,7 @@ mod tests {
     }
 
     fn ctx(view: i32, cab: bool) -> Ctx {
-        Ctx { view, amount: if view == 2 { 1.0 } else { 0.0 }, cab, master: 1.0, doppler: false, listener: Vec3::ZERO }
+        Ctx { view, amount: if view == 2 { 1.0 } else { 0.0 }, cab, master: 1.0, doppler: false, listener: Vec3::ZERO, now: std::time::Instant::now() }
     }
 
     fn eval(c: &Ctx, def: SoundEntry, var: &dyn Fn(&str) -> Option<f32>) -> Eval {
@@ -992,6 +1160,30 @@ mod tests {
     /// fired while the door still closes at -1 m/s; by the frame's end the script has turned
     /// the speed round. The volume is the one of the moment it fired (#676).
     #[test]
+    fn a_frame_reads_each_variable_once() {
+        let e = AudioEngine::capture(48_000);
+        let clip = Arc::new(Clip { sample_rate: 48_000, channels: 1, samples: vec![1000; 4800] });
+        let entry = SoundEntry {
+            volume: 1.0,
+            conditions: vec![omsi_vehicle::sound::Condition { variable: "engine_on".into(), value: 1.0, relation: 1, kind: Default::default() }],
+            vol_curves: vec![VolCurve { variable: "n".into(), points: vec![(0.0, 0.0), (1.0, 1.0)] }, VolCurve { variable: "-1".into(), points: vec![(0.0, 1.0), (1.0, 1.0)] }],
+            ..Default::default()
+        };
+        let sounds = (0..3).map(|_| RuntimeSound::new(entry.clone(), Some(clip.clone()))).collect();
+        let mut set = SoundSet { sounds, master: 1.0, dir: Default::default(), inside: false, amount: 0.0, ai: false, listener_vehicle: false, muffled: false, parts: Vec::new(), vars: None };
+        let reads = std::cell::Cell::new(0);
+        let var = |n: &str| {
+            reads.set(reads.get() + 1);
+            Some(if n == "n" { 0.5 } else { 1.0 })
+        };
+        set.update(&e, &var, &Mat4::IDENTITY, &[]);
+        assert_eq!(reads.get(), 2, "engine_on and n, once each");
+        assert_eq!(set.sounds.iter().filter(|s| s.voice.is_some_and(|id| e.is_playing(id))).count(), 3);
+        let gains: Vec<f32> = set.sounds.iter().filter_map(|s| e.voice_state(s.voice?)).map(|v| v.1).collect();
+        assert!(gains.len() == 3 && gains.iter().all(|g| (g - 0.5).abs() < 0.01), "the curve read through the table: {gains:?}");
+    }
+
+    #[test]
     fn a_triggered_sound_reads_its_curve_when_it_fires() {
         let hit = SoundEntry {
             volume: 1.0,
@@ -1004,8 +1196,30 @@ mod tests {
         assert_eq!(eval(&ctx(2, true), hit.clone(), &now).gain, 0.0, "read at the frame's end: silent");
         let fired = |n: &str| at_fire("ev_doorhitclose_0", n).or_else(|| now(n));
         assert_eq!(eval(&ctx(2, true), hit.clone(), &fired).gain, 1.0);
-        let set = SoundSet { sounds: vec![RuntimeSound::new(hit, None)], master: 1.0, dir: Default::default(), inside: true, amount: 1.0, ai: false, listener_vehicle: true, muffled: false, parts: Vec::new() };
+        let set = SoundSet { sounds: vec![RuntimeSound::new(hit.clone(), None)], master: 1.0, dir: Default::default(), inside: true, amount: 1.0, ai: false, listener_vehicle: true, muffled: false, parts: Vec::new(), vars: None };
         assert_eq!(set.curve_triggers(), vec!["ev_doorhitclose_0".to_string()]);
+    }
+
+    /// The door hit keeps the volume it fired with to its end, though `doorSpeed_0` is 0
+    /// from the next frame on (#611, #1268); fired again, it reads the curves anew.
+    #[test]
+    fn a_triggered_sound_keeps_the_volume_it_started_with() {
+        let _g = globals();
+        let hit = SoundEntry {
+            volume: 1.0,
+            triggers: vec!["ev_doorhitclose_0".into()],
+            vol_curves: vec![VolCurve { variable: "doorSpeed_0".into(), points: vec![(-1.0, 1.0), (-0.5, 0.0)] }],
+            ..Default::default()
+        };
+        let c = ctx(2, true);
+        let mut s = RuntimeSound::new(hit, None);
+        let fast = |n: &str| (n == "doorSpeed_0").then_some(-1.0);
+        let stopped = |n: &str| (n == "doorSpeed_0").then_some(0.0);
+        let slow = |n: &str| (n == "doorSpeed_0").then_some(-0.75);
+        assert_eq!(c.eval_holding(&mut s, &fast, &Mat4::IDENTITY, true).gain, 1.0, "as it fires");
+        assert_eq!(c.eval_holding(&mut s, &stopped, &Mat4::IDENTITY, true).gain, 1.0, "the leaf has stopped: still playing out");
+        s.fired_curves = None;
+        assert!((c.eval_holding(&mut s, &slow, &Mat4::IDENTITY, true).gain - 0.5).abs() < 1e-4, "fired again, slower");
     }
 
     /// The stock IBIS announces Spandau's "Falkenseer Ch/Stadtrandstr" with the file

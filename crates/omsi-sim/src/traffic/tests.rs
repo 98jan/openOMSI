@@ -135,8 +135,9 @@ fn no_legal_exit_does_not_fall_back_to_a_forbidden_lane() {
     net.lanes[1].no_cars = true;
     assert_eq!(car.choose_after(&net, 0), None);
     net.lanes[1].no_cars = false;
+    // (density 0 is no closure: with no other way on, the car drives on there, #2466)
     net.lanes[1].density = 0.0;
-    assert_eq!(car.choose_after(&net, 0), None);
+    assert_eq!(car.choose_after(&net, 0), Some(1));
     net.lanes[1].density = 1.0;
     car.veh_type = 3;
     assert_eq!(car.choose_after(&net, 0), None);
@@ -477,6 +478,28 @@ fn simultaneous_inactive_events_do_not_stall_the_cycle() {
 }
 
 #[test]
+fn jump_to_zero_at_cycle_boundary_does_not_freeze_the_program() {
+    // Grand Paris-Moulon's TCSP17 ends its 84 s cycle with a request-conditioned jump
+    // from 84 to 0, and also jumps from 64 to 0 when no light-4 request is present.
+    // The jump at 64 lands on the cycle-boundary jump. That second jump makes no progress
+    // and must only be processed once, so the bus light can reach its next green.
+    let mut lights = vec![Vec::new(); 7];
+    lights[2] = vec![(0, 29.0), (6, 12.0), (9, 2.0), (0, 25.0), (6, 12.0), (9, 2.0), (0, 1.0)];
+    let mut c = TrafficLightController::from_program(
+        lights.into_iter().map(|p| (p, None)).collect(),
+        Some(84.0),
+        &[],
+        &[[4.0, 64.0, 1.0, 0.0], [4.0, 84.0, 1.0, 0.0]],
+    );
+    c.time = 63.9;
+    c.advance(0.2);
+    assert!((c.time - 0.1).abs() < 1e-5, "controller clock froze at {}", c.time);
+
+    c.advance(29.0);
+    assert_eq!(c.state(2), 6, "the bus light reaches its next green");
+}
+
+#[test]
 fn simultaneous_inactive_events_do_not_hide_a_later_active_jump() {
     let mut c = TrafficLightController::from_program(
         vec![(vec![(0, 4.0), (6, 16.0)], None); 3],
@@ -592,8 +615,9 @@ fn right_of_way_between_paths() {
     c.turn = 1;
     let mut net = Network { lanes: vec![a, b, c], ..Default::default() };
     net.link(1.5);
-    // equal priority: b comes from a's right
-    assert!(net.must_yield(0, 1));
+    // equal priority: neither gives way by where it comes from - the first there goes
+    // first, as in Omsi.exe (no priority to the right, #2058)
+    assert!(!net.must_yield(0, 1));
     assert!(!net.must_yield(1, 0));
     // the left turn waits for the oncoming car
     assert!(net.must_yield(2, 0));
@@ -607,8 +631,8 @@ fn right_of_way_between_paths() {
 
 #[test]
 fn right_of_way_on_the_left() {
-    // the same crossing on a left-hand-traffic map: b (from a's right) now waits for a
-    // (from b's left), and a right turn across the oncoming traffic waits, a left one not
+    // the same crossing on a left-hand-traffic map: a right turn across the oncoming traffic
+    // waits, a left one not; crossing straight on, nobody gives way by the side
     let a = LaneBuilder::arc(DVec3::new(0.0, -10.0, 0.0), 0.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let b = LaneBuilder::arc(DVec3::new(10.0, 0.0, 0.0), 270.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let mut c = LaneBuilder::arc(DVec3::new(-1.5, 10.0, 0.0), 180.0, 10.0 * std::f64::consts::FRAC_PI_2, -10.0, 0.0, LaneKind::Street, 3.0);
@@ -616,7 +640,7 @@ fn right_of_way_on_the_left() {
     let mut net = Network { lanes: vec![a, b, c], left_hand: true, ..Default::default() };
     net.link(1.5);
     assert!(!net.must_yield(0, 1));
-    assert!(net.must_yield(1, 0));
+    assert!(!net.must_yield(1, 0));
     assert!(net.must_yield(2, 0));
     net.lanes[2].turn = 1;
     assert!(!net.must_yield(2, 0));
@@ -993,15 +1017,13 @@ fn a_blockpath_has_no_effect_as_in_omsi() {
 
 #[test]
 fn the_ring_goes_before_the_entry_where_the_map_sets_no_priorities() {
-    // an entry from the south joining a ring lane that comes from the entry's right
-    // (from the east, heading west across it): by right-before-left the ring would go
-    // first anyway; one coming from the left is the case that matters
+    // an entry from the south and a ring lane coming from its left
     let a = LaneBuilder::arc(DVec3::new(0.0, -10.0, 0.0), 0.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let b = LaneBuilder::arc(DVec3::new(-10.0, 0.0, 0.0), 90.0, 20.0, 0.0, 0.0, LaneKind::Street, 3.0);
     let mut net = Network { lanes: vec![a, b], ..Default::default() };
     net.link(1.5);
-    // b comes from a's left: a goes first by right-before-left
-    assert!(!net.must_yield(0, 1) && net.must_yield(1, 0));
+    // without the ring nobody gives way by the side
+    assert!(!net.must_yield(0, 1) && !net.must_yield(1, 0));
     net.lanes[1].ring = true;
     assert!(net.must_yield(0, 1) && !net.must_yield(1, 0));
     // the map's priorities still decide where it sets them
@@ -1031,4 +1053,38 @@ fn two_turns_sweeping_past_each_other_meet_where_they_pass() {
     assert!(!c.merge && (c.at - net.lanes[0].length() * 0.5).abs() < 2.0, "{c:?}");
     // bends well apart do not meet
     assert!(net_of(5.0).crossings[0].is_empty());
+}
+
+/// #2466: of two ways on, the car does not take the one that leads only into lanes closed
+/// to it (it came to that lane's end with nowhere to go and vanished in the road); with no
+/// other choice it still takes it, and the map's edge (no lane on at all) stays a way.
+#[test]
+fn a_way_on_that_leads_only_into_closed_lanes_is_not_taken() {
+    let a = LaneBuilder::arc(DVec3::ZERO, 0.0, 60.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    let trap = LaneBuilder::arc(a.end(), 0.0, 30.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    let mut closed = LaneBuilder::arc(trap.end(), 0.0, 30.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    closed.density = 0.0;
+    let open = LaneBuilder::arc(a.end(), 0.0, 14.0 * 60f64.to_radians(), 14.0, 0.0, LaneKind::Street, 3.0);
+    let on = LaneBuilder::arc(open.end(), 60.0, 30.0, 0.0, 0.0, LaneKind::Street, 3.0);
+    let mut net = Network { lanes: vec![a, trap, closed, open, on], ..Default::default() };
+    net.link(1.5);
+    assert!(net.lanes[0].next.contains(&1) && net.lanes[0].next.contains(&3));
+    for seed in 1..40 {
+        let mut car = AiState::new(0, 0.0, seed);
+        assert_eq!(car.choose_after(&net, 0), Some(3), "seed {seed} took the lane into the closed one");
+    }
+    // the open way gone: the trapped one is still taken rather than nothing, and at its end
+    // the lane of density 0 (no closure)
+    net.lanes[3].density = 0.0;
+    let mut car = AiState::new(0, 0.0, 5);
+    assert_eq!(car.choose_after(&net, 0), Some(1));
+    assert_eq!(car.choose_after(&net, 1), Some(2));
+    // closed to cars: nothing
+    net.lanes[2].no_cars = true;
+    assert_eq!(car.choose_after(&net, 1), None);
+    // the edge of the network is no trap
+    let mut net = junction();
+    net.lanes[2].next.clear();
+    let mut car = AiState::new(0, 0.0, 5);
+    assert_eq!(car.choose_after(&net, 0), Some(1));
 }

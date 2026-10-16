@@ -185,8 +185,10 @@ impl App {
                     let def = &p.vehicle.ty.def;
                     let cam = if schedule { def.view_schedule } else { def.view_ticketselling };
                     let n = def.cameras_driver.len().max(1);
-                    // (the choice counts from the standard camera)
-                    if let Some(c) = cam.filter(|c| *c < def.cameras_driver.len()).map(|c| (c + n - def.camera_std % n) % n) {
+                    let all = p.driver_camera_count().max(1);
+                    // (the choice counts from the standard camera, over the coupled parts'
+                    // cameras as well: `Player::driver_camera_slot`)
+                    if let Some(c) = cam.filter(|c| *c < def.cameras_driver.len()).map(|c| (c + all - def.camera_std % n) % all) {
                         let back = p.cam_before_special.take();
                         if self.view == "driver" && p.cam_choice.0 == c {
                             p.cam_choice.0 = back.unwrap_or(0);
@@ -290,6 +292,26 @@ impl App {
                     self.service_msg = Some((format!("{} camera {n} of {count}", if pax { "Passenger" } else { "Driver" }), 2.0));
                 }
             }
+            // OMSI's quick menu from a key that is no Shift, Ctrl or Alt (a tap of one of
+            // those is `alt_tap`'s, #2392)
+            "open_menue" => self.quick_menu_key(),
+            // the radio's own keys, for a keyboard, a wheel's or a pad's buttons (#1293, #1462)
+            "radio_next" | "radio_previous" | "radio_volume_up" | "radio_volume_down" => {
+                let msg = match name {
+                    "radio_next" => self.sound.radio.next_station(),
+                    "radio_previous" => self.sound.radio.previous_station(),
+                    _ => self.sound.radio.step_volume(name == "radio_volume_up"),
+                };
+                self.service_msg = Some((msg, 3.0));
+            }
+            // the free camera's keys handed to the bus and back (#1779)
+            "view_camera_keys_toggle" => {
+                self.input.camera_keys_off = !self.input.camera_keys_off;
+                let msg = if self.input.camera_keys_off { "Camera keys off: in the free view the keys work the bus, the mouse turns the camera" } else { "Camera keys on: W, A, S, D, Q, E and the arrows fly the free camera" };
+                self.service_msg = Some((msg.into(), 4.0));
+            }
+            // the zoom keys work while held: the frame reads them (`view_keys::zoom_keys`)
+            "view_zoom_in" | "view_zoom_out" => {}
             "toggel_mouse_ctrl" => {
                 self.set_mouse_drive(!self.input.mouse_drive);
                 let msg = if self.input.mouse_drive { "Mouse steering on: across steers, up is the throttle, down the brake (O turns it off)" } else { "Mouse steering off" };

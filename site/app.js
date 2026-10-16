@@ -60,7 +60,6 @@ scrim.onclick = () => toggleDrawer(false);
 let release = null;
 let releaseAt = 0;
 async function latestRelease() {
-  // (a release comes with every push: what was fetched ten minutes ago may be old)
   if (release && Date.now() - releaseAt < 120000) return release;
   releaseAt = Date.now();
   try {
@@ -68,6 +67,34 @@ async function latestRelease() {
     release = r.ok ? await r.json() : { none: true };
   } catch { release = { none: true }; }
   return release;
+}
+
+let releasesRequest = null;
+async function gameReleases() {
+  if (!releasesRequest) releasesRequest = (async () => {
+    const list = [];
+    for (let page = 1; ; page++) {
+      const batch = await gh(`releases?per_page=100&page=${page}`);
+      list.push(...batch.filter(r => !r.draft && /^v\d+\.\d+\.\d+$/.test(r.tag_name)));
+      if (batch.length < 100) return list;
+    }
+  })().catch(e => { releasesRequest = null; throw e; });
+  return releasesRequest;
+}
+
+function newerVersion(a, b) {
+  const x = a.replace(/^v/, "").split(".").map(Number);
+  const y = b.replace(/^v/, "").split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+}
+
+async function latestBeta() {
+  const [list, stable] = await Promise.all([gameReleases(), latestRelease()]);
+  // Older pre-releases stay in the history, but are never offered as an update to stable.
+  if (!stable.tag_name) throw new Error("The stable release could not be checked. Try again later.");
+  return list.filter(r => r.prerelease && newerVersion(r.tag_name, stable.tag_name))
+    .sort((a, b) => newerVersion(a.tag_name, b.tag_name) ? -1 : newerVersion(b.tag_name, a.tag_name) ? 1 : 0)[0] || null;
 }
 
 function slug(text) {
@@ -112,17 +139,29 @@ async function playingNow() {
   playingTimer = setTimeout(playingNow, wait);
 }
 
-async function download() {
+async function download(beta = false) {
   showTemplate("download");
-  const rel = await latestRelease();
   const grid = document.getElementById("dl-grid");
   const ver = document.getElementById("dl-version");
-  if (!rel.tag_name) {
-    ver.textContent = "No release has been published yet.";
+  if (beta) {
+    document.title = "Beta downloads · openOMSI";
+    view.querySelector("h1").textContent = "Beta downloads";
+    document.getElementById("dl-channel").innerHTML = `Betas are for testing new changes. For everyday use, choose the <a href="#/download">stable release</a>.`;
+    document.getElementById("dl-warning-title").textContent = "Beta: for testing";
+    document.getElementById("dl-warning-text").innerHTML = `This build may have regressions. Report problems with the version number on the <a href="#/issues">Issues</a> page. You can return to Stable in the launcher's update settings.`;
+  }
+  let rel;
+  try { rel = beta ? await latestBeta() : await latestRelease(); }
+  catch (e) { if (view.contains(ver)) ver.textContent = e.message; return; }
+  if (!view.contains(ver)) return;
+  if (!rel?.tag_name) {
+    ver.innerHTML = beta
+      ? `There is no beta newer than the stable release. <a href="#/download">Download stable</a> or browse the <a href="#/releases/beta">beta history</a>.`
+      : "No stable release has been published yet.";
     return;
   }
   const v = rel.tag_name.replace(/^v/, "");
-  ver.innerHTML = `Latest version: <b>${v}</b> · ${new Date(rel.published_at).toLocaleDateString()}`;
+  ver.innerHTML = `${beta ? "Latest beta" : "Stable version"}: <b>${esc(v)}</b> · ${new Date(rel.published_at).toLocaleDateString()}`;
   // Each file by its exact name: matched by its ending alone, "-windows-x64.zip" was the
   // dedicated server's zip as well, and the Windows button downloaded the server.
   const card = p => {
@@ -150,7 +189,7 @@ async function doc(name, anchor) {
     if (!r.ok) throw new Error(r.status);
     md = await r.text();
   } catch {
-    view.querySelector(".doc").innerHTML = `<h1>Not found</h1><p>There is no document called <code>${name}</code>.</p>`;
+    view.querySelector(".doc").innerHTML = `<h1>Not found</h1><p>There is no document called <code>${esc(name)}</code>.</p>`;
     return;
   }
   const box = view.querySelector(".doc");
@@ -190,15 +229,52 @@ async function gh(path) {
 function esc(t) {
   return String(t ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
+const MD_TAGS = new Set(["a", "abbr", "b", "blockquote", "br", "code", "dd", "del", "details", "div", "dl", "dt", "em", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "i", "img", "input", "ins", "kbd", "li", "mark", "ol", "p", "pre", "q", "s", "samp", "small", "span", "strike", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "tt", "u", "ul"]);
+const MD_DROP = new Set(["script", "style", "iframe", "frame", "frameset", "object", "embed", "applet", "form", "link", "meta", "base", "template", "noscript", "textarea", "select", "button", "svg", "math", "title", "xmp", "noembed", "noframes", "plaintext", "audio", "video", "source", "track", "canvas", "portal", "dialog"]);
+const MD_ATTRS = {
+  "*": ["title"],
+  a: ["href"],
+  img: ["src", "alt", "width", "height"],
+  p: ["align"],
+  div: ["align"],
+  td: ["align", "colspan", "rowspan"],
+  th: ["align", "colspan", "rowspan"],
+  ol: ["start"],
+  details: ["open"],
+  input: ["type", "checked", "disabled"],
+};
+function safeUrl(value, image) {
+  try {
+    const u = new URL(value.trim(), `https://github.com/${REPO}/issues/`);
+    if (u.protocol === "https:" || u.protocol === "http:" || (!image && u.protocol === "mailto:")) return u.href;
+  } catch {}
+  return null;
+}
 function md(text) {
-  // the author's markdown, with anything active taken out of it (scripts, frames, event
-  // handlers, javascript: links)
   const t = document.createElement("template");
   t.innerHTML = marked.parse(text || "");
-  t.content.querySelectorAll("script, style, iframe, object, embed, form, link, meta").forEach(e => e.remove());
-  t.content.querySelectorAll("*").forEach(e => [...e.attributes].forEach(a => {
-    if (/^on/i.test(a.name) || (/^(href|src)$/i.test(a.name) && /^\s*(javascript|data):/i.test(a.value) && !/^data:image\//i.test(a.value))) e.removeAttribute(a.name);
-  }));
+  for (const e of [...t.content.querySelectorAll("*")]) {
+    const tag = e.localName;
+    if (e.namespaceURI !== "http://www.w3.org/1999/xhtml" || MD_DROP.has(tag) || (tag === "input" && e.getAttribute("type") !== "checkbox")) {
+      e.remove();
+      continue;
+    }
+    if (!MD_TAGS.has(tag)) {
+      e.replaceWith(...e.childNodes);
+      continue;
+    }
+    const allowed = [...MD_ATTRS["*"], ...(MD_ATTRS[tag] || [])];
+    for (const a of [...e.attributes]) {
+      const name = a.name.toLowerCase();
+      if (tag === "code" && name === "class" && /^language-[\w+-]+$/.test(a.value)) continue;
+      if (!allowed.includes(name)) { e.removeAttribute(a.name); continue; }
+      if (name === "href" || name === "src") {
+        const url = safeUrl(a.value, name === "src");
+        if (url) e.setAttribute(a.name, url); else e.removeAttribute(a.name);
+      }
+    }
+    if (tag === "input") e.setAttribute("disabled", "");
+  }
   return t.innerHTML;
 }
 function ago(date) {
@@ -212,26 +288,42 @@ function labelChips(labels) {
   return (labels || []).map(l => `<span class="label" style="--lc:#${esc(l.color)}">${esc(l.name)}</span>`).join("");
 }
 
-async function releases() {
-  view.innerHTML = `<div class="content"><h1>Releases</h1>
-    <p class="lead">Every version, newest first. The newest one is also on the <a href="#/download">Download</a> page.</p>
+async function releases(beta = false) {
+  view.innerHTML = `<div class="content"><h1>${beta ? "Beta releases" : "Stable releases"}</h1>
+    <p class="lead">${beta ? 'Versions for testing, including older betas. <a href="#/beta">Download the latest beta</a>.' : 'Stable versions, newest first. <a href="#/download">Download the latest stable release</a>.'}</p>
+    <nav class="release-channels" aria-label="Release channel"><a class="btn ${beta ? "btn-outlined" : "btn-contained"}" href="#/releases"${beta ? "" : ' aria-current="page"'}>Stable</a> <a class="btn ${beta ? "btn-contained" : "btn-outlined"}" href="#/releases/beta"${beta ? ' aria-current="page"' : ""}>Betas</a></nav>
     <div id="rel-list"><div class="loading">Loading…</div></div></div>`;
-  document.title = "Releases · openOMSI";
+  document.title = `${beta ? "Beta" : "Stable"} releases · openOMSI`;
   const box = document.getElementById("rel-list");
-  let list;
-  try { list = await gh("releases?per_page=30"); } catch (e) { box.innerHTML = `<p>${esc(e.message)} <a href="https://github.com/${REPO}/releases">Releases on GitHub</a></p>`; return; }
-  if (!list.length) { box.innerHTML = "<p>No release has been published yet.</p>"; return; }
-  box.innerHTML = list.map((r, i) => {
-    const assets = (r.assets || []).map(a => `<a class="asset" href="${esc(a.browser_download_url)}"><span class="material-icons">download</span>${esc(a.name)} <small>${(a.size / 1048576).toFixed(0)} MB</small></a>`).join("");
-    return `<details class="card elevation-1 release"${i === 0 ? " open" : ""}>
-      <summary><span class="rel-tag">${esc(r.tag_name.replace(/^v/, ""))}</span>
-        ${i === 0 ? '<span class="label" style="--lc:#2da44e">Latest</span>' : ""}${r.prerelease ? '<span class="label" style="--lc:#bf8700">Pre-release</span>' : ""}
-        <span class="rel-name">${esc(r.name && r.name !== r.tag_name ? r.name : "")}</span>
-        <span class="spacer"></span><span class="muted">${new Date(r.published_at).toLocaleDateString()}</span></summary>
-      <div class="doc rel-body">${md(r.body) || "<p class='muted'>No notes.</p>"}</div>
-      ${assets ? `<div class="assets">${assets}</div>` : ""}
-    </details>`;
-  }).join("");
+  let all, stable;
+  try { [all, stable] = await Promise.all([gameReleases(), latestRelease()]); }
+  catch (e) { box.innerHTML = `<p>${esc(e.message)} <a href="https://github.com/${REPO}/releases">Releases on GitHub</a></p>`; return; }
+  if (!view.contains(box)) return;
+  const list = all.filter(r => r.prerelease === beta)
+    .sort((a, b) => newerVersion(a.tag_name, b.tag_name) ? -1 : newerVersion(b.tag_name, a.tag_name) ? 1 : 0);
+  if (!list.length) { box.innerHTML = `<p>No ${beta ? "beta" : "stable"} release has been published yet.</p>`; return; }
+  const latest = beta
+    ? (stable.tag_name ? list.findIndex(r => newerVersion(r.tag_name, stable.tag_name)) : -1)
+    : list.findIndex(r => r.tag_name === stable.tag_name);
+  // Render notes only as they are requested, rather than parsing the whole history at once.
+  let shown = 0;
+  const draw = () => {
+    shown += 30;
+    box.innerHTML = list.slice(0, shown).map((r, i) => {
+      const assets = (r.assets || []).map(a => `<a class="asset" href="${esc(a.browser_download_url)}"><span class="material-icons">download</span>${esc(a.name)} <small>${(a.size / 1048576).toFixed(0)} MB</small></a>`).join("");
+      return `<details class="card elevation-1 release"${i === latest ? " open" : ""}>
+        <summary><span class="rel-tag">${esc(r.tag_name.replace(/^v/, ""))}</span>
+          ${i === latest ? `<span class="label" style="--lc:#2da44e">${beta ? "Latest beta" : "Latest"}</span>` : ""}${r.prerelease ? '<span class="label" style="--lc:#bf8700">Pre-release</span>' : ""}
+          <span class="rel-name">${esc(r.name && r.name !== r.tag_name ? r.name : "")}</span>
+          <span class="spacer"></span><span class="muted">${new Date(r.published_at).toLocaleDateString()}</span></summary>
+        <div class="doc rel-body">${md(r.body) || "<p class='muted'>No notes.</p>"}</div>
+        ${assets ? `<div class="assets">${assets}</div>` : ""}
+      </details>`;
+    }).join("") + (shown < list.length ? '<button class="btn btn-outlined" id="rel-more">More releases</button>' : "");
+    const more = document.getElementById("rel-more");
+    if (more) more.onclick = draw;
+  };
+  draw();
 }
 
 let issueState = "open", issueQuery = "";
@@ -288,12 +380,14 @@ async function issue(n) {
 function route() {
   const hash = location.hash.replace(/^#/, "") || "/";
   const [path, anchor] = hash.split("#");
-  document.querySelectorAll(".drawer a[data-route]").forEach(a => a.classList.toggle("active", a.dataset.route === path || (a.dataset.route === "/issues" && path.startsWith("/issues/"))));
+  document.querySelectorAll(".drawer a[data-route]").forEach(a => a.classList.toggle("active", a.dataset.route === path || (["/issues", "/releases"].includes(a.dataset.route) && path.startsWith(a.dataset.route + "/"))));
   toggleDrawer(false);
   document.title = "openOMSI";
   if (path.startsWith("/docs/")) return doc(path.slice(6), anchor);
   if (path === "/download") return download();
+  if (path === "/beta") return download(true);
   if (path === "/releases") return releases();
+  if (path === "/releases/beta") return releases(true);
   if (path.startsWith("/issues")) return issues(path.split("/")[2]);
   window.scrollTo(0, 0);
   return home();

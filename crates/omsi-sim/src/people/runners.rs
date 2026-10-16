@@ -174,7 +174,7 @@ pub fn route_to_stop(ped: &PedNet, net: &Network, lane: usize, s0: f32, sign: f3
             return None;
         }
         let node = ped.end_node(net, &leg)?;
-        leg = ped.next_leg(net, node, leg.lane, pick)?;
+        leg = ped.next_leg(net, node, &leg, pick)?;
     }
     if out.iter().any(off_street) {
         return None;

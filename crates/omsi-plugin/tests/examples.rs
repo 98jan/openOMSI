@@ -166,3 +166,29 @@ fn the_trip_panel_runs_too() {
     no_errors(&g);
     assert_eq!(panel_ids(&p), ["trip"]);
 }
+
+#[test]
+fn reduced_tickets_change_the_full_fare() {
+    let mut p = load("ex-reduced", "reduced_tickets.lua");
+    let mut g = Game::new();
+    let ask = |kind: omsi_plugin::TicketKind, ticket: u8| omsi_plugin::TicketAsk { person: 1, age: 40.0, kind, ticket, ..Default::default() };
+    // a full-rate buyer, a day ticket and a pass holder: only the first is changed
+    g.ticket_asks = vec![ask(omsi_plugin::TicketKind::Buy, 1), ask(omsi_plugin::TicketKind::Buy, 3), ask(omsi_plugin::TicketKind::None, 1)];
+    p.frame(&mut g);
+    no_errors(&g);
+    assert_eq!(*g.log.borrow(), ["ticket 1 None Some(4) None None None Some(\"reduced\") by reduced_tickets"]);
+}
+
+#[test]
+fn the_passenger_log_runs() {
+    let mut p = load("ex-paxlog", "passenger_log.lua");
+    let mut g = Game::new();
+    // one the game knows (people.get finds them), one it does not, one with a full ride
+    let ask = |person: u32| omsi_plugin::TicketAsk { person, age: 40.0, kind: omsi_plugin::TicketKind::Buy, ticket: 1, ..Default::default() };
+    let mut ride = ask(1);
+    (ride.stop_name, ride.destination, ride.stop_index, ride.destination_index) = (Some("Zoo".into()), Some("Rathaus".into()), Some(0), Some(2));
+    g.ticket_asks = vec![ask(1), ask(9), ride];
+    p.frame(&mut g);
+    no_errors(&g);
+    assert!(g.log.borrow().is_empty(), "it only reads");
+}

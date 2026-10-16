@@ -3,7 +3,8 @@
 
 use crate::App;
 use omsi_plugin as op;
-use omsi_sim::people::{pax::Task, BusId, Place, State};
+use omsi_sim::people::pax::{Pax, TICKET_BUY, TICKET_NONE, TICKET_STAMP};
+use omsi_sim::people::{pax::Task, BusId, PeopleSim, Place, State};
 use omsi_sim::VehicleInstance;
 
 pub(crate) fn veh(app: &App) -> Option<&VehicleInstance> {
@@ -200,9 +201,10 @@ pub(crate) fn traffic_list(app: &App) -> Vec<op::AiCar> {
 
 pub(crate) fn traffic_remove(app: &mut App, id: u64) -> bool {
     let (Some(t), Some(w), Some(r), Some(sc)) = (app.session.traffic.as_mut(), app.world.as_ref(), app.renderer.as_ref(), app.scene.as_mut()) else { return false };
-    if !t.remove_car(&mut app.gfx.sim_view.traffic, w, r, sc, id) {
+    if !t.remove_car(id) {
         return false;
     }
+    crate::view_sync::apply_traffic(t, &mut app.gfx.sim_view.traffic, w, r, sc);
     if let Some(s) = app.session.schedule.as_mut() {
         s.sim.forget_car(id);
     }
@@ -215,7 +217,9 @@ pub(crate) fn traffic_remove(app: &mut App, id: u64) -> bool {
 
 pub(crate) fn traffic_clear(app: &mut App) -> Option<usize> {
     let (Some(t), Some(w), Some(r), Some(sc)) = (app.session.traffic.as_mut(), app.world.as_ref(), app.renderer.as_ref(), app.scene.as_mut()) else { return None };
-    Some(t.clear_random(&mut app.gfx.sim_view.traffic, w, r, sc))
+    let removed = t.clear_random();
+    crate::view_sync::apply_traffic(t, &mut app.gfx.sim_view.traffic, w, r, sc);
+    Some(removed)
 }
 
 /// The light on the street ahead of the player's bus: the first lane within `reach` that
@@ -247,6 +251,8 @@ fn person_state(p: &omsi_sim::people::Person) -> &'static str {
         State::Strolling(_) => "strolling",
         State::Idle => "idle",
         State::Standing => "standing",
+        // (stepping away from the bus it got off, to stand clear of the door)
+        State::Leaving { .. } => "stepping_off",
         State::Pax(x) => match x.task {
             Task::WaitingForBus => "waiting",
             Task::ToBus => "to_bus",
@@ -270,6 +276,7 @@ pub(crate) fn people(app: &App) -> Vec<op::Person> {
                 State::Pax(x) => Some(x),
                 _ => None,
             };
+            let ticket = pax.map(|x| pax_ticket(h, x));
             op::Person {
                 id: p.id,
                 pos: [p.position.x, p.position.y, p.position.z],
@@ -281,11 +288,76 @@ pub(crate) fn people(app: &App) -> Vec<op::Person> {
                 },
                 stop: pax.and_then(|x| x.stop),
                 destination: pax.and_then(|x| x.dest.clone()).map(|d| d.trim().to_string()),
-                ticket: None,
+                ticket: ticket.as_ref().map(|t| t.name.clone()).filter(|n| !n.is_empty()),
                 complaint: pax.map_or(0, |x| x.complaint),
+                age: p.age,
+                model: p.ty.def.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                voice: p.ty.def.voice.trim().to_string(),
+                stop_name: pax.and_then(|x| x.stop).and_then(|s| h.stop_name(s)),
+                pax_ticket: ticket,
+                tag: pax.and_then(|x| x.plugin().tag.clone()),
             }
         })
         .collect()
+}
+
+/// A passenger's ticket now: the pack's, or what a plugin made of it.
+fn pax_ticket(h: &PeopleSim, x: &Pax) -> op::PaxTicket {
+    let kind = match x.ticket {
+        TICKET_BUY => op::TicketKind::Buy,
+        TICKET_STAMP => op::TicketKind::Stamp,
+        _ => op::TicketKind::None,
+    };
+    // (what the desk asks for - for somebody with no ticket of the pack who does not buy,
+    // nothing)
+    let pl = x.plugin();
+    let (name, price) = h.ticket_request(x);
+    // (as `PeopleSim::set_ticket` decides: on the way to the door, or in the bus before the
+    // request at the desk)
+    let open = (x.inside.is_none() && x.task == Task::WalkingToBus) || (x.inside.is_some() && x.task == Task::InBusToPlace && x.ticket == TICKET_BUY && x.sub < 4);
+    op::PaxTicket {
+        kind,
+        index: x.ticket_id,
+        name: name.trim().to_string(),
+        price,
+        voice: pl.voice.clone(),
+        by: pl.by.clone(),
+        asked: x.inside.is_some() && !open,
+    }
+}
+
+/// `people.set_ticket` and `AccessTicketRequest`.
+pub(crate) fn set_ticket(app: &mut App, id: u32, c: &op::TicketChange, by: &str) -> Result<(), String> {
+    let h = app.session.humans.as_mut().ok_or("no passengers")?;
+    let kind = c.kind.map(|k| match k {
+        op::TicketKind::None => TICKET_NONE,
+        op::TicketKind::Stamp => TICKET_STAMP,
+        op::TicketKind::Buy => TICKET_BUY,
+    });
+    let change = omsi_sim::people::TicketChange { kind, ticket: c.ticket, name: c.name.clone(), price: c.price, voice: c.voice.clone(), tag: c.tag.clone() };
+    h.set_ticket(id, &change, by).map_err(str::to_string)
+}
+
+/// The passengers of the people's `ticket_asks`, for the plugins.
+pub(crate) fn ticket_ask(a: omsi_sim::people::TicketAsk) -> op::TicketAsk {
+    let kind = match a.kind {
+        TICKET_BUY => op::TicketKind::Buy,
+        TICKET_STAMP => op::TicketKind::Stamp,
+        _ => op::TicketKind::None,
+    };
+    op::TicketAsk {
+        person: a.person,
+        age: a.age,
+        kind,
+        ticket: a.ticket,
+        name: a.name,
+        price: a.price,
+        stop: a.stop,
+        stop_name: a.stop_name,
+        destination: a.destination,
+        stop_index: a.stop_index,
+        destination_index: a.destination_index,
+    }
 }
 
 pub(crate) fn pax_stops(app: &App) -> Vec<op::PaxStop> {

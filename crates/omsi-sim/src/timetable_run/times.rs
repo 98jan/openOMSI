@@ -147,6 +147,11 @@ pub fn trip_stations(trip: &omsi_timetable::Trip) -> Vec<i64> {
         .collect()
 }
 
+/// Whether `trip_stations` would list any station (without making the list).
+pub fn trip_has_stations(trip: &omsi_timetable::Trip) -> bool {
+    !trip.stations.is_empty() || trip.stations_legacy.iter().any(|s| s.first().is_some_and(|id| id.trim().parse::<i64>().is_ok()))
+}
+
 /// A type-1 station names its entry in the trip's .ttr, not just a nearby pole.
 /// In Recife, paired boarding/alighting boxes sit on opposite sides of the same
 /// path; a platform-side search across the whole route can move one to another visit.

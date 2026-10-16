@@ -5,8 +5,8 @@ use super::*;
 use omsi_render::{Renderer, Scene};
 
 /// How far ahead (s) the timetable reads and uploads the vehicles of its next departures: a
-/// layover bus stands at its first stop a quarter of an hour early.
-pub(super) const FLEET_AHEAD: f64 = 25.0 * 60.0;
+/// tour's bus missing on its layover stands at its first stop up to half an hour early.
+pub(super) const FLEET_AHEAD: f64 = 35.0 * 60.0;
 
 /// [`FLEET_AHEAD`], or `OMSI_FLEET_AHEAD` minutes (for tests).
 pub(super) fn fleet_ahead() -> f64 {
@@ -65,7 +65,7 @@ impl Schedule {
         let pooled: Vec<Arc<VehicleType>> = self.sim.pooled_types();
         for ty in &pooled {
             if seen.insert(ty.def.path.clone()) {
-                let hof = self.sim.pool_hof(ty.def.dir(), world);
+                let hof = self.sim.pool_hof(ty.def.dir(), &*world.data());
                 crate::traffic::warm_up(world, ty, hof);
             }
         }
@@ -85,7 +85,26 @@ impl Schedule {
             out.push((t, s));
         }
         if let Some(cars) = &c.train {
-            out.extend(cars.iter().skip(1).map(|(t, _)| (t.clone(), None)));
+            // Every vehicle of the train as `spawn_new_bus` and `turn_train` draw it: the
+            // further cars with the vehicles of their units (bogies, the second half of a
+            // twin car) unpainted, and - for a trip that runs the train turned round, or
+            // when it is turned for its next trip - its last vehicle leading in the train's
+            // paint. Only the lead and its own chain were read ahead, so an S-Bahn's other
+            // halves were built on the frame it appeared, and again after every quiet
+            // spell had let them go (#2365, #2464).
+            let mut all: Vec<Arc<VehicleType>> = vec![c.ty.clone()];
+            all.extend(traffic.trailer_chain(&c.ty).into_iter().map(|(t, _)| t));
+            for (t, rev) in cars.iter().skip(1) {
+                all.extend(traffic.coupled_chain(t, *rev, false).into_iter().map(|(t, _)| t));
+                all.push(t.clone());
+                all.extend(traffic.coupled_chain(t, *rev, true).into_iter().map(|(t, _)| t));
+            }
+            for t in all {
+                out.push((t.clone(), None));
+                if c.scheme.is_some() {
+                    out.push((t, c.scheme));
+                }
+            }
         }
         out
     }
@@ -101,7 +120,7 @@ impl Schedule {
         let mut out = Vec::new();
         let mut seen: HashSet<crate::scene::VehicleKey> = HashSet::new();
         for i in self.sim.upcoming(day_time, fleet_ahead()) {
-            let Some(c) = self.sim.choose(i, world) else {
+            let Some(c) = self.sim.choose(i, &*world.data()) else {
                 continue;
             };
             for (ty, scheme) in Self::choice_sets(&c, traffic) {

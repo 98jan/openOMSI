@@ -1,5 +1,6 @@
 //! [`PluginIo`]: the game's side of the plugins. The first eight methods are what an OMSI
-//! `.opl` plugin needs and every game implements them; the rest feed the Lua and WASM
+//! `.opl` plugin needs and every game implements them; the two script texture methods
+//! after them serve an `.opl`'s openOMSI-only `[scripttexturelist]`; the rest feed the Lua and WASM
 //! plugins' API (`crate::api`) and default to "the game has none of it" - a test's fake
 //! game implements what it tests, the real game (omsi-app's `plugins.rs`) all of it.
 //!
@@ -20,6 +21,18 @@ pub trait PluginIo {
     fn set_string(&mut self, name: &str, s: &str);
     /// A trigger's key went down (`true`) or came up.
     fn fire(&mut self, trigger: &str, down: bool);
+    /// The size of the player's vehicle's `[scripttexture]` number `index` (0-based, as
+    /// `[useScriptTexture]` counts), for an `.opl` plugin's `[scripttexturelist]`. None: the
+    /// vehicle has no such texture.
+    fn script_texture_size(&self, _index: usize) -> Option<(u32, u32)> {
+        None
+    }
+    /// A picture a plugin drew for that texture: `width` x `height` RGBA, top row first,
+    /// straight (not premultiplied) alpha. False when it was not taken (no such texture,
+    /// or it has another size by now).
+    fn set_script_texture(&mut self, _index: usize, _width: u32, _height: u32, _rgba: &[u8]) -> bool {
+        false
+    }
     /// Seconds of game time since the last frame (timers).
     fn dt(&self) -> f32 {
         0.0
@@ -270,6 +283,17 @@ pub trait PluginIo {
     }
     fn people_set_density(&mut self, _v: f32) -> bool {
         false
+    }
+    /// The passengers who decided about their ticket for the player's bus since the last
+    /// frame (the `passenger_ticket` event, an `.opl`'s `AccessTicketRequest`). Their request
+    /// at the cash desk waits for the end of this frame.
+    fn ticket_asks(&self) -> Vec<TicketAsk> {
+        Vec::new()
+    }
+    /// Change a passenger's ticket (`by`: the plugin's name); the reason when nothing was
+    /// changed.
+    fn people_set_ticket(&mut self, _id: u32, _change: &TicketChange, _by: &str) -> Result<(), String> {
+        Err("the game has no passengers".into())
     }
 
     // --- duty and timetable -------------------------------------------------------------
@@ -622,9 +646,108 @@ pub struct Person {
     pub in_ai_bus: Option<u64>,
     pub stop: Option<i64>,
     pub destination: Option<String>,
+    /// The name of the ticket they ask (or asked) for at the cash desk.
     pub ticket: Option<String>,
     /// 0 none, 1..3 how bad the ride was (3: they leave).
     pub complaint: u8,
+    /// Age in years (the `.hum`'s `[age]`, else 40).
+    pub age: f32,
+    /// The figure's `.hum` file name and its voice folder (`[voice]`).
+    pub model: String,
+    pub voice: String,
+    /// The name of the stop they wait at or boarded at (the timetable's).
+    pub stop_name: Option<String>,
+    /// A passenger's ticket: none for a pedestrian.
+    pub pax_ticket: Option<PaxTicket>,
+    /// A plugin's own text kept with the person (`people.set_ticket`'s `tag`).
+    pub tag: Option<String>,
+}
+
+/// What a passenger does about a ticket.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TicketKind {
+    /// Nothing (a pass, or no ticket at all).
+    #[default]
+    None,
+    /// Validates one at a validator.
+    Stamp,
+    /// Buys one at the cash desk.
+    Buy,
+}
+
+impl TicketKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TicketKind::None => "none",
+            TicketKind::Stamp => "stamp",
+            TicketKind::Buy => "buy",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<TicketKind> {
+        [TicketKind::None, TicketKind::Stamp, TicketKind::Buy].into_iter().find(|k| k.as_str().eq_ignore_ascii_case(s.trim()))
+    }
+
+    /// `AccessTicketRequest`'s `kind`: 0 nothing, 1 stamp, 2 buy.
+    pub fn code(self) -> i32 {
+        self as i32
+    }
+
+    pub fn from_code(c: i32) -> Option<TicketKind> {
+        [TicketKind::None, TicketKind::Stamp, TicketKind::Buy].get(usize::try_from(c).ok()?).copied()
+    }
+}
+
+/// A passenger's ticket now.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PaxTicket {
+    pub kind: TicketKind,
+    /// The ticket of the pack (from 1; 0: none) and the name and price asked for.
+    pub index: u8,
+    pub name: String,
+    pub price: f32,
+    /// The voice line a plugin chose for the request (none: `Ticket_<n>_<k>`).
+    pub voice: Option<String>,
+    /// The plugin that changed the ticket, if one did.
+    pub by: Option<String>,
+    /// Asked for at the desk already: it cannot be changed any more.
+    pub asked: bool,
+}
+
+/// A passenger boarding the player's bus, as they decided about their ticket (see
+/// [`PluginIo::ticket_asks`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TicketAsk {
+    pub person: u32,
+    pub age: f32,
+    pub kind: TicketKind,
+    /// The ticket of the pack (from 1; 0: none fits their age), its name and price.
+    pub ticket: u8,
+    pub name: String,
+    pub price: f32,
+    /// The stop they board at: its map object id and its timetable name.
+    pub stop: Option<i64>,
+    pub stop_name: Option<String>,
+    /// The stop they ride to (the timetable's name).
+    pub destination: Option<String>,
+    /// Where the two are in the duty's trip (from 0), where it has them.
+    pub stop_index: Option<usize>,
+    pub destination_index: Option<usize>,
+}
+
+/// A plugin's change of a passenger's ticket: `None` leaves that part as it is.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct TicketChange {
+    /// Only before they are in the bus.
+    pub kind: Option<TicketKind>,
+    /// Another ticket of the pack (from 1; 0: none): its name and price come with it.
+    pub ticket: Option<u8>,
+    pub name: Option<String>,
+    pub price: Option<f32>,
+    /// A voice line of the passenger's voice folder said instead of `Ticket_<n>_<k>`.
+    pub voice: Option<String>,
+    /// A text of the plugin's own kept with the person (empty: none).
+    pub tag: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

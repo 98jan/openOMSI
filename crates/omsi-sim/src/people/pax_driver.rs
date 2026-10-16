@@ -9,13 +9,13 @@ impl PeopleSim {
     /// of the ticket pack's voices) - the third time getting off at the next stop. The
     /// toll eases off by 0.2 a kilometre (`pax_tick`). OMSI's passengers did this; here
     /// they never said a word about the driving (#862, #873).
-    pub fn ride_comfort(&mut self, dt: f32, bus: Option<&VehicleInstance>, buses: &[BusNow], bus_ix: &HashMap<BusId, usize>, world: &dyn World) {
+    pub fn ride_comfort(&mut self, dt: f32, bus: Option<&PlayerBusView>, buses: &[BusNow], bus_ix: &HashMap<BusId, usize>, world: &dyn World) {
         let Some(v) = bus else { return };
         if dt <= 0.0 || self.avatar_only {
             return;
         }
-        let a = v.physics.a_trans;
-        let k = self.comfort.step(dt, self.time * 1000.0, v.physics.speed, a.x, a.y);
+        let a = v.a_trans;
+        let k = self.comfort.step(dt, self.time * 1000.0, v.speed, a.x, a.y);
         if k <= 0.0 {
             return;
         }
@@ -148,7 +148,7 @@ impl PeopleSim {
         i: usize,
         dt: f32,
         bn: &BusNow,
-        player_bus: Option<&VehicleInstance>,
+        player_bus: Option<&PlayerBusView>,
         taken_ticket: &mut bool,
     ) {
         let _ = dt;
@@ -156,12 +156,8 @@ impl PeopleSim {
         // the game plays the driver in `auto` boarding (a setting; OMSI has no such mode)
         let auto = self.boarding.eq_ignore_ascii_case("auto");
         let id = p.ticket_id as usize;
-        let (name, value) = self
-            .tickets
-            .as_ref()
-            .and_then(|t| t.tickets.get(id.saturating_sub(1)))
-            .map(|t| (t.name.clone(), t.value))
-            .unwrap_or_default();
+        // (the pack's ticket, or what a plugin made of it)
+        let (name, value) = self.ticket_request(&p);
         let tol = self.money.as_ref().map(|m| m.smallest_value()).unwrap_or(0.01) / 2.0;
         let owed = p.paid - p.price;
         // the change on the tray (sub_7e8900): enough of it, too much, too many coins
@@ -183,7 +179,7 @@ impl PeopleSim {
             if auto || h.give_ticket {
                 return (true, false);
             }
-            let given = player_bus.and_then(|b| b.var("GivenTicket")).unwrap_or(-1.0);
+            let given = player_bus.and_then(|b| b.given_ticket).unwrap_or(-1.0);
             if given < 0.0 {
                 return (false, false);
             }
@@ -193,12 +189,16 @@ impl PeopleSim {
         let (ch_ok, too_much, many) = if p.sub == 7 { change(self) } else { (false, false, false) };
         let (tk_ok, wrong) = if p.sub == 5 { ticket(self) } else { (false, false) };
         if p.sub == 3 {
+            // the plugins have not had their say about this ticket yet (a frame or two)
+            if self.ticket_pending(i) {
+                return;
+            }
             // the desk free (sub_7d1fec, +0x7a8): "Einmal ..., bitte"
             if self.desk_busy.is_some_and(|d| d != self.people[i].id) {
                 return;
             }
             let k = 1 + self.rand() % 2;
-            self.say_ex(i, &format!("Ticket_{id}_{k}"), false);
+            self.say_ticket(i, id, k, p.plugin().voice.as_deref());
             self.ticket_requests += 1;
             self.request = Some((name, value));
             self.desk_busy = Some(self.people[i].id);
@@ -221,7 +221,7 @@ impl PeopleSim {
                 let coins = if self.exact_fare || auto { m.exact_coins_for(value) } else { m.omsi_coins_for(value) };
                 paid = m.value_of(&coins);
                 if let Some((pos, var, parent)) = point {
-                    // (put there when the view catches up: `show_bodies`)
+                    // (put there when the view catches up: `view_sync::apply_people`)
                     self.bodies.ops.push(BodyOp::Coins { coins, point: pos, var, change: false, parent });
                 }
             }

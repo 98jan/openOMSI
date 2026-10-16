@@ -37,15 +37,17 @@ impl PeopleSim {
         center: DVec3,
     ) {
         self.center = center;
+        // (the stops set up already are passed over before anything is asked of the ground
+        // or copied: once the map round the player is up, every call came here for none)
         let list: Vec<(i64, DVec3, f64, String)> = world
             .bus_stops()
             .iter()
-            .filter(|s| (s.1 - center).length() < STOP_RANGE + 100.0)
+            .filter(|s| !self.stops.contains_key(&s.0) && (s.1 - center).length() < STOP_RANGE + 100.0)
             .map(|s| (s.0, s.1, s.2, s.3.clone()))
             .collect();
         for (id, pos, rot, name) in list {
             // only once the ground under the stop is there
-            if world.walk_height(pos.x, pos.y).is_none() || self.stops.contains_key(&id) {
+            if self.stops.contains_key(&id) || world.walk_height(pos.x, pos.y).is_none() {
                 continue;
             }
             let st = self.build_pax_stop(world, net, id, pos, rot, &name);
@@ -92,7 +94,6 @@ impl PeopleSim {
             }
             spots.push(WaitSpot { pos: *p, face: *face, height: *height });
         }
-        drop(objects);
         // the gather point (+0x48): (1, 0, 1) or (-1, 0, 1) through the stop's turn
         let x = if (side == 1) == left { 1.0 } else { -1.0 };
         let (fwd, right) = (DVec2::new(h.sin(), h.cos()), DVec2::new(h.cos(), -h.sin()));
@@ -103,10 +104,20 @@ impl PeopleSim {
         // the destinations: the stops the trips from here go on to, as likely as people
         // get off there; each with the termini of the buses that go there
         let lines: Vec<(String, HashSet<String>)> = self.stop_targets.as_ref().and_then(|m| m.get(&id)).cloned().unwrap_or_default();
+        // (the weight of the stations the trips from here reach - by their objects, as
+        // Omsi.exe takes it from the trip's station record. Looked up by the label among the
+        // stops placed so far, every stop on a tile not loaded yet - and every one whose
+        // label is not its timetable name - weighed 0.5 whatever its cube said: people got
+        // off in numbers where the cube says nobody does, and fewer where many do, #1583)
+        let targets = self.stop_target_objects.as_ref().and_then(|m| m.get(&id));
         let weights: Vec<f32> = lines
             .iter()
             .map(|(n, _)| {
-                world.bus_stops().iter().find(|s| s.3.trim() == n.trim()).map(|s| world.stop_exit_weight(s.0)).unwrap_or(0.5)
+                let objects = targets.and_then(|t| t.get(n)).filter(|o| !o.is_empty());
+                match objects {
+                    Some(o) => o.iter().map(|k| world.stop_exit_weight(*k)).fold(0.0, f32::max),
+                    None => world.bus_stops().iter().find(|s| s.3.trim() == n.trim()).map(|s| world.stop_exit_weight(s.0)).unwrap_or(0.5),
+                }
             })
             .collect();
         let total: f32 = weights.iter().sum();
@@ -117,6 +128,7 @@ impl PeopleSim {
         };
         if debug_pax() {
             log::info!("stop {id} '{name}' at ({:.1}, {:.1}, {:.2}) heading {heading:.0}: {} waiting places, length {length}, side {side}, {} destinations", pos.x, pos.y, pos.z, spots.len(), dests.len());
+            log::info!("stop {id}: exit weights {:?}", lines.iter().zip(&weights).map(|((n, _), w)| format!("{n}={w}")).collect::<Vec<_>>());
         }
         let n = spots.len();
         // what the timetable calls it - its id when the timetable does not know it, as the
@@ -169,6 +181,20 @@ impl PeopleSim {
                 remote.iter().any(|b| b.id == BusId::Ai(*bus) && (b.pos - s.pos).length() < 60.0)
             });
         }
+        // who belongs to each stop, counted once for all of them (a person counted per stop
+        // and frame was stops x people every frame). Exact through the loop: a stop's own
+        // spawns and departures change its count only, and it is read before them.
+        let mut counts: HashMap<i64, usize> = HashMap::with_capacity(ids.len());
+        for p in &self.people {
+            if let State::Pax(x) = &p.state {
+                if let Some(s) = x.stop {
+                    *counts.entry(s).or_default() += 1;
+                }
+            }
+        }
+        for h in &self.handed {
+            *counts.entry(h.0).or_default() += 1;
+        }
         for id in ids {
             let near = {
                 let s = &self.stops[&id];
@@ -210,7 +236,8 @@ impl PeopleSim {
                 };
                 s.factor = (r * 2.0 - 1.0) * k + 1.0;
             }
-            let count = self.people.iter().filter(|p| matches!(&p.state, State::Pax(x) if x.stop == Some(id))).count() + self.handed.iter().filter(|h| h.0 == id).count();
+            let count = counts.get(&id).copied().unwrap_or(0);
+            debug_assert_eq!(count, self.people.iter().filter(|p| matches!(&p.state, State::Pax(x) if x.stop == Some(id))).count() + self.handed.iter().filter(|h| h.0 == id).count());
             let want = {
                 let s = &self.stops[&id];
                 let mean = (s.enter_max + s.enter_min) / 2.0;

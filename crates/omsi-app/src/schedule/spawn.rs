@@ -1,7 +1,11 @@
 //! Putting one departure on the road.
 
 use super::*;
-use omsi_render::{Renderer, Scene};
+
+/// A bus slower than this (m/s) within this far (m) of a layover bus's stand, on the
+/// stand's lanes, has the stand.
+const STAND_STILL: f32 = 0.5;
+const STAND_REACH: f64 = 30.0;
 
 impl Schedule {
     /// Put departure `i` on the road where its bus is at `day_time`: on the part of the route
@@ -15,23 +19,20 @@ impl Schedule {
         i: usize,
         world: &World,
         traffic: &mut Traffic,
-        view: &mut TrafficView,
-        renderer: &Renderer,
-        scene: &mut Scene,
         day_time: f64,
         onto: Option<usize>,
     ) -> Placed {
         let profile = omsi_cfg::flags::OMSI_PROFILE.is_set();
         let t_spawn = std::time::Instant::now();
-        let p = match self.sim.place_departure(i, world, &mut traffic.sim, day_time, onto) {
+        let p = match self.sim.place_departure(i, &*world.data(), &mut traffic.sim, day_time, onto) {
             Ok(p) => p,
             Err(placed) => return placed,
         };
         let t_route = t_spawn.elapsed();
         if let Some(ci) = onto {
-            return self.take_trip_on(i, ci, p, world, traffic, view, renderer, scene, day_time);
+            return self.take_trip_on(i, ci, p, world, traffic, day_time);
         }
-        self.spawn_new_bus(i, p, world, traffic, view, renderer, scene, day_time, profile, t_spawn, t_route)
+        self.spawn_new_bus(i, p, world, traffic, day_time, profile, t_spawn, t_route)
     }
 
     /// The tour's bus `ci`, at the end of its previous trip, takes departure `i` on.
@@ -43,12 +44,9 @@ impl Schedule {
         p: Placing,
         world: &World,
         traffic: &mut Traffic,
-        view: &mut TrafficView,
-        renderer: &Renderer,
-        scene: &mut Scene,
         day_time: f64,
     ) -> Placed {
-        let Placing { trip_name, stations, departure, leave, steps, station_steps, slots, end, section, mut stops, served, .. } = p;
+        let (trip_name, section) = (&p.trip_name, &p.section);
         // a train whose next trip runs the other way (its `[trainreverse]` is not how the
         // train stands) is turned round where it stands, as Omsi.exe turns it when the
         // trip begins (0x613a98): its last car leads, on the way back. (It drove off
@@ -67,7 +65,7 @@ impl Schedule {
                 .min_by(|a, b| a.3.total_cmp(&b.3));
             match found {
                 Some((k, l, s, d)) if d < 2.5 => {
-                    traffic.turn_train(view, world, renderer, scene, ci, l, s, &section[..k], reverse);
+                    traffic.turn_train(world, ci, l, s, &section[..k], reverse);
                 }
                 _ => {
                     if omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set() {
@@ -80,101 +78,7 @@ impl Schedule {
                 }
             }
         }
-        let (ty, rail) = (traffic.cars[ci].vehicle.ty.clone(), traffic.cars[ci].is_rail());
-        place_stops(&traffic.net, &section, 0, &mut stops, &ty, rail);
-        // the tour's bus that has just finished its trip takes this one on from where
-        // it stands: the section itself when it stands on it, else the shortest way
-        // from its lane onto one of the section's first lanes (round a terminal loop)
-        let (lane0, s0) = (traffic.cars[ci].state.lane, traffic.cars[ci].state.s);
-        let net = &traffic.net;
-        let (prefix, from) = match tour_entry(&section, lane0) {
-            Some(r) => (Vec::new(), r),
-            None => {
-                let mut best: Option<(f32, Vec<usize>, usize)> = None;
-                for t in 0..section.len().min(TOUR_ENTRY_LANES) {
-                    if let Some(p) = net.shortest_path(lane0, section[t]) {
-                        let len = p[..p.len() - 1].iter().map(|&l| net.lanes[l].length()).sum::<f32>() - s0;
-                        if len < 400.0 && best.as_ref().map(|b| len < b.0).unwrap_or(true) {
-                            best = Some((len, p, t));
-                        }
-                    }
-                }
-                match best {
-                    Some((_, p, t)) => (p[..p.len() - 1].to_vec(), t),
-                    None => {
-                        log::debug!("trip {trip_name}: the tour's bus has no way from where it stands");
-                        if omsi_cfg::flags::OMSI_DEBUG_TRAFFIC.is_set() {
-                            let ln = &net.lanes[lane0];
-                            log::info!("trip {trip_name}: tour bus on lane {lane0} {:?} at s {s0:.1} of {:.1}, ({:.1}, {:.1}) -> ({:.1}, {:.1}), next {:?}", ln.key, ln.length(), ln.start().x, ln.start().y, ln.end().x, ln.end().y, ln.next);
-                            for &l in section.iter().take(4) {
-                                let ln = &net.lanes[l];
-                                log::info!("  trip lane {l} {:?} len {:.1} ({:.1}, {:.1}) -> ({:.1}, {:.1}) prev? next {:?}", ln.key, ln.length(), ln.start().x, ln.start().y, ln.end().x, ln.end().y, ln.next);
-                            }
-                        }
-                        return Placed::Drop;
-                    }
-                }
-            }
-        };
-        let route: Vec<usize> = prefix.iter().copied().chain(section[from..].iter().copied()).collect();
-        let shift = prefix.len() as isize - from as isize;
-        // the stops from the bus on; one just behind it on its lane is where it stands
-        let stops: Vec<(usize, f32, f32, f64, i64, f32)> = stops
-            .into_iter()
-            .filter(|st| st.0 >= from)
-            .filter_map(|(ri, ss, lat, t, id, side)| {
-                let nri = (ri as isize + shift) as usize;
-                if nri == 0 && ss <= s0 + 0.3 {
-                    (s0 - ss < 25.0).then_some((0, s0 + 0.3, 0.0, t, id, side))
-                } else {
-                    Some((nri, ss, lat, t, id, side))
-                }
-            })
-            .collect();
-        let layover = departure > day_time;
-        let n_stops = stops.len();
-        traffic.reroute(ci, route, s0, stops, layover);
-        let line = self.sim.display_line(i);
-        let terminus = self.sim.trip_of(i).terminus.clone();
-        let names = self.sim.trip_stop_names(self.sim.trip_index(i));
-        let last_stop = trip_stations(&self.sim.trip_of(i)).last().copied();
-        let (always, early, holds) = self.sim.special_stops(i);
-        let car = &mut traffic.cars[ci];
-        if let Some(k) = car.vehicle.ty.program.str_var("Linie") {
-            car.vehicle.state.str_vars[k as usize] = line.clone();
-        }
-        let hof = car.vehicle.host.hof.clone();
-        let names: Vec<&str> = names.iter().map(String::as_str).collect();
-        let timetable = self.sim.ai_timetable(i);
-        timetable.install(&mut car.vehicle.host, car.bus.as_ref().and_then(|b| b.stops.front()));
-        car.vehicle.set_var("schedule_active", 1.0);
-        if let Some(b) = car.bus.as_mut() {
-            b.delay = 0.0;
-        }
-        set_ai_destination(&mut car.vehicle, hof.as_deref(), &line, &terminus, &names);
-        if let Some(b) = car.bus.as_mut() {
-            b.route_open = end < slots.len();
-            b.terminus = terminus.clone();
-            b.last_stop = last_stop;
-            b.always = always;
-            b.serve_early = early;
-            b.holds = holds;
-        }
-        let id = car.id;
-        self.sim.bus_runs(id, i);
-        self.sim.forget_route(id);
-        if end < slots.len() {
-            self.sim.carry_later(id, steps, end, &stations, &leave, served, station_steps);
-        }
-        log::info!(
-            "scheduled bus {id}: line {line} tour {} goes on with trip {trip_name} to {} at {:.1} min (leaves {:.1} min), {n_stops} stops{}",
-            self.sim.departure_tour(i),
-            terminus.trim(),
-            day_time / 60.0,
-            departure / 60.0,
-            if prefix.is_empty() { String::new() } else { format!(", {} lanes to its first stop", prefix.len()) }
-        );
-        Placed::Spawned
+        self.sim.take_trip_on(i, ci, p, &mut traffic.sim, day_time)
     }
 
     /// A new bus for departure `i`, put on the road where the trip is now.
@@ -185,9 +89,6 @@ impl Schedule {
         p: Placing,
         world: &World,
         traffic: &mut Traffic,
-        view: &mut TrafficView,
-        renderer: &Renderer,
-        scene: &mut Scene,
         day_time: f64,
         profile: bool,
         t_spawn: std::time::Instant,
@@ -200,7 +101,7 @@ impl Schedule {
                      hof,
                      scheme,
                      train,
-                 }) = self.sim.choose(i, world)
+                 }) = self.sim.choose(i, &*world.data())
         else {
             log::warn!(
                 "trip {trip_name}: no vehicles for AI group '{}'",
@@ -278,26 +179,36 @@ impl Schedule {
             log::debug!("trip {trip_name}: a vehicle stands where the bus would appear");
             return Placed::Busy;
         }
-        // A bus on its layover waits at the stand only when no other bus stands there or
-        // pulls in; otherwise it comes at its departure time. (A stand shared by four lines
-        // had five buses queueing in the road for a quarter of an hour, and every bus
-        // serving the stop and every car behind them waiting as well.)
+        // A bus on its layover waits at the stand only when no other bus stands there;
+        // otherwise it tries again in a while, and comes at its departure time at the latest.
+        // (A stand shared by four lines had five buses queueing in the road for a quarter of
+        // an hour, and every bus serving the stop and every car behind them waiting as
+        // well.) Only a bus standing at the stand counts - on the stand's own lanes, at a
+        // standstill - not one driving past or one on the other side of the road: with
+        // those counted a busy terminus never had its buses before they left (#2593).
+        let near_lanes = &section[start_index.saturating_sub(1)..(start_index + 3).min(section.len())];
         if departure > day_time + 30.0
-            && traffic
-            .cars
-            .iter()
-            .any(|c| c.is_bus() && !c.gone && (c.vehicle.position - at_pos).length() < 50.0)
+            && traffic.cars.iter().any(|c| {
+                c.is_bus()
+                    && !c.gone
+                    && c.state.speed.abs() < STAND_STILL
+                    && near_lanes.contains(&c.state.lane)
+                    && (c.vehicle.position - at_pos).length() < STAND_REACH
+            })
         {
-            log::debug!(
-                "trip {trip_name}: its stand is taken, the bus comes at its departure time"
-            );
-            self.sim.stand_taken(i);
+            log::debug!("trip {trip_name}: a bus stands at its stand, it tries again in a while");
+            self.sim.stand_taken(i, day_time);
             return Placed::Drop;
         }
         // nobody may see a bus appear (except while the map loads)
         // (the map-loading exemption holds only while the world is being built: a departure
         // of that moment that had to wait popped up in plain view minutes later)
-        if !(self.sim.queued_at_startup(i) && traffic.loading_phase()) && !traffic.may_appear(world, at_pos) {
+        // - but a bus due to leave its first stop now comes there in view as well: a terminus
+        // the player watched never had its buses, every one of them kept back until the
+        // player had driven a stop or two away, while in OMSI 2 they stand there and leave on
+        // time (#2235)
+        let due_at_start = leg == 0 && frac < 0.01 && (-30.0..=60.0).contains(&(departure - day_time));
+        if !(self.sim.queued_at_startup(i) && traffic.loading_phase()) && !due_at_start && !traffic.may_appear(world, at_pos) {
             log::debug!("trip {trip_name}: the bus would appear in view");
             return Placed::Busy;
         }
@@ -322,10 +233,7 @@ impl Schedule {
         let tour = self.sim.departure_tour(i).to_string();
         let terminus = self.sim.trip_of(i).terminus.clone();
         let Some(ci) = traffic.spawn_bus(
-            view,
             world,
-            renderer,
-            scene,
             lead_ty.clone(),
             route,
             s,
@@ -339,10 +247,10 @@ impl Schedule {
         };
         self.sim.bus_runs(traffic.cars[ci].id, i);
         if let Some(t) = &turned {
-            traffic.set_trailers(view, world, renderer, scene, ci, &t[1..]);
+            traffic.set_trailers(ci, &t[1..]);
             traffic.cars[ci].consist_reversed = true;
         } else if let Some(rest) = &rest {
-            traffic.attach_cars(view, world, renderer, scene, ci, rest);
+            traffic.attach_cars(ci, rest);
         }
         if train.is_some() {
             log::info!("train: {}", std::iter::once(traffic.cars[ci].vehicle.ty.def.path.file_stem().unwrap_or_default().to_string_lossy().to_string()).chain(traffic.cars[ci].vehicle.trailers.iter().map(|t| format!("{}{}", t.ty.def.path.file_stem().unwrap_or_default().to_string_lossy(), if t.reversed { " (turned)" } else { "" }))).collect::<Vec<_>>().join(" + "));
@@ -359,6 +267,7 @@ impl Schedule {
         if let Some(b) = car.bus.as_mut() {
             b.layover = departure > day_time
                 && b.stops.front().map(|st| st.ri == 0 && (st.s - s).abs() < 2.0).unwrap_or(false);
+            b.put_out = b.layover;
             b.route_open = end < slots.len();
             b.terminus = terminus.clone();
             b.last_stop = last_stop;

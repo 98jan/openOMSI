@@ -135,10 +135,18 @@ impl crate::App {
                 _ => {}
             }
         }
-        // the trip's summary, when one has just ended (and the setting wants it)
-        if let Some(s) = self.session.journey.as_mut().and_then(|j| j.take_summary()) {
+        // A completed trip's summary waits until the bus stops: the panel takes the mouse.
+        let speed = self.player.as_ref().map_or(f32::INFINITY, |p| p.vehicle.physics.velocity_kmh());
+        let still = if self.paused { 0.0 } else { dt };
+        if let Some(j) = self.session.journey.as_mut() {
             if self.settings.trip_summary {
-                self.menus.game_panels.trip = Some(trip_summary::TripPanel::new(s));
+                if let Some(s) = j.take_summary_when_stopped(speed, still) {
+                    self.menus.game_panels.trip = Some(trip_summary::TripPanel::new(s));
+                }
+            } else {
+                // Disabled summaries are consumed, so enabling the setting later cannot
+                // open a report from an earlier trip. The quick menu still has it.
+                j.take_summary();
             }
         }
         let panels: Vec<(&str, Option<Panel>)> = vec![
@@ -161,7 +169,11 @@ impl crate::App {
         }
         let (Some(r), Some(scene)) = (self.renderer.as_ref(), self.scene.as_mut()) else { return };
         let dpi = self.window.as_ref().map_or(1.0, |w| w.scale_factor() as f32);
-        let size = crate::ui::size_factor(hud[3], dpi, self.settings.ui_scale, self.settings.ui_scale_window);
+        let mut size = crate::ui::size_factor(hud[3], dpi, self.settings.ui_scale, self.settings.ui_scale_window);
+        // (the trip's summary shrinks to fit a small screen - a phone - rather than spill off it)
+        if let Some((w, h)) = self.menus.game_panels.trip.as_ref().map(|t| t.extent()) {
+            size = size.min(hud[2] * 0.96 / (w * dpi)).min(hud[3] * 0.96 / (h * dpi));
+        }
         let map_open = self.menus.navigator.as_ref().is_some_and(|n| n.map_open());
         let hidden = vr_active || self.menus.game_menu.is_some() || self.menus.chooser.is_some() || map_open || self.photo.is_some();
         let frame = crate::plugin_ui::PanelsFrame {
@@ -188,6 +200,14 @@ impl crate::App {
     /// Whether the game's panels have the mouse.
     pub(crate) fn game_panels_mouse(&self) -> bool {
         self.menus.game_panels.focused()
+    }
+
+    pub(crate) fn game_panel_touch(&mut self, x: f32, y: f32) -> bool {
+        if !self.game_panels_mouse() {
+            return false;
+        }
+        self.input.cursor = (x, y);
+        self.game_panel_click(true)
     }
 
     /// The left button while the panels have the mouse: a press on a button goes to it, a
@@ -275,9 +295,11 @@ impl crate::App {
 
     /// Alt pressed and let go with nothing else between: OMSI 2's quick menu opens (or
     /// closes). Every key comes through here, pressed and released, before its own work.
+    /// (The key is OMSI's `open_menue`, "Alt (both)" in its keyboard.cfg: moved to another
+    /// Shift, Ctrl or Alt key, that key's tap opens it; moved to any other key or cleared, a
+    /// tap opens nothing - that key is a [game] key then, #2392.)
     pub(crate) fn alt_tap(&mut self, code: winit::keyboard::KeyCode, pressed: bool, repeat: bool) {
-        use winit::keyboard::KeyCode;
-        let alt = matches!(code, KeyCode::AltLeft | KeyCode::AltRight);
+        let alt = quick_menu_tap_key(&self.input.game_keys, code);
         let gp = &mut self.menus.game_panels;
         match (alt, pressed) {
             (true, true) if !repeat => gp.alt_alone = true,
@@ -291,8 +313,51 @@ impl crate::App {
         }
     }
 
+    /// `open_menue` (the quick menu) from a key that is not a Shift, Ctrl or Alt key.
+    pub(crate) fn quick_menu_key(&mut self) {
+        if self.menus.game_menu.is_none() && self.menus.chooser.is_none() && self.photo.is_none() && !self.vr_active() {
+            quick_menu::toggle(self);
+        }
+    }
+
     /// A mouse button went down: Alt held with it is no tap.
     pub(crate) fn alt_tap_spoilt(&mut self) {
         self.menus.game_panels.alt_alone = false;
+    }
+}
+
+/// Whether `code` is the key whose tap opens the quick menu: keyboard.cfg's `open_menue`
+/// where it is a Shift, Ctrl or Alt key (either side's code, or one side's), Alt where the
+/// file has no entry for it.
+pub(crate) fn quick_menu_tap_key(game_keys: &[omsi_content::KeyBinding], code: winit::keyboard::KeyCode) -> bool {
+    let Some(both) = omsi_input::keys::both_code(code) else { return false };
+    match game_keys.iter().find(|b| b.action.eq_ignore_ascii_case("open_menue")) {
+        None => both == omsi_input::keys::ALT_BOTH,
+        Some(b) => b.scan_code == both || omsi_input::keys::dik_code(code) == Some(b.scan_code),
+    }
+}
+
+#[cfg(test)]
+mod quick_menu_key_tests {
+    use super::quick_menu_tap_key;
+    use omsi_content::KeyBinding;
+    use winit::keyboard::KeyCode::*;
+
+    /// The quick menu's key moved away from Alt: Alt no longer opens it (#2392).
+    #[test]
+    fn the_quick_menu_follows_open_menue() {
+        let kb = |k: i32| vec![KeyBinding { action: "open_menue".into(), scan_code: k, modifier: 0 }];
+        assert!(quick_menu_tap_key(&[], AltLeft));
+        assert!(quick_menu_tap_key(&kb(92), AltRight));
+        assert!(!quick_menu_tap_key(&kb(92), ShiftLeft));
+        assert!(!quick_menu_tap_key(&kb(92), KeyA));
+        // moved to the right Ctrl, to F10, cleared
+        assert!(quick_menu_tap_key(&kb(157), ControlRight));
+        assert!(!quick_menu_tap_key(&kb(157), ControlLeft));
+        assert!(!quick_menu_tap_key(&kb(157), AltLeft));
+        assert!(!quick_menu_tap_key(&kb(68), AltLeft));
+        assert!(!quick_menu_tap_key(&kb(0), AltLeft));
+        // Shift (both)
+        assert!(quick_menu_tap_key(&kb(90), ShiftRight));
     }
 }

@@ -3,7 +3,7 @@
 mod common;
 
 use common::{run, Game};
-use omsi_plugin::{AiCar, InfoValue, Light};
+use omsi_plugin::{AiCar, InfoValue, Light, TicketAsk, TicketKind};
 
 /// Run `body` (Lua) in a plugin's first frame; it reports with `omsi.message`.
 fn check(tag: &str, body: &str, g: &mut Game) -> Vec<String> {
@@ -371,4 +371,32 @@ fn derived_events() {
     ] {
         assert!(msg.contains(want), "{want} is missing from: {msg}");
     }
+}
+
+#[test]
+fn passengers_tickets() {
+    let mut g = Game::new();
+    g.ticket_asks = vec![TicketAsk { person: 1, age: 40.0, kind: TicketKind::Buy, ticket: 1, name: "Full fare".into(), price: 2.0, stop: Some(12), stop_name: Some("Markt".into()), destination: Some("Rathaus".into()), stop_index: Some(1), destination_index: Some(2) }];
+    run(
+        "tickets",
+        r##"
+        omsi.on("passenger_ticket", function(p)
+          assert(p.id == 1 and p.kind == "buy" and p.ticket == 1 and p.name == "Full fare" and p.price == 2)
+          assert(p.stop == 12 and p.stop_name == "Markt" and p.destination == "Rathaus" and p.stop_number == 2 and p.destination_number == 3)
+          local zones = p.destination_number - p.stop_number
+          local ok, why = omsi.people.set_ticket(p.id, { name = "Zone " .. zones, price = 30, voice = "Zone_" .. zones, tag = "zones" })
+          assert(ok and why == nil)
+          local ok2, why2 = omsi.people.set_ticket(2, { kind = "none" })
+          assert(not ok2 and why2 == "not boarding the bus yet")
+          assert(not pcall(omsi.people.set_ticket, 1, { kind = "train" }))
+          assert(not pcall(omsi.people.set_ticket, 1, { price = -1 }))
+          assert(omsi.people.get(1).state == "seated" and omsi.people.get(5) == nil)
+          omsi.message("heard " .. p.id)
+        end)
+        "##,
+        &mut g,
+        1,
+    );
+    assert_eq!(g.messages, ["heard 1"]);
+    assert_eq!(*g.log.borrow(), ["ticket 1 None None Some(\"Zone 1\") Some(30.0) Some(\"Zone_1\") Some(\"zones\") by tickets"]);
 }

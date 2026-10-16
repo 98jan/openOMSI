@@ -204,7 +204,9 @@ impl ScheduleSim {
                             .find(|(_, s)| !**s)
                             .map(|(st, _)| st.1)
                     })
-                });
+                })
+                // (the bus's times are on the traffic's clock, which counts on past 24:00)
+                .map(|t| t - self.day_base);
                 on_road.insert(
                     i,
                     OnRoad {
@@ -356,14 +358,12 @@ impl ScheduleSim {
         out
     }
 
+    /// The line an AI bus and the departure boards show for departure `i`: its trip's own,
+    /// blank when the trip has none, as Omsi.exe shows it (Gerolstein's service trips: a
+    /// blank rear matrix and line column). The timetable line's name stood in for it once,
+    /// and the service trips read "Diensttafeln".
     pub fn display_line(&self, i: usize) -> String {
-        let d = &self.departures[i];
-        let own = self.data.trips[d.trip].line.trim();
-        if own.is_empty() {
-            d.line.trim().to_string()
-        } else {
-            own.to_string()
-        }
+        self.data.trips[self.departures[i].trip].line.trim().to_string()
     }
 }
 
@@ -394,12 +394,11 @@ pub(super) struct StopExtra {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use parking_lot::Mutex;
 
     struct EmptyWorld {
         path: PathBuf,
         ai: omsi_map::AiLists,
-        positions: Mutex<HashMap<i64, (DVec3, [f64; 3])>>,
+        positions: crate::world_data::ObjectPlaces,
     }
 
     impl TimetableWorld for EmptyWorld {
@@ -410,7 +409,7 @@ mod tests {
         fn raw_tiles(&self) -> Vec<(i32, i32)> { Vec::new() }
         fn has_tile(&self, _: (i32, i32)) -> bool { false }
         fn date(&self) -> i32 { 20221010 }
-        fn object_positions(&self) -> MutexGuard<'_, HashMap<i64, (DVec3, [f64; 3])>> { self.positions.lock() }
+        fn object_positions(&self) -> &crate::world_data::ObjectPlaces { &self.positions }
         fn stop_side(&self, _: i64) -> f32 { 0.0 }
     }
 
@@ -423,6 +422,25 @@ mod tests {
         ScheduleSim::new(&world.path, &world, &crate::SimClock::default())
     }
 
+    /// A trip without a line of its own shows none, as in Omsi.exe: Gerolstein's service
+    /// trips in `Diensttafeln.ttl` read "Diensttafeln" on the boards and the AI buses.
+    #[test]
+    fn a_trip_without_a_line_shows_none() {
+        let mut sim = schedule();
+        sim.data.trips.push(omsi_timetable::Trip { terminus: "Betriebsfahrt".into(), stations: vec![42], ..Default::default() });
+        sim.departures.push(Departure {
+            time: 100.0, trip: 0, profile: 0, line: "Diensttafeln".into(), ai_group: "depot".into(),
+            tour: "101 Mo-Do".into(), mask: -1, spawned: false, yesterday: false,
+        });
+        sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0)], stops: vec![true], ..Default::default() }]];
+        sim.visits.insert(42, vec![(0, 0)]);
+        sim.trip_departures = vec![vec![0]];
+        assert_eq!(sim.display_line(0), "");
+        let clock = crate::SimClock { time: 0.0, ..Default::default() };
+        let (boards, _) = sim.make_boards(None, vec![42], vec!["markt".into()], None, &clock);
+        assert_eq!(boards[&42].iter().map(|r| (r.0.as_str(), r.1.as_str())).collect::<Vec<_>>(), [("", "Betriebsfahrt")]);
+    }
+
     #[test]
     fn departure_boards_keep_timetable_text_for_ai_players_and_pages() {
         let mut sim = schedule();
@@ -432,7 +450,7 @@ mod tests {
         });
         sim.departures.push(Departure {
             time: 100.0, trip: 0, profile: 0, line: "7".into(), ai_group: "depot".into(),
-            tour: "1".into(), mask: -1, spawned: false,
+            tour: "1".into(), mask: -1, spawned: false, yesterday: false,
         });
         sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0)], stops: vec![true], ..Default::default() }]];
         sim.visits.insert(42, vec![(0, 0)]);
@@ -454,6 +472,159 @@ mod tests {
         assert_eq!(boards[&42].iter().map(|r| (r.0.as_str(), r.1.as_str())).collect::<Vec<_>>(), [("7", destination), ("8", destination)]);
         assert_eq!(pages["markt"].iter().map(|r| r.destination.as_str()).collect::<Vec<_>>(), [destination, destination]);
         assert_eq!(sim.depots["depot"][0].2.as_ref().unwrap().termini[0].strings[0], "     U Marktstraße   über Bahnhof");
+    }
+
+    /// A night tour of today (23:00, 24:30) and the same tour's 24:30 as yesterday's, at
+    /// 00:30 (#2166).
+    fn night_tour(sim: &mut ScheduleSim) {
+        sim.data.trips.push(omsi_timetable::Trip { terminus: "Bahnhof".into(), line: "N1".into(), stations: vec![42], ..Default::default() });
+        sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0)], stops: vec![true], duration: 600.0, ..Default::default() }]];
+        let mask = sim.day_bits.0 | sim.day_bits.1;
+        let d = |time: f64, yesterday: bool| Departure {
+            time, trip: 0, profile: 0, line: "N1".into(), ai_group: "depot".into(), tour: "1".into(), mask, spawned: false, yesterday,
+        };
+        sim.departures = vec![d(1800.0, true), d(82_800.0, false), d(88_200.0, false)];
+        sim.night_twin = super::load::night_twins(&sim.departures);
+        sim.tour_next = vec![None, Some(2), None];
+        sim.tour_prev = vec![None, None, Some(1)];
+    }
+
+    #[test]
+    fn a_night_trip_after_midnight_runs_as_yesterdays_tour() {
+        let mut sim = schedule();
+        night_tour(&mut sim);
+        assert_eq!(sim.night_twin, [Some(2), None, Some(0)]);
+        // today the tour runs from 23:00 into the night; this morning's 00:30 was yesterday's
+        assert!(sim.runs(1) && sim.runs(2));
+        assert!(!sim.runs(0), "yesterday's tour does not run on yesterday's day mask");
+        // midnight: the day moves on, and the 24:30 comes at 00:30 as yesterday's
+        sim.roll_day(DAY + 10.0);
+        assert!(sim.runs(0), "after midnight the night trip is yesterday's tour's");
+        assert!(!sim.departures[0].spawned);
+        let tod = 1800.0 + 1.0;
+        assert!(sim.departures[0].time <= tod && sim.departures[0].time > tod - 5.0, "due at 00:30");
+        assert_eq!(sim.dep_time(0), DAY + 1800.0);
+    }
+
+    #[test]
+    fn the_tour_bus_on_a_night_trip_at_midnight_keeps_it_as_yesterdays() {
+        let mut sim = schedule();
+        night_tour(&mut sim);
+        // 23:55: the tour's bus will take the 24:30 on after its 23:00 trip
+        sim.departures[2].spawned = true;
+        sim.awaiting.insert(2);
+        sim.car_departure.insert(7, 1);
+        sim.roll_day(DAY + 10.0);
+        assert!(sim.awaiting.contains(&0) && !sim.awaiting.contains(&2));
+        assert!(sim.departures[0].spawned, "no second bus for the trip its tour's bus takes on");
+        assert!(!sim.departures[2].spawned, "tonight's 24:30 runs again");
+        assert_eq!(sim.dep_time(0), DAY + 1800.0, "the same moment as before midnight");
+    }
+
+    fn no_traffic() -> crate::ai_traffic::TrafficSim {
+        crate::ai_traffic::TrafficSim::assemble(
+            Path::new(""),
+            Default::default(),
+            crate::ai_traffic::setup::RandomTypes { types: Vec::new(), groups: Vec::new(), group_curves: false, group_uvg: Vec::new(), uvg_defaults: Vec::new() },
+            Vec::new(),
+            Default::default(),
+            (Vec::new(), Vec::new()),
+            Vec::new(),
+            (1.0, 0),
+            0,
+        )
+    }
+
+    fn no_world() -> EmptyWorld {
+        EmptyWorld { path: std::env::temp_dir(), ai: Default::default(), positions: Default::default() }
+    }
+
+    /// One trip of two stations, 10 minutes long, and departures (time, tour, previous of
+    /// the tour) all running today and not yet out.
+    fn tours(sim: &mut ScheduleSim, deps: &[(f64, &str, Option<usize>)]) {
+        sim.data.trips.push(omsi_timetable::Trip { terminus: "Bahnhof".into(), line: "1".into(), stations: vec![42, 43], ..Default::default() });
+        sim.times = vec![vec![TripTimes { stations: vec![(0.0, 0.0), (600.0, 600.0)], stops: vec![true, true], duration: 600.0, ..Default::default() }]];
+        let mask = sim.day_bits.0 | sim.day_bits.1;
+        sim.departures = deps
+            .iter()
+            .map(|&(time, tour, _)| Departure {
+                time, trip: 0, profile: 0, line: "1".into(), ai_group: "depot".into(), tour: tour.into(), mask, spawned: false, yesterday: false,
+            })
+            .collect();
+        sim.tour_prev = deps.iter().map(|d| d.2).collect();
+        sim.tour_next = vec![None; deps.len()];
+        for (i, d) in deps.iter().enumerate() {
+            if let Some(k) = d.2 {
+                sim.tour_next[k] = Some(i);
+            }
+        }
+    }
+
+    /// A tour's bus is out only while its tour runs: the second trip of a tour whose bus is
+    /// missing stands at its first stop well before it leaves (#2593), the first trip of a
+    /// tour comes at its departure time and not before (#2595).
+    #[test]
+    fn only_a_tour_under_way_has_its_bus_before_a_departure() {
+        let mut sim = schedule();
+        let (world, mut traffic) = (no_world(), no_traffic());
+        // tour 1 at 10:00 and 10:35 (its first trip over at 10:10), tour 2 from 10:30
+        tours(&mut sim, &[(36_000.0, "1", None), (37_800.0, "2", None), (38_100.0, "1", Some(0))]);
+        sim.departures[0].spawned = true;
+        // 10:25: tour 1's bus stands for its 10:35 trip, tour 2 has no bus yet
+        sim.queue_due(&world, &mut traffic, 36_000.0 + 1500.0, 1.0);
+        assert_eq!(sim.pending.iter().copied().collect::<Vec<_>>(), [2]);
+        // 10:30: tour 2 leaves now
+        sim.queue_due(&world, &mut traffic, 37_800.0 + 0.5, 1.0);
+        assert_eq!(sim.pending.iter().copied().collect::<Vec<_>>(), [2, 1]);
+    }
+
+    /// A previous trip of the tour that does not run today is no trip before this one: the
+    /// trip is its tour's first and comes at its time. And after a break longer than a tour's
+    /// bus waits out, no bus stands there early either (the one that drove has gone).
+    #[test]
+    fn no_early_bus_after_a_trip_of_another_day_or_a_long_break() {
+        let mut sim = schedule();
+        let (world, mut traffic) = (no_world(), no_traffic());
+        // 10:00 (another day's), 10:30 after it; 11:00, then 11:41 after a 31-minute break
+        tours(&mut sim, &[(36_000.0, "1", None), (37_800.0, "1", Some(0)), (39_600.0, "2", None), (42_060.0, "2", Some(2))]);
+        sim.departures[0].mask = 0;
+        sim.departures[2].spawned = true;
+        sim.queue_due(&world, &mut traffic, 37_800.0 - 600.0, 1.0);
+        assert!(sim.pending.is_empty(), "{:?}", sim.pending);
+        sim.queue_due(&world, &mut traffic, 42_060.0 - 300.0, 1.0);
+        assert!(sim.pending.is_empty(), "{:?}", sim.pending);
+        // a 29-minute break: it stands there
+        sim.departures[3].time = 41_940.0;
+        sim.queue_due(&world, &mut traffic, 41_940.0 - 300.0, 1.0);
+        assert_eq!(sim.pending.iter().copied().collect::<Vec<_>>(), [3]);
+    }
+
+    /// A layover bus whose stand was taken tries again in a while, and when it comes at its
+    /// departure time it is no longer kept as one: at midnight the trip is made ready to run
+    /// again (it had stopped running after the first midnight).
+    #[test]
+    fn a_stand_taken_departure_retries_and_runs_again_the_next_day() {
+        let mut sim = schedule();
+        let (world, mut traffic) = (no_world(), no_traffic());
+        tours(&mut sim, &[(36_000.0, "1", None), (37_800.0, "1", Some(0))]);
+        sim.departures[0].spawned = true;
+        let t = 37_800.0 - 900.0;
+        sim.queue_due(&world, &mut traffic, t, 1.0);
+        assert_eq!(sim.next_pending(), Some(1));
+        sim.stand_taken(1, t);
+        sim.queue_due(&world, &mut traffic, t + 5.0, 1.0);
+        assert!(sim.pending.is_empty(), "not again at once");
+        sim.queue_due(&world, &mut traffic, t + 30.0, 1.0);
+        assert_eq!(sim.next_pending(), Some(1), "tried again");
+        sim.stand_taken(1, t + 30.0);
+        // at its departure time it comes, and is no longer a layover departure
+        sim.queue_due(&world, &mut traffic, 37_800.0 + 0.5, 1.0);
+        assert_eq!(sim.next_pending(), Some(1));
+        assert!(sim.later_layover.is_empty());
+        let mut next = sim.date_clock.clone();
+        next.day_of_year += 1;
+        sim.set_day(&next);
+        assert!(!sim.departures[1].spawned, "made ready to run again");
     }
 
 }
