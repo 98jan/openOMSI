@@ -190,10 +190,8 @@ impl App {
                 self.quick_save();
                 self.close_game_menu();
             }
-            "saveslot" => {
-                self.save_slot();
-                self.close_game_menu();
-            }
+            // (a new slot, or one of the map's slots to save over: #2556)
+            "saveslot" => self.open_list(crate::game_lists::ListKind::SaveSlots),
             "shot" => {
                 self.close_game_menu();
                 self.take_screenshot();
@@ -502,7 +500,7 @@ pub(crate) const GAME_MENU: [(&str, &str); 15] = [
     ("skipstop", "Skip the next stop"),
     ("endduty", "End the tour"),
     ("save", "Save the situation"),
-    ("saveslot", "Save to a new slot"),
+    ("saveslot", "Save to a slot..."),
     ("load", "Load the quicksave"),
     ("photo", "Photo mode"),
     ("quit", "End the session"),

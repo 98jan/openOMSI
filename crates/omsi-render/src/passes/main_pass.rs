@@ -363,11 +363,33 @@ impl Renderer {
             let u = SnowUniform {
                 wind: lighting.wind.extend(self.started.elapsed().as_secs_f32() % 20000.0).to_array(),
                 fall: [lighting.snowfall, mean, counts[0] as f32, counts[1] as f32],
+                roof: self.shadows.precip.uniform().0,
+                roof_on: [self.shadows.precip.uniform().1, 0.0, 0.0, 0.0],
             };
             self.queue.write_buffer(&self.lights.snow_buf, 0, bytemuck::bytes_of(&u));
             pass.set_pipeline(snow);
             pass.set_bind_group(0, scene.camera_bind_group.as_ref().unwrap(), &[]);
             pass.set_bind_group(1, &self.lights.snow_bind_group, &[]);
+            pass.draw(0..6, 0..counts.iter().sum::<u32>());
+        }
+        // the rainfall, as the snowfall (rain.wgsl)
+        let rf = scene.rainfall;
+        if let Some(rain) = pp.rain_fall_pipeline.as_ref().filter(|_| particles && rf.rate > 0.001 && lighting.snowfall <= 0.01 && !f.env.no_rain) {
+            let counts = rainfall_drops(rf.rate, rf.quality);
+            let u = RainUniform {
+                wind: rf.wind.extend(self.started.elapsed().as_secs_f32() % 20000.0).to_array(),
+                // (the eye's time: a seventieth of a second's way of the drop, a streak of
+                // some ten centimetres in a downpour)
+                eye: rf.eye_velocity.extend(1.0 / 70.0).to_array(),
+                fall: [rf.rate, rf.drop_mm * 0.001, counts[0] as f32, counts[1] as f32],
+                view: [f.width as f32, f.height as f32, 0.85, (counts[0] + counts[1] + counts[2]) as f32],
+                roof: self.shadows.precip.uniform().0,
+                roof_on: [self.shadows.precip.uniform().1, 0.0, 0.0, 0.0],
+            };
+            self.queue.write_buffer(&self.lights.rain_buf, 0, bytemuck::bytes_of(&u));
+            pass.set_pipeline(rain);
+            pass.set_bind_group(0, scene.camera_bind_group.as_ref().unwrap(), &[]);
+            pass.set_bind_group(1, &self.lights.rain_bind_group, &[]);
             pass.draw(0..6, 0..counts.iter().sum::<u32>());
         }
         // light coronas, additive: the world's, then the vehicle the camera is in -

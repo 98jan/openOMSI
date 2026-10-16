@@ -23,6 +23,7 @@ pub(super) fn lighting(cx: LightingCx, dt: f32, daylight: omsi_sim::Daylight) ->
         cx.weather.weather.as_ref(),
         *cx.weather.cloud_drift,
         *cx.weather.wetness,
+        cx.weather.rain.snow_cover(),
         cx.world.world.as_deref(),
         inside,
         cx.player.player.as_ref().map(|p| &p.vehicle),

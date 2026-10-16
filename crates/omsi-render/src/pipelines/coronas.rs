@@ -160,12 +160,15 @@ impl Coronas {
     }
 }
 
-/// The snowfall (snow.wgsl): the camera group and its own parameters, no vertices.
-pub(crate) struct Snow {
+/// The snowfall (snow.wgsl) or the rainfall (rain.wgsl): the camera group and its own
+/// parameters, no vertices.
+pub(crate) struct Precip {
     shader: wgpu::ShaderModule,
     pub buf: wgpu::Buffer,
     pub bind_group: wgpu::BindGroup,
     pl: wgpu::PipelineLayout,
+    label: &'static str,
+    vs: &'static str,
 }
 
 const PREMULTIPLIED_SNOW: wgpu::BlendState = wgpu::BlendState {
@@ -173,36 +176,52 @@ const PREMULTIPLIED_SNOW: wgpu::BlendState = wgpu::BlendState {
     alpha: wgpu::BlendComponent::REPLACE,
 };
 
-impl Snow {
-    pub(crate) fn new(device: &wgpu::Device, camera_layout: &wgpu::BindGroupLayout) -> Snow {
-        // the snowfall (snow.wgsl): the camera group and its own parameters, no vertices
-        let snow_shader = compile_shader(device, wgpu::ShaderModuleDescriptor {
-            label: Some("snow"),
-            source: wgpu::ShaderSource::Wgsl(snow_shader_source().into()),
+impl Precip {
+    pub(crate) fn snow(device: &wgpu::Device, camera_layout: &wgpu::BindGroupLayout, roof: &wgpu::TextureView) -> Precip {
+        Precip::new(device, camera_layout, roof, "snow", "vs_snow", snow_shader_source(), std::mem::size_of::<SnowUniform>())
+    }
+
+    pub(crate) fn rain(device: &wgpu::Device, camera_layout: &wgpu::BindGroupLayout, roof: &wgpu::TextureView) -> Precip {
+        Precip::new(device, camera_layout, roof, "rain", "vs_rain", rain_shader_source(), std::mem::size_of::<RainUniform>())
+    }
+
+    /// (`roof`: the precipitation's roof map, `passes::precip_map`)
+    fn new(device: &wgpu::Device, camera_layout: &wgpu::BindGroupLayout, roof: &wgpu::TextureView, label: &'static str, vs: &'static str, source: String, size: usize) -> Precip {
+        let shader = compile_shader(device, wgpu::ShaderModuleDescriptor { label: Some(label), source: wgpu::ShaderSource::Wgsl(source.into()) });
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some(label),
+            entries: &[
+                uniform_entry(0, wgpu::ShaderStages::VERTEX),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+                    count: None,
+                },
+            ],
         });
-        let snow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("snow"),
-            entries: &[uniform_entry(0, wgpu::ShaderStages::VERTEX)],
+        let buf = uniform_buffer(device, label, size as u64);
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: buf.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(roof) },
+            ],
         });
-        let snow_buf = uniform_buffer(device, "snow params", std::mem::size_of::<SnowUniform>() as u64);
-        let snow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("snow"),
-            layout: &snow_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: snow_buf.as_entire_binding() }],
-        });
-        let snow_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("snow"),
-            bind_group_layouts: &[Some(camera_layout), Some(&snow_layout)],
+        let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some(label),
+            bind_group_layouts: &[Some(camera_layout), Some(&layout)],
             immediate_size: 0,
         });
-        Snow { shader: snow_shader, buf: snow_buf, bind_group: snow_bind_group, pl: snow_pl }
+        Precip { shader, buf, bind_group, pl, label, vs }
     }
 
     pub(crate) fn pipeline(&self, device: &wgpu::Device, f: wgpu::TextureFormat, fs: &str, msaa: u32) -> wgpu::RenderPipeline {
-        log::info!("renderer: compiling the snowfall shader ({fs})");
+        log::info!("renderer: compiling the {} shader ({fs})", self.label);
         let targets = color_targets(f, Some(PREMULTIPLIED_SNOW), wgpu::ColorWrites::COLOR, false, false);
-        no_vertex_pipeline("snow", &self.pl, &self.shader, fs, &targets)
-            .vs("vs_snow")
+        no_vertex_pipeline(self.label, &self.pl, &self.shader, fs, &targets)
+            .vs(self.vs)
             .depth(depth_test(wgpu::CompareFunction::GreaterEqual))
             .samples(msaa)
             .create(device)

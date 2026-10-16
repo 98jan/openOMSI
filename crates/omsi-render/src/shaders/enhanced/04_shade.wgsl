@@ -97,6 +97,9 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             discard;
         }
     }
+    // (a blended slot that keeps Omsi.exe's alpha test, `MaterialExtra::alpha_cut`: a
+    // livery's clear glass is cut away, its tinted glass blended)
+    tex.a = select(tex.a, 0.0, mode > 2.5 && tex.a < ALPHA_REF);
     var alpha = tex.a * material.color.a;
     if (mode < 0.5) {
         alpha = 1.0;
@@ -383,8 +386,10 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             n = normalize(mix(n, geo_n, puddle) + vec3<f32>(ripple.xy, 0.0));
         }
     } else if (wet_any > 0.0) {
+        // (a body's paint wears a film of water as smooth as glass: the street and the sky
+        // mirror in a wet bus as sharply as in its windows)
         if (!terrain) {
-            rough = mix(rough, rough * 0.6, wet_any);
+            rough = mix(rough, select(rough * 0.6, min(rough, 0.04), reflective_env), select(wet_any, min(wet_any * 2.6, 1.0), reflective_env));
         }
         // Soaked by the rain, a porous surface - soil, a paving stone, plaster, bark -
         // turns darker and deeper in colour: the light that enters the water film and is

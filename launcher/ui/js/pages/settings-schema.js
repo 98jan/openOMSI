@@ -143,6 +143,8 @@ const driving = {
       rows: [
         { type: 'section', title: 'Touch controls', when: mobile },
         { type: 'select', key: 'touch_door_mode', label: 'Door buttons', options: [['standard', 'Standard (physical doors)'], ['direct', 'Direct OMSI triggers']], when: mobile },
+        { type: 'slider', key: 'touch_pedal_length', label: 'Pedal length', min: 0.8, max: 1.6, step: 0.05, def: 1, format: pct, store: r2, when: mobile },
+        { type: 'slider', key: 'touch_pedal_deadzone', label: 'Pedal rest zone (a finger at the foot presses nothing)', min: 0, max: 0.4, step: 0.01, def: 0.15, format: pct, store: r2, when: mobile },
         { type: 'section', title: 'Keyboard & mouse', when: mobile },
         { type: 'select', key: 'drive_keys', label: 'Driving keys', options: [['omsi', 'Custom controls (Controls page)'], ['simple', 'W A S D + arrows'], ['wasd', 'W A S D only'], ['arrows', 'Arrow keys only']] },
         { type: 'toggle', key: 'steering_linear', label: "Steering linearity (keys at OMSI's steady pace)" },
@@ -417,7 +419,10 @@ const general = {
   ],
 };
 
-export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, general];
+/** Content test: no settings - the page draws the test itself (content-test.js). */
+const contentTest = { id: 'content', label: 'Content test', page: 'content', cols: [], when: (s, p) => !mobile(s, p) };
+
+export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, general, contentTest];
 
 /** The settings a saved graphics profile holds (`GRAPHICS_PROFILE_KEYS`). */
 export const GRAPHICS_PROFILE_KEYS = [
