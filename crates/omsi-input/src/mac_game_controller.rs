@@ -127,6 +127,13 @@ struct Pad {
     axes: Arc<Mutex<[f32; 6]>>,
 }
 
+pub fn monitor_background(on: bool) {
+    use objc2::ClassType;
+    if GCController::class().metaclass().responds_to(objc2::sel!(setShouldMonitorBackgroundEvents:)) {
+        unsafe { GCController::setShouldMonitorBackgroundEvents(on) };
+    }
+}
+
 pub struct GcPads {
     pads: Vec<Pad>,
     last_scan: Option<std::time::Instant>,

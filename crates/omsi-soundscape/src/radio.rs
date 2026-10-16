@@ -206,6 +206,7 @@ pub struct Radio {
     volume: f32,
     /// Shift+R: how far the list is turned from the bus's own station numbers.
     offset: usize,
+    power: bool,
     playing: Option<Playing>,
     /// The radio's own sound (the settings' `radio_speaker`, `radio_hiss`, `radio_dropouts`).
     pub fx: omsi_audio::radio_fx::RadioFxParams,
@@ -362,7 +363,7 @@ impl Radio {
         if !stations.is_empty() {
             log::info!("radio: {} stations", stations.len());
         }
-        Radio { stations: stations.clone(), own: stations, frequencies: frequencies.clone(), own_frequencies: frequencies, map: String::new(), relisted: false, volume, offset: 0, playing: None, fx: Default::default() }
+        Radio { stations: stations.clone(), own: stations, frequencies: frequencies.clone(), own_frequencies: frequencies, map: String::new(), relisted: false, volume, offset: 0, power: false, playing: None, fx: Default::default() }
     }
 
     /// The frequency the station that plays is on where the bus is (`94.6 MHz`), for a
@@ -402,17 +403,40 @@ impl Radio {
         }
     }
 
+    fn bus_button(v: &omsi_sim::VehicleInstance) -> Option<usize> {
+        let button = match v.var("SndExt_Radio") {
+            Some(x) if x >= 0.5 => Some(x.round() as usize - 1),
+            _ => None,
+        };
+        button.or_else(|| v.var("Snd_Radio").filter(|x| *x >= 0.5).map(|_| 0))
+    }
+
     /// The station the bus's radio is tuned to, None while it is off.
     fn wanted(&self, v: &omsi_sim::VehicleInstance) -> Option<usize> {
         if self.stations.is_empty() {
             return None;
         }
-        let button = match v.var("SndExt_Radio") {
-            Some(x) if x >= 0.5 => Some(x.round() as usize - 1),
-            _ => None,
-        };
-        let button = button.or_else(|| v.var("Snd_Radio").filter(|x| *x >= 0.5).map(|_| 0));
+        let button = if Self::has_radio(v) { Self::bus_button(v) } else { self.power.then_some(0) };
         button.map(|b| (b + self.offset) % self.stations.len())
+    }
+
+    fn has_radio(v: &omsi_sim::VehicleInstance) -> bool {
+        v.var("SndExt_Radio").is_some() || v.var("Snd_Radio").is_some()
+    }
+
+    pub fn toggle_power(&mut self, v: Option<&omsi_sim::VehicleInstance>) -> String {
+        if self.stations.is_empty() {
+            return "No radio stations (see ~/.openomsi/radio.cfg)".into();
+        }
+        if let Some(v) = v.filter(|v| Self::has_radio(v)) {
+            return if Self::bus_button(v).is_some() { "The bus radio is on (switch it off in the cockpit)" } else { "The bus radio is off (switch it on in the cockpit)" }.into();
+        }
+        self.power = !self.power;
+        if !self.power {
+            return "Radio off".into();
+        }
+        let station = self.offset % self.stations.len();
+        format!("Radio {}: {}", station + 1, self.stations[station].0)
     }
 
     /// Follow the player's bus radio; a text for the screen when the station or its song
@@ -550,6 +574,18 @@ mod tests {
     use super::*;
     use omsi_cfg::radio::{station_lines, with_stations};
 
+    #[test]
+    fn the_radio_switches_on_by_itself_in_a_bus_without_one() {
+        let one = vec![("One".to_string(), "https://a.example/one.mp3".to_string())];
+        let mut r = Radio { stations: one.clone(), own: one, frequencies: Frequencies::new(), own_frequencies: Frequencies::new(), map: String::new(), relisted: false, volume: 0.7, offset: 0, power: false, playing: None, fx: Default::default() };
+        assert_eq!(r.toggle_power(None), "Radio 1: One");
+        assert!(r.power);
+        assert_eq!(r.toggle_power(None), "Radio off");
+        r.stations.clear();
+        assert_eq!(r.toggle_power(None), "No radio stations (see ~/.openomsi/radio.cfg)");
+        assert!(!r.power);
+    }
+
     /// The volume keys step by tenths within 0..1 and keep the file's other lines (#1293).
     #[test]
     fn the_volume_keys_step_and_are_kept() {
@@ -597,7 +633,7 @@ mod tests {
         std::fs::create_dir_all(&map).unwrap();
         std::fs::write(map.join("radio.cfg"), "# the town's stations\nvolume = 0.1\nMestske radio = http://example.org/mesto.mp3\nSecond = http://example.org/own.mp3\n").unwrap();
         let own = vec![("Mine".to_string(), "http://example.org/mine.mp3".to_string()), ("Own".to_string(), "http://EXAMPLE.org/own.mp3".to_string())];
-        let mut r = Radio { stations: own.clone(), own, frequencies: Default::default(), own_frequencies: Default::default(), map: String::new(), relisted: false, volume: 0.7, offset: 2, playing: None, fx: Default::default() };
+        let mut r = Radio { stations: own.clone(), own, frequencies: Default::default(), own_frequencies: Default::default(), map: String::new(), relisted: false, volume: 0.7, offset: 2, power: false, playing: None, fx: Default::default() };
         r.set_map(&dir, "maps/Mesto/global.cfg");
         let names: Vec<&str> = r.stations.iter().map(|s| s.0.as_str()).collect();
         assert_eq!(names, ["Mestske radio", "Second", "Mine"]);

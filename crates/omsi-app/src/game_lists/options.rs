@@ -427,6 +427,7 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "pad_steer_linear" => s.pad_steer_linear,
         "pad_buttons" => s.pad_buttons,
         "right_stick_look" => s.right_stick_look,
+        "ctrl_background" => s.ctrl_background,
         "arrows_switch_cams" => s.arrows_switch_cams,
         "old_steering" => s.old_steering,
         "red_steer_spd" => s.red_steer_spd,
@@ -756,6 +757,10 @@ fn toggle_set_graphics_and_controls(app: &mut App, id: &str, on: bool, bit: Stri
         "right_stick_look" => {
             app.settings.right_stick_look = on;
             Some(("right_stick_look", bit))
+        }
+        "ctrl_background" => {
+            app.settings.ctrl_background = on;
+            Some(("ctrl_background", bit))
         }
         "arrows_switch_cams" => {
             app.settings.arrows_switch_cams = on;
