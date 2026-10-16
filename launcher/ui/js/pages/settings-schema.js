@@ -332,6 +332,8 @@ const gameplay = {
         { type: 'toggle', key: 'exact_fare', label: 'Passengers pay the exact fare' },
         { type: 'slider', key: 'pax_density', label: 'How many passengers', min: 0, max: 2, step: 0.1, def: 1, format: pct, store: r2 },
         { type: 'toggle', key: 'get_up', label: 'Ability to get up (Ctrl+Shift+G)' },
+        { type: 'toggle', key: 'full_tank', label: 'Start with a full tank' },
+        { type: 'toggle', key: 'trip_summary', label: 'Trip summary' },
         { type: 'section', title: 'Traffic' },
         { type: 'select', key: 'ai_unsched_factor', label: 'Random traffic', options: [['25', '25%'], ['50', '50%'], ['75', '75%'], ['100', '100%'], ['150', '150%'], ['200', '200%']] },
         { type: 'select', key: 'ai_max_scheduled', label: 'Timetable vehicles', options: [['0', 'All'], ['10', 'At most 10'], ['25', 'At most 25'], ['50', 'At most 50']] },

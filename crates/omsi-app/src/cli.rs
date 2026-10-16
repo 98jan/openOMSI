@@ -205,6 +205,10 @@ pub(crate) struct Args {
     /// saved with its variables.
     #[arg(skip)]
     pub(crate) situation_others: Vec<SituationOther>,
+    /// The vehicle put down is not a new one (a part uncoupled from the bus): its tank stays
+    /// as it was, whatever the "full tank" setting says.
+    #[arg(skip)]
+    pub(crate) keep_fuel: bool,
     /// The trip of the duty the bus was placed at (`duty_start::place_on_duty`).
     #[arg(skip)]
     pub(crate) duty_trip: Option<usize>,

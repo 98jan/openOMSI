@@ -28,6 +28,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         switch_row(app, "trip_summary", "Trip summary", "At the end of each trip: its stops with the times planned and driven, to copy or to save"),
         switch_row(app, "info_bar", "Information bar (Shift+Y)", "Displays information such as the time, speed, and other details at the top of the screen"),
         switch_row(app, "exact_fare", "Passengers pay the exact fare", "No change is given at the cash desk"),
+        switch_row(app, "full_tank", "Start with a full tank", "Each new bus starts with its tank full (many maps have no petrol station); a saved situation keeps its own"),
         pick("boarding", "Boarding", "How passengers get their tickets"),
         pick("standing_chance", "Standing passengers", "The chance a passenger stands although a seat is free"),
         pick("maintenance", "Maintenance", later),
