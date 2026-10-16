@@ -723,6 +723,24 @@ fn smooth_paving(part: &mut Part) {
                 }
             }
         }
+        // the junction models' low-poly kerb corners: notches filled and bumps cut off up to
+        // some 2 m (closed, then opened, by 1 m)
+        let grow = |m: &mut Vec<f32>, max: bool| {
+            let src = m.clone();
+            for y in 1..h - 1 {
+                for x in 1..w - 1 {
+                    let mut v = src[y * w + x];
+                    for (dx, dy) in [(0isize, 1isize), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)] {
+                        let q = src[(y as isize + dy) as usize * w + (x as isize + dx) as usize];
+                        v = if max { v.max(q) } else { v.min(q) };
+                    }
+                    m[y * w + x] = v;
+                }
+            }
+        };
+        for max in [true, true, false, false, false, false, true, true] {
+            grow(&mut m, max);
+        }
         // round the corners: two passes of a 3 x 3 box (some 0.7 m)
         for _ in 0..2 {
             let src = m.clone();
