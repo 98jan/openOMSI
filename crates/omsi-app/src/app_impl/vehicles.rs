@@ -64,6 +64,9 @@ impl App {
         let one = Args {
             bus: Some(bus.clone()),
             spawn: Some(format!("{x},{y},{heading}")),
+            // a bus placed now is a new one, also in a session started from a situation
+            // (a full tank if wanted, none of the situation's script pictures)
+            situation: None,
             situation_vars: Vec::new(),
             situation_strvars: Vec::new(),
             situation_odometer_km: None,
