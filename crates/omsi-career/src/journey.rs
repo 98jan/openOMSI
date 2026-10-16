@@ -4,7 +4,7 @@
 //! time the bus reaches or leaves a stop, so it is there however the session ends.
 
 use crate::career::{EARLY_DEPARTURE, LATE_ARRIVAL};
-use crate::schedule::{PlannedTrip, PlayerDuty};
+use omsi_sim::timetable_run::{PlannedTrip, PlayerDuty};
 use std::path::PathBuf;
 
 /// The time to open the doors before the summary takes the mouse (s).
@@ -39,7 +39,7 @@ impl Row {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct TripRating {
+pub struct TripRating {
     pub driving: f64,
     pub comfort: f64,
     pub tickets: f64,
@@ -48,11 +48,11 @@ pub(crate) struct TripRating {
 }
 
 impl TripRating {
-    pub(crate) fn comfort_rated(&self) -> Option<f64> {
+    pub fn comfort_rated(&self) -> Option<f64> {
         (self.passengers > 0).then_some(self.comfort)
     }
 
-    pub(crate) fn tickets_rated(&self) -> Option<f64> {
+    pub fn tickets_rated(&self) -> Option<f64> {
         (self.tickets_asked > 0).then_some(self.tickets)
     }
 }
@@ -61,7 +61,7 @@ impl TripRating {
 /// with its time planned and as driven, how far off that was and the odometer there - the
 /// first stop by its departure, the others by their arrival.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct TripSummary {
+pub struct TripSummary {
     /// "Trip 2  |  5 to Muzealna  |  08:20:00" and the log's head line.
     pub title: String,
     pub head: String,
@@ -80,7 +80,7 @@ pub(crate) struct TripSummary {
 
 impl TripSummary {
     /// The table as text, in columns (copied, or saved to the Journeys folder).
-    pub(crate) fn text(&self) -> String {
+    pub fn text(&self) -> String {
         let head = ["Stop", "Plan", "Actual", "Diff", "Odometer"];
         let width = |k: usize| self.rows.iter().map(|r| r[k].chars().count()).chain([head[k].chars().count()]).max().unwrap_or(0);
         let w: Vec<usize> = (0..5).map(width).collect();
@@ -114,7 +114,7 @@ impl TripSummary {
         out
     }
 
-    pub(crate) fn score(&self) -> f64 {
+    pub fn score(&self) -> f64 {
         let mut parts = Vec::new();
         if self.served.1 > 0 {
             parts.push(100.0 * self.on_time as f64 / self.served.1 as f64);
@@ -130,7 +130,7 @@ impl TripSummary {
         parts.iter().sum::<f64>() / parts.len() as f64
     }
 
-    pub(crate) fn stars(&self) -> u8 {
+    pub fn stars(&self) -> u8 {
         match self.score() {
             s if s >= 90.0 => 5,
             s if s >= 75.0 => 4,
@@ -140,7 +140,7 @@ impl TripSummary {
         }
     }
 
-    pub(crate) fn mood(&self) -> Option<&'static str> {
+    pub fn mood(&self) -> Option<&'static str> {
         let r = self.rating.filter(|r| r.passengers > 0)?;
         Some(match (r.driving + r.comfort) / 2.0 {
             m if m >= 90.0 => "Your passengers enjoyed the ride",
@@ -151,7 +151,7 @@ impl TripSummary {
     }
 
     /// The summary written to the Journeys folder; the file it went to.
-    pub(crate) fn save(&self) -> std::io::Result<PathBuf> {
+    pub fn save(&self) -> std::io::Result<PathBuf> {
         std::fs::create_dir_all(&self.dir)?;
         let path = (1..100)
             .map(|n| self.dir.join(if n == 1 { format!("{}.txt", self.stem) } else { format!("{} ({n}).txt", self.stem) }))
@@ -162,7 +162,7 @@ impl TripSummary {
     }
 }
 
-pub(crate) struct Journey {
+pub struct Journey {
     /// The duty it is the log of: line, tour and where its trips begin in the tour.
     key: (String, String, usize),
     /// The lines above the trips (driver, map, bus, date; line and tour).
@@ -206,8 +206,9 @@ impl Journey {
         }
     }
 
-    /// Trip `t` (its index in the duty's trips) has ended: its summary is made.
-    pub(crate) fn trip_ended(&mut self, t: usize, rating: Option<TripRating>) {
+    /// Trip `t` (its index in the duty's trips) has ended: its summary is made. `distance`
+    /// writes an odometer reading (km) in the player's units.
+    pub fn trip_ended(&mut self, t: usize, rating: Option<TripRating>, distance: impl Fn(f64) -> String) {
         let rows: Vec<&Row> = self.rows.iter().filter(|r| r.trip == t).collect();
         if rows.iter().all(|r| r.arrived.is_none() && r.left.is_none()) {
             return;
@@ -217,7 +218,7 @@ impl Journey {
             .map(|r| {
                 let (plan, real) = if r.first { (r.plan.1, r.left) } else { (r.plan.0, r.arrived) };
                 let [p, a, d] = times(plan, real);
-                [r.name.clone(), p, a, d, r.odo.map(|k| crate::units::Units::now().long_distance(k as f64, 1)).unwrap_or_default()]
+                [r.name.clone(), p, a, d, r.odo.map(&distance).unwrap_or_default()]
             })
             .collect();
         let served = rows.iter().filter(|r| r.served()).count();
@@ -237,13 +238,13 @@ impl Journey {
     }
 
     /// The summary of the trip that has just ended, once.
-    pub(crate) fn take_summary(&mut self) -> Option<TripSummary> {
+    pub fn take_summary(&mut self) -> Option<TripSummary> {
         self.ready.take()
     }
 
     /// Keep the automatic summary pending while driving: opening it takes the mouse
     /// away from the bus. Use the timetable's standstill threshold (0.1 m/s).
-    pub(crate) fn take_summary_when_stopped(&mut self, speed_kmh: f32, dt: f32) -> Option<TripSummary> {
+    pub fn take_summary_when_stopped(&mut self, speed_kmh: f32, dt: f32) -> Option<TripSummary> {
         self.still = if speed_kmh.abs() < 0.36 { self.still + dt } else { 0.0 };
         if self.still >= SUMMARY_DELAY {
             self.take_summary()
@@ -253,7 +254,7 @@ impl Journey {
     }
 
     /// The summary of the last trip that ended.
-    pub(crate) fn last_summary(&self) -> Option<TripSummary> {
+    pub fn last_summary(&self) -> Option<TripSummary> {
         self.last.clone()
     }
 
@@ -324,7 +325,9 @@ impl Journey {
     /// Write the log (its file is named by the real date and time it began, and the line and tour).
     fn write(&mut self) {
         if self.path.is_none() {
-            let (y, mo, d, h, mi) = omsi_launcher_lib::local_now().unwrap_or((1970, 1, 1, 0, 0));
+            let (y, mo, d, h, mi) = crate::real_time::now()
+                .map(|n| (n.year, n.month, n.day, (n.secs / 3600.0) as i32, (n.secs % 3600.0 / 60.0) as i32))
+                .unwrap_or((1970, 1, 1, 0, 0));
             let clean = |s: &str| s.trim().chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect::<String>();
             let stem = format!("{y:04}-{mo:02}-{d:02} {h:02}-{mi:02} line {} tour {}", clean(&self.key.0), clean(&self.key.1));
             if let Err(e) = std::fs::create_dir_all(&self.dir) {
@@ -350,10 +353,10 @@ impl Journey {
 /// `served` seconds late (arrival, departure: what `PlayerDuty::update` returned), and
 /// arrived at the one it is due at now (`PlayerDuty::arrived`). `head` (driver, map, bus,
 /// date) is asked for when a log begins.
-pub(crate) fn note(slot: &mut Option<Journey>, duty: &PlayerDuty, due: (usize, usize), served: Option<(f64, f64)>, odo_km: f64, root: &std::path::Path, head: impl FnOnce() -> String) {
+pub fn note(slot: &mut Option<Journey>, duty: &PlayerDuty, due: (usize, usize), served: Option<(f64, f64)>, odo_km: f64, root: &std::path::Path, head: impl FnOnce() -> String) {
     // (every frame: the key is compared, not made)
     if slot.as_ref().is_none_or(|j| (j.key.0.as_str(), j.key.1.as_str(), j.key.2) != (duty.line.as_str(), duty.tour.as_str(), duty.first_trip)) {
-        let dir = crate::startup::content_dir().unwrap_or_else(|| root.to_path_buf()).join("Journeys");
+        let dir = omsi_cfg::content_dir().unwrap_or_else(|| root.to_path_buf()).join("Journeys");
         *slot = Some(Journey::new((duty.line.clone(), duty.tour.clone(), duty.first_trip), &duty.trips, &head(), dir));
     }
     let Some(j) = slot.as_mut() else { return };
@@ -371,7 +374,7 @@ pub(crate) fn note(slot: &mut Option<Journey>, duty: &PlayerDuty, due: (usize, u
 }
 
 /// The log's first line: the driver, the map, the bus and the game's date.
-pub(crate) fn head(career: &crate::career::Career, map: &str, bus: &omsi_sim::VehicleInstance, clock: &omsi_sim::SimClock) -> String {
+pub fn head(career: &crate::career::Career, map: &str, bus: &omsi_sim::VehicleInstance, clock: &omsi_sim::SimClock) -> String {
     let driver = career.driver.as_ref().map(|d| d.name.clone()).or_else(|| career.path.as_ref().and_then(|p| p.file_stem()).map(|s| s.to_string_lossy().into_owned()));
     let (day, month) = clock.day_month();
     let bus = format!("{} {}", bus.ty.def.manufacturer.trim(), bus.ty.def.type_name.trim());
@@ -381,7 +384,7 @@ pub(crate) fn head(career: &crate::career::Career, map: &str, bus: &omsi_sim::Ve
 }
 
 /// A time of day as HH:MM:SS (a duty's times may run past midnight or before it).
-pub(crate) fn hms(t: f64) -> String {
+pub fn hms(t: f64) -> String {
     let s = t.round().rem_euclid(86400.0) as i64;
     format!("{:02}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
 }
@@ -401,7 +404,12 @@ fn times(plan: f64, real: Option<f64>) -> [String; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schedule::PlannedStop;
+    use omsi_sim::timetable_run::PlannedStop;
+
+    /// An odometer reading as the game writes it in metric units.
+    fn km(k: f64) -> String {
+        format!("{k:.1} km")
+    }
 
     fn trip(stops: &[(&str, f64)]) -> PlannedTrip {
         PlannedTrip {
@@ -419,7 +427,7 @@ mod tests {
         let trips = [trip(&[("First", 0.0), ("Last", 60.0)])];
         let mut j = Journey::new(("5".into(), "1".into(), 0), &trips, "Test", PathBuf::new());
         j.arrived((0, 1), 0.0);
-        j.trip_ended(0, None);
+        j.trip_ended(0, None, km);
         let expected = j.last_summary().expect("the completed trip is already recorded");
 
         for speed in [20.0, -20.0, 1.0, -1.0, 0.36, -0.36] {
@@ -436,7 +444,7 @@ mod tests {
         for speed in [0.01, -0.01, 0.35, -0.35] {
             let mut j = Journey::new(("5".into(), "1".into(), 0), &trips, "Test", PathBuf::new());
             j.arrived((0, 1), 0.0);
-            j.trip_ended(0, None);
+            j.trip_ended(0, None, km);
             assert!(j.take_summary_when_stopped(speed, 0.0).is_none(), "the doors first");
             assert!(j.take_summary_when_stopped(speed, 5.0).is_some(), "stopped at {speed} km/h");
         }
@@ -448,7 +456,7 @@ mod tests {
         let mut j = Journey::new(("5".into(), "1".into(), 0), &trips, "Test", PathBuf::new());
         j.left((0, 0), (0.0, 0.0));
         j.arrived((0, 1), 0.0);
-        j.trip_ended(0, Some(TripRating { driving: 95.0, comfort: 100.0, tickets: 90.0, passengers: 12, tickets_asked: 8 }));
+        j.trip_ended(0, Some(TripRating { driving: 95.0, comfort: 100.0, tickets: 90.0, passengers: 12, tickets_asked: 8 }), km);
         let s = j.take_summary().expect("a summary");
         assert_eq!((s.served, s.on_time, s.driven), ((2, 2), 2, Some(60.0)));
         assert_eq!(s.stars(), 5);
@@ -479,7 +487,7 @@ mod tests {
         let trips = [trip(&[("First", 0.0), ("Last", 60.0)])];
         let mut j = Journey::new(("5".into(), "1".into(), 0), &trips, "Test", PathBuf::new());
         j.arrived((0, 1), 0.0);
-        j.trip_ended(0, None);
+        j.trip_ended(0, None, km);
         for _ in 0..299 {
             assert!(j.take_summary_when_stopped(0.0, 1.0 / 60.0).is_none(), "the doors are still opening");
         }
@@ -529,7 +537,7 @@ mod tests {
         j.odometer((0, 0), 1234.0);
         j.odometer((0, 1), 1235.25);
         j.odometer((0, 3), 1236.5);
-        j.trip_ended(0, None);
+        j.trip_ended(0, None, km);
         let s = j.take_summary().expect("a summary");
         assert!(j.take_summary().is_none() && j.last_summary().is_some());
         assert_eq!(s.rows.len(), 4);

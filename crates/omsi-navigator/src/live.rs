@@ -9,7 +9,7 @@ use omsi_sim::timetable_run::ScheduleSim;
 
 /// A vehicle of the timetable the traffic does not drive, as the maps show it.
 #[derive(Clone, Debug)]
-pub(crate) struct LiveVehicle {
+pub struct LiveVehicle {
     pub pos: DVec3,
     pub heading: f64,
     pub line: String,
@@ -194,7 +194,7 @@ impl Navigator {
     }
 
     /// The timetable's vehicles the traffic does not drive, where they are drawn.
-    pub(crate) fn live_vehicles(&self) -> &[LiveVehicle] {
+    pub fn live_vehicles(&self) -> &[LiveVehicle] {
         &self.live_drawn
     }
 }

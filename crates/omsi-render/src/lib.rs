@@ -233,7 +233,7 @@ pub const MSAA: u32 = 4;
 pub const SHADOW_SIZE: u32 = 2048;
 
 /// What the renderer is built with: the user's graphics settings.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderOptions {
     /// Samples per pixel: 1 (off), 2, 4 or 8.
     pub msaa: u32,
@@ -283,9 +283,8 @@ pub struct RenderOptions {
     /// they are built where the texture layout supports them. Native desktop backends
     /// keep them available for switching modes in-game.
     pub no_enhanced: bool,
-    /// The launcher's preview (the showroom), which always draws Vanilla+ (see
-    /// `showroom::lighting_for`): no enhanced pipelines, reflection probe or cloud noise
-    /// are made for it, on any device.
+    /// The launcher's preview (the showroom) in plain graphics: no enhanced pipelines,
+    /// reflection probe or cloud noise are made for it, on any device.
     pub preview_only: bool,
     /// Enhanced+: the enhanced path with ray-traced sun shadows, ambient occlusion and
     /// reflections, where the device can trace rays (hardware ray queries); elsewhere the

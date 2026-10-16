@@ -368,7 +368,7 @@ pub(crate) fn duty_step(
     if let (Some(f), Some(j)) = (ended.as_ref(), journey.as_mut()) {
         let (passengers, tickets_asked) = career.trip_people(f.run).unwrap_or_default();
         let rating = rated.map(|[driving, comfort, tickets]| crate::journey::TripRating { driving, comfort, tickets, passengers, tickets_asked });
-        j.trip_ended(f.index, rating);
+        j.trip_ended(f.index, rating, |km| omsi_ui::units::Units::now().long_distance(km, 1));
     }
     if let Some(events) = plugin_events {
         use omsi_plugin::InfoValue::{Num, Text};
@@ -539,5 +539,5 @@ pub(crate) fn push_mirror_hud(
 ) {
     let start = scene.overlays.len();
     hud.push(scene, world, viewport[2], viewport[3], cursor);
-    crate::ui::shift_overlays(scene, start, viewport[0]);
+    scene.shift_overlays(start, viewport[0]);
 }
