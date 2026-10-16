@@ -72,7 +72,10 @@ fn tree_name(file: &str) -> bool {
 fn paving_of(texture: &str) -> Option<usize> {
     let n = stem(texture);
     let base = n.rsplit('/').next().unwrap_or(&n);
-    if has_any(base, &["gehweg", "gw_", "sidewalk", "pavement", "bordst", "kerb", "curb", "fussweg", "fußweg", "footpath", "plaster_gw", "radweg", "cycle"]) {
+    if has_any(base, &["gruen", "grün", "gras", "rasen", "wiese", "lawn"]) {
+        return Some(layers::PAVE_GREEN);
+    }
+    if has_any(base, &["gehweg", "gw_", "sidewalk", "pavement", "bordst", "kerb", "curb", "fussweg", "fußweg", "footpath", "plaster_gw", "radweg", "cycle", "str_side", "side1", "side2"]) {
         return Some(layers::PAVE_FOOT);
     }
     if crate::open::road_surface_name(texture) || has_any(base, &["asphalt", "asph", "teer", "tarmac", "fahrbahn", "kopfstein", "cobble", "pflaster", "beton", "concrete", "parkpl"]) {
@@ -212,16 +215,12 @@ fn type_info(root: &Path, file: &str) -> Option<TypeInfo> {
         info.tree = Some(((hi.x - lo.x).max(hi.y - lo.y) * 0.5).clamp(1.0, 9.0));
         return Some(info);
     }
-    // flat paved faces near the ground (junctions, bays, car parks): the lowest level only - a
-    // pavement or an island stands on its kerb a hand's breadth higher, whatever its texture
-    let flat = |t: &[Vec3; 3]| {
-        let n = (t[1] - t[0]).cross(t[2] - t[0]);
-        n.length_squared() > 1e-6 && n.z.abs() >= n.length() * 0.92 && t.iter().all(|p| p.z <= lo.z + 1.5)
-    };
-    let floor = tris.iter().filter(|(t, c)| c.is_some() && flat(t)).map(|(t, _)| t[0].z.max(t[1].z).max(t[2].z)).fold(f32::MAX, f32::min);
+    // the ground's faces as the model lays them, pressed flat (carriageways, pavements, kerbs,
+    // islands): the faces seen from above near its foot
     for (t, class) in &tris {
         let Some(class) = class else { continue };
-        if !flat(t) || t.iter().any(|p| p.z > floor + KERB) {
+        let n = (t[1] - t[0]).cross(t[2] - t[0]);
+        if n.length_squared() < 1e-6 || n.z.abs() < n.length() * 0.5 || t.iter().any(|p| p.z > lo.z + 1.5) {
             continue;
         }
         let class = if *class == layers::PAVE_ROAD && sco.paths.is_empty() { layers::PAVE_AREA } else { *class };
@@ -488,8 +487,6 @@ pub fn generate(root: &Path, map_dir: &Path, ground_textures: &[omsi_map::global
                 }
             }
             woods_of(&mut part, lo, ts as f32);
-            // (the pavements are not drawn: a map shows the carriageways)
-            part.paved[layers::PAVE_FOOT].clear();
             part
         })
         .collect();
@@ -627,17 +624,6 @@ fn spline_of(part: &mut Part, sp: &omsi_map::tile::MapSpline, def: &omsi_scenery
     let has_cars = def.paths.iter().any(|p| p.kind == 0);
     let rails: Vec<f32> = def.paths.iter().filter(|p| p.kind == 2).map(|p| p.start[0]).collect();
     let file = stem(&def.path.to_string_lossy());
-    // the carriageway's level: the lowest flat paved part of the profile (a pavement stands on
-    // its kerb above it, and on a main road it is often asphalt as well)
-    let flat_paved = |profile: &omsi_scenery::sli::SplineProfile| -> Vec<f32> {
-        let tex = def.textures.get(profile.texture).map(|t| t.file.as_str()).unwrap_or("");
-        if paving_of(tex).is_none() {
-            return Vec::new();
-        }
-        profile.points.windows(2).filter(|w| (w[1].x - w[0].x).abs() >= 0.3 && (w[0].z - w[1].z).abs() <= (w[1].x - w[0].x).abs() * 0.25 && w[0].z.max(w[1].z) <= 1.0).map(|w| (w[0].z + w[1].z) * 0.5).collect()
-    };
-    let floor = def.profiles.iter().flat_map(flat_paved).fold(f32::MAX, f32::min);
-    let footway = has_any(&file, &["gehweg", "sidewalk", "footpath", "fussweg", "fußweg", "radweg", "pavement"]);
     for profile in &def.profiles {
         let tex = def.textures.get(profile.texture).map(|t| t.file.as_str()).unwrap_or("");
         let class = if water_name(tex) {
@@ -649,12 +635,9 @@ fn spline_of(part: &mut Part, sp: &omsi_map::tile::MapSpline, def: &omsi_scenery
         for pair in profile.points.windows(2) {
             let (a, b) = (&pair[0], &pair[1]);
             let (x0, x1) = (a.x.min(b.x) as f64, a.x.max(b.x) as f64);
-            // (flat parts only: a kerb's face or a wall is no surface seen from above)
-            if x1 - x0 < 0.3 || (a.z - b.z).abs() > ((x1 - x0) as f32) * 0.25 || a.z.max(b.z) > 1.0 {
-                continue;
-            }
-            // (above the carriageway: a pavement; a spline of footway alone: no road)
-            if class != usize::MAX && ((a.z + b.z) * 0.5 > floor + KERB || footway) {
+            // (the whole profile pressed flat: only what has no width from above - a kerb's
+            // face, a fence, a wall - and what stands high over the ground drop out)
+            if x1 - x0 < 0.02 || a.z.max(b.z) > 1.0 {
                 continue;
             }
             let target = if class == usize::MAX { &mut part.land[layers::LAND_WATER] } else { &mut part.paved[class] };
@@ -674,10 +657,6 @@ fn spline_of(part: &mut Part, sp: &omsi_map::tile::MapSpline, def: &omsi_scenery
         part.lines.push(Line { class: if tram { layers::LINE_TRAM } else { layers::LINE_RAIL }, width: span + 1.5, points: pts });
     }
 }
-
-/// How far over the carriageway a paved part may lie and still be carriageway (m): a kerb is
-/// 8 - 20 cm.
-const KERB: f32 = 0.06;
 
 /// Woods where trees stand close: a field of the crowns, its dense parts.
 fn woods_of(part: &mut Part, lo: Vec2, ts: f32) {

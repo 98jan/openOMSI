@@ -15,9 +15,10 @@ pub(crate) struct Palette {
     pub paved_land: Color,
     pub sand: Color,
     pub water: Color,
-    /// Carriageways: the surface and its edge; yards and car parks.
+    /// Carriageways: the surface and its edge; pavements; yards and car parks.
     pub road: Color,
     pub road_edge: Color,
+    pub foot: Color,
     pub area: Color,
     /// Houses: the roof, the wall facing the light and the one turned from it, the shadow.
     pub roof: Color,
@@ -57,6 +58,7 @@ pub(crate) const LIGHT: Palette = Palette {
     water: hex(0x9fcff2),
     road: hex(0xffffff),
     road_edge: hex(0xcfccc4),
+    foot: hex(0xe6e3dc),
     area: hex(0xefeef0),
     roof: hex(0xfaf9f6),
     roof_edge: hex(0xdcd8d0),
@@ -88,6 +90,7 @@ pub(crate) const DARK: Palette = Palette {
     water: hex(0x1d3c55),
     road: hex(0x62666e),
     road_edge: hex(0x2b2e33),
+    foot: hex(0x45484e),
     area: hex(0x393b40),
     roof: hex(0x3b3f47),
     roof_edge: hex(0x2c2f35),

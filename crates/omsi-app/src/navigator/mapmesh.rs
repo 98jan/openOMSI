@@ -182,14 +182,14 @@ impl MapData {
         }
     }
 
-    /// The paved surfaces as the splines and the models lay them, flat: the yards' and car
-    /// parks', then the carriageways'.
+    /// The splines' and the models' ground as they lay it, pressed flat: grass strips, yards and
+    /// car parks, pavements and kerbs, carriageways.
     pub fn build_paved(&self, p: &mut Painter, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette, _look: GroundLook) {
         let k = self.shift(anchor);
         let c = (centre - self.layers.origin).as_vec2();
         let v = |q: Vec2| (q + k).extend(0.0);
         let cells: Vec<&Cell> = self.cells_near(c, radius as f32).collect();
-        for (class, fill) in [(layers::PAVE_AREA, pal.area), (layers::PAVE_ROAD, pal.road)] {
+        for (class, fill) in [(layers::PAVE_GREEN, pal.grass), (layers::PAVE_AREA, pal.area), (layers::PAVE_FOOT, pal.foot), (layers::PAVE_ROAD, pal.road)] {
             for cell in &cells {
                 for t in cell.paved[class].chunks_exact(3) {
                     p.world_poly(&[v(t[0]), v(t[1]), v(t[2])], fill);
