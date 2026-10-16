@@ -24,11 +24,14 @@ struct MainTargets<'t> {
 }
 
 impl Renderer {
+    pub(crate) fn shares_prepass_depth(&self, f: &FrameCtx, plan: &DrawPlan) -> bool {
+        f.prepass_on && self.options.msaa <= 1 && self.targets.ao.is_some() && !plan.has_presurface && !f.puddles_wanted
+    }
+
     /// The main pass into `encoder`, the parts before its last one (when it is split) into
     /// encoders of their own, which are returned.
     pub(crate) fn encode_main_pass(&mut self, encoder: &mut wgpu::CommandEncoder, scene: &Scene, f: &FrameCtx, plan: &DrawPlan, main_bundles: &[wgpu::RenderBundle], timers: &mut PassTimers) -> Vec<wgpu::CommandEncoder> {
         let (width, height, enhanced, with_overlays, lighting) = (f.width, f.height, f.enhanced, f.with_overlays, f.lighting);
-        let (prepass_on, has_presurface) = (f.prepass_on, plan.has_presurface);
         // Without multisampling the main pass tests against the depth the prepass left
         // (when there was one): the costly shading - lighting, the shadow filter - is then
         // done once per pixel for the surface that is seen, not for every tree and wall
@@ -38,7 +41,7 @@ impl Renderer {
         // seals them. Reusing prepass depth would reject those faces (or let terrain
         // reject them first). The prepass still supplies AO; colour rebuilds its depth.
         // A depth-writing window in the colour pass must not replace the road receiver.
-        let share_depth = prepass_on && single && self.targets.ao.is_some() && !has_presurface && !f.puddles_wanted;
+        let share_depth = self.shares_prepass_depth(f, plan);
         // (the colour only where the picture is drawn into it: not into the HDR targets)
         let msaa_color = !single && !(f.masked_frame && self.targets.hdr_targets.contains_key(&(width, height)));
         let targets = if share_depth {
@@ -66,7 +69,7 @@ impl Renderer {
         let prefill = (msaa_prepass && !presurface_prefill && targets.is_some())
             .then_some(())
             .and(self.prepass_msaa_pipelines.as_ref())
-            .map(|pipes| (&plan.prepass_batches[..], pipes));
+            .map(|pipes| (plan.prefill_batches(), pipes));
         let mut main_parts: Vec<wgpu::CommandEncoder> = Vec::new();
         {
             // The enhanced sky dome was meant to cover everything, so this used to clear to

@@ -377,7 +377,8 @@ and `drive_keys`, plus `render_scale` (`auto` or a fraction: the picture is draw
 and upscaled), `post_aa` (`fxaa`, the enhanced renderer's, or `off`), `view_distance` (m,
 how far the tiles are kept loaded), `video_memory` ("Video memory", MB: all the game holds
 on the graphics card - textures, meshes, render targets, the driver's own; when unset, nine
-tenths of a discrete card's memory, and never more than the driver's budget; the old
+tenths of a discrete card's memory, and never more than the driver's budget; on a card of
+its own the textures may take half of it; the old
 `texture_memory=` and OMSI's `texmemlimit` were texture budgets and are dropped), `texture_compression`
 (loose pictures compressed to BC1-BC3 on loading, on by default), `gpu_texture_compression`
 (DXT/BC textures kept compressed on the GPU, on by default; off decodes them to RGBA, for a
