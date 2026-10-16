@@ -6,7 +6,7 @@ import { Icon } from '../icons.js';
 import { Button, Field, Select, Toggle, Segmented, Slider } from '../ui.js';
 import { choose, realTime, realDate, weatherName, weatherOfItsOwn } from '../data.js';
 import { WeatherEditor, isCustomWeather, editableWeather } from './weather-editor.js';
-import { SEASONS, PHASES, setSeason, localNow, TimeInput, DateInput } from './drive.js';
+import { SEASONS, PHASES, setSeason, localNow, TimeInput, DateInput, DatePicker } from './drive.js';
 
 function WeatherTile({ on, icon, name, sub, onClick }) {
   return html`<button type="button" class=${'weather-tile' + (on ? ' on' : '')} aria-pressed=${on} onClick=${onClick} title=${sub || name}>
@@ -60,6 +60,7 @@ export function DayStep() {
   const rd = realDate();
   const joined = c.lan_mode === 'join';
   const srv = c.lan_server || {};
+  const [picking, setPicking] = useState(false);
   return html`<div class="stack">
     ${joined
       ? html`<div class="stack" style="gap:10px">
@@ -70,7 +71,7 @@ export function DayStep() {
           </dl>
           <p class="muted small">${t('On a server the map, the time, the date and the weather are the same for everybody: the server keeps the world\'s clock. You choose your bus and your duty.')}</p>
         </div>`
-      : html`<div class="grid-2">
+      : html`<div class="grid-2 day-when">
           <${Field} label="Start time" help=${rt ? 'Follows the computer\'s clock (Settings)' : null}>
             <div class="row" style="gap:6px">
               <div class="grow"><${TimeInput} minutes=${c.time} disabled=${rt} onChange=${(time) => choose({ time })} /></div>
@@ -80,6 +81,7 @@ export function DayStep() {
           <${Field} label="Date" help=${rd ? 'Today (Settings)' : null}>
             <div class="row" style="gap:6px">
               <div class="grow"><${DateInput} value=${c.date} disabled=${rd} onChange=${(date) => choose({ date, season: 'auto', own_date: null })} /></div>
+              ${!rd && html`<${Button} icon="down" title="Choose a date" onClick=${() => setPicking(true)} />`}
               ${!rd && html`<${Button} icon="calendar" title="Current date" onClick=${() => choose({ date: localNow().date, season: 'auto', own_date: null })} />`}
             </div>
           </${Field}>
@@ -98,5 +100,6 @@ export function DayStep() {
       ].map(([key, label, help]) => html`<div title=${t(help)}><${Toggle} checked=${c[key]} onChange=${(v) => choose({ [key]: v })} label=${label} /></div>`)}
     </div>
     ${!joined && html`<${Weather} />`}
+    ${picking && html`<${DatePicker} value=${c.date} onClose=${() => setPicking(false)} onPick=${(date) => (setPicking(false), choose({ date, season: 'auto', own_date: null }))} />`}
   </div>`;
 }

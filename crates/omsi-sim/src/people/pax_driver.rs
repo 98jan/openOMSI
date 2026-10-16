@@ -16,7 +16,7 @@ impl PeopleSim {
         }
         let a = v.a_trans;
         let k = self.comfort.step(dt, self.time * 1000.0, v.speed, a.x, a.y);
-        if k <= 0.0 {
+        if k <= 0.0 || !self.bad_driving {
             return;
         }
         for i in 0..self.people.len() {

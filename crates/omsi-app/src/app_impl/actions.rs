@@ -423,7 +423,9 @@ impl App {
         let _ = std::fs::create_dir_all(&dir);
         let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let path = dir.join(format!("omsi_{secs}.png"));
-        self.service_msg = Some((format!("Screenshot: {}", path.display()), 4.0));
+        if !cfg!(target_os = "android") {
+            self.service_msg = Some((format!("Screenshot: {}", path.display()), 4.0));
+        }
         self.perf.shot = Some((path, false));
     }
 }
