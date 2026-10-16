@@ -107,9 +107,9 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_FRAME_ORDER` | bool | off | once | app | Log the window's frame and the offscreen run's step as their ordered stages (phase, what each reads and writes, its profile key), once at start. |
 | `OMSI_GPU_TIMERS` | bool | off | use | render | Measure GPU time per pass with timestamp queries. |
 | `OMSI_GPU_TIMERS_RAW` | bool | off | use | render | With OMSI_GPU_TIMERS: the passes in the order the GPU finished them. |
-| `OMSI_GROUND_GAP` | text | - | use | app | Offscreen CSV (or -): how far every drawn tyre stands over or sinks into the ground. |
-| `OMSI_GROUND_GAP_RADIUS` | num | 150 | use | app | With OMSI_GROUND_GAP: the radius in metres. |
-| `OMSI_GROUND_LANES` | bool | off | use | app | Along every street lane, every metre, how far the ground lies over or under the lane. |
+| `OMSI_GROUND_GAP` | text | - | use | sim | Offscreen CSV (or -): how far every drawn tyre stands over or sinks into the ground. |
+| `OMSI_GROUND_GAP_RADIUS` | num | 150 | use | sim | With OMSI_GROUND_GAP: the radius in metres. |
+| `OMSI_GROUND_LANES` | bool | off | use | sim | Along every street lane, every metre, how far the ground lies over or under the lane. |
 | `OMSI_LAN_TRACE` | text | - | use | app | LAN CSV file: where the host's people are drawn. |
 | `OMSI_LIST_ALIGNED` | bool | off | use | scene | Log the splines aligned to the terrain. |
 | `OMSI_PROFILE` | bool | off | use | app, render, scene, sim, xr | Time per stage of the frame, logged. |

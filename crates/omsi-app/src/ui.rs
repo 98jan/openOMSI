@@ -282,6 +282,7 @@ pub struct TimetableRow {
     pub name: String,
     pub arr: String,
     pub dep: String,
+    pub expected: String,
     pub state: u8,
 }
 
@@ -809,7 +810,12 @@ impl Ui {
         const INK: [u8; 4] = [237, 237, 237, 0];
         const INK_2: [u8; 4] = [184, 184, 184, 0];
         const MUTED: [u8; 4] = [138, 138, 138, 0];
-        let w = (400.0 * s).min(f.width * 0.42).round();
+        let hpx = (11.5 * s).round() as u32 | BOLD;
+        let time_w = 44.0 * s;
+        let exp_w = self.text.width_bold("Expected", (11.5 * s).round()).max(time_w) + 16.0 * s;
+        let wide = (470.0 * s).min(f.width * 0.42).round();
+        let roomy = wide - 98.0 * s - time_w - exp_w >= 150.0 * s;
+        let w = if roomy { wide } else { (400.0 * s).min(f.width * 0.42).round() };
         let x = (f.width - w - 16.0 * s - beside).max(16.0 * s).round();
         let pad = (16.0 * s).round();
         let px = (13.0 * s).round() as u32;
@@ -861,24 +867,24 @@ impl Ui {
         // the table's head
         let col_arr = x + pad;
         let col_stop = x + pad + 58.0 * s;
-        let col_dep = x + w - pad;
         let hy = top + head_h + th_h * 0.5;
-        let hpx = (11.5 * s).round() as u32 | BOLD;
-        for (txt, at, right) in [(omsi_ui::tr("Arrives"), col_arr, false), (omsi_ui::tr("Stop"), col_stop, false), (omsi_ui::tr("Departs"), col_dep, true)] {
+        let col_exp = x + w - pad;
+        let col_dep = if roomy { col_exp - exp_w } else { col_exp };
+        let heads = [(omsi_ui::tr("Arrives"), col_arr, false), (omsi_ui::tr("Stop"), col_stop, false), (omsi_ui::tr("Departs"), col_dep, true), (omsi_ui::tr("Expected"), col_exp, true)];
+        for (txt, at, right) in heads.into_iter().take(if roomy { 4 } else { 3 }) {
             let l = self.text.label_op(r, scene, &txt, hpx, MUTED, 1.0);
             let lx = if right { at - l.w as f32 } else { at };
             let ly = (hy - l.h as f32 * 0.5).round();
             scene.overlays.push((l.tex, [lx.round(), ly, lx.round() + l.w as f32, ly + l.h as f32]));
         }
         // the rows
-        let time_w = 44.0 * s;
         for k in first..first + shown {
             let ry = top + head_h + th_h + lh * (k - first) as f32;
             let band = [x + 6.0 * s, ry, x + w - 6.0 * s, ry + lh - 2.0 * s];
-            let (name, arr, dep, state) = match t.rows.get(k) {
-                Some(row) => (row.name.clone(), row.arr.clone(), row.dep.clone(), row.state),
+            let (name, arr, dep, expected, state) = match t.rows.get(k) {
+                Some(row) => (row.name.clone(), row.arr.clone(), row.dep.clone(), if roomy { row.expected.clone() } else { String::new() }, row.state),
                 None => match t.next.as_ref() {
-                    Some((what, when)) => (format!("› {what}"), String::new(), when.clone(), 3),
+                    Some((what, when)) => (format!("› {what}"), String::new(), when.clone(), String::new(), 3),
                     None => continue,
                 },
             };
@@ -895,11 +901,11 @@ impl Ui {
             };
             let size = if state == 1 { px | BOLD } else { px };
             let cy = ry + (lh - 2.0 * s) * 0.5;
-            for (txt, at, right) in [(&arr, col_arr, false), (&dep, col_dep, true)] {
+            for (txt, at, right, col) in [(&arr, col_arr, false, time_ink), (&dep, col_dep, true, time_ink), (&expected, col_exp, true, dcol)] {
                 if txt.is_empty() {
                     continue;
                 }
-                let l = self.text.label_op(r, scene, txt, size, time_ink, 1.0);
+                let l = self.text.label_op(r, scene, txt, size, col, 1.0);
                 let lx = if right { at - l.w as f32 } else { at };
                 let ly = (cy - l.h as f32 * 0.5).round();
                 scene.overlays.push((l.tex, [lx.round(), ly, lx.round() + l.w as f32, ly + l.h as f32]));
