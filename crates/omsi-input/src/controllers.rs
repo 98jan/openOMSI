@@ -1240,6 +1240,7 @@ impl Controllers {
 
     pub fn set_editing(&mut self, editing: bool) {
         if editing && !self.editing { self.held.release_momentary(&mut self.actions); }
+        if !editing && self.editing { self.held.resume(&self.cfg, &mut self.actions); }
         self.editing = editing;
     }
 
@@ -1342,12 +1343,13 @@ impl Controllers {
         let mut out = Analog::default();
         self.raw_buttons = self.devices.poll();
         for (name, n, down) in &self.raw_buttons {
+            if self.editing { self.held.while_editing(name, *n, *down); }
             if self.editing || !self.enabled || self.off(name) {
                 continue;
             }
             self.held.event(&self.cfg, name, *n, *down, &mut self.actions);
         }
-        self.repeating = if self.editing || !self.enabled { Vec::new() } else { self.held.repeating() };
+        self.repeating = if self.editing || !self.enabled || !self.focused { Vec::new() } else { self.held.repeating() };
         self.preset_buttons();
         if !self.enabled {
             return out;

@@ -284,7 +284,7 @@ impl App {
                     self.input.pad_voice_radio = *down;
                     return false;
                 }
-                if n == "gear_up" || n == "gear_down" {
+                if gear_step(&n).is_some() {
                     if *down {
                         game.push(n);
                     }
@@ -299,10 +299,19 @@ impl App {
                 true
             });
             for n in game {
-                match n.as_str() {
-                    "gear_up" => { self.shift_gear(true); }
-                    "gear_down" => { self.shift_gear(false); }
-                    _ => { self.game_action(&n); }
+                match gear_step(&n) {
+                    Some(up) => { self.shift_gear(up); }
+                    None => { self.game_action(&n); }
+                }
+            }
+            let repeat = std::mem::take(&mut self.input.pad_repeat);
+            if !menu_open && !self.paused {
+                for name in repeat {
+                    if let Some(up) = gear_step(&name) {
+                        self.shift_gear(up);
+                    } else if let Some(p) = self.player.as_mut().filter(|p| p.vehicle.ty.program.trigger(&name).is_some()) {
+                        p.vehicle.trigger(&name);
+                    }
                 }
             }
         }
@@ -313,13 +322,6 @@ impl App {
             p.axes.pedal_hold = self.settings.brake_hold;
             p.axes.pedal_speed = self.settings.key_pedal_speed;
             p.analog = analog;
-            if self.menus.game_menu.is_none() && self.menus.chooser.is_none() && !self.paused {
-                for name in std::mem::take(&mut self.input.pad_repeat) {
-                    if p.vehicle.ty.program.trigger(&name).is_some() {
-                        p.vehicle.trigger(&name);
-                    }
-                }
-            }
             for (name, down) in actions {
                 if !down || (self.menus.game_menu.is_none() && self.menus.chooser.is_none()) {
                     // a button on a pedal (the clutch, a throttle or brake button) works the
@@ -352,13 +354,23 @@ fn controller_notice(text: &str, tr: impl Fn(&str) -> String) -> String {
     text.to_owned()
 }
 
+fn gear_step(name: &str) -> Option<bool> {
+    if name.eq_ignore_ascii_case("gear_up") {
+        Some(true)
+    } else if name.eq_ignore_ascii_case("gear_down") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
 fn keys_steer_over_idle_stick(x: f32, keys_steering: f32) -> bool {
     x == 0.0 && keys_steering != 0.0
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{controller_notice, keys_steer_over_idle_stick};
+    use super::{controller_notice, gear_step, keys_steer_over_idle_stick};
 
     #[test]
     fn controller_notices_translate_fixed_text_and_keep_device_name() {
@@ -392,5 +404,12 @@ mod tests {
         assert!((r(50.0) - 1.0 / 3.0).abs() < 1e-6);
         assert!((r(-90.0) - 0.2).abs() < 1e-6);
         assert_eq!(r(f32::NAN), 1.0);
+    }
+
+    #[test]
+    fn a_held_gear_button_shifts_as_its_press_does() {
+        assert_eq!(gear_step("gear_up"), Some(true));
+        assert_eq!(gear_step("GEAR_DOWN"), Some(false));
+        assert_eq!(gear_step("retarder_up"), None);
     }
 }
