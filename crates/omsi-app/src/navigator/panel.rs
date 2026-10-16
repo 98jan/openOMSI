@@ -19,7 +19,7 @@ const BANNER_DIM: Color = Color::rgba(205, 208, 214, 1.0);
 /// chevrons - so that they never fight over the same depth.)
 pub(super) fn solid_and_ghost(v: &[Vertex], ghost: f32) -> (Vec<Vertex>, Vec<Vertex>) {
     let n = v.len().max(1) as f32;
-    let solid = v.iter().enumerate().map(|(i, x)| Vertex { mode: [2.0, x.mode[1]], pos: [x.pos[0], x.pos[1], x.pos[2] + 0.04 + 0.3 * i as f32 / n], ..*x }).collect();
+    let solid = v.iter().enumerate().map(|(i, x)| Vertex { mode: [2.0, x.mode[1]], pos: [x.pos[0], x.pos[1], x.pos[2] + 0.04 + 0.3 * (i / 3) as f32 / n], ..*x }).collect();
     let faint = v.iter().map(|x| Vertex { color: [x.color[0], x.color[1], x.color[2], x.color[3] * ghost], ..*x }).collect();
     (solid, faint)
 }
@@ -504,7 +504,10 @@ pub(super) fn car_dot(p: &mut Painter, at: Vec3, light: bool) {
     p.world_disc(at, 1.35, 3.0, fill);
 }
 
-/// The vertices standing `dz` metres higher at their own depth (drawn over the route).
+/// The vertices standing `dz` metres higher at their own depth (drawn over the route), each
+/// triangle a little over the one before it: a vehicle's edge, body and windscreen lie one on
+/// the other, and at one height they fought over the same depth (they flickered).
 pub(super) fn lifted(v: &[Vertex], dz: f32) -> Vec<Vertex> {
-    v.iter().map(|x| Vertex { mode: [2.0, x.mode[1]], pos: [x.pos[0], x.pos[1], x.pos[2] + dz], ..*x }).collect()
+    let n = (v.len() / 3).max(1) as f32;
+    v.iter().enumerate().map(|(i, x)| Vertex { mode: [2.0, x.mode[1]], pos: [x.pos[0], x.pos[1], x.pos[2] + dz + 0.5 * (i / 3) as f32 / n], ..*x }).collect()
 }
