@@ -88,6 +88,30 @@ pub(crate) fn prepare(args: &mut Args, path: &Path) -> Result<ServerCfg> {
 /// `passenger_density` (None: the machine's own passengers setting).
 pub(crate) static SERVER_PASSENGERS: std::sync::OnceLock<(bool, Option<f32>)> = std::sync::OnceLock::new();
 
+/// The map of `server.cfg` is installed (in the original folder or the content folder), or
+/// what to do: the maps there are.
+pub(crate) fn check_map(args: &Args) -> Result<(), String> {
+    let path = omsi_cfg::resolve_path(&args.root, &args.map);
+    if omsi_cfg::vfs::exists(&path) {
+        return Ok(());
+    }
+    Err(format!("the map of server.cfg, map = {}, is not installed ({} not found). Installed maps: {}", args.map, path.display(), installed_maps().join(", ")))
+}
+
+/// The installed maps as server.cfg names them (`maps/<folder>/global.cfg`), sorted.
+fn installed_maps() -> Vec<String> {
+    let mut maps: Vec<String> = omsi_cfg::read_dir_merged("maps")
+        .into_iter()
+        .filter(|d| omsi_cfg::vfs::exists(&d.join("global.cfg")))
+        .filter_map(|d| d.file_name().map(|n| format!("maps/{}/global.cfg", n.to_string_lossy())))
+        .collect();
+    maps.sort_by_key(|m| m.to_lowercase());
+    if maps.is_empty() {
+        maps.push("none".into());
+    }
+    maps
+}
+
 /// The airport whose METAR report a dedicated server's weather follows (None: no METAR sync).
 pub(crate) static SERVER_METAR: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 

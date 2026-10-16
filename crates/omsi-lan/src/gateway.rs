@@ -56,7 +56,15 @@ pub fn open_public_gateway(session: &LanSession, info: omsi_net::ws::ServerInfo,
     let Some(udp) = session.local_addr() else { return };
     let target = SocketAddr::from(([127, 0, 0, 1], udp.port()));
     let port = if web_port == 0 { udp.port().saturating_add(10) } else { web_port };
-    let gateway = match omsi_net::ws::WsGateway::start(SocketAddr::from(([0, 0, 0, 0], port)), target, info.clone()).or_else(|_| omsi_net::ws::WsGateway::start(SocketAddr::from(([0, 0, 0, 0], 0)), target, info)) {
+    // (a web port taken: another one, and the log says which - the status page, the tunnel
+    // and the players' WebSockets are there instead)
+    let gateway = match omsi_net::ws::WsGateway::start(SocketAddr::from(([0, 0, 0, 0], port)), target, info.clone()).or_else(|e| {
+        let g = omsi_net::ws::WsGateway::start(SocketAddr::from(([0, 0, 0, 0], 0)), target, info);
+        if let Ok(g) = &g {
+            log::warn!("LAN: web port {port} cannot be used ({e}): the gateway (status page, WebSocket players, tunnel) is on port {} instead - change web_port or stop what uses {port}", g.addr.port());
+        }
+        g
+    }) {
         Ok(g) => g,
         Err(e) => {
             log::warn!("LAN: no WebSocket gateway: {e}");

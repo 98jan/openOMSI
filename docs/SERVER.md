@@ -18,6 +18,23 @@ motd, map, date, time, weather, traffic, timetable, passengers, port, web_port,
 max_players, tunnel, radius, the voice chat); `server-icon.png` beside it (64x64, like Minecraft's) is the
 icon the players' list shows.
 
+**When it does not start**, it says why on its output and ends with a code a launcher can
+tell apart:
+
+| exit code | cause |
+|---|---|
+| 1 | the original OMSI 2 was not found at `--root` (the files missing are listed: a wrong folder, or an incomplete installation), or another error, printed as `Error: …` |
+| 2 | `server.cfg` cannot be read or written, or its `map` is not installed (the maps there are listed, as `server.cfg` names them) |
+| 3 | its UDP `port` is taken (another server, or another program): stop it, or choose another port |
+
+A `web_port` that is taken is no reason to stop: the gateway takes another port and the log
+says which (the status page, the WebSocket players and the tunnel are there). The log goes to
+the standard error output: a launcher keeps it with the rest (`start.sh` writes it to
+`server.log` too; `start.cmd` shows it in its window), and does not take a line there for a
+failure - informational lines go there as well; the exit code says whether it failed. Paths
+with spaces or accents are passed as they are, quoted. A map is named as in the game, relative
+to the OMSI 2 folder (`maps/<folder>/global.cfg`), and found in the content folder (mods) too.
+
 Players reach it two ways:
 
 * UDP at `host:port` (a server with a public address, or on the LAN);

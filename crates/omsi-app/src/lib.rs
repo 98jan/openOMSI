@@ -398,6 +398,14 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
         omsi_cfg::vfs::mount_dir_zips(&c.join("Archives"));
     }
     omsi_cfg::add_content_root(args.root.clone());
+    // a server's map must be installed: said now, with the maps there are, rather than as
+    // a file the loading could not read
+    if server_cfg.is_some() {
+        if let Err(e) = server::check_map(&args) {
+            eprintln!("server: {e}");
+            std::process::exit(2);
+        }
+    }
     Ok(Some((args, server_cfg)))
 }
 
@@ -449,6 +457,12 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     } else {
         None
     };
+    // a dedicated server without its session has nobody to serve: why, and the end (it went
+    // on running alone, unreachable, with a warning among the log's lines)
+    if let (Some(cfg), None) = (server_cfg.as_ref(), lan.as_ref()) {
+        eprintln!("server: cannot open the session on UDP port {} (the line above says why): another server or program uses it, or the system refuses it. Stop the other one, or choose another `port` in {}", cfg.port, args.server.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "server.cfg".into()));
+        std::process::exit(3);
+    }
     // turned away at the door (banned, full, another version): no game to play there
     if lan.as_ref().and_then(lan::turned_away).is_some() {
         log::info!("game ends");
