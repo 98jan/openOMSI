@@ -3858,6 +3858,7 @@ dependencies = [
 name = "omsi-scene"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "glam",
  "hashbrown 0.17.1",

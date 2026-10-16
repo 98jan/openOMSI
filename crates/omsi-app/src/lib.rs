@@ -79,7 +79,16 @@ use omsi_scene::{rain, window_wipers};
 mod scene;
 mod season_phase;
 mod schedule;
-mod schedule_paper;
+/// The cab's paper timetable (`omsi_scene::schedule_paper`) in the game's language.
+mod schedule_paper {
+    pub(crate) fn update_vehicle(
+        vehicle: &mut omsi_sim::VehicleInstance,
+        duty: &omsi_sim::timetable_run::PlayerDuty,
+        fonts: &mut omsi_sim::texttex::FontLibrary,
+    ) -> anyhow::Result<()> {
+        omsi_scene::schedule_paper::update_vehicle(vehicle, duty, fonts, || crate::settings::Settings::load().language)
+    }
+}
 mod real_time;
 mod settings;
 mod shell;

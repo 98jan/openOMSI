@@ -63,6 +63,7 @@ mod lanes;
 mod season_looks;
 pub mod host;
 pub mod tiles;
+pub mod schedule_paper;
 
 pub use staging::*;
 pub use batching::*;
