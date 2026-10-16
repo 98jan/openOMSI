@@ -17,6 +17,8 @@ pub(crate) struct GpuTimers {
     pub(crate) unresolved: bool,
     pub(crate) waiting: bool,
     pub(crate) ready: Arc<std::sync::atomic::AtomicBool>,
+    /// The readback's mapping failed: the timers start over rather than wait for it forever.
+    pub(crate) failed: Arc<std::sync::atomic::AtomicBool>,
     /// pass → (seconds, frames)
     pub(crate) totals: std::collections::BTreeMap<&'static str, (f64, u32)>,
 }
@@ -57,6 +59,7 @@ impl GpuTimers {
             unresolved: false,
             waiting: false,
             ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            failed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             totals: Default::default(),
         })
     }
@@ -170,6 +173,11 @@ impl GpuTimers {
     /// Take in the pass times of the last timed frame once its readback has arrived.
     pub(crate) fn collect(&mut self, period: f64) {
         let t = self;
+        if t.waiting && t.failed.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            // (nothing mapped to read: the next timed frame asks again)
+            t.waiting = false;
+            return;
+        }
         if !t.waiting || !t.ready.swap(false, std::sync::atomic::Ordering::Relaxed) {
             return;
         }
@@ -258,9 +266,10 @@ impl Renderer {
                 enc.resolve_query_set(&t.set, 0..n, &t.resolve, 0);
                 enc.copy_buffer_to_buffer(&t.resolve, 0, &t.read, 0, n as u64 * 8);
                 self.queue.submit([enc.finish()]);
-                let ready = t.ready.clone();
+                let (ready, failed) = (t.ready.clone(), t.failed.clone());
                 t.read.map_async(wgpu::MapMode::Read, .., move |r| {
-                    ready.store(r.is_ok(), std::sync::atomic::Ordering::Relaxed)
+                    let flag = if r.is_ok() { &ready } else { &failed };
+                    flag.store(true, std::sync::atomic::Ordering::Relaxed)
                 });
                 t.waiting = true;
             }

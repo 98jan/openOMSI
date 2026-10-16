@@ -121,16 +121,19 @@ fn receiver_normal(px: vec2<i32>, uv: vec2<f32>, world: vec3<f32>, depth: f32) -
 fn fs_trace(in: PuddleVertex) -> @location(0) vec4<f32> {
     let size = vec2<i32>(textureDimensions(t_scene));
     let centre = vec2<i32>(in.uv * vec2<f32>(size));
-    // Pick a wet sample from all the pixels this ray stands for (2x2 at half size, 4x4 on
-    // Low), so a small pool off its centre still gets a ray. The full-size resolve
-    // reapplies the exact mask.
+    // Pick a wet sample among the pixels this ray stands for (2x2 at half size, 4x4 on Low or
+    // past the ray budget), so a small pool off its centre still gets a ray: at most 3x3
+    // looks, spread over them (2x2, the same pixels, at half size) - the looks per ray do not
+    // grow with the picture. The full-size resolve reapplies the exact mask.
     var px = clamp(centre, vec2<i32>(0), size - vec2<i32>(1));
     var weight = 0.0;
     let span = clamp(i32(p.quality.z), 1, 8);
     let half = span / 2;
-    for (var y = 0; y < span; y++) {
-        for (var x = 0; x < span; x++) {
-            let q = clamp(centre + vec2<i32>(x - half, y - half), vec2<i32>(0), size - vec2<i32>(1));
+    let taps = min(span, 3);
+    for (var y = 0; y < taps; y++) {
+        for (var x = 0; x < taps; x++) {
+            let at = (vec2<i32>(2 * x + 1, 2 * y + 1) * span) / (2 * taps) - vec2<i32>(half);
+            let q = clamp(centre + at, vec2<i32>(0), size - vec2<i32>(1));
             let w = textureLoad(t_mask, q, 0).b;
             if (w > weight) { weight = w; px = q; }
         }

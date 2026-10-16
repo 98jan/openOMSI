@@ -363,7 +363,7 @@ pub(super) struct Targets {
 }
 
 /// How many picture pixels one ray stands for, each way (2 at half size; 4 on Low, or on
-/// High past the budget): the wet pixel looked for in all of them.
+/// High past the budget): the wet pixel looked for among them (see `probe_taps`).
 fn footprint(w: u32, h: u32, low: bool) -> f32 {
     let (tw, th) = trace_size(w, h, low);
     (w as f32 / tw as f32).max(h as f32 / th as f32).ceil().clamp(1.0, 8.0)
@@ -1359,8 +1359,39 @@ mod tests {
         }
     }
 
-    /// The wet pixel is looked for in every picture pixel a ray stands for: 2x2 at half size,
-    /// 4x4 on Low - and more past the budget.
+    /// Where `fs_trace` looks for a wet pixel around a ray's centre, one way (the shader's
+    /// sum, in i32): at most 3 looks, spread over the `span` pixels the ray stands for.
+    fn probe_taps(span: i32) -> Vec<i32> {
+        let span = span.clamp(1, 8);
+        let taps = span.min(3);
+        (0..taps).map(|x| ((2 * x + 1) * span) / (2 * taps) - span / 2).collect()
+    }
+
+    /// The looks for a wet pixel: the same 2x2 at half size as before, at most 3x3 spread
+    /// over the pixels otherwise - so the looks per frame do not grow with the picture, and
+    /// Low stays below High.
+    #[test]
+    fn the_wet_probe_is_bounded_and_spread() {
+        assert_eq!(probe_taps(2), [-1, 0]);
+        assert_eq!(probe_taps(4), [-2, 0, 1]);
+        assert_eq!(probe_taps(8), [-3, 0, 2]);
+        for span in 1..=8 {
+            let t = probe_taps(span);
+            assert!(t.len() <= 3 && t.iter().all(|&o| o >= -(span / 2) && o < span - span / 2), "{span}: {t:?}");
+        }
+        for (w, h) in [(1920, 1080), (2560, 1440), (3840, 2160)] {
+            let looks = |low: bool| {
+                let (tw, th) = trace_size(w, h, low);
+                let n = probe_taps(footprint(w, h, low) as i32).len() as u64;
+                tw as u64 * th as u64 * n * n
+            };
+            assert!(looks(true) < looks(false), "{w}x{h}: low {} high {}", looks(true), looks(false));
+            assert!(looks(false) <= MAX_TRACE_PIXELS as u64 * 9);
+        }
+    }
+
+    /// The pixels a ray stands for: 2 each way at half size, 4 on Low - and more past the
+    /// budget.
     #[test]
     fn a_ray_looks_at_all_its_pixels() {
         assert_eq!(footprint(1920, 1080, false), 2.0);

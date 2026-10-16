@@ -1,13 +1,16 @@
-/// The simulation goes beside the picture unless the player turned it off; the launcher's
-/// own save keeps the choice (it does not know the key).
+/// The simulation goes beside the picture only when the player turns it on (opt-in, on
+/// phones too); the launcher's save keeps the choice, and the game's own text writes it.
 #[test]
-fn the_sim_thread_is_on_until_turned_off() {
-    assert!(super::Settings::default().sim_thread);
-    assert!(super::Settings::from_text("version=4\n").sim_thread);
-    assert!(!super::Settings::from_text("sim_thread=0\n").sim_thread);
-    let launcher = omsi_launcher_lib::settings_from_text(Some("sim_thread=0\n"));
-    let saved = omsi_launcher_lib::settings_to_text(&launcher, Some("sim_thread=0\n"));
-    assert!(!super::Settings::from_text(&saved).sim_thread, "{saved}");
+fn the_sim_thread_is_off_until_turned_on() {
+    assert!(!super::Settings::default().sim_thread);
+    assert!(!super::Settings::phone().sim_thread);
+    assert!(!super::Settings::from_text("version=4\n").sim_thread);
+    assert!(super::Settings::from_text("sim_thread=1\n").sim_thread);
+    let launcher = omsi_launcher_lib::settings_from_text(Some("sim_thread=1\n"));
+    let saved = omsi_launcher_lib::settings_to_text(&launcher, Some("sim_thread=1\n"));
+    assert!(super::Settings::from_text(&saved).sim_thread, "{saved}");
+    let on = super::Settings { sim_thread: true, ..super::Settings::default() };
+    assert!(super::Settings::from_text(&on.to_text()).sim_thread);
 }
 
 /// Switched in the game's menu, the value saved (through the launcher's writer, as the game
