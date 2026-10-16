@@ -1,8 +1,8 @@
 //! The launcher's bus preview: the chosen bus drawn by the game's own renderer - its
 //! model, paint and materials - with the player's graphics settings, under a fixed
-//! midday light on a plain backdrop, into a picture the launcher shows in a card. It is
-//! drawn again only when something changed (another bus, paint, the preview turned by the
-//! mouse, other graphics settings), never every frame.
+//! midday light on a podium in a photo studio, into a picture the launcher shows in a
+//! card. It is drawn again only when something changed (another bus, paint, the preview
+//! turned by the mouse, other graphics settings), never every frame.
 //!
 //! A bus is read on a worker (its type, its scripts run to their resting state, its
 //! textures and meshes put on the GPU ahead) and then placed into a scene of its own with
@@ -430,7 +430,6 @@ impl Showroom {
         let args = args_for(&r.look);
         let weather = studio_weather();
         let sky = crate::weather_setup::SkyState { clouds: None, model: None, look: args.session_settings };
-        add_floor(renderer, &mut scene);
         let world = r.world;
         // (the panes wear this weather's snow as the bus goes onto the GPU)
         world.settings.set_snow(weather.snow);
@@ -455,6 +454,7 @@ impl Showroom {
             centre.y = bb[4] + bb[1] * 0.5 - total * 0.5;
             length = total;
         }
+        add_studio(renderer, &mut scene, centre.y, length, super::showroom_enhanced(&crate::settings::Settings::load()));
         let lighting = lighting_for(&args, &weather, &sky);
         log::info!("showroom: {} ({} meshes, {:.1} m long) placed in {:.2} s", r.look.bus, render.instances.len(), length, t0.elapsed().as_secs_f64());
         let _ = std::fs::remove_file(placing_mark());
@@ -650,6 +650,15 @@ mod tests {
     use std::mem::ManuallyDrop;
 
     #[test]
+    fn the_podium_holds_the_whole_bus() {
+        for length in [8.0, 12.0, 18.75, 25.0] {
+            let (r, h) = podium(length);
+            assert!(r >= length * 0.5 + 1.0 && h > 0.0);
+        }
+        assert!(podium(4.0).0 >= 6.0);
+    }
+
+    #[test]
     fn the_studio_weather_is_clear() {
         let w = studio_weather();
         assert_eq!(w.clouds.0, "-1");
@@ -743,8 +752,8 @@ mod tests {
     }
 }
 
-/// A clear midday light, with the sun's shadow under the bus, before a plain grey backdrop,
-/// drawn with the player's shading, detail and shadow switches (no weather effects).
+/// A clear midday light, with the sun's shadow under the bus, in the studio, drawn with
+/// the player's shading, detail and shadow switches (no weather effects).
 fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather, sky: &crate::weather_setup::SkyState) -> Lighting {
     let settings = crate::settings::Settings::load();
     let clock = start_clock(args);
@@ -770,27 +779,80 @@ fn studio_weather() -> omsi_content::weather::Weather {
 /// The backdrop's grey (linear), drawn where no sky is set up.
 const STUDIO_GREY: f32 = 0.08;
 
-/// A round showroom floor under the bus: dark, matt, catching its shadow.
-fn add_floor(renderer: &Renderer, scene: &mut Scene) {
-    let n = 96;
-    let r = 400.0f32;
-    let mut positions = vec![glam::Vec3::ZERO];
-    let mut normals = vec![glam::Vec3::Z];
-    let mut uvs = vec![glam::Vec2::ZERO];
-    for k in 0..n {
-        let a = std::f32::consts::TAU * k as f32 / n as f32;
-        positions.push(glam::Vec3::new(a.cos() * r, a.sin() * r, 0.0));
-        normals.push(glam::Vec3::Z);
-        uvs.push(glam::Vec2::new(a.cos(), a.sin()));
+fn podium(length: f32) -> (f32, f32) {
+    ((length * 0.5 + 1.4).max(6.5), 0.32)
+}
+
+type Ring = (f32, f32, f32, f32, f32);
+
+fn lathe(profile: &[Ring], centre_y: f32) -> omsi_geometry::MeshData {
+    let n = 128;
+    let (mut positions, mut normals, mut uvs, mut indices) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for &(r, z, nr, nz, shade) in profile {
+        for k in 0..=n {
+            let a = std::f32::consts::TAU * k as f32 / n as f32;
+            let (sa, ca) = a.sin_cos();
+            positions.push(glam::Vec3::new(ca * r, centre_y + sa * r, z));
+            normals.push(glam::Vec3::new(ca * nr, sa * nr, nz).normalize_or_zero());
+            uvs.push(glam::Vec2::new(shade, k as f32 / n as f32));
+        }
     }
-    let mut indices = Vec::new();
-    for k in 0..n {
-        indices.extend([0u32, 1 + ((k + 1) % n) as u32, 1 + k as u32]);
+    let row = n as u32 + 1;
+    for j in 0..profile.len().saturating_sub(1) as u32 {
+        for k in 0..n as u32 {
+            let (a, b) = (j * row + k, (j + 1) * row + k);
+            indices.extend([a, b, a + 1, a + 1, b, b + 1]);
+        }
     }
-    let data = omsi_geometry::MeshData { positions, normals, uvs, ranges: vec![(0, indices.len() as u32, 0)], indices, one_sided: false };
-    let mesh = renderer.add_mesh(scene, &data);
-    let mat = renderer.add_material(scene, None, omsi_render::AlphaMode::Opaque, [0.12, 0.125, 0.135, 1.0], false);
-    renderer.add_instance(scene, mesh, DVec3::new(0.0, 0.0, -0.005), glam::Mat4::IDENTITY, vec![mat]);
+    omsi_geometry::MeshData { positions, normals, uvs, ranges: vec![(0, indices.len() as u32, 0)], indices, one_sided: false }
+}
+
+fn add_lathe(renderer: &Renderer, scene: &mut Scene, profile: &[Ring], centre_y: f32, texture: Option<usize>, color: [f32; 3], glow: bool) {
+    let mesh = renderer.add_mesh(scene, &lathe(profile, centre_y));
+    let rgba = [color[0], color[1], color[2], 1.0];
+    let mat = if glow {
+        renderer.add_material_all(scene, None, omsi_render::AlphaMode::Opaque, rgba, true, None, None, None, None, color)
+    } else {
+        renderer.add_material(scene, texture, omsi_render::AlphaMode::Opaque, rgba, false)
+    };
+    let i = renderer.add_instance(scene, mesh, DVec3::ZERO, glam::Mat4::IDENTITY, vec![mat]);
+    renderer.set_casts_shadow(scene, i, texture.is_none() && !glow);
+    renderer.set_object_culling(scene, i, 0.0, 1.0, true);
+}
+
+fn studio_ramp() -> omsi_texture::Image {
+    let n = 64u32;
+    let rgba = (0..n).flat_map(|i| {
+        let v = (i as f32 / (n - 1) as f32 * 255.0).round() as u8;
+        [v, v, v, 255]
+    });
+    omsi_texture::Image { width: n, height: 1, rgba: rgba.collect(), has_alpha: false }
+}
+
+fn add_studio(renderer: &Renderer, scene: &mut Scene, centre_y: f32, length: f32, enhanced: bool) {
+    let (r, h) = podium(length);
+    let dim = if enhanced { 0.4 } else { 1.0 };
+    let bevel = 0.06;
+    let top = [(0.0, 0.0, 0.0, 1.0, 0.0), (r - bevel, 0.0, 0.0, 1.0, 0.0), (r - bevel, 0.0, 0.7, 0.7, 0.0), (r, -bevel, 0.7, 0.7, 0.0), (r, -bevel, 1.0, 0.0, 0.0), (r, -h * 0.55, 1.0, 0.0, 0.0)];
+    add_lathe(renderer, scene, &top, centre_y, None, [0.09 * dim, 0.092 * dim, 0.1 * dim], false);
+    let rim = [(r + 0.002, -h * 0.55, 1.0, 0.0, 0.0), (r + 0.002, -h * 0.7, 1.0, 0.0, 0.0)];
+    add_lathe(renderer, scene, &rim, centre_y, None, [0.75, 0.85, 1.0], true);
+    let base = [(r, -h * 0.7, 1.0, 0.0, 0.0), (r, -h, 1.0, 0.0, 0.0)];
+    add_lathe(renderer, scene, &base, centre_y, None, [0.03 * dim, 0.031 * dim, 0.034 * dim], false);
+    let ramp = renderer.add_texture(scene, &studio_ramp(), false);
+    let (flat, round, wall) = (r + 30.0, 90.0, 170.0);
+    let mut cove = vec![(0.0, -h, 0.0, 1.0, 0.99), (r + 1.5, -h, 0.0, 1.0, 0.95), (r + 8.0, -h, 0.0, 1.0, 0.7), (flat, -h, 0.0, 1.0, 0.45)];
+    for k in 1..=24 {
+        let a = std::f32::consts::FRAC_PI_2 * k as f32 / 24.0;
+        cove.push((flat + a.sin() * round, -h + (1.0 - a.cos()) * round, -a.sin(), a.cos(), 0.45 - 0.15 * k as f32 / 24.0));
+    }
+    let rim_z = -h + round;
+    for k in 1..=24 {
+        let a = std::f32::consts::FRAC_PI_2 * k as f32 / 24.0;
+        cove.push(((flat + round) * a.cos(), rim_z + a.sin() * wall, -a.cos() / (flat + round), -a.sin() / wall, 0.3 - 0.2 * k as f32 / 24.0));
+    }
+    let k = 0.3 * dim;
+    add_lathe(renderer, scene, &cove, centre_y, Some(ramp), [k, k * 1.02, k * 1.08], false);
 }
 
 #[cfg(test)]
