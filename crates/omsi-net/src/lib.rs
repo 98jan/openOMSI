@@ -95,6 +95,7 @@ pub mod tunnel;
 pub mod official;
 pub mod hostkey;
 pub mod remote_text;
+pub use remote_text::is_fingerprint;
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -891,10 +892,8 @@ pub struct Pose {
     pub box_offset: f32,
     /// Hash of the vehicle's sync table (see `lamps`, `switches`, `values`), 0 for none.
     pub table: u32,
-    /// What the vehicle is, by its content: the fingerprint of every file it uses (`v2-`
-    /// and 64 hex digits, see the game's `lan_mods::identity`). Two players whose buses have
-    /// the same one see the same bus, file for file. Empty: not known (an older game, or not
-    /// worked out yet).
+    /// What the vehicle is, by its content (`v2-` and 64 hex digits, the fingerprint of every
+    /// file it uses: `lan_mods::identity`); empty when not known (an older game, or not yet).
     pub content: String,
     /// Height (m) of the box around the vehicle, for a stand-in of its size; 0: not known.
     pub height: f32,
@@ -1173,15 +1172,6 @@ pub fn clean_text(s: &str, max: usize) -> String {
 
 /// The longest vehicle path taken from the network.
 const MAX_VEHICLE_PATH: usize = 260;
-
-/// Is `s` a vehicle's fingerprint (`v2-`, or the older `v1-`, and 64 lower-case hex digits)?
-/// (`v2` hashes the bus file's path too; `v1` is still recognised on the wire but no longer
-/// produced - see the game's `lan_mods::identity`.)
-pub fn is_fingerprint(s: &str) -> bool {
-    s.strip_prefix("v2-")
-        .or_else(|| s.strip_prefix("v1-"))
-        .is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
-}
 
 /// `Pose::bus` as a path relative to a content root that may be looked up on this machine,
 /// or None. A pose comes from another machine, so the path is not trusted: it must be
