@@ -488,7 +488,8 @@ pub fn generate(root: &Path, map_dir: &Path, ground_textures: &[omsi_map::global
                 }
             }
             woods_of(&mut part, lo, ts as f32);
-            smooth_paving(&mut part);
+            // (the pavements are not drawn: a map shows the carriageways)
+            part.paved[layers::PAVE_FOOT].clear();
             part
         })
         .collect();
@@ -678,185 +679,6 @@ fn spline_of(part: &mut Part, sp: &omsi_map::tile::MapSpline, def: &omsi_scenery
 /// 8 - 20 cm.
 const KERB: f32 = 0.06;
 
-/// Cell of the paving's mask (m).
-const PAVE_CELL: f32 = 0.5;
-
-/// The tile's carriageways and yards as one smooth surface each, as a map draws them: the
-/// splines' sections and the junctions' and car parks' faces laid into a mask, the gaps between
-/// the pieces closed, the corners rounded (a little blur), and the outline traced, simplified
-/// and filled again - the low-poly kerb corners of a junction's model and the steps where a
-/// junction meets its roads are gone. The outlines go with them as lines (`LINE_*_EDGE`) for a
-/// clean edge. The pavements are left out: a map does not draw them.
-fn smooth_paving(part: &mut Part) {
-    part.paved[layers::PAVE_FOOT].clear();
-    for (class, edge) in [(layers::PAVE_ROAD, layers::LINE_ROAD_EDGE), (layers::PAVE_AREA, layers::LINE_AREA_EDGE)] {
-        let tris = std::mem::take(&mut part.paved[class]);
-        if tris.len() < 3 {
-            continue;
-        }
-        let lo = tris.iter().fold(Vec2::splat(f32::MAX), |a, p| a.min(*p)) - Vec2::splat(3.0);
-        let hi = tris.iter().fold(Vec2::splat(f32::MIN), |a, p| a.max(*p)) + Vec2::splat(3.0);
-        let (w, h) = (((hi.x - lo.x) / PAVE_CELL).ceil() as usize + 1, ((hi.y - lo.y) / PAVE_CELL).ceil() as usize + 1);
-        if w * h > 9_000_000 {
-            part.paved[class] = tris;
-            continue;
-        }
-        let mut m = vec![0.0f32; w * h];
-        for t in tris.chunks_exact(3) {
-            let a = (t[1] - t[0]).perp_dot(t[2] - t[0]);
-            if a.abs() < 1e-4 {
-                continue;
-            }
-            let tlo = t[0].min(t[1]).min(t[2]);
-            let thi = t[0].max(t[1]).max(t[2]);
-            let (x0, y0) = (((tlo.x - lo.x) / PAVE_CELL).floor().max(0.0) as usize, ((tlo.y - lo.y) / PAVE_CELL).floor().max(0.0) as usize);
-            let (x1, y1) = ((((thi.x - lo.x) / PAVE_CELL).ceil() as usize).min(w - 1), (((thi.y - lo.y) / PAVE_CELL).ceil() as usize).min(h - 1));
-            let sg = a.signum();
-            for y in y0..=y1 {
-                for x in x0..=x1 {
-                    let q = lo + Vec2::new(x as f32, y as f32) * PAVE_CELL;
-                    // (a little generous: neighbouring pieces meet without a hairline between)
-                    let e = |u: Vec2, v: Vec2| (v - u).perp_dot(q - u) * sg / (v - u).length().max(1e-4) >= -0.3;
-                    if e(t[0], t[1]) && e(t[1], t[2]) && e(t[2], t[0]) {
-                        m[y * w + x] = 1.0;
-                    }
-                }
-            }
-        }
-        // the junction models' low-poly kerb corners: notches filled and bumps cut off up to
-        // some 2 m (closed, then opened, by 1 m)
-        let grow = |m: &mut Vec<f32>, max: bool| {
-            let src = m.clone();
-            for y in 1..h - 1 {
-                for x in 1..w - 1 {
-                    let mut v = src[y * w + x];
-                    for (dx, dy) in [(0isize, 1isize), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)] {
-                        let q = src[(y as isize + dy) as usize * w + (x as isize + dx) as usize];
-                        v = if max { v.max(q) } else { v.min(q) };
-                    }
-                    m[y * w + x] = v;
-                }
-            }
-        };
-        for max in [true, true, false, false, false, false, true, true] {
-            grow(&mut m, max);
-        }
-        // round the corners: two passes of a 3 x 3 box (some 0.7 m)
-        for _ in 0..2 {
-            let src = m.clone();
-            for y in 1..h - 1 {
-                for x in 1..w - 1 {
-                    let mut s = 0.0;
-                    for dy in 0..3 {
-                        for dx in 0..3 {
-                            s += src[(y + dy - 1) * w + x + dx - 1];
-                        }
-                    }
-                    m[y * w + x] = s / 9.0;
-                }
-            }
-        }
-        let rings: Vec<Vec<Vec2>> = iso_rings(&m, w, h, PAVE_CELL, lo, 0.5)
-            .into_iter()
-            .map(|r| layers::simplify_ring(&r, 0.18))
-            .filter(|r| r.len() >= 3 && layers::area2(r).abs() > 2.0)
-            .collect();
-        part.paved[class] = fill_rings(&rings);
-        for r in rings {
-            let mut pts = r.clone();
-            pts.push(r[0]);
-            part.lines.push(Line { class: edge, width: 0.0, points: pts });
-        }
-    }
-}
-
-/// The closed contours where `v` (nodes `nx` x `ny`, `cell` m apart from `org`) crosses `iso`
-/// (marching squares, the pieces joined into rings).
-fn iso_rings(v: &[f32], nx: usize, ny: usize, cell: f32, org: Vec2, iso: f32) -> Vec<Vec<Vec2>> {
-    // an edge of the grid by its lower node and direction: (x, y, 0 along x | 1 along y)
-    type E = (u32, u32, u8);
-    let at = |x: usize, y: usize| v[y * nx + x];
-    let point = |e: E| -> Vec2 {
-        let (x, y, d) = (e.0 as usize, e.1 as usize, e.2);
-        let (a, b, q0, q1) = if d == 0 { (at(x, y), at(x + 1, y), Vec2::new(x as f32, y as f32), Vec2::new(x as f32 + 1.0, y as f32)) } else { (at(x, y), at(x, y + 1), Vec2::new(x as f32, y as f32), Vec2::new(x as f32, y as f32 + 1.0)) };
-        let t = ((iso - a) / (b - a)).clamp(0.0, 1.0);
-        org + q0.lerp(q1, t) * cell
-    };
-    let mut next: HashMap<E, E> = HashMap::new();
-    for y in 0..ny - 1 {
-        for x in 0..nx - 1 {
-            let c = [at(x, y) >= iso, at(x + 1, y) >= iso, at(x + 1, y + 1) >= iso, at(x, y + 1) >= iso];
-            let (xu, yu) = (x as u32, y as u32);
-            let (s, r, n, l): (E, E, E, E) = ((xu, yu, 0), (xu + 1, yu, 1), (xu, yu + 1, 0), (xu, yu, 1));
-            let idx = c[0] as u8 | (c[1] as u8) << 1 | (c[2] as u8) << 2 | (c[3] as u8) << 3;
-            // segments with the inside on their left (from one crossing to the next)
-            let segs: &[(E, E)] = match idx {
-                0 | 15 => &[],
-                1 => &[(l, s)],
-                2 => &[(s, r)],
-                3 => &[(l, r)],
-                4 => &[(r, n)],
-                5 => {
-                    if (at(x, y) + at(x + 1, y) + at(x + 1, y + 1) + at(x, y + 1)) * 0.25 >= iso { &[(l, n), (r, s)] } else { &[(l, s), (r, n)] }
-                }
-                6 => &[(s, n)],
-                7 => &[(l, n)],
-                8 => &[(n, l)],
-                9 => &[(n, s)],
-                10 => {
-                    if (at(x, y) + at(x + 1, y) + at(x + 1, y + 1) + at(x, y + 1)) * 0.25 >= iso { &[(s, l), (n, r)] } else { &[(s, r), (n, l)] }
-                }
-                11 => &[(n, r)],
-                12 => &[(r, l)],
-                13 => &[(r, s)],
-                14 => &[(s, l)],
-                _ => &[],
-            };
-            for &(a, b) in segs {
-                next.insert(a, b);
-            }
-        }
-    }
-    let mut rings = Vec::new();
-    while let Some(&start) = next.keys().next() {
-        let mut ring = Vec::new();
-        let mut cur = start;
-        while let Some(n) = next.remove(&cur) {
-            ring.push(point(cur));
-            cur = n;
-            if cur == start {
-                break;
-            }
-        }
-        if ring.len() >= 3 {
-            rings.push(ring);
-        }
-    }
-    rings
-}
-
-/// Rings (outlines and holes, in any order) filled even-odd into triangles.
-fn fill_rings(rings: &[Vec<Vec2>]) -> Vec<Vec2> {
-    use lyon_tessellation::geom::point;
-    use lyon_tessellation::path::Path;
-    use lyon_tessellation::{BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers};
-    let mut b = Path::builder();
-    for r in rings {
-        b.begin(point(r[0].x, r[0].y));
-        for q in &r[1..] {
-            b.line_to(point(q.x, q.y));
-        }
-        b.end(true);
-    }
-    let path = b.build();
-    let mut buf: VertexBuffers<Vec2, u32> = VertexBuffers::new();
-    let ok = FillTessellator::new().tessellate_path(&path, &FillOptions::tolerance(0.05).with_fill_rule(FillRule::EvenOdd), &mut BuffersBuilder::new(&mut buf, |v: FillVertex| Vec2::new(v.position().x, v.position().y)));
-    if ok.is_err() {
-        return Vec::new();
-    }
-    buf.indices.iter().map(|&i| buf.vertices[i as usize]).collect()
-}
-
 /// Woods where trees stand close: a field of the crowns, its dense parts.
 fn woods_of(part: &mut Part, lo: Vec2, ts: f32) {
     if part.trees.len() < 8 {
@@ -956,18 +778,6 @@ mod tests {
         let mut out = Vec::new();
         iso_fill(&[1.0; 9], 3, 3, 2.0, Vec2::ZERO, 0.5, &mut out);
         assert_eq!(out.len(), 12);
-    }
-
-    #[test]
-    fn a_square_of_paving_comes_back_as_one_ring_and_its_fill() {
-        // a 10 x 10 m square of node values over the level
-        let (n, cell) = (31usize, 0.5f32);
-        let v: Vec<f32> = (0..n * n).map(|k| { let (x, y) = (k % n, k / n); if (5..=25).contains(&x) && (5..=25).contains(&y) { 1.0 } else { 0.0 } }).collect();
-        let rings = iso_rings(&v, n, n, cell, Vec2::ZERO, 0.5);
-        assert_eq!(rings.len(), 1);
-        let tris = fill_rings(&rings);
-        let area: f32 = tris.chunks_exact(3).map(|t| (t[1] - t[0]).perp_dot(t[2] - t[0]).abs() * 0.5).sum();
-        assert!((area - 10.5 * 10.5).abs() < 2.0, "{area}");
     }
 
     #[test]

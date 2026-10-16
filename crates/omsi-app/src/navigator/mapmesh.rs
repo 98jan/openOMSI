@@ -182,26 +182,14 @@ impl MapData {
         }
     }
 
-    /// The paved surfaces: the yards' and car parks' outline and surface, then the
-    /// carriageways' (one smooth surface each, `omsi_scene::mapgen::smooth_paving`): the outline
-    /// a fine line along the edge, the surface over its inner half.
+    /// The paved surfaces as the splines and the models lay them, flat: the yards' and car
+    /// parks', then the carriageways'.
     pub fn build_paved(&self, p: &mut Painter, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette, _look: GroundLook) {
         let k = self.shift(anchor);
         let c = (centre - self.layers.origin).as_vec2();
-        let r = radius as f32;
         let v = |q: Vec2| (q + k).extend(0.0);
-        let cells: Vec<&Cell> = self.cells_near(c, r).collect();
-        for (class, edge_class, fill, edge) in [(layers::PAVE_AREA, layers::LINE_AREA_EDGE, pal.area, pal.area_edge), (layers::PAVE_ROAD, layers::LINE_ROAD_EDGE, pal.road, pal.road_edge)] {
-            for &(lo, hi, i) in &self.lines {
-                if lo.x > c.x + r || hi.x < c.x - r || lo.y > c.y + r || hi.y < c.y - r {
-                    continue;
-                }
-                let l = &self.layers.lines[i];
-                if l.class == edge_class {
-                    let pts: Vec<Vec3> = l.points.iter().map(|q| v(*q)).collect();
-                    p.ribbon(&pts, 0.5, 2.2, edge, false);
-                }
-            }
+        let cells: Vec<&Cell> = self.cells_near(c, radius as f32).collect();
+        for (class, fill) in [(layers::PAVE_AREA, pal.area), (layers::PAVE_ROAD, pal.road)] {
             for cell in &cells {
                 for t in cell.paved[class].chunks_exact(3) {
                     p.world_poly(&[v(t[0]), v(t[1]), v(t[2])], fill);

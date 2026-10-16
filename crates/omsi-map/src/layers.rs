@@ -71,7 +71,7 @@ pub struct Layers {
 
 const MAGIC: &[u8; 4] = b"OMML";
 /// Bumped whenever the generator changes what it makes: an older cache is read again.
-pub const VERSION: u32 = 9;
+pub const VERSION: u32 = 10;
 
 impl Layers {
     pub fn empty(origin: DVec2) -> Layers {
