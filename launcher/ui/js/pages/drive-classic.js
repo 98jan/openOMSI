@@ -1,9 +1,10 @@
 import { html, useState, useEffect, useRef } from '../../vendor/preact-htm.js';
-import { useStore, set, remembered, remember } from '../store.js';
+import { useStore, set, remembered, remember, toast } from '../store.js';
 import { t, hhmm, longDate, language } from '../i18n.js';
 import { Icon } from '../icons.js';
-import { Button, Notice } from '../ui.js';
+import { Button, Notice, useConfirm } from '../ui.js';
 import { choose, curMap, curBus, curLine, curTour, pickedTrip, start, loadSituations, weatherName, mapName, noServerBus, askJoined } from '../data.js';
+import { call } from '../api.js';
 import { BusPreview } from '../preview.js';
 import { BusList, BusOptions, withoutMaker } from './bus-list.js';
 import { DayStep } from './drive-day.js';
@@ -42,7 +43,7 @@ export function ClassicDrive() {
   </div>`;
 }
 
-function BusStage() {
+export function BusStage() {
   const s = useStore();
   const c = s.choice;
   const v = curBus();
@@ -56,7 +57,7 @@ function BusStage() {
   </div>`;
 }
 
-function StartBar({ step, go }) {
+export function StartBar({ step, go }) {
   const s = useStore();
   const c = s.choice;
   const m = curMap();
@@ -101,6 +102,7 @@ function StartBar({ step, go }) {
 function Continue({ go, busy }) {
   const s = useStore();
   const [open, setOpen] = useState(false);
+  const [ask, dialog] = useConfirm();
   const box = useRef();
   useEffect(() => {
     loadSituations();
@@ -112,13 +114,25 @@ function Continue({ go, busy }) {
     return () => document.removeEventListener('mousedown', out);
   }, [open]);
   if (!s.situations?.length || s.choice.lan_mode === 'join') return null;
+  const remove = async (e, x) => {
+    e.stopPropagation();
+    if (!(await ask({ title: 'Delete the save', text: t('Delete "{name}"? It cannot be brought back.', { name: t(x.name) }), yes: 'Delete', danger: true }))) return;
+    try {
+      await call('delete_situation', { map: s.choice.map, file: x.file });
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    loadSituations();
+  };
   return html`<div class="menu-box" ref=${box}>
     <${Button} big icon="history" label="Continue" onClick=${() => setOpen(!open)} />
     ${open && html`<div class="menu up">
-      ${s.situations.slice(0, 6).map((x) => html`<button type="button" class="menu-item" disabled=${busy} onClick=${() => (setOpen(false), go({ situation: x.file }))}>
+      ${s.situations.map((x) => html`<div class="menu-item" role="button" tabindex="0" aria-disabled=${busy} onClick=${() => !busy && (setOpen(false), go({ situation: x.file }))} onKeyDown=${(e) => e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ') && !busy && (e.preventDefault(), setOpen(false), go({ situation: x.file }))}>
         <${Icon} name="play" size=${16} />
         <span class="grow"><b class="ellipsis">${t(x.name)}</b><span class="muted small">${new Date(x.saved * 1000).toLocaleString(language())}</span></span>
-      </button>`)}
+        <${Button} kind="ghost" small icon="trash" title="Delete" onClick=${(e) => remove(e, x)} />
+      </div>`)}
     </div>`}
+    ${dialog}
   </div>`;
 }
