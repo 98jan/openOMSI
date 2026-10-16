@@ -504,6 +504,7 @@ pub fn generate(root: &Path, map_dir: &Path, ground_textures: &[omsi_map::global
         out.lines.extend(p.lines);
     }
     dedupe_buildings(&mut out.buildings);
+    out.paved[layers::PAVE_INNER] = inner_streets(&out);
     log::info!(
         "map layers: {} tiles, {} houses, {} trees, {} paved triangles, {} land triangles, {} lines, {} object types, {:.1} s",
         out.tiles.len(),
@@ -516,6 +517,148 @@ pub fn generate(root: &Path, map_dir: &Path, ground_textures: &[omsi_map::global
         t0.elapsed().as_secs_f64()
     );
     out
+}
+
+/// How wide the streets' dark rim is (m): a pavement's breadth.
+const RIM: f32 = 2.5;
+/// Cell of the streets' distance field (m).
+const RIM_CELL: f32 = 0.25;
+
+/// Where the streets (carriageways and pavements, all pieces together) lie more than `RIM`
+/// from their edge: the bright middle drawn over the dark street, so that the street shows a
+/// dark rim. The distance is to the edge of all the paving at once - a spline's end against a
+/// junction's model is no edge, and where their outlines differ the rim runs on unbroken; the
+/// streets' own faces are left as they are.
+fn inner_streets(l: &Layers) -> Vec<Vec2> {
+    use rayon::prelude::*;
+    const B: f32 = 20.0;
+    let key = |p: Vec2| ((p.x / B).floor() as i32, (p.y / B).floor() as i32);
+    let tris: Vec<[Vec2; 3]> = [layers::PAVE_ROAD, layers::PAVE_FOOT].iter().flat_map(|&c| l.paved[c].chunks_exact(3).map(|t| [t[0], t[1], t[2]])).filter(|t| (t[1] - t[0]).perp_dot(t[2] - t[0]).abs() > 1e-4).collect();
+    let mut grid: HashMap<(i32, i32), Vec<u32>> = HashMap::new();
+    for (i, t) in tris.iter().enumerate() {
+        let (a, b) = (key(t[0].min(t[1]).min(t[2])), key(t[0].max(t[1]).max(t[2])));
+        if (b.0 - a.0) as i64 * (b.1 - a.1) as i64 > 2500 {
+            continue;
+        }
+        for y in a.1..=b.1 {
+            for x in a.0..=b.0 {
+                grid.entry((x, y)).or_default().push(i as u32);
+            }
+        }
+    }
+    let margin = ((RIM + 1.0) / RIM_CELL).ceil() as usize;
+    l.tiles
+        .par_iter()
+        .flat_map_iter(|t| {
+            let (tlo, thi) = (Vec2::new(t[0], t[1]), Vec2::new(t[2], t[3]));
+            let core = ((thi.x - tlo.x) / RIM_CELL).round() as usize;
+            let n = core + 1 + 2 * margin;
+            let org = tlo - Vec2::splat(margin as f32 * RIM_CELL);
+            // the nodes on the streets (a little generous: pieces meet without a hairline)
+            let mut inside = vec![false; n * n];
+            let mut seen = hashbrown::HashSet::new();
+            let (ka, kb) = (key(org), key(org + Vec2::splat(n as f32 * RIM_CELL)));
+            for gy in ka.1..=kb.1 {
+                for gx in ka.0..=kb.0 {
+                    for &i in grid.get(&(gx, gy)).map(|v| v.as_slice()).unwrap_or(&[]) {
+                        if !seen.insert(i) {
+                            continue;
+                        }
+                        let t = &tris[i as usize];
+                        let sg = (t[1] - t[0]).perp_dot(t[2] - t[0]).signum();
+                        let (lo, hi) = (t[0].min(t[1]).min(t[2]) - org, t[0].max(t[1]).max(t[2]) - org);
+                        let x0 = ((lo.x / RIM_CELL).floor().max(0.0) as usize).min(n);
+                        let y0 = ((lo.y / RIM_CELL).floor().max(0.0) as usize).min(n);
+                        let x1 = ((hi.x / RIM_CELL).ceil().max(0.0) as usize).min(n - 1);
+                        let y1 = ((hi.y / RIM_CELL).ceil().max(0.0) as usize).min(n - 1);
+                        for y in y0..=y1 {
+                            for x in x0..=x1 {
+                                let q = org + Vec2::new(x as f32, y as f32) * RIM_CELL;
+                                let e = |u: Vec2, v: Vec2| (v - u).perp_dot(q - u) * sg / (v - u).length().max(1e-4) >= -0.15;
+                                if e(t[0], t[1]) && e(t[1], t[2]) && e(t[2], t[0]) {
+                                    inside[y * n + x] = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if !inside.iter().any(|b| *b) {
+                return Vec::new().into_iter();
+            }
+            let d = distance_to_outside(&inside, n);
+            // (the tile's own nodes: the neighbours' parts are theirs)
+            let m = core + 1;
+            let mut v = vec![0.0f32; m * m];
+            for y in 0..m {
+                for x in 0..m {
+                    v[y * m + x] = d[(y + margin) * n + x + margin];
+                }
+            }
+            let mut out = Vec::new();
+            iso_fill(&v, m, m, RIM_CELL, tlo, RIM, &mut out);
+            out.into_iter()
+        })
+        .collect()
+}
+
+/// Every node's distance (m, `RIM_CELL` a node) to the nearest node off the streets (exact,
+/// Felzenszwalb and Huttenlocher's two passes of lower parabola envelopes).
+fn distance_to_outside(inside: &[bool], n: usize) -> Vec<f32> {
+    const INF: f32 = 1e12;
+    let mut f: Vec<f32> = inside.iter().map(|&i| if i { INF } else { 0.0 }).collect();
+    let pass = |line: &mut [f32]| {
+        let len = line.len();
+        let mut v = vec![0usize; len];
+        let mut z = vec![0.0f32; len + 1];
+        let mut k = 0usize;
+        z[0] = f32::MIN;
+        z[1] = f32::MAX;
+        for q in 1..len {
+            loop {
+                let p = v[k];
+                let s = ((line[q] + (q * q) as f32) - (line[p] + (p * p) as f32)) / (2.0 * (q - p) as f32);
+                if s <= z[k] && k > 0 {
+                    k -= 1;
+                    continue;
+                }
+                if s <= z[k] {
+                    v[0] = q;
+                    z[0] = f32::MIN;
+                    z[1] = f32::MAX;
+                    break;
+                }
+                k += 1;
+                v[k] = q;
+                z[k] = s;
+                z[k + 1] = f32::MAX;
+                break;
+            }
+        }
+        let src = line.to_vec();
+        k = 0;
+        for q in 0..len {
+            while z[k + 1] < q as f32 {
+                k += 1;
+            }
+            let p = v[k];
+            line[q] = (q as f32 - p as f32).powi(2) + src[p];
+        }
+    };
+    for y in 0..n {
+        pass(&mut f[y * n..(y + 1) * n]);
+    }
+    let mut col = vec![0.0f32; n];
+    for x in 0..n {
+        for y in 0..n {
+            col[y] = f[y * n + x];
+        }
+        pass(&mut col);
+        for y in 0..n {
+            f[y * n + x] = col[y];
+        }
+    }
+    f.into_iter().map(|d| d.min(INF).sqrt() * RIM_CELL).collect()
 }
 
 /// Two copies of one house in one place (a map that placed it twice, or a chrono patch): one.
@@ -770,6 +913,17 @@ mod tests {
     #[test]
     fn ground_textures_are_told_by_colour_where_the_name_says_nothing() {
         assert_eq!(class_by_color(Vec3::new(0.35, 0.5, 0.2)), layers::LAND_GRASS);
+    }
+
+    #[test]
+    fn the_distance_to_the_outside_is_exact() {
+        // a 9 x 9 node square on the streets in a 13 x 13 grid
+        let n = 13;
+        let inside: Vec<bool> = (0..n * n).map(|k| (2..=10).contains(&(k % n)) && (2..=10).contains(&(k / n))).collect();
+        let d = distance_to_outside(&inside, n);
+        assert_eq!(d[6 * n + 6], 5.0 * RIM_CELL);
+        assert_eq!(d[6 * n + 2], RIM_CELL);
+        assert_eq!(d[0], 0.0);
         assert_eq!(class_by_color(Vec3::new(0.5, 0.5, 0.5)), layers::LAND_PAVED);
         assert_eq!(class_by_color(Vec3::new(0.45, 0.33, 0.2)), layers::LAND_FIELD);
     }

@@ -28,7 +28,9 @@ pub const PAVE_FOOT: usize = 1;
 pub const PAVE_AREA: usize = 2;
 /// A spline's or a junction's grass strip or island.
 pub const PAVE_GREEN: usize = 3;
-pub const PAVE_CLASSES: usize = 4;
+/// The streets' bright middle: more than a pavement's breadth from their edge.
+pub const PAVE_INNER: usize = 4;
+pub const PAVE_CLASSES: usize = 5;
 
 /// The lines: a railway, a tram track (in a street or on its own bed), a river or stream.
 pub const LINE_RAIL: u8 = 0;
@@ -73,7 +75,7 @@ pub struct Layers {
 
 const MAGIC: &[u8; 4] = b"OMML";
 /// Bumped whenever the generator changes what it makes: an older cache is read again.
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 13;
 
 impl Layers {
     pub fn empty(origin: DVec2) -> Layers {

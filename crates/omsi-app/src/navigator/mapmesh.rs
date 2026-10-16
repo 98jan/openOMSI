@@ -25,8 +25,6 @@ const PAVED_CELL: f32 = 2.0;
 struct Cell {
     land: Vec<Vec<Vec2>>,
     paved: Vec<Vec<Vec2>>,
-    /// The band inside the streets' outer edge (triangles): see `rims`.
-    rim: Vec<Vec2>,
     buildings: Vec<u32>,
     trees: Vec<u32>,
 }
@@ -35,126 +33,6 @@ const CELL: f32 = 200.0;
 
 fn cell_of(p: Vec2) -> (i32, i32) {
     ((p.x / CELL).floor() as i32, (p.y / CELL).floor() as i32)
-}
-
-/// How wide the streets' dark rim is (m): a pavement's breadth.
-const RIM: f32 = 2.5;
-
-/// The streets (carriageways and pavements as one surface) drawn bright with a dark band inside
-/// their outer edge, as a map draws a street: the band's triangles. An edge is outer where no
-/// paving lies just beyond it - a spline's end against a junction's model is no edge, though
-/// their faces do not share it.
-fn rims(layers: &Layers) -> Vec<Vec2> {
-    const B: f32 = 10.0;
-    let key = |p: Vec2| ((p.x / B).floor() as i32, (p.y / B).floor() as i32);
-    // every paved face, found by the 10 m buckets it touches
-    let tris: Vec<[Vec2; 3]> = [layers::PAVE_ROAD, layers::PAVE_FOOT, layers::PAVE_AREA].iter().flat_map(|&c| layers.paved[c].chunks_exact(3).map(|t| [t[0], t[1], t[2]])).filter(|t| (t[1] - t[0]).perp_dot(t[2] - t[0]).abs() > 1e-4).collect();
-    let mut grid: HashMap<(i32, i32), Vec<u32>> = HashMap::new();
-    for (i, t) in tris.iter().enumerate() {
-        let (lo, hi) = (key(t[0].min(t[1]).min(t[2])), key(t[0].max(t[1]).max(t[2])));
-        if (hi.0 - lo.0) as i64 * (hi.1 - lo.1) as i64 > 400 {
-            continue;
-        }
-        for y in lo.1..=hi.1 {
-            for x in lo.0..=hi.0 {
-                grid.entry((x, y)).or_default().push(i as u32);
-            }
-        }
-    }
-    let paved_at = |q: Vec2| {
-        grid.get(&key(q)).is_some_and(|v| {
-            v.iter().any(|&i| {
-                let t = &tris[i as usize];
-                let s = (t[1] - t[0]).perp_dot(t[2] - t[0]).signum();
-                let e = |u: Vec2, w: Vec2| (w - u).perp_dot(q - u) * s >= 0.0;
-                e(t[0], t[1]) && e(t[1], t[2]) && e(t[2], t[0])
-            })
-        })
-    };
-    // the edges of the streets' faces no other face shares
-    let q = |p: Vec2| ((p.x * 100.0).round() as i64, (p.y * 100.0).round() as i64);
-    let mut edges: HashMap<((i64, i64), (i64, i64)), (Vec2, Vec2, f32)> = HashMap::new();
-    for c in [layers::PAVE_ROAD, layers::PAVE_FOOT] {
-        for t in layers.paved[c].chunks_exact(3) {
-            let s = (t[1] - t[0]).perp_dot(t[2] - t[0]);
-            if s.abs() < 1e-4 {
-                continue;
-            }
-            for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
-                let (ka, kb) = (q(a), q(b));
-                let k = if ka < kb { (ka, kb) } else { (kb, ka) };
-                if edges.remove(&k).is_none() {
-                    edges.insert(k, (a, b, s.signum()));
-                }
-            }
-        }
-    }
-    // the outer pieces, each with the streets on its left, in pieces of at most a metre (an
-    // edge may be outer for a part of it)
-    let mut next: HashMap<(i64, i64), Vec<(Vec2, Vec2)>> = HashMap::new();
-    for (a, b, s) in edges.into_values() {
-        let (a, b) = if s > 0.0 { (a, b) } else { (b, a) };
-        let len = (b - a).length();
-        if len < 0.01 {
-            continue;
-        }
-        let inward = Vec2::new(-(b - a).y, (b - a).x) / len;
-        let k = len.ceil() as usize;
-        for i in 0..k {
-            let (p0, p1) = (a.lerp(b, i as f32 / k as f32), a.lerp(b, (i + 1) as f32 / k as f32));
-            if !paved_at((p0 + p1) * 0.5 - inward * 0.25) {
-                next.entry(q(p0)).or_default().push((p0, p1));
-            }
-        }
-    }
-    // joined into lines, and a band laid inside each with mitred corners (pieces each with its
-    // own band fanned apart on every bend)
-    let mut out = Vec::new();
-    while let Some(&start) = next.keys().next() {
-        let mut pts = Vec::new();
-        let mut cur = start;
-        while let Some(v) = next.get_mut(&cur) {
-            let (p0, p1) = v.pop().unwrap();
-            if v.is_empty() {
-                next.remove(&cur);
-            }
-            if pts.is_empty() {
-                pts.push(p0);
-            }
-            pts.push(p1);
-            cur = q(p1);
-        }
-        let closed = pts.len() > 2 && q(pts[0]) == q(*pts.last().unwrap());
-        let m = pts.len();
-        if m < 2 {
-            continue;
-        }
-        let normal = |i: usize| {
-            let d = (pts[i + 1] - pts[i]).normalize_or_zero();
-            Vec2::new(-d.y, d.x)
-        };
-        let offs: Vec<Vec2> = (0..m)
-            .map(|i| {
-                let n0 = if i > 0 { Some(normal(i - 1)) } else if closed { Some(normal(m - 2)) } else { None };
-                let n1 = if i + 1 < m { Some(normal(i)) } else if closed { Some(normal(0)) } else { None };
-                match (n0, n1) {
-                    (Some(a), Some(b)) => {
-                        let mid = (a + b).normalize_or(b);
-                        mid / mid.dot(b).max(0.4)
-                    }
-                    (Some(a), None) => a,
-                    (None, Some(b)) => b,
-                    _ => Vec2::ZERO,
-                }
-            })
-            .collect();
-        for i in 0..m - 1 {
-            let (p0, p1) = (pts[i], pts[i + 1]);
-            let (p2, p3) = (p1 + offs[i + 1] * RIM, p0 + offs[i] * RIM);
-            out.extend([p0, p1, p2, p0, p2, p3]);
-        }
-    }
-    out
 }
 
 /// What to draw of the ground.
@@ -225,10 +103,6 @@ impl MapData {
                     }
                 }
             }
-        }
-        for t in rims(&layers).chunks_exact(3) {
-            let c = cell_of((t[0] + t[1] + t[2]) / 3.0);
-            cells.entry(c).or_insert_with(new_cell).rim.extend_from_slice(t);
         }
         MapData { layers, cells, lines, paved_cells }
     }
@@ -309,25 +183,20 @@ impl MapData {
     }
 
     /// The splines' and the models' ground as they lay it, pressed flat: grass strips, yards and
-    /// car parks, then the streets - carriageways and pavements one bright surface with a dark
-    /// band inside its outer edge (`rims`).
+    /// car parks, then the streets - carriageways and pavements one dark surface, their middle
+    /// (`layers::PAVE_INNER`) bright over it, so that a dark rim runs along their edge.
     pub fn build_paved(&self, p: &mut Painter, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette, _look: GroundLook) {
         let k = self.shift(anchor);
         let c = (centre - self.layers.origin).as_vec2();
         let v = |q: Vec2| (q + k).extend(0.0);
         let cells: Vec<&Cell> = self.cells_near(c, radius as f32).collect();
-        for (classes, fill) in [(&[layers::PAVE_GREEN][..], pal.grass), (&[layers::PAVE_AREA][..], pal.area), (&[layers::PAVE_FOOT, layers::PAVE_ROAD][..], pal.road)] {
+        for (classes, fill) in [(&[layers::PAVE_GREEN][..], pal.grass), (&[layers::PAVE_AREA][..], pal.area), (&[layers::PAVE_FOOT, layers::PAVE_ROAD][..], pal.foot), (&[layers::PAVE_INNER][..], pal.road)] {
             for cell in &cells {
                 for &class in classes {
                     for t in cell.paved[class].chunks_exact(3) {
                         p.world_poly(&[v(t[0]), v(t[1]), v(t[2])], fill);
                     }
                 }
-            }
-        }
-        for cell in &cells {
-            for t in cell.rim.chunks_exact(3) {
-                p.world_poly(&[v(t[0]), v(t[1]), v(t[2])], pal.foot);
             }
         }
     }
