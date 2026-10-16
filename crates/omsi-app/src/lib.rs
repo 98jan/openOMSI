@@ -46,7 +46,7 @@ use omsi_scene::camera_arm;
 use omsi_vehicle::cam_approach;
 use omsi_career::career;
 use omsi_input::describe;
-mod editor;
+pub(crate) use omsi_scene::editor;
 mod duty_book;
 mod game_lists;
 mod game_panels;
