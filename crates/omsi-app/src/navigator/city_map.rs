@@ -5,7 +5,7 @@
 //! vehicle of the traffic; and the navigator panel's placement, dragging and sizing.
 
 use super::mapmesh::GroundLook;
-use super::panel::{car_dot, lifted, puck, solid_and_ghost, stop_pin};
+use super::panel::{car_dot, puck, solid_and_ghost, stop_pin};
 use super::style::{self, Palette};
 use super::*;
 
@@ -564,7 +564,8 @@ impl Navigator {
                 }
             }
         }
-        let dots_solid = lifted(&dots.verts, 0.6);
+        // (over the route in their order, no depth: see the small map)
+        let dots_solid = dots.verts;
         // marks, names, cards
         let mut ui = Painter::new();
         let n_stops = f.stops.len();
@@ -779,8 +780,9 @@ impl Navigator {
             Draw { buffer: 14, range: 0..if stand { shadow_n } else { 0 }, layer: 2, texture: 0 },
             Draw { buffer: 10, range: 0..if stand { solid_n } else { 0 }, layer: 3, texture: 0 },
             Draw { buffer: 11, range: 0..if stand { route_n } else { 0 }, layer: 1, texture: 0 },
-            Draw { buffer: 4, range: 0..route_n, layer: 4, texture: 0 },
-            Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 4, texture: 0 },
+            // (flat from above the route needs no depth: from far it fought with itself)
+            Draw { buffer: 4, range: 0..route_n, layer: if stand { 4 } else { 1 }, texture: 0 },
+            Draw { buffer: 5, range: n_bg..n_bg + n_dots, layer: 1, texture: 0 },
             Draw { buffer: 5, range: n_ui..all.len() as u32, layer: 0, texture: 0 },
         ];
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("city map") });

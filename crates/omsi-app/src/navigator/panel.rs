@@ -160,8 +160,10 @@ impl Navigator {
                 }
             }
         }
-        // (over the route: the traffic stands on it, it is not painted over)
-        let dy_solid = lifted(&dy.verts, 0.6);
+        // (drawn over the route and the houses in their order, with no depth: a vehicle's edge,
+        // body and windscreen lie one on the other, and at a depth of their own they fought
+        // over it from far)
+        let dy_solid = dy.verts;
 
         let mut ui = Painter::new();
         // the far end of the map: a haze into the land's colour
@@ -217,7 +219,7 @@ impl Navigator {
             Draw { buffer: 8, range: 0..if three { solid_n } else { 0 }, layer: 3, texture: 0 },
             Draw { buffer: 9, range: 0..if three && solid_n > 0 { route_n } else { 0 }, layer: 1, texture: 0 },
             Draw { buffer: 1, range: 0..route_n, layer: 4, texture: 0 },
-            Draw { buffer: 2, range: n_bg..n_bg + n_dy, layer: 4, texture: 0 },
+            Draw { buffer: 2, range: n_bg..n_bg + n_dy, layer: 1, texture: 0 },
             Draw { buffer: 2, range: n_ui_start..all.len() as u32, layer: 0, texture: 0 },
         ];
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("navigator") });
@@ -504,10 +506,3 @@ pub(super) fn car_dot(p: &mut Painter, at: Vec3, light: bool) {
     p.world_disc(at, 1.35, 3.0, fill);
 }
 
-/// The vertices standing `dz` metres higher at their own depth (drawn over the route), each
-/// triangle a little over the one before it: a vehicle's edge, body and windscreen lie one on
-/// the other, and at one height they fought over the same depth (they flickered).
-pub(super) fn lifted(v: &[Vertex], dz: f32) -> Vec<Vertex> {
-    let n = (v.len() / 3).max(1) as f32;
-    v.iter().enumerate().map(|(i, x)| Vertex { mode: [2.0, x.mode[1]], pos: [x.pos[0], x.pos[1], x.pos[2] + dz + 0.5 * (i / 3) as f32 / n], ..*x }).collect()
-}
