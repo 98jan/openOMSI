@@ -48,10 +48,11 @@ pub(crate) fn wants(path: &str) -> bool {
 /// The answer to a whole request (head and body as read), from the handler - or a 404 when
 /// there is none or it does not know the page.
 pub(crate) fn answer(request: &[u8], peer: Option<SocketAddr>) -> ApiResponse {
-    let text = String::from_utf8_lossy(request);
-    let (head, _) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
-    let head_len = head.len() + 4;
-    let body = request.get(head_len.min(request.len())..).unwrap_or(&[]);
+    // (the head's end found in the bytes: an offset into the lossy text is not one into them)
+    let head_end = request.windows(4).position(|w| w == b"\r\n\r\n").unwrap_or(request.len());
+    let text = String::from_utf8_lossy(&request[..head_end]);
+    let head: &str = &text;
+    let body = request.get((head_end + 4).min(request.len())..).unwrap_or(&[]);
     let (first, headers) = head.split_once("\r\n").unwrap_or((head, ""));
     let mut words = first.split_whitespace();
     let method = words.next().unwrap_or("");

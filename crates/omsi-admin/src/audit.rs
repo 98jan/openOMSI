@@ -1,7 +1,8 @@
 //! The audit log: who did what to whom, when, and what became of it - the logins, every
 //! operation, whatever way it came. The last entries are kept in memory for the panels; with a
 //! file (`admin-audit.log` beside `server.cfg`) each one is also a JSON line there, the file
-//! put aside as `.1` when it passes its size (so at most twice that on the disk). No password
+//! put aside as `.1` when it passes its size, the `.1` before as `.2` (so at most three times
+//! that on the disk), readable by the server's own account only. No password
 //! or token is ever given to it, and its texts are cleaned and cut like an operation's.
 
 use crate::op::clean;
@@ -62,13 +63,23 @@ impl Audit {
         let Some(path) = self.file.as_ref() else { return };
         let Ok(line) = serde_json::to_string(e) else { return };
         if std::fs::metadata(path).map(|m| m.len() + line.len() as u64 > self.max_bytes).unwrap_or(false) {
-            let mut old = path.clone().into_os_string();
-            old.push(".1");
-            if let Err(err) = std::fs::rename(path, &old) {
+            // (two put aside: `.1` the last, `.2` the one before)
+            let aside = |n: u8| {
+                let mut p = path.clone().into_os_string();
+                p.push(format!(".{n}"));
+                PathBuf::from(p)
+            };
+            let _ = std::fs::rename(aside(1), aside(2));
+            if let Err(err) = std::fs::rename(path, aside(1)) {
                 log::warn!("admin audit: {} not put aside: {err}", path.display());
             }
         }
-        let r = std::fs::OpenOptions::new().create(true).append(true).open(path).and_then(|mut f| writeln!(f, "{line}"));
+        let mut open = std::fs::OpenOptions::new();
+        open.create(true).append(true);
+        // (the records name the admins' addresses: for the server's own account only)
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut open, 0o600);
+        let r = open.open(path).and_then(|mut f| writeln!(f, "{line}"));
         if let Err(err) = r {
             log::warn!("admin audit: not written to {}: {err}", path.display());
         }
@@ -120,7 +131,11 @@ mod tests {
         }
         let now = std::fs::metadata(&path).unwrap().len();
         let old = std::fs::metadata(dir.join("admin-audit.log.1")).unwrap().len();
-        assert!(now <= 4096 && old <= 4096, "{now} {old}");
+        let older = std::fs::metadata(dir.join("admin-audit.log.2")).unwrap().len();
+        assert!(now <= 4096 && old <= 4096 && older <= 4096, "{now} {old} {older}");
+        // (the server's own account alone reads who did what)
+        #[cfg(unix)]
+        assert_eq!(std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&path).unwrap().permissions()) & 0o777, 0o600);
         // each line a JSON object, nothing secret in it
         let text = std::fs::read_to_string(&path).unwrap();
         for line in text.lines() {

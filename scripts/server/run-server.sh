@@ -133,9 +133,9 @@ if [ "$first" = 1 ]; then
   done
   while :; do
     if [ -n "$(cfg_get admin_password)" ]; then
-      ask "Admin password (8+ characters; Enter keeps the one set; - for none): " "Senha de admin (8+ caracteres; Enter mantém a atual; - para nenhuma): "
+      ask "Admin password (12+ characters; Enter keeps the one set; - for none): " "Senha de admin (12+ caracteres; Enter mantém a atual; - para nenhuma): "
     else
-      ask "Admin password (8+ characters; Enter for none): " "Senha de admin (8+ caracteres; Enter para nenhuma): "
+      ask "Admin password (12+ characters; Enter for none): " "Senha de admin (12+ caracteres; Enter para nenhuma): "
     fi
     if [ -t 0 ]; then stty -echo; fi
     IFS= read -r v || v=""
@@ -145,8 +145,8 @@ if [ "$first" = 1 ]; then
       "") break ;;
       -) cfg_set admin_password ""; break ;;
     esac
-    if [ "$(printf '%s' "$v" | wc -m)" -lt 8 ]; then
-      say "At least 8 characters." "Pelo menos 8 caracteres."
+    if [ "$(printf '%s' "$v" | wc -m)" -lt 12 ]; then
+      say "At least 12 characters." "Pelo menos 12 caracteres."
     elif [ "$v" != "$(printf '%s' "$v" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')" ]; then
       say "No spaces at the start or the end (server.cfg would cut them)." "Sem espaço no começo ou no fim (o server.cfg cortaria)."
     else

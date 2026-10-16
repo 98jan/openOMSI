@@ -68,9 +68,10 @@ pub(crate) fn read_head(s: &mut TcpStream, request: &mut Vec<u8>, deadline: Inst
 /// The rest of a request's body, up to its `Content-Length` (4 KiB at most), before
 /// `deadline`.
 pub(crate) fn read_body(s: &mut TcpStream, request: &mut Vec<u8>, deadline: Instant) {
-    let text = String::from_utf8_lossy(request).to_string();
-    let Some(head_end) = text.find("\r\n\r\n") else { return };
-    let want = header(&text[..head_end], "content-length").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0).min(4096);
+    // (the head's end found in the bytes: an offset into the lossy text is not one into them)
+    let Some(head_end) = request.windows(4).position(|w| w == b"\r\n\r\n") else { return };
+    let text = String::from_utf8_lossy(&request[..head_end]).to_string();
+    let want = header(&text, "content-length").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0).min(4096);
     let mut buf = [0u8; 1024];
     while request.len() < head_end + 4 + want && wait_until(s, deadline) {
         match s.read(&mut buf) {

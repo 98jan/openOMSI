@@ -22,7 +22,7 @@ icon the players' list shows.
 on Linux, both beside `openomsi` in the server's zip): the first time it asks for the OMSI 2
 folder (and checks it is a complete installation before going on), then for the main
 settings of `server.cfg` - name, players at most, the UDP and web ports, the tunnel, the admin
-password (typed hidden; 8 characters at least) - with what the file has in brackets, kept
+password (typed hidden; 12 characters at least) - with what the file has in brackets, kept
 with Enter. Every time, it lists the installed maps by number (the last one marked, taken
 with Enter) and starts the server on the one picked, without changing `map` in `server.cfg`;
 the output goes to the window and to `server.log`, and when the server stops on an error it
@@ -140,8 +140,11 @@ addresses in the code (routers that cannot be punched through) joins through the
 
 ## Administration
 
-A server administers itself with passwords of `server.cfg`, at least 8 characters each (a
-shorter one lets nobody in, and the log says so):
+A server administers itself with passwords of `server.cfg`, at least 12 characters each (a
+shorter one lets nobody in, and the log says so - a server set up before with 8 to 11
+characters needs a longer one now). The game's login goes over the session unencrypted: its
+challenge, salt and rounds can be overheard, and a short password could then be guessed
+offline, hence the length.
 
 | key | role | may |
 |---|---|---|
@@ -309,6 +312,10 @@ a browser).
   (the machine's own door) on.
 * On this machine the panel answers to its own names only (`127.0.0.1`, `localhost`, `[::1]`): a
   page of another site whose name was turned to this machine (DNS rebinding) is refused.
+* A reverse proxy on this machine must say it is one: it has to add `X-Forwarded-For` (or the
+  header of `admin_proxy_header`) to what it passes on. One that adds none, and sets `Host` to
+  `localhost`, hands every request from the internet over as this machine's own - the server
+  cannot tell them apart.
 * Mind that a tunnel working below HTTP (`ssh -R`, frp, playit, `ngrok tcp`) hands every client
   over as this machine, with no header to tell: with one in front of the web port, anybody who
   reaches it meets the login as if they were here (the passwords and their locks still hold).

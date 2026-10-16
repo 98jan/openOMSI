@@ -98,6 +98,9 @@ pub struct Auth {
     all_fails: Vec<Instant>,
     /// The locks already told of: whose (None: everybody's) and the wrong password that began it.
     told: HashMap<Option<IpAddr>, Instant>,
+    /// Each source's locks so far and until when the last holds: a source that keeps
+    /// guessing waits twice as long each time (an hour at most).
+    penalty: HashMap<IpAddr, (u32, Instant)>,
     counter: u64,
 }
 
@@ -113,6 +116,21 @@ fn same(a: &[u8; 32], b: &[u8; 32]) -> bool {
     a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// The source a wrong password counts against: an IPv6 address by its /64 (a v4 one mapped
+/// into v6 as the v4 one), an IPv4 one as it is.
+fn bucket(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let s = v6.segments();
+                IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        },
+        v4 => v4,
+    }
+}
+
 fn token() -> Option<String> {
     use ring::rand::SecureRandom;
     let mut b = [0u8; 32];
@@ -122,7 +140,7 @@ fn token() -> Option<String> {
 
 impl Auth {
     pub fn new(pw: Passwords, cfg: AuthCfg) -> Auth {
-        Auth { pw, cfg, sessions: HashMap::new(), fails: HashMap::new(), all_fails: Vec::new(), told: HashMap::new(), counter: 0 }
+        Auth { pw, cfg, sessions: HashMap::new(), fails: HashMap::new(), all_fails: Vec::new(), told: HashMap::new(), penalty: HashMap::new(), counter: 0 }
     }
 
     /// Whether any password is set.
@@ -163,6 +181,9 @@ impl Auth {
         if self.all_fails.len() >= self.cfg.overall && !direct {
             return wait(&self.all_fails, None);
         }
+        if let Some(&(_, until)) = self.penalty.get(&source).filter(|(_, until)| *until > now) {
+            return Some((until.saturating_duration_since(now).as_secs().max(1), Some(source), until));
+        }
         match self.fails.get(&source) {
             Some(v) if v.len() >= self.cfg.per_source => wait(v, Some(source)),
             _ => None,
@@ -179,7 +200,9 @@ impl Auth {
         if !self.enabled() {
             return Err(LoginError::Disabled);
         }
-        if let Some((wait, whose, began)) = self.locked(source, direct, now) {
+        // (the counts by source: an IPv6 address by its /64, which one client changes at will)
+        let key = bucket(source);
+        if let Some((wait, whose, began)) = self.locked(key, direct, now) {
             if self.told.len() >= 1024 {
                 self.told.clear();
             }
@@ -194,9 +217,21 @@ impl Auth {
                     self.fails.remove(&k);
                 }
             }
-            self.fails.entry(source).or_default().push(now);
+            let tries = self.fails.entry(key).or_default();
+            tries.push(now);
+            if tries.len() >= self.cfg.per_source {
+                // locked: for the window the first time, twice as long each time after
+                self.fails.remove(&key);
+                if self.penalty.len() >= 1024 && !self.penalty.contains_key(&key) {
+                    self.penalty.retain(|_, (_, until)| *until > now);
+                }
+                let strikes = self.penalty.get(&key).map_or(0, |p| p.0).saturating_add(1);
+                let hold = self.cfg.window.saturating_mul(1 << (strikes - 1).min(10)).min(Duration::from_secs(3600));
+                self.penalty.insert(key, (strikes, now + hold));
+            }
             return Err(LoginError::Wrong);
         };
+        self.penalty.remove(&key);
         self.prune(now);
         while self.sessions.len() >= self.cfg.max_sessions {
             // (the least used of this role or a lower one: a moderator's logins never end an
@@ -327,6 +362,40 @@ mod tests {
         a.set_passwords(Passwords { admin: "a new one!".into(), moderator: String::new() });
         assert!(a.check(&t, t0).is_none());
         assert_eq!(a.login("admin-secret", ip(1), t0), Err(LoginError::Wrong));
+    }
+
+    /// A source that keeps guessing waits twice as long each time (an hour at most), until it
+    /// gets in; an IPv6 client is one source for its whole /64.
+    #[test]
+    fn a_source_that_keeps_guessing_waits_longer() {
+        let mut a = auth();
+        let mut now = Instant::now();
+        let mut waits = Vec::new();
+        for _ in 0..8 {
+            for _ in 0..5 {
+                assert_eq!(a.login("nope", ip(1), now), Err(LoginError::Wrong));
+            }
+            match a.login("admin-secret", ip(1), now) {
+                Err(LoginError::Locked { wait, .. }) => waits.push(wait),
+                other => panic!("{other:?}"),
+            }
+            now += Duration::from_secs(waits.last().copied().unwrap_or(0) + 1);
+        }
+        assert_eq!(&waits[..4], [120, 240, 480, 960]);
+        assert!(waits.iter().all(|&w| w <= 3600) && waits.last() == Some(&3600), "{waits:?}");
+        // in at last: the count starts over
+        assert!(a.login("admin-secret", ip(1), now).is_ok());
+        for _ in 0..5 {
+            let _ = a.login("nope", ip(1), now);
+        }
+        assert!(matches!(a.login("admin-secret", ip(1), now), Err(LoginError::Locked { wait: 120, .. })));
+        // a /64 is one source, whatever address in it
+        let v6 = |n: u16| IpAddr::from([0x2001, 0xdb8, 1, 2, n, n, n, n]);
+        for n in 0..5 {
+            let _ = a.login("nope", v6(n), now);
+        }
+        assert!(matches!(a.login("admin-secret", v6(77), now), Err(LoginError::Locked { .. })));
+        assert!(a.login("admin-secret", IpAddr::from([0x2001, 0xdb8, 1, 3, 0, 0, 0, 1]), now).is_ok());
     }
 
     #[test]

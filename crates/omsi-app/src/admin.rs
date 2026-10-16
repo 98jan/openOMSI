@@ -156,7 +156,7 @@ fn host_action(app: &mut App, action: &str) {
         }
         (Action::Weather(_), _) => app.next_weather(),
         // (a dedicated server's: a game's own is its Options' passengers setting)
-        (Action::PassengerDensity(_), _) => app.service_msg = Some(("The passenger density is set in Options here".into(), 3.0)),
+        (Action::PassengerDensity(_), _) => app.service_msg = Some((omsi_ui::tr("The passenger density is set in Options here").into_owned(), 3.0)),
         (Action::Traffic(arg), _) if arg == "clear" => clear_ai_traffic(app),
         (Action::Traffic(_), _) => {
             if let Some(t) = app.session.traffic.as_mut() {

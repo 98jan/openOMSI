@@ -102,11 +102,11 @@ radius = 0
 
 # players who say \"/admin <password>\" in the chat get the Administration menu (Esc):
 # send players away, bring them, the clock, its speed, the weather, the traffic and the
-# passengers. The password needs at least 8 characters; empty: nobody
+# passengers. The password needs at least 12 characters; empty: nobody
 admin_password =
 # the same with this password: a moderator, who sees the players and sends them away, talks
 # to them, but leaves the clock, the weather, the traffic and the passengers alone
-# (at least 8 characters; empty: no moderators)
+# (at least 12 characters; empty: no moderators)
 moderator_password =
 
 # the web panel (http://127.0.0.1:<web_port>/admin/) and its API: local = from this machine
@@ -180,7 +180,7 @@ impl ServerCfg {
         let num = |k: &str, d: i64| kv.get(k).and_then(|v| v.parse::<i64>().ok()).unwrap_or(d);
         let dir = path.parent().unwrap_or(Path::new("."));
         let icon = std::fs::read(dir.join("server-icon.png")).ok().filter(|b| b.starts_with(b"\x89PNG") && b.len() < 256 * 1024).unwrap_or_default();
-        Ok(ServerCfg {
+        Ok(remote_needs_long_passwords(ServerCfg {
             name: get("name", "openOMSI server"),
             motd: get("motd", ""),
             map: get("map", "maps/Berlin-Spandau/global.cfg"),
@@ -212,8 +212,19 @@ impl ServerCfg {
             vehicles: kv.get("vehicles").map(|v| v.split(';').map(|x| x.trim().replace('\\', "/")).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
             share_positions: flag("share_positions", false),
             voice: crate::voice::VoiceServer::from_kv(|k| kv.get(k).cloned()),
-        })
+        }))
     }
+}
+
+/// `admin_web = remote` puts the login on the internet: its passwords need
+/// `REMOTE_MIN_PASSWORD` characters, or the panel stays on this machine (and the log says so).
+fn remote_needs_long_passwords(mut cfg: ServerCfg) -> ServerCfg {
+    let short = |p: &str| !p.is_empty() && p.chars().count() < crate::admin::REMOTE_MIN_PASSWORD;
+    if cfg.admin_web == omsi_admin::WebMode::Remote && (short(&cfg.admin_password) || short(&cfg.moderator_password)) {
+        log::warn!("server.cfg: admin_web = remote needs passwords of {} characters at least: the web administration stays on this machine (local)", crate::admin::REMOTE_MIN_PASSWORD);
+        cfg.admin_web = omsi_admin::WebMode::Local;
+    }
+    cfg
 }
 
 /// (one check for `server.cfg` and the admins: `omsi_admin::passenger_density`)
@@ -393,6 +404,13 @@ mod passenger_density_tests {
         assert_eq!(load("admin_proxy_header = X-Real-IP\n").admin_proxy_header, omsi_admin::ProxyHeader::RealIp);
         assert_eq!(load("admin_proxy_header = cf-connecting-ip\n").admin_proxy_header, omsi_admin::ProxyHeader::CfConnectingIp);
         assert_eq!(load("admin_proxy_header = forwarded\n").admin_proxy_header, omsi_admin::ProxyHeader::ForwardedFor);
+        // remote with a password too short for the internet: the panel stays on this machine
+        let short = load("admin_web = remote\nadmin_password = twelve chars\n");
+        assert_eq!((short.admin_password.as_str(), short.admin_web), ("twelve chars", omsi_admin::WebMode::Local));
+        let long = load("admin_web = remote\nadmin_password = sixteen chars ok\nmoderator_password = and this one too\n");
+        assert_eq!(long.admin_web, omsi_admin::WebMode::Remote);
+        let short_mod = load("admin_web = remote\nadmin_password = sixteen chars ok\nmoderator_password = twelve chars\n");
+        assert_eq!(short_mod.admin_web, omsi_admin::WebMode::Local);
     }
 }
 
@@ -404,7 +422,9 @@ mod vehicles_tests {
     fn a_short_admin_password_leaves_the_administration_off() {
         assert_eq!(admin_password("1234".into()), "");
         assert_eq!(admin_password(String::new()), "");
-        assert_eq!(admin_password("eight888".into()), "eight888");
+        // (12 at least: the game's login can be overheard and guessed offline)
+        assert_eq!(admin_password("eight888".into()), "");
+        assert_eq!(admin_password("twelve chars".into()), "twelve chars");
     }
 
     #[test]

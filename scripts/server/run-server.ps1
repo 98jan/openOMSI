@@ -203,9 +203,9 @@ if ($first) {
     }
     while ($true) {
         if (Cfg-Get 'admin_password') {
-            $prompt = T 'Admin password (8+ characters; Enter keeps the one set; - for none)' 'Senha de admin (8+ caracteres; Enter mantém a atual; - para nenhuma)'
+            $prompt = T 'Admin password (12+ characters; Enter keeps the one set; - for none)' 'Senha de admin (12+ caracteres; Enter mantém a atual; - para nenhuma)'
         } else {
-            $prompt = T 'Admin password (8+ characters; Enter for none)' 'Senha de admin (8+ caracteres; Enter para nenhuma)'
+            $prompt = T 'Admin password (12+ characters; Enter for none)' 'Senha de admin (12+ caracteres; Enter para nenhuma)'
         }
         if ([Console]::IsInputRedirected) {
             # (the answers come from a file or another program: no typing to hide, and a
@@ -218,7 +218,7 @@ if ($first) {
         }
         if (-not $v) { break }
         if ($v -eq '-') { Cfg-Set 'admin_password' ''; break }
-        if ($v.Length -lt 8) { Say 'At least 8 characters.' 'Pelo menos 8 caracteres.'; continue }
+        if ($v.Length -lt 12) { Say 'At least 12 characters.' 'Pelo menos 12 caracteres.'; continue }
         if ($v -ne $v.Trim()) { Say 'No spaces at the start or the end (server.cfg would cut them).' 'Sem espaço no começo ou no fim (o server.cfg cortaria).'; continue }
         Cfg-Set 'admin_password' $v
         break

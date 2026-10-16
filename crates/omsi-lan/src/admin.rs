@@ -36,7 +36,9 @@ pub fn finite(text: &str) -> Option<f64> {
 pub const KDF_ROUNDS: u32 = 600_000;
 const MIN_ROUNDS: u32 = 100_000;
 const MAX_ROUNDS: u32 = 5_000_000;
-pub const MIN_PASSWORD: usize = 8;
+pub const MIN_PASSWORD: usize = 12;
+/// The passwords' least length when the web panel is open to the internet (`admin_web = remote`).
+pub const REMOTE_MIN_PASSWORD: usize = 16;
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -146,9 +148,11 @@ pub struct ServerAdmin {
     pub passenger_density: Option<f32>,
     /// The challenge each asking player was given (used once).
     challenges: std::collections::HashMap<u32, String>,
-    /// When wrong answers came lately (the lock counts them, whoever sent them: a player
-    /// who reconnects is somebody new).
+    /// When wrong answers came lately: from everybody (the lock for all, when many sources
+    /// guess at once) and from each source (its address: a player who reconnects is the
+    /// same source).
     failures: Vec<std::time::Instant>,
+    failures_from: HashMap<String, Vec<std::time::Instant>>,
     /// The passwords' keys for the challenges (both with one salt), and the passwords they
     /// were made of.
     kdf: Option<Kdf>,
@@ -180,8 +184,11 @@ impl TrafficOrder {
     }
 }
 
-/// Wrong answers within `LOCK_WINDOW` that lock the administration for everybody.
+/// Wrong answers within `LOCK_WINDOW` that lock one source out; from all sources, that lock
+/// the administration for everybody (a source counts `LOCK_AFTER` at most, so that takes
+/// many guessing at once).
 const LOCK_AFTER: usize = 5;
+const LOCK_ALL: usize = 30;
 const LOCK_WINDOW: std::time::Duration = std::time::Duration::from_secs(120);
 
 impl ServerAdmin {
@@ -234,10 +241,43 @@ impl ServerAdmin {
         std::mem::take(&mut self.world)
     }
 
-    fn locked(&mut self) -> bool {
+    fn locked(&mut self, source: &str) -> bool {
         self.failures.retain(|t| t.elapsed() < LOCK_WINDOW);
-        self.failures.len() >= LOCK_AFTER
+        self.failures_from.retain(|_, v| {
+            v.retain(|t| t.elapsed() < LOCK_WINDOW);
+            !v.is_empty()
+        });
+        self.failures.len() >= LOCK_ALL || self.failures_from.get(source).is_some_and(|v| v.len() >= LOCK_AFTER)
     }
+
+    fn failed(&mut self, source: String) {
+        let now = std::time::Instant::now();
+        self.failures.push(now);
+        // (so many sources at most: a flood of them forgets some)
+        if self.failures_from.len() >= 1024 && !self.failures_from.contains_key(&source) {
+            self.failures_from.clear();
+        }
+        self.failures_from.entry(source).or_default().push(now);
+    }
+}
+
+/// Who a wrong answer is counted against: the player's address (the same when they come
+/// back), or their number when the session has none.
+fn source_of(lan: &LanSession, from: u32) -> String {
+    match lan.peers().find(|p| p.pose.id == from).and_then(|p| p.addr) {
+        Some(a) => a.ip().to_string(),
+        None => format!("player {from}"),
+    }
+}
+
+/// A challenge for the password's proof: 128 bits from the system's secure random.
+fn fresh_challenge() -> String {
+    use ring::rand::SecureRandom;
+    let mut c = [0u8; 16];
+    if ring::rand::SystemRandom::new().fill(&mut c).is_err() {
+        return format!("{:016x}{:016x}", omsi_net::random_session_id(), omsi_net::random_session_id());
+    }
+    hex(&c)
 }
 
 /// Who the commands of the web gateway's `POST /admin` come from: no player has this id.
@@ -254,10 +294,10 @@ pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut Ser
         "auth?" => {
             if !adm.enabled() {
                 lan.command(from, "admin-no");
-            } else if adm.locked() {
+            } else if adm.locked(&source_of(lan, from)) {
                 lan.command(from, "admin-locked");
             } else {
-                let c = format!("{:016x}{:016x}", omsi_net::random_session_id(), omsi_net::random_session_id());
+                let c = fresh_challenge();
                 let salt = adm.derived().salt;
                 adm.challenges.insert(from, c.clone());
                 lan.command(from, &format!("admin-challenge {c} {} {KDF_ROUNDS}", hex(&salt)));
@@ -265,7 +305,7 @@ pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut Ser
         }
         "auth" => {
             let challenge = adm.challenges.remove(&from);
-            if adm.locked() {
+            if adm.locked(&source_of(lan, from)) {
                 lan.command(from, "admin-locked");
             } else if let (true, Some(c)) = (adm.enabled(), challenge) {
                 match adm.role_of(&c, arg.trim()) {
@@ -281,7 +321,7 @@ pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut Ser
                         lan.command(from, &format!("admin-ok {}", role.name()));
                     }
                     None => {
-                        adm.failures.push(std::time::Instant::now());
+                        adm.failed(source_of(lan, from));
                         let who = reply::player_label(lan, from);
                         log::warn!("server: {who} gave a wrong admin password");
                         if let Some(h) = hub {
@@ -334,6 +374,34 @@ pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut Ser
 #[cfg(test)]
 mod password_tests {
     use super::*;
+
+    /// One player's wrong passwords lock that player out, not the admins; only many sources
+    /// guessing at once lock everybody.
+    #[test]
+    fn wrong_passwords_lock_their_source() {
+        let mut adm = ServerAdmin::default();
+        for _ in 0..LOCK_AFTER {
+            adm.failed("10.0.0.5".into());
+        }
+        assert!(adm.locked("10.0.0.5"));
+        assert!(!adm.locked("10.0.0.6"));
+        // (each source counts its share until the lock for all)
+        for n in 0..(LOCK_ALL / LOCK_AFTER) {
+            for _ in 0..LOCK_AFTER {
+                adm.failed(format!("192.0.2.{n}"));
+            }
+        }
+        assert!(adm.locked("10.0.0.6"));
+    }
+
+    /// The challenges come from the secure random: 128 bits, a new one each time.
+    #[test]
+    fn challenges_are_fresh() {
+        let (a, b) = (fresh_challenge(), fresh_challenge());
+        assert_eq!(a.len(), 32);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b);
+    }
 
     #[test]
     fn the_answer_needs_the_password_and_a_slow_key() {

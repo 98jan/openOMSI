@@ -157,6 +157,8 @@ function start(session) {
 async function refresh() {
   clearTimeout(S.timer);
   if (!S.token) return;
+  // (one loop: a refresh started while another waits for its answers takes over from it)
+  const run = (S.run = (S.run || 0) + 1);
   if (!document.hidden) {
     const q = encodeURIComponent($("search").value.trim());
     const [st, pl, ev] = await Promise.all([api("GET", "/api/admin/state"), api("GET", "/api/admin/players?q=" + q), api("GET", "/api/admin/events?audit_after=" + S.audit)]);
@@ -170,9 +172,12 @@ async function refresh() {
       if (one && one.status === 200) S.selHere = one.data.players.some((p) => p.id === S.selected.id && p.conn === S.selected.conn);
     }
     if (ev && ev.status === 200) { for (const o of ev.data.ops) S.ops.set(o.id, o); }
+    if (run !== S.run) return;
     render();
   }
+  if (run !== S.run) return;
   const wait = Math.min(30000, 3000 * Math.pow(2, Math.min(S.failures, 4)));
+  clearTimeout(S.timer);
   S.timer = setTimeout(refresh, wait);
 }
 

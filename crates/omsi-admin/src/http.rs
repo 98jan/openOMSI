@@ -180,7 +180,9 @@ fn admitted(req: &Request, cfg: &WebCfg) -> Result<(IpAddr, bool), Response> {
             if !cfg.trusted_proxies.contains(&peer.ip()) {
                 return Err(error("403 Forbidden", "only through the HTTPS proxy the server trusts (admin_trusted_proxies)"));
             }
-            let https = req.header("x-forwarded-proto").is_some_and(|p| p.eq_ignore_ascii_case("https")) || req.header("cf-visitor").is_some_and(|v| v.replace(' ', "").contains("\"scheme\":\"https\""));
+            // (the proxy's own word, as for the address: the last line, its last value - a proxy
+            // that adds to the client's header puts its own after it)
+            let https = req.last_header("x-forwarded-proto").and_then(|v| v.rsplit(',').next()).is_some_and(|p| p.trim().eq_ignore_ascii_case("https")) || req.last_header("cf-visitor").is_some_and(|v| v.replace(' ', "").contains("\"scheme\":\"https\""));
             if !https {
                 return Err(error("403 Forbidden", "the administration is reached over HTTPS only"));
             }
@@ -499,6 +501,10 @@ mod tests {
         // the proxy, over https (Cloudflare's way of saying so too), saying whose request it is
         assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("X-Forwarded-Proto: https").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg).0, "200 OK");
         assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("CF-Visitor: {\"scheme\":\"https\"}").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg).0, "200 OK");
+        // the proxy's word on the scheme is its own last one: a client's "https" before a
+        // proxy that adds "http" is plain HTTP
+        assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("X-Forwarded-Proto: https").with("X-Forwarded-Proto: http").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg).0, "403 Forbidden");
+        assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("X-Forwarded-Proto: https, http").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg).0, "403 Forbidden");
         // a proxy that does not say whose: turned away (not taken for the proxy itself)
         assert_eq!(R::post("/api/admin/login", pw).from("10.0.0.1:1").with("X-Forwarded-Proto: https").send(&h, &cfg).0, "403 Forbidden");
     }
