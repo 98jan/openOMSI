@@ -341,7 +341,7 @@ fn mods_status() -> Answer {
 
 fn add_hofs(files: Vec<String>) -> Answer {
     let files: Vec<PathBuf> = files.into_iter().map(PathBuf::from).collect();
-    Ok(json!(core::add_hofs_to_vehicle_folders(&files).map_err(err)?))
+    Ok(json!(core::add_shared_hofs(&files).map_err(err)?))
 }
 
 fn mod_set_enabled(id: String, on: bool) -> Answer {

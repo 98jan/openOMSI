@@ -128,6 +128,32 @@ pub fn record(content: &Path, name: &str, paths: &[String]) {
     }
 }
 
+pub fn attach(content: &Path, owner: &str, paths: &[String]) {
+    if paths.is_empty() {
+        return;
+    }
+    let mut r = load(content);
+    import_records(content, &mut r);
+    let owned = |p: &String| owner.eq_ignore_ascii_case(p) || owner.to_ascii_lowercase().starts_with(&format!("{}/", p.to_ascii_lowercase()));
+    let k = match r.mods.iter().position(|m| m.paths.iter().any(owned)) {
+        Some(k) => k,
+        None => {
+            let name = owner.rsplit('/').next().unwrap_or(owner).to_string();
+            let id = new_id(&r, &name);
+            r.mods.push(Mod { id, name, paths: vec![owner.to_string()], enabled: true, installed: 0, bytes: 0, kind: Kind::Other, noted: true });
+            r.mods.len() - 1
+        }
+    };
+    for p in paths {
+        if !r.mods[k].paths.iter().any(|x| x.eq_ignore_ascii_case(p)) {
+            r.mods[k].paths.push(p.clone());
+        }
+    }
+    if let Err(e) = save(content, &r) {
+        crate::log_to_file(&format!("mods: the note of {owner} was not written: {e:#}"));
+    }
+}
+
 fn size_of(p: &Path) -> u64 {
     match std::fs::symlink_metadata(p) {
         Ok(m) if m.is_dir() => std::fs::read_dir(p).map(|rd| rd.flatten().map(|e| size_of(&e.path())).sum()).unwrap_or(0),
@@ -466,6 +492,29 @@ mod tests {
         assert!(list(&c).iter().all(|m| m.name != "Hill Town"));
         // the others are untouched
         assert!(c.join("Vehicles/Big Bus/big.bus").exists());
+        std::fs::remove_dir_all(c).unwrap();
+    }
+
+    #[test]
+    fn a_maps_shared_depot_goes_with_the_map() {
+        let c = content();
+        std::fs::create_dir_all(c.join("HOFs")).unwrap();
+        std::fs::write(c.join("HOFs/Hill Town.hof"), b"[name]").unwrap();
+        std::fs::write(c.join("HOFs/Other.hof"), b"[name]").unwrap();
+        attach(&c, "maps/Hill Town", &["HOFs/Hill Town.hof".into()]);
+        let map = list(&c).into_iter().find(|m| m.name == "Hill Town").unwrap();
+        assert!(map.noted && map.kind == Kind::Map);
+        assert_eq!(map.paths, ["maps/Hill Town", "HOFs/Hill Town.hof"]);
+        remove(&c, &map.id).unwrap();
+        assert!(!c.join("HOFs/Hill Town.hof").exists() && c.join("HOFs/Other.hof").exists());
+
+        record(&c, "Town pack.zip", &["Archives/Town pack.zip".into()]);
+        std::fs::create_dir_all(c.join("Archives")).unwrap();
+        std::fs::write(c.join("Archives/Town pack.zip"), b"x").unwrap();
+        attach(&c, "Archives/Town pack.zip/maps/Town", &["HOFs/Other.hof".into()]);
+        let pack = list(&c).into_iter().find(|m| m.name == "Town pack.zip").unwrap();
+        assert_eq!(pack.paths, ["Archives/Town pack.zip", "HOFs/Other.hof"]);
+        assert!(list(&c).iter().all(|m| m.name != "Town"));
         std::fs::remove_dir_all(c).unwrap();
     }
 }

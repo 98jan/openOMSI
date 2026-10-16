@@ -1,9 +1,6 @@
 use super::*;
 use anyhow::bail;
 
-/// Copy each installed mod map's depot file into existing content vehicle folders that
-/// already contain a vehicle-local HOF. OMSI expects that copy next to every bus; openOMSI
-/// keeps it in its writable content folder so the original installation stays untouched.
 #[derive(Default)]
 struct MapHofSyncState {
     stamp: Option<String>,
@@ -15,56 +12,81 @@ fn map_hof_sync_state() -> &'static std::sync::Mutex<MapHofSyncState> {
     STATE.get_or_init(Default::default)
 }
 
-pub(super) fn sync_map_hofs_to_vehicle_folders() {
-    let Some(content) = content_dir() else { return };
-    let Ok(original) = root() else { return };
+fn writable_content() -> Option<PathBuf> {
+    let content = content_dir()?;
+    let original = root().ok()?;
     let canonical_content = std::fs::canonicalize(&content).unwrap_or_else(|_| content.clone());
     let canonical_original = std::fs::canonicalize(&original).unwrap_or(original);
-    if canonical_content == canonical_original {
-        return;
-    }
+    (canonical_content != canonical_original).then_some(content)
+}
+
+fn sync_stamp() -> String {
     let roots = omsi_cfg::content_roots();
     let mut stamp = index::content_stamp(&roots, None);
     let hof_dirs: Vec<PathBuf> = roots.iter().map(|r| r.join("HOFs")).collect();
     stamp.push_str(&format!("-{:016x}", index::folder_stamp(&hof_dirs)));
-    let state = map_hof_sync_state();
-    let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
+    stamp
+}
+
+fn is_hof(p: &Path) -> bool {
+    p.extension().is_some_and(|e| e.eq_ignore_ascii_case("hof"))
+}
+
+fn hof_is_called(p: &Path, name: &str) -> bool {
+    p.file_stem().is_some_and(|s| s.to_string_lossy().trim().eq_ignore_ascii_case(name)) || omsi_vehicle::Hof::read_name(p).is_some_and(|n| n.trim().eq_ignore_ascii_case(name))
+}
+
+fn depot_name(raw: &str) -> &str {
+    let name = raw.trim();
+    let name = name.rsplit(['\\', '/']).next().unwrap_or(name);
+    match name.len().checked_sub(4) {
+        Some(cut) if name.get(cut..).is_some_and(|ext| ext.eq_ignore_ascii_case(".hof")) => &name[..cut],
+        _ => name,
+    }
+}
+
+fn map_depot_source(map: &Path, name: &str) -> Option<PathBuf> {
+    omsi_cfg::mirrored_dirs(map)
+        .iter()
+        .flat_map(|d| omsi_cfg::vfs::read_dir_paths(d))
+        .find(|p| is_hof(p) && hof_is_called(p, name))
+        .or_else(|| omsi_vehicle::hof::depot_anywhere(name).map(|h| h.path))
+}
+
+fn copy_to_shared(content: &Path, file_name: &str, bytes: &[u8]) -> Result<Option<String>> {
+    let dir = content_case_path(content, "HOFs");
+    if !path_stays_in_content(content, &dir) {
+        bail!("the shared HOFs folder is outside the writable content folder");
+    }
+    std::fs::create_dir_all(&dir)?;
+    let dest = content_case_path(content, &format!("HOFs/{file_name}"));
+    let mut output = match std::fs::OpenOptions::new().write(true).create_new(true).open(&dest) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
+    if let Err(e) = std::io::Write::write_all(&mut output, bytes) {
+        drop(output);
+        let _ = std::fs::remove_file(&dest);
+        return Err(e.into());
+    }
+    let rel = dest.strip_prefix(content).unwrap_or(&dest).components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+    Ok(Some(rel))
+}
+
+pub(super) fn sync_map_hofs() {
+    let Some(content) = writable_content() else { return };
+    let stamp = sync_stamp();
+    let mut state = map_hof_sync_state().lock().unwrap_or_else(|e| e.into_inner());
     if state.stamp.as_deref() == Some(stamp.as_str()) {
         return;
     }
-
-    // Invalidate missed depot lookups when a map or HOF was added outside the installer.
     omsi_cfg::content_changed();
 
-    let mut vehicles = Vec::new();
-    for dir in omsi_cfg::read_dir_merged("Vehicles") {
-        if !omsi_cfg::vfs::is_dir(&dir) {
-            continue;
-        }
-        let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
-        // Only use a bus folder already present directly in writable content. This avoids
-        // creating standalone bus mods for stock buses or buses read from an archive.
-        if !content_case_path(&content, &format!("Vehicles/{name}")).is_dir() {
-            continue;
-        }
-        let mirrors = omsi_cfg::mirrored_dirs(&dir);
-        let mut local_hofs = std::collections::HashSet::new();
-        for mirror in mirrors {
-            for (file, is_dir) in omsi_cfg::vfs::list_dir(&mirror).unwrap_or_default() {
-                if !is_dir && Path::new(&file).extension().is_some_and(|e| e.eq_ignore_ascii_case("hof")) {
-                    local_hofs.insert(file.to_string_lossy().to_ascii_lowercase());
-                }
-            }
-        }
-        if !local_hofs.is_empty() {
-            vehicles.push((name, local_hofs));
-        }
-    }
-
+    let mut shared: Vec<PathBuf> = omsi_cfg::read_dir_merged("HOFs").into_iter().filter(|p| is_hof(p)).collect();
     let mut copied = 0usize;
     let mut retry = false;
     let mut warnings = Vec::new();
-    let mut seen_hofs = std::collections::HashSet::new();
     for (folder, dirs) in merged_folders("maps") {
         let Some(map) = dirs.into_iter().find(|d| in_content(d) && omsi_cfg::vfs::is_file(&d.join("global.cfg"))) else { continue };
         let ailists_path = map.join("ailists.cfg");
@@ -74,201 +96,91 @@ pub(super) fn sync_map_hofs_to_vehicle_folders() {
         let ailists = match omsi_map::ailists::AiLists::load(&ailists_path) {
             Ok(ailists) => ailists,
             Err(e) => {
-                let warning = format!("{folder}: couldn't read ailists.cfg: {e}");
-                log_line(&format!("maps: {warning}"));
-                warnings.push(warning);
+                warnings.push(format!("{folder}: couldn't read ailists.cfg: {e}"));
                 retry = true;
                 continue;
             }
         };
-        for name in ailists.groups.iter().filter_map(|g| g.hof.as_deref()).map(str::trim).filter(|n| !n.is_empty()) {
-            let name = name.rsplit(['\\', '/']).next().unwrap_or(name);
-            let name = if name.get(name.len().saturating_sub(4)..).is_some_and(|ext| ext.eq_ignore_ascii_case(".hof")) {
-                &name[..name.len() - 4]
-            } else {
-                name
-            };
-            if !seen_hofs.insert(name.to_ascii_lowercase()) {
+        let map_rel = map.strip_prefix(&content).unwrap_or(&map).components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+        let mut names: Vec<&str> = ailists.groups.iter().filter_map(|g| g.hof.as_deref()).map(depot_name).filter(|n| !n.is_empty()).collect();
+        names.sort_by_key(|n| n.to_ascii_lowercase());
+        names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+        let mut added = Vec::new();
+        for name in names {
+            if shared.iter().any(|p| hof_is_called(p, name)) {
                 continue;
             }
-            let Some(hof) = omsi_vehicle::hof::depot_anywhere(name) else {
-                warnings.push(format!("{folder}: couldn't find the required HOF file '{name}.hof' in the installed content."));
+            let Some(source) = map_depot_source(&map, name) else {
+                warnings.push(format!("{folder}: the HOF file '{name}.hof' it needs isn't installed."));
                 continue;
             };
-            let Some(file_name) = hof.path.file_name() else { continue };
-            let file_name = file_name.to_string_lossy().to_string();
-            let key = file_name.to_ascii_lowercase();
-            let bytes = match omsi_cfg::vfs::read(&hof.path) {
-                Ok(bytes) => bytes,
+            let Some(file_name) = source.file_name().map(|n| n.to_string_lossy().to_string()) else { continue };
+            let copy = omsi_cfg::vfs::read(&source).map_err(anyhow::Error::from).and_then(|bytes| copy_to_shared(&content, &file_name, &bytes));
+            match copy {
+                Ok(Some(rel)) => {
+                    shared.push(content.join(&rel));
+                    added.push(rel);
+                    copied += 1;
+                }
+                Ok(None) => {}
                 Err(e) => {
-                    let warning = format!("{folder}: couldn't read HOF {}: {e}", hof.path.display());
-                    log_line(&format!("maps: {warning}"));
-                    warnings.push(warning);
+                    warnings.push(format!("{folder}: couldn't share {file_name} with every bus: {e}"));
                     retry = true;
-                    continue;
                 }
-            };
-            for (vehicle, local_hofs) in &mut vehicles {
-                if local_hofs.contains(&key) {
-                    continue;
-                }
-                let rel = format!("Vehicles/{vehicle}/{file_name}");
-                let dest = content_case_path(&content, &rel);
-                if !path_stays_in_content(&content, dest.parent().unwrap_or(&content)) {
-                    let warning = format!("{folder}: couldn't add {file_name} to {vehicle}; the destination is outside the writable content folder.");
-                    log_line(&format!("maps: {warning}"));
-                    warnings.push(warning);
-                    retry = true;
-                    continue;
-                }
-                if let Some(parent) = dest.parent() {
-                    if let Err(e) = std::fs::create_dir_all(parent) {
-                        let warning = format!("{folder}: couldn't create the folder for {file_name} in {vehicle}: {e}");
-                        log_line(&format!("maps: {warning}"));
-                        warnings.push(warning);
-                        retry = true;
-                        continue;
-                    }
-                }
-                let mut output = match std::fs::OpenOptions::new().write(true).create_new(true).open(&dest) {
-                    Ok(file) => file,
-                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                        local_hofs.insert(key.clone());
-                        continue;
-                    }
-                    Err(e) => {
-                        let warning = format!("{folder}: couldn't add {file_name} to {vehicle}: {e}");
-                        log_line(&format!("maps: {warning}"));
-                        warnings.push(warning);
-                        retry = true;
-                        continue;
-                    }
-                };
-                if let Err(e) = std::io::Write::write_all(&mut output, &bytes) {
-                    let _ = std::fs::remove_file(&dest);
-                    let warning = format!("{folder}: couldn't finish adding {file_name} to {vehicle}: {e}");
-                    log_line(&format!("maps: {warning}"));
-                    warnings.push(warning);
-                    retry = true;
-                    continue;
-                }
-                local_hofs.insert(key.clone());
-                copied += 1;
             }
+        }
+        if !added.is_empty() {
+            mods::attach(&content, &map_rel, &added);
         }
     }
 
     if copied > 0 {
-        log_line(&format!("maps: added {copied} map HOF file(s) to existing vehicle folders in {}", content.display()));
+        log_line(&format!("maps: shared {copied} map HOF file(s) with every bus in {}", content.join("HOFs").display()));
         omsi_cfg::content_changed();
     }
     warnings.sort();
     warnings.dedup();
-    if !warnings.is_empty() {
-        for warning in &warnings {
-            log_line(&format!("maps: HOF sync warning: {warning}"));
-        }
-        log_line(&format!("maps: HOF sync has {} warning(s); see the Mods page", warnings.len()));
+    for warning in &warnings {
+        log_line(&format!("maps: HOF sync warning: {warning}"));
     }
-
-    // Store the post-copy stamp, so new overlay files don't cause another full scan.
-    let roots = omsi_cfg::content_roots();
-    let mut final_stamp = index::content_stamp(&roots, None);
-    let hof_dirs: Vec<PathBuf> = roots.iter().map(|r| r.join("HOFs")).collect();
-    final_stamp.push_str(&format!("-{:016x}", index::folder_stamp(&hof_dirs)));
     state.warnings = warnings;
-    state.stamp = if retry { None } else { Some(final_stamp) };
+    state.stamp = if retry { None } else { Some(sync_stamp()) };
 }
 
-/// Copy player-selected depot files into existing content vehicle folders that already have
-/// local HOFs. Only the writable openOMSI content folder is changed; existing files are left alone.
-pub fn add_hofs_to_vehicle_folders(files: &[PathBuf]) -> Result<String> {
-    let content = content_dir().ok_or_else(|| anyhow!("no game content folder is configured"))?;
-    let original = root()?;
-    let canonical_content = std::fs::canonicalize(&content).unwrap_or_else(|_| content.clone());
-    let canonical_original = std::fs::canonicalize(&original).unwrap_or(original);
-    if canonical_content == canonical_original {
+pub fn add_shared_hofs(files: &[PathBuf]) -> Result<String> {
+    let Some(content) = writable_content() else {
         bail!("the writable content folder is the original OMSI folder; HOF files were not copied");
-    }
+    };
     if files.is_empty() {
         bail!("no HOF files were selected");
     }
-
-    let mut vehicles = Vec::new();
-    for dir in omsi_cfg::read_dir_merged("Vehicles") {
-        if !omsi_cfg::vfs::is_dir(&dir) { continue; }
-        let name = dir.file_name().unwrap_or_default().to_string_lossy().to_string();
-        if !content_case_path(&content, &format!("Vehicles/{name}")).is_dir() { continue; }
-        let mut local_hofs = std::collections::HashSet::new();
-        for mirror in omsi_cfg::mirrored_dirs(&dir) {
-            for (file, is_dir) in omsi_cfg::vfs::list_dir(&mirror).unwrap_or_default() {
-                if !is_dir && Path::new(&file).extension().is_some_and(|e| e.eq_ignore_ascii_case("hof")) {
-                    local_hofs.insert(file.to_string_lossy().to_ascii_lowercase());
-                }
-            }
-        }
-        if !local_hofs.is_empty() { vehicles.push((name, local_hofs)); }
-    }
-    if vehicles.is_empty() {
-        bail!("no vehicle folders with existing HOF files were found");
-    }
-
     let mut copied = 0usize;
     let mut skipped = 0usize;
     let mut failures = Vec::new();
     for source in files {
-        if !source.extension().is_some_and(|e| e.eq_ignore_ascii_case("hof")) {
-            failures.push(format!("{} is not a .hof file", source.display()));
+        let Some(file_name) = source.file_name().map(|n| n.to_string_lossy().to_string()) else {
+            failures.push(format!("{} has no file name", source.display()));
+            continue;
+        };
+        if !is_hof(source) {
+            failures.push(format!("{file_name} is not a .hof file"));
             continue;
         }
-        let Some(file_name) = source.file_name() else {
-            failures.push(format!("{} has no filename", source.display()));
-            continue;
-        };
-        let file_name = file_name.to_string_lossy().to_string();
-        let key = file_name.to_ascii_lowercase();
-        let bytes = match std::fs::read(source) {
-            Ok(bytes) => bytes,
-            Err(e) => { failures.push(format!("couldn't read {file_name}: {e}")); continue; }
-        };
-        for (vehicle, local_hofs) in &mut vehicles {
-            if local_hofs.contains(&key) { skipped += 1; continue; }
-            let dest = content_case_path(&content, &format!("Vehicles/{vehicle}/{file_name}"));
-            if !path_stays_in_content(&content, dest.parent().unwrap_or(&content)) {
-                failures.push(format!("couldn't safely add {file_name} to {vehicle}"));
-                continue;
-            }
-            if let Some(parent) = dest.parent() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    failures.push(format!("couldn't prepare {vehicle} for {file_name}: {e}"));
-                    continue;
-                }
-            }
-            let mut output = match std::fs::OpenOptions::new().write(true).create_new(true).open(&dest) {
-                Ok(file) => file,
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => { local_hofs.insert(key.clone()); skipped += 1; continue; }
-                Err(e) => { failures.push(format!("couldn't add {file_name} to {vehicle}: {e}")); continue; }
-            };
-            if let Err(e) = std::io::Write::write_all(&mut output, &bytes) {
-                let _ = std::fs::remove_file(&dest);
-                failures.push(format!("couldn't finish adding {file_name} to {vehicle}: {e}"));
-                continue;
-            }
-            local_hofs.insert(key.clone());
-            copied += 1;
+        match std::fs::read(source).map_err(anyhow::Error::from).and_then(|bytes| copy_to_shared(&content, &file_name, &bytes)) {
+            Ok(Some(_)) => copied += 1,
+            Ok(None) => skipped += 1,
+            Err(e) => failures.push(format!("couldn't add {file_name}: {e}")),
         }
     }
-    if copied > 0 { omsi_cfg::content_changed(); }
+    if copied > 0 {
+        omsi_cfg::content_changed();
+    }
     if !failures.is_empty() {
-        bail!("copied {copied} file(s), skipped {skipped} existing copy/copies; {} issue(s): {}", failures.len(), failures.join("; "));
+        bail!("added {copied} file(s), {skipped} already there; {}", failures.join("; "));
     }
-    if copied == 0 {
-        bail!("all selected HOF files were already present in the eligible vehicle folders");
-    }
-    Ok(format!("copied {copied} HOF file(s) to bus folders; skipped {skipped} existing copy/copies"))
+    Ok(format!("added {copied} HOF file(s) for every bus; {skipped} already there"))
 }
 
-/// Resolve each component case-insensitively inside the writable content folder only.
 fn content_case_path(base: &Path, rel: &str) -> PathBuf {
     let mut current = base.to_path_buf();
     for component in rel.split('/').filter(|c| !c.is_empty()) {
@@ -283,7 +195,6 @@ fn content_case_path(base: &Path, rel: &str) -> PathBuf {
     current
 }
 
-/// Refuse to follow a link out of the writable overlay into another content root.
 fn path_stays_in_content(content: &Path, path: &Path) -> bool {
     let base = std::fs::canonicalize(content).unwrap_or_else(|_| content.to_path_buf());
     let mut ancestor = path;
@@ -293,7 +204,6 @@ fn path_stays_in_content(content: &Path, path: &Path) -> bool {
     }
     std::fs::canonicalize(ancestor).map(|p| p.starts_with(base)).unwrap_or(false)
 }
-
 
 pub(super) fn warnings() -> Vec<String> {
     map_hof_sync_state().lock().unwrap_or_else(|e| e.into_inner()).warnings.clone()

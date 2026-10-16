@@ -16,7 +16,7 @@ mod hof_sync;
 mod file_dialog;
 
 pub use file_dialog::{pick_file, pick_folder, pick_hofs, pick_mod};
-pub use hof_sync::add_hofs_to_vehicle_folders;
+pub use hof_sync::add_shared_hofs;
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -534,7 +534,6 @@ pub struct ModsStatus {
     /// What an earlier, interrupted install left and was removed now.
     pub cleaned: Vec<String>,
     pub jobs: Vec<install::Progress>,
-    /// Problems while adding newly installed maps' depot files to existing vehicle folders.
     pub hof_warnings: Vec<String>,
     /// Every mod, one by one (see `mods`).
     pub installed: Vec<mods::Mod>,
@@ -685,7 +684,7 @@ pub fn install_inbox_blocking() -> Vec<install::Progress> {
 pub fn mods_status() -> Result<ModsStatus> {
     let content = content_dir().ok_or_else(|| anyhow!("no game binary configured, so no content folder"))?;
     let cleaned = install::cleanup_stale(&data_dir(), Some(&content));
-    hof_sync::sync_map_hofs_to_vehicle_folders();
+    hof_sync::sync_map_hofs();
     let hof_warnings = hof_sync::warnings();
     let folders = omsi_cfg::CONTENT_FOLDERS
         .iter()
@@ -772,7 +771,7 @@ pub struct EntryInfo {
 
 pub fn list_maps() -> Result<Vec<MapInfo>> {
     root()?;
-    hof_sync::sync_map_hofs_to_vehicle_folders();
+    hof_sync::sync_map_hofs();
     let lang = content_language();
     let mut out = Vec::new();
     let mut keys = Vec::new();

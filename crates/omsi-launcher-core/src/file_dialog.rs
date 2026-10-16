@@ -45,7 +45,6 @@ pub fn pick_file(title: &str) -> Option<PathBuf> {
     }
 }
 
-/// Native multi-file picker for depot files (unavailable on mobile; the platform UI handles it).
 pub fn pick_hofs(title: &str, filter: &str) -> Option<Vec<PathBuf>> {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
