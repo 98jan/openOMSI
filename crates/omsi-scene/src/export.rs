@@ -78,7 +78,7 @@ pub fn export_glb(root: &Path, vt: &VehicleType, vehicle: &VehicleInstance, sche
                 Some(m) => *m,
                 None => {
                     // `null.bmp` is the exporters' "no texture": the material colour alone
-                    let img = if crate::scene::is_null_texture(&tex_name) {
+                    let img = if crate::is_null_texture(&tex_name) {
                         None
                     } else {
                         match image_index.get(&tex_name.to_ascii_lowercase()) {

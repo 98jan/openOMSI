@@ -3883,6 +3883,7 @@ dependencies = [
  "omsi-weather",
  "omsi-world",
  "parking_lot",
+ "png",
  "pollster 1.0.1",
  "rayon",
  "serde_json",

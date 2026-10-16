@@ -29,6 +29,7 @@ ab_glyph.workspace = true
 glam.workspace = true
 hashbrown.workspace = true
 image.workspace = true
+png = "0.18"
 log.workspace = true
 parking_lot.workspace = true
 rayon.workspace = true

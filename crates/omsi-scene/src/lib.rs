@@ -65,6 +65,7 @@ pub mod host;
 pub mod tiles;
 pub mod schedule_paper;
 pub mod check;
+pub mod export;
 
 pub use staging::*;
 pub use batching::*;

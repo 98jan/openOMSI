@@ -53,7 +53,7 @@ mod game_panels;
 mod game_controller_menu;
 mod rail_drive;
 use omsi_scene::driver;
-mod export;
+use omsi_scene::export;
 mod hud;
 mod humans;
 mod journey;
