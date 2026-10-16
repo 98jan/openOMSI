@@ -96,7 +96,7 @@ mod tests {
             assert_eq!(options.msaa, 1);
             assert_eq!(options.render_scale, 0.75);
             assert_eq!(options.anisotropy, 2);
-            assert_eq!(options.reflections, settings.reflections);
+            assert_eq!(options.reflections, settings.reflections > 0.0);
             assert_eq!(options.shadow_size, 1024);
             assert_eq!(options.preview_only, !super::showroom_enhanced(&settings));
             assert_eq!(options.no_enhanced, !super::showroom_enhanced(&settings));
