@@ -314,6 +314,25 @@ pub fn update_server_players(list: Vec<omsi_net::ws::PlayerInfo>) {
     }
 }
 
+/// A dedicated server's administration on the web gateway: `/api/admin/…` and the panel
+/// (`omsi_admin::http`), answered from the hub on the gateway's threads.
+struct AdminApi {
+    hub: Arc<omsi_admin::Hub>,
+    cfg: omsi_admin::WebCfg,
+}
+
+impl omsi_net::ws_api::HttpApi for AdminApi {
+    fn handle(&self, r: &omsi_net::ws_api::ApiRequest) -> Option<omsi_net::ws_api::ApiResponse> {
+        let req = omsi_admin::http::Request { method: r.method, path: r.path, query: r.query, headers: r.headers, body: r.body, peer: r.peer };
+        omsi_admin::http::handle(&self.hub, &self.cfg, &req).map(|a| omsi_net::ws_api::ApiResponse { status: a.status, content_type: a.content_type, body: a.body, headers: a.headers })
+    }
+}
+
+/// The web administration opens on every gateway of this process (who may reach it: `cfg`).
+pub fn open_admin_api(hub: Arc<omsi_admin::Hub>, cfg: omsi_admin::WebCfg) {
+    omsi_net::ws_api::set_api(Some(Arc::new(AdminApi { hub, cfg })));
+}
+
 /// A server run: the admin commands that came to the web gateway's `POST /admin`.
 pub fn take_local_admin() -> Vec<String> {
     if let Ok(w) = WS_PATH.lock() {

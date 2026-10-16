@@ -91,6 +91,7 @@ pub mod scripttex;
 pub mod ai_context;
 pub mod sounds;
 pub mod ws;
+pub mod ws_api;
 pub mod tunnel;
 pub mod official;
 pub mod hostkey;

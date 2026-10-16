@@ -160,6 +160,90 @@ trailers; a player on foot is put back at the wheel first, so walking is not kep
 becomes of other players sitting in a bus that is moved is not checked. They need the admin's
 bus, and are not safe for every case, so the web panel and the new panels offer none of them.
 
+**The web API.** The web gateway answers the administration under `/api/admin/` (and the
+panel under `/admin/`), on the server's web port; nothing else is needed. All JSON, the token
+of a login in `Authorization: Bearer <token>` - never in a cookie or in the address. A request
+that changes something is `POST` with `Content-Type: application/json`.
+
+| request | body / query | answer |
+|---|---|---|
+| `POST /api/admin/login` | `{"password": "…"}` | `200 {"token", "session"}`; `401` wrong password; `429 {"retry_after"}` too many lately; `404` no password set |
+| `POST /api/admin/logout` | `{}` | `200`: the session ends |
+| `GET /api/admin/session` | | `200 {"session"}` |
+| `GET /api/admin/state` | | `200 {"session", "server", "age_ms"}` |
+| `GET /api/admin/players` | `?q=<search>` | `200 {"players", "total", "age_ms"}` |
+| `POST /api/admin/ops` | an operation, below | `202 {"op"}` queued; `400` not one (with the reason); `403` not for this role; `503` too many waiting |
+| `GET /api/admin/ops/<id>` | | `200 {"op"}`; `404` not kept any more (the audit log has it) |
+| `GET /api/admin/events` | `?audit_after=<seq>` | `200 {"ops": the last 50 records, "audit": the audit entries after seq}` |
+
+`session` is `{"role": "admin"|"moderator", "permissions": ["view", "moderate", "world"], "actor":
+"web#2 (address)", "expires_in": seconds}`. `server` is `{"name", "map", "version", "players",
+"max_players", "time": "HH:MM", "clock": seconds of the day, "clock_speed", "real_time", "weather",
+"metar": station or null, "traffic", "traffic_max", "timetable", "passengers",
+"passenger_density", "passenger_density_max", "waiting", "walking", "aboard", "cars",
+"buses"}`, as the server's loop published it about a second ago (`age_ms`; a server that has
+stopped publishing shows as old). A player is `{"id", "conn", "name", "state": "joining" |
+"driving" | "on_foot" | "aboard", "vehicle", "line", "tour", "aboard": the driver's id or null,
+"online_secs", "admin": role or null}` - no position, no address. An operation's record is
+`{"id", "actor", "op", "summary", "target": {"id", "conn"} or null, "target_name", "status":
+"queued" | "applied" | "pending" | "rejected", "message", "at"}`.
+
+The operations (`POST /api/admin/ops`), with what they need:
+
+| body | role |
+|---|---|
+| `{"op": "kick", "target": {"id": 3, "conn": 17}, "reason": "…"}` (reason optional, 120 characters) | moderator |
+| `{"op": "ban", "target": {…}, "reason": "…"}` - for this server run | moderator |
+| `{"op": "say", "text": "…"}` / `{"op": "tell", "target": {…}, "text": "…"}` (160 characters) | moderator |
+| `{"op": "clock", "seconds": 30600}` (0 .. 86400) / `{"op": "shift", "seconds": -3600}` / `{"op": "speed", "factor": 2}` (1 .. 30) | admin |
+| `{"op": "weather", "next": true}` / `{"op": "weather", "file": "Weather/#CAVOK.owt"}` | admin |
+| `{"op": "traffic", "density": 40}` (0 .. the game's top) / `{"op": "traffic", "clear": true}` | admin |
+| `{"op": "passenger_density", "value": 1.5}` (0 .. 3) | admin |
+
+A request is answered `queued` at once; the server's loop does it on its next step and the
+record says what became of it (`GET /api/admin/ops/<id>`): the web's threads never touch the
+session or the world. A request the loop has not come to in 30 s is refused. The texts are
+values, never commands: a line break in a reason is a space, markup stays text (the panel
+shows it as text).
+
+**Who reaches the web panel and the API** (`server.cfg`):
+
+* `admin_web = local` (the default): from the server's own machine only, directly - a request
+  that came through a tunnel or a reverse proxy (it carries `X-Forwarded-For`, `CF-Connecting-IP`
+  …) is refused, the server's own Cloudflare tunnel (`tunnel = 1`) included. Starting the tunnel
+  does not put the administration on the internet.
+* `admin_web = remote`: also through the proxies listed in `admin_trusted_proxies` (addresses
+  separated by `;`; this machine by default), and only for requests they say came over HTTPS
+  (`X-Forwarded-Proto: https`, or Cloudflare's `CF-Visitor`). The address they say a request came
+  from is believed of them alone, and only in the header they write: `admin_proxy_header`, the
+  last address of `X-Forwarded-For` by default (Caddy, nginx, Cloudflare), or `x-real-ip`, or
+  `cf-connecting-ip` - the other headers may be the client's own, passed on. That address counts
+  its wrong passwords and names it in the records; a request the proxy names nobody for is
+  refused. A plain HTTP request from another machine is refused. Mind
+  that with `tunnel = 1` the local cloudflared is such a proxy: the panel is then on the public
+  tunnel address, guarded by the passwords alone. A proxy of your own (Caddy, nginx with a
+  certificate) in front of `127.0.0.1:<web_port>` is the safer way; it must not pass `/admin`
+  (the machine's own door) on.
+* On this machine the panel answers to its own names only (`127.0.0.1`, `localhost`, `[::1]`): a
+  page of another site whose name was turned to this machine (DNS rebinding) is refused.
+* Mind that a tunnel working below HTTP (`ssh -R`, frp, playit, `ngrok tcp`) hands every client
+  over as this machine, with no header to tell: with one in front of the web port, anybody who
+  reaches it meets the login as if they were here (the passwords and their locks still hold).
+  Point such a tunnel at the game's port only, or keep `admin_web = off`.
+* `admin_web = off`: none (the machine's own `POST /admin` stays as it is).
+* `admin_web_origins`: other `https://` sites whose pages may send requests (a dispatch page
+  elsewhere); a request whose browser names another origin is refused. No answer allows
+  another site's page to read it (no `Access-Control-Allow-Origin`).
+
+A session ends after 30 minutes unused, after 12 hours, at logout, or when the server stops;
+at most 16 at once (a moderator's login makes room among the moderators' sessions only, never an
+admin's). Five wrong passwords in two minutes lock a source for a while, thirty from anywhere
+lock the door for everybody but this machine itself (a flood from afar cannot keep the operator
+out of their own panel). A wrong password is noted in the audit log, a lock once - not each
+knock on it. The server's `POST /admin` for a tool on its machine stays
+as it was (one command a line, `X-Admin-Password`, the loopback only, `202` when taken): its
+commands go the same way as the others and are in the audit log, with what became of them.
+
 **The audit log.** Every login, refused password, operation and what became of it is written to
 `admin-audit.log` beside `server.cfg` (a JSON object a line: when, who - `player 3 'Name'`,
 `local tool (POST /admin)`, `web#2 (address)` -, the role, the action, the player, the result),

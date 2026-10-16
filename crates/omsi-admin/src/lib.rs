@@ -12,6 +12,7 @@
 
 pub mod audit;
 pub mod auth;
+pub mod http;
 pub mod hub;
 pub mod op;
 pub mod perm;
@@ -19,6 +20,7 @@ pub mod players;
 
 pub use audit::{Audit, Entry};
 pub use auth::{Auth, AuthCfg, LoginError, Passwords, SessionInfo};
+pub use http::{ProxyHeader, WebCfg, WebMode};
 pub use hub::{Actor, Hub, Job, OpRecord, Origin, Outcome, ServerState, Snapshot, Status};
 pub use op::{clean, passenger_density, weather_file_ok, Op, Target, TrafficOp, WeatherOp, PASSENGER_DENSITY_MAX};
 pub use perm::{Perm, Role};

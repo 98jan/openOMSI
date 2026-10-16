@@ -538,6 +538,27 @@ const ADMIN_LOCK_AFTER: usize = 5;
 const ADMIN_LOCK_WINDOW: Duration = Duration::from_secs(120);
 
 /// The rest of a request's body, up to its `Content-Length` (4 KiB at most).
+/// The longest request head read (the headers a browser and a proxy send fit well).
+const HEAD_MAX: usize = 8192;
+
+/// Read on until the head's end (`\r\n\r\n`): Err with the answer when it never comes
+/// (too long, or the connection ended first).
+fn read_head(s: &mut impl Read, request: &mut Vec<u8>) -> Result<(), &'static str> {
+    let mut buf = [0u8; 1024];
+    loop {
+        if request.windows(4).any(|w| w == b"\r\n\r\n") {
+            return Ok(());
+        }
+        if request.len() >= HEAD_MAX {
+            return Err("431 Request Header Fields Too Large");
+        }
+        match s.read(&mut buf) {
+            Ok(0) | Err(_) => return Err("400 Bad Request"),
+            Ok(n) => request.extend_from_slice(&buf[..n]),
+        }
+    }
+}
+
 fn read_body(s: &mut TcpStream, request: &mut Vec<u8>) {
     let text = String::from_utf8_lossy(request).to_string();
     let Some(head_end) = text.find("\r\n\r\n") else { return };
@@ -670,6 +691,25 @@ fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: 
         // (the request is read off the socket before the answer: some proxies wait)
         let got = s.read(&mut head).unwrap_or(0);
         let mut request = head[..got].to_vec();
+        // the whole head, however it came in pieces: one cut short would lose the headers
+        // past the cut - a tunnel's or a proxy's marks, the Authorization
+        if let Err(status) = read_head(&mut s, &mut request) {
+            let _ = s.write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes());
+            return Ok(());
+        }
+        // a dedicated server's administration (`ws_api`): its own answer and headers
+        if crate::ws_api::wants(&path) {
+            read_body(&mut s, &mut request);
+            let r = crate::ws_api::answer(&request, peer);
+            let mut hdr = format!("HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n", r.status, r.content_type, r.body.len());
+            for (k, v) in &r.headers {
+                hdr.push_str(&format!("{k}: {}\r\n", v.replace(['\r', '\n'], " ")));
+            }
+            hdr.push_str("\r\n");
+            s.write_all(hdr.as_bytes()).map_err(|e| e.to_string())?;
+            s.write_all(&r.body).map_err(|e| e.to_string())?;
+            return Ok(());
+        }
         let (status, ctype, body): (&str, &str, Vec<u8>) = match path.as_str() {
             "/admin" => {
                 read_body(&mut s, &mut request);
@@ -1124,6 +1164,38 @@ mod tests {
         }
         assert_eq!(local_admin(&post("s3cret", "say x"), here, &info).0, "429 Too Many Requests");
         assert!(same_secret("abc", "abc") && !same_secret("abc", "abd") && !same_secret("abc", "abcd") && !same_secret("", "a"));
+    }
+
+    /// The whole head is read, however long (within its cap) and however it comes in pieces: a
+    /// tunnel's mark pushed past the first read by a padded header still shuts the door, and a
+    /// head past the cap is refused.
+    #[test]
+    fn the_whole_head_is_read() {
+        let gw = WsGateway::start("127.0.0.1:0".parse().unwrap(), "127.0.0.1:9".parse().unwrap(), ServerInfo { local_admin_password: "s3cret".into(), ..Default::default() }).unwrap();
+        let ask = |pieces: &[Vec<u8>]| {
+            let mut c = TcpStream::connect(gw.addr).unwrap();
+            c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            for p in pieces {
+                c.write_all(p).unwrap();
+                c.flush().unwrap();
+                std::thread::sleep(Duration::from_millis(60));
+            }
+            let mut out = String::new();
+            let _ = c.read_to_string(&mut out);
+            out
+        };
+        let pad = format!("X-Pad: {}\r\n", "a".repeat(3000));
+        let start = format!("POST /admin HTTP/1.1\r\nHost: x\r\nX-Admin-Password: s3cret\r\n{pad}");
+        let tunnel = b"Cf-Connecting-Ip: 203.0.113.9\r\nContent-Length: 6\r\n\r\nsay hi".to_vec();
+        let out = ask(&[start.clone().into_bytes(), tunnel]);
+        assert!(out.starts_with("HTTP/1.1 403"), "{out}");
+        assert!(gw.info.lock().unwrap().local_admin_queue.is_empty());
+        // the same, from this machine itself and in pieces: taken
+        let out = ask(&[start.into_bytes(), b"Content-Length: 6\r\n".to_vec(), b"\r\nsay hi".to_vec()]);
+        assert!(out.starts_with("HTTP/1.1 202"), "{out}");
+        // past the cap
+        let out = ask(&[format!("GET /status HTTP/1.1\r\nX-Pad: {}\r\n\r\n", "a".repeat(HEAD_MAX)).into_bytes()]);
+        assert!(out.starts_with("HTTP/1.1 431"), "{out}");
     }
 
     #[test]
