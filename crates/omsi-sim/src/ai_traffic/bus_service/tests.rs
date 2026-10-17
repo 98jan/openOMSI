@@ -587,3 +587,17 @@ fn timetable_tracks_repeated_stops_streaming_and_trip_changes() {
     assert_eq!(v.host.tt_terminus_index, -1);
     assert_eq!(v.host.tt_delay, 0.0);
 }
+
+#[test]
+fn a_bus_stands_at_its_trips_last_stop_until_its_time_however_long() {
+    // in at 21:10, its time at the last stop 05:40 the next morning: it stands the night
+    let stop = |id: i64, depart: f64| Stop::from_tuple((0, 0.0, 0.0, depart, id, 0.0));
+    let (now, depart) = (76_200.0, 106_800.0);
+    let mut service = BusService::new(vec![stop(5, 75_000.0), stop(6, depart)]);
+    service.last_stop = Some(6);
+    // at an earlier stop the timetable holds it at, the early wait stays capped
+    service.holds = vec![5];
+    assert_eq!(service.stop_wait(depart, now, false, false, false), LAYOVER_WAIT);
+    service.stops.pop_front();
+    assert_eq!(service.stop_wait(depart, now, false, false, false), depart - EARLY_LEAVE - now);
+}
