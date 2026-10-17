@@ -125,6 +125,7 @@ mod memory;
 mod offscreen;
 pub(crate) use omsi_sim::ground_gap;
 mod on_foot;
+mod optimiser;
 use omsi_scene::route_arrows;
 mod server;
 mod player;
@@ -312,6 +313,7 @@ fn game_event_loop() -> Result<EventLoop<()>> {
 /// installation and the content roots (mods, archives). None when the program has
 /// nothing more to do (a fatal error was shown).
 pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option<server::ServerCfg>)>> {
+    optimiser::recover_cut_short();
     ui_language(&settings::Settings::load().language);
     units::Units::from_setting(&settings::Settings::load().units).set();
     // (a server has no interface to translate)
@@ -735,6 +737,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             frame_stages: Vec::new(),
             overlay: crate::perf_overlay::new(),
             texture_cut_at: None,
+            optimiser: Default::default(),
         },
         sound: SoundState {
             radio,
