@@ -111,7 +111,10 @@ impl PeopleSim {
                 if bn.cabin.entries.is_empty() {
                     return None;
                 }
-                let f = fit(stop, s, p.dest.as_deref(), termini, bn.terminus.as_deref()?, &bn.takes)?;
+                // (or the destination of another route of its service ending where its own
+                // does: a circular's people wait for the stop it ends at)
+                let f = fit(stop, s, p.dest.as_deref(), termini, bn.terminus.as_deref()?, &bn.takes)
+                    .or_else(|| bn.route.as_ref().and_then(|r| r.takes_for(termini)))?;
                 Some((*id, f, (bn.pos - self.people[i].position).length()))
             })),
         }

@@ -540,3 +540,21 @@ fn everybody_leaves_at_the_last_stop_of_the_ibis_route() {
     assert!(IbisRoute::of(&hof, 2, Some(3)).unwrap().ends_at(&test_stop("Station", "")));
     assert_eq!(IbisRoute::of(&hof, 3, None), None, "no such route");
 }
+
+/// A bus on the loop takes the people waiting for the station: the depot file's route of
+/// the same line and line code ending at the same stop goes there. Not those waiting for
+/// the hospital, nor for a route of another line ending at the station.
+#[test]
+fn a_circular_takes_the_people_waiting_for_where_it_ends() {
+    let mut hof = route_test_hof();
+    hof.termini.push(omsi_vehicle::hof::Terminus { code: 20, texture_id: "9 Station".into(), ..Default::default() });
+    hof.info_trips.push(omsi_vehicle::hof::InfoTrip { code: "901".into(), route: "20".into(), line: "9".into(), ..Default::default() });
+    hof.info_busstop_lists.push(vec!["Hospital Gate".into(), "Station".into()]);
+    let set = |names: &[&str]| -> HashSet<String> { names.iter().map(|s| s.to_string()).collect() };
+    let loop_ = IbisRoute::of(&hof, 2, Some(1)).unwrap();
+    assert_eq!(loop_.takes_for(&set(&["7 Station"])), Some(Fit::Terminus));
+    assert_eq!(loop_.takes_for(&set(&["Station"])), Some(Fit::Terminus), "the route's number in front");
+    assert_eq!(loop_.takes_for(&set(&["07HOSPITAL"])), None);
+    assert_eq!(loop_.takes_for(&set(&["9 Station"])), None, "another line");
+    assert_eq!(IbisRoute::of(&hof, 0, None).unwrap().takes_for(&set(&["7 Station"])), None);
+}

@@ -545,6 +545,11 @@ pub struct IbisRoute {
     /// name, ends at `016 hospital duque final`. None on a circular route while the bus is
     /// still at its first stop, which is also its last.
     pub end: Option<String>,
+    /// The destinations of the depot file's routes of the same service - the same line and
+    /// line code - that end at the same stop: the people waiting for any of them take the
+    /// bus. Bowdenham's circular shows `B2 Apsley Circular`, its people wait for `B2 Apsley
+    /// Bus Station`, where it ends all the same.
+    pub termini: Vec<String>,
 }
 
 impl IbisRoute {
@@ -557,8 +562,26 @@ impl IbisRoute {
         let list = hof.info_busstop_lists.get(route)?;
         let end = last_of(route)?;
         let circular = list.first().is_some_and(|s| ident(s).eq_ignore_ascii_case(&end)) && list.len() > 1;
+        let trip = hof.info_trips.get(route)?;
+        let service = |t: &omsi_vehicle::hof::InfoTrip| (t.line.trim().to_string(), omsi_cfg::parse_i32(&t.code) / 100);
+        let termini = hof
+            .info_trips
+            .iter()
+            .enumerate()
+            .filter(|(r, t)| service(t) == service(trip) && last_of(*r).is_some_and(|e| e.eq_ignore_ascii_case(&end)))
+            .filter_map(|(_, t)| hof.terminus_by_code(omsi_cfg::parse_i32(&t.route)))
+            .filter(|t| !t.all_exit)
+            .map(|t| t.texture_id.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
         let end = (!circular || at.is_some_and(|k| k > 0)).then_some(end);
-        Some(IbisRoute { end })
+        Some(IbisRoute { end, termini })
+    }
+
+    /// Whether somebody whose line record lists `termini` takes the bus for another route of
+    /// its service (`termini` of this route).
+    pub fn takes_for(&self, termini: &HashSet<String>) -> Option<Fit> {
+        self.termini.iter().any(|t| termini.contains(t) || without_route(t).is_some_and(|t| termini.contains(t))).then_some(Fit::Terminus)
     }
 
     /// Whether everybody gets off at `stop`: the route ends there.
