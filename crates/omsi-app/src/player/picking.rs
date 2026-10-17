@@ -88,7 +88,6 @@ pub(crate) const RING_SLACK: f32 = 0.05;
 pub(crate) struct Reach(pub f32);
 
 impl Reach {
-    #[cfg(test)]
     pub(crate) const ANY: Reach = Reach(f32::INFINITY);
 
     /// The farthest hit ring `ring` (0: the ray through the cursor) may take.
@@ -97,24 +96,30 @@ impl Reach {
     }
 }
 
-/// How far along a ray (from `o`, in the body's frame, `dir` of unit length) the nearest part
-/// of a body that hides what is behind it stands (infinite: none). The switches themselves
-/// (`[mouseevent]` meshes) are left out - among them the nearest wins anyway - and so are
-/// shadow meshes, meshes the view does not draw (`[viewpoint]`) and slots a script has
-/// faded out. From outside (`outside`) any part hides, walls and windows alike; from the cab
-/// only opaque ones do, not the glass one looks through.
-pub(crate) fn hiding_distance(ty: &omsi_sim::VehicleType, props: &[omsi_sim::vehicle::MeshProps], xf_of: impl Fn(usize) -> glam::Mat4, o: Vec3, dir: Vec3, outside: bool) -> f32 {
-    hiding_part(ty, props, xf_of, o, dir, outside).map_or(f32::INFINITY, |(_, t)| t)
+/// How far a switch of body `ty` can be reached along a ray from `o` (the body's frame, `dir`
+/// of unit length). From the cab nothing hides a switch, as in Omsi.exe: buses made for it
+/// put seats, ticket machines and body panels in front of switches that are clicked through
+/// them (the O560's stop request behind the driver's seat, the Lion's City G's roof hatches
+/// behind its body). From outside (`outside`) any part of the body hides what is behind it.
+pub(crate) fn reach_into(ty: &omsi_sim::VehicleType, props: &[omsi_sim::vehicle::MeshProps], xf_of: impl Fn(usize) -> glam::Mat4, o: Vec3, dir: Vec3, outside: bool) -> Reach {
+    if !outside {
+        return Reach::ANY;
+    }
+    Reach(hiding_part(ty, props, xf_of, o, dir).map_or(f32::INFINITY, |(_, t)| t))
 }
 
-/// The part [`hiding_distance`] finds: its mesh and how far along the ray it is.
-pub(crate) fn hiding_part(ty: &omsi_sim::VehicleType, props: &[omsi_sim::vehicle::MeshProps], xf_of: impl Fn(usize) -> glam::Mat4, o: Vec3, dir: Vec3, outside: bool) -> Option<(usize, f32)> {
+/// The nearest part of a body, seen from outside, that hides what is behind it along a ray
+/// (see [`reach_into`]): its mesh and how far along the ray it is. The switches themselves
+/// (`[mouseevent]` meshes) are left out - among them the nearest wins anyway - and so are
+/// shadow meshes, meshes the outside view does not draw (`[viewpoint]`) and slots a script
+/// has faded out; walls and windows alike hide.
+pub(crate) fn hiding_part(ty: &omsi_sim::VehicleType, props: &[omsi_sim::vehicle::MeshProps], xf_of: impl Fn(usize) -> glam::Mat4, o: Vec3, dir: Vec3) -> Option<(usize, f32)> {
     let mut nearest: Option<(usize, f32)> = None;
     for (i, vm) in ty.meshes.iter().enumerate() {
         let def = &ty.model.meshes[vm.def_index];
         let Some(p) = props.get(i).filter(|p| p.visible) else { continue };
         let vp = def.viewpoint;
-        let drawn = vp == 0 || if outside { vp & 1 != 0 } else { vp & 2 != 0 };
+        let drawn = vp == 0 || vp & 1 != 0;
         if def.mouse_event.is_some() || def.is_shadow || !drawn {
             continue;
         }
@@ -122,11 +127,9 @@ pub(crate) fn hiding_part(ty: &omsi_sim::VehicleType, props: &[omsi_sim::vehicle
         if !ray_may_hit(ty, i, &xf, o, dir, 0.0) {
             continue;
         }
-        let hides = |slot: usize| {
-            p.slot_alpha.get(slot).is_none_or(|&a| a > 0.01) && (outside || omsi_scene::material_alpha(&vm.materials, slot, &vm.overrides) == omsi_render::AlphaMode::Opaque)
-        };
+        let hides = |slot: usize| p.slot_alpha.get(slot).is_none_or(|&a| a > 0.01);
         let tris: Vec<u32> = vm.data.ranges.iter().filter(|r| hides(r.2 as usize)).flat_map(|r| (r.0..r.0 + r.1).step_by(3)).collect();
-        // (a face the eye stands in, the cab's own walls around the head, hides nothing)
+        // (a face the eye stands in hides nothing)
         if let Some(t) = omsi_geometry::ray_triangles(o, dir, &vm.data, &xf, &tris).filter(|&t| t > 0.02) {
             if nearest.is_none_or(|(_, n)| t < n) {
                 nearest = Some((i, t));
@@ -309,7 +312,7 @@ pub(crate) fn pick_trailer_in(vehicle: &omsi_sim::VehicleInstance, origin: DVec3
 
 #[cfg(test)]
 mod reach_tests {
-    use super::{hiding_distance, pick_in, Reach};
+    use super::{pick_in, reach_into, Reach};
     use glam::{DVec3, Mat4, Vec3};
 
     /// A square of 1 m across `y` = `at`, facing the origin, its one slot showing `texture`.
@@ -366,31 +369,30 @@ mod reach_tests {
     }
 
     fn picks(v: &omsi_sim::VehicleInstance, outside: bool) -> Option<usize> {
-        let reach = Reach(hiding_distance(&v.ty, &v.mesh_props, |i| v.mesh_local_transform(i), Vec3::ZERO, Vec3::Y, outside));
+        let reach = reach_into(&v.ty, &v.mesh_props, |i| v.mesh_local_transform(i), Vec3::ZERO, Vec3::Y, outside);
         pick_in(v, v.position, Vec3::Y, 0.0, reach).map(|(i, _)| i)
     }
 
-    /// A switch behind a part of the bus cannot be clicked through it: from outside behind any
-    /// part, from the cab only behind an opaque one; a switch flush with its panel, or in
-    /// front of it, stays reachable.
+    /// From outside a switch behind any part of the bus cannot be clicked through it, glass
+    /// too; a switch flush with its panel, or in front of it, stays reachable. From the cab
+    /// nothing hides a switch, as in Omsi.exe.
     #[test]
-    fn a_switch_behind_another_part_is_out_of_reach() {
-        assert_eq!(picks(&bus("dash.dds", 1.2), false), None);
+    fn a_switch_behind_another_part_is_out_of_reach_from_outside() {
         assert_eq!(picks(&bus("dash.dds", 1.2), true), None);
-        assert_eq!(picks(&bus("glass.dds", 1.2), false), Some(1));
         assert_eq!(picks(&bus("glass.dds", 1.2), true), None);
+        assert_eq!(picks(&bus("dash.dds", 1.2), false), Some(1));
+        assert_eq!(picks(&bus("glass.dds", 1.2), false), Some(1));
         assert_eq!(picks(&bus("dash.dds", 1.004), false), Some(1));
         assert_eq!(picks(&bus("dash.dds", 0.995), true), Some(1));
         assert_eq!(pick_in(&bus("dash.dds", 1.2), DVec3::ZERO, Vec3::Y, 0.0, Reach::ANY).map(|h| h.0), Some(1));
     }
 
     /// Real buses: every switch that a ray from one of the bus's cameras picks with nothing
-    /// hiding it (aimed at the faces of the switch) is still picked from one of them with the
-    /// parts that hide (opaque ones) taken into account. The SD202's ticket rests inside its
-    /// printer until it is printed, and the buttons on the body's outer skin or named
-    /// `_external` (the doors' outside openers, the pram request) are for outside: those are out of reach from
-    /// inside, as they should be. Stock buses by default; more with
-    /// `OMSI_PICK_BUSES` (comma-separated `.bus` paths under the root).
+    /// hiding it (aimed at the faces of the switch) is still picked from one of them through
+    /// `reach_into` as the cab uses it. Buttons on the body's outer skin or named `_external`
+    /// (the doors' outside openers, the pram request) and the SD202's ticket while it rests
+    /// inside its printer are for other views and not counted. Stock buses by default; more
+    /// with `OMSI_PICK_BUSES` (comma-separated `.bus` paths under the root, or absolute).
     #[test]
     #[ignore = "needs the installed content; set OMSI_ROOT"]
     fn installed_switches_stay_reachable_from_inside() {
@@ -436,7 +438,7 @@ mod reach_tests {
                     eyes.iter().any(|&eye| {
                         aims.iter().any(|&aim| {
                             let dir = (aim - eye).normalize_or_zero();
-                            let reach = if with_parts { Reach(hiding_distance(&v.ty, &v.mesh_props, |m| v.mesh_local_transform(m), eye, dir, false)) } else { Reach::ANY };
+                            let reach = if with_parts { reach_into(&v.ty, &v.mesh_props, |m| v.mesh_local_transform(m), eye, dir, false) } else { Reach::ANY };
                             pick_in(&v, v.position + eye.as_dvec3(), dir, 0.0, reach).is_some_and(|h| h.0 == i)
                         })
                     })
@@ -455,7 +457,7 @@ mod reach_tests {
                     // (what hides it, along the first aim from the first camera)
                     let (eye, aim) = (eyes[0], aims[0]);
                     let dir = (aim - eye).normalize_or_zero();
-                    let hider = super::hiding_part(&v.ty, &v.mesh_props, |m| v.mesh_local_transform(m), eye, dir, false);
+                    let hider = super::hiding_part(&v.ty, &v.mesh_props, |m| v.mesh_local_transform(m), eye, dir);
                     let what = hider.map(|(m, t)| {
                         let file = v.ty.meshes[m].file.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
                         format!("{file} at {t:.3} m, switch at {:.3} m", (aim - eye).length())
