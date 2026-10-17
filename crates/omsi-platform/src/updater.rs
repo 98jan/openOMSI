@@ -42,6 +42,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+mod unpack;
+pub use unpack::unpack;
+
 /// The project on GitHub.
 pub const REPO: &str = "openOMSI-org/openOMSI";
 pub const REPO_URL: &str = "https://github.com/openOMSI-org/openOMSI";
@@ -860,67 +863,6 @@ fn aside_of(target: &Path) -> PathBuf {
     first
 }
 
-/// Unpack `zip` into `to` (a fresh folder), with the files' Unix modes and links.
-pub fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
-    let _ = std::fs::remove_dir_all(to);
-    std::fs::create_dir_all(to)?;
-    let mut a = zip::ZipArchive::new(std::fs::File::open(zip)?)?;
-    for i in 0..a.len() {
-        let mut e = a.by_index(i)?;
-        let Some(rel) = e.enclosed_name() else { continue };
-        // (macOS' resource forks, which ditto keeps beside the files)
-        if rel.components().next().map(|c| c.as_os_str() == "__MACOSX").unwrap_or(false) || rel.file_name().map(|n| n.to_string_lossy().starts_with("._")).unwrap_or(false) {
-            continue;
-        }
-        let out = to.join(&rel);
-        if e.is_dir() {
-            std::fs::create_dir_all(&out)?;
-            continue;
-        }
-        if let Some(p) = out.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        let mode = e.unix_mode();
-        #[cfg(unix)]
-        if let Some(m) = mode {
-            if m & 0o170000 == 0o120000 {
-                let mut target = String::new();
-                e.read_to_string(&mut target)?;
-                if link_stays_inside(&rel, Path::new(&target)) {
-                    std::os::unix::fs::symlink(target, &out)?;
-                }
-                continue;
-            }
-        }
-        let mut f = std::fs::File::create(&out)?;
-        std::io::copy(&mut e, &mut f)?;
-        drop(f);
-        #[cfg(unix)]
-        if let Some(m) = mode {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(m & 0o777))?;
-        }
-        #[cfg(not(unix))]
-        let _ = mode;
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn link_stays_inside(rel: &Path, target: &Path) -> bool {
-    use std::path::Component;
-    let depth = rel.parent().map_or(0, |p| p.components().count());
-    target
-        .components()
-        .try_fold(depth, |d, c| match c {
-            Component::Normal(_) => Some(d + 1),
-            Component::CurDir => Some(d),
-            Component::ParentDir => d.checked_sub(1),
-            Component::RootDir | Component::Prefix(_) => None,
-        })
-        .is_some()
-}
-
 /// What the archive's top-level item `name` replaces in the installation.
 pub(crate) fn target_of(name: &str, place: &Place) -> PathBuf {
     // (the macOS app, whatever the player named the one that runs)
@@ -1462,33 +1404,6 @@ mod tests {
         }
         assert!(install_archive_with(&bad, &place, false).is_err());
         assert_eq!(std::fs::read_to_string(dir.join("openomsi")).unwrap(), "new game");
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn links_and_setuid_bits_do_not_leave_the_unpacked_folder() {
-        use std::os::unix::fs::PermissionsExt;
-        let root = std::env::temp_dir().join(format!("omsi-unpack-links-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        let zip = root.join("pack.zip");
-        {
-            let mut z = zip::ZipWriter::new(std::fs::File::create(&zip).unwrap());
-            let o = zip::write::SimpleFileOptions::default();
-            z.add_symlink("App.app/Contents/Current", "Versions/A", o).unwrap();
-            z.add_symlink("App.app/escape", "../../outside", o).unwrap();
-            z.add_symlink("App.app/absolute", "/etc", o).unwrap();
-            z.start_file("App.app/run", o.unix_permissions(0o4755)).unwrap();
-            z.write_all(b"x").unwrap();
-            z.finish().unwrap();
-        }
-        let to = root.join("out");
-        unpack(&zip, &to).unwrap();
-        assert_eq!(std::fs::read_link(to.join("App.app/Contents/Current")).unwrap(), Path::new("Versions/A"));
-        assert!(!to.join("App.app/escape").is_symlink());
-        assert!(!to.join("App.app/absolute").is_symlink());
-        assert_eq!(std::fs::metadata(to.join("App.app/run")).unwrap().permissions().mode() & 0o7777, 0o755);
         let _ = std::fs::remove_dir_all(&root);
     }
 }
