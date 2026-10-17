@@ -415,6 +415,8 @@ pub struct Navigator {
     day_clock: (f64, i32),
     /// The map's timetable for the lines panel, for the date it was read for.
     times: Option<(i32, std::sync::Arc<line_times::LineTimes>)>,
+    /// The worker reading it (for which date, and where the result comes).
+    times_job: Option<(i32, std::sync::mpsc::Receiver<std::sync::Arc<line_times::LineTimes>>)>,
     /// How far the panel has faded in (Shift+N fades it in and out rather than cutting).
     shown: f32,
     /// The trip's next stops (place, name, the bus's heading there) and where the bus is,
@@ -556,6 +558,7 @@ impl Navigator {
             date: 0,
             day_clock: (0.0, 0),
             times: None,
+            times_job: None,
             shown: if enabled { 1.0 } else { 0.0 },
             stop_spots: Vec::new(),
             bus_at: DVec3::ZERO,

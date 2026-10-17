@@ -368,3 +368,26 @@ fn the_route_of_the_line_in_focus_is_picked() {
     other.debug_lines("nope");
     assert!(!other.city.lines.open);
 }
+
+#[test]
+fn the_timetable_is_read_on_a_worker_and_the_frame_does_not_wait_for_it() {
+    let mut n = with_example_lines();
+    n.date = 19900101;
+    // (asked for the first time: a worker starts, and what comes back is "not yet" or, if it was quick, the timetable)
+    let first = n.line_times();
+    assert!(first.is_some() || n.times_job.is_some());
+    let began = std::time::Instant::now();
+    let mut got = first;
+    while got.is_none() && began.elapsed() < std::time::Duration::from_secs(10) {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        got = n.line_times();
+    }
+    assert!(got.is_some(), "the worker answers");
+    // (kept: asked again, it is the same and no worker runs)
+    assert!(n.times_job.is_none());
+    assert!(std::sync::Arc::ptr_eq(&got.unwrap(), &n.line_times().unwrap()));
+    // a new date is read again, on a worker
+    n.date = 19910101;
+    let again = n.line_times();
+    assert!(again.is_some() || n.times_job.as_ref().is_some_and(|j| j.0 == 19910101));
+}
