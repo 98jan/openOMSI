@@ -49,17 +49,51 @@ impl Package {
         self.terrain_offset
     }
 
+    /// The contour lines of a chunk and nothing else: the triangles and the other lines are skipped without being
+    /// decoded (a big city package has millions of them, and `walk` decodes them all).
+    fn contours_of(&self, body: &[u8]) -> Vec<super::Line> {
+        let mut out = Vec::new();
+        let mut r = Rd { b: body, i: 0 };
+        let _ = (|| -> Option<()> {
+            for _ in 0..r.u32()? {
+                r.u8()?;
+                let n = r.u32()? as usize;
+                r.take(n.checked_mul(24)?)?;
+            }
+            for _ in 0..r.u32()? {
+                let class = r.u8()?;
+                r.u8()?;
+                let width = r.f32()?;
+                r.u32()?;
+                let n = r.u32()? as usize;
+                if class != LINE_CONTOUR && class != LINE_CONTOUR_INDEX {
+                    r.take(n.checked_mul(8)?)?;
+                    continue;
+                }
+                if n.checked_mul(8)? > r.left() {
+                    return None;
+                }
+                let mut points = Vec::with_capacity(n);
+                for _ in 0..n {
+                    points.push(self.to_world(r.f32()?, r.f32()?));
+                }
+                out.push(super::Line { class, width, points });
+            }
+            Some(())
+        })();
+        out
+    }
+
     /// Where the heights of the contours are written on the city map: a point (world metres), the height (with the
     /// offset) and whether the line is an index one; about every 700 m along an index line and every 450 m along the
-    /// others. Made on first use.
+    /// others. Made on first use: that walks the whole file, so a frame must not be the one that asks (use
+    /// `contour_marks_ready` in a frame and have a worker call this).
     pub fn contour_marks(&self) -> &[((f64, f64), i32, bool)] {
         self.contour_marks.get_or_init(|| {
             let mut out = Vec::new();
             for e in &self.index {
                 let Some(body) = self.data.get(e.at..e.at + e.len) else { continue };
-                let mut layers = super::Layers::default();
-                let _ = self.walk(body, &mut layers);
-                for l in &layers.contours {
+                for l in &self.contours_of(body) {
                     let index = l.class == LINE_CONTOUR_INDEX;
                     let (gap, mut run) = (if index { 700.0 } else { 450.0 }, 0.0f64);
                     let mut next = if index { 150.0 } else { 100.0 };
@@ -74,6 +108,11 @@ impl Package {
             }
             out
         })
+    }
+
+    /// The marks, if they have been made (never makes them): what a frame asks.
+    pub fn contour_marks_ready(&self) -> Option<&[((f64, f64), i32, bool)]> {
+        self.contour_marks.get().map(|v| v.as_slice())
     }
 }
 
@@ -137,6 +176,26 @@ mod tests {
         assert_eq!(marks.iter().filter(|m| m.2).count(), 1);
         assert!(marks.iter().filter(|m| !m.2).count() >= 2);
         assert!(marks.iter().all(|m| m.1 == if m.2 { 52 } else { 12 }), "{marks:?}");
+    }
+
+    #[test]
+    fn the_marks_are_made_only_when_asked_and_a_frame_can_see_whether_they_are_there() {
+        let p = with_contours();
+        assert!(p.contour_marks_ready().is_none(), "nothing is made by opening the package");
+        let made = p.contour_marks().len();
+        assert!(made > 0);
+        assert_eq!(p.contour_marks_ready().map(|m| m.len()), Some(made));
+    }
+
+    #[test]
+    fn the_contours_of_a_chunk_are_the_same_whether_read_whole_or_skimmed() {
+        let p = with_contours();
+        let body = &p.data[p.index[0].at..p.index[0].at + p.index[0].len];
+        let mut whole = super::super::Layers::default();
+        let _ = p.walk(body, &mut whole);
+        assert_eq!(p.contours_of(body), whole.contours);
+        // a chunk that ends short gives what was read before it
+        assert!(p.contours_of(&body[..body.len() / 2]).len() <= whole.contours.len());
     }
 
     #[test]
