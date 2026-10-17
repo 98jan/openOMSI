@@ -95,8 +95,10 @@ impl App {
         // the latest `$msg` of the player's bus scripts, which OMSI writes on the screen: a
         // note while the script keeps saying it and for a few seconds after (AI vehicles'
         // messages are not shown)
-        if let Some(m) = self.player.as_ref().and_then(|p| p.vehicle.host.fresh_message(SCRIPT_MESSAGE_SECS)) {
-            say(format!("script $msg {}", note_key(m)), m.to_string(), NoticeKind::Info);
+        let script_says = self.player.as_ref().and_then(|p| p.vehicle.host.fresh_message(SCRIPT_MESSAGE_SECS));
+        if let Some(text) = script_says {
+            let key = format!("bus script {}", note_key(text));
+            say(key, text.to_string(), NoticeKind::Info);
         }
         // what is under the cursor, in the player's language (the scripts only
         // know internal, mostly German names)

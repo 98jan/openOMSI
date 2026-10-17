@@ -285,6 +285,7 @@ const LAYOVER_WAIT: f64 = 1800.0;
 const INTERPOLATED_STOP_WAIT: f64 = 120.0;
 
 /// How long a bus arriving at `now` stands at a stop it is to leave at `depart`.
+#[cfg(test)]
 fn early_wait(depart: f64, now: f64, layover: bool, rail: bool) -> f64 {
     time_to_departure(depart, now, layover, rail).min(LAYOVER_WAIT)
 }

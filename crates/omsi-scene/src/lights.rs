@@ -1098,9 +1098,9 @@ pub fn corona_texture_id(model_dir: &std::path::Path, name: &str) -> u16 {
     let root = CORONA_TEXTURES.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|t| t.root.clone()).unwrap_or_default();
     // (found as a material's texture is: the Helferlein signals' `Eff_li.bmp` ships only
     // as `Eff_li.dds`, and looked for under its own name alone the plain glow was drawn)
-    let dirs = crate::texture_dirs(&root, model_dir);
-    let dirs: Vec<&std::path::Path> = dirs.iter().map(|d| d.as_path()).collect();
-    let id = omsi_texture::find_texture(name, &dirs).map(texture_id_of).unwrap_or(0);
+    let search = crate::texture_dirs(&root, model_dir);
+    let search: Vec<&std::path::Path> = search.iter().map(std::path::PathBuf::as_path).collect();
+    let id = omsi_texture::find_texture(name, &search).map_or(0, texture_id_of);
     KNOWN
         .lock()
         .unwrap_or_else(|e| e.into_inner())

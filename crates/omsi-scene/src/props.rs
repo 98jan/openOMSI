@@ -1321,7 +1321,8 @@ pub(super) fn stand_in_mesh(m: &MeshData, defs: &[MaterialDef], xf: &Mat4, pos: 
         return false;
     }
     // a picture that never hides what is drawn after it, wherever it starts: a backdrop
-    if width > loaded && !defs.is_empty() && defs.iter().all(|d| d.no_z_write || d.no_z_check) {
+    let never_hides = !defs.is_empty() && defs.iter().all(|d| d.no_z_write || d.no_z_check);
+    if never_hides && width > loaded {
         return true;
     }
     // A mesh modelled wholly beyond the tiles OMSI loads with its object is seen in OMSI
