@@ -3820,7 +3820,7 @@ _version: 2
   ms: "Mod"
   tl: "Mga mod"
   sv: "Moddar"
-  sr: "Mods"
+  sr: "Modovi"
 "Tutorials":
   ca: "Tutorials"
   ru: "Обучение"
@@ -5181,7 +5181,7 @@ _version: 2
   ms: "Antialias"
   tl: "Anti-aliasing"
   sv: "Kantutjämning"
-  sr: "Anti-aliasing"
+  sr: "Izglađivanje ivica"
 "Off":
   ca: "Desactivat"
   ru: "Выкл."
@@ -5210,7 +5210,7 @@ _version: 2
   ms: "Mati"
   tl: "Off"
   sv: "Av"
-  sr: "Off"
+  sr: "Isključeno"
 "Render scale":
   ca: "Escala de renderització"
   ru: "Масштаб рендера"
@@ -5239,7 +5239,7 @@ _version: 2
   ms: "Skala pemaparan"
   tl: "Render scale"
   sv: "Renderingsskala"
-  sr: "Render scale"
+  sr: "Skala renderovanja"
 "Auto":
   ca: "Auto"
   ru: "Авто"
@@ -5268,7 +5268,7 @@ _version: 2
   ms: "Automatik"
   tl: "Awtomatiko"
   sv: "Auto"
-  sr: "Auto"
+  sr: "Automatski"
 "Anisotropic":
   ca: "Filtratge anisotròpic"
   ru: "Анизотропная"
@@ -5471,7 +5471,7 @@ _version: 2
   ms: "Skrin penuh"
   tl: "Full screen"
   sv: "Helskärm"
-  sr: "Fullscreen"
+  sr: "Ceo ekran"
 "V-sync":
   ca: "Sincronització vertical"
   ru: "Верт. синхронизация"
@@ -6022,7 +6022,7 @@ _version: 2
   ms: "Navigasi"
   tl: "Navigator"
   sv: "Navigator"
-  sr: "Navigator"
+  sr: "Navigacija"
 "Navigator (Shift+N: map, schedule, off)":
   ca: "Navegador (Maj+N: mapa, horari, desactivat)"
   ru: "Навигатор (Shift+N: карта, расписание, выкл.)"
@@ -6167,7 +6167,7 @@ _version: 2
   ms: "Sudut"
   tl: "Corner"
   sv: "Hörn"
-  sr: "Corner"
+  sr: "Ugao"
 "Interface & online":
   ca: "Interfície i xarxa"
   ru: "Интерфейс и сеть"
@@ -6544,7 +6544,7 @@ _version: 2
   ms: "Tersuai"
   tl: "Custom"
   sv: "Anpassad"
-  sr: "Custom"
+  sr: "Prilagođeno"
 "Quality preset":
   ca: "Perfil de qualitat"
   ru: "Предустановка качества"
@@ -7472,7 +7472,7 @@ _version: 2
   ms: "Kelantangan"
   tl: "Lakas ng tunog"
   sv: "Volym"
-  sr: "Volume"
+  sr: "Jačina"
 "Doppler effect":
   ca: "Efecte Doppler"
   ru: "Эффект Доплера"
@@ -8386,7 +8386,7 @@ _version: 2
   ms: "Lampu kecemasan"
   tl: "Hazard lights"
   sv: "Varningsblinkers"
-  sr: "Hazard lights"
+  sr: "Upozoravajuća svetla"
 "Horn":
   ca: "Clàxon"
   ru: "Гудок"
@@ -8415,7 +8415,7 @@ _version: 2
   ms: "Hon"
   tl: "Busina"
   sv: "Signalhorn"
-  sr: "Horn"
+  sr: "Sirena"
 "Headlights":
   ca: "Fars"
   ru: "Фары"
@@ -8531,7 +8531,7 @@ _version: 2
   ms: "Penghidup"
   tl: "Starter"
   sv: "Startmotor"
-  sr: "Starter"
+  sr: "Anlaser"
 "Wipers (next mode)":
   ca: "Eixugaparabrises (mode següent)"
   ru: "Дворники (след. режим)"
@@ -8618,7 +8618,7 @@ _version: 2
   ms: "Gear D"
   tl: "Gear D"
   sv: "Växel D"
-  sr: "Gear D"
+  sr: "Menjač D"
 "Gear N":
   ca: "Marxa N"
   ru: "Передача N"
@@ -8647,7 +8647,7 @@ _version: 2
   ms: "Gear N"
   tl: "Gear N"
   sv: "Växel N"
-  sr: "Gear N"
+  sr: "Menjač N"
 "Gear R":
   ca: "Marxa R"
   ru: "Передача R"
@@ -8676,7 +8676,7 @@ _version: 2
   ms: "Gear R"
   tl: "Gear R"
   sv: "Växel R"
-  sr: "Gear R"
+  sr: "Menjač R"
 "Front door (leaf 1)":
   ca: "Porta davantera (fulla 1)"
   ru: "Передняя дверь (створка 1)"
@@ -10113,7 +10113,7 @@ _version: 2
   ms: "Folder OMSI 2"
   tl: "OMSI 2 folder"
   sv: "OMSI 2-mapp"
-  sr: "OMSI 2 folder"
+  sr: "Fascikla OMSI 2"
 "Browse":
   ca: "Explora"
   ru: "Обзор"
@@ -10779,7 +10779,7 @@ _version: 2
   ms: "Sambungan dilepaskan"
   tl: "Natanggal ang coupling"
   sv: "Frånkopplat"
-  sr: "Uncoupled"
+  sr: "Otkačeno"
 "Object editor off (unsaved changes stay until the end of the session)":
   ca: "Editor d'objectes desactivat (els canvis sense desar es mantenen fins al final de la sessió)"
   ru: "Редактор объектов выкл. (несохранённые изменения остаются до конца сессии)"
@@ -11121,7 +11121,7 @@ _version: 2
   ms: "Penumpang"
   tl: "Pasahero"
   sv: "Passagerare"
-  sr: "Passenger"
+  sr: "Putnik"
 "Mouse steering on: across steers, up is the throttle, down the brake (O turns it off)":
   ca: "Direcció amb ratolí activada: horitzontal per girar, amunt per accelerar i avall per frenar (O la desactiva)"
   ru: "Руление мышью вкл.: влево-вправо - руль, вверх - газ, вниз - тормоз (O - выключить)"
@@ -11783,7 +11783,7 @@ _version: 2
   ms: "Baiki"
   tl: "Ayusin"
   sv: "Reparera"
-  sr: "Repair"
+  sr: "Popravka"
 "Copy server code":
   ca: "Copia el codi del servidor"
   de: "Servercode kopieren"
@@ -12322,7 +12322,7 @@ _version: 2
   ms: "Masa nyata"
   tl: "Real time"
   sv: "Verklig tid"
-  sr: "Real time"
+  sr: "Stvarno vreme"
 "Time speed (not in multiplayer)":
   ca: "Velocitat del temps (no disponible en multijugador)"
   ru: "Скорость времени (не в мультиплеере)"
@@ -13698,7 +13698,7 @@ _version: 2
   hi: "ब्रेक"
   zh-tw: "煞車"
   sv: "BROMS"
-  sr: "BRAKE"
+  sr: "KOČNICA"
 "Backspace":
   ca: "Retrocés"
   ru: "Backspace"
@@ -14609,7 +14609,7 @@ _version: 2
   hi: "Deutsch"
   zh-tw: "Deutsch"
   sv: "Deutsch"
-  sr: "Deutsch"
+  sr: "Nemački"
 "Devices":
   ca: "Dispositius"
   ru: "Устройства"
@@ -14661,7 +14661,7 @@ _version: 2
   hi: "Di"
   zh-tw: "週二"
   sv: "Ti"
-  sr: "Di"
+  sr: "Uto"
 "Dim":
   ca: "dg."
   ru: "Вс"
@@ -14684,7 +14684,7 @@ _version: 2
   hi: "र"
   zh-tw: "週日"
   sv: "Dämpad"
-  sr: "Dim"
+  sr: "Ned"
 "ANGLE (DirectX 11)":
   ca: "ANGLE (DirectX 11)"
   ru: "ANGLE (DirectX 11)"
@@ -15687,7 +15687,7 @@ _version: 2
   hi: "Handbremse"
   zh-tw: "Handbremse"
   sv: "Parkeringsbroms"
-  sr: "Handbremse"
+  sr: "Ručna kočnica"
 "Head movement":
   ca: "Moviment del cap"
   ru: "Движение головы"
@@ -15894,7 +15894,7 @@ _version: 2
   hi: "इनपुट"
   zh-tw: "輸入"
   sv: "Inmatning"
-  sr: "Inputs"
+  sr: "Kontrole"
 "Insert":
   ca: "Insereix"
   ru: "Insert"
@@ -15992,7 +15992,7 @@ _version: 2
   hi: "Jeu"
   zh-tw: "週四"
   sv: "To"
-  sr: "Jeu"
+  sr: "Čet"
 "Key bindings saved; Driving keys switched to Custom controls so the game uses them.":
   ca: "Assignacions desades; s'ha activat Controls personalitzats a Tecles de conducció perquè el joc les utilitzi."
   ru: "Назначения клавиш сохранены; «Клавиши вождения» переключены на «Свои настройки», чтобы игра их использовала."
@@ -16403,7 +16403,7 @@ _version: 2
   hi: "Lun"
   zh-tw: "週一"
   sv: "Må"
-  sr: "Lun"
+  sr: "Pon"
 "M_Wheel":
   ca: "M_Wheel"
   ru: "M_Wheel"
@@ -16472,7 +16472,7 @@ _version: 2
   hi: "Mer"
   zh-tw: "週三"
   sv: "On"
-  sr: "Mer"
+  sr: "Sre"
 "Mi":
   ca: "dc."
   ru: "Ср"
@@ -18123,7 +18123,7 @@ _version: 2
   hi: "सैलून लाइट"
   zh-tw: "車廂照明"
   sv: "Passagerarbelysning"
-  sr: "Saloon lights"
+  sr: "Svetla u putničkom prostoru"
 "Sam":
   ca: "ds."
   ru: "Сб"
@@ -18146,7 +18146,7 @@ _version: 2
   hi: "Sam"
   zh-tw: "週六"
   sv: "Lö"
-  sr: "Sam"
+  sr: "Sub"
 "Sat":
   ca: "ds."
   ru: "Сб"
@@ -18175,7 +18175,7 @@ _version: 2
   id: "Sab"
   ms: "Sab"
   tl: "Sab"
-  sr: "Sat"
+  sr: "Sub"
 "Saved":
   ca: "Desat"
   ru: "Сохранено"
@@ -18596,7 +18596,7 @@ _version: 2
   ms: "Langkau"
   tl: "Laktawan"
   sv: "Hoppa över"
-  sr: "Skip"
+  sr: "Preskoči"
 "Slider 1":
   ca: "Control lliscant 1"
   ru: "Ползунок 1"
@@ -19525,7 +19525,7 @@ _version: 2
   hi: "तक"
   zh-tw: "至"
   sv: "To"
-  sr: "To"
+  sr: "Do"
 "Too many wrong admin passwords: try again later":
   ca: "Massa contrasenyes d'administració incorrectes: torna-ho a provar més tard"
   ru: "Слишком много неверных паролей администратора: повторите позже"
@@ -19617,7 +19617,7 @@ _version: 2
   hi: "ट्रिप"
   zh-tw: "班次"
   sv: "Tur"
-  sr: "Trip"
+  sr: "Vožnja"
 "Try again":
   ca: "Torna-ho a provar"
   ru: "Повторить"
@@ -19842,7 +19842,7 @@ _version: 2
   hi: "Ven"
   zh-tw: "週五"
   sv: "Fr"
-  sr: "Ven"
+  sr: "Pet"
 "Vulkan":
   ca: "Vulkan"
   ru: "Vulkan"
@@ -20724,7 +20724,7 @@ _version: 2
   hi: "नेविगेटर मैप"
   zh-tw: "導航地圖"
   sv: "navigatorkarta"
-  sr: "navigator map"
+  sr: "mapa navigacije"
 "no bus":
   ca: "sense autobús"
   ru: "нет автобуса"
@@ -22629,7 +22629,7 @@ _version: 2
   ms: "Hidup"
   tl: "On"
   sv: "På"
-  sr: "On"
+  sr: "Uključeno"
 "Interface opacity":
   ca: "Opacitat de la interfície"
   ru: "Непрозрачность интерфейса"
@@ -25643,7 +25643,7 @@ _version: 2
   zh-tw: "挑選"
   nl: "Kiezen"
   sv: "Välj"
-  sr: "Pick"
+  sr: "Izaberi"
 
 "Teleports you to any location on the map":
   es: "Te teletransporta a cualquier lugar del mapa"
@@ -25903,7 +25903,7 @@ _version: 2
   zh-tw: "預設"
   nl: "Voorinstelling"
   sv: "Förval"
-  sr: "Preset"
+  sr: "Postavka"
 
 "A ready-made weather":
   es: "Una configuración meteorológica predefinida"
@@ -26808,7 +26808,7 @@ _version: 2
   pt-pt: "Alerta"
   nl: "Melding"
   sv: "Larm"
-  sr: "Alert"
+  sr: "Upozorenje"
 "Voice chat through GreenTeaSpeak (multiplayer)":
   es: "Chat de voz mediante GreenTeaSpeak (multijugador)"
   ca: "Xat de veu amb GreenTeaSpeak (multijugador)"
@@ -27183,7 +27183,7 @@ _version: 2
   zh: "套件"
   nl: "Pakket"
   sv: "Paket"
-  sr: "Pack"
+  sr: "Paket"
 
 "Paint":
   es: "Librea"
@@ -27197,7 +27197,7 @@ _version: 2
   zh: "涂装"
   nl: "Kleurstelling"
   sv: "Lackering"
-  sr: "Paint"
+  sr: "Boja"
 
 "Snow cover":
   ca: "Capa de neu"
@@ -27282,7 +27282,7 @@ _version: 2
   de: "Depot"
   nl: "Depot"
   sv: "Depå"
-  sr: "Depot"
+  sr: "Depo"
 
 "Station":
   es: "Estación"
@@ -27978,7 +27978,7 @@ _version: 2
   tl: "Latching"
   hi: "लैचिंग"
   sv: "Låsande"
-  sr: "Latching"
+  sr: "Fiksiranje"
 
 "Left screen inward angle":
   es: "Ángulo de la pantalla izquierda hacia dentro"
@@ -29013,7 +29013,7 @@ _version: 2
   zh: "在线"
   nl: "Online"
   sv: "Online"
-  sr: "Online"
+  sr: "Na mreži"
 
 "Options":
   ca: "Opcions"
@@ -29522,7 +29522,7 @@ _version: 2
   ms: "Pertengahan"
   tl: "Gitna"
   sv: "Mitten"
-  sr: "Mid"
+  sr: "Srednje"
 "Late":
   ca: "Final"
   ru: "Конец"
@@ -30066,7 +30066,7 @@ _version: 2
   sv: "Iskyla"
   pt: "Frio intenso"
   ca: "Fred intens"
-  sr: "Eiseskalte"
+  sr: "Ekstremna hladnoća"
 
 "Starker Schneefall":
   es: "Nevada intensa"
@@ -30074,7 +30074,7 @@ _version: 2
   sv: "Kraftigt snöfall"
   pt: "Nevasca forte"
   ca: "Nevada intensa"
-  sr: "Starker Schneefall"
+  sr: "Obilne snežne padavine"
 
 "Ueberfrierende Naesse":
   es: "Hielo en la calzada"
@@ -30082,7 +30082,7 @@ _version: 2
   sv: "Underkyld nederbörd"
   pt: "Pista congelando"
   ca: "Humitat amb glaçades"
-  sr: "Ueberfrierende Naesse"
+  sr: "Poledica"
 
 "Bodennebel":
   es: "Niebla baja"
@@ -30090,7 +30090,7 @@ _version: 2
   sv: "Markdimma"
   pt: "Neblina rasteira"
   ca: "Boira baixa"
-  sr: "Bodennebel"
+  sr: "Prizemna magla"
 
 "Daemmerungsnebel":
   es: "Niebla al anochecer"
@@ -30098,7 +30098,7 @@ _version: 2
   sv: "Skymningsdimma"
   pt: "Neblina ao entardecer"
   ca: "Boira al capvespre"
-  sr: "Daemmerungsnebel"
+  sr: "Sumračna magla"
 
 "Schmuddelwetter":
   es: "Tiempo desapacible"
@@ -30106,7 +30106,7 @@ _version: 2
   sv: "Ruskväder"
   pt: "Tempo feio"
   ca: "Temps plujós"
-  sr: "Schmuddelvetter"
+  sr: "Bljuzgavo vreme"
 
 "Sommerlich":
   es: "Tiempo veraniego"
@@ -30114,7 +30114,7 @@ _version: 2
   sv: "Sommarväder"
   pt: "Clima de verão"
   ca: "Temps estiuenc"
-  sr: "Sommerlich"
+  sr: "Letnje"
 
 "Sturm":
   es: "Temporal"
@@ -30122,7 +30122,7 @@ _version: 2
   sv: "Storm"
   pt: "Tempestade"
   ca: "Tempesta"
-  sr: "Sturm"
+  sr: "Oluja"
 
 "In a LAN session only the host can clear AI traffic":
   zh-tw: "區域網路連線中，只有主機可以清除 AI 交通"
@@ -31936,7 +31936,7 @@ _version: 2
   ms: "DIJEDA"
   tl: "NAKA-PAUSE"
   sv: "PAUSAT"
-  sr: "PAUSED"
+  sr: "PAUZIRANO"
 "MENU":
   ca: "MENÚ"
   ru: "МЕНЮ"
@@ -31965,7 +31965,7 @@ _version: 2
   ms: "MENU"
   tl: "MENU"
   sv: "MENY"
-  sr: "MENU"
+  sr: "MENI"
 "Photo mode":
   ca: "Mode foto"
   ru: "Фоторежим"
@@ -31994,7 +31994,7 @@ _version: 2
   ms: "Mod foto"
   tl: "Photo mode"
   sv: "Fotoläge"
-  sr: "Photo mode"
+  sr: "Režim fotografisanja"
 "Lens":
   ca: "Objectiu"
   ru: "Объектив"
@@ -32023,7 +32023,7 @@ _version: 2
   ms: "Kanta"
   tl: "Lente"
   sv: "Objektiv"
-  sr: "Lens"
+  sr: "Objektiv"
 "Colour":
   ca: "Color"
   ru: "Цвет"
@@ -32110,7 +32110,7 @@ _version: 2
   ms: "Adegan"
   tl: "Eksena"
   sv: "Scen"
-  sr: "Scene"
+  sr: "Scena"
 "Movement":
   ca: "Moviment"
   ru: "Движение"
@@ -32168,7 +32168,7 @@ _version: 2
   ms: "Bebas"
   tl: "Malaya"
   sv: "Fri"
-  sr: "Besplatno"
+  sr: "Slobodno"
 "Orbit":
   ca: "Òrbita"
   ru: "Орбита"
@@ -32255,7 +32255,7 @@ _version: 2
   ms: "Kecondongan"
   tl: "Ikiling"
   sv: "Sidolutning"
-  sr: "Roll"
+  sr: "Rotacija"
 "Speed":
   ca: "Velocitat"
   ru: "Скорость"
@@ -32342,7 +32342,7 @@ _version: 2
   ms: "Bingkai"
   tl: "Frame"
   sv: "Bildutsnitt"
-  sr: "Frame"
+  sr: "Kadar"
 "Aspect ratio":
   ca: "Relació d'aspecte"
   ru: "Соотношение сторон"
@@ -32458,7 +32458,7 @@ _version: 2
   ms: "Fokus"
   tl: "Focus"
   sv: "Fokus"
-  sr: "Focus"
+  sr: "Fokus"
 "On the bus":
   ca: "A l'autobús"
   ru: "На автобусе"
@@ -32516,7 +32516,7 @@ _version: 2
   ms: "Manual"
   tl: "Mano-mano"
   sv: "Manuell"
-  sr: "Manual"
+  sr: "Ručno"
 "Focus distance":
   ca: "Distància d'enfocament"
   ru: "Дистанция фокуса"
@@ -32893,7 +32893,7 @@ _version: 2
   ms: "Serlahan"
   tl: "Highlights"
   sv: "Högdagrar"
-  sr: "Highlights"
+  sr: "Svetli tonovi"
 "Shadows":
   ca: "Ombres"
   ru: "Тени"
@@ -32951,7 +32951,7 @@ _version: 2
   ms: "Ketepuan"
   tl: "Saturation"
   sv: "Mättnad"
-  sr: "Saturation"
+  sr: "Zasićenost"
 "Vibrance":
   ca: "Intensitat"
   ru: "Красочность"
@@ -32980,7 +32980,7 @@ _version: 2
   ms: "Kerancakan"
   tl: "Vibrance"
   sv: "Lyster"
-  sr: "Vibrance"
+  sr: "Živost"
 "Tint":
   ca: "Tint"
   ru: "Оттенок"
@@ -33212,7 +33212,7 @@ _version: 2
   ms: "Tajamkan"
   tl: "Patalasin"
   sv: "Skärpa"
-  sr: "Sharpen"
+  sr: "Izoštravanje"
 "Time of day":
   ca: "Hora del dia"
   ru: "Время суток"
@@ -33299,7 +33299,7 @@ _version: 2
   ms: "Menyimpan"
   tl: "Pag-save"
   sv: "Sparande"
-  sr: "Saving"
+  sr: "Čuvanje"
 "Photo size":
   ca: "Mida de la foto"
   ru: "Размер фото"
@@ -33763,7 +33763,7 @@ _version: 2
   ms: "Bulat"
   tl: "Bilog"
   sv: "Rund"
-  sr: "Round"
+  sr: "Okruglo"
 "5 blades":
   ca: "5 làmines"
   ru: "5 лепестков"
@@ -34053,7 +34053,7 @@ _version: 2
   ms: "Terang"
   tl: "Matingkad"
   sv: "Livfull"
-  sr: "Vivid"
+  sr: "Živopisno"
 "Warm":
   ca: "Càlid"
   ru: "Тёплый"
@@ -34111,7 +34111,7 @@ _version: 2
   ms: "Sejuk"
   tl: "Malamig"
   sv: "Kall"
-  sr: "Cool"
+  sr: "Hladno"
 "Vintage":
   ca: "Vintage"
   ru: "Винтаж"
@@ -34140,7 +34140,7 @@ _version: 2
   ms: "Vintaj"
   tl: "Vintage"
   sv: "Vintage"
-  sr: "Vintage"
+  sr: "Retro"
 "Sepia":
   ca: "Sèpia"
   ru: "Сепия"
@@ -34169,7 +34169,7 @@ _version: 2
   ms: "Sepia"
   tl: "Sepia"
   sv: "Sepia"
-  sr: "Sepia"
+  sr: "Sepija"
 "Black and white":
   ca: "Blanc i negre"
   ru: "Чёрно-белый"
@@ -34227,7 +34227,7 @@ _version: 2
   ms: "Noir"
   tl: "Noir"
   sv: "Noir"
-  sr: "Noir"
+  sr: "Noar"
 "Bleach bypass":
   ca: "Bleach bypass"
   ru: "Отбеливание (bleach bypass)"
@@ -35402,7 +35402,7 @@ _version: 2
   hi: "अंतर"
   ca: "Dif."
   sv: "Skillnad"
-  sr: "Diff"
+  sr: "Razlika"
 
 "Stops served:":
   de: "Bediente Haltestellen:"
@@ -36382,7 +36382,7 @@ _version: 2
   sv: "Startprogram"
   ca: "Llançador"
   fr: "Lanceur"
-  sr: "Launcher"
+  sr: "Pokretač"
 
 "Level {n}":
   es: "Nivel {n}"
@@ -37703,7 +37703,7 @@ _version: 2
   id: "Rit kosong"
   ms: "Perjalanan depoh"
   tl: "Biyahe sa depot"
-  sr: "Depot run"
+  sr: "Vožnja iz depoa"
 
 "Start time":
   es: "Hora de inicio"
@@ -38465,7 +38465,7 @@ _version: 2
   hi: "आर्काइव"
   ca: "Arxius"
   sv: "Arkiv"
-  sr: "Archives"
+  sr: "Arhiva"
 
 "Read in place by the game, without unpacking.":
   es: "El juego lo lee directamente, sin descomprimirlo."
@@ -38595,7 +38595,7 @@ _version: 2
   sv: "Kvinna"
   ca: "Dona"
   fr: "Femme"
-  sr: "Female"
+  sr: "Žensko"
 
 "No driver yet":
   es: "Aún no hay ningún conductor"
@@ -39090,7 +39090,7 @@ _version: 2
   sv: "Mörkt"
   ca: "Fosc"
   fr: "Sombre"
-  sr: "Dark"
+  sr: "Tamno"
 
 "System":
   es: "Sistema"
@@ -39440,7 +39440,7 @@ _version: 2
   hi: "{n} टूर"
   ca: "{n} torns"
   sv: "{n} omlopp"
-  sr: "{n} tours"
+  sr: "Broj tura: {n}"
 
 "trips":
   de: "Fahrten"
@@ -39642,7 +39642,7 @@ _version: 2
   tr: "Yer sisi"
   sv: "Markdimma"
   ca: "Boira baixa"
-  sr: "Ground Fog"
+  sr: "Prizemna magla"
 
 "Twilight Fog":
   zh-tw: "暮光霧"
@@ -39657,7 +39657,7 @@ _version: 2
   tr: "Alacakaranlık sisi"
   sv: "Skymningsdimma"
   ca: "Boira al capvespre"
-  sr: "Tvilight Fog"
+  sr: "Sumračna magla"
 
 "Iciness":
   zh-tw: "結冰"
@@ -39672,7 +39672,7 @@ _version: 2
   tr: "Dondurucu soğuk"
   sv: "Iskyla"
   ca: "Fred intens"
-  sr: "Iciness"
+  sr: "Zaleđenost"
 
 "Rainy":
   zh-tw: "下雨"
@@ -39702,7 +39702,7 @@ _version: 2
   tr: "Yaz gibi"
   sv: "Somrigt"
   ca: "Temps estiuenc"
-  sr: "Summerlike"
+  sr: "Letnje"
 
 "Heavy Snowfall":
   zh-tw: "大雪"
@@ -40760,7 +40760,7 @@ _version: 2
   ms: "Ringkas"
   tl: "Compact"
   sv: "Kompakt"
-  sr: "Compact"
+  sr: "Kompaktno"
 
 "Detailed":
   ca: "Detallat"
@@ -40910,7 +40910,7 @@ _version: 2
   hi: "रैखिक"
   ca: "Lineal"
   sv: "Linjär"
-  sr: "Linear"
+  sr: "Linearno"
 
 "Progressive":
   de: "Progressiv"
@@ -41270,7 +41270,7 @@ _version: 2
   hi: "गेमपैड"
   ca: "Comandament"
   sv: "Handkontroll"
-  sr: "Gamepad"
+  sr: "Kontroler"
 
 "Gearbox":
   de: "Getriebe"
@@ -42440,7 +42440,7 @@ _version: 2
   hi: "Circle"
   ca: "Cercle"
   sv: "Cirkel"
-  sr: "Circle"
+  sr: "Krug"
 
 "Square":
   de: "Quadrat"
@@ -42710,7 +42710,7 @@ _version: 2
   hi: "Share"
   ca: "Share"
   sv: "Dela"
-  sr: "Share"
+  sr: "Podeli"
 
 "For every wheel":
   de: "Für alle Lenkräder"
@@ -44098,7 +44098,7 @@ _version: 2
   zh: "地图"
   hi: "मानचित्र"
   ca: "Mapes"
-  sr: "Maps"
+  sr: "Mape"
 
 "{name} installed":
   de: "{name} installiert"
@@ -45549,7 +45549,7 @@ _version: 2
   ms: "Cuci gambar"
   tl: "Develop"
   sv: "Framkalla"
-  sr: "Develop"
+  sr: "Razvijanje"
 "Everything sharp (hyperfocal)":
   ca: "Tot nítid (hiperfocal)"
   ru: "Всё резко (гиперфокал)"
@@ -45665,7 +45665,7 @@ _version: 2
   ms: "Denyar (5900 K)"
   tl: "Flash (5900 K)"
   sv: "Blixt (5900 K)"
-  sr: "Flash (5900 K)"
+  sr: "Blic (5900 K)"
 "Flat (for grading)":
   ca: "Pla (per a gradació)"
   ru: "Плоский (для грейдинга)"
@@ -45810,7 +45810,7 @@ _version: 2
   ms: "Beku"
   tl: "Frozen"
   sv: "Fryst"
-  sr: "Frozen"
+  sr: "Zamrznuto"
 "Full frame (36 x 24 mm)":
   ca: "Format complet (36 x 24 mm)"
   ru: "Полный кадр (36 x 24 mm)"
@@ -46042,7 +46042,7 @@ _version: 2
   ms: "Cetakan segera"
   tl: "Instant print"
   sv: "Direktbild"
-  sr: "Instant print"
+  sr: "Instantna fotografija"
 "Landscape":
   ca: "Paisatge"
   ru: "Пейзаж"
@@ -46274,7 +46274,7 @@ _version: 2
   ms: "Meter"
   tl: "Meter"
   sv: "Ljusmätare"
-  sr: "Meter"
+  sr: "Merač"
 "Metering":
   ca: "Mesura"
   ru: "Замер экспозиции"
@@ -46361,7 +46361,7 @@ _version: 2
   ms: "Mod"
   tl: "Mode"
   sv: "Läge"
-  sr: "Mode"
+  sr: "Režim"
 "Motion":
   ca: "Moviment"
   ru: "Движение"
@@ -46390,7 +46390,7 @@ _version: 2
   ms: "Gerakan"
   tl: "Galaw"
   sv: "Rörelse"
-  sr: "Motion"
+  sr: "Pokret"
 "Neutral":
   ca: "Neutre"
   ru: "Нейтральный"
@@ -46448,7 +46448,7 @@ _version: 2
   ms: "Panning"
   tl: "Panning"
   sv: "Panorering"
-  sr: "Panning"
+  sr: "Praćenje pokreta"
 "Photos are saved as PNG into the Screenshots folder of the game, with the camera's settings (aperture, time, ISO, focal length) in their metadata.":
   ca: "Les fotos es desen com a PNG a la carpeta Screenshots del joc, amb els ajustos de la càmera (obertura, temps, ISO, distància focal) a les metadades."
   ru: "Снимки сохраняются в PNG в папку Screenshots игры, а настройки камеры (диафрагма, выдержка, ISO, фокусное расстояние) записываются в метаданные."
@@ -46854,7 +46854,7 @@ _version: 2
   ms: "Mudah"
   tl: "Simple"
   sv: "Enkelt"
-  sr: "Simple"
+  sr: "Jednostavno"
 "Simple: the lens, the look and the frame. Advanced: a camera body - sensor size, P/A/S/M exposure with ISO and metering, white balance in kelvin, tilt-shift, histogram, focus peaking, bracketing and 16-bit PNG.":
   ca: "Simple: l'objectiu, l'aspecte i el marc. Avançat: un cos de càmera - mida del sensor, exposició P/A/S/M amb ISO i mesura, balanç de blancs en kelvin, basculament i descentrament, histograma, ressaltat del focus, horquillat i PNG de 16 bits."
   ru: "Простой: объектив, стиль и рамка. Расширенный: корпус камеры - размер матрицы, экспозиция P/A/S/M с ISO и замером, баланс белого в кельвинах, тилт-шифт, гистограмма, фокус-пикинг, брекетинг и 16-битный PNG."
@@ -46970,7 +46970,7 @@ _version: 2
   ms: "Titik"
   tl: "Spot"
   sv: "Spot"
-  sr: "Spot"
+  sr: "Tačkasto"
 "Swing":
   ca: "Rotació"
   ru: "Свинг"
@@ -47057,7 +47057,7 @@ _version: 2
   ms: "Condong"
   tl: "Tilt"
   sv: "Tilt"
-  sr: "Tilt"
+  sr: "Nagib"
 "Tilt and shift":
   ca: "Basculament i descentrament"
   ru: "Наклон и сдвиг"
@@ -47144,7 +47144,7 @@ _version: 2
   ms: "Tona"
   tl: "Tone"
   sv: "Ton"
-  sr: "Tone"
+  sr: "Ton"
 "Tripod":
   ca: "Trípode"
   ru: "Штатив"
@@ -47173,7 +47173,7 @@ _version: 2
   ms: "Tripod"
   tl: "Tripod"
   sv: "Stativ"
-  sr: "Tripod"
+  sr: "Stativ"
 "Tungsten (3200 K)":
   ca: "Tungstè (3200 K)"
   ru: "Лампа накаливания (3200 K)"
@@ -49348,7 +49348,7 @@ _version: 2
   es: "Sencillo"
   zh-tw: "基本"
   ca: "Senzill"
-  sr: "Plain"
+  sr: "Obično"
 
 "Lower is faster: the drops on the glass painted less often, less spray and fewer streaks; Low shows OMSI 2's own rain on the glass (from the next bus loaded)":
   zh-tw: "較低品質可提高效能：減少玻璃雨滴更新、水花與雨線；低品質會使用 OMSI 2 的玻璃雨效（下次載入巴士生效）"
@@ -49662,7 +49662,7 @@ _version: 2
   es: "Desconectado"
   zh-tw: "未連接"
   ca: "Desconnectat"
-  sr: "Disconnected"
+  sr: "Nije povezano"
 
 "Found by its name and USB ids":
   fr: "Reconnue par son nom et ses identifiants USB"
@@ -49688,7 +49688,7 @@ _version: 2
   es: "Sin asignar"
   zh-tw: "未指定"
   ca: "Sense assignar"
-  sr: "Unassigned"
+  sr: "Nedodeljeno"
 
 "Default buttons":
   fr: "Boutons par défaut"
