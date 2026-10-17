@@ -39,7 +39,7 @@ impl Navigator {
         let (tx, rx) = std::sync::mpsc::channel();
         let spawned = std::thread::Builder::new().name("navigator timetable".into()).spawn(move || {
             let chrono = omsi_map::active_chrono_dirs(&map_dir, date);
-            let _ = tx.send(std::sync::Arc::new(LineTimes::load(&map_dir, &chrono)));
+            let _ = tx.send(std::sync::Arc::new(LineTimes::load(&map_dir, &chrono, date)));
         });
         self.times_job = spawned.ok().map(|_| (date, rx));
         None

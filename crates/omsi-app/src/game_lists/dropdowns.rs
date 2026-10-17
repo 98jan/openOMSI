@@ -320,7 +320,12 @@ pub(super) fn preset_row(file: &serde_json::Value, name: &str, desc: &str) -> Op
     Some((row(name, 'o', &label, desc, None), "preset".to_string()))
 }
 
-pub(super) fn store_with(app: &mut App, change: impl FnOnce(&mut serde_json::Value)) {
+pub(crate) fn saved_settings() -> Option<serde_json::Value> {
+    flush_settings(true);
+    omsi_launcher_lib::get_settings().ok()
+}
+
+pub(crate) fn store_with(app: &mut App, change: impl FnOnce(&mut serde_json::Value)) {
     flush_settings(true);
     let Ok(mut v) = omsi_launcher_lib::get_settings() else { return };
     change(&mut v);
@@ -341,7 +346,7 @@ pub(super) fn reload_settings(app: &mut App) {
     sync_live(app);
 }
 
-pub(super) fn session_mode(app: &App) -> &'static str {
+pub(crate) fn session_mode(app: &App) -> &'static str {
     mode_of_session(&app.args.session_settings, &app.settings.graphics)
 }
 

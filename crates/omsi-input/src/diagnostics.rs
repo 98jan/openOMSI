@@ -2,7 +2,7 @@
 
 /// The player's key for `action` when `bindings` (the vehicle's `Inputs/keyboard.cfg`) bind it
 /// to another key than OMSI's own file does; `None` for the stock key or no key at all.
-pub(crate) fn rebound_key(bindings: &[omsi_content::KeyBinding], action: &str) -> Option<String> {
+pub fn rebound_key(bindings: &[omsi_content::KeyBinding], action: &str) -> Option<String> {
     use omsi_content::input::KEY_HOLD;
     let b = bindings.iter().find(|b| b.action.eq_ignore_ascii_case(action) && b.scan_code != 0)?;
     let stock = crate::stock_keys::STOCK_KEYS
@@ -15,7 +15,7 @@ pub(crate) fn rebound_key(bindings: &[omsi_content::KeyBinding], action: &str) -
 /// first (empty when it moves or nothing is pressed). The window's HUD shows them, an
 /// offscreen run logs them. `key(action)` names the player's own key for an action of
 /// `Inputs/keyboard.cfg` when it is not the stock one (see [`rebound_key`]).
-pub(crate) fn standing_reasons(v: &omsi_sim::VehicleInstance, key: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
+pub fn standing_reasons(v: &omsi_sim::VehicleInstance, key: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
     let mut lines = Vec::new();
     let throttle = v.var("throttle").unwrap_or(0.0) > 0.05;
     let slow = v.physics.velocity_kmh().abs() < 3.0;
@@ -63,13 +63,11 @@ pub(crate) fn standing_reasons(v: &omsi_sim::VehicleInstance, key: &dyn Fn(&str)
             // (with the tanks full the spring brake is held by the bus's own parking brake,
             // whatever its script calls it, not by a want of air)
             let full = !tanks.is_empty() && low >= 6.0e5;
-            let tank = if tanks.is_empty() {
-                String::new()
-            } else {
-                format!("{:.1} bar in the tanks, ", low / 1e5)
-            };
-            if !full {
-                lines.push(format!("Air pressure is low ({tank}spring brake {:.1} bar): the spring brake holds until the compressor has filled the tanks - keep the engine running", fba / 1e5));
+            // (whole sentences: the tables translate a text by its key)
+            if !full && tanks.is_empty() {
+                lines.push(format!("Air pressure is low (spring brake {:.1} bar): the spring brake holds until the compressor has filled the tanks - keep the engine running", fba / 1e5));
+            } else if !full {
+                lines.push(format!("Air pressure is low ({:.1} bar in the tanks, spring brake {:.1} bar): the spring brake holds until the compressor has filled the tanks - keep the engine running", low / 1e5, fba / 1e5));
             }
         }
     }
@@ -113,7 +111,7 @@ pub(crate) fn standing_reasons(v: &omsi_sim::VehicleInstance, key: &dyn Fn(&str)
 }
 
 /// `OMSI_DEBUG_PHYSICS`: one line with the player's pose, speed, wheel contacts and crashes.
-pub(crate) fn log_physics(v: &omsi_sim::VehicleInstance, t: f32) {
+pub fn log_physics(v: &omsi_sim::VehicleInstance, t: f32) {
     let wheels = v
         .rigid
         .as_ref()

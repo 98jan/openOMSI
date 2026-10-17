@@ -118,6 +118,8 @@ impl Renderer {
         // a small or shared graphics chip gets a lighter picture (see `lighter_picture`)
         GL_BACKEND.store(info.backend == wgpu::Backend::Gl, std::sync::atomic::Ordering::Relaxed);
         let (options, lighter) = gpu_memory::lighter_picture(&info, vram, options);
+        let most = gpu_memory::ceiling(&info, vram);
+        *CEILING.lock().unwrap_or_else(|e| e.into_inner()) = Some(if intel_vulkan_safe { gpu_memory::Ceiling { msaa: 1, ssao: false, shadow_size: most.shadow_size.min(2048), ..most } } else { most });
         let shadow_size = options
             .shadow_size
             .clamp(512, if intel_vulkan_safe { 2048 } else { 8192 });
@@ -277,6 +279,9 @@ impl Renderer {
             .filter(|&n| n <= wanted)
             .find(|&n| supported(n))
             .unwrap_or(1);
+        if let Some(c) = CEILING.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            c.sample_counts = [1, 2, 4, 8].into_iter().filter(|&n| supported(n)).fold(0, |m, n| m | n);
+        }
         if msaa != wanted {
             log::warn!("{}x MSAA is not supported by {} (the device takes {:?} samples for {:?}, {:?} for the HDR target, {:?} for depth); using {}x", wanted, info.name, flags_of(format).supported_sample_counts(), format, flags_of(targets[1]).supported_sample_counts(), flags_of(DEPTH_FORMAT).supported_sample_counts(), msaa);
         }
