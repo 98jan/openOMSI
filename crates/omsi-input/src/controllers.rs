@@ -19,6 +19,9 @@ use crate::gamepad_profile::{self, PadKind};
 use gilrs::{Axis, EventType, Gilrs};
 use std::path::Path;
 
+mod held;
+use held::HeldButtons;
+
 /// What one axis of a device does.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Func {
@@ -83,11 +86,28 @@ pub struct DeviceCfg {
     /// `[openOMSI.Latching]`: the buttons (from 0) that are latching switches - a turn signal
     /// lever, a lit hazard button - and switch back when they come out.
     pub latching: Vec<usize>,
+    pub more: Vec<(usize, String)>,
 }
 
 impl DeviceCfg {
     pub fn steers(&self) -> bool {
         self.axes.iter().flatten().any(|(f, _)| *f == Func::Steering)
+    }
+
+    pub fn actions_of(&self, button: usize) -> Vec<String> {
+        let first = self.buttons.get(button).map(|b| b.0.clone()).into_iter();
+        let more = self.more.iter().filter(|(b, _)| *b == button).map(|(_, a)| a.clone());
+        let mut out: Vec<String> = Vec::new();
+        for a in first.chain(more).filter(|a| !a.is_empty()) {
+            if !out.iter().any(|o| o.eq_ignore_ascii_case(&a)) {
+                out.push(a);
+            }
+        }
+        out
+    }
+
+    pub fn continuous(&self, button: usize) -> bool {
+        self.buttons.get(button).is_some_and(|b| b.1.trim() == "1")
     }
 }
 
@@ -167,6 +187,19 @@ pub fn parse_cfg(text: &str) -> Vec<DeviceCfg> {
                 }
                 i += 2;
             }
+            "[openOMSI.MoreActions]" => {
+                let n: usize = lines.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(0).min(4096);
+                if let Some(d) = out.last_mut() {
+                    for k in 0..n {
+                        let button = lines.get(i + 2 + k * 2).and_then(|v| v.parse::<usize>().ok()?.checked_sub(1));
+                        let action = lines.get(i + 3 + k * 2).unwrap_or(&"");
+                        if let Some(b) = button.filter(|_| !action.is_empty()) {
+                            d.more.push((b, action.to_string()));
+                        }
+                    }
+                }
+                i += 2 + n * 2;
+            }
             "[openOMSI.FFInvert]" => {
                 if let Some(d) = out.last_mut() {
                     d.ff_invert = lines.get(i + 1).and_then(|v| match *v { "0" => Some(false), "1" => Some(true), _ => None });
@@ -203,6 +236,13 @@ pub fn cfg_text(devices: &[DeviceCfg]) -> String {
         if !d.latching.is_empty() {
             let numbers: Vec<String> = d.latching.iter().map(|b| (b + 1).to_string()).collect();
             t.push_str(&format!("[openOMSI.Latching]\r\n{}\r\n\r\n", numbers.join(" ")));
+        }
+        if !d.more.is_empty() {
+            t.push_str(&format!("[openOMSI.MoreActions]\r\n{}\r\n", d.more.len()));
+            for (b, action) in &d.more {
+                t.push_str(&format!("{}\r\n{action}\r\n", b + 1));
+            }
+            t.push_str("\r\n");
         }
     }
     t
@@ -488,6 +528,17 @@ impl Devices {
         }
         #[cfg(not(windows))]
         let _ = focused;
+    }
+
+    pub fn set_background(&mut self, on: bool) {
+        #[cfg(windows)]
+        if let Some(d) = self.di.as_mut() {
+            d.set_background(on);
+        }
+        #[cfg(target_os = "macos")]
+        crate::mac_game_controller::monitor_background(on);
+        #[cfg(not(any(windows, target_os = "macos")))]
+        let _ = on;
     }
 
     pub fn calibration_pulse(&mut self, name: &str, axis: usize, force: f32) -> bool {
@@ -1031,54 +1082,6 @@ fn lattice(i: i32) -> f32 {
 }
 
 
-/// Button-down actions remember their original mapping until release. Editing a binding
-/// must release that action, rather than sending an unrelated new action's key-up.
-#[derive(Default)]
-struct HeldButtons(Vec<(String, usize, String, bool)>);
-
-impl HeldButtons {
-    fn event(&mut self, cfg: &[DeviceCfg], name: &str, button: usize, down: bool, actions: &mut Vec<(String, bool)>) {
-        if down {
-            if self.0.iter().any(|(n, b, ..)| names_match(n, name) && *b == button) {
-                return;
-            }
-            let Some(d) = find_device_cfg(cfg, name) else { return };
-            let Some((action, _)) = d.buttons.get(button).filter(|a| !a.0.is_empty()) else { return };
-            self.0.push((name.to_string(), button, action.clone(), d.latching.contains(&button)));
-            actions.push((action.clone(), true));
-        } else if let Some(i) = self.0.iter().position(|(n, b, ..)| names_match(n, name) && *b == button) {
-            let (_, _, action, latching) = self.0.remove(i);
-            actions.push((action.clone(), false));
-            if latching {
-                let back = latch_release(&action);
-                actions.push((back.clone(), true));
-                actions.push((back, false));
-            }
-        }
-    }
-
-    fn release(&mut self, actions: &mut Vec<(String, bool)>) {
-        for (_, _, action, _) in self.0.drain(..) {
-            // Do not toggle a latching switch just because its configuration changed.
-            actions.push((action, false));
-        }
-    }
-
-    /// Let go of the buttons held down, but not of the latching switches: a switch stays
-    /// where it is while the pause menu is open or the window is in the background, and
-    /// when it comes out later its release still reaches the bus. Let go of with the rest,
-    /// the switch went out in the game at ESC or alt-tab and only came back once it was
-    /// switched off and on again by hand (#1876).
-    fn release_momentary(&mut self, actions: &mut Vec<(String, bool)>) {
-        self.0.retain(|(_, _, action, latching)| {
-            if !latching {
-                actions.push((action.clone(), false));
-            }
-            *latching
-        });
-    }
-}
-
 /// Save to `~/.openomsi/Inputs`. The original OMSI installation is read-only.
 pub fn save_cfg(devices: &[DeviceCfg]) -> Result<std::path::PathBuf, String> {
     let path = omsi_cfg::own_input("gamectrler.cfg").ok_or("No home folder was found to keep the controllers in")?;
@@ -1146,6 +1149,7 @@ pub struct Controllers {
     settled: Vec<f32>,
     pub devices: Devices,
     focused: bool,
+    background: bool,
     cfg: Vec<DeviceCfg>,
     held: HeldButtons,
     editing: bool,
@@ -1183,6 +1187,7 @@ pub struct Controllers {
     pub steer_gain: f32,
     /// Key actions of buttons pressed (true) and released (false) since the last poll.
     pub actions: Vec<(String, bool)>,
+    pub repeating: Vec<String>,
     /// Devices told about in the log (and on the screen) as not set up.
     announced: Vec<String>,
     /// Devices nobody set up whose X axis has left its centre: only from then on does it
@@ -1235,6 +1240,7 @@ impl Controllers {
 
     pub fn set_editing(&mut self, editing: bool) {
         if editing && !self.editing { self.held.release_momentary(&mut self.actions); }
+        if !editing && self.editing { self.held.resume(&self.cfg, &mut self.actions); }
         self.editing = editing;
     }
 
@@ -1253,6 +1259,13 @@ impl Controllers {
             self.held.release_momentary(&mut self.actions);
             self.raw_buttons.clear();
             self.ff_source_logged = None;
+        }
+    }
+
+    pub fn set_background(&mut self, on: bool) {
+        if self.background != on {
+            self.background = on;
+            self.devices.set_background(on);
         }
     }
 
@@ -1277,7 +1290,7 @@ impl Controllers {
     }
 
     fn with_devices(devices: Devices, cfg: Vec<DeviceCfg>) -> Controllers {
-        Controllers { settled: Vec::new(), devices, focused: true, cfg, held: HeldButtons::default(), editing: false, raw_buttons: Vec::new(), deadzone: 0.0, right_stick_look: true, pad_deadzone: 0.08, pad_presets: true, pedal_throttle: 1.0, pedal_brake: 1.0, disabled: Vec::new(), ff_invert: false, ff_enabled: true, ff_road: 1.0, ff_engine: 1.0, ff_fade: FF_FADE, steer_gain: 1.0, enabled: true, actions: Vec::new(), announced: Vec::new(), moved: Vec::new(), notice: None, rests: Default::default(), auto_saved: None, cfg_unread: false, steer: None, ff_t: 0.0, ff_lateral: 0.0, ff_bump: 0.0, ff_bump_age: 0.0, ff_micro: Micro::default(), ff_vib: ScriptVib::default(), ff_rumble: 0.0, ff_source_logged: None, rumble: Vec::new(), #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel: None, #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel_tried: None }
+        Controllers { settled: Vec::new(), devices, focused: true, background: false, cfg, held: HeldButtons::default(), editing: false, raw_buttons: Vec::new(), repeating: Vec::new(), deadzone: 0.0, right_stick_look: true, pad_deadzone: 0.08, pad_presets: true, pedal_throttle: 1.0, pedal_brake: 1.0, disabled: Vec::new(), ff_invert: false, ff_enabled: true, ff_road: 1.0, ff_engine: 1.0, ff_fade: FF_FADE, steer_gain: 1.0, enabled: true, actions: Vec::new(), announced: Vec::new(), moved: Vec::new(), notice: None, rests: Default::default(), auto_saved: None, cfg_unread: false, steer: None, ff_t: 0.0, ff_lateral: 0.0, ff_bump: 0.0, ff_bump_age: 0.0, ff_micro: Micro::default(), ff_vib: ScriptVib::default(), ff_rumble: 0.0, ff_source_logged: None, rumble: Vec::new(), #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel: None, #[cfg(all(target_os = "linux", target_pointer_width = "64"))] wheel_tried: None }
     }
 
     /// Whether this device steers the bus (set up so, or steering now): the photo mode's camera takes none for its gamepad (a wheel turned it).
@@ -1330,11 +1343,13 @@ impl Controllers {
         let mut out = Analog::default();
         self.raw_buttons = self.devices.poll();
         for (name, n, down) in &self.raw_buttons {
+            if self.editing { self.held.while_editing(name, *n, *down); }
             if self.editing || !self.enabled || self.off(name) {
                 continue;
             }
             self.held.event(&self.cfg, name, *n, *down, &mut self.actions);
         }
+        self.repeating = if self.editing || !self.enabled || !self.focused { Vec::new() } else { self.held.repeating() };
         self.preset_buttons();
         if !self.enabled {
             return out;
@@ -1758,7 +1773,12 @@ fn wheel_force(f: &FfInput, x: f32, x0: f32, t: &mut f32, k_springs: f32, k_effe
     // At road speed, power steering gives the driver a firmer sense of direction.
     // Keep parking and town-speed forces familiar while separating 70 km/h from 10 km/h.
     let road_speed = ((v - 20.0) / 50.0).clamp(0.0, 1.0);
-    let spring_strength = (0.22 + 0.28 * v / (v + 10.0)) * (1.0 + 0.5 * road_speed);
+    // The tyres' aligning torque is their side force times the pneumatic trail, and the side
+    // force grows with the speed through the turn: crawling round a corner it is the caster
+    // alone that brings the wheel back, slowly - the bus driver lets the wheel slide back
+    // through the hands. Firmer only as the speed builds (#2103: a strong pull at town speed
+    // snapped the wheel back as if the tyres had no grip).
+    let spring_strength = (0.12 + 0.38 * v / (v + 20.0)) * (1.0 + 0.5 * road_speed);
     let moving_steering_gain = 1.0 + 0.18 * v / (v + 8.0);
     // More return torque at small and medium angles, where wheel friction can
     // otherwise stop the return. Compensate wheel friction near the centre with
@@ -1786,7 +1806,14 @@ fn wheel_force(f: &FfInput, x: f32, x0: f32, t: &mut f32, k_springs: f32, k_effe
     // resistance on return lets a quick wheel overshoot and oscillate around
     // the centre, especially when force commands arrive at a low frame rate.
     // This only resists motion: it adds no holding force or parked centring.
-    let damping = -0.03 * turning_speed * rolling;
+    // A wheel let go comes back through the steering box's hydraulic damping: more of it
+    // on the way back, so that it settles at the centre instead of swinging past (#2103).
+    // (only on a wheel coming back quickly, fading out across the centre: the last slow
+    // degrees of a return are left to the centring, which a wheel's own friction would
+    // otherwise stop short)
+    let back = ((0.03 - x * turning_speed.signum()) / 0.06).clamp(0.0, 1.0);
+    let fast_back = 0.35 * (turning_speed.abs() - 0.15).max(0.0) * turning_speed.signum() * back * back * (3.0 - 2.0 * back);
+    let damping = -(0.03 * turning_speed + fast_back) * rolling;
     *t += dt;
     let period = (f.vib_period * 0.01).max(0.02);
     let shake = f.vib_amp.clamp(0.0, 1.0) * VIB_SHARE * (std::f32::consts::TAU * *t / period).sin();
@@ -2492,6 +2519,32 @@ mod button_tests {
         }
     }
 
+    /// A wheel let go at half lock in a turn comes back to the centre and settles there,
+    /// without swinging far past it (#2103) - a rim of 0.06 kg m^2 on an 8 Nm base, 900
+    /// degrees, the forces sent sixty times a second.
+    #[test]
+    fn a_released_wheel_returns_without_overshooting() {
+        for kmh in [10.0, 30.0, 60.0] {
+            let mut t = 0.0;
+            let (mut x, mut x0) = (0.5f32, 0.5f32);
+            let mut lowest = x;
+            let dt = 1.0 / 60.0;
+            let half_range = 450.0f32.to_radians();
+            let accel_per_force = 8.0 / 0.06 / half_range;
+            let mut v = 0.0f32;
+            for _ in 0..(6.0 / dt) as usize {
+                let f = super::FfInput { on: true, kmh, dt, ..Default::default() };
+                let force = super::wheel_force(&f, x, x0, &mut t, 1.0, 0.0);
+                v += force * accel_per_force * dt;
+                x0 = x;
+                x += v * dt;
+                lowest = lowest.min(x);
+            }
+            assert!(x.abs() < 0.03, "kmh={kmh}: still at {x}");
+            assert!(lowest > -0.06, "kmh={kmh}: swung past the centre to {lowest}");
+        }
+    }
+
     #[test]
     fn steering_resistance_drops_as_the_bus_starts_rolling() {
         let mut t = 0.0;
@@ -2505,8 +2558,9 @@ mod button_tests {
     fn a_returning_wheel_is_not_stopped_by_parking_drag() {
         let mut t = 0.0;
         let f = super::FfInput { on: true, kmh: 20.0, dt: 0.016, ..Default::default() };
-        let right = super::wheel_force(&f, 0.5, 0.55, &mut t, 1.0, 0.0);
-        let left = super::wheel_force(&f, -0.5, -0.55, &mut t, 1.0, 0.0);
+        // (coming back at a third of the wheel's range a second, as a wheel let go does)
+        let right = super::wheel_force(&f, 0.5, 0.505, &mut t, 1.0, 0.0);
+        let left = super::wheel_force(&f, -0.5, -0.505, &mut t, 1.0, 0.0);
         assert!(right < 0.0 && left > 0.0, "{right} {left}");
     }
 
@@ -2615,7 +2669,8 @@ mod button_tests {
         let f = super::FfInput { on: true, kmh: 25.0, lateral_accel: 2.0, dt: 0.016, ..Default::default() };
         let held = super::wheel_force(&f, 0.5, 0.5, &mut t, 1.0, 0.0);
         let turning_out = super::wheel_force(&f, 0.5, 0.48, &mut t, 1.0, 0.0);
-        let returning = super::wheel_force(&f, 0.5, 0.52, &mut t, 1.0, 0.0);
+        // (coming back as a wheel let go does; a faster return meets the steering's damping)
+        let returning = super::wheel_force(&f, 0.5, 0.505, &mut t, 1.0, 0.0);
         // Assistance still lightens turning out. A moving return also includes
         // damping, so its net torque need not exceed the outward-turning torque.
         assert!(held < turning_out && turning_out < 0.0, "{held} {turning_out}");

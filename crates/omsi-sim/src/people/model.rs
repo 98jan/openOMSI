@@ -352,6 +352,7 @@ pub struct PeopleSim {
     /// (Shared with the step that made them rather than copied: a copy was every bus's door
     /// lists and names again, every frame.)
     pub last_buses: Arc<Vec<BusNow>>,
+    pub(super) manual_door_requests: HashMap<u32, (super::DoorRequest, f32)>,
     /// Only avatars: nobody else is put on the map (the passengers are off).
     pub avatar_only: bool,
     /// The player has got up and left the wheel: a standing bus with a door open is left
@@ -401,6 +402,7 @@ pub struct PeopleSim {
     pub defer_populate: bool,
     /// Passengers pay the exact fare: no change is ever due.
     pub exact_fare: bool,
+    pub bad_driving: bool,
     /// How passengers board (`boarding` in the settings): `auto` - pay and take the
     /// ticket by themselves after a moment; `pay` - wait at the desk for the driver to
     /// sell it (and show a pass after `PAY_PATIENCE`); `walk` - no cash desk at all.

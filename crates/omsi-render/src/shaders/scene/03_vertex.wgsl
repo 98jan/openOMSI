@@ -169,7 +169,7 @@ fn tree_sway(local: vec3<f32>, m: mat4x4<f32>) -> vec3<f32> {
 // Where a scene vertex lands on the screen: the main pass's and the depth passes' vertex
 // shaders (`vs_main`, `vs_depth`) both take it from here, so that their depths agree to the
 // last bit (the main pass tests against the depth the prepass left).
-fn scene_clip(e: u32, wp: vec4<f32>) -> vec4<f32> {
+fn scene_clip(e: u32, wp: vec4<f32>, nw: vec3<f32>) -> vec4<f32> {
     // Road surfaces (splines, the objects lying on them, a shadow blob) are pulled towards
     // the eye along the line of sight - the picture does not move, only the depth - so that
     // they win over the flush ground beside them. Code 0.9 keeps the surface shading without
@@ -197,12 +197,39 @@ fn scene_clip(e: u32, wp: vec4<f32>) -> vec4<f32> {
         // beside. Capped, the pole stays behind what it stands by, and the depth a road
         // needs over flush ground is a few millimetres at most (a floor raised 3 cm above
         // the road is still seen - `surface_bias_keeps_raised_floors_visible_at_a_distance`).
-        let share = select(select(0.003, 0.004, surf > 1.1 && surf < 1.5), 0.005, surf > 1.5);
-        let fixed = select(select(0.0, 0.01, surf > 1.1 && surf < 1.5), 0.05, surf > 1.5);
+        // (a road's painted lines, 1.4, a little more again: a crossing object laid over
+        // the road covered the lines it overlaps, which in Omsi.exe lie a millimetre over
+        // the road and win the depth test against it - #1694)
+        let decal = surf > 1.1 && surf < 1.35;
+        let paint = surf > 1.35 && surf < 1.5;
+        let share = select(select(select(0.003, 0.004, decal), 0.0045, paint), 0.005, surf > 1.5);
+        let fixed = select(select(select(0.0, 0.01, decal), 0.015, paint), 0.05, surf > 1.5);
         let pull = min(min(share * d, 0.05) + fixed, d * 0.3);
         cp = wp.xyz - to / max(d, 1e-3) * pull;
     }
-    return camera.view_proj * vec4<f32>(cp, 1.0);
+    // Omsi.exe draws a model mesh by mesh and subset by subset with LESSEQUAL into a 24-bit
+    // depth buffer: of two of its surfaces in one plane - a dashboard and the instruments
+    // printed on it - the later one is seen. Here their depths differed by rounding alone
+    // and every pixel was a coin toss. A slot lying on an earlier surface of its object
+    // (`draw_order_level`, 1 to 3; everything else 0) is brought nearer by two steps, each
+    // the same over a whole plane however it is cut into triangles (a step worked out per
+    // vertex from its own distance bends the surface): the reversed depth times 1 + 1e-5 a
+    // level, above the vertices' rounding; and 2e-5 a level over the plane's distance from
+    // the eye, against the tilt the rasterizer's snapping of each corner to a fraction of a
+    // pixel gives a triangle's depth, the more the flatter it is seen. Seen from above the
+    // plane that lifts it by 3e-5 a level times the distance: 0.9 mm at 10 m at level 3.
+    // (The plane's distance is at least 5 % of the vertex's own: the edge of a curved mesh,
+    // whose tangent plane runs through the eye, is not pulled metres forward.)
+    let clip = camera.view_proj * vec4<f32>(cp, 1.0);
+    let level = models[e * 4u].w;
+    if (level <= 0.0) {
+        return clip;
+    }
+    // (the depth of the eye's own point: n f / (f - n), about the near plane)
+    let at_eye = (camera.view_proj * vec4<f32>(camera.cam_pos.xyz, 1.0)).z;
+    let plane = max(abs(dot(safe_normal(nw), cp - camera.cam_pos.xyz)), 0.05 * length(cp - camera.cam_pos.xyz));
+    let slant = level * 2e-5 * at_eye * clip.w / plane;
+    return vec4<f32>(clip.x, clip.y, clip.z * (1.0 + level * 1e-5) + slant, clip.w);
 }
 
 @vertex
@@ -211,7 +238,7 @@ fn vs_main(in: VsIn) -> VsOut {
     let m = model_matrix(e);
     let wp = m * vec4<f32>(in.pos, 1.0) + vec4<f32>(tree_sway(in.pos, m), 0.0);
     var out: VsOut;
-    out.clip = scene_clip(e, wp);
+    out.clip = scene_clip(e, wp, (m * vec4<f32>(in.normal, 0.0)).xyz);
     out.world = wp.xyz;
     out.normal = safe_normal((m * vec4<f32>(in.normal, 0.0)).xyz);
     let sp = vertex_specular(wp.xyz, out.normal);
@@ -255,7 +282,7 @@ fn vs_depth(in: VsIn) -> DepthOut {
     let m = model_matrix(e);
     let wp = m * vec4<f32>(in.pos, 1.0) + vec4<f32>(tree_sway(in.pos, m), 0.0);
     var out: DepthOut;
-    out.clip = scene_clip(e, wp);
+    out.clip = scene_clip(e, wp, (m * vec4<f32>(in.normal, 0.0)).xyz);
     let pr = inst_params[e * 2u];
     out.uv = in.uv + pr.zw;
     out.params = pr;

@@ -177,12 +177,13 @@ export function Tag({ kind = '', children }) {
 
 /** A dialog over the page; Escape and a click beside it close it. */
 export function Dialog({ title, onClose, children, footer, wide, class: cls = '' }) {
+  const box = useRef();
   useEffect(() => {
-    const k = (e) => e.key === 'Escape' && onClose?.();
+    const k = (e) => e.key === 'Escape' && [...document.querySelectorAll('.overlay')].pop() === box.current && onClose?.();
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
-  return html`<div class="overlay" onMouseDown=${(e) => e.target === e.currentTarget && onClose?.()}>
+  return html`<div class="overlay" ref=${box} onMouseDown=${(e) => e.target === e.currentTarget && onClose?.()}>
     <div class=${'dialog' + (wide ? ' wide' : '') + (cls ? ' ' + cls : '')} role="dialog">
       <div class="dialog-head"><h2>${t(title)}</h2>${onClose && html`<${Button} kind="ghost" icon="x" title="Close" onClick=${onClose} />`}</div>
       <div class="dialog-body">${children}</div>

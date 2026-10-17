@@ -11,7 +11,7 @@
 //! A phone runs the launcher's page inside the game program itself: there the same service
 //! runs on a thread of its own (`in_process`), asked through a channel instead of a pipe.
 
-use super::showroom::{Look, PreviewView, Showroom};
+use super::showroom::{Look, PreviewView, Quality, Showroom};
 use omsi_render::Renderer;
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
@@ -117,8 +117,9 @@ impl InProcess {
 fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
     let send = |id: &Value, head: Value, body: &[u8]| reply(id, head, body);
     let mut renderer: Option<Renderer> = None;
+    let mut quality = Quality::now();
     let mut showroom = Showroom::new();
-    let pads = super::pads::Pads::start();
+    let pads = super::pads::Pads::start(super::pads::paths());
     let mut last = Instant::now();
     while let Ok(req) = rx.recv() {
         let id = req.get("id").cloned().unwrap_or(Value::Null);
@@ -126,6 +127,9 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
         let f = |k: &str, d: f64| req.get(k).and_then(Value::as_f64).unwrap_or(d);
         match req.get("cmd").and_then(Value::as_str).unwrap_or("") {
             "look" => {
+                if showroom.follow(&mut quality, true) {
+                    renderer = None;
+                }
                 let _ = omsi_launcher_lib::content_dir();
                 let root = omsi_launcher_lib::root_dir().unwrap_or_default();
                 showroom.want(Look { root, map: s("map"), bus: s("bus"), paint: s("paint"), weather: s("weather"), time: f("time", 540.0) as i32, date: s("date") });
@@ -146,7 +150,7 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
             // (the launcher starts: the renderer's pipelines are built now, not on the first picture)
             "warm" => {
                 if renderer.is_none() {
-                    renderer = open_renderer().ok();
+                    renderer = open_renderer(quality.options).ok();
                 }
                 send(&id, json!({ "ok": renderer.is_some() }), &[]);
             }
@@ -162,8 +166,11 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
                 if let Some(view) = req.get("view").and_then(Value::as_str).and_then(PreviewView::from_name) {
                     showroom.set_view(view);
                 }
+                if showroom.follow(&mut quality, false) {
+                    renderer = None;
+                }
                 if renderer.is_none() {
-                    match open_renderer() {
+                    match open_renderer(quality.options) {
                         Ok(r) => renderer = Some(r),
                         Err(e) => {
                             send(&id, json!({ "ok": false, "error": format!("{e:#}") }), &[]);
@@ -193,9 +200,10 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
             "map" => {
                 let out = reply.clone();
                 let (map, date, trip) = (s("map"), s("date"), s("trip"));
+                let surface = req.get("surface").and_then(Value::as_bool).unwrap_or(true);
                 std::thread::spawn(move || {
                     let global = omsi_cfg::find_in_roots(&map).map(|(_, p)| p).or_else(|| omsi_launcher_lib::content_path(&map).ok()).unwrap_or_else(|| PathBuf::from(&map));
-                    let v = omsi_launcher_model::mapview::export(&map, &global, &date, &trip, 0.6);
+                    let v = omsi_launcher_model::mapview::export(&map, &global, &date, &trip, 0.6, surface);
                     out(&id, json!({ "ok": true }), v.to_string().as_bytes());
                 });
             }
@@ -218,10 +226,9 @@ impl Showroom {
 }
 
 /// The preview's renderer: no window, the launcher window's own options.
-fn open_renderer() -> anyhow::Result<Renderer> {
-    let settings = crate::settings::Settings::load();
+fn open_renderer(options: omsi_render::RenderOptions) -> anyhow::Result<Renderer> {
     let instance = crate::graphics_instance();
-    let r = pollster::block_on(Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), super::showroom_options(&settings)))?;
+    let r = pollster::block_on(Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), options))?;
     log::info!("launcher service: renderer on {}", r.adapter_name);
     Ok(r)
 }

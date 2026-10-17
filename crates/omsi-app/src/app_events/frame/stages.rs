@@ -108,7 +108,7 @@ impl frame_stages::Stage for WindowStage {
             Timing => StageInfo {
                 takes: &[],
                 gives: &[Carry::Time],
-                ..stage("timing", P::Housekeeping, Role::Own, &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::Input, G::Menus, G::Weather, G::Traffic, G::Player, G::People, G::Duty, G::Ui], &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::World, G::Integrations], Profile::None)
+                ..stage("timing", P::Housekeeping, Role::Own, &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::Input, G::Menus, G::Weather, G::Traffic, G::Player, G::People, G::Duty, G::Ui], &[G::Clock, G::Gfx, G::Perf, G::View, G::Net, G::World, G::Integrations, G::Sound], Profile::None)
             },
             ShellActions => StageInfo { takes: &[], ..stage("shell_actions", P::Housekeeping, Role::Own, &[G::Menus, G::Input, G::Traffic, G::People, G::Duty, G::Net, G::Integrations, G::Sound, G::View, G::Ui, G::Gfx, G::Perf], &[G::Menus, G::Player, G::World, G::Clock, G::Weather], Profile::Key(K::Shell)) },
             Placement => StageInfo { takes: &[], ..stage("placement", P::Housekeeping, Role::Own, crate::app_impl::PlacementCx::READS, crate::app_impl::PlacementCx::WRITES, Profile::Key(K::Placement)) },
@@ -119,7 +119,7 @@ impl frame_stages::Stage for WindowStage {
             MouseDrive => StageInfo { takes: &[Carry::Time, Carry::Controls], gives: &[Carry::Controls], ..stage("mouse_drive", P::Input, Role::Own, &[G::Input, G::Player, G::View, G::Menus, G::Clock, G::World, G::People, G::Duty, G::Net, G::Integrations, G::Ui, G::Gfx], &[G::Input, G::View], Profile::Key(K::Player)) },
             PadActions => StageInfo { takes: &[Carry::Time, Carry::Controls], ..stage("pad_actions", P::Input, Role::Own, &[G::Clock, G::Weather, G::World, G::Traffic, G::People, G::Duty, G::Net, G::Integrations, G::Ui, G::Gfx, G::Perf], &[G::Input, G::Player, G::Menus, G::View, G::Sound], Profile::Key(K::Player)) },
             PlayerTick => stage("player_tick", P::Sim, Role::Player, super::driving::PlayerStepCx::READS, super::driving::PlayerStepCx::WRITES, Profile::Key(K::Player)),
-            PlayerView => stage("player_view", P::Present, Role::Own, &[G::Player, G::View, G::Clock, G::Input, G::World, G::Menus, G::People, G::Duty, G::Net, G::Sound, G::Ui, G::Perf], &[G::Player, G::View, G::Gfx], Profile::Key(K::Player)),
+            PlayerView => stage("player_view", P::Present, Role::Own, &[G::Player, G::View, G::Clock, G::Input, G::World, G::Menus, G::People, G::Duty, G::Net, G::Sound, G::Ui], &[G::Player, G::View, G::Gfx, G::Perf], Profile::Key(K::Player)),
             Audio => stage("audio", P::Present, Role::Own, super::driving::AudioCx::READS, super::driving::AudioCx::WRITES, Profile::Key(K::Player)),
             Lan => stage("lan", P::Sim, Role::Lan, &[G::Net, G::Player, G::Clock, G::Duty, G::Input, G::Menus, G::Weather, G::World, G::Integrations, G::View, G::Ui], &[G::Net, G::Traffic, G::People, G::Gfx, G::Sound], Profile::Key(K::Lan)),
             OnFoot => stage("on_foot", P::Sim, Role::Own, crate::on_foot::OnFootCx::READS, crate::on_foot::OnFootCx::WRITES, Profile::Key(K::OnFoot)),
@@ -241,7 +241,10 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
             PlayerView => app.frame_player_view(dt()),
             Audio => super::driving::audio(super::driving::AudioCx::of(&mut app.parts()), dt()),
             Lan => app.frame_lan(dt()),
-            OnFoot => super::people::on_foot(crate::on_foot::OnFootCx::of(&mut app.parts()), dt()),
+            OnFoot => {
+                super::people::on_foot(crate::on_foot::OnFootCx::of(&mut app.parts()), dt());
+                app.tick_passenger_door_request(dt());
+            },
             Humans => {
                 if once_a_frame {
                     super::people::humans(super::people::HumansCx::of(&mut app.parts()), frame_step());
@@ -267,7 +270,7 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
             }
             Lights => {
                 let daylight = self.daylight.expect(NO_DAYLIGHT);
-                let behind = app.drawn_behind();
+                let behind = app.traffic_drawn_behind();
                 let sim = app.player_to_drawn_pose();
                 super::surroundings::lights(super::surroundings::LightsCx::of(&mut app.parts()), dt(), daylight, behind);
                 app.player_back_to_sim_pose(sim);

@@ -329,7 +329,7 @@ impl World {
             let gdirs: Vec<&Path> =
                 ground_dirs.iter().map(|p| p.as_path()).collect();
             let gcfg = self.textures.cfg(&gt.texture, &gdirs);
-            let wet = gcfg.moisture || gcfg.puddles;
+            let wet = gcfg.wetness_kind();
             let m = renderer.add_terrain_layer_material(
                 scene,
                 layer_tex,
@@ -337,7 +337,7 @@ impl World {
                 detail,
                 gt.repeats(),
                 lm,
-                if wet { 1.0 } else { 0.0 },
+                wet,
             );
             let m = gpu.material(renderer, scene, m);
             tg.materials.push(m);
@@ -387,7 +387,7 @@ impl World {
                     detail,
                     gt.repeats(),
                     lm,
-                    if cfg.moisture || cfg.puddles { 1.0 } else { 0.0 },
+                    cfg.wetness_kind(),
                 );
                 let m = gpu.material(renderer, scene, m);
                 tg.materials.push(m);
@@ -455,7 +455,7 @@ impl World {
                 };
                 let dirs_ref: Vec<&Path> = dirs.iter().map(|p| p.as_path()).collect();
                 let cfg = self.textures.cfg(&t.file, &dirs_ref);
-                let wet = cfg.moisture || cfg.puddles;
+                let wet = cfg.wetness_kind();
                 if cfg.terrain_mapping {
                     sg.terrain.push(sg.materials.len());
                 }
@@ -474,7 +474,7 @@ impl World {
                     [0.0; 3],
                     MaterialExtra {
                         no_z_write: alpha == AlphaMode::Blend,
-                        moisture: if wet { 1.0 } else { 0.0 },
+                        moisture: wet,
                         ..MaterialExtra::default()
                     },
                 );
@@ -632,6 +632,9 @@ impl World {
         key: (i32, i32),
         ground_mat: MaterialId,
     ) {
+        // (its meshes are one model: a surface lying on an earlier one of it is drawn
+        // over it, see `Renderer::begin_object`)
+        renderer.begin_object(scene);
         let images: &HashMap<PathBuf, Arc<TextureData>> = &p.images;
         let PlacedObject {
             ot,

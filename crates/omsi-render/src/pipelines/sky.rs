@@ -37,6 +37,7 @@ impl SkyBase {
                 sampler_entry(8),
                 float_texture_entry(9),
                 uniform_entry(10, wgpu::ShaderStages::FRAGMENT),
+                float_texture_entry(11),
             ],
         });
         let (cloud_shape_view, cloud_detail_view, cloud_sampler, cloud_shape_cpu) = cloud_noise_textures(device, queue, enhanced);

@@ -3429,7 +3429,6 @@ dependencies = [
  "anyhow",
  "arboard",
  "clap",
- "ct2rs",
  "env_logger",
  "gilrs",
  "glam",
@@ -3454,7 +3453,10 @@ dependencies = [
  "omsi-launcher-core",
  "omsi-launcher-model",
  "omsi-map",
+ "omsi-mapdraw",
  "omsi-model",
+ "omsi-mt",
+ "omsi-navigator",
  "omsi-net",
  "omsi-o3d",
  "omsi-photo",
@@ -3485,7 +3487,6 @@ dependencies = [
  "rustrict",
  "serde",
  "serde_json",
- "sha2",
  "steamworks",
  "ureq",
  "wgpu",
@@ -3591,8 +3592,11 @@ dependencies = [
 name = "omsi-guard"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "libc",
+ "log",
  "omsi-cfg",
+ "omsi-launcher-core",
  "omsi-platform",
  "serde_json",
  "windows 0.62.2",
@@ -3628,6 +3632,7 @@ dependencies = [
  "omsi-script",
  "omsi-sim",
  "omsi-vehicle",
+ "serde_json",
  "windows 0.62.2",
  "winit",
 ]
@@ -3643,6 +3648,7 @@ dependencies = [
  "log",
  "omsi-cfg",
  "omsi-map",
+ "omsi-model",
  "omsi-net",
  "omsi-o3d",
  "omsi-script",
@@ -3705,7 +3711,6 @@ dependencies = [
  "hashbrown 0.17.1",
  "log",
  "omsi-cfg",
- "omsi-lan",
  "omsi-launcher-core",
  "omsi-map",
  "omsi-net",
@@ -3719,9 +3724,24 @@ dependencies = [
 name = "omsi-map"
 version = "0.1.0"
 dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
  "log",
  "omsi-cfg",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "omsi-mapdraw"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
+ "omsi-map",
+ "omsi-sim",
+ "omsi-ui",
 ]
 
 [[package]]
@@ -3730,6 +3750,39 @@ version = "0.1.0"
 dependencies = [
  "log",
  "omsi-cfg",
+]
+
+[[package]]
+name = "omsi-mt"
+version = "0.1.0"
+dependencies = [
+ "ct2rs",
+ "log",
+ "omsi-ui",
+ "parking_lot",
+ "serde_json",
+ "sha2",
+ "ureq",
+]
+
+[[package]]
+name = "omsi-navigator"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
+ "omsi-lan",
+ "omsi-map",
+ "omsi-mapdraw",
+ "omsi-render",
+ "omsi-scene",
+ "omsi-sim",
+ "omsi-texture",
+ "omsi-timetable",
+ "omsi-ui",
+ "wgpu",
 ]
 
 [[package]]
@@ -3777,6 +3830,7 @@ dependencies = [
  "log",
  "omsi-cfg",
  "omsi-launcher-core",
+ "serde",
  "serde_json",
  "sha2",
  "ureq",
@@ -3839,6 +3893,7 @@ dependencies = [
 name = "omsi-scene"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "glam",
  "hashbrown 0.17.1",
@@ -3863,8 +3918,10 @@ dependencies = [
  "omsi-weather",
  "omsi-world",
  "parking_lot",
+ "png",
  "pollster 1.0.1",
  "rayon",
+ "serde_json",
  "wgpu",
  "zip",
 ]
@@ -3971,6 +4028,7 @@ dependencies = [
  "image",
  "log",
  "naga",
+ "omsi-cfg",
  "pollster 1.0.1",
  "resvg",
  "wgpu",

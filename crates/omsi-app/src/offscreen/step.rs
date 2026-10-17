@@ -15,7 +15,7 @@ impl Offscreen<'_> {
     /// The ground under the vehicles (`OMSI_GROUND_GAP`).
     pub(super) fn ground_gap_step(&mut self, t_s: f32) {
         if let Some(g) = self.ground_gap.as_mut() {
-            g.frame(&self.world, t_s, self.player.as_ref().map(|p| &p.vehicle), self.traffic.as_ref());
+            g.frame(&self.world.data, t_s, self.player.as_ref().map(|p| &p.vehicle), self.traffic.as_deref());
         }
     }
 
@@ -209,6 +209,7 @@ impl Offscreen<'_> {
             ref run_clock,
             ref envir,
             ref weather,
+            ref wetness,
             ref sky,
             ..
         } = *self;
@@ -226,6 +227,8 @@ impl Offscreen<'_> {
                 player.as_ref(),
                 &renderer.options,
             );
+            let daylight = omsi_sim::Daylight::compute(run_clock, envir.as_ref());
+            steps::set_ai_environment(t, run_clock, daylight, Some(weather), *wetness, false, settings.auto_clutch);
             if i.is_multiple_of(super::steps_in(2.0)) {
                 // (following a car, the population goes with the camera)
                 let pc = if args.follow.is_some() { view_cam.position } else { center };
@@ -248,6 +251,7 @@ impl Offscreen<'_> {
                         &daylight,
                         weather,
                         cloud_drift_at(weather, run_clock.time),
+                        0.0,
                         0.0,
                         settings.shadows,
                         sky,
@@ -287,6 +291,8 @@ impl Offscreen<'_> {
             let daylight = omsi_sim::Daylight::compute(run_clock, envir.as_ref());
             steps::set_ai_daylight(t, daylight, steps::gloomy_weather(Some(weather)));
             let rail = player.as_ref().and_then(|p| p.rail.as_ref()).map(|r| (r.lane, r.along));
+            let capture = self.lan_off.as_ref().is_some_and(|lan| lan.role == omsi_net::Role::Host);
+            for c in &mut t.sim.cars { c.vehicle.host.capture_sound_triggers = capture; }
             steps::traffic_tick(t, world, scenery, dt, false, player.as_ref(), remotes_off, &[], rail);
             steps::traffic_boxes(t, player.as_mut(), settings.collision_vehicles);
         }
@@ -789,10 +795,15 @@ impl Offscreen<'_> {
             };
             let config = args.lan_config();
             let host = lan::AppLanHost { args, world: Some(world) };
+            if l.role == omsi_net::Role::Host {
+                if let Some(t) = traffic.as_mut() {
+                    for c in &mut t.sim.cars { remotes_off.publish_vehicle_sounds(l, &mut c.vehicle, c.id, &config); }
+                }
+            }
             let sent = {
                 let traffic = traffic.as_ref();
                 let cars = || traffic.map(|t| t.cars.iter().map(|c| lan::car_footprint(&c.vehicle)).collect()).unwrap_or_default();
-                lan::tick_send(l, remotes_off, dt, &config, player.as_ref().map(|p| &p.vehicle), &cars, None, &frame)
+                lan::tick_send(l, remotes_off, dt, &config, player.as_mut().map(|p| &mut p.vehicle), &cars, None, &frame)
             };
             lan_world_off.tick(
                 l,
@@ -806,6 +817,12 @@ impl Offscreen<'_> {
                 sim_view,
                 player.as_ref().map(|p| p.vehicle.position),
             );
+            if let Some(t) = traffic.as_mut().filter(|t| t.sim.mirror) {
+                let ready: Vec<_> = t.sim.cars.iter().filter(|c| t.has_sound_set(c.id)).map(|c| c.id).collect();
+                for c in &mut t.sim.cars {
+                    if ready.contains(&c.id) { remotes_off.apply_ai_sounds(&mut c.vehicle, c.id, &config.root); }
+                }
+            }
             let updates = lan::tick_receive(
                 l,
                 remotes_off,
@@ -850,9 +867,12 @@ impl Offscreen<'_> {
         }
         // the tyres' spray, frame by frame as the window throws it (the camera that matters
         // for its detail: the followed car's, else the player's bus): the puddles and the wet
-        // asphalt the renderer draws (none under snow, OMSI_WETNESS as the picture takes it)
+        // asphalt the renderer draws (none under snow, OMSI_WETNESS as the picture takes it).
+        // A dedicated server's picture (a 64x36 offscreen one) is never looked at: no spray
+        // to throw for every AI car in the rain
         let spray_wet = puddles::road_wetness(*wetness, weather.snow);
-        if (spray_wet > 0.0 || !spray.is_empty()) && !omsi_cfg::flags::OMSI_NO_SPRAY.is_set() {
+        let server = crate::server::SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed);
+        if !server && (spray_wet > 0.0 || !spray.is_empty()) && !omsi_cfg::flags::OMSI_NO_SPRAY.is_set() {
             let eye = traffic
                 .as_ref()
                 .and_then(|t| follow_id(args, Some(t)).and_then(|id| follow_camera(Some(t), id)))

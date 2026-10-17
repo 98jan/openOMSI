@@ -56,7 +56,11 @@ impl VehicleInstance {
         let speed = (self.physics.velocity_kmh().abs() / 50.0).min(2.0);
         // a dry duty adds a few percent, a wet one soils the bus in a couple of hours
         // a dry duty of a couple of hours shows; a wet one soils the bus in half an hour
-        self.dirt = (self.dirt + dt * speed * (8.0e-5 + 1.2e-3 * rain)).clamp(0.0, 1.0);
+        // Off the road the wheels throw up the ground itself: earth and grass churned up
+        // under the tyres spatter the sides, dust off dry ground, mud off wet - a few minutes
+        // across a field leave the bus brown (`host.offroad`, the wheels' share off the road)
+        let off = self.host.offroad.clamp(0.0, 1.0) * (2.5e-3 + 6.0e-3 * rain.max(self.host.street_cond.clamp(0.0, 1.0)));
+        self.dirt = (self.dirt + dt * speed * (8.0e-5 + 1.2e-3 * rain + off)).clamp(0.0, 1.0);
         self.set_engine_ev(Ev::DirtNorm, self.dirt);
         // spray off a wet road, dust off a dry one
         self.set_engine_ev(Ev::DirtRate, speed * (1.5e-4 + 6.0e-3 * rain));
@@ -249,7 +253,23 @@ impl VehicleInstance {
         inputs: &[(omsi_script::VarId, f32)],
         pinned: &[(omsi_script::VarId, f32)],
     ) {
-        self.host.clock.advance(dt);
+        self.update_ai_with_strings(dt, ai, inputs, pinned, &[]);
+    }
+
+    /// Pin owner strings before script execution and again before visual updates.
+    pub fn update_ai_with_strings(
+        &mut self,
+        dt: f32,
+        ai: &AiFrame,
+        inputs: &[(omsi_script::VarId, f32)],
+        pinned: &[(omsi_script::VarId, f32)],
+        strings: &[(omsi_script::StrVarId, &str)],
+    ) {
+        if self.host.external_ai_clock {
+            self.host.clock.timegap = dt;
+        } else {
+            self.host.clock.advance(dt);
+        }
         self.set_engine_ev(Ev::ScheduleActive, self.host.schedule_active);
         self.physics.speed = ai.speed;
         self.physics.steer_deg = ai.steer_deg;
@@ -363,6 +383,14 @@ impl VehicleInstance {
         for &(id, v) in inputs.iter().chain(pinned) {
             self.put(Some(id), v);
         }
+        for (id, value) in strings {
+            if let Some(s) = self.state.str_vars.get_mut(*id as usize) {
+                if s.as_str() != *value {
+                    s.clear();
+                    s.push_str(value);
+                }
+            }
+        }
         self.run_collision_trigger();
         let p = self.ty.program.clone();
         crate::timetable_run::apply_pending_destination(self);
@@ -374,6 +402,14 @@ impl VehicleInstance {
         self.clear_pax_requests();
         for &(id, v) in pinned {
             self.put(Some(id), v);
+        }
+        for (id, value) in strings {
+            if let Some(s) = self.state.str_vars.get_mut(*id as usize) {
+                if s.as_str() != *value {
+                    s.clear();
+                    s.push_str(value);
+                }
+            }
         }
         if self.ai_visuals {
             let dt = dt + std::mem::take(&mut self.ai_visuals_missed);

@@ -20,6 +20,12 @@ pub static ADAPTER_VRAM_MB: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 /// The adapter the device was opened on (its name, ids, backend and driver), see `Renderer::new`.
 pub static ADAPTER_INFO: std::sync::Mutex<Option<wgpu::AdapterInfo>> = std::sync::Mutex::new(None);
 
+pub(crate) static CEILING: std::sync::Mutex<Option<crate::gpu_memory::Ceiling>> = std::sync::Mutex::new(None);
+
+pub fn ceiling() -> Option<crate::gpu_memory::Ceiling> {
+    *CEILING.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// The device runs on OpenGL (set in `Renderer::new`).
 pub(crate) static GL_BACKEND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -539,7 +545,8 @@ impl Renderer {
     /// textures, before the driver gives up the device).
     pub fn take_out_of_memory(&self) -> bool {
         let texture = crate::resources::TEXTURE_OUT_OF_MEMORY.swap(false, std::sync::atomic::Ordering::Relaxed);
-        self.errors.out_of_memory.swap(false, std::sync::atomic::Ordering::Relaxed) | texture
+        let mesh = crate::resources::MESH_OUT_OF_MEMORY.swap(false, std::sync::atomic::Ordering::Relaxed);
+        self.errors.out_of_memory.swap(false, std::sync::atomic::Ordering::Relaxed) | texture | mesh
     }
 
     pub fn device_lost(&self) -> Option<String> {

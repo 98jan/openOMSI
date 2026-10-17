@@ -1,7 +1,7 @@
 // The launcher's frame: the menu on the left, the page beside it, messages in the corner.
 
 import { html, render, useState, useEffect } from '../vendor/preact-htm.js';
-import { useStore, set, S } from './store.js';
+import { useStore, set, S, remembered, remember } from './store.js';
 import { t, plainText } from './i18n.js';
 import { Icon } from './icons.js';
 import { Spinner } from './ui.js';
@@ -10,7 +10,6 @@ import { DrivePage } from './pages/drive.js';
 import { MultiplayerPage } from './pages/multiplayer.js';
 import { ProfilePage } from './pages/profile.js';
 import { ModsPage } from './pages/mods.js';
-import { ModelTestPage } from './pages/modeltest.js';
 import { SettingsPage } from './pages/settings.js';
 import { ControlsPage } from './pages/controls.js';
 import { GamesPage } from './pages/games.js';
@@ -26,20 +25,14 @@ import { onPhone, onDrop } from './api.js';
 const PHONE = onPhone || new URLSearchParams(location.search).has('phone');
 if (PHONE) document.documentElement.classList.add('phone');
 
-const PAGES = [
-  ['drive', 'Drive', 'bus', DrivePage],
-  ['multiplayer', 'Multiplayer', 'users', MultiplayerPage],
-  ['profile', 'Profile', 'user', ProfilePage],
-  ['mods', 'Mods', 'puzzle', ModsPage],
-  ['modeltest', 'Model test', 'check', ModelTestPage],
-  ['settings', 'Settings', 'sliders', SettingsPage],
-  ['controls', 'Controls', 'keyboard', ControlsPage],
-  null,
-  ['games', 'Running games', 'gamepad', GamesPage],
-  ['tutorials', 'Tutorials', 'book', TutorialsPage],
-  ['timetable', 'Timetable', 'clock', TimetablePage],
-  ['setup', 'Setup', 'folder', SetupPage],
+const GROUPS = [
+  ['Play', [['drive', 'Drive', 'bus', DrivePage], ['multiplayer', 'Multiplayer', 'users', MultiplayerPage], ['games', 'Running games', 'gamepad', GamesPage]]],
+  ['Content', [['mods', 'Mods', 'puzzle', ModsPage], ['timetable', 'Timetable', 'clock', TimetablePage]]],
+  ['Options', [['settings', 'Settings', 'sliders', SettingsPage], ['controls', 'Controls', 'keyboard', ControlsPage], ['setup', 'Setup', 'folder', SetupPage]]],
+  ['Help', [['tutorials', 'Tutorials', 'book', TutorialsPage]]],
 ];
+
+const PAGES = [...GROUPS.flatMap(([, pages]) => pages), ['profile', 'Profile', 'user', ProfilePage]];
 
 function Sidebar() {
   const s = useStore();
@@ -47,18 +40,27 @@ function Sidebar() {
   const installing = s.poll.jobs?.filter(jobRunning).length || 0;
   const p = s.profile;
   const name = s.config?.profile || '';
-  return html`<nav class="sidebar">
+  const [icons, setIcons] = useState(() => remembered('sidebar', 'full') === 'icons');
+  const flip = () => {
+    setIcons(!icons);
+    remember('sidebar', icons ? 'full' : 'icons');
+  };
+  return html`<nav class=${'sidebar' + (icons ? ' icons' : '')}>
     <div class="brand"><img src="logo.svg" alt="" /><div><b>openOMSI</b><small>${t('Launcher')} ${s.boot?.version || ''}</small></div></div>
-    ${PAGES.map((x) => {
-      if (!x) return html`<div class="nav-sep"></div>`;
-      const [id, label, icon] = x;
-      const count = id === 'games' ? running : id === 'mods' ? installing : 0;
-      return html`<button class=${'nav-item' + (s.page === id ? ' active' : '')} onClick=${() => set({ page: id })} title=${t(label)}>
-        <${Icon} name=${icon} /><span class="label">${t(label)}</span>${count > 0 && html`<span class="count">${count}</span>`}
-      </button>`;
-    })}
+    ${GROUPS.map(([title, pages]) => html`<div class="nav-group" role="group" aria-label=${t(title)}>
+      <div class="nav-title">${t(title)}</div>
+      ${pages.map(([id, label, icon]) => {
+        const count = id === 'games' ? running : id === 'mods' ? installing : 0;
+        return html`<button class=${'nav-item' + (s.page === id ? ' active' : '')} onClick=${() => set({ page: id })} title=${t(label)}>
+          <${Icon} name=${icon} /><span class="label">${t(label)}</span>${count > 0 && html`<span class="count">${count}</span>`}
+        </button>`;
+      })}
+    </div>`)}
     <div class="nav-fill"></div>
-    <button class="driver-chip" onClick=${() => set({ page: 'profile' })} title=${t('Profile')}>
+    <button class="nav-item sidebar-toggle" onClick=${flip} title=${t(icons ? 'Expand the menu' : 'Collapse the menu')} aria-expanded=${!icons}>
+      <${Icon} name=${icons ? 'right' : 'left'} /><span class="label">${t('Collapse the menu')}</span>
+    </button>
+    <button class=${'driver-chip' + (s.page === 'profile' ? ' active' : '')} onClick=${() => set({ page: 'profile' })} title=${t('Profile')}>
       <span class="avatar">${(name[0] || '?').toUpperCase()}</span>
       <span class="who"><b>${name || t('No driver')}</b><span>${p ? t('Level {n}', { n: p.level }) : t('Choose a driver')}</span></span>
     </button>

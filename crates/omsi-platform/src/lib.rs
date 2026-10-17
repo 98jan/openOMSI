@@ -8,10 +8,13 @@
 
 pub mod avatars;
 pub mod discord;
+pub mod memory;
 pub mod presence;
 pub mod proxy;
 pub mod quit;
 pub mod recovery;
+pub mod support_bundle;
+pub mod tomorrow;
 pub mod updater;
 pub mod webview2;
 

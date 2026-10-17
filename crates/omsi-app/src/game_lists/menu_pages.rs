@@ -14,8 +14,10 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
     let game: Vec<(String, String)> = vec![
         switch_row(app, "navigator", "Navigator", "Enables/Disables the Minimap"),
         switch_row(app, "nav_ai", "AI vehicles on the map", "Shows/hides the other (AI) vehicles on the Minimap and the city map"),
-        switch_row(app, "nav_surface", "Map surface under the roads", "Shows the map's own water, green land, rivers and rail under the roads of the Minimap and the city map, when the map has a package"),
+        switch_row(app, "nav_surface", "Map surface under the roads", "Shows the map's ground, water, woods, houses and paved surfaces on the Minimap and the city map (and the map's package, when it has one)"),
         switch_row(app, "nav_light", "Light map", "The Minimap and the city map in a light look"),
+        switch_row(app, "nav_3d", "3D buildings on the map", "The houses stand in 3D with their shadows on the Minimap, and the city map tilts into 3D when zoomed in"),
+        switch_row(app, "nav_widget", "Navigator as a widget", "Drag the Minimap anywhere and change its size at its bottom right corner"),
         switch_row(app, "nav_arrows", "Route arrows (as in OMSI 2)", "Shows OMSI 2's route arrows over the road"),
         pick("navigator_corner", "Corner", later),
         switch_row(app, "get_up", "Ability to get up (Ctrl+Shift+G)", "Allows you to get out of the car and explore the world"),
@@ -26,6 +28,8 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         switch_row(app, "trip_summary", "Trip summary", "At the end of each trip: its stops with the times planned and driven, to copy or to save"),
         switch_row(app, "info_bar", "Information bar (Shift+Y)", "Displays information such as the time, speed, and other details at the top of the screen"),
         switch_row(app, "exact_fare", "Passengers pay the exact fare", "No change is given at the cash desk"),
+        switch_row(app, "full_tank", "Start with a full tank", "Each new bus starts with its tank full (many maps have no petrol station); a saved situation keeps its own"),
+        switch_row(app, "pax_bad_driving", "Passengers react to bad driving", "They complain about rough driving and may get off at the next stop"),
         pick("boarding", "Boarding", "How passengers get their tickets"),
         pick("standing_chance", "Standing passengers", "The chance a passenger stands although a seat is free"),
         pick("maintenance", "Maintenance", later),
@@ -40,6 +44,8 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
     let graphics: Vec<(String, String)> = vec![
         pick("graphics", "Graphics", later),
         preset_row(&file, "Quality preset", "Sets most of the graphics options at once"),
+        app.can_optimise().then(|| button("Optimise for my PC", "Start", "Measures while you drive and adjusts the graphics for a smooth frame rate; your settings are saved first", "optimise")),
+        omsi_launcher_lib::optimise::backup().is_some().then(|| button("Restore my previous settings", "Restore", "The graphics settings as they were before the last optimisation", "optimise_restore")),
         pick("msaa", "Anti-aliasing", later),
         pick("render_scale", "Render scale", later),
         pick("anisotropy", "Anisotropic", later),
@@ -52,10 +58,11 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         slider_row(app, "night_brightness", "Night brightness", "Enhanced graphics: how much brighter the night is shown", &|v| if v < 0.01 { "Off".to_string() } else { format!("+{v:.2}") }).filter(|_| shown("night_brightness")),
         slider_row(app, "led_glow", "LED glow", "How strongly the dots of LED destination displays glow", &|v| format!("{}/15", v as i64)).filter(|_| shown("led_glow")),
         slider_row(app, "led_mips", "LED mip strength", "Lower: sharper LED dots that shimmer from a distance; higher: calmer, softer dots", &|v| format!("{v:.2}")).filter(|_| shown("led_mips")),
-        switch_row(app, "reflections", "Reflection maps (paint, chrome, glass)", later).filter(|_| shown("reflections")),
+        slider_row(app, "reflections", "Reflection maps (paint, chrome, glass)", "Changes show at once; turned up from Off, they come back when the game starts the next time", &|v| if v < 0.005 { "Off".to_string() } else { format!("{:.0}%", v * 100.0) }).filter(|_| shown("reflections")),
         switch_row(app, "clouds", "Clouds", later),
         pick("cloud_quality", "Cloud quality", "Enhanced: the volumetric clouds marched in fewer steps - faster, a little grainier").filter(|_| shown("cloud_quality") && app.settings.clouds),
         pick("rain_quality", "Rain quality", "Lower is faster: the drops on the glass painted less often, less spray and fewer streaks; Low shows OMSI 2's own rain on the glass (from the next bus loaded)"),
+        pick("puddles", "Puddles", "The wet roads' reflections in the rain: Low only near the bus and in fewer rays, much cheaper; Off none (the reflections on paint and glass stay)").filter(|_| app.settings.reflections > 0.0),
         switch_row(app, "windy_trees", "Windy trees", "The trees' leaves bend and sway in the wind and its gusts; with no wind they stand still"),
     ]
         .into_iter()
@@ -136,6 +143,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         pick("max_fps", "Frame limit", "Frames a second at most"),
         switch_row(app, "fps", "Frame rate", "Show the frames per second in the top right corner"),
         pick("perf_overlay", "Performance details", "Where each frame's time goes, how busy the processor is and what slows the game down, with live graphs"),
+        switch_row(app, "sim_thread", "Simulation on its own thread", "The AI traffic, the people and the scenery scripts run beside the drawing, on another processor core (the AI cars one frame later); from the next start"),
         pick("view_distance", "View distance", later),
         pick("max_obj_dist", "Object distance", later),
         pick("min_obj_size", "Small objects", later),
@@ -143,7 +151,7 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         pick("mirror_refresh", "Bus mirror refresh", "How often the mirrors are drawn: every frame, the street moves through them as smoothly as through the windscreen"),
         pick("mirror_quality", "Mirror quality", "In Enhanced and Enhanced+: the mirrors shaded as the picture is, with its light and its sky, instead of the plain light").filter(|_| shown("mirror_quality")),
         switch_row(app, "mirror_hud_every_frame", "Mirror panels every frame", "The mirror panels in the cab (Ctrl+M) are drawn every frame, as in ETS2, instead of taking turns with the other mirrors"),
-        pick("texture_memory", "Texture memory", later),
+        pick("video_memory", "Video memory", later),
         switch_row(app, "texture_compression", "Compress textures on loading", later),
         (!omsi_launcher_lib::graphics_profiles().is_empty()).then(|| opens("Load graphics profile", "Applies a graphics profile saved in the launcher", "gfxprofile")),
     ])
@@ -173,7 +181,8 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
         slider_row(app, "head_idle_pace", "Sway pace", "How fast that sway moves (100% is the pace it is designed at)", &|v| format!("{:.0}%", v * 100.0)),
         switch_row(app, "hands_in_cab", "Driver's hands in the cab view", "Shows the driver's hand on the steering wheel (Cockpit only)"),
         switch_row(app, "driver", "Driver at the wheel (outside views)", "Shows the driver in the outside views and in the mirrors"),
-        switch_row(app, "headtrack", "Head tracking (native TrackIR / OpenTrack)", &format!("Use native TrackIR on Windows, or OpenTrack on UDP port {}", s.head_tracking_port)),
+        switch_row(app, "headtrack", "Head tracking (native TrackIR / OpenTrack)", &omsi_ui::tr("Use native TrackIR on Windows, or OpenTrack on UDP port {}")
+            .into_owned().replace("{}", &s.head_tracking_port.to_string())),
         slider_row(app, "head_tracking_yaw_sens", "TrackIR yaw sensitivity", "Left / right head movement. 100% is 1:1; the low end is deliberately finer.", &|v| format!("{v:.0}%")),
         slider_row(app, "head_tracking_pitch_sens", "TrackIR pitch sensitivity", "Up / down head movement. 100% is 1:1; the low end is deliberately finer.", &|v| format!("{v:.0}%")),
         slider_row(app, "head_tracking_roll_sens", "TrackIR roll sensitivity", "Head tilt. 100% is 1:1; the low end is deliberately finer.", &|v| format!("{v:.0}%")),
@@ -521,9 +530,9 @@ mod tests {
         assert_eq!(s.graphics, "vanilla_plus");
         assert!(s.shadows && s.ssao && s.detail_textures && !s.classic());
         let s = text_in_mode("graphics=enhanced_plus\nshadows=0\nssao=0\nreflections=0\n", "vanilla");
-        assert!(!s.ray_tracing() && !s.enhanced && !s.shadows && !s.ssao && !s.reflections);
+        assert!(!s.ray_tracing() && !s.enhanced && !s.shadows && !s.ssao && s.reflections == 0.0);
         let s = text_in_mode("graphics=vanilla\nshadows=0\n", "enhanced_plus");
-        assert!(s.ray_tracing() && s.enhanced && s.shadows && s.ssao && s.reflections);
+        assert!(s.ray_tracing() && s.enhanced && s.shadows && s.ssao && s.reflections == 1.0);
     }
 
     #[test]

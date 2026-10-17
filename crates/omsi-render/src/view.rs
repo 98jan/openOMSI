@@ -172,6 +172,10 @@ pub struct Lighting {
     pub low_clouds: bool,
     /// How much brighter the night is shown, in exposure steps after sunset (the settings' 0 .. 3).
     pub night_brightness: f32,
+    pub reflection_strength: f32,
+    /// The wet roads' reflections (`puddles`): 0 none, 1 low (a quarter of the rays, within
+    /// 40 m, no capture of the player's vehicle), 2 high (as they were). Read every frame.
+    pub puddles: u8,
     /// The player's vehicle's velocity (m/s, world): at speed the airstream drives the drops
     /// on its glass up the windscreen and back along the side windows.
     pub glass_wind: Vec3,
@@ -260,6 +264,8 @@ impl Default for Lighting {
             fog_base: None,
             envir_tint: [Vec3::ONE; 3],
             night_brightness: 0.0,
+            reflection_strength: 1.0,
+            puddles: 2,
             led_glow: 1.5,
             led_mips: 1.3,
             low_clouds: false,

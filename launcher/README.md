@@ -65,3 +65,20 @@ without one.
   `lines '{"map":"maps/Grundorf/global.cfg","date":"1989-05-30"}'`); `bootstrap.json` is
   written by hand. In the browser console, `missingTexts()` lists the texts the translation
   tables lack in the language shown.
+* **Every Drive page layout, checked**: `node launcher/tests/drive-check.mjs` (Node 22, or 20
+  with `--experimental-websocket`; Chrome from `CHROME`, else `google-chrome`) serves the page
+  with the small test data of `launcher/tests/fixtures` and, in a headless Chrome, for every
+  layout in both themes and at a phone's width up to an ultrawide screen
+  (`DRIVE_CHECK_SIZES=400x820,1280x720`), looks for every option of the list in
+  `launcher/tests/drive-check.js`, opens every dialog and menu and clicks the lists; it says
+  what is missing, covered, cut off or not opening, and fails then. A pull request that changes
+  the launcher's page runs it (`.github/workflows/pr_checks.yml`). A new option of the Drive
+  page goes into that list, so that no layout can lack it.
+
+### Multiplayer interface regression checks
+
+Serve `launcher/` locally, then open `/tests/multiplayer-check.html` and press **Run multiplayer
+checks**. These checks render the real page with local command fixtures; they cover code
+validation, full and unavailable sessions, continuing while status is pending, stale queries,
+the server list, and host setup.
+They do not start a game, query a remote server, or change a real saved duty.

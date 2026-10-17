@@ -1,8 +1,8 @@
 //! The launcher's bus preview: the chosen bus drawn by the game's own renderer - its
-//! model, paint and materials - on the plain (Vanilla+) path without the costly passes,
-//! under the light of the chosen time and weather, into a picture the launcher shows
-//! in a card. It is drawn again only when something changed (another bus, paint, light,
-//! the preview turned by the mouse), never every frame.
+//! model, paint and materials - with the player's graphics settings, under a fixed
+//! midday light on a podium in a photo studio, into a picture the launcher shows in a
+//! card. It is drawn again only when something changed (another bus, paint, the preview
+//! turned by the mouse, other graphics settings), never every frame.
 //!
 //! A bus is read on a worker (its type, its scripts run to their resting state, its
 //! textures and meshes put on the GPU ahead) and then placed into a scene of its own with
@@ -47,8 +47,6 @@ struct Shown {
     centre: glam::Vec3,
     length: f32,
     weather: omsi_content::weather::Weather,
-    /// The sky's cloud type and weather model its look is drawn with.
-    sky: crate::weather_setup::SkyState,
     lighting: Lighting,
 }
 
@@ -140,6 +138,7 @@ pub struct Showroom {
     pub generation: u64,
     /// Bumped at every drawing of the picture (the launcher shows an unchanged one only once).
     pub drawn: u64,
+    fresh_light: bool,
 }
 
 /// Names the bus whose preview is being read and placed, until it is in the picture.
@@ -184,14 +183,8 @@ fn args_for(look: &Look) -> Args {
     if !look.paint.is_empty() {
         v.extend(["--paint".into(), look.paint.clone()]);
     }
-    // (the current weather is fetched by the game, not by the preview)
-    if !look.weather.is_empty() && !look.weather.starts_with("metar:") {
-        v.extend(["--weather".into(), look.weather.clone()]);
-    }
-    v.extend(["--time".into(), format!("{:02}:{:02}", look.time / 60, look.time % 60)]);
-    if !look.date.is_empty() {
-        v.extend(["--date".into(), look.date.clone()]);
-    }
+    // (the same light whatever the duty's time and weather: at night the bus was hardly seen)
+    v.extend(["--time".into(), "12:00".into()]);
     let mut args = Args::try_parse_from(v).unwrap_or_else(|_| Args::parse_from(["omsi"]));
     // (drawn the way the game will be)
     args.session_settings = crate::startup::SessionSettings::for_showroom(&crate::settings::Settings::load());
@@ -232,6 +225,7 @@ impl Showroom {
             dirty: true,
             generation: 0,
             drawn: 0,
+            fresh_light: true,
         }
     }
 
@@ -318,6 +312,7 @@ impl Showroom {
                 Ok(Ok(ready)) => {
                     self.loading = None;
                     self.shown = Some(self.place(renderer, ready));
+                    self.fresh_light = true;
                     if !self.can_view(self.view) {
                         self.view = PreviewView::Outside;
                     }
@@ -344,17 +339,12 @@ impl Showroom {
             let shown = self.shown.as_ref().map(|s| &s.look);
             let loading = self.loading.as_ref().map(|l| &l.0);
             if shown != Some(&w) && loading != Some(&w) && self.loading.is_none() && self.failed.as_ref() != Some(&w) {
-                // only the light changed: no need to read the bus again
+                // only the time or weather changed: the preview does not show them
                 let same_bus = shown.map(|s| s.bus == w.bus && s.paint == w.paint && s.map == w.map && s.root == w.root).unwrap_or(false);
                 if same_bus {
                     if let Some(s) = self.shown.as_mut() {
                         s.look = w.clone();
-                        let args = args_for(&w);
-                        (s.weather, s.sky.model) = crate::weather_setup::load_weather_run(&args);
-                        setup_sky(&args, renderer, &mut s.scene, omsi_content::Envir::load(&args.root.join("envir.cfg")).ok().as_ref(), Some(&s.weather), &mut s.sky.clouds);
-                        s.lighting = lighting_for(&args, &s.weather, &s.sky);
                     }
-                    self.dirty = true;
                 } else {
                     self.start_loading(w);
                 }
@@ -438,11 +428,8 @@ impl Showroom {
         let t0 = std::time::Instant::now();
         let mut scene = renderer.new_scene();
         let args = args_for(&r.look);
-        let (weather, model) = crate::weather_setup::load_weather_run(&args);
-        let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
-        let mut sky = crate::weather_setup::SkyState { clouds: None, model, look: args.session_settings };
-        setup_sky(&args, renderer, &mut scene, envir.as_ref(), Some(&weather), &mut sky.clouds);
-        add_floor(renderer, &mut scene);
+        let weather = studio_weather();
+        let sky = crate::weather_setup::SkyState { clouds: None, model: None, look: args.session_settings };
         let world = r.world;
         // (the panes wear this weather's snow as the bus goes onto the GPU)
         world.settings.set_snow(weather.snow);
@@ -467,10 +454,11 @@ impl Showroom {
             centre.y = bb[4] + bb[1] * 0.5 - total * 0.5;
             length = total;
         }
+        add_studio(renderer, &mut scene, glam::Vec2::new(centre.x, centre.y), length, super::showroom_enhanced(&crate::settings::Settings::load()));
         let lighting = lighting_for(&args, &weather, &sky);
         log::info!("showroom: {} ({} meshes, {:.1} m long) placed in {:.2} s", r.look.bus, render.instances.len(), length, t0.elapsed().as_secs_f64());
         let _ = std::fs::remove_file(placing_mark());
-        Shown { look: r.look, scene, world: Some(world), vehicle: Some(vehicle), render: Some(render), trailers, centre, length, weather, sky, lighting }
+        Shown { look: r.look, scene, world: Some(world), vehicle: Some(vehicle), render: Some(render), trailers, centre, length, weather, lighting }
     }
 
     /// The picture of the bus at `w` x `h` pixels, drawn again when something changed.
@@ -497,7 +485,9 @@ impl Showroom {
             self.dirty = false;
             self.drawn += 1;
             let view = self.target.as_ref().unwrap().1.clone();
+            renderer.instant_exposure = std::mem::take(&mut self.fresh_light);
             self.render(renderer, &view, w, h);
+            renderer.instant_exposure = false;
         }
         self.target.as_ref().map(|t| t.1.clone())
     }
@@ -532,6 +522,9 @@ impl Showroom {
         let dir = DVec3::new((sy * cp) as f64, (cy * cp) as f64, -sp as f64);
         let mut pos = target_pt - dir * dist as f64;
         pos.z = pos.z.max(0.6);
+        let cove = Cove::of(s.length);
+        let off = glam::Vec2::new(pos.x as f32 - s.centre.x, pos.y as f32 - s.centre.y).length();
+        pos.z = pos.z.max(cove.height_at(off.min(cove.flat + cove.round - 2.0)) as f64 + 1.0);
         // the bus stands in the free part of the window: the camera looks past it to the
         // side by as much
         let side = (focus - 0.5) * 2.0 * half_v * aspect;
@@ -601,12 +594,90 @@ impl Showroom {
         self.shown.as_ref().map(|s| s.vehicle.is_some()).unwrap_or(false) && self.target.is_some()
     }
 
+    pub fn renderer_changed(&mut self) {
+        let _ = std::fs::remove_file(placing_mark());
+        self.shown = None;
+        self.target = None;
+        self.loading = None;
+        self.opening = None;
+        self.failed = None;
+        self.dirty = true;
+    }
+
+    pub fn relight(&mut self) {
+        if let Some(s) = self.shown.as_mut() {
+            let args = args_for(&s.look);
+            let sky = crate::weather_setup::SkyState { clouds: None, model: None, look: args.session_settings };
+            s.lighting = lighting_for(&args, &s.weather, &sky);
+            self.fresh_light = true;
+            self.dirty = true;
+        }
+    }
+
+    pub fn follow(&mut self, quality: &mut Quality, now: bool) -> bool {
+        if !now && quality.checked.elapsed() < std::time::Duration::from_millis(500) {
+            return false;
+        }
+        let next = Quality::now();
+        let rebuild = next.options != quality.options;
+        if rebuild {
+            self.renderer_changed();
+        } else if next.light != quality.light {
+            self.relight();
+        }
+        *quality = next;
+        rebuild
+    }
+}
+
+pub struct Quality {
+    pub options: omsi_render::RenderOptions,
+    pub(super) light: (crate::startup::SessionSettings, bool, bool, u32),
+    checked: std::time::Instant,
+}
+
+impl Quality {
+    pub fn now() -> Quality {
+        Quality::of(&crate::settings::Settings::load())
+    }
+
+    pub(super) fn of(s: &crate::settings::Settings) -> Quality {
+        let light = (crate::startup::SessionSettings::for_showroom(&s), s.shadows, s.detail_textures, s.reflections.to_bits());
+        Quality { options: super::showroom_options(s), light, checked: std::time::Instant::now() }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::mem::ManuallyDrop;
+
+    #[test]
+    fn the_cove_rises_from_the_floor_to_its_wall() {
+        let cove = Cove::of(12.0);
+        assert!((cove.height_at(0.0) - cove.floor).abs() < 1e-3);
+        assert!((cove.height_at(cove.flat) - cove.floor).abs() < 1e-3);
+        assert!((cove.height_at(cove.flat + cove.round) - (cove.floor + cove.round)).abs() < 1e-3);
+        assert!(cove.height_at(cove.flat + 50.0) > cove.floor);
+    }
+
+    #[test]
+    fn the_podium_holds_the_whole_bus() {
+        for length in [8.0, 12.0, 18.75, 25.0] {
+            let (r, h) = podium(length);
+            assert!(r >= length * 0.5 + 1.0 && h > 0.0);
+        }
+        assert!(podium(4.0).0 >= 6.0);
+    }
+
+    #[test]
+    fn the_studio_weather_is_clear() {
+        let w = studio_weather();
+        assert_eq!(w.clouds.0, "-1");
+        assert!(!w.snow && !w.snow_on_road);
+        assert_eq!(w.precip[0], 0.0);
+        assert!(w.fog.0 >= 10_000.0);
+    }
 
     fn look(bus: &str) -> Look {
         Look { bus: bus.into(), ..Look::default() }
@@ -693,45 +764,126 @@ mod tests {
     }
 }
 
-/// The light of the look's time and weather, with the sun's shadow under the bus. Always
-/// the plain renderer, whatever the game's graphics setting: a preview is to be quick and
-/// clear, not the game's picture (no enhanced exposure and glow, no weather effects).
+/// A clear midday light, with the sun's shadow under the bus, in the studio, drawn with
+/// the player's shading, detail and shadow switches (no weather effects).
 fn lighting_for(args: &Args, weather: &omsi_content::weather::Weather, sky: &crate::weather_setup::SkyState) -> Lighting {
+    let settings = crate::settings::Settings::load();
     let clock = start_clock(args);
     let envir = omsi_content::Envir::load(&args.root.join("envir.cfg")).ok();
     let daylight = omsi_sim::Daylight::compute(&clock, envir.as_ref());
-    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, true, sky);
-    l.shadows = daylight.altitude_deg > 2.0;
-    l.enhanced = false;
-    l.classic = false;
-    l.detail = false;
+    let mut l = weather_lighting(&daylight, weather, crate::weather_setup::cloud_drift_at(weather, clock.time), 0.0, 0.0, settings.shadows, sky);
+    l.shadows = settings.shadows && daylight.altitude_deg > 2.0;
+    l.enhanced = super::showroom_enhanced(&settings);
+    l.detail = settings.detail_textures;
     l.wetness = 0.0;
     l.snow = 0.0;
     l.fog_density = 0.0;
+    l.reflection_strength = settings.reflections;
+    l.sky_color = glam::Vec3::splat(STUDIO_GREY);
     l
 }
 
-/// A round showroom floor under the bus: dark, matt, catching its shadow.
-fn add_floor(renderer: &Renderer, scene: &mut Scene) {
-    let n = 96;
-    let r = 400.0f32;
-    let mut positions = vec![glam::Vec3::ZERO];
-    let mut normals = vec![glam::Vec3::Z];
-    let mut uvs = vec![glam::Vec2::ZERO];
-    for k in 0..n {
-        let a = std::f32::consts::TAU * k as f32 / n as f32;
-        positions.push(glam::Vec3::new(a.cos() * r, a.sin() * r, 0.0));
-        normals.push(glam::Vec3::Z);
-        uvs.push(glam::Vec2::new(a.cos(), a.sin()));
+/// A clear sky whatever the duty's weather: no clouds dimming the sun, no snow on the panes.
+fn studio_weather() -> omsi_content::weather::Weather {
+    omsi_content::weather::from_metar("", "CAVOK")
+}
+
+/// The backdrop's grey (linear), drawn where no sky is set up.
+const STUDIO_GREY: f32 = 0.08;
+
+fn podium(length: f32) -> (f32, f32) {
+    ((length * 0.5 + 1.4).max(6.5), 0.32)
+}
+
+struct Cove {
+    floor: f32,
+    flat: f32,
+    round: f32,
+    wall: f32,
+}
+
+impl Cove {
+    fn of(length: f32) -> Cove {
+        let (r, h) = podium(length);
+        Cove { floor: -h, flat: r + 30.0, round: 200.0, wall: 400.0 }
     }
-    let mut indices = Vec::new();
-    for k in 0..n {
-        indices.extend([0u32, 1 + ((k + 1) % n) as u32, 1 + k as u32]);
+
+    fn height_at(&self, d: f32) -> f32 {
+        let x = (d - self.flat).clamp(0.0, self.round);
+        self.floor + self.round - (self.round * self.round - x * x).sqrt()
     }
-    let data = omsi_geometry::MeshData { positions, normals, uvs, ranges: vec![(0, indices.len() as u32, 0)], indices, one_sided: false };
-    let mesh = renderer.add_mesh(scene, &data);
-    let mat = renderer.add_material(scene, None, omsi_render::AlphaMode::Opaque, [0.12, 0.125, 0.135, 1.0], false);
-    renderer.add_instance(scene, mesh, DVec3::new(0.0, 0.0, -0.005), glam::Mat4::IDENTITY, vec![mat]);
+}
+
+type Ring = (f32, f32, f32, f32, f32);
+
+fn lathe(profile: &[Ring], centre: glam::Vec2) -> omsi_geometry::MeshData {
+    let n = 128;
+    let (mut positions, mut normals, mut uvs, mut indices) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for &(r, z, nr, nz, shade) in profile {
+        for k in 0..=n {
+            let a = std::f32::consts::TAU * k as f32 / n as f32;
+            let (sa, ca) = a.sin_cos();
+            positions.push(glam::Vec3::new(centre.x + ca * r, centre.y + sa * r, z));
+            normals.push(glam::Vec3::new(ca * nr, sa * nr, nz).normalize_or_zero());
+            uvs.push(glam::Vec2::new(shade, k as f32 / n as f32));
+        }
+    }
+    let row = n as u32 + 1;
+    for j in 0..profile.len().saturating_sub(1) as u32 {
+        for k in 0..n as u32 {
+            let (a, b) = (j * row + k, (j + 1) * row + k);
+            indices.extend([a, b, a + 1, a + 1, b, b + 1]);
+        }
+    }
+    omsi_geometry::MeshData { positions, normals, uvs, ranges: vec![(0, indices.len() as u32, 0)], indices, one_sided: false }
+}
+
+fn add_lathe(renderer: &Renderer, scene: &mut Scene, profile: &[Ring], centre: glam::Vec2, texture: Option<usize>, color: [f32; 3], glow: bool, unlit: bool) {
+    let mesh = renderer.add_mesh(scene, &lathe(profile, centre));
+    let rgba = [color[0], color[1], color[2], 1.0];
+    let mat = if glow {
+        renderer.add_material_all(scene, None, omsi_render::AlphaMode::Opaque, rgba, true, None, None, None, None, color)
+    } else {
+        renderer.add_material(scene, texture, omsi_render::AlphaMode::Opaque, rgba, unlit)
+    };
+    let i = renderer.add_instance(scene, mesh, DVec3::new(0.0, 0.0, -0.005), glam::Mat4::IDENTITY, vec![mat]);
+    renderer.set_casts_shadow(scene, i, texture.is_none() && !glow);
+    renderer.set_object_culling(scene, i, 0.0, 1.0, true);
+}
+
+fn studio_ramp() -> omsi_texture::Image {
+    let n = 64u32;
+    let rgba = (0..n).flat_map(|i| {
+        let v = (i as f32 / (n - 1) as f32 * 255.0).round() as u8;
+        [v, v, v, 255]
+    });
+    omsi_texture::Image { width: n, height: 1, rgba: rgba.collect(), has_alpha: false }
+}
+
+fn add_studio(renderer: &Renderer, scene: &mut Scene, centre: glam::Vec2, length: f32, enhanced: bool) {
+    let (r, h) = podium(length);
+    let dim = if enhanced { 0.4 } else { 1.0 };
+    let bevel = 0.06;
+    let top = [(0.0, 0.0, 0.0, 1.0, 0.0), (r - bevel, 0.0, 0.0, 1.0, 0.0), (r - bevel, 0.0, 0.7, 0.7, 0.0), (r, -bevel, 0.7, 0.7, 0.0), (r, -bevel, 1.0, 0.0, 0.0), (r, -h * 0.55, 1.0, 0.0, 0.0)];
+    add_lathe(renderer, scene, &top, centre, None, [0.09 * dim, 0.092 * dim, 0.1 * dim], false, false);
+    let rim = [(r + 0.002, -h * 0.55, 1.0, 0.0, 0.0), (r + 0.002, -h * 0.7, 1.0, 0.0, 0.0)];
+    add_lathe(renderer, scene, &rim, centre, None, [0.75, 0.85, 1.0], true, true);
+    let base = [(r, -h * 0.7, 1.0, 0.0, 0.0), (r, -h, 1.0, 0.0, 0.0)];
+    add_lathe(renderer, scene, &base, centre, None, [0.03 * dim, 0.031 * dim, 0.034 * dim], false, false);
+    let ramp = renderer.add_texture(scene, &studio_ramp(), false);
+    let Cove { flat, round, wall, .. } = Cove::of(length);
+    let mut cove = vec![(0.0, -h, 0.0, 1.0, 0.99), (r + 1.5, -h, 0.0, 1.0, 0.95), (r + 8.0, -h, 0.0, 1.0, 0.7), (flat, -h, 0.0, 1.0, 0.45)];
+    for k in 1..=32 {
+        let a = std::f32::consts::FRAC_PI_2 * k as f32 / 32.0;
+        cove.push((flat + a.sin() * round, -h + (1.0 - a.cos()) * round, -a.sin(), a.cos(), 0.45 - 0.17 * k as f32 / 32.0));
+    }
+    let rim_z = -h + round;
+    for k in 1..=24 {
+        let a = std::f32::consts::FRAC_PI_2 * k as f32 / 24.0;
+        cove.push(((flat + round) * a.cos(), rim_z + a.sin() * wall, -a.cos() / (flat + round), -a.sin() / wall, 0.28 - 0.18 * k as f32 / 24.0));
+    }
+    let k = if enhanced { 0.24 } else { 0.3 };
+    add_lathe(renderer, scene, &cove, centre, Some(ramp), [k, k * 1.02, k * 1.08], false, enhanced);
 }
 
 #[cfg(test)]

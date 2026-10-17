@@ -6,7 +6,7 @@ import { Icon } from '../icons.js';
 import { Button, Field, Select, Toggle, Segmented, Slider } from '../ui.js';
 import { choose, realTime, realDate, weatherName, weatherOfItsOwn } from '../data.js';
 import { WeatherEditor, isCustomWeather, editableWeather } from './weather-editor.js';
-import { SEASONS, PHASES, setSeason, localNow, TimeInput, DateInput } from './drive.js';
+import { SEASONS, PHASES, setSeason, localNow, TimeInput, DateInput, DatePicker } from './drive.js';
 
 function WeatherTile({ on, icon, name, sub, onClick }) {
   return html`<button type="button" class=${'weather-tile' + (on ? ' on' : '')} aria-pressed=${on} onClick=${onClick} title=${sub || name}>
@@ -32,7 +32,7 @@ function Weather() {
     if (metarOn && !airports.length) call('metar_airports').then(setAirports).catch(() => {});
   }, [c.weather]);
   const custom = isCustomWeather(c.weather);
-  const other = weatherOfItsOwn(c.weather) && !custom && !metarOn && c.weather !== 'cycle';
+  const other = weatherOfItsOwn(c.weather) && !custom && !metarOn && c.weather !== 'cycle' && c.weather !== 'tomorrow';
   const pick = (weather) => (isCustomWeather(weather) ? setEditing(weather) : choose({ weather }));
   return html`<div class="stack" style="gap:10px">
     <div class="section-title">${t('Weather')}</div>
@@ -41,6 +41,7 @@ function Weather() {
       <${WeatherTile} on=${custom} icon="sliders" name=${t('Custom weather')} sub=${t('Set visibility, wind, clouds, rain, temperature and road state')} onClick=${() => setEditing(custom ? c.weather : 'custom:')} />
       ${metar && html`<${WeatherTile} on=${metarOn} icon="globe" name=${t('Current weather')} sub=${t('METAR of {} (fetched at the start)', [metar])} onClick=${() => pick(`metar:${metar}`)} />`}
       <${WeatherTile} on=${c.weather === 'cycle'} icon="refresh" name=${t('Weather cycle')} sub=${t('Changes every 25-60 minutes, as the month allows')} onClick=${() => pick('cycle')} />
+      <${WeatherTile} on=${c.weather === 'tomorrow'} icon="globe" name="Tomorrow.io" sub=${t('Current weather')} onClick=${() => pick('tomorrow')} />
       ${other && html`<${WeatherTile} on icon="cloud" name=${weatherName(c.weather)} onClick=${() => {}} />`}
       ${w.map((x) => html`<${WeatherTile} on=${c.weather === x.file} icon="cloud" name=${x.name} sub=${x.description} onClick=${() => pick(x.file)} />`)}
     </div>
@@ -59,6 +60,7 @@ export function DayStep() {
   const rd = realDate();
   const joined = c.lan_mode === 'join';
   const srv = c.lan_server || {};
+  const [picking, setPicking] = useState(false);
   return html`<div class="stack">
     ${joined
       ? html`<div class="stack" style="gap:10px">
@@ -69,17 +71,18 @@ export function DayStep() {
           </dl>
           <p class="muted small">${t('On a server the map, the time, the date and the weather are the same for everybody: the server keeps the world\'s clock. You choose your bus and your duty.')}</p>
         </div>`
-      : html`<div class="grid-2">
+      : html`<div class="grid-2 day-when">
           <${Field} label="Start time" help=${rt ? 'Follows the computer\'s clock (Settings)' : null}>
             <div class="row" style="gap:6px">
               <div class="grow"><${TimeInput} minutes=${c.time} disabled=${rt} onChange=${(time) => choose({ time })} /></div>
-              ${!rt && html`<${Button} icon="clock" title="Current time" onClick=${() => choose({ time: localNow().time })} />`}
+              <${Button} icon="clock" title="Current time" disabled=${rt} onClick=${() => choose({ time: localNow().time })} />
             </div>
           </${Field}>
           <${Field} label="Date" help=${rd ? 'Today (Settings)' : null}>
             <div class="row" style="gap:6px">
               <div class="grow"><${DateInput} value=${c.date} disabled=${rd} onChange=${(date) => choose({ date, season: 'auto', own_date: null })} /></div>
-              ${!rd && html`<${Button} icon="calendar" title="Current date" onClick=${() => choose({ date: localNow().date, season: 'auto', own_date: null })} />`}
+              <${Button} icon="down" title="Choose a date" disabled=${rd} onClick=${() => setPicking(true)} />
+              <${Button} icon="calendar" title="Current date" disabled=${rd} onClick=${() => choose({ date: localNow().date, season: 'auto', own_date: null })} />
             </div>
           </${Field}>
         </div>
@@ -97,5 +100,6 @@ export function DayStep() {
       ].map(([key, label, help]) => html`<div title=${t(help)}><${Toggle} checked=${c[key]} onChange=${(v) => choose({ [key]: v })} label=${label} /></div>`)}
     </div>
     ${!joined && html`<${Weather} />`}
+    ${picking && html`<${DatePicker} value=${c.date} onClose=${() => setPicking(false)} onPick=${(date) => (setPicking(false), choose({ date, season: 'auto', own_date: null }))} />`}
   </div>`;
 }

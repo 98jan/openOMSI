@@ -69,6 +69,8 @@ struct Roads {
     entries: Vec<Entry>,
     /// Every placed object's world place: the trip's stops are found here.
     objects: HashMap<i64, DVec2>,
+    /// The map's own layers (ground, water, paved surfaces, houses), when the game has them.
+    layers: Option<Arc<omsi_map::layers::Layers>>,
 }
 
 impl Roads {
@@ -95,7 +97,7 @@ fn simplify(pts: &[Vec3], tol: f32) -> Vec<Vec3> {
 /// stops stand - points in metres from `origin`, rounded to the decimetre, as flat
 /// `[x0, y0, x1, y1, ...]` lists. `colors` are the game's city map colours (casing, road, main
 /// road, route) as CSS.
-pub fn export(map: &str, global: &Path, date: &str, trip: &str, tolerance: f32) -> serde_json::Value {
+pub fn export(map: &str, global: &Path, date: &str, trip: &str, tolerance: f32, surface: bool) -> serde_json::Value {
     use serde_json::json;
     let look = Look { map: map.to_string(), global: global.to_path_buf(), date: date.to_string(), trip: trip.to_string(), entry: -1 };
     let roads = read_map(&look);
@@ -124,7 +126,8 @@ pub fn export(map: &str, global: &Path, date: &str, trip: &str, tolerance: f32) 
         "lo": rel(roads.lo), "hi": rel(roads.hi),
         "roads": list, "route": route, "stops": stops, "entries": entries,
         "colors": [css(casing), css(road), css(main), css(red)],
-        "package": package_view(global, o, roads.lo, roads.hi, tolerance),
+        "package": if surface { package_view(global, o, roads.lo, roads.hi, tolerance) } else { serde_json::Value::Null },
+        "layers": if surface { layers_view(roads.layers.as_deref(), o) } else { serde_json::Value::Null },
     })
 }
 
@@ -237,6 +240,7 @@ pub fn overview(look: Look) -> serde_json::Value {
         "stops": stops,
         "entries": entries,
         "lanes": roads.net.lanes.len(),
+        "layers": layers_view(roads.layers.as_deref(), o),
     })
 }
 
@@ -335,7 +339,31 @@ fn read_map(look: &Look) -> Roads {
         min.x, min.y, max.x, max.y,
         lo.x, lo.y, hi.x, hi.y
     );
-    Roads { roads, net: Arc::new(net), lanes: by_path, splines: by_spline, origin, lo, hi, entries, objects }
+    let layers = crate::host::host().map_layers(&root, &map_dir, &tiles, &chrono).map(Arc::new);
+    Roads { roads, net: Arc::new(net), lanes: by_path, splines: by_spline, origin, lo, hi, entries, objects, layers }
+}
+
+/// The map's layers as the page draws them under the roads, in metres from `origin` rounded to
+/// the decimetre: the ground by class, the paved surfaces by class, the houses' outlines with
+/// their heights, the railways and tram tracks. `null` when the game has none for the map.
+fn layers_view(l: Option<&omsi_map::layers::Layers>, origin: DVec2) -> serde_json::Value {
+    use serde_json::json;
+    let Some(l) = l else { return serde_json::Value::Null };
+    let shift = (l.origin - origin).as_vec2();
+    let r1 = |v: f32| ((v as f64) * 10.0).round() / 10.0;
+    let tris = |t: &[glam::Vec2]| -> Vec<f64> {
+        t.chunks_exact(3)
+            // (slivers under a few square decimetres are nothing at a launcher's zoom)
+            .filter(|c| (c[1] - c[0]).perp_dot(c[2] - c[0]).abs() > 0.1)
+            .flat_map(|c| c.iter().flat_map(|q| [r1(q.x + shift.x), r1(q.y + shift.y)]).collect::<Vec<_>>())
+            .collect()
+    };
+    let land: Vec<Vec<f64>> = l.land.iter().map(|t| tris(t)).collect();
+    let paved: Vec<Vec<f64>> = l.paved.iter().take(omsi_map::layers::PAVE_GREEN).map(|t| tris(t)).collect();
+    let houses: Vec<serde_json::Value> = l.buildings.iter().map(|b| json!({ "h": r1(b.height), "p": b.outline.iter().flat_map(|q| [r1(q.x + shift.x), r1(q.y + shift.y)]).collect::<Vec<_>>() })).collect();
+    let lines: Vec<serde_json::Value> = l.lines.iter().filter(|x| x.class < omsi_map::layers::LINE_ROAD_EDGE).map(|x| json!({ "c": x.class, "w": r1(x.width), "p": x.points.iter().flat_map(|q| [r1(q.x + shift.x), r1(q.y + shift.y)]).collect::<Vec<_>>() })).collect();
+    let tiles: Vec<[f64; 4]> = l.tiles.iter().map(|t| [r1(t[0] + shift.x), r1(t[1] + shift.y), r1(t[2] + shift.x), r1(t[3] + shift.y)]).collect();
+    json!({ "tiles": tiles, "land": land, "paved": paved, "houses": houses, "lines": lines })
 }
 
 #[cfg(test)]

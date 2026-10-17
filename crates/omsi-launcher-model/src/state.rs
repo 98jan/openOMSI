@@ -4,6 +4,8 @@
 //! Everything slow runs on a thread of its own and comes back as a [`Msg`]; the window
 //! drains them at the start of each frame, so it never waits.
 
+mod vehicle;
+
 use crate::host::host;
 use omsi_launcher_lib as core;
 pub use omsi_launcher_lib::crash::{crash_of, disconnect_of, CRASH_TAIL_GAP};
@@ -97,18 +99,9 @@ fn server_join_address(address: &str, proto: JoinProto, info: Option<&omsi_net::
     Ok((target, proto))
 }
 
-/// A code host's status page (its gateway is the session's port + 10).
+/// A code host's first responsive status endpoint, including its tunnel.
 fn host_status(code: &str) -> Result<omsi_net::ws::ServerInfo, String> {
-    let c = omsi_net::SessionCode::decode(code)?;
-    for a in c.addrs().into_iter().take(3) {
-        if let Ok(i) = omsi_net::ws::query(&format!("http://{}:{}", a.ip(), a.port().saturating_add(10)), false) {
-            return Ok(i);
-        }
-    }
-    match omsi_net::bridge::lookup_tunnel(c.session) {
-        Some(url) => omsi_net::ws::query(&url, false),
-        None => Err("the host did not answer".into()),
-    }
+    omsi_net::ws::query_session(code)
 }
 
 /// The list as saved, with the official server first when it is not in it.
@@ -131,7 +124,7 @@ pub struct Choice {
     pub paint: String,
     /// The number plate the player typed for the bus (empty: as the content says).
     pub plate: String,
-    /// The fleet number picked from the bus's `[number]` list (empty: its first).
+    /// The fleet number picked from the bus's `[number]` list (empty: no selection yet).
     pub number: String,
     pub hof: String,
     /// The depot file was chosen by hand (else it follows the map and the date).
@@ -945,8 +938,12 @@ impl State {
                     if let Some(v) = self.vehicles.first() {
                         self.choice.bus = v.file.clone();
                         self.choice.paint.clear();
+                        self.choice.number.clear();
                         self.choice.hof = self.default_hof();
                     }
+                }
+                if !self.bus().is_some_and(|v| v.numbers.iter().any(|(number, _)| *number == self.choice.number)) {
+                    self.choice.number = self.random_bus_number();
                 }
                 self.pick_map();
                 // (the first reading asked for the lines with the maps already)
@@ -1185,23 +1182,13 @@ impl State {
         self.line()?.tours.iter().find(|x| &x.number == t)
     }
 
-    /// The depot file a bus uses on the chosen map: the map's own when the bus has it (or
-    /// has none: the game borrows it), else the bus's first.
-    /// The depot file for the chosen bus: the one the map's own buses use on the chosen date
-    /// (the chrono scenarios change it: Berlin's 1994 depot has line 137 where 1986's had
-    /// 92), which the bus has, else its first.
-    pub fn default_hof(&self) -> String {
-        let line = if self.choice.free { None } else { self.choice.line.as_deref() };
-        core::default_hof(self.map(), self.bus(), &self.choice.date, line)
-    }
-
     pub fn select_bus(&mut self, file: &str) {
         if self.choice.bus == file {
             return;
         }
         self.choice.bus = file.to_string();
         self.choice.paint.clear();
-        self.choice.number.clear();
+        self.choice.number = self.random_bus_number();
         // (a hand-picked depot file stays when the new bus has one of that name)
         let keep = self.choice.hof_manual && self.bus().is_some_and(|v| v.hofs.iter().any(|h| h.eq_ignore_ascii_case(&self.choice.hof)));
         if !keep {

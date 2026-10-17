@@ -54,17 +54,13 @@ export const RESOLUTIONS = [
   ['1600x900', '1600 x 900'], ['1920x1080', '1920 x 1080'], ['1920x1200', '1920 x 1200'], ['2560x1440', '2560 x 1440'], ['3840x2160', '3840 x 2160'],
 ];
 
-/** MB as the texture memory's choices write it. */
-const mb = (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)} GB` : `${v} MB`);
-
-/** The texture memory's choices; "Automatic" says what that comes to on this machine. */
-function textureMemory(s) {
-  const auto = Number(s.texture_memory_auto) || 0;
-  return [
-    ['0', auto > 0 ? t('Automatic ({size} here)', { size: mb(auto) }) : 'Automatic'],
-    ['500', '500 MB'], ['1000', '1 GB'], ['1500', '1.5 GB'], ['2000', '2 GB'], ['3000', '3 GB'], ['4000', '4 GB'], ['6000', '6 GB'],
-  ];
-}
+/** The video memory's choices: all the game holds on the graphics card (textures, meshes,
+ * render targets). "Automatic" is nine tenths of the card's own memory and the driver's
+ * budget, which the launcher does not know. */
+const videoMemory = [
+  ['0', 'Automatic'],
+  ['1000', '1 GB'], ['1500', '1.5 GB'], ['2000', '2 GB'], ['3000', '3 GB'], ['4000', '4 GB'], ['6000', '6 GB'], ['8000', '8 GB'], ['12000', '12 GB'], ['16000', '16 GB'],
+];
 
 /** The pedals' response: softer below 1, stronger above. */
 const pedal = (v) => (Math.abs(v - 1) < 0.01 ? t('Normal') : v < 1 ? `${t('Softer')} x${v.toFixed(2)}` : `${t('Stronger')} x${v.toFixed(2)}`);
@@ -86,6 +82,7 @@ const graphics = {
         // the mode first, then the quality presets for it: they set most of what follows
         { type: 'select', key: 'graphics', label: 'Graphics', options: [['vanilla', 'Vanilla (as OMSI 2)'], ['vanilla_plus', 'Vanilla+'], ['enhanced', 'Enhanced'], ['enhanced_plus', 'Enhanced+']] },
         { type: 'custom', id: 'preset' },
+        { type: 'custom', id: 'optimise' },
         { type: 'select', key: 'msaa', label: 'Anti-aliasing', options: [['1', 'Off'], ['2', '2x MSAA'], ['4', '4x MSAA'], ['8', '8x MSAA']] },
         { type: 'select', key: 'render_scale', label: 'Render scale', options: [['auto', 'Auto'], ['1', '100%'], ['0.85', '85%'], ['0.75', '75%'], ['0.67', '67%'], ['0.5', '50%']] },
         { type: 'select', key: 'anisotropy', label: 'Anisotropic', options: [['1', 'Off'], ['2', '2x'], ['4', '4x'], ['8', '8x'], ['16', '16x']] },
@@ -101,11 +98,13 @@ const graphics = {
         { type: 'slider', key: 'led_mips', label: 'LED mip strength', min: 0, max: 4, step: 0.05, def: 1.3, format: (v) => (v < 0.005 ? t('Off') : v.toFixed(2)), store: snap(0.05), when: enhanced },
         // (the `[isshadow]` blob under a vehicle is drawn in every mode, the vanilla one included)
         { type: 'toggle', key: 'shadow_blobs', label: "OMSI's shadow meshes (under vehicles)" },
-        { type: 'toggle', key: 'reflections', label: 'Reflection maps (paint, chrome, glass)', when: (s) => !traced(s) },
+        { type: 'slider', key: 'reflections', label: 'Reflection maps (paint, chrome, glass)', min: 0, max: 1, step: 0.05, def: 1, format: (v) => (v < 0.005 ? t('Off') : pct(v)), store: snap(0.05), when: (s) => !traced(s) },
         { type: 'toggle', key: 'clouds', label: 'Clouds' },
         // (only the enhanced modes march volumetric clouds; the vanilla ones are a texture)
         { type: 'select', key: 'cloud_quality', label: 'Cloud quality', options: [['high', 'High'], ['low', 'Low']], when: (s) => enhanced(s) && s.clouds !== false },
         { type: 'select', key: 'rain_quality', label: 'Rain quality', options: [['high', 'High'], ['medium', 'Medium'], ['low', 'Low']] },
+        // (the wet roads' reflections need the reflection maps on)
+        { type: 'select', key: 'puddles', label: 'Puddles', options: [['high', 'High'], ['low', 'Low'], ['off', 'Off']], when: (s) => Number(s.reflections ?? 1) > 0.005 },
         { type: 'toggle', key: 'windy_trees', label: 'Windy trees' },
       ],
     },
@@ -115,6 +114,7 @@ const graphics = {
         { type: 'toggle', key: 'fullscreen', label: 'Fullscreen' },
         { type: 'select', key: 'resolution', label: 'Window size', options: RESOLUTIONS },
         { type: 'toggle', key: 'vsync', label: 'V-sync' },
+        { type: 'toggle', key: 'sim_thread', label: 'Simulation on its own thread' },
         { type: 'select', key: 'max_fps', label: 'Frame limit', options: [['0', 'Screen refresh rate'], ['30', '30 fps'], ['45', '45 fps'], ['60', '60 fps'], ['120', '120 fps'], ['144', '144 fps'], ['1000', 'Unlimited']] },
         // (a Mac has Metal only; ANGLE is Windows' path for a chip with none of the others)
         { type: 'select', key: 'graphics_api', label: 'Graphics API', options: [['auto', 'Automatic'], ['vulkan', 'Vulkan'], ['dx12', 'DirectX 12'], ['gl', 'OpenGL'], ['angle', 'ANGLE (DirectX 11)']], when: windows },
@@ -127,7 +127,7 @@ const graphics = {
         { type: 'select', key: 'mirror_refresh', label: 'Bus mirror refresh', options: [['off', 'None (frozen picture)'], ['eco', 'Economical'], ['full', 'Full'], ['every', 'Every frame (smoothest)']] },
         { type: 'select', key: 'mirror_quality', label: 'Mirror quality', options: [['standard', 'Standard'], ['enhanced', 'As the picture (Enhanced)']], when: enhanced },
         { type: 'toggle', key: 'mirror_hud_every_frame', label: 'Mirror panels every frame' },
-        { type: 'select', key: 'texture_memory', label: 'Texture memory', options: textureMemory },
+        { type: 'select', key: 'video_memory', label: 'Video memory', options: videoMemory, help: 'Everything the game keeps on the graphics card: textures, models and the picture itself. Automatic is nine tenths of the card.' },
         { type: 'toggle', key: 'texture_compression', label: 'Compress textures on loading' },
         // (off: block formats decoded on loading, for a driver that mishandles them)
         { type: 'toggle', key: 'gpu_texture_compression', label: 'DXT/BC textures stay compressed on the GPU' },
@@ -147,6 +147,8 @@ const driving = {
       rows: [
         { type: 'section', title: 'Touch controls', when: mobile },
         { type: 'select', key: 'touch_door_mode', label: 'Door buttons', options: [['standard', 'Standard (physical doors)'], ['direct', 'Direct OMSI triggers']], when: mobile },
+        { type: 'slider', key: 'touch_pedal_length', label: 'Pedal length', min: 0.8, max: 1.6, step: 0.05, def: 1, format: pct, store: r2, when: mobile },
+        { type: 'slider', key: 'touch_pedal_deadzone', label: 'Pedal rest zone (a finger at the foot presses nothing)', min: 0, max: 0.4, step: 0.01, def: 0.15, format: pct, store: r2, when: mobile },
         { type: 'section', title: 'Keyboard & mouse', when: mobile },
         { type: 'select', key: 'drive_keys', label: 'Driving keys', options: [['omsi', 'Custom controls (Controls page)'], ['simple', 'W A S D + arrows'], ['wasd', 'W A S D only'], ['arrows', 'Arrow keys only']] },
         { type: 'toggle', key: 'steering_linear', label: "Steering linearity (keys at OMSI's steady pace)" },
@@ -179,6 +181,7 @@ const driving = {
         { type: 'slider', key: 'pedal_brake', label: 'Brake pedal strength', min: 0.5, max: 2, step: 0.05, def: 1, format: pedal, store: r2 },
         { type: 'toggle', key: 'momentary_gears', label: 'H-pattern shifter: return to neutral when the gear is released' },
         { type: 'toggle', key: 'arrows_switch_cams', label: 'Arrow keys switch the cameras with a wheel too (no glance)' },
+        { type: 'toggle', key: 'ctrl_background', label: 'Keep driving in the background' },
         { type: 'section', title: 'Gamepad' },
         { type: 'select', key: 'pad_type', label: 'Gamepad type', options: [['auto', 'Automatic'], ['xbox', 'Xbox'], ['ps4', 'PlayStation 4'], ['ps5', 'PlayStation 5']] },
         { type: 'toggle', key: 'pad_buttons', label: 'Default gamepad buttons (indicators, doors, views, gears, menu, pause)' },
@@ -329,8 +332,11 @@ const gameplay = {
         // (drawn on this computer only; the avatars are downloaded once, about 310 MB)
         { type: 'select', key: 'character_models', label: 'Character models', options: [['original', 'Original'], ['improved', 'High quality (improved)']], help: 'High quality draws the people with the Microsoft Rocketbox avatars and their living faces, on this computer only: servers and other players keep their own. They are downloaded once (about 310 MB).' },
         { type: 'toggle', key: 'exact_fare', label: 'Passengers pay the exact fare' },
+        { type: 'toggle', key: 'pax_bad_driving', label: 'Passengers react to bad driving' },
         { type: 'slider', key: 'pax_density', label: 'How many passengers', min: 0, max: 2, step: 0.1, def: 1, format: pct, store: r2 },
         { type: 'toggle', key: 'get_up', label: 'Ability to get up (Ctrl+Shift+G)' },
+        { type: 'toggle', key: 'full_tank', label: 'Start with a full tank' },
+        { type: 'toggle', key: 'trip_summary', label: 'Trip summary' },
         { type: 'section', title: 'Traffic' },
         { type: 'select', key: 'ai_unsched_factor', label: 'Random traffic', options: [['25', '25%'], ['50', '50%'], ['75', '75%'], ['100', '100%'], ['150', '150%'], ['200', '200%']] },
         { type: 'select', key: 'ai_max_scheduled', label: 'Timetable vehicles', options: [['0', 'All'], ['10', 'At most 10'], ['25', 'At most 25'], ['50', 'At most 50']] },
@@ -398,6 +404,9 @@ const general = {
         { type: 'toggle', key: 'nav_ai', label: 'AI vehicles on the map' },
         { type: 'toggle', key: 'nav_surface', label: 'Map surface under the roads' },
         { type: 'toggle', key: 'nav_light', label: 'Light map' },
+        { type: 'toggle', key: 'nav_3d', label: '3D buildings on the map' },
+        { type: 'toggle', key: 'nav_widget', label: 'Navigator as a widget (drag it anywhere, size it at its corner)' },
+        { type: 'slider', key: 'nav_size', label: 'Navigator size', min: 0.6, max: 2, step: 0.05, def: 1, format: (v) => `${Math.round(v * 100)} %` },
         { type: 'custom', id: 'corner' },
       ],
     },
@@ -421,10 +430,13 @@ const general = {
   ],
 };
 
-export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, general];
+/** Content test: no settings - the page draws the test itself (content-test.js). */
+const contentTest = { id: 'content', label: 'Content test', page: 'content', cols: [], when: (s, p) => !mobile(s, p) };
+
+export const SETTINGS_TABS = [graphics, driving, camera, sound, gameplay, general, contentTest];
 
 /** The settings a saved graphics profile holds (`GRAPHICS_PROFILE_KEYS`). */
 export const GRAPHICS_PROFILE_KEYS = [
-  'graphics', 'msaa', 'render_scale', 'anisotropy', 'shadow_size', 'ssao', 'shadows', 'shadow_casters', 'detail_textures', 'night_brightness', 'led_glow', 'led_mips', 'shadow_blobs', 'reflections', 'clouds', 'cloud_quality', 'rain_quality', 'windy_trees',
-  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_quality', 'mirror_hud_every_frame', 'texture_memory', 'texture_compression', 'gpu_texture_compression',
+  'graphics', 'msaa', 'render_scale', 'anisotropy', 'shadow_size', 'ssao', 'shadows', 'shadow_casters', 'detail_textures', 'night_brightness', 'led_glow', 'led_mips', 'shadow_blobs', 'reflections', 'clouds', 'cloud_quality', 'rain_quality', 'puddles', 'windy_trees',
+  'vsync', 'max_fps', 'view_distance', 'max_obj_dist', 'min_obj_size', 'mirror_size', 'mirror_refresh', 'mirror_quality', 'mirror_hud_every_frame', 'video_memory', 'texture_compression', 'gpu_texture_compression',
 ];

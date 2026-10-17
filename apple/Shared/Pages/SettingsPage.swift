@@ -97,7 +97,7 @@ struct SettingsPage: View {
                 SettingSlider(label: "LED mip strength", key: "led_mips", range: 0 ... 4, step: 0.05, fallback: 1.3) { $0 < 0.005 ? "Off" : String(format: "%.2f", $0) }
             }
             SettingToggle(label: "OMSI's shadow meshes (under vehicles)", key: "shadow_blobs", fallback: true)
-            if !traced { SettingToggle(label: "Reflection maps (paint, chrome, glass)", key: "reflections", fallback: true) }
+            if !traced { SettingSlider(label: "Reflection maps (paint, chrome, glass)", key: "reflections", range: 0 ... 1, step: 0.05, fallback: 1) { $0 < 0.005 ? "Off" : String(format: "%.0f%%", $0 * 100) } }
             SettingToggle(label: "Clouds", key: "clouds", fallback: true)
             if enhanced && store.flag("clouds", true) {
                 SettingSelect(label: "Cloud quality", key: "cloud_quality", options: [("high", "High"), ("low", "Low")])
@@ -121,7 +121,7 @@ struct SettingsPage: View {
             SettingSelect(label: "Small objects", key: "min_obj_size", options: [("0.005", "All"), ("0.013", "Normal"), ("0.02", "Fewer (faster)"), ("0.03", "Few (fastest)")])
             SettingSelect(label: "Mirrors", key: "mirror_size", options: [("0", "Off"), ("128", "Low (128)"), ("256", "Normal (256)"), ("512", "High (512)"), ("1024", "Very high (1024)")])
             SettingSelect(label: "Bus mirror refresh", key: "mirror_refresh", options: [("off", "None (frozen picture)"), ("eco", "Economical"), ("full", "Full")])
-            SettingSelect(label: "Texture memory", key: "texture_memory", options: [("0", "Automatic"), ("500", "500 MB"), ("1000", "1 GB"), ("1500", "1.5 GB"), ("2000", "2 GB"), ("3000", "3 GB"), ("4000", "4 GB"), ("6000", "6 GB")])
+            SettingSelect(label: "Video memory", key: "video_memory", options: [("0", "Automatic"), ("1000", "1 GB"), ("1500", "1.5 GB"), ("2000", "2 GB"), ("3000", "3 GB"), ("4000", "4 GB"), ("6000", "6 GB"), ("8000", "8 GB"), ("12000", "12 GB"), ("16000", "16 GB")])
             SettingToggle(label: "Compress textures on loading", key: "texture_compression", fallback: true)
             SettingToggle(label: "DXT/BC textures stay compressed on the GPU", key: "gpu_texture_compression", fallback: true)
             SectionTitle("Profiles").padding(.top, 8)
@@ -231,6 +231,7 @@ struct SettingsPage: View {
             SettingSelect(label: "Standing passengers", key: "standing_chance", options: [("0", "Never"), ("5", "5%"), ("10", "10%"), ("25", "25%"), ("50", "50%"), ("100", "Always")])
             SettingSelect(label: "Passenger animations", key: "passenger_animation", options: [("original", "Original OMSI"), ("enhanced", "Procedural (experimental)")])
             SettingToggle(label: "Passengers pay the exact fare", key: "exact_fare", fallback: true)
+            SettingToggle(label: "Passengers react to bad driving", key: "pax_bad_driving", fallback: true)
             SettingSlider(label: "How many passengers", key: "pax_density", range: 0 ... 2, step: 0.1, fallback: 1) { "\(Int($0 * 100))%" }
             SettingToggle(label: "Ability to get up (Ctrl+Shift+G)", key: "get_up")
             SectionTitle("Traffic").padding(.top, 8)

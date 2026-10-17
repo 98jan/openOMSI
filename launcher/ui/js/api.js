@@ -22,7 +22,7 @@ const android = window.OmsiLauncher
       };
       return {
         call(cmd, args) {
-          if (cmd === 'preview_frame') {
+          if (BYTES.has(cmd)) {
             return fetch('http://omsi.localhost/bytes/' + cmd + '?args=' + encodeURIComponent(JSON.stringify(args))).then(async (r) => {
               if (!r.ok) throw new Error(await r.text());
               return r.arrayBuffer();
@@ -42,15 +42,16 @@ export const onPhone = !!android;
 async function mock(cmd) {
   // (raw answers - the preview's pictures - as .bin)
   if (cmd === 'preview_frame') return (await fetch('../mock/preview_frame.bin')).arrayBuffer();
+  if (BYTES.has(cmd)) return (await fetch(`../mock/${cmd}.json`)).arrayBuffer();
   const r = await fetch(`../mock/${cmd}.json`);
   if (!r.ok) throw new Error(`${cmd}: no mock data`);
   return r.json();
 }
 
 // (the desktop window's own commands; every other one is the launcher's, `omsi-launcher-api`)
-const OWN = new Set(['pick_folder', 'pick_file', 'pick_mod', 'open_path', 'open_url', 'update_relaunch', 'selftest_done', 'fit_zoom']);
+const OWN = new Set(['pick_folder', 'pick_file', 'pick_mod', 'pick_hofs', 'open_path', 'open_url', 'update_relaunch', 'selftest_done', 'fit_zoom']);
 // (commands answering bytes rather than JSON)
-const BYTES = new Set(['preview_frame']);
+const BYTES = new Set(['preview_frame', 'route_map']);
 
 /** Call a command; rejects with the error text the command gave. */
 export function call(cmd, args = {}) {

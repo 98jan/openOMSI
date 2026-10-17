@@ -59,6 +59,7 @@ pub mod pednet;
 pub mod spawn;
 pub mod populate;
 pub mod buses;
+pub mod door_requests;
 pub mod bus_view;
 pub use bus_view::{CabinView, PlayerBusView};
 pub mod tick;
@@ -85,6 +86,8 @@ mod tests;
 mod population_limit_tests;
 #[cfg(test)]
 mod ticket_hook_tests;
+#[cfg(test)]
+mod bad_driving_tests;
 
 use avatar::*;
 use cabin::*;
@@ -95,6 +98,7 @@ use pednet::*;
 // The module's API, at the paths it always had in omsi-app (some only returned, never named
 // outside).
 pub use avatar::{AvatarCmd, SeatSpot};
+pub use door_requests::DoorRequest;
 pub use bodies::{BodyOp, BodyOps};
 pub use mirror::{placed_bus_id, remote_bus_id, remote_bus_player, LanPerson, MirrorPose};
 pub use model::{BusId, DoorWants, Eye, Footfall, PeopleSim, Person, Place, State, VoiceLine};

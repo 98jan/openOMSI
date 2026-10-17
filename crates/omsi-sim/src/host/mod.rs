@@ -32,6 +32,8 @@ pub struct VehicleHost {
     /// A time of day a script wrote to `(S.S.Time)` this frame: the game's clock takes it.
     pub time_written: Option<f64>,
     pub clock: SimClock,
+    /// The game or LAN host supplies the AI clock; do not advance it a second time.
+    pub external_ai_clock: bool,
     pub mouse: (f32, f32),
     pub precip_type: f32,
     pub precip_rate: f32,
@@ -43,6 +45,10 @@ pub struct VehicleHost {
     /// `WetLane_2.wav` over 1 … 2, and `spray.osc` raises the wheel spray while it is
     /// between 1 and 2.
     pub street_cond: f32,
+    /// How much of the vehicle rolls off the road (0..1): its wheels' share on grass, earth
+    /// or gravel, a muddy one counted whole (set from what the wheels roll on, see
+    /// `omsi_scene::wheel_surface`). The body soils with it (`update_dirt`).
+    pub offroad: f32,
     /// People aboard (`humans_count`), set by whoever carries them.
     pub humans_count: f32,
     /// 1 while the vehicle drives a timetable duty (`schedule_active`).
@@ -77,6 +83,11 @@ pub struct VehicleHost {
     pub auto_clutch: f32,
     pub no_sound: f32,
     pub fired_triggers: Vec<String>,
+    /// Mirrors accept sound events from their owner, never from their local scripts.
+    pub remote_sound_triggers: bool,
+    /// Enabled by LAN for vehicles this machine owns. Independent of local audio drains.
+    pub capture_sound_triggers: bool,
+    pub network_sound_triggers: Vec<(String, Option<String>, Option<Vec<f32>>)>,
     /// Triggers (lower case) whose sounds read variables in their volume curves: when one
     /// fires, the variables of that moment are kept in `fired_trigger_vars` (the door's
     /// hit sound reads `doorSpeed_<n>`, which the script turns round right after it).
@@ -90,6 +101,9 @@ pub struct VehicleHost {
     pub font_lib: Option<Arc<Mutex<FontLibrary>>>,
     /// `[scripttexture]` images drawn by the `ST*` callbacks.
     pub script_textures: Vec<ScriptTexture>,
+    /// LAN copies receive script textures from their owner; their scripts may read but
+    /// must never create, lock, load, filter, or draw these surfaces locally.
+    pub remote_script_textures: bool,
     /// Folder for `STLoadTex` paths (the vehicle directory).
     pub content_dir: std::path::PathBuf,
     /// Depot file (termini, bus stop strings, IBIS trips) behind the `Get*` callbacks.
@@ -240,6 +254,16 @@ pub fn ambient_weather() -> Option<(f32, f32)> {
 }
 
 impl VehicleHost {
+    fn record_network_sound(&mut self, name: &str, file: Option<&str>) {
+        if self.capture_sound_triggers {
+            if self.network_sound_triggers.len() < 512 {
+                self.network_sound_triggers.push((name.to_owned(), file.map(str::to_owned), None));
+            } else {
+                log::warn!("LAN sound event queue is full");
+            }
+        }
+    }
+
     /// A page asked for the departures of stop `key` (trimmed, lower case). The game keeps the
     /// stops asked most recently: one asked again moves to the back, a new one past the limit
     /// pushes out the one asked longest ago. (A fixed first-come list stayed full for good, and
@@ -274,10 +298,17 @@ impl VehicleHost {
     pub fn scratch(&self) -> VehicleHost {
         VehicleHost {
             clock: self.clock.clone(),
+            external_ai_clock: self.external_ai_clock,
+            schedule_active: self.schedule_active,
+            humans_count: self.humans_count,
+            mouse: self.mouse,
+            coll_pos: self.coll_pos,
+            coll_energy: self.coll_energy,
             precip_type: self.precip_type,
             precip_rate: self.precip_rate,
             wind: self.wind,
             street_cond: self.street_cond,
+            offroad: self.offroad,
             temperature: self.temperature,
             abs_humidity: self.abs_humidity,
             sun_alt: self.sun_alt,
@@ -297,6 +328,65 @@ impl VehicleHost {
             tt_terminus_index: self.tt_terminus_index,
             tt_busstop_index: self.tt_busstop_index,
             ..Default::default()
+        }
+    }
+
+    /// The complete system-variable context in `SysVar::ALL` order.
+    pub fn system_values(&self) -> [f32; 22] {
+        SysVar::ALL.map(|v| self.read_sys_var(v))
+    }
+
+    /// An authoritative AI frame context, available before scripts run.
+    pub fn apply_ai_system_values(&mut self, values: &[f32; 22]) {
+        for (var, value) in SysVar::ALL.into_iter().zip(values) {
+            self.set_sys_var(var, *value);
+        }
+        self.time_written = None;
+        self.external_ai_clock = true;
+    }
+
+    /// Shared environment fields; collisions, mouse picking and wear belong to this car.
+    pub fn apply_ai_globals(&mut self, values: &[f32; 22]) {
+        for (var, value) in SysVar::ALL.into_iter().zip(values) {
+            if !matches!(var, SysVar::CollPosX | SysVar::CollPosY | SysVar::CollPosZ | SysVar::CollEnergy | SysVar::MouseX | SysVar::MouseY | SysVar::WearLifespan) {
+                self.set_sys_var(var, *value);
+            }
+        }
+        self.time_written = None;
+        self.external_ai_clock = true;
+    }
+
+    fn read_sys_var(&self, v: SysVar) -> f32 {
+        match v {
+            SysVar::Timegap => self.clock.timegap,
+            SysVar::GetTime => self.clock.run_time as f32,
+            SysVar::NoSound => self.no_sound,
+            SysVar::Pause => if self.clock.paused { 1.0 } else { 0.0 },
+            // seconds since midnight ("Time in seconds", says the stock clock object): every
+            // script divides it by 3600 for the hour (IBIS and ticket printer clocks) or
+            // compares it with 28800/72000 (the Citaro's door chime by day). Handing out hours
+            // made every clock read 00:00 and the day-time checks think it was night.
+            SysVar::Time => self.clock.time as f32,
+            SysVar::Day => self.clock.day_month().0 as f32,
+            SysVar::Month => self.clock.day_month().1 as f32,
+            SysVar::Year => self.clock.year as f32,
+            SysVar::DayOfYear => self.clock.day_of_year as f32,
+            SysVar::MouseX => self.mouse.0,
+            SysVar::MouseY => self.mouse.1,
+            SysVar::PrecipType => self.precip_type,
+            SysVar::PrecipRate => self.precip_rate,
+            SysVar::CollPosX => self.coll_pos[0],
+            SysVar::CollPosY => self.coll_pos[1],
+            SysVar::CollPosZ => self.coll_pos[2],
+            // Read as often as the block likes: the stock collision block adds it to the
+            // general damage and then again to the engine's, and a value gone after the
+            // first read left the engine and the drivetrain whole after any crash.
+            SysVar::CollEnergy => self.coll_energy,
+            SysVar::WeatherTemperature => self.temperature,
+            SysVar::WeatherAbsHum => self.abs_humidity,
+            SysVar::WearLifespan => self.wear_lifespan,
+            SysVar::AutoClutch => self.auto_clutch,
+            SysVar::SunAlt => self.sun_alt,
         }
     }
 
@@ -366,39 +456,7 @@ fn arg_idx(v: f32) -> usize {
 }
 
 impl Host for VehicleHost {
-    fn sys_var(&mut self, v: SysVar) -> f32 {
-        match v {
-            SysVar::Timegap => self.clock.timegap,
-            SysVar::GetTime => self.clock.run_time as f32,
-            SysVar::NoSound => self.no_sound,
-            SysVar::Pause => if self.clock.paused { 1.0 } else { 0.0 },
-            // seconds since midnight ("Time in seconds", says the stock clock object): every
-            // script divides it by 3600 for the hour (IBIS and ticket printer clocks) or
-            // compares it with 28800/72000 (the Citaro's door chime by day). Handing out hours
-            // made every clock read 00:00 and the day-time checks think it was night.
-            SysVar::Time => self.clock.time as f32,
-            SysVar::Day => self.clock.day_month().0 as f32,
-            SysVar::Month => self.clock.day_month().1 as f32,
-            SysVar::Year => self.clock.year as f32,
-            SysVar::DayOfYear => self.clock.day_of_year as f32,
-            SysVar::MouseX => self.mouse.0,
-            SysVar::MouseY => self.mouse.1,
-            SysVar::PrecipType => self.precip_type,
-            SysVar::PrecipRate => self.precip_rate,
-            SysVar::CollPosX => self.coll_pos[0],
-            SysVar::CollPosY => self.coll_pos[1],
-            SysVar::CollPosZ => self.coll_pos[2],
-            // Read as often as the block likes: the stock collision block adds it to the
-            // general damage and then again to the engine's, and a value gone after the
-            // first read left the engine and the drivetrain whole after any crash.
-            SysVar::CollEnergy => self.coll_energy,
-            SysVar::WeatherTemperature => self.temperature,
-            SysVar::WeatherAbsHum => self.abs_humidity,
-            SysVar::WearLifespan => self.wear_lifespan,
-            SysVar::AutoClutch => self.auto_clutch,
-            SysVar::SunAlt => self.sun_alt,
-        }
-    }
+    fn sys_var(&mut self, v: SysVar) -> f32 { self.read_sys_var(v) }
 
     /// `(S.S.x)`: OMSI writes through the system variable's pointer into the engine's
     /// own value (`TXPC_calcblock_var`). What the engine sets anew every frame (the frame
@@ -468,16 +526,26 @@ impl Host for VehicleHost {
     fn sound_trigger_file(&mut self, name: &str, file: &str) {
         // `" " (T.F.ev_nbs_on)` is how the MB_C2 gearbox script says "no sound" (every
         // frame in neutral, 80 times a minute per bus at Ahlheim): nothing to play
-        if file.trim().is_empty() {
+        if self.remote_sound_triggers || file.trim().is_empty() {
             return;
         }
+        self.record_network_sound(name, Some(file));
         self.fired_file_triggers.push((name.to_string(), file.to_string()));
     }
     fn sound_trigger(&mut self, name: &str, _id: NameId) {
+        if self.remote_sound_triggers { return; }
+        self.record_network_sound(name, None);
         self.fired_triggers.push(name.to_string());
     }
     fn sound_trigger_vars(&mut self, name: &str, id: NameId, vars: &[f32]) {
+        if self.remote_sound_triggers { return; }
+        let network_count = self.network_sound_triggers.len();
         self.sound_trigger(name, id);
+        if self.network_sound_triggers.len() > network_count {
+            if let Some((_, _, snapshot)) = self.network_sound_triggers.last_mut() {
+                *snapshot = Some(vars.to_vec());
+            }
+        }
         // (asked in place; the lower-case name is made only for a trigger that is kept - a
         // copy was made for every trigger fired by a vehicle with such sounds)
         if !self.snapshot_triggers.is_empty() && omsi_script::compile::with_lower(name, |k| self.snapshot_triggers.contains(k)) {
@@ -542,6 +610,52 @@ mod tests {
     }
 
     #[test]
+    fn network_sound_events_survive_audio_drains_and_mirrors_cannot_generate_them() {
+        let mut h = VehicleHost::default();
+        h.capture_sound_triggers = true;
+        h.sound_trigger_vars("door", 0, &[5.0, 1.0]);
+        h.sound_trigger_file("announcement", "../Announcements/stop.wav");
+        h.sound_trigger_file("announcement", " ");
+        h.fired_triggers.clear(); h.fired_file_triggers.clear();
+        assert_eq!(h.network_sound_triggers, vec![
+            ("door".into(), None, Some(vec![5.0, 1.0])),
+            ("announcement".into(), Some("../Announcements/stop.wav".into()), None),
+        ]);
+        h.network_sound_triggers.clear(); h.remote_sound_triggers = true;
+        h.snapshot_triggers.insert("door".into());
+        h.sound_trigger_vars("door", 0, &[7.0]);
+        h.sound_trigger_file("announcement", "stop.wav");
+        assert!(h.fired_triggers.is_empty()); assert!(h.fired_file_triggers.is_empty());
+        assert!(h.fired_trigger_vars.is_empty()); assert!(h.network_sound_triggers.is_empty());
+    }
+
+    #[test]
+    fn ai_globals_refresh_calendar_weather_and_leave_vehicle_collision_and_wear() {
+        let mut world = VehicleHost::new(Default::default());
+        world.clock.set_date(2024, 3, 1);
+        world.clock.time = 23.0 * 3600.0;
+        world.clock.run_time = 1234.0;
+        world.temperature = -8.0;
+        world.abs_humidity = 7.25;
+        world.precip_type = 2.0;
+        world.precip_rate = 0.8;
+        world.sun_alt = -10.0;
+        let mut ai = VehicleHost::new(Default::default());
+        ai.coll_pos = [1.0, 2.0, 3.0];
+        ai.coll_energy = 42.0;
+        ai.mouse = (0.25, 0.5);
+        ai.wear_lifespan = 123.0;
+        ai.schedule_active = 1.0;
+        ai.apply_ai_globals(&world.system_values());
+        assert_eq!((ai.clock.year, ai.clock.day_of_year, ai.clock.time, ai.clock.run_time), (2024, 61, 23.0 * 3600.0, 1234.0));
+        assert_eq!((ai.temperature, ai.abs_humidity, ai.precip_type, ai.precip_rate, ai.sun_alt), (-8.0, 7.25, 2.0, 0.8, -10.0));
+        assert_eq!((ai.coll_pos, ai.coll_energy, ai.mouse, ai.wear_lifespan), ([1.0, 2.0, 3.0], 42.0, (0.25, 0.5), 123.0));
+        assert!(ai.external_ai_clock);
+        assert_eq!(ai.scratch().schedule_active, 1.0);
+        assert_eq!(ai.scratch().system_values(), ai.system_values());
+    }
+
+    #[test]
     fn departure_wants_keep_the_stops_asked_most_recently() {
         let mut host = VehicleHost::new(SimClock::default());
         for i in 0..MAX_HTML_DEPARTURE_STOPS + 3 {
@@ -578,6 +692,53 @@ mod tests {
         // a half goes to the even number, as under Delphi's control word
         assert_eq!((arg_i32(0.5), arg_i32(1.5), arg_i32(2.5), arg_i32(-0.5)), (0, 2, 2, 0));
         assert_eq!(arg_idx(-1.0), usize::MAX);
+    }
+
+    #[test]
+    fn remote_script_texture_callbacks_consume_arguments_without_drawing() {
+        let p = compile(&CompileInput::default());
+        let mut state = State::new(&p);
+        let mut host = VehicleHost::new(SimClock::default());
+        host.remote_script_textures = true;
+        let mut texture = ScriptTexture::new(2, 1);
+        texture.apply_network(2, 1, false, &[1, 2, 3, 4, 5, 6, 7, 8]);
+        host.script_textures.push(texture);
+        for (name, args) in [
+            ("STNewTex", vec![0.0]),
+            ("STLock", vec![0.0]),
+            ("STUnlock", vec![0.0]),
+            ("STFilter", vec![0.0]),
+            ("STSetColor", vec![0.0, 255.0, 255.0, 255.0, 255.0]),
+            ("STDrawPixel", vec![0.0, 0.0, 0.0]),
+            ("STDrawRect", vec![0.0, 0.0, 0.0, 1.0, 0.0]),
+        ] {
+            let mut stacks = Stacks::default();
+            for arg in args { stacks.push(arg); }
+            host.callback(name, 0, &mut stacks, &mut state);
+            assert_eq!(stacks.st, [0.0; 8], "{name} must still consume its arguments");
+        }
+        let mut stacks = Stacks::default();
+        stacks.push_str("missing.png".into());
+        stacks.push(0.0);
+        host.callback("STLoadTex", 0, &mut stacks, &mut state);
+        for arg in [0.0, 1.0, 1.0, 0.0, 2.0, 3.0] { stacks.push(arg); }
+        stacks.push_str("local text must not be drawn".into());
+        host.callback("STTextOut", 0, &mut stacks, &mut state);
+        assert_eq!(stacks.st, [0.0; 8]);
+        assert!(stacks.sst.iter().all(String::is_empty));
+        let texture = &host.script_textures[0];
+        assert_eq!(texture.rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert!(!texture.locked);
+        assert!(!texture.mipmaps);
+        assert_eq!(texture.color, [255; 4]);
+        // Reading the owner's pixels is still useful for scripts; it only selects a
+        // local read colour and cannot change the replicated image.
+        for arg in [0.0, 1.0, 0.0] { stacks.push(arg); }
+        host.callback("STReadPixel", 0, &mut stacks, &mut state);
+        stacks.push(0.0);
+        host.callback("STGetA", 0, &mut stacks, &mut state);
+        assert_eq!(stacks.pop(), 8.0);
+        assert_eq!(host.script_textures[0].rgba, [1, 2, 3, 4, 5, 6, 7, 8]);
     }
 
     #[test]

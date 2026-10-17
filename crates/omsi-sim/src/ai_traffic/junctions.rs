@@ -908,6 +908,25 @@ impl TrafficSim {
         found
     }
 
+    /// The two crossing lanes' directions, priority and signs.
+    fn crossing_rank(&self, l: usize, m: usize) -> (bool, bool, bool, bool) {
+        let oncoming = crate::traffic::wrap_deg(self.net.lanes[m].start_heading() - self.net.lanes[l].start_heading()).abs() > 135.0;
+        let must_yield = self.net.must_yield(l, m);
+        // between equals (no sign, no turn across the other) whoever gets there first
+        // goes first (Omsi.exe: the path reserved first): the later one gives way
+        // as to the right of way (see `FIRST_COME_MARGIN`)
+        let equals = !must_yield && !self.net.must_yield(m, l);
+        // signs decide between the two (a priority road, a ring) - and so does the
+        // turn across the oncoming traffic, which gives way to it whoever decided
+        // first (Omsi.exe FUN_00716970: a vehicle turning left yields to one that does
+        // not, whatever was reserved). Decided by being first, a turn claimed from far
+        // off held the oncoming queue at its green, half the cars of that approach
+        // went through (#2431).
+        let across = if self.net.left_hand { 2 } else { 1 };
+        let signed = self.net.signed(l, m) || (oncoming && (self.net.lanes[l].turn == across) != (self.net.lanes[m].turn == across));
+        (oncoming, must_yield, equals, signed)
+    }
+
     /// `junction_stop`'s look at everybody on or coming to the lanes that cross car `i`'s
     /// way through junction `jn`, and at the people on its crossings.
     #[allow(clippy::too_many_arguments)]
@@ -968,20 +987,7 @@ impl TrafficSim {
                 if point + c.after < -car.tail - 0.3 {
                     continue; // passed already
                 }
-                let oncoming = crate::traffic::wrap_deg(self.net.lanes[m].start_heading() - self.net.lanes[l].start_heading()).abs() > 135.0;
-                let must_yield = self.net.must_yield(l, m);
-                // between equals (no sign, no turn across the other) whoever gets there first
-                // goes first (Omsi.exe: the path reserved first): the later one gives way
-                // as to the right of way (see `FIRST_COME_MARGIN`)
-                let equals = !must_yield && !self.net.must_yield(m, l);
-                // signs decide between the two (a priority road, a ring) - and so does the
-                // turn across the oncoming traffic, which gives way to it whoever decided
-                // first (Omsi.exe FUN_00716970: a vehicle turning left yields to one that does
-                // not, whatever was reserved). Decided by being first, a turn claimed from far
-                // off held the oncoming queue at its green, half the cars of that approach
-                // went through (#2431).
-                let across = if self.net.left_hand { 2 } else { 1 };
-                let signed = self.net.signed(l, m) || (oncoming && (self.net.lanes[l].turn == across) != (self.net.lanes[m].turn == across));
+                let (oncoming, must_yield, equals, signed) = self.crossing_rank(l, m);
                 // this car's front to the meeting place
                 let my_room = point - c.before - st.front;
                 // A driver who gives way by a sign and can still stop has not taken the way

@@ -229,6 +229,12 @@ pub struct MaterialExtra {
     /// enhanced picture lights it by its normals, not as leaves lit from every side and
     /// glowing with the sun through them (people shone in the sun).
     pub solid: bool,
+    /// A blended slot that also keeps Omsi.exe's alpha test: `[matl_alpha] 1` sets
+    /// ALPHATESTENABLE with ALPHAREF 0x80 and leaves ALPHABLENDENABLE as the draw before
+    /// left it (0x7ffd6c), so a livery's tinted window glass (alpha 129 to 254) is blended
+    /// and its clear glass (128 and less) cut away. Drawn solid, the tinted panes were black
+    /// (#2609, #2624); blended without the cut, the clear glass was a grey film.
+    pub alpha_cut: bool,
     /// Windy trees: foliage the wind moves - the height (mesh units) of the pivot where the
     /// crown leaves the trunk (nothing below it moves), of the crown's top, and how much the
     /// tree gives to the wind (1 a broadleaf). `None`: not foliage.
@@ -734,6 +740,7 @@ impl Renderer {
         let mode = match alpha {
             AlphaMode::Opaque => 0.0,
             AlphaMode::Test => 1.0,
+            AlphaMode::Blend if extra.alpha_cut => 3.0,
             AlphaMode::Blend => 2.0,
         };
         // a mirror's glass shows a picture this renderer drew (`add_render_texture`): the

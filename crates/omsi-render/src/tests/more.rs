@@ -457,10 +457,13 @@ fn omsi_render_phases_are_monotonic_and_complete() {
 
 #[test]
 fn metric_lifted_surfaces_keep_shading_class_without_view_space_pull() {
-    assert_eq!(surface_instance_code(false, false, false, true, false), 0.9);
-    assert_eq!(surface_instance_code(false, false, false, true, true), 1.0);
-    assert_eq!(surface_instance_code(false, false, true, false, false), 0.9);
-    assert_eq!(surface_instance_code(false, true, false, true, false), 0.75);
+    assert_eq!(surface_instance_code(false, false, false, true, false, false), 0.9);
+    assert_eq!(surface_instance_code(false, false, false, true, true, false), 1.0);
+    assert_eq!(surface_instance_code(false, false, true, false, false, false), 0.9);
+    assert_eq!(surface_instance_code(false, true, false, true, false, false), 0.75);
+    // a road's painted lines go over the crossings laid on the road (#1694)
+    assert_eq!(surface_instance_code(false, false, false, true, true, true), 1.4);
+    assert_eq!(surface_instance_code(false, false, true, true, true, true), 1.25);
 }
 
 #[test]
@@ -598,6 +601,8 @@ fn shaders_validate_and_match_the_uniforms() {
         ("corona", corona_shader_source()),
         ("fog lamps", fog_lamps_shader_source()),
         ("snow", snow_shader_source()),
+        ("rain", rain_shader_source()),
+        ("rain basic", lean_rain(precip_shader_source(include_str!("../rain.wgsl")))),
         ("post", include_str!("../post.wgsl").to_string()),
         ("ssao", include_str!("../ssao.wgsl").to_string()),
         ("puddles", puddles::shader_source()),
@@ -617,6 +622,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("PostParams", std::mem::size_of::<PostUniform>()),
         ("FogLampParams", std::mem::size_of::<FogLampUniform>()),
         ("SnowParams", std::mem::size_of::<SnowUniform>()),
+        ("RainParams", std::mem::size_of::<RainUniform>()),
         ("PuddleParams", std::mem::size_of::<puddles::Uniform>()),
         ("Sight", std::mem::size_of::<SightUniform>()),
         ("VehicleReflection", std::mem::size_of::<puddles::VehicleUniform>()),
@@ -1279,4 +1285,158 @@ fn a_lamp_behind_a_wall_does_not_dazzle_and_one_in_view_still_does() {
     let sight = renderer.tone.lamp_sight.as_ref().expect("lamp sight");
     assert!(sight.seen(in_view) > 0.9, "a lamp in plain view: {}", sight.seen(in_view));
     assert!(sight.seen(behind) < 0.1, "a lamp behind the wall: {}", sight.seen(behind));
+}
+
+#[test]
+fn a_mesh_page_the_card_refuses_is_made_mesh_by_mesh_or_left_out() {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = wgpu::Backends::NOOP;
+    descriptor.backend_options.noop = wgpu::NoopBackendOptions { enable: true };
+    let instance = wgpu::Instance::new(descriptor);
+    let renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, render_scale: 1.0, ..Default::default() },
+    )).expect("noop renderer");
+    let mesh = |n: usize| {
+        let positions: Vec<Vec3> = (0..n).map(|i| Vec3::new(i as f32, 0.0, 0.0)).collect();
+        let indices: Vec<u32> = (0..n as u32 / 3 * 3).collect();
+        MeshData { normals: vec![Vec3::Z; n], uvs: vec![glam::Vec2::ZERO; n], ranges: vec![(0, indices.len() as u32, 0)], positions, indices, ..Default::default() }
+    };
+    let _ = renderer.take_out_of_memory();
+    let mut scene = renderer.new_scene();
+    let scope = renderer.device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let one = mesh_page_bytes(&mesh(300)).0;
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(one));
+    let alone = renderer.add_mesh(&mut scene, &mesh(300));
+    let pair = prepare_meshes(&renderer.device, &renderer.queue, &[&mesh(300), &mesh(300)], renderer.mesh_pages());
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(0));
+    let refused = renderer.add_mesh(&mut scene, &mesh(300));
+    let refused_pair = prepare_meshes(&renderer.device, &renderer.queue, &[&mesh(300), &mesh(300)], renderer.mesh_pages());
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(u64::MAX));
+    let pair: Vec<MeshId> = pair.into_iter().map(|m| renderer.add_prepared_mesh(&mut scene, m)).collect();
+    let refused_pair: Vec<MeshId> = refused_pair.into_iter().map(|m| renderer.add_prepared_mesh(&mut scene, m)).collect();
+    assert!(scene.mesh_pages.is_empty());
+    assert!(scene.meshes[pair[0]].vertex_buf != scene.meshes[pair[1]].vertex_buf, "the refused pair split into pages of their own");
+    for id in [alone, pair[0], pair[1]] {
+        let m = &scene.meshes[id];
+        assert_eq!((m.page, m.vertex_bytes, m.ranges.len()), (u32::MAX, one, 1), "made in a page of its own");
+    }
+    for id in [refused, refused_pair[0], refused_pair[1]] {
+        let m = &scene.meshes[id];
+        assert!(m.ranges.is_empty() && m.vertex_bytes == 0 && m.bounds_radius == 0.0, "left out");
+        let mat = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [1.0; 4], true);
+        renderer.add_instance(&mut scene, id, DVec3::ZERO, Mat4::IDENTITY, vec![mat]);
+        renderer.free_mesh(&mut scene, id);
+    }
+    assert!(pollster::block_on(scope.pop()).is_none(), "nothing invalid reached the device");
+    assert!(!renderer.take_out_of_memory(), "a refused buffer is no shortage of graphics memory");
+}
+
+#[test]
+#[ignore = "requires a graphics adapter; run with --ignored on a GPU host"]
+fn a_mesh_left_out_for_want_of_a_page_draws_nothing_and_the_rest_of_the_picture_is_drawn() {
+    let camera = Camera { position: DVec3::new(0.0, 0.0, 5.0), yaw: 0.0, pitch: -90.0, roll: 0.0, fov_deg: 60.0, near: 0.1, far: 100.0 };
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, fxaa: false, shadow_size: 1024, render_scale: 1.0, ..Default::default() },
+    )).expect("test renderer");
+    let mut scene = renderer.new_scene();
+    let quad = |z: f32| MeshData {
+        positions: vec![Vec3::new(-4.0, -4.0, z), Vec3::new(4.0, -4.0, z), Vec3::new(4.0, 4.0, z), Vec3::new(-4.0, 4.0, z)],
+        normals: vec![Vec3::Z; 4],
+        uvs: vec![glam::Vec2::ZERO; 4],
+        indices: vec![0, 1, 2, 0, 2, 3],
+        ranges: vec![(0, 6, 0)],
+        one_sided: false,
+    };
+    let red = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [1.0, 0.0, 0.0, 1.0], true);
+    let blue = renderer.add_material(&mut scene, None, AlphaMode::Opaque, [0.0, 0.0, 1.0, 1.0], true);
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(0));
+    let left_out = renderer.add_mesh(&mut scene, &quad(1.0));
+    crate::resources::REFUSE_MESH_PAGES_OVER.with(|r| r.set(u64::MAX));
+    renderer.add_instance(&mut scene, left_out, DVec3::ZERO, Mat4::IDENTITY, vec![blue]);
+    let drawn = renderer.add_mesh(&mut scene, &quad(0.0));
+    renderer.add_instance(&mut scene, drawn, DVec3::ZERO, Mat4::IDENTITY, vec![red]);
+    let lighting = Lighting { fog_density: 0.0, ..Default::default() };
+    let scope = renderer.device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let image = renderer.render_to_image(&mut scene, 64, 64, &camera, &lighting).unwrap();
+    assert!(pollster::block_on(scope.pop()).is_none(), "the frame reached the device whole");
+    let centre = (32 * 64 + 32) * 4;
+    assert!(image[centre] > 2 * image[centre + 1].max(image[centre + 2]).max(8), "the red quad is drawn, the left out one is not: {:?}", &image[centre..centre + 4]);
+}
+
+#[test]
+#[ignore = "requires a graphics adapter; run with --ignored on a GPU host"]
+fn the_reflection_strength_scales_what_an_envmapped_surface_mirrors() {
+    let camera = Camera { position: DVec3::ZERO, yaw: 0.0, pitch: 0.0, roll: 0.0, fov_deg: 60.0, near: 0.1, far: 100.0 };
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, shadow_size: 1024, fxaa: false, render_scale: 1.0, ..Default::default() },
+    )).expect("test renderer");
+    let mut scene = renderer.new_scene();
+    let red = renderer.add_texture(&mut scene, &omsi_texture::Image { width: 4, height: 4, rgba: [255, 0, 0, 255].repeat(16), has_alpha: false }, false);
+    let grey = renderer.add_texture(&mut scene, &omsi_texture::Image { width: 1, height: 1, rgba: vec![60, 60, 60, 255], has_alpha: false }, false);
+    let paint = renderer.add_material_env(&mut scene, Some(grey), AlphaMode::Opaque, [1.0; 4], false, None, None, None, Some((red, 1.0)));
+    let mesh = renderer.add_mesh(&mut scene, &MeshData {
+        positions: vec![Vec3::new(-3.0, 5.0, -3.0), Vec3::new(3.0, 5.0, -3.0), Vec3::new(3.0, 5.0, 3.0), Vec3::new(-3.0, 5.0, 3.0)],
+        normals: vec![-Vec3::Y; 4],
+        uvs: vec![glam::Vec2::splat(0.5); 4],
+        ranges: vec![(0, 6, 0)],
+        indices: vec![0, 1, 2, 0, 2, 3],
+        one_sided: false,
+    });
+    renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![paint]);
+    for (mode, classic, enhanced) in [("vanilla", true, false), ("vanilla+", false, false), ("enhanced", false, true)] {
+        let mut centre = |strength: f32| {
+            let lighting = Lighting { shadows: false, fog_density: 0.0, classic, enhanced, reflection_strength: strength, ..Default::default() };
+            let rgba = renderer.render_to_image(&mut scene, 64, 64, &camera, &lighting).unwrap();
+            [0, 1, 2].map(|c| rgba[(32 * 64 + 32) * 4 + c] as i32)
+        };
+        let off = centre(0.0);
+        let away = |p: [i32; 3]| (0..3).map(|c| (p[c] - off[c]).abs()).sum::<i32>();
+        let (full, half) = (away(centre(1.0)), away(centre(0.5)));
+        assert!(full > half + 4 && half > 2, "{mode}: change from 0 % at 100 / 50 %: {full} {half} (0 %: {off:?})");
+        if !enhanced {
+            assert!((off[0] - off[1]).abs() <= 2, "{mode}: nothing mirrored at 0 %: {off:?}");
+        }
+    }
+}
+
+#[test]
+#[ignore = "requires a graphics adapter; run with --ignored on a GPU host"]
+fn envmapped_paint_with_normals_off_its_faces_mirrors_no_more_than_with_sound_ones() {
+    let camera = Camera { position: DVec3::ZERO, yaw: 0.0, pitch: 0.0, roll: 0.0, fov_deg: 60.0, near: 0.1, far: 100.0 };
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, shadow_size: 1024, fxaa: false, render_scale: 1.0, ..Default::default() },
+    )).expect("test renderer");
+    let mut scene = renderer.new_scene();
+    let blue = renderer.add_texture(&mut scene, &omsi_texture::Image { width: 4, height: 4, rgba: [20, 40, 160, 255].repeat(16), has_alpha: false }, false);
+    let photo = renderer.add_texture(&mut scene, &omsi_texture::Image { width: 4, height: 4, rgba: [200, 200, 200, 255].repeat(16), has_alpha: false }, false);
+    let paint = renderer.add_material_env(&mut scene, Some(blue), AlphaMode::Opaque, [1.0; 4], false, None, None, None, Some((photo, 0.1)));
+    let mut mirrored = |normal: Vec3| {
+        let mesh = renderer.add_mesh(&mut scene, &MeshData {
+            positions: vec![Vec3::new(-3.0, 5.0, -3.0), Vec3::new(3.0, 5.0, -3.0), Vec3::new(3.0, 5.0, 3.0), Vec3::new(-3.0, 5.0, 3.0)],
+            normals: vec![normal.normalize(); 4],
+            uvs: vec![glam::Vec2::splat(0.5); 4],
+            ranges: vec![(0, 6, 0)],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            one_sided: false,
+        });
+        let i = renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![paint]);
+        let [none, full] = [0.0, 1.0].map(|strength| {
+            let lighting = Lighting { shadows: false, fog_density: 0.0, enhanced: true, reflection_strength: strength, ..Default::default() };
+            let rgba = renderer.render_to_image(&mut scene, 64, 64, &camera, &lighting).unwrap();
+            [0, 1, 2].map(|c| rgba[(32 * 64 + 32) * 4 + c] as i32)
+        });
+        renderer.remove_instance(&mut scene, i);
+        (0..3).map(|c| (full[c] - none[c]).abs()).sum::<i32>()
+    };
+    let sound = mirrored(-Vec3::Y);
+    let off = mirrored(Vec3::new(1.0, -0.15, 0.0));
+    assert!(sound >= 4, "the paint mirrors nothing to compare with: {sound}");
+    assert!(off <= 2 * sound + 6, "normals along the face mirrored {off} where sound ones mirror {sound}");
 }

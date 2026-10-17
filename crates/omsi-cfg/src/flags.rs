@@ -273,14 +273,14 @@ flags! {
     OMSI_ENHANCED: Bool, Tuning, Use, "settings", "Enhanced graphics for this run.";
     OMSI_ENHANCED_PLUS: Bool, Tuning, Use, "settings", "Enhanced+ (ray traced) graphics for this run.";
     OMSI_ENV_PHOTO: Num, Debug, Use, "1", "0 leaves the environment photo out of the debug views.";
-    OMSI_FAKE_GPU_ERROR: Text, Test, Frame, "-", "Fault injection: open, open-panic, pipeline, lost-build, build, lost, frame - the GPU error to simulate. Only in builds with omsi-render's `test-hooks` feature (on by default).";
+    OMSI_FAKE_GPU_ERROR: Text, Test, Frame, "-", "Fault injection: open, open-panic, pipeline, lost-build, build, lost, frame, mesh - the GPU error to simulate. Only in builds with omsi-render's `test-hooks` feature (on by default).";
     OMSI_FIXED_SCALE: Bool, Switch, Use, "off", "Keep the render scale fixed (no dynamic resolution).";
     OMSI_FLEET_AHEAD: Num, Test, Use, "FLEET_AHEAD", "Minutes ahead the timetable fleet is planned (for tests).";
     OMSI_FLEET_IDLE: Num, Test, Use, "FLEET_IDLE", "Seconds a fleet vehicle idles (shortened for tests).";
     OMSI_FOLLOW_CAM: Text, Test, Use, "-", "right,ahead,up,yaw,pitch: a camera in the followed car's frame.";
     OMSI_FORCE_OPAQUE: Bool, Switch, Use, "off", "Draw transmap-masked materials opaque.";
     OMSI_FRAME_ORDER: Bool, Debug, Once, "off", "Log the window's frame and the offscreen run's step as their ordered stages (phase, what each reads and writes, its profile key), once at start.";
-    OMSI_FULL_GPU: Bool, Switch, Use, "off", "Keep the requested settings on a small or shared graphics chip.";
+    OMSI_FULL_GPU: Bool, Switch, Use, "off", "Keep the requested settings on a small or shared graphics chip, and 8x MSAA with Enhanced+.";
     OMSI_GLASS_WIND: Num, Test, Use, "-", "Offscreen: the rain on the glass as met at this speed in m/s.";
     OMSI_GL_TEXTURE_UNITS: Bool, Switch, Use, "off", "Use the texture-unit layout of the OpenGL backend on any device.";
     OMSI_GPU_ARRAYS: Text, Switch, Use, "-", "textures, nostorage or lighttextures: take that texture array path on any device.";
@@ -326,6 +326,8 @@ flags! {
     OMSI_MIRROR_HUD: Num, Tuning, Use, "settings", "Mirror HUD mode (number).";
     OMSI_MOBILE: Bool, Test, Use, "off", "The phone layout on a computer (screen cut-outs).";
     OMSI_MUTE: Bool, Test, Use, "off", "Mix everything as usual but play nothing.";
+    OMSI_NAV_2D: Bool, Test, Use, "off", "Navigator pictures with flat houses (the nav_3d setting off).";
+    OMSI_NAV_LINES: Text, Test, Use, "-", "Offscreen: open the city map's lines panel on the line with this number (a route, then a departure time, after semicolons: 5;1 or 5;1;14:07, which opens its timetable).";
     OMSI_NAV_MAP: Bool, Test, Use, "off", "Open the navigation map.";
     OMSI_NAV_MAP_MPP: Num, Test, Use, "2.5", "Navigation map zoom in metres per pixel.";
     OMSI_NAV_PROBE: Text, Test, Use, "-", "x,y[,r]: the network lanes that start or end within r of that point.";
@@ -342,6 +344,7 @@ flags! {
     OMSI_NO_CLOUDS: Bool, Switch, Use, "off", "No clouds.";
     OMSI_NO_CORONAS: Bool, Switch, Frame, "off", "No light coronas.";
     OMSI_NO_CULL: Bool, Switch, Once, "off", "Draw every mesh from both sides (A/B).";
+    OMSI_NO_DRAW_ORDER_DEPTH: Bool, Switch, Once, "off", "An object's surfaces in one plane without the draw order's depth step (A/B).";
     OMSI_NO_ENHANCED: Bool, Switch, Frame, "off", "Enhanced settings drawn with the plain path.";
     OMSI_NO_ENVMAP: Bool, Switch, Use, "off", "No environment maps.";
     OMSI_NO_FXAA: Bool, Switch, Frame, "off", "No FXAA.";
@@ -355,6 +358,7 @@ flags! {
     OMSI_NO_LAN_MODS: Bool, Switch, Use, "off", "LAN: do not exchange mods.";
     OMSI_NO_LIGHT_MAP: Bool, Switch, Use, "off", "No night light maps on the tiles (A/B).";
     OMSI_NO_MAIN_SPLIT: Bool, Switch, Frame, "off", "Do not split the main pass's bundles in two.";
+    OMSI_NO_MAP_CACHE: Bool, Test, Use, "off", "Read the map's navigator layers (houses, ground, paving) again instead of from the cache.";
     OMSI_NO_MATERIAL_SPLINE_BATCHING: Bool, Switch, Use, "off", "No batching of splines by material.";
     OMSI_NO_MODEL_ORDER: Bool, Switch, Use, "off", "Draw the opaque parts of ordered models first again (A/B).";
     OMSI_NO_MSAA_PREPASS: Bool, Switch, Frame, "off", "No depth prepass with multisampling.";
@@ -362,10 +366,12 @@ flags! {
     OMSI_NO_PIPELINE_CACHE: Bool, Switch, Use, "off", "Compile every pipeline at each start (no ~/.openomsi/cache/pipelines-*.bin).";
     OMSI_NO_PLUGINS: Bool, Switch, Use, "off", "No plugins loaded.";
     OMSI_NO_POLL_THREAD: Bool, Switch, Use, "off", "No device poll thread.";
+    OMSI_NO_PRECIP_ROOF: Bool, Switch, Frame, "off", "Rain and snow fall through roofs (no roof map).";
     OMSI_NO_PRESENCE: Bool, Switch, Use, "off", "No presence (\"playing now\") service.";
     OMSI_NO_PUDDLE_GLASS_DEPTH: Bool, Switch, Use, "off", "Puddles without glass depth.";
     OMSI_NO_PUDDLE_REFLECTIONS: Bool, Switch, Frame, "off", "No puddle reflections.";
     OMSI_NO_PUDDLE_VEHICLE: Bool, Switch, Use, "off", "No vehicles in puddle reflections.";
+    OMSI_NO_RAIN: Bool, Switch, Frame, "off", "No rainfall.";
     OMSI_NO_RENDER_POOL: Bool, Switch, Use, "off", "No encoding thread pool for rendering.";
     OMSI_NO_RT: Bool, Switch, Use, "off", "No ray queries (Enhanced+ draws as Enhanced).";
     OMSI_NO_RT_FRAME: Bool, Switch, Frame, "off", "Ray queries kept but nothing traced.";
@@ -430,7 +436,7 @@ flags! {
     OMSI_SERIAL_PIPELINES: Bool, Switch, Use, "off", "Compile the renderer's pipelines one after the other on one thread, as before (A/B).";
     OMSI_SHADOW_FAR_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the far shadow map every frame.";
     OMSI_SHADOW_NEAR_EVERY_FRAME: Bool, Switch, Frame, "off", "Redraw the near shadow map every frame.";
-    OMSI_SIM_THREAD: Bool, Switch, Use, "off", "Window: the AI traffic's, the people's and the scenery scripts' steps run on a thread of its own while the picture is drawn (one frame later); the offscreen run ignores it.";
+    OMSI_SIM_THREAD: Text, Switch, Use, "the setting", "Window: the AI traffic's, the people's and the scenery scripts' steps on a thread of their own while the picture is drawn (one frame later): 0 / false / off / no: on the main thread, anything else: on their thread, over the `sim_thread` setting (off by default); the offscreen run ignores it.";
     OMSI_SKIP_OBJECT: Text, Test, Use, "-", "Leave out the objects whose file name contains this text.";
     OMSI_SKIP_PIPE: Text, Test, Frame, "-", "Pipeline kinds to leave out of the main pass (comma-separated numbers).";
     OMSI_SPOT_SELECT: Num, Test, Use, "-", "Turn on spotlight n (headlight pictures).";
@@ -445,6 +451,9 @@ flags! {
     OMSI_TEST_WINE_DIR: Text, Test, Test, "-", "Plugin demo test: folder holding omsi-plugin-host.exe for Wine.";
     OMSI_TEXTURE_MEMORY: Num, Tuning, Use, "settings", "Texture budget in MB.";
     OMSI_TEXTURE_RAIN: Bool, Switch, Use, "off", "OMSI 2's own texture rain on the glass instead of the drops.";
+    OMSI_TOMORROW_API_KEY: Text, Setup, Use, "private key file", "Private Tomorrow.io API key for map-selected weather; never include it in map configs or logs.";
+    OMSI_TOMORROW_CACHE_DIR: Text, Setup, Use, "settings/weather-cache", "Private Tomorrow.io response cache and shared request-budget directory.";
+    OMSI_TOMORROW_KEY_FILE: Text, Setup, Use, "settings/tomorrow-api-key.txt", "Private text file containing the player's Tomorrow.io API key.";
     OMSI_TONE_CONTRAST: Text, Tuning, Once, "1", "day[,night]: tone mapping contrast.";
     OMSI_TOUCH: Bool, Test, Use, "off", "The on-screen touch controls on a computer.";
     OMSI_TRACE_AI: Text, Debug, Use, "-", "CSV: every AI car's pose, steering and speed every frame.";
@@ -462,12 +471,14 @@ flags! {
     OMSI_TYRE_SUSPENSION: Bool, Switch, Once, "off", "The old suspension with wheel mass, tyre and bump stops (A/B).";
     OMSI_UI_PREVIEW: Text, Test, Use, "target/ui-preview.png", "Plugin UI preview test: the picture's path.";
     OMSI_UPDATE_URL: Text, Setup, Use, "built-in", "Another release description (URL or file:///...json) for the update check.";
+    OMSI_VIDEO_MEMORY: Num, Tuning, Use, "settings", "What the game may hold on the graphics card all together (textures, meshes, render targets), in MB.";
     OMSI_WARM_FRAMES: Num, Test, Use, "0", "Offscreen: frames drawn before the picture.";
     OMSI_WATCH_VARS: Text, Debug, Use, "-", "a,b: log every change of these variables of the player's bus.";
     OMSI_WETNESS: Num, Test, Use, "weather", "Ground wetness the picture is drawn with.";
     OMSI_WHEEL_TRACE: Bool, Debug, Use, "off", "Log the deepest a drawn tyre goes into the road, once a second.";
     OMSI_WINDY_TREES: Text, Tuning, Use, "settings", "0 or 1: trees in the wind off or on (A/B renders).";
     OMSI_WINE: Text, Setup, Use, "PATH", "The Wine binary for Windows plugins.";
+    OMSI_ZFIGHT_PROBE: Num, Debug, Once, "-", "Z-fighting check: the draw order's depth steps within an object from a hash (1) or its reverse (2); offscreen pictures of both differ where an object's surfaces lie in one plane.";
 }
 
 #[cfg(test)]

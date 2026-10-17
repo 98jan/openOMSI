@@ -240,6 +240,20 @@ impl App {
                 }
                 _ => nav.clear_route(),
             }
+            if let Some(sch) = self.session.schedule.as_ref() {
+                if nav.map_net().is_some() && !nav.stop_names_learnt() {
+                    nav.learn_stop_names(&sch.stop_names());
+                }
+            }
+            // the timetable's vehicles the traffic does not drive, where the timetable has them
+            if let (Some(sch), true) = (self.session.schedule.as_ref(), nav.show_ai && (nav.enabled || nav.map_open())) {
+                let cars: Vec<(DVec3, String)> = match self.session.traffic.as_ref().filter(|_| nav.live_due(dt)) {
+                    Some(t) => t.cars.iter().filter(|c| !c.gone && c.bus.is_some()).map(|c| (c.vehicle.position, c.vehicle.host.tt_line.clone())).collect(),
+                    None => Vec::new(),
+                };
+                let ground = self.world.as_ref().map(|w| w.data());
+                nav.update_live(sch, self.clock.time, dt, &cars, &|p| ground.as_ref().is_some_and(|d| d.has_ground(p.x, p.y)));
+            }
             let (outside_temp, inside_temp) = match p {
                 Some(p) => vehicle_temperatures(p),
                 None => {
@@ -257,7 +271,8 @@ impl App {
                 (None, None) => return,
             };
             let frame = navigator::NavFrame {
-                traffic: self.session.traffic.as_ref(),
+                traffic: self.session.traffic.as_deref(),
+                touch: crate::platform::touch_controls(),
                 players: self.net.lan.as_ref().map(|l| crate::lan::nav_players(&self.net.remotes, l.my_id)).unwrap_or_default(),
                 bus: at,
                 heading,
@@ -272,6 +287,7 @@ impl App {
                 stop_requested: p.is_some_and(|p| navigator::stop_requested(&p.vehicle)),
                 time: self.clock.time,
                 weekday: self.clock.weekday(),
+                date: self.clock.date_code(),
                 language: &self.settings.language,
                 screen: if vr_active {
                     (1440.0, 1440.0)

@@ -434,16 +434,21 @@ impl App {
                         .unwrap_or(1200.0)
                         .max(omsi_map::tile_size());
                     w.set_fast_texture_loads(true);
-                    w.set_texture_budget(texture_budget(&self.settings));
+                    let video = video_memory_limit(&self.settings);
+                    let textures = texture_budget(video);
+                    w.set_texture_budget(textures);
+                    w.set_video_memory_limit(video);
                     log::info!(
-                        "texture budget: {:.0} MB",
-                        texture_budget(&self.settings) as f64 / 1e6
+                        "texture budget: {:.0} MB, video memory: {:.0} MB (0 = the driver's budget)",
+                        textures as f64 / 1e6,
+                        video as f64 / 1e6
                     );
                     self.gfx.streamer = Some(tiles::Streamer::new(
                         w.clone(),
                         &start_centers(&self.args, &cam, Some(&w)),
                         distance,
                         700.0,
+                        crate::release_free_memory,
                     ));
                     self.world = Some(w);
                     self.cam.starting = Some(cam);
@@ -575,6 +580,9 @@ impl App {
                     n.show_ai = self.settings.nav_ai;
                     n.show_surface = self.settings.nav_surface;
                     n.light = self.settings.nav_light;
+                    n.show_3d = self.settings.nav_3d;
+                    n.widget = self.settings.nav_widget;
+                    n.size = self.settings.nav_size;
                 }
                 if let Some(d) = self.args.driver.as_deref() {
                     self.session.career = career::Career::load(&self.args.root, d);
@@ -586,6 +594,7 @@ impl App {
                         h.set_lan_seed(lan::population_seed(lan));
                     }
                     h.exact_fare = self.settings.exact_fare;
+                    h.bad_driving = self.settings.pax_bad_driving;
                     h.boarding = self.settings.boarding.clone();
                     h.stand_chance = self.settings.standing_chance;
                     h.voices = match self.settings.pax_voices.as_str() { "off" => 2, "tickets" => 1, _ => 0 };

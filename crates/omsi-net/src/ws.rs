@@ -18,6 +18,10 @@
 //!   127.0.0.1 and gives its address to `LanSession::join`; whatever the game sends there
 //!   goes over the WebSocket and back.
 
+#[path = "ws/session.rs"]
+mod session;
+pub use session::query_session;
+
 use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};

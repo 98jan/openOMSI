@@ -30,37 +30,7 @@ pub(crate) fn player_bus_path(root: &Path, bus: &str) -> Result<PathBuf> {
     }
 }
 
-/// The next vehicle of a consist from one with definition `def` (turned round: `rev`),
-/// towards the back of the train or its front, and whether that one is turned round - as
-/// Omsi.exe builds a consist (0x70a174): towards the back a vehicle goes on with its
-/// `[couple_back]`, or with its `[couple_front]` when it is itself turned round (towards the
-/// front the other way about); the coupled one is turned round when the coupling says so,
-/// against the one it hangs on; a coupling back to its own file that turns nothing round
-/// is not followed. (Following `[couple_back]` whatever the way, the Berlin A3's unit - the
-/// S car and its K car turned round, whose `[couple_back]` names the S car - went on S, K,
-/// S, K, S, none of them turned.)
-pub(crate) fn next_coupled(def: &omsi_vehicle::vehicle::Vehicle, rev: bool, toward_back: bool) -> Option<(PathBuf, bool)> {
-    let (file, flag) = if toward_back != rev { def.couple_back.as_ref() } else { def.couple_front.as_ref() }?;
-    let path = omsi_cfg::resolve_path(def.dir(), file);
-    let same = path.file_name().map(|f| f.to_ascii_lowercase()) == def.path.file_name().map(|f| f.to_ascii_lowercase());
-    if !flag && same {
-        return None;
-    }
-    Some((path, flag ^ rev))
-}
-
-/// How many coupled parts one vehicle may have behind it. A consist that closes on itself
-/// stops on its own (see [`chain_has_part`]); this only guards against a coupling chain that
-/// keeps growing through different files.
-pub(crate) const MAX_COUPLED_PARTS: usize = 32;
-
-/// Whether the vehicle file `path` is already one of the parts of the consist `seen` - the
-/// same file, not the same spelling, so a chain that comes round again ends there instead of
-/// growing. The NF6D tram closes on itself: its rear cab car `[couple_back]`s the
-/// articulation its front car starts with, and the whole unit is eleven parts long.
-pub(crate) fn chain_has_part(seen: &[PathBuf], path: &Path) -> bool {
-    seen.iter().any(|s| omsi_vehicle::vehicle::same_file(s, path))
-}
+pub(crate) use omsi_vehicle::vehicle::{chain_has_part, next_coupled, MAX_COUPLED_PARTS};
 
 /// Load the `[couple_back]` chain behind `vehicle` (articulated rear sections, trailers),
 /// each file resolved from the folder of the part before it in whichever content root
@@ -216,8 +186,8 @@ fn player_identity(
         Some(w) => match available.iter().find(|(n, _)| n.trim() == w) {
             Some((n, _)) => Some(n.clone()),
             None => {
-                log::warn!("--number {w}: not in the bus's [number] list, the first one is taken");
-                available.first().map(|(n, _)| n.clone())
+                log::warn!("--number {w}: not in the bus's [number] list");
+                Some(w.to_string())
             }
         },
         None => available.first().map(|(n, _)| n.clone()),
@@ -405,6 +375,16 @@ pub(crate) fn spawn_player_prepared(
     let mut p = new_player(vehicle, render, trailer_renders, bindings, rail_bound, &vt);
     for _ in 0..3 {
         p.vehicle.update(1.0 / 30.0);
+    }
+    // a new bus with its tank full, if the player wants it (many maps have no petrol station):
+    // filled by its own pump, as at one, so each bus takes what its script says it holds; a
+    // situation's bus and a part uncoupled keep what they had (and --setvar, after it,
+    // still sets what a test asks for)
+    if !args.is_resuming() && !args.keep_fuel && crate::settings::Settings::load().full_tank {
+        match p.vehicle.refuel() {
+            Some(l) => log::info!("spawn: tank filled ({l:.0} l)"),
+            None => log::info!("spawn: this vehicle has no fuel pump handling (veh_tank): its tank stays as its script set it"),
+        }
     }
     if let Some(sv) = &args.setvar {
         for kv in sv.split(',') {

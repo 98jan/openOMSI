@@ -817,6 +817,17 @@ impl DirectInput {
         }
     }
 
+    pub fn set_background(&mut self, on: bool) {
+        let on = on || BACKGROUND.get() == Some(&(self.hwnd.0 as isize));
+        if self.background == on {
+            return;
+        }
+        self.background = on;
+        let exclusive: Vec<(GUID, String)> = self.devices.iter().filter(|d| self.ff && d.ff_capable).map(|d| (d.guid, d.name.clone())).collect();
+        log::info!("game controllers: DirectInput {} the window is in front", if on { "goes on reading while" } else { "reads only while" });
+        self.reopen_devices(exclusive);
+    }
+
     /// Throw away stale DirectInput objects and create them again. Reusing a GUID is not
     /// enough to prove the old COM object survived a USB/driver reset.
     fn reopen_devices(&mut self, reopen: Vec<(GUID, String)>) {

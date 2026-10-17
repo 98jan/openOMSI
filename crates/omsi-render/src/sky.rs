@@ -107,7 +107,7 @@ impl Renderer {
         textures: [TextureId; 3],
         clouds: Option<TextureId>,
     ) {
-        self.set_sky_textures_vanilla(scene, textures, clouds, None)
+        self.set_sky_textures_vanilla(scene, textures, clouds, None, None)
     }
 
     /// Sky gradients, the cloud field (`clouds`, the enhanced sky's and its weather's
@@ -119,6 +119,7 @@ impl Renderer {
         textures: [TextureId; 3],
         clouds: Option<TextureId>,
         vanilla_clouds: Option<TextureId>,
+        sun: Option<TextureId>,
     ) {
         let views: Vec<&wgpu::TextureView> =
             textures.iter().map(|t| &scene.textures[*t].view).collect();
@@ -175,6 +176,13 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 10,
                     resource: self.sky.vanilla_sky_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(match sun {
+                        Some(s) => &scene.textures[s].view,
+                        None => &self.black_texture.view,
+                    }),
                 },
             ],
         });
