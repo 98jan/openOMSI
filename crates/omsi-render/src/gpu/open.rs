@@ -662,6 +662,7 @@ impl Renderer {
             },
             _device_poller: DevicePoller::start(&device),
             mip_pipeline: mip.pipeline,
+            mip_plain_pipeline: mip.plain_pipeline,
             mip_layout: mip.layout,
             mip_sampler: mip.sampler,
             clamp_sampler: defaults.clamp_sampler,

@@ -166,6 +166,8 @@ pub struct Renderer {
     pub light_map_next: std::cell::Cell<bool>,
     /// Mipmap generation on the GPU (a blit per level).
     mip_pipeline: wgpu::RenderPipeline,
+    /// The same for text and script textures: colour and alpha averaged each on its own.
+    mip_plain_pipeline: wgpu::RenderPipeline,
     mip_layout: wgpu::BindGroupLayout,
     mip_sampler: wgpu::Sampler,
     /// The headset's pictures: the heading (degrees) the `[matl_envmap]` sphere maps are
