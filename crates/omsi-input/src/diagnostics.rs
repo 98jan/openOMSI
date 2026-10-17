@@ -63,13 +63,11 @@ pub fn standing_reasons(v: &omsi_sim::VehicleInstance, key: &dyn Fn(&str) -> Opt
             // (with the tanks full the spring brake is held by the bus's own parking brake,
             // whatever its script calls it, not by a want of air)
             let full = !tanks.is_empty() && low >= 6.0e5;
-            let tank = if tanks.is_empty() {
-                String::new()
-            } else {
-                format!("{:.1} bar in the tanks, ", low / 1e5)
-            };
-            if !full {
-                lines.push(format!("Air pressure is low ({tank}spring brake {:.1} bar): the spring brake holds until the compressor has filled the tanks - keep the engine running", fba / 1e5));
+            // (whole sentences: the tables translate a text by its key)
+            if !full && tanks.is_empty() {
+                lines.push(format!("Air pressure is low (spring brake {:.1} bar): the spring brake holds until the compressor has filled the tanks - keep the engine running", fba / 1e5));
+            } else if !full {
+                lines.push(format!("Air pressure is low ({:.1} bar in the tanks, spring brake {:.1} bar): the spring brake holds until the compressor has filled the tanks - keep the engine running", low / 1e5, fba / 1e5));
             }
         }
     }
