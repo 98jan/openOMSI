@@ -82,6 +82,7 @@ const graphics = {
         // the mode first, then the quality presets for it: they set most of what follows
         { type: 'select', key: 'graphics', label: 'Graphics', options: [['vanilla', 'Vanilla (as OMSI 2)'], ['vanilla_plus', 'Vanilla+'], ['enhanced', 'Enhanced'], ['enhanced_plus', 'Enhanced+']] },
         { type: 'custom', id: 'preset' },
+        { type: 'custom', id: 'optimise' },
         { type: 'select', key: 'msaa', label: 'Anti-aliasing', options: [['1', 'Off'], ['2', '2x MSAA'], ['4', '4x MSAA'], ['8', '8x MSAA']] },
         { type: 'select', key: 'render_scale', label: 'Render scale', options: [['auto', 'Auto'], ['1', '100%'], ['0.85', '85%'], ['0.75', '75%'], ['0.67', '67%'], ['0.5', '50%']] },
         { type: 'select', key: 'anisotropy', label: 'Anisotropic', options: [['1', 'Off'], ['2', '2x'], ['4', '4x'], ['8', '8x'], ['16', '16x']] },
