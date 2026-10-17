@@ -141,6 +141,12 @@ if [ "$first" = 1 ]; then
     IFS= read -r v || v=""
     if [ -t 0 ]; then stty echo; fi
     echo
+    # (one kept from before the 12 characters: the server would ignore it)
+    if [ -z "$v" ] && [ -n "$(cfg_get admin_password)" ] && [ "$(cfg_get admin_password | tr -d '\n' | wc -m)" -lt 12 ]; then
+      say "The password set is shorter than 12 characters, and the server ignores it: type a new one (- for none)." "A senha atual tem menos de 12 caracteres, e o servidor a ignora: digite uma nova (- para nenhuma)."
+      # (answers from a file: said, not asked again for ever)
+      if [ -t 0 ]; then continue; fi
+    fi
     case "$v" in
       "") break ;;
       -) cfg_set admin_password ""; break ;;

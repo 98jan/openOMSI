@@ -262,10 +262,15 @@ impl ServerAdmin {
 }
 
 /// Who a wrong answer is counted against: the player's address (the same when they come
-/// back), or their number when the session has none.
+/// back; the one behind the web gateway, not the gateway's loopback socket), or their
+/// number when there is none (this machine, or no address).
 fn source_of(lan: &LanSession, from: u32) -> String {
-    match lan.peers().find(|p| p.pose.id == from).and_then(|p| p.addr) {
-        Some(a) => a.ip().to_string(),
+    counted_source(lan.peers().find(|p| p.pose.id == from).and_then(|p| p.addr), from)
+}
+
+fn counted_source(addr: Option<std::net::SocketAddr>, from: u32) -> String {
+    match addr.and_then(omsi_net::source_ip) {
+        Some(ip) => ip.to_string(),
         None => format!("player {from}"),
     }
 }
@@ -394,6 +399,16 @@ mod password_tests {
         assert!(adm.locked("10.0.0.6"));
     }
 
+    /// A wrong answer counts against the player's own address, or their number when they
+    /// are on this machine (the web gateway's loopback is not one source for all).
+    #[test]
+    fn a_wrong_answer_counts_against_its_player() {
+        assert_eq!(counted_source(Some("203.0.113.9:5000".parse().unwrap()), 1), "203.0.113.9");
+        assert_eq!(counted_source(Some("127.0.0.1:41000".parse().unwrap()), 3), "player 3");
+        assert_eq!(counted_source(Some("127.0.0.1:41001".parse().unwrap()), 4), "player 4");
+        assert_eq!(counted_source(None, 5), "player 5");
+    }
+
     /// The challenges come from the secure random: 128 bits, a new one each time.
     #[test]
     fn challenges_are_fresh() {
@@ -488,7 +503,7 @@ mod passenger_density_command_tests {
     fn session() -> LanSession {
         // (no rendezvous on the internet from a test)
         std::env::set_var("OMSI_NO_BRIDGE", "1");
-        LanSession::host(28700, "server", omsi_net::WorldInfo::default(), true).unwrap()
+        LanSession::host(0, "server", omsi_net::WorldInfo::default(), true).unwrap()
     }
 
     fn run(lan: &mut LanSession, adm: &mut ServerAdmin, text: &str) {

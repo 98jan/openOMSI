@@ -67,8 +67,12 @@ Players reach it two ways:
   message, the server's gateway gives each WebSocket a UDP socket of its own on 127.0.0.1.
   The session sees such a player there (`joined from 127.0.0.1:<port>`); the log says who
   that is (`gateway: player WebSocket from <address> on 127.0.0.1:<port>`), with the
-  address a reverse proxy or tunnel on the machine forwards (`X-Forwarded-For`,
-  `X-Real-IP`, `CF-Connecting-IP`).
+  address a reverse proxy or tunnel on the machine forwards: the last `X-Forwarded-For`,
+  else `CF-Connecting-IP`. With Cloudflare's proxy (the orange cloud) in front of a proxy of
+  this machine, the last `X-Forwarded-For` is a Cloudflare edge, and the players would share a
+  few addresses (16 connections each at most): `gateway_proxy_header = cf-connecting-ip`
+  then believes Cloudflare's `CF-Connecting-IP` first - only with Cloudflare in front, which
+  writes it over a client's own.
   That is what a free Cloudflare quick tunnel carries (`tunnel = 1` starts `cloudflared
   tunnel --url http://127.0.0.1:<web_port>` and prints the `https://….trycloudflare.com`
   address). The same port answers `GET /status` (JSON: name, motd, map, players,
@@ -148,8 +152,8 @@ offline, hence the length.
 
 | key | role | may |
 |---|---|---|
-| `admin_password` | admin | everything below, and the world: the clock and its speed, the weather, the AI traffic, the passengers |
-| `moderator_password` | moderator | see the server and its players, send a player away (not an admin), the chat, a word to one player, duties, services |
+| `admin_password` | admin | everything below, and the world: the clock and its speed, the weather, the AI traffic, the passengers; bringing players to their bus (`bring`, `bringall`) |
+| `moderator_password` | moderator | see the server and its players, send a player away (not an admin), the chat, a word or a notice to one player or to all (`tell`, `notify`), duties, services, putting a player's bus back on its wheels (`unstick`), going to a player (`goto`, which moves the moderator's own bus) |
 
 The role comes from the password that was given and is decided by the server alone: nothing a
 game or a page sends names or raises it, and every operation is checked on the server, whether
@@ -159,7 +163,10 @@ role. No password: no administration.
 **In the game.** A player says `/admin <password>` in the chat; the password never goes over the
 network (the game asks `auth?`, the server answers with a fresh challenge, its salt and rounds,
 and the game proves it knows the password: PBKDF2 and an HMAC of the challenge). Five wrong
-answers in two minutes lock it for everybody for a while. The server answers `admin-ok admin`
+answers in two minutes from one source (the player's address - the one behind the web gateway
+for a player who came by WebSocket - or their number on this machine) lock it for that source
+for a while; thirty from all sources together lock it for everybody. The web panel counts its
+own wrong passwords apart (see below): a lock of the one is no lock of the other. The server answers `admin-ok admin`
 or `admin-ok moderator` (a game before the roles reads the first word), and the Esc menu's
 *Administration* sends every line to the server as `admin <action>`. The rights end when the
 player leaves or talks from another address.
@@ -287,13 +294,14 @@ a browser).
 
 **Who reaches the web panel and the API** (`server.cfg`):
 
-* `admin_web = local` (the default): from the server's own machine only, directly - a request
+* `admin_web = local` (what a new server's file says): from the server's own machine only, directly - a request
   that came through a tunnel or a reverse proxy (it carries `X-Forwarded-For`, `CF-Connecting-IP`
   …) is refused, the server's own Cloudflare tunnel (`tunnel = 1`) included. Starting the tunnel
   does not put the administration on the internet.
 * `admin_web = remote`: also through the proxies listed in `admin_trusted_proxies` (addresses
   separated by `;`; this machine by default), and only for requests they say came over HTTPS
-  (`X-Forwarded-Proto: https`, or Cloudflare's `CF-Visitor`). The address they say a request came
+  (`X-Forwarded-Proto: https`, or Cloudflare's `CF-Visitor` with `admin_proxy_header =
+  cf-connecting-ip` only - behind another proxy it would be the client's own). The address they say a request came
   from is believed of them alone, and only in the header they write: `admin_proxy_header`, the
   last address of `X-Forwarded-For` by default (Caddy, nginx, Cloudflare), or `x-real-ip`, or
   `cf-connecting-ip` - the other headers may be the client's own, passed on. That address counts
@@ -313,14 +321,17 @@ a browser).
 * On this machine the panel answers to its own names only (`127.0.0.1`, `localhost`, `[::1]`): a
   page of another site whose name was turned to this machine (DNS rebinding) is refused.
 * A reverse proxy on this machine must say it is one: it has to add `X-Forwarded-For` (or the
-  header of `admin_proxy_header`) to what it passes on. One that adds none, and sets `Host` to
-  `localhost`, hands every request from the internet over as this machine's own - the server
-  cannot tell them apart.
+  header of `admin_proxy_header`) to what it passes on. One that adds none hands every request
+  from the internet over as this machine's own - the server cannot tell them apart. nginx's
+  plain `proxy_pass http://127.0.0.1:<web_port>;` is such a one (it sends `Host: 127.0.0.1:…`
+  and no address): add `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`.
 * Mind that a tunnel working below HTTP (`ssh -R`, frp, playit, `ngrok tcp`) hands every client
   over as this machine, with no header to tell: with one in front of the web port, anybody who
   reaches it meets the login as if they were here (the passwords and their locks still hold).
   Point such a tunnel at the game's port only, or keep `admin_web = off`.
-* `admin_web = off`: none (the machine's own `POST /admin` stays as it is).
+* `admin_web = off`: none (the machine's own `POST /admin` stays as it is). A `server.cfg`
+  without the key - one from before the web panel - or with a wrong word is off: an update
+  opens no panel the operator did not ask for. Add `admin_web = local` to have it.
 * `admin_web_origins`: other `https://` sites whose pages may send requests (a dispatch page
   elsewhere); a request whose browser names another origin is refused. No answer allows
   another site's page to read it (no `Access-Control-Allow-Origin`).

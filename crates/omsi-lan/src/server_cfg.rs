@@ -43,6 +43,10 @@ pub struct ServerCfg {
     /// The header in which they name the client (`admin_proxy_header`; the last
     /// `X-Forwarded-For` by default).
     pub admin_proxy_header: omsi_admin::ProxyHeader,
+    /// Players through Cloudflare's proxy and a proxy of this machine are told by
+    /// `CF-Connecting-IP` (`gateway_proxy_header = cf-connecting-ip`), not the last
+    /// `X-Forwarded-For`.
+    pub gateway_cf_connecting_ip: bool,
     /// How fast the server's clock runs (1 real time).
     pub time_speed: f64,
     /// The clock follows the server machine's real date and time (the speed and the
@@ -105,7 +109,8 @@ radius = 0
 # passengers. The password needs at least 12 characters; empty: nobody
 admin_password =
 # the same with this password: a moderator, who sees the players and sends them away, talks
-# to them, but leaves the clock, the weather, the traffic and the passengers alone
+# to them, but leaves the clock, the weather, the traffic, the passengers and bringing
+# players to their bus alone
 # (at least 12 characters; empty: no moderators)
 moderator_password =
 
@@ -120,6 +125,9 @@ admin_trusted_proxies =
 # the header in which those proxies name the client: x-forwarded-for (its last address: Caddy,
 # nginx, Cloudflare), x-real-ip or cf-connecting-ip - only that one is believed
 admin_proxy_header = x-forwarded-for
+# the same for the players who come by WebSocket through a proxy of this machine:
+# x-forwarded-for, or cf-connecting-ip with Cloudflare's proxy (the orange cloud) in front
+gateway_proxy_header = x-forwarded-for
 
 # how fast the clock runs (1 = real time, 2 = twice as fast, up to 30)
 time_speed = 1
@@ -201,10 +209,11 @@ impl ServerCfg {
             icon,
             admin_password: admin_password(kv.get("admin_password").cloned().unwrap_or_default()),
             moderator_password: checked_password(kv.get("moderator_password").cloned().unwrap_or_default(), "moderator_password"),
-            admin_web: web_mode(kv.get("admin_web").map(String::as_str).unwrap_or("")),
+            admin_web: web_mode(kv.get("admin_web").map(String::as_str)),
             admin_web_origins: kv.get("admin_web_origins").map(|v| v.split(';').map(|o| o.trim().trim_end_matches('/').to_string()).filter(|o| o.starts_with("https://") || o.starts_with("http://")).collect()).unwrap_or_default(),
             admin_trusted_proxies: trusted_proxies(kv.get("admin_trusted_proxies").map(String::as_str).unwrap_or("")),
             admin_proxy_header: proxy_header(kv.get("admin_proxy_header").map(String::as_str).unwrap_or("")),
+            gateway_cf_connecting_ip: kv.get("gateway_proxy_header").is_some_and(|v| v.trim().eq_ignore_ascii_case("cf-connecting-ip")),
             time_speed: kv.get("time_speed").and_then(|v| v.parse::<f64>().ok()).filter(|v| v.is_finite()).unwrap_or(1.0).clamp(1.0, 30.0),
             real_time: flag("real_time", false),
             metar_sync: flag("metar_sync", false),
@@ -241,11 +250,13 @@ pub fn installed_maps() -> Vec<String> {
     maps
 }
 
-/// `admin_web`: a wrong word is the default (this machine only), never the open door.
-fn web_mode(v: &str) -> omsi_admin::WebMode {
+/// `admin_web`: none (a `server.cfg` from before the web panel) or a wrong word is off - an
+/// update opens no door the operator did not ask for; a new server's file says `local`.
+fn web_mode(v: Option<&str>) -> omsi_admin::WebMode {
+    let Some(v) = v else { return omsi_admin::WebMode::Off };
     omsi_admin::WebMode::parse(v).unwrap_or_else(|| {
-        log::warn!("server.cfg: admin_web = {v} is not local, remote or off: local");
-        omsi_admin::WebMode::Local
+        log::warn!("server.cfg: admin_web = {v} is not local, remote or off: off");
+        omsi_admin::WebMode::Off
     })
 }
 
@@ -393,17 +404,23 @@ mod passenger_density_tests {
     /// The web administration's keys: a wrong word is never the open door.
     #[test]
     fn the_web_administration_keys() {
-        let old = load("admin_password = 12345678\n");
-        assert_eq!(old.admin_web, omsi_admin::WebMode::Local);
+        // (a file from before the web panel: no panel after the update, until it says so)
+        let old = load("admin_password = a long password\n");
+        assert_eq!(old.admin_web, omsi_admin::WebMode::Off);
+        assert_eq!(load("admin_web = lcoal\n").admin_web, omsi_admin::WebMode::Off);
+        assert_eq!(load("admin_web = local\n").admin_web, omsi_admin::WebMode::Local);
         let r = load("admin_web = remote\nadmin_web_origins = https://admin.example.org/; javascript:x; http://lan.example\nadmin_trusted_proxies = 10.0.0.1; nonsense; ::1\n");
         assert_eq!(r.admin_web, omsi_admin::WebMode::Remote);
         assert_eq!(r.admin_web_origins, vec!["https://admin.example.org".to_string(), "http://lan.example".to_string()]);
         assert_eq!(r.admin_trusted_proxies, vec!["10.0.0.1".parse::<std::net::IpAddr>().unwrap(), "::1".parse().unwrap()]);
-        assert_eq!(load("admin_web = public\n").admin_web, omsi_admin::WebMode::Local);
+        assert_eq!(load("admin_web = public\n").admin_web, omsi_admin::WebMode::Off);
         assert_eq!(load("admin_web = off\n").admin_web, omsi_admin::WebMode::Off);
         assert_eq!(load("admin_proxy_header = X-Real-IP\n").admin_proxy_header, omsi_admin::ProxyHeader::RealIp);
         assert_eq!(load("admin_proxy_header = cf-connecting-ip\n").admin_proxy_header, omsi_admin::ProxyHeader::CfConnectingIp);
         assert_eq!(load("admin_proxy_header = forwarded\n").admin_proxy_header, omsi_admin::ProxyHeader::ForwardedFor);
+        assert!(!load("").gateway_cf_connecting_ip);
+        assert!(load("gateway_proxy_header = CF-Connecting-IP\n").gateway_cf_connecting_ip);
+        assert!(!load("gateway_proxy_header = x-forwarded-for\n").gateway_cf_connecting_ip);
         // remote with a password too short for the internet: the panel stays on this machine
         let short = load("admin_web = remote\nadmin_password = twelve chars\n");
         assert_eq!((short.admin_password.as_str(), short.admin_web), ("twelve chars", omsi_admin::WebMode::Local));

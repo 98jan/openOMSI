@@ -213,6 +213,12 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   player fetches must be what its name says (a picture of a size a texture can have, a sound,
   a mesh the reader takes, a text), or it is left out and reported; a vehicle script that
   would never end is cut short instead of stopping the game.
+- **The dedicated server's administration** — an admin and a moderator role, a menu in the
+  game and a web panel (`/admin/`) that use the same operations, an audit log, and a passenger
+  density (`passenger_density`) besides `passengers` (see [docs/SERVER.md](docs/SERVER.md)).
+  For a server set up before: an `admin_password` or `moderator_password` shorter than 12
+  characters now lets nobody in (the log says so; the start scripts ask for a new one), and a
+  `server.cfg` without `admin_web` has the web panel off until it says `admin_web = local`.
 
 ## 0.3.0 - 2026-10-14
 

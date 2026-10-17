@@ -369,7 +369,8 @@ async function boot() {
   if (!S.token) return showLogin("");
   const r = await api("GET", "/api/admin/session");
   if (r && r.status === 200) start(r.data.session);
-  else if (!r) { showLogin(""); }
+  // (refused - off, another address, a lock: the login with the server's word, never a blank page)
+  else showLogin((r && r.data && r.data.error) || "");
 }
 
 boot();

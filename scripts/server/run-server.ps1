@@ -216,6 +216,9 @@ if ($first) {
             $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
             try { $v = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
         }
+        # (one kept from before the 12 characters: the server would ignore it)
+        $kept = Cfg-Get 'admin_password'
+        if (-not $v -and $kept -and $kept.Length -lt 12) { Say 'The password set is shorter than 12 characters, and the server ignores it: type a new one (- for none).' 'A senha atual tem menos de 12 caracteres, e o servidor a ignora: digite uma nova (- para nenhuma).'; if (-not [Console]::IsInputRedirected) { continue } }
         if (-not $v) { break }
         if ($v -eq '-') { Cfg-Set 'admin_password' ''; break }
         if ($v.Length -lt 12) { Say 'At least 12 characters.' 'Pelo menos 12 caracteres.'; continue }

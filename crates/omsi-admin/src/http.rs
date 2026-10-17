@@ -13,9 +13,11 @@
 //! origin, from the server's own address or one of `admin_web_origins`. No answer carries
 //! `Access-Control-Allow-Origin`: another site's page cannot read it.
 
+use crate::audit::without_address;
 use crate::auth::{LoginError, SessionInfo};
 use crate::hub::{Actor, Hub, Origin};
 use crate::op::Op;
+use crate::perm::Role;
 use serde_json::{json, Value};
 use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
@@ -182,7 +184,9 @@ fn admitted(req: &Request, cfg: &WebCfg) -> Result<(IpAddr, bool), Response> {
             }
             // (the proxy's own word, as for the address: the last line, its last value - a proxy
             // that adds to the client's header puts its own after it)
-            let https = req.last_header("x-forwarded-proto").and_then(|v| v.rsplit(',').next()).is_some_and(|p| p.trim().eq_ignore_ascii_case("https")) || req.last_header("cf-visitor").is_some_and(|v| v.replace(' ', "").contains("\"scheme\":\"https\""));
+            // (`CF-Visitor` only from Cloudflare: behind another proxy it is the client's own)
+            let https = req.last_header("x-forwarded-proto").and_then(|v| v.rsplit(',').next()).is_some_and(|p| p.trim().eq_ignore_ascii_case("https"))
+                || (cfg.proxy_header == ProxyHeader::CfConnectingIp && req.last_header("cf-visitor").is_some_and(|v| v.replace(' ', "").contains("\"scheme\":\"https\"")));
             if !https {
                 return Err(error("403 Forbidden", "the administration is reached over HTTPS only"));
             }
@@ -192,7 +196,8 @@ fn admitted(req: &Request, cfg: &WebCfg) -> Result<(IpAddr, bool), Response> {
                 ProxyHeader::RealIp => req.last_header("x-real-ip"),
                 ProxyHeader::CfConnectingIp => req.last_header("cf-connecting-ip"),
             };
-            let said = said.and_then(|v| v.trim().parse::<IpAddr>().ok()).ok_or_else(|| error("403 Forbidden", "the proxy did not say whose request it is (admin_proxy_header)"))?;
+            // (`::ffff:127.0.0.1` is 127.0.0.1)
+            let said = said.and_then(|v| v.trim().parse::<IpAddr>().ok()).map(|ip| ip.to_canonical()).ok_or_else(|| error("403 Forbidden", "the proxy did not say whose request it is (admin_proxy_header)"))?;
             // (this machine comes straight, never through the proxy: a proxy saying so passes
             // on what its client wrote - a tunnel below HTTP, a proxy that adds no address)
             if said.is_loopback() || said.is_unspecified() {
@@ -312,7 +317,10 @@ pub fn handle(hub: &Hub, cfg: &WebCfg, req: &Request) -> Option<Response> {
 }
 
 fn login(hub: &Hub, source: IpAddr, direct: bool, body: &Value) -> Response {
-    let password = body.get("password").and_then(Value::as_str).unwrap_or("");
+    // (a body that could not be read - cut, too long, not JSON - is no guess at the password)
+    let Some(password) = body.get("password").and_then(Value::as_str).filter(|p| !p.is_empty()) else {
+        return error("400 Bad Request", "send the password as JSON: {\"password\": \"…\"}");
+    };
     let r = hub.auth().login_from(password, source, direct, Instant::now());
     match r {
         Ok((token, info)) => {
@@ -348,7 +356,13 @@ fn get(hub: &Hub, req: &Request, s: &SessionInfo, path: &str) -> Response {
         "/api/admin/events" => {
             let after = req.param("after").and_then(|v| v.parse().ok()).unwrap_or(0);
             let audit_after = req.param("audit_after").and_then(|v| v.parse().ok()).unwrap_or(0);
-            json_answer("200 OK", json!({ "ops": hub.recent(50), "audit": hub.audit_since(audit_after, 100), "after": after }))
+            let (mut ops, mut audit) = (hub.recent(50), hub.audit_since(audit_after, 100));
+            // (the admins' addresses for the admins only)
+            if s.role != Role::Admin {
+                ops.iter_mut().for_each(|o| o.actor = without_address(&o.actor));
+                audit.iter_mut().for_each(|e| e.actor = without_address(&e.actor));
+            }
+            json_answer("200 OK", json!({ "ops": ops, "audit": audit, "after": after }))
         }
         p if p.starts_with("/api/admin/ops/") => match p["/api/admin/ops/".len()..].parse::<u64>().ok().and_then(|id| hub.record(id)) {
             Some(r) => json_answer("200 OK", json!({ "op": r })),
@@ -500,7 +514,12 @@ mod tests {
         assert_eq!(R::post("/api/admin/login", pw.clone()).send(&h, &cfg).0, "200 OK");
         // the proxy, over https (Cloudflare's way of saying so too), saying whose request it is
         assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("X-Forwarded-Proto: https").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg).0, "200 OK");
-        assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("CF-Visitor: {\"scheme\":\"https\"}").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg).0, "200 OK");
+        // (Cloudflare's `CF-Visitor` from Cloudflare only: behind Caddy or nginx it is the
+        // client's own)
+        assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("CF-Visitor: {\"scheme\":\"https\"}").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg).0, "403 Forbidden");
+        assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("X-Forwarded-Proto: http").with("CF-Visitor: {\"scheme\":\"https\"}").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg).0, "403 Forbidden");
+        let cf = WebCfg { proxy_header: ProxyHeader::CfConnectingIp, ..cfg.clone() };
+        assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("CF-Visitor: {\"scheme\":\"https\"}").with("CF-Connecting-IP: 203.0.113.9").send(&h, &cf).0, "200 OK");
         // the proxy's word on the scheme is its own last one: a client's "https" before a
         // proxy that adds "http" is plain HTTP
         assert_eq!(R::post("/api/admin/login", pw.clone()).from("10.0.0.1:1").with("X-Forwarded-Proto: https").with("X-Forwarded-Proto: http").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg).0, "403 Forbidden");
@@ -542,7 +561,7 @@ mod tests {
         let h = hub();
         let cfg = WebCfg { mode: WebMode::Remote, ..WebCfg::default() };
         let pw = |p: &str| R::post("/api/admin/login", json!({ "password": p })).with("X-Forwarded-Proto: https");
-        for said in ["127.0.0.1", "127.9.8.7", "::1", "0.0.0.0"] {
+        for said in ["127.0.0.1", "127.9.8.7", "::1", "0.0.0.0", "::ffff:127.0.0.1", "::ffff:0.0.0.0"] {
             assert_eq!(pw("admin secret").with(&format!("X-Forwarded-For: {said}")).send(&h, &cfg).0, "403 Forbidden", "{said}");
         }
         // thirty wrong passwords from afar lock the door for everybody through the proxy ...
@@ -552,6 +571,38 @@ mod tests {
         assert_eq!(pw("admin secret").with("X-Forwarded-For: 203.0.113.50").send(&h, &cfg).0, "429 Too Many Requests");
         // ... and leave the operator's own direct login alone
         assert_eq!(R::post("/api/admin/login", json!({ "password": "admin secret" })).send(&h, &cfg).0, "200 OK");
+    }
+
+    /// A body that could not be read (cut, too long, not JSON, no password) is answered 400
+    /// and is no wrong password: it locks nothing and is not noted as one.
+    #[test]
+    fn an_unreadable_login_is_no_guess() {
+        let h = hub();
+        let cfg = WebCfg::default();
+        let mut cut = R::post("/api/admin/login", json!({}));
+        cut.body = b"{\"password\": \"admin sec".to_vec();
+        for _ in 0..10 {
+            assert_eq!(cut.send(&h, &cfg).0, "400 Bad Request");
+            assert_eq!(R::post("/api/admin/login", json!({})).send(&h, &cfg).0, "400 Bad Request");
+            assert_eq!(R::post("/api/admin/login", json!({ "password": 7 })).send(&h, &cfg).0, "400 Bad Request");
+        }
+        assert!(h.audit_since(0, 100).is_empty(), "{:?}", h.audit_since(0, 100));
+        assert_eq!(R::post("/api/admin/login", json!({ "password": "admin secret" })).send(&h, &cfg).0, "200 OK");
+    }
+
+    /// The admins' addresses are for the admins: a moderator's events name the sessions
+    /// without them.
+    #[test]
+    fn a_moderator_sees_no_admin_address() {
+        let h = hub();
+        let cfg = WebCfg { mode: WebMode::Remote, ..WebCfg::default() };
+        let (_, v) = R::post("/api/admin/login", json!({ "password": "admin secret" })).with("X-Forwarded-Proto: https").with("X-Forwarded-For: 203.0.113.9").send(&h, &cfg);
+        assert!(v["session"]["actor"].as_str().unwrap().contains("203.0.113.9"), "{v}");
+        let m = login(&h, &cfg, "mod secret");
+        let a = login(&h, &cfg, "admin secret");
+        let text = |t: &str| R::get("/api/admin/events").token(t).send(&h, &cfg).1.to_string();
+        assert!(!text(&m).contains("203.0.113.9"), "{}", text(&m));
+        assert!(text(&a).contains("203.0.113.9"), "{}", text(&a));
     }
 
     /// A page of another site whose name was turned to this machine (DNS rebinding) still

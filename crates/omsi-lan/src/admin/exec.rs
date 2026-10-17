@@ -45,6 +45,8 @@ pub enum Exec {
 pub fn perm_of(a: &Action) -> Perm {
     match a {
         Action::Time(_) | Action::Speed(_) | Action::Clock(_) | Action::Weather(_) | Action::Traffic(_) | Action::PassengerDensity(_) => Perm::World,
+        // (moving other players' buses - admins' too - is the admin's)
+        Action::Bring(_) | Action::BringAll => Perm::World,
         _ => Perm::Moderate,
     }
 }
@@ -72,6 +74,7 @@ fn subject(a: &Action) -> Option<u32> {
     match a {
         Action::Kick { id, .. } | Action::Bring(id) | Action::Goto(id) | Action::Tell { id, .. } | Action::Duty { id, .. } | Action::DutyOff(id) | Action::Unstick(id) => Some(*id),
         Action::Service { whom: Whom::Player(id), .. } => Some(*id),
+        Action::Notify { who, .. } => who.parse().ok(),
         _ => None,
     }
 }
@@ -198,7 +201,7 @@ pub fn exec(lan: &mut LanSession, adm: &ServerAdmin, actor: &Actor, action: &Act
     use Exec::Done;
     let perm = perm_of(action);
     if !actor.role.allows(perm) {
-        return Done(Outcome::rejected(format!("a {} may not change the server's world (clock, weather, traffic, passengers)", actor.role.name())));
+        return Done(Outcome::rejected(format!("a {} may not do this: the clock, the weather, the traffic, the passengers and bringing players are the admin's", actor.role.name())));
     }
     let list = players(lan, adm);
     // the player picked is still the one (not who has the number since)
@@ -290,6 +293,11 @@ mod tests {
         assert_eq!(split_guard("kick 3 spam like 12#3"), ("kick 3 spam like 12#3".into(), None));
         assert_eq!(split_guard("service repair 4#8"), ("service repair 4".into(), Some(Target { id: 4, conn: 8 })));
         assert_eq!(split_guard("tell 5#2 see 6#1"), ("tell 5 see 6#1".into(), Some(Target { id: 5, conn: 2 })));
+        // (a notice for one player names them, as its tag does; one for all names nobody)
+        let (line, guard) = split_guard("notify 3#17 9 5 info Hi");
+        assert_eq!(guard, Some(Target { id: 3, conn: 17 }));
+        assert_eq!(Action::parse(&line).as_ref().and_then(subject), Some(3));
+        assert_eq!(Action::parse("notify all 9 5 info Hi").as_ref().and_then(subject), None);
     }
 
     #[test]
@@ -299,6 +307,10 @@ mod tests {
         assert_eq!(perm_of(&Action::Clock(0.0)), Perm::World);
         assert_eq!(perm_of(&Action::Weather(WeatherAction::Next)), Perm::World);
         assert_eq!(perm_of(&Action::PassengerDensity(1.0)), Perm::World);
+        assert_eq!(perm_of(&Action::BringAll), Perm::World);
+        assert_eq!(perm_of(&Action::Bring(2)), Perm::World);
+        assert_eq!(perm_of(&Action::Goto(2)), Perm::Moderate);
+        assert_eq!(perm_of(&Action::Unstick(2)), Perm::Moderate);
         // the web's operations are the menu's actions
         let t = Target { id: 3, conn: 9 };
         assert_eq!(action_of(&Op::Kick { target: t, reason: Some("x".into()) }), Action::parse("kick 3 x").unwrap());

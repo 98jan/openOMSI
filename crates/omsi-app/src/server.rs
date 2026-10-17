@@ -126,6 +126,7 @@ fn start_administration(cfg: &ServerCfg, path: &Path) {
     let audit = path.parent().map(|d| d.join("admin-audit.log"));
     let hub = std::sync::Arc::new(omsi_admin::Hub::new(omsi_admin::Auth::new(pw, Default::default()), omsi_admin::Audit::new(audit, 1 << 20)));
     omsi_lan::admin::install_hub(hub.clone());
+    omsi_net::ws::believe_cf_connecting_ip(cfg.gateway_cf_connecting_ip);
     // the web panel and its API on the gateway (`admin_web`: who may reach them)
     let web = omsi_admin::WebCfg { mode: cfg.admin_web, origins: cfg.admin_web_origins.clone(), trusted_proxies: cfg.admin_trusted_proxies.clone(), proxy_header: cfg.admin_proxy_header, traffic_max: crate::game_lists::TRAFFIC_MAX };
     let has_password = !cfg.admin_password.is_empty() || !cfg.moderator_password.is_empty();

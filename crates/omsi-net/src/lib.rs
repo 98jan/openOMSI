@@ -81,6 +81,7 @@
 pub const LEFT_SERVER: &str = "LAN: disconnected from the server: ";
 
 mod admission;
+pub use admission::source_ip;
 pub mod addrs;
 pub mod bridge;
 pub mod wire;

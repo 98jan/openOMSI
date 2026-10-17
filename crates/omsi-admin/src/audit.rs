@@ -33,6 +33,14 @@ pub struct Entry {
     pub detail: String,
 }
 
+/// Who, without the address (`web#2 (192.0.2.1)` → `web#2`): for whom may not see it.
+pub fn without_address(actor: &str) -> String {
+    match actor.rsplit_once(" (") {
+        Some((who, rest)) if rest.strip_suffix(')').is_some_and(|a| a.parse::<std::net::IpAddr>().is_ok()) => who.to_string(),
+        _ => actor.to_string(),
+    }
+}
+
 pub struct Audit {
     entries: VecDeque<Entry>,
     seq: u64,
@@ -50,7 +58,8 @@ impl Audit {
     pub fn record(&mut self, actor: &str, role: Option<Role>, action: &str, target: &str, result: &str, detail: &str) -> u64 {
         self.seq += 1;
         let e = Entry { seq: self.seq, at: crate::unix_now(), actor: clean(actor, 80), role, action: clean(action, 40), target: clean(target, 120), result: clean(result, 20), detail: clean(detail, 200) };
-        log::info!("admin audit: {} [{}] {} {} -> {} {}", e.actor, e.role.map(Role::name).unwrap_or("-"), e.action, e.target, e.result, e.detail);
+        // (the general log is no account's own: no address in it)
+        log::info!("admin audit: {} [{}] {} {} -> {} {}", without_address(&e.actor), e.role.map(Role::name).unwrap_or("-"), e.action, e.target, e.result, e.detail);
         self.write(&e);
         if self.entries.len() >= KEEP {
             self.entries.pop_front();
@@ -79,7 +88,12 @@ impl Audit {
         // (the records name the admins' addresses: for the server's own account only)
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut open, 0o600);
-        let r = open.open(path).and_then(|mut f| writeln!(f, "{line}"));
+        let r = open.open(path).and_then(|mut f| {
+            // (a file of before, made with another mode, too)
+            #[cfg(unix)]
+            f.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
+            writeln!(f, "{line}")
+        });
         if let Err(err) = r {
             log::warn!("admin audit: not written to {}: {err}", path.display());
         }
@@ -117,6 +131,32 @@ mod tests {
         a.record("player 2 'x\nkick 3'", None, "kick", "player 3 '<b>'", "applied", "why\r\nnot");
         let e = a.since(a.last_seq() - 1, 1).remove(0);
         assert_eq!((e.actor.as_str(), e.target.as_str(), e.detail.as_str()), ("player 2 'x kick 3'", "player 3 '<b>'", "why not"));
+    }
+
+    /// A log made before with another mode (`0644`) is the server's own account's too once
+    /// it is written to; the address is out of the general log and of a moderator's view.
+    #[cfg(unix)]
+    #[test]
+    fn a_log_of_before_is_closed_too() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("omsi-audit-mode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("admin-audit.log");
+        std::fs::write(&path, "").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        Audit::new(Some(path.clone()), 1 << 20).record("web#1 (192.0.2.1)", Some(Role::Admin), "say", "", "applied", "");
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_address_can_be_left_out() {
+        assert_eq!(without_address("web#2 (192.0.2.1)"), "web#2");
+        assert_eq!(without_address("web (2001:db8::1)"), "web");
+        assert_eq!(without_address("player 5 'Name (x)'"), "player 5 'Name (x)'");
+        assert_eq!(without_address("web#1 (admin)"), "web#1 (admin)");
+        assert_eq!(without_address("local tool"), "local tool");
     }
 
     #[test]

@@ -538,17 +538,27 @@ impl WsGateway {
 const ADMIN_LOCK_AFTER: usize = 5;
 const ADMIN_LOCK_WINDOW: Duration = Duration::from_secs(120);
 
-fn client_ip(head: &str, peer: Option<SocketAddr>) -> Option<std::net::IpAddr> {
+/// Behind Cloudflare's proxy and one of this machine, the player's address is Cloudflare's
+/// `CF-Connecting-IP`, not the last `X-Forwarded-For` (an edge's): `gateway_proxy_header`.
+static CF_FIRST: AtomicBool = AtomicBool::new(false);
+
+/// Believe `CF-Connecting-IP` before `X-Forwarded-For` (`gateway_proxy_header =
+/// cf-connecting-ip`): only with Cloudflare in front, which writes it over the client's own.
+pub fn believe_cf_connecting_ip(on: bool) {
+    CF_FIRST.store(on, Ordering::Relaxed);
+}
+
+fn client_ip(head: &str, peer: Option<SocketAddr>, cf_first: bool) -> Option<std::net::IpAddr> {
     let peer = peer?;
     if !peer.ip().is_loopback() {
         return Some(peer.ip());
     }
     // (the address the proxy added - the last of X-Forwarded-For: a CF-Connecting-IP or an
     // earlier address may be the client's own, passed on by a proxy on this machine; Cloudflare
-    // writes both, the same)
-    last_header(head, "x-forwarded-for")
-        .and_then(|v| v.rsplit(',').next())
-        .or_else(|| header(head, "cf-connecting-ip"))
+    // writes both, the same - unless the operator says Cloudflare is in front)
+    let forwarded = || last_header(head, "x-forwarded-for").and_then(|v| v.rsplit(',').next());
+    let cf = || last_header(head, "cf-connecting-ip");
+    if cf_first { cf().or_else(forwarded) } else { forwarded().or_else(cf) }
         .map(str::trim)
         .and_then(|v| v.parse::<std::net::IpAddr>().ok())
         .filter(|ip| !ip.is_loopback())
@@ -628,7 +638,7 @@ fn serve(stream: TcpStream, slot: Option<SourceSlot>, target: SocketAddr, info: 
     stream.set_read_timeout(Some(HEAD_WAIT)).map_err(|e| e.to_string())?;
     let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
     let upgrade = req.to_ascii_lowercase().contains("upgrade: websocket");
-    let client = client_ip(&req, peer);
+    let client = client_ip(&req, peer, CF_FIRST.load(Ordering::Relaxed));
     let source = client.map(|ip| ip.to_string()).unwrap_or_else(|| peer.map(|p| p.ip().to_string()).unwrap_or_else(|| "?".into()));
     let _slot = match (slot, client) {
         (Some(slot), _) => Some(slot),
@@ -1077,19 +1087,29 @@ mod tests {
         let far: SocketAddr = "203.0.113.7:50000".parse().unwrap();
         let req = |h: &str| format!("GET / HTTP/1.1\r\nHost: x\r\n{h}Upgrade: websocket\r\n\r\n");
         let ip = |s: &str| Some(s.parse::<std::net::IpAddr>().unwrap());
-        assert_eq!(client_ip(&req("X-Forwarded-For: 10.0.0.1, 198.51.100.4\r\n"), Some(local)), ip("198.51.100.4"));
-        assert_eq!(client_ip(&req("X-Real-IP: 2001:db8::1\r\n"), Some(local)), None);
+        fn client_ip_x(h: &str, p: Option<SocketAddr>) -> Option<std::net::IpAddr> {
+            client_ip(h, p, false)
+        }
+        assert_eq!(client_ip_x(&req("X-Forwarded-For: 10.0.0.1, 198.51.100.4\r\n"), Some(local)), ip("198.51.100.4"));
+        assert_eq!(client_ip_x(&req("X-Real-IP: 2001:db8::1\r\n"), Some(local)), None);
         // (the proxy's own address, the last X-Forwarded-For: a CF-Connecting-IP through a
         // proxy on this machine may be the client's own)
-        assert_eq!(client_ip(&req("CF-Connecting-IP: 192.0.2.9\r\nX-Forwarded-For: 198.51.100.4\r\n"), Some(local)), ip("198.51.100.4"));
-        assert_eq!(client_ip(&req("X-Forwarded-For: 192.0.2.9\r\nX-Forwarded-For: 198.51.100.4\r\n"), Some(local)), ip("198.51.100.4"));
-        assert_eq!(client_ip(&req("CF-Connecting-IP: 192.0.2.9\r\n"), Some(local)), ip("192.0.2.9"));
+        assert_eq!(client_ip_x(&req("CF-Connecting-IP: 192.0.2.9\r\nX-Forwarded-For: 198.51.100.4\r\n"), Some(local)), ip("198.51.100.4"));
+        assert_eq!(client_ip_x(&req("X-Forwarded-For: 192.0.2.9\r\nX-Forwarded-For: 198.51.100.4\r\n"), Some(local)), ip("198.51.100.4"));
+        assert_eq!(client_ip_x(&req("CF-Connecting-IP: 192.0.2.9\r\n"), Some(local)), ip("192.0.2.9"));
         // no proxy: the peer; a header from the internet is not believed
-        assert_eq!(client_ip(&req(""), Some(local)), None);
-        assert_eq!(client_ip(&req("X-Forwarded-For: 127.0.0.1\r\n"), Some(local)), None);
-        assert_eq!(client_ip(&req("X-Forwarded-For: 198.51.100.4\r\n"), Some(far)), ip("203.0.113.7"));
-        assert_eq!(client_ip(&req("X-Forwarded-For: not-an-address\r\n"), Some(local)), None);
-        assert_eq!(client_ip(&req(""), None), None);
+        assert_eq!(client_ip_x(&req(""), Some(local)), None);
+        assert_eq!(client_ip_x(&req("X-Forwarded-For: 127.0.0.1\r\n"), Some(local)), None);
+        assert_eq!(client_ip_x(&req("X-Forwarded-For: 198.51.100.4\r\n"), Some(far)), ip("203.0.113.7"));
+        assert_eq!(client_ip_x(&req("X-Forwarded-For: not-an-address\r\n"), Some(local)), None);
+        assert_eq!(client_ip_x(&req(""), None), None);
+        // Cloudflare in front of a proxy of this machine (`gateway_proxy_header =
+        // cf-connecting-ip`): the player, not the edge the last X-Forwarded-For names
+        let both = req("CF-Connecting-IP: 192.0.2.9\r\nX-Forwarded-For: 192.0.2.9, 172.70.1.1\r\n");
+        assert_eq!(client_ip(&both, Some(local), true), ip("192.0.2.9"));
+        assert_eq!(client_ip(&both, Some(local), false), ip("172.70.1.1"));
+        assert_eq!(client_ip(&req("X-Forwarded-For: 198.51.100.4\r\n"), Some(local), true), ip("198.51.100.4"));
+        assert_eq!(client_ip(&req("CF-Connecting-IP: 192.0.2.9\r\n"), Some(far), true), ip("203.0.113.7"));
     }
 
     #[test]
@@ -1181,7 +1201,7 @@ mod tests {
             String::from_utf8_lossy(&peek_head(&srv, Instant::now() + Duration::from_secs(5))).to_string()
         };
         assert!(peeked.contains("Upgrade: websocket"), "{}", peeked.len());
-        assert_eq!(client_ip(&peeked, Some(SocketAddr::from(([127, 0, 0, 1], 1)))), Some("198.51.100.4".parse().unwrap()));
+        assert_eq!(client_ip(&peeked, Some(SocketAddr::from(([127, 0, 0, 1], 1))), false), Some("198.51.100.4".parse().unwrap()));
     }
 
 
