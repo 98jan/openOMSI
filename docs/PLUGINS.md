@@ -312,7 +312,8 @@ end)
 F10 gives the panels the mouse; a click on the button sounds the horn. The whole example is
 [`docs/examples/plugins/trip_panel.lua`](examples/plugins/trip_panel.lua).
 
-`omsi.ui.version` is `3` (`2` before the navigator's board, `1` before the controls below):
+`omsi.ui.version` is `4` (`3` before boxes, stop lists and the other elements and keys marked
+4 below, `2` before the navigator's board, `1` before the controls):
 test `if omsi.ui and omsi.ui.version >= 2` in a plugin that should also run in an older openOMSI.
 The panels are the plugin's own: one plugin cannot change or remove another's, and when the
 plugin stops, or is loaded again after a change of its file, its panels go (its
@@ -375,8 +376,10 @@ Every element can have an `id`, a `color` and `visible = false` (left out, no ro
 | `text` | `text`, `size` (default 14), `weight` (`regular`, `medium`, `bold`), `align` (`left`, `center`, `right`), `wrap` (default `true`; `false`: one line, cut with "…") | a line or a paragraph, wrapped at the width it has; a line is 1.3 × `size` high |
 | `icon` | `name`, `size` (default 20) | one of the game's icons (Material Symbols names: `directions_bus`, `schedule`, `payments`, `warning`, `star`, `emoji_events`... - every one in [`assets/icons/material`](../assets/icons/material)); a name the game does not have draws nothing |
 | `row` | `children`, `gap` (default 8), `align` (`start`, `center`, `end`, `between`) | its children side by side, centred on each other; a child with `grow = true` takes the width the others leave (several share it); when they do not fit, texts, labels and buttons give up width alike |
-| `bar` | `value` (0 to 1), `height` (default 6), `color` (the filled part, default the game's amber), `background` | a progress bar; in a row 60 wide unless it grows |
-| `badge` | `text`, `color` (its fill, default amber), `text_color` | a small rounded label, 20 high |
+| `bar` | `value` (0 to 1), `height` (default 6), `color` (the filled part, default the game's amber), `background`; `segments` (4: `{ { value = 3, color = "#34B26E" }, ... }`, up to 16) | a progress bar; in a row 60 wide unless it grows. With `segments`: its parts side by side, each its share of their sum (early, on time, late...), in place of `value` |
+| `badge` | `text`, `color` (its fill, default amber), `text_color`, `weight` (4; default `medium`) | a small rounded label, 20 high |
+| `box` (4) | `children`, `gap` (default 4), `color` (default amber) | its children stacked in a box tinted with `color`, a stripe of it on the left: a note, an advice |
+| `stops` (4) | `stops` (`{ { name, time, expected, expected_color, state, tag }, ... }`, up to 128), `size` (13), `color` (the rail, default amber) | stops on a rail, a row each: `state` `"done"` (behind the bus: grey), `"now"` (the one it heads for: marked, bold) or `"ahead"` (the default); `time` on the right, `expected` before it in `expected_color`, and `tag` (`"terminus"`) before them |
 | `divider` | `color` | a thin line (in a row: upright) |
 | `space` | `size` (default 8) | empty room (in a row: across) |
 | `button` | `id` (needed), `text`, `icon`, `color` | a button 34 high, across the panel (in a row as wide as its label, or what it grows to); a click on it is `ui_click(panel id, button id)` |
@@ -386,7 +389,7 @@ Every element can have an `id`, a `color` and `visible = false` (left out, no ro
 | `input` | `id` (needed), `text`, `placeholder`, `max` (characters, default 100) | a text field: clicked, it takes what is typed (the keys do not reach the bus meanwhile) - `ui_change` at every key, Enter is a `ui_click` on it, Esc or a click elsewhere leaves it |
 | `tabs` | `id` (needed), `tabs` (a list of texts), `selected` (from 1) | a row of tabs: `ui_change(panel, id, number)` when one is chosen |
 | `chart` | `values` (up to 512 numbers), `min`, `max` (default: the values'), `height` (48), `style` (`line`, `bars`), `fill` | the values over the width: a line (filled below with `fill`) or bars |
-| `table` | `columns` (header texts), `rows` (a list of lists of texts), `widths` (shares of the width), `size` (13) | columns of texts, the header bold over a line |
+| `table` | `columns` (header texts), `rows` (a list of lists of texts; 4: a cell may be `{ text = "+3:12", color = "#FF5F57" }`), `widths` (shares of the width), `size` (13), `aligns` (4: `{ "left", "right", ... }`, each column's) | columns of texts, the header bold over a line |
 
 Another element with an `id` and `clickable = true` (a whole row, say) is clicked as a
 button is. Texts are shown as they are: they are not translated into the game's language.
@@ -394,8 +397,8 @@ button is. Texts are shown as they are: they are not translated into the game's 
 Keys the game does not know are left alone and an element of an unknown `type` is left out,
 so a plugin written for a later openOMSI still shows its panels here. A key of the wrong
 kind makes `set` return `false` and the reason. Limits, each plugin: 16 panels, 200
-elements in a panel (those in rows counted), 500 characters in a text, 64 in an id, rows 8
-deep, 512 values in a chart or cells in a table.
+elements in a panel (those in rows and boxes counted), 500 characters in a text, 64 in an id,
+rows and boxes 8 deep, 512 values in a chart or cells in a table.
 
 ### Example plugins
 
