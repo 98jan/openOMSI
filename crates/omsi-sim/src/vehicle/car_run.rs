@@ -229,17 +229,19 @@ mod tests {
         std::fs::write(
             &script,
             "{frame}\n\
-             (L.L.train_frontcoupling) ! (S.L.free_front)\n\
-             (L.L.train_backcoupling) ! (S.L.free_rear)\n\
-             (L.L.free_front) (L.L.train_me_reverse) ! && (S.L.lamp_front_white)\n\
-             (L.L.free_front) (L.L.train_me_reverse) && (S.L.lamp_front_red)\n\
-             (L.L.free_rear) (L.L.train_me_reverse) && (S.L.lamp_rear_white)\n\
-             (L.L.free_rear) (L.L.train_me_reverse) ! && (S.L.lamp_rear_red)\n\
+             (L.L.train_me_reverse) (S.L.turned)\n\
+             0 (S.L.lamp_front_white) (S.L.lamp_front_red) (S.L.lamp_rear_white) (S.L.lamp_rear_red)\n\
+             (L.L.train_frontcoupling) 0 = {if}\n\
+               (L.L.turned) {if} 1 (S.L.lamp_front_red) {else} 1 (S.L.lamp_front_white) {endif}\n\
+             {endif}\n\
+             (L.L.train_backcoupling) 0 = {if}\n\
+               (L.L.turned) {if} 1 (S.L.lamp_rear_white) {else} 1 (S.L.lamp_rear_red) {endif}\n\
+             {endif}\n\
              {end}\n",
         )
         .unwrap();
         let mut names = PLACE_IN_TRAIN.join("\n");
-        for extra in ["free_front", "free_rear"].iter().chain(&LAMPS) {
+        for extra in ["turned"].iter().chain(&LAMPS) {
             names.push('\n');
             names.push_str(extra);
         }
