@@ -471,6 +471,7 @@ impl ApplicationHandler for App {
     /// anything else is torn down (Cmd+Q ends the process without returning from the loop).
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         crate::game_lists::flush_settings(true);
+        self.abort_optimiser();
         self.finish_session();
         // (with the pipelines made since the start: puddles, Enhanced+)
         omsi_render::pipeline_cache::save();
