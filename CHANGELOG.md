@@ -127,6 +127,11 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 - The steering wheel comes back after a turn the way a bus's does: gently at town speed and
   damped on its way back, without swinging past the centre [#2103](https://github.com/openOMSI-org/openOMSI/issues/2103).
 
+**Launcher**
+
+- The bus picker's preview and details fill their side of the window for every bus: a bus
+  with a short description no longer leaves an empty strip left of its preview.
+
 **Traffic and timetable**
 
 - A test covers buses behind a bus standing long at a shared stop: each serves the stop from
