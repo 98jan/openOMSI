@@ -13,6 +13,7 @@ import { SETTINGS_TABS, GRAPHICS_PROFILE_KEYS } from './settings-schema.js';
 import { VersionsDialog } from './versions.js';
 import { RadioStations } from './radio-stations.js';
 import { ContentTest } from './content-test.js';
+import { OptimiseBlock } from './optimise.js';
 
 const REPO_URL = 'https://github.com/openOmsi-project/openOMSI';
 
@@ -177,6 +178,7 @@ function ButtonRow({ row }) {
 
 const CUSTOM = {
   preset: () => html`<${PresetRow} />`,
+  optimise: () => html`<${OptimiseBlock} />`,
   profiles: () => html`<${ProfilesBlock} />`,
   theme: () => html`<${ThemeRow} />`,
   launcher_layout: () => !onPhone && html`<${LauncherLayoutRow} />`,
