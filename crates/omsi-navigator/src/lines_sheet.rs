@@ -5,16 +5,51 @@ use super::line_times::{clock, Dep, LineTimes, Sheet};
 use super::*;
 
 impl Navigator {
-    /// The map's timetable for the session's date (the map's `TTData` with the eras in force laid over it), read the first time
-    /// a line is opened and kept until the date changes.
+    /// The map's timetable for the session's date (the map's `TTData` with the eras in force laid over it). It is read on a
+    /// worker the first time it is asked for (a big map's `TTData` takes a while, and the frame must not wait for it) and kept
+    /// until the date changes; until it is there this is `None` (the sheet says it is loading).
     pub(super) fn line_times(&mut self) -> Option<std::sync::Arc<LineTimes>> {
+        use std::sync::mpsc::TryRecvError;
         let sf = self.surface.clone()?;
-        if self.times.as_ref().is_none_or(|(d, _)| *d != self.date) {
-            let map_dir = sf.map_dir().to_path_buf();
-            let chrono = omsi_map::active_chrono_dirs(&map_dir, self.date);
-            self.times = Some((self.date, std::sync::Arc::new(LineTimes::load(&map_dir, &chrono))));
+        let date = self.date;
+        if let Some((_, t)) = self.times.as_ref().filter(|(d, _)| *d == date) {
+            return Some(t.clone());
         }
-        self.times.as_ref().map(|t| t.1.clone())
+        if let Some((asked, rx)) = self.times_job.as_ref() {
+            let asked = *asked;
+            match rx.try_recv() {
+                Ok(t) if asked == date => {
+                    self.times_job = None;
+                    self.times = Some((date, t.clone()));
+                    return Some(t);
+                }
+                Err(TryRecvError::Empty) if asked == date => return None,
+                // (the worker is gone: no timetable, rather than asking again every frame)
+                Err(TryRecvError::Disconnected) if asked == date => {
+                    self.times_job = None;
+                    let t = std::sync::Arc::new(LineTimes::default());
+                    self.times = Some((date, t.clone()));
+                    return Some(t);
+                }
+                // (it was asked for another date: asked for this one below)
+                _ => self.times_job = None,
+            }
+        }
+        let map_dir = sf.map_dir().to_path_buf();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new().name("navigator timetable".into()).spawn(move || {
+            let chrono = omsi_map::active_chrono_dirs(&map_dir, date);
+            let _ = tx.send(std::sync::Arc::new(LineTimes::load(&map_dir, &chrono)));
+        });
+        self.times_job = spawned.ok().map(|_| (date, rx));
+        None
+    }
+
+    /// What the sheet says while the timetable is being read.
+    fn sheet_loading(&mut self, ui: &mut Painter, area: Rect, s: f32) -> Rect {
+        let text = omsi_ui::tr("Loading the timetable...");
+        ui.text(&mut self.atlas, &self.fonts, &text, 12.5 * s, Weight::Medium, Vec2::new(area.x + 14.0 * s, area.y + 36.0 * s), Align::Left, TEXT_DIM);
+        area
     }
 
     /// The day group the timetable shows: the picked one, else today's (Monday to Friday, Saturday, Sunday).
@@ -34,8 +69,12 @@ impl Navigator {
     /// written on the map). Returns the scrolling area.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn sheet_panel(&mut self, ui: &mut Painter, sf: &omsi_map::package::Package, i: usize, area: Rect, s: f32, lt: &LinesText, hits: &mut Vec<(Rect, LinesHit)>) -> Rect {
-                let times = self.line_times().expect("the caller checked");
-        let sheet = times.line(&sf.lines()[i].number).expect("the caller checked");
+        let Some(times) = self.line_times() else { return self.sheet_loading(ui, area, s) };
+        // (read, and this line has no timetable after all: back to the list)
+        let Some(sheet) = times.line(&sf.lines()[i].number) else {
+            self.city.lines.sheet = false;
+            return area;
+        };
         let (x0, y0, pw, pad) = (area.x, area.y, area.w, 14.0 * s);
         let tab = |on: bool| if on { Color::rgba(60, 98, 156, 1.0) } else { Color::rgba(40, 46, 56, 1.0) };
         let (day, dir) = (self.sheet_day(), self.sheet_dir(sheet, i, sf));
