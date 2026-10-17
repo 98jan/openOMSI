@@ -38,6 +38,14 @@ const KNEEL_WALK: f64 = 0.5;
 const DOOR_REACH: f64 = 3.2;
 /// The walker's radius against walls and vehicles (m).
 const RADIUS: f64 = 0.28;
+/// The highest step the feet take (m).
+const STEP: f64 = 0.45;
+/// Ground steeper than this (the tangent of 50 degrees) is no ground to walk up: it is
+/// climbed no more than a step above where the walker last stood on walkable ground.
+const STEEP: f64 = 1.191_753_6;
+/// Half the run over which the ground's slope is measured (m): a kerb's edge is a step
+/// over it, not a slope.
+const SLOPE_RUN: f64 = 0.25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FootCam {
@@ -90,6 +98,9 @@ pub(crate) struct OnFoot {
     pub crouch: f32,
     pub door_request: Option<omsi_sim::people::DoorRequest>,
     pub door_request_send: f32,
+    /// The height the walker last stood at on walkable ground (no steeper than `STEEP`);
+    /// None after stepping out of a bus or the cab, until the ground stepped onto sets it.
+    pub walkable: Option<f64>,
 }
 
 /// What a walk leads to once walked.
@@ -196,6 +207,22 @@ impl OnFoot {
             WALK
         }
     }
+}
+
+/// How steep the ground is at `at`, the tangent of its slope: its heights `height` gives
+/// `SLOPE_RUN` either side of the point along both axes (one not found: the point's own,
+/// `here`).
+fn steepness(height: impl Fn(f64, f64) -> Option<f64>, at: DVec2, here: f64) -> f64 {
+    let h = |dx: f64, dy: f64| height(at.x + dx, at.y + dy).unwrap_or(here);
+    let gx = (h(SLOPE_RUN, 0.0) - h(-SLOPE_RUN, 0.0)) / (2.0 * SLOPE_RUN);
+    let gy = (h(0.0, SLOPE_RUN) - h(0.0, -SLOPE_RUN)) / (2.0 * SLOPE_RUN);
+    (gx * gx + gy * gy).sqrt()
+}
+
+/// Whether the feet may come onto ground at height `g` as steep as `steep` (a tangent),
+/// having last stood on walkable ground at height `walkable`.
+fn may_climb(g: f64, steep: f64, walkable: f64) -> bool {
+    steep <= STEEP || g <= walkable + STEP
 }
 
 fn wrap(a: f64) -> f64 {
@@ -376,6 +403,7 @@ impl App {
             crouch: 0.0,
             door_request: None,
             door_request_send: 0.0,
+            walkable: None,
         });
         self.view = "foot".into();
         self.service_msg = Some(("On foot: W A S D walk, Shift runs, C kneels, F4 free camera / F1 back, G sits down (by the driver's place: back at the wheel), Ctrl+Shift+G steps out of the bus".into(), 7.0));
@@ -508,6 +536,7 @@ impl App {
             crouch: 0.0,
             door_request: None,
             door_request_send: 0.0,
+            walkable: None,
         });
         self.view = "foot".into();
     }
@@ -1031,6 +1060,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
         f.seat = None;
         f.lift = 0.0;
         f.vz = 0.0;
+        f.walkable = None;
         f.pos = tr.from.lerp(tr.to, k);
         f.vel = (tr.to - tr.from).truncate() / tr.dur as f64;
         if f.vel.length() > 0.1 {
@@ -1143,14 +1173,25 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
                     next = push_out(next, o, RADIUS);
                 }
             }
-            match w.walk_height_reach(next.x, next.y, z + f.lift, 1.0) {
-                Some(g) if g - (z + f.lift) > 0.45 => {
+            // Steep ground (a bank, a wall's face the ground finds) is climbed no more than a
+            // step above where the walker last stood on walkable ground: out of the bus under
+            // a covered terminus the walker went up the bank beside it onto the deck, a few
+            // centimetres a frame, each a step of its own. Stepping out of a bus starts the
+            // limit afresh from the ground stepped onto.
+            let walkable = *f.walkable.get_or_insert(z);
+            let ground = w.walk_height_reach(next.x, next.y, z + f.lift, 1.0);
+            let steep = ground.filter(|g| *g > walkable + STEP).map(|g| steepness(|x, y| w.walk_height_reach(x, y, g, 0.5), next, g));
+            match ground {
+                Some(g) if g - (z + f.lift) > STEP || steep.is_some_and(|s| !may_climb(g, s, walkable)) => {
                     // too high a step: stay (and lose the speed into it)
                     next = f.pos.truncate();
                     f.vel *= 0.3;
                 }
                 Some(g) => {
                     let feet = z + f.lift;
+                    if steepness(|x, y| w.walk_height_reach(x, y, g, 0.5), next, g) <= STEEP {
+                        f.walkable = Some(g);
+                    }
                     if g >= feet - 0.02 || f.grounded() && feet - g < 0.4 {
                         // on the ground (down a kerb the feet follow it)
                         f.pos.z = g;
@@ -1174,6 +1215,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
         if f.inside.is_some() {
             f.vz = 0.0;
             f.lift = 0.0;
+            f.walkable = None;
         }
         if f.vz > 0.0 || f.lift > 0.0 {
             f.vz -= 9.81 * dt64;
@@ -1395,6 +1437,7 @@ mod tests {
             crouch: 0.0,
             door_request: None,
             door_request_send: 0.0,
+            walkable: None,
         }
     }
 
@@ -1433,6 +1476,38 @@ mod tests {
 
     /// C kneels: the eyes go down to about a metre over a moment (a picture from below,
     /// #1148), the walk becomes a shuffle, and C again stands up; not on a seat.
+    /// A kerb's edge is a step, not a slope; a bank of 60 degrees beside the road is climbed
+    /// a step high and no higher however small the bits it is walked up in; a ramp of 30
+    /// degrees all the way.
+    #[test]
+    fn steep_ground_is_climbed_no_more_than_a_step() {
+        let kerb = |x: f64, _: f64| Some(if x > 0.0 { 0.15 } else { 0.0 });
+        assert!(steepness(kerb, DVec2::new(0.01, 0.0), 0.15) <= STEEP);
+        let bank = |x: f64, _: f64| Some(x.max(0.0) * 60f64.to_radians().tan());
+        let ramp = |x: f64, _: f64| Some(x.max(0.0) * 30f64.to_radians().tan());
+        let climb = |ground: &dyn Fn(f64, f64) -> Option<f64>| {
+            let (mut x, mut walkable, mut z) = (-1.0, 0.0, 0.0);
+            for _ in 0..400 {
+                let at = DVec2::new(x + 0.01, 0.0);
+                let g = ground(at.x, at.y).unwrap();
+                let steep = steepness(ground, at, g);
+                if g - z > STEP || !may_climb(g, steep, walkable) {
+                    break;
+                }
+                if steep <= STEEP {
+                    walkable = g;
+                }
+                (x, z) = (at.x, g);
+            }
+            z
+        };
+        let up = climb(&bank);
+        // (the foot of the bank, within the quarter metre the slope is measured over, still
+        // counts as walkable)
+        assert!(up < STEP + SLOPE_RUN * 60f64.to_radians().tan() && up > STEP, "up the bank to {up}");
+        assert!(climb(&ramp) > 1.5, "up the ramp");
+    }
+
     #[test]
     fn kneeling_lowers_the_eyes_and_slows_the_walk() {
         let mut f = walker();
