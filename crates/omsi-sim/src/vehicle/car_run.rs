@@ -66,8 +66,9 @@ fn stored_vars(p: &Program) -> Vec<bool> {
 }
 
 /// The leading vehicle's host as a car's own scripts see it: they may ask it anything (the
-/// time, the weather, the depot), but their sounds and messages go nowhere, since the
-/// leading vehicle's scripts give those already.
+/// time, the weather, the depot), but what the leading vehicle's scripts do already does not
+/// happen twice: no sounds, no messages, no change coins handed out (and no script texture
+/// drawn, see [`quietly`]). The other callbacks only read.
 struct SilentHost<'a>(&'a mut crate::host::VehicleHost);
 
 impl omsi_script::Host for SilentHost<'_> {
@@ -75,6 +76,11 @@ impl omsi_script::Host for SilentHost<'_> {
         omsi_script::Host::sys_var(self.0, v)
     }
     fn callback(&mut self, name: &str, id: omsi_script::NameId, stacks: &mut omsi_script::Stacks, state: &mut State) {
+        if name.trim().eq_ignore_ascii_case("givechangecoin") {
+            // (its coin index taken off the stack, as the call does)
+            stacks.pop();
+            return;
+        }
         omsi_script::Host::callback(self.0, name, id, stacks, state);
     }
     fn sound_trigger(&mut self, _name: &str, _id: omsi_script::NameId) {}
@@ -82,14 +88,12 @@ impl omsi_script::Host for SilentHost<'_> {
     fn message(&mut self, _text: &str) {}
 }
 
-/// Run `f` with the leading vehicle's host made silent; the coins and script textures a
-/// car's run would add are left out as well.
+/// Run `f` with the leading vehicle's host made silent; its script textures are not drawn
+/// by a car's run either (the drawing callbacks see them as another machine's).
 fn quietly(lead: &mut VehicleInstance, f: impl FnOnce(&mut SilentHost)) {
-    let coins_before = lead.host.change_coins.len();
     let remote_before = std::mem::replace(&mut lead.host.remote_script_textures, true);
     f(&mut SilentHost(&mut lead.host));
     lead.host.remote_script_textures = remote_before;
-    lead.host.change_coins.truncate(coins_before);
 }
 
 /// A train car's scripts with variables of its own (see the module).

@@ -96,9 +96,9 @@ impl App {
         // note while the script keeps saying it and for a few seconds after (AI vehicles'
         // messages are not shown)
         let script_says = self.player.as_ref().and_then(|p| p.vehicle.host.fresh_message(SCRIPT_MESSAGE_SECS));
+        // (one note whose text follows the script: a value it prints changes every frame)
         if let Some(text) = script_says {
-            let key = format!("bus script {}", note_key(text));
-            say(key, text.to_string(), NoticeKind::Info);
+            say("bus script message".to_string(), text.to_string(), NoticeKind::Info);
         }
         // what is under the cursor, in the player's language (the scripts only
         // know internal, mostly German names)

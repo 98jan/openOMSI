@@ -104,7 +104,12 @@ impl Reach {
 /// faded out. From outside (`outside`) any part hides, walls and windows alike; from the cab
 /// only opaque ones do, not the glass one looks through.
 pub(crate) fn hiding_distance(ty: &omsi_sim::VehicleType, props: &[omsi_sim::vehicle::MeshProps], xf_of: impl Fn(usize) -> glam::Mat4, o: Vec3, dir: Vec3, outside: bool) -> f32 {
-    let mut nearest = f32::INFINITY;
+    hiding_part(ty, props, xf_of, o, dir, outside).map_or(f32::INFINITY, |(_, t)| t)
+}
+
+/// The part [`hiding_distance`] finds: its mesh and how far along the ray it is.
+pub(crate) fn hiding_part(ty: &omsi_sim::VehicleType, props: &[omsi_sim::vehicle::MeshProps], xf_of: impl Fn(usize) -> glam::Mat4, o: Vec3, dir: Vec3, outside: bool) -> Option<(usize, f32)> {
+    let mut nearest: Option<(usize, f32)> = None;
     for (i, vm) in ty.meshes.iter().enumerate() {
         let def = &ty.model.meshes[vm.def_index];
         let Some(p) = props.get(i).filter(|p| p.visible) else { continue };
@@ -123,7 +128,9 @@ pub(crate) fn hiding_distance(ty: &omsi_sim::VehicleType, props: &[omsi_sim::veh
         let tris: Vec<u32> = vm.data.ranges.iter().filter(|r| hides(r.2 as usize)).flat_map(|r| (r.0..r.0 + r.1).step_by(3)).collect();
         // (a face the eye stands in, the cab's own walls around the head, hides nothing)
         if let Some(t) = omsi_geometry::ray_triangles(o, dir, &vm.data, &xf, &tris).filter(|&t| t > 0.02) {
-            nearest = nearest.min(t);
+            if nearest.is_none_or(|(_, n)| t < n) {
+                nearest = Some((i, t));
+            }
         }
     }
     nearest
@@ -375,5 +382,89 @@ mod reach_tests {
         assert_eq!(picks(&bus("dash.dds", 1.004), false), Some(1));
         assert_eq!(picks(&bus("dash.dds", 0.995), true), Some(1));
         assert_eq!(pick_in(&bus("dash.dds", 1.2), DVec3::ZERO, Vec3::Y, 0.0, Reach::ANY).map(|h| h.0), Some(1));
+    }
+
+    /// Real buses: every switch that a ray from one of the bus's cameras picks with nothing
+    /// hiding it (aimed at the faces of the switch) is still picked from one of them with the
+    /// parts that hide (opaque ones) taken into account. The SD202's ticket rests inside its
+    /// printer until it is printed, and the buttons on the body's outer skin or named
+    /// `_external` (the doors' outside openers, the pram request) are for outside: those are out of reach from
+    /// inside, as they should be. Stock buses by default; more with
+    /// `OMSI_PICK_BUSES` (comma-separated `.bus` paths under the root).
+    #[test]
+    #[ignore = "needs the installed content; set OMSI_ROOT"]
+    fn installed_switches_stay_reachable_from_inside() {
+        let Some(root) = omsi_cfg::flags::OMSI_ROOT.live_os().map(std::path::PathBuf::from) else {
+            eprintln!("skipped: set OMSI_ROOT");
+            return;
+        };
+        let mut files: Vec<String> = ["Vehicles/MAN_SD202/MAN_D92.bus", "Vehicles/MAN_NL_NG/MAN_EN92_main.bus", "Vehicles/MAN_NL_NG/MAN_GN92_main.bus"].map(String::from).to_vec();
+        files.extend(std::env::var("OMSI_PICK_BUSES").unwrap_or_default().split(',').filter(|f| !f.trim().is_empty()).map(|f| f.trim().to_string()));
+        let mut lost = Vec::new();
+        for file in &files {
+            let ty = omsi_sim::VehicleType::load(&root, &root.join(file)).unwrap_or_else(|e| panic!("{file}: {e}"));
+            let mut v = omsi_sim::VehicleInstance::new(std::sync::Arc::new(ty), omsi_sim::VehicleHost::new(Default::default()));
+            // (a few frames standing: the scripts set which parts and switches show)
+            for _ in 0..3 {
+                v.update(1.0 / 30.0);
+            }
+            // (the driver's cameras and the passengers': a switch in the saloon is for the
+            // views there, not for the driver behind the cab wall)
+            let eyes: Vec<Vec3> = v.ty.def.cameras_driver.iter().chain(&v.ty.def.cameras_pax).map(|c| Vec3::from(c.pos)).collect();
+            assert!(!v.ty.def.cameras_driver.is_empty(), "{file}: no driver camera");
+            let half_width = v.ty.def.bounding_box.map(|b| b[0] * 0.5);
+            let (mut switches, mut reachable) = (0, 0);
+            for (i, vm) in v.ty.meshes.iter().enumerate() {
+                let def = &v.ty.model.meshes[vm.def_index];
+                if def.mouse_event.is_none() || !v.mesh_props.get(i).is_some_and(|p| p.visible) || vm.data.indices.len() < 3 {
+                    continue;
+                }
+                let xf = v.mesh_local_transform(i);
+                let faces = vm.data.indices.len() / 3;
+                // (the middle of each face, and a point near each corner of it: what the eye
+                // can see of the switch)
+                let samples = faces.min(400);
+                let aims: Vec<Vec3> = (0..samples)
+                    .flat_map(|k| {
+                        let f = k * faces / samples;
+                        let corner = |c: usize| xf.transform_point3(vm.data.positions[vm.data.indices[f * 3 + c] as usize]);
+                        let mid = (corner(0) + corner(1) + corner(2)) / 3.0;
+                        [mid, mid.lerp(corner(0), 0.8), mid.lerp(corner(1), 0.8), mid.lerp(corner(2), 0.8)]
+                    })
+                    .collect();
+                let picked = |with_parts: bool| {
+                    eyes.iter().any(|&eye| {
+                        aims.iter().any(|&aim| {
+                            let dir = (aim - eye).normalize_or_zero();
+                            let reach = if with_parts { Reach(hiding_distance(&v.ty, &v.mesh_props, |m| v.mesh_local_transform(m), eye, dir, false)) } else { Reach::ANY };
+                            pick_in(&v, v.position + eye.as_dvec3(), dir, 0.0, reach).is_some_and(|h| h.0 == i)
+                        })
+                    })
+                };
+                let name = def.mouse_event.clone().unwrap_or_default();
+                // (on the body's outer skin, or wider: a button for outside)
+                let side = aims.iter().map(|a| a.x.abs()).sum::<f32>() / aims.len() as f32;
+                let outside = half_width.is_some_and(|h| side >= h - 0.03) || name.ends_with("_external");
+                if !picked(false) || outside || name == "ticketprinter_getticket" {
+                    continue;
+                }
+                switches += 1;
+                if picked(true) {
+                    reachable += 1;
+                } else {
+                    // (what hides it, along the first aim from the first camera)
+                    let (eye, aim) = (eyes[0], aims[0]);
+                    let dir = (aim - eye).normalize_or_zero();
+                    let hider = super::hiding_part(&v.ty, &v.mesh_props, |m| v.mesh_local_transform(m), eye, dir, false);
+                    let what = hider.map(|(m, t)| {
+                        let file = v.ty.meshes[m].file.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+                        format!("{file} at {t:.3} m, switch at {:.3} m", (aim - eye).length())
+                    });
+                    lost.push(format!("{file}: {} behind {}", def.mouse_event.clone().unwrap_or_default(), what.unwrap_or_default()));
+                }
+            }
+            eprintln!("{file}: {reachable} of {switches} switches reachable from inside");
+        }
+        assert!(lost.is_empty(), "switches lost to the parts in front of them: {lost:#?}");
     }
 }

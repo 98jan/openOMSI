@@ -174,13 +174,13 @@ impl TrafficLightController {
             let p = self.stops[k];
             let asked = self.request.get(p.light).copied().unwrap_or(false);
             let active = if p.if_request { !asked } else { asked };
-            // A stop holds only a phase that lets traffic go: some light green, none in
-            // red-and-yellow. London's Brixton Road programs put a stop a second into
-            // red-and-yellow, and a queue waiting there held the junction in the
-            // changeover for good. (Every stock stop - the level crossings at 1 s and
-            // with the barriers closed, the side road's rest, the depot gates - falls in
-            // a green phase.)
-            let holdable = p.jump_to.is_some() || self.lets_traffic_go();
+            // A stop does not hold the changeover to green: while some light shows
+            // red-and-yellow the clock goes on. London's Brixton Road programs put a stop a
+            // second into red-and-yellow, and a queue waiting there held the junction in the
+            // changeover for good. Any other phase may hold: green, and also flashing
+            // yellow, dark or all red (mod level crossings rest with dark road lights,
+            // night programs without a jump).
+            let holdable = p.jump_to.is_some() || !self.in_changeover();
             if !active || !holdable {
                 self.passed.push(k);
                 continue;
@@ -224,10 +224,9 @@ impl TrafficLightController {
         }
     }
 
-    /// Some light shows green and none red-and-yellow: the program may wait here.
-    fn lets_traffic_go(&self) -> bool {
-        let aspects: Vec<Aspect> = (0..self.lights.len()).map(|i| Self::aspect(self.state(i))).collect();
-        aspects.iter().any(|a| matches!(a, Aspect::Green | Aspect::GreenYellow)) && !aspects.contains(&Aspect::RedYellow)
+    /// Some light shows red-and-yellow: the program is changing over to green.
+    fn in_changeover(&self) -> bool {
+        (0..self.lights.len()).any(|i| Self::aspect(self.state(i)) == Aspect::RedYellow)
     }
 
     /// State of light `i` at position `x` of the cycle (s).
