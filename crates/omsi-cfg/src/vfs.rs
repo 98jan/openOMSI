@@ -432,13 +432,37 @@ pub fn read(path: &Path) -> io::Result<Vec<u8>> {
     if let Some(b) = memory_file(path) {
         return Ok(b.to_vec());
     }
-    if let Some((m, key)) = sealed::locate(path) {
-        return m.read(&key);
+    let r = if let Some((m, key)) = sealed::locate(path) {
+        m.read(&key)
+    } else {
+        match locate(path) {
+            Some((m, key)) => m.read(&key),
+            None => read_disk_file(path),
+        }
+    };
+    if r.is_ok() && RECORDING.load(std::sync::atomic::Ordering::Relaxed) {
+        READS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(path.to_path_buf());
     }
-    match locate(path) {
-        Some((m, key)) => m.read(&key),
-        None => read_disk_file(path),
+    r
+}
+
+/// Every file `read` gave out while `record_reads` was on: what a LAN player's own bus
+/// really uses (the variant and paint driven, not its whole pack), to pass on to a server
+/// that lacks it.
+static RECORDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static READS: std::sync::Mutex<Option<std::collections::HashSet<PathBuf>>> = std::sync::Mutex::new(None);
+
+/// Note (or stop noting, and forget) the files `read` gives out.
+pub fn record_reads(on: bool) {
+    RECORDING.store(on, std::sync::atomic::Ordering::Relaxed);
+    if !on {
+        *READS.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
+}
+
+/// The files read since `record_reads` was switched on.
+pub fn reads() -> Vec<PathBuf> {
+    READS.lock().unwrap_or_else(|e| e.into_inner()).iter().flatten().cloned().collect()
 }
 
 fn read_disk_file(path: &Path) -> io::Result<Vec<u8>> {

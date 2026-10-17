@@ -40,6 +40,16 @@ pub struct ServerCfg {
     pub vehicles: Vec<String>,
     /// `GET /players` on the web port tells who drives what and where (for a web map).
     pub share_positions: bool,
+    /// A player whose bus the server lacks sends it, and the server passes it on to the
+    /// others (`mods::upload`).
+    pub accept_uploads: bool,
+    /// Days a bus players sent is kept when nobody uses it (`mods::vehicles::collect`).
+    pub uploads_keep_days: u64,
+    /// The map (and what it uses) goes to players who join without it (`mods`); off,
+    /// they install it themselves - the server's line is kept for the players' buses. A
+    /// `server.cfg` without the key shares it, as servers did before the key came; the new
+    /// file (`DEFAULT_CFG`) says 0.
+    pub share_maps: bool,
     /// The GreenTeaSpeak server and channel the players talk in (`voice`).
     pub voice: Option<crate::voice::VoiceServer>,
 }
@@ -104,6 +114,21 @@ vehicles =
 # positions - for a live map of the server on a website; tell your players when it is on
 share_positions = 0
 
+# a player whose bus this server does not have sends it the files that bus uses (the variant
+# and paint driven, not the whole pack); the server keeps them and passes them on to every
+# other player, so nobody sees a stand-in. Taken without asking and kept after a restart
+# (in ~/.openomsi/lan-store). With it on and vehicles empty, the players may choose any bus.
+# 1 = on, 0 = off
+accept_uploads = 1
+# days a bus players sent is kept when nobody drives it; when the disk runs short, the buses
+# nobody drives now go first, the least lately used first (no bus is refused for its size)
+uploads_keep_days = 30
+# a player who joins without the server's map gets it from the server (the map and the
+# objects, splines and vehicles it uses - gigabytes for a big map). Off: players install the
+# map themselves and are told which one is missing; the server's bandwidth goes to the
+# players' buses. 1 = on, 0 = off
+share_maps = 0
+
 # voice chat: the players hear each other where they stand, through GreenTeaSpeak and its
 # openOMSI plugin (as SaltyChat does for FiveM). voice_server_uid is the voice server's unique
 # id (its info panel; needed: without it there is no voice chat), voice_channel the in-game
@@ -118,6 +143,15 @@ voice_radio = 1
 ";
 
 impl ServerCfg {
+    /// The players' buses and the map as this config says (`mods`): whether the server takes
+    /// its players' buses, how long it keeps the ones nobody drives, and whether it passes
+    /// the map on to players who join without it.
+    pub fn apply_to_mods(&self) {
+        crate::mods::upload::accept(self.accept_uploads);
+        crate::mods::vehicles::keep_for_days(self.uploads_keep_days);
+        crate::mods::share_maps(self.share_maps);
+    }
+
     /// `traffic_max`: the most AI vehicles the game allows (`traffic` is capped there).
     pub fn load(path: &Path, traffic_max: usize) -> Result<ServerCfg> {
         if !path.is_file() {
@@ -163,6 +197,9 @@ impl ServerCfg {
             metar_station: kv.get("metar_station").map(|v| v.chars().filter(|c| c.is_ascii_alphabetic()).take(4).collect::<String>().to_ascii_uppercase()).unwrap_or_default(),
             vehicles: kv.get("vehicles").map(|v| v.split(';').map(|x| x.trim().replace('\\', "/")).filter(|x| !x.is_empty()).collect()).unwrap_or_default(),
             share_positions: flag("share_positions", false),
+            accept_uploads: flag("accept_uploads", true),
+            uploads_keep_days: num("uploads_keep_days", 30).clamp(1, 3650) as u64,
+            share_maps: flag("share_maps", true),
             voice: crate::voice::VoiceServer::from_kv(|k| kv.get(k).cloned()),
         })
     }
@@ -258,6 +295,30 @@ mod vehicles_tests {
         assert!(!allows(&list, "Vehicles/MAN_SD200/XMAN_SD77.bus"));
         // no list: every bus
         assert!(allows(&[], "Vehicles/Some_Mod/Bus.bus"));
+    }
+}
+
+#[cfg(test)]
+mod cfg_tests {
+    use super::{ServerCfg, DEFAULT_CFG};
+
+    fn load(text: &str) -> ServerCfg {
+        let dir = std::env::temp_dir().join(format!("omsi-server-cfg-{}-{}", std::process::id(), text.len()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("server.cfg");
+        std::fs::write(&path, text).unwrap();
+        let cfg = ServerCfg::load(&path, 100).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        cfg
+    }
+
+    /// A server that upgrades with its old `server.cfg` (no `share_maps`) goes on passing its
+    /// map to players who join without it; only the file written new leaves it to them.
+    #[test]
+    fn an_old_server_cfg_still_shares_the_map() {
+        assert!(load("name = old server\nmap = maps/Grundorf/global.cfg\n").share_maps);
+        assert!(!load(DEFAULT_CFG).share_maps);
+        assert!(!load("share_maps = 0\n").share_maps);
     }
 }
 

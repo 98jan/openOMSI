@@ -736,11 +736,18 @@ impl App {
         self.last = Instant::now();
     }
 
-    /// The first area of a streamed map is loading: show how far it got, and start the rest
-    /// of the world once it is there. Returns false while the loading screen is up.
+    /// The first area of a streamed map is loading, then what holds the start (`omsi_lan::game::start_held`):
+    /// show how far it got, start the world once it is there. False while the loading screen is up.
     pub(crate) fn drive_start(&mut self, event_loop: &ActiveEventLoop) -> bool {
         let Some(cam) = self.cam.starting.take() else {
-            return true;
+            let Some((caption, progress)) = omsi_lan::game::start_held() else { return true };
+            if let (Some(renderer), Some(scene)) = (self.renderer.take(), self.scene.take()) { self.loading_frame(renderer, scene, &caption, progress) }
+            // (--exit-after holds while the start waits - our bus on its way - as while loading)
+            if let Some(limit) = self.args.exit_after.filter(|l| self.started.elapsed().as_secs_f32() > *l) {
+                log::info!("exit after {limit} s while the start waited: {caption}");
+                crate::platform::exit(event_loop);
+            }
+            return false;
         };
         let (Some(renderer), Some(mut scene)) = (self.renderer.take(), self.scene.take()) else {
             self.cam.starting = Some(cam);
@@ -785,7 +792,8 @@ impl App {
                 log::warn!("this run was started again after the graphics device was lost ({n}): lighter graphics for this run");
                 self.service_msg = Some(("The graphics driver reset the card: the game started again with lighter graphics for this drive. Settings → Graphics keeps yours for the next start.".into(), 12.0));
             }
-            return true;
+            omsi_lan::game::drive_started(&self.args.lan_config(), &self.args.root, self.player.as_ref().map(|p| &p.vehicle));
+            return omsi_lan::game::start_held().is_none();
         };
         let name = self
             .world
@@ -798,6 +806,27 @@ impl App {
                 }
             })
             .unwrap_or_default();
+        // (the bar eases towards the count: it came in unevenly and jumped to its end)
+        let dt = self.menus.loading.tick();
+        if self.menus.loading.expected <= 0.0 {
+            self.menus.loading.expected = crate::ui::LoadTimes::expected(&self.args.map).unwrap_or(crate::ui::LOADING_FIRST_GUESS);
+            log::info!("loading: {:.1} s expected for {}", self.menus.loading.expected, self.args.map);
+        }
+        self.menus.loading.step(done as f32 / total.max(1) as f32, dt);
+        self.menus.loading.title = name.trim().to_string();
+        self.loading_frame(renderer, scene, name.trim(), self.menus.loading.shown());
+        self.cam.starting = Some(cam);
+        if let Some(limit) = self.args.exit_after {
+            if self.started.elapsed().as_secs_f32() > limit {
+                log::info!("exit after {limit} s while loading: {done} of {total} tiles");
+                crate::platform::exit(event_loop);
+            }
+        }
+        false
+    }
+
+    /// One loading screen picture (the map, or our bus going to the server): `title`, bar at `shown`.
+    fn loading_frame(&mut self, renderer: omsi_render::Renderer, mut scene: Scene, title: &str, shown: f32) {
         let mut reconfigure = false;
         if let (Some(ui), Some(s), Some(win)) = (
             self.ui.as_mut(),
@@ -807,15 +836,7 @@ impl App {
             scene.overlays.clear();
             let dpi = win.scale_factor() as f32;
             let scale = dpi * crate::ui::size_factor(s.config.height as f32, dpi, self.settings.ui_scale, self.settings.ui_scale_window);
-            // (the bar eases towards the count: it came in unevenly and jumped to its end)
-            let dt = self.menus.loading.tick();
-            if self.menus.loading.expected <= 0.0 {
-                self.menus.loading.expected = crate::ui::LoadTimes::expected(&self.args.map).unwrap_or(crate::ui::LOADING_FIRST_GUESS);
-                log::info!("loading: {:.1} s expected for {}", self.menus.loading.expected, self.args.map);
-            }
-            self.menus.loading.step(done as f32 / total.max(1) as f32, dt);
-            self.menus.loading.title = name.trim().to_string();
-            ui.loading(&renderer, &mut scene, s.config.width as f32, s.config.height as f32, scale, name.trim(), self.menus.loading.shown(), self.menus.loading.clock(), self.menus.loading.tip());
+            ui.loading(&renderer, &mut scene, s.config.width as f32, s.config.height as f32, scale, title, shown, self.menus.loading.clock(), self.menus.loading.tip());
             let acquired = s.acquire();
             // a swapchain that no longer fits the window (Vulkan says so after the switch
             // to full screen, without a resize event) is made again, as the game's own
@@ -877,14 +898,6 @@ impl App {
             }
         }
         self.scene = Some(scene);
-        self.cam.starting = Some(cam);
-        if let Some(limit) = self.args.exit_after {
-            if self.started.elapsed().as_secs_f32() > limit {
-                log::info!("exit after {limit} s while loading: {done} of {total} tiles");
-                crate::platform::exit(event_loop);
-            }
-        }
-        false
     }
 
 }
