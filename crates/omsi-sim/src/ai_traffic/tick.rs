@@ -303,6 +303,8 @@ impl TrafficSim {
             .flat_map(|c| c.approach.iter().flatten().copied())
             .fold(160.0f32, f32::max)
             .min(1200.0);
+        // (a train asks a light without a distance of its own from far off, C1b)
+        let train_reach = reach.max(crate::traffic::TRAIN_APPROACH);
         let mut indicating: Vec<(PlayerBox, u8)> = Vec::new();
         for c in &self.cars {
             // (a car indicating stands on the paths marked with its turn: the rear sections
@@ -317,12 +319,15 @@ impl TrafficSim {
                     }
                 }
             }
-            for (l, d) in self.way_lanes(&c.state, reach) {
+            let train = c.is_train();
+            let way = if train { self.train_way(&c.state, train_reach) } else { self.way_lanes(&c.state, reach) };
+            for (l, d) in way {
                 if let Some((ci, li)) = self.net.lanes[l].traffic_light {
                     if let Some(ctl) = self.lights.get_mut(ci) {
                         let gap = d - c.state.front;
-                        // (asked until its rear has left the lane, not its middle)
-                        if gap <= ctl.approach_dist(li) && d + self.net.lanes[l].length() + c.state.rear >= 0.0 {
+                        // (asked until its rear has left the lane, not its middle; a car
+                        // standing at the line asks whatever the light's distance)
+                        if ctl.asks(li, gap, c.state.speed, train) && d + self.net.lanes[l].length() + c.state.rear >= 0.0 {
                             if let Some(r) = ctl.request.get_mut(li) {
                                 *r = true;
                             }
@@ -334,23 +339,21 @@ impl TrafficSim {
         // the player's bus and the other players' vehicles ask too: a depot gate (Spandau's
         // `Omnibushof_S_1`, the exit arm on light 1) opens only for whoever asks, and the
         // player driving out of the depot at the start of a duty found it shut
-        let askers: Vec<(DVec3, f64)> = player
-            .iter()
-            .map(|p| (p.0, p.1))
-            .chain(self.others.iter().map(|(_, b)| (b.0, b.1)))
-            .collect();
+        let askers: Vec<PlayerBox> = player.iter().copied().chain(self.others.iter().map(|(_, b)| *b)).collect();
         indicating.extend(player.iter().map(|p| (*p, self.player_blinker)));
         indicating.extend(self.others.iter().map(|(id, b)| (*b, self.other_blinkers.get(id).copied().unwrap_or(0))));
         for (b, blinker) in &indicating {
             self.request_indicated(b, *blinker);
         }
-        for &(pos, heading) in &askers {
+        for &(pos, heading, ..) in &askers {
             // (off the lanes - a depot yard, a car park - a gate's lane that starts just
             // ahead, the way the bus is facing, is asked all the same: standing a few metres
             // beside every lane there, the bus never opened the barrier in front of it.
             // Only off the lanes: on the road it asked the lights of every lane up to 6 m
             // beside it - Winsenburg's bus light jumped for a bus driving past on the road
-            // next to the bus bays, #1790; on a lane, the lanes ahead below ask)
+            // next to the bus bays, #1790; on a lane, the lanes ahead below ask. Only road
+            // lights: a bus waiting beside a level crossing rang its barriers shut for
+            // nobody, the rail lane starting just ahead of it)
             if self.net.lane_along(pos, heading, LaneKind::Street, 2.5, 45.0).is_some() {
                 continue;
             }
@@ -359,6 +362,9 @@ impl TrafficSim {
             for l in 0..self.net.lanes.len() {
                 let lane = &self.net.lanes[l];
                 let Some((ci, li)) = lane.traffic_light else { continue };
+                if lane.kind != LaneKind::Street {
+                    continue;
+                }
                 let (p0, h0) = lane.at(0.0);
                 let d = (p0 - pos).truncate();
                 let (along, across) = (d.dot(fwd), d.perp_dot(fwd).abs());
@@ -373,11 +379,12 @@ impl TrafficSim {
         // the lights ahead within their approach distance, asked as the indicator says
         // (`indicated_requests`, #2532)
         let blinkers: Vec<u8> = player.iter().map(|_| self.player_blinker).chain(self.others.iter().map(|(id, _)| self.other_blinkers.get(id).copied().unwrap_or(0))).collect();
-        for ((pos, heading), blinker) in askers.into_iter().zip(blinkers) {
+        for ((pos, heading, half_len, _, speed), blinker) in askers.into_iter().zip(blinkers) {
             let mut near: Vec<(usize, usize, i32, f32)> = Vec::new();
             for (l, d) in self.lanes_ahead_of(pos, heading, reach) {
                 if let Some((ci, li)) = self.net.lanes[l].traffic_light {
-                    if self.lights.get(ci).is_some_and(|ctl| d <= ctl.approach_dist(li)) {
+                    // (`d` from the vehicle's middle; standing at the line it asks)
+                    if self.lights.get(ci).is_some_and(|ctl| d <= ctl.approach_dist(li) || ctl.asks(li, d - half_len, speed, false)) {
                         near.push((ci, li, self.net.lanes[l].turn, d));
                     }
                 }

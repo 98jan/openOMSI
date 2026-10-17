@@ -20,6 +20,15 @@ pub struct LightStop {
 /// `[approachdist]` (m): about four seconds at town speed.
 pub const DEFAULT_APPROACH: f32 = 50.0;
 
+/// How far before its stop line a train asks a light that sets no distance of its own (m):
+/// about the braking distance from 100 km/h. A level crossing's program rarely gives one
+/// (unset or 0), and its barriers must be down before the train comes.
+pub const TRAIN_APPROACH: f32 = 600.0;
+
+/// A vehicle standing with its front this close to the stop line (m) asks the light
+/// whatever its `[approachdist]`: with 0 the car waiting half a metre short never asked.
+pub const AT_LINE: f32 = 3.0;
+
 /// The `TrafficLightPhase` of an object no crossing light drives: a signal without a
 /// `[varparent]`, one whose crossing has no program, any other scripted object. Omsi.exe
 /// binds every placed object's `TrafficLightPhase` and `TrafficLightApproach` to a light
@@ -96,6 +105,20 @@ impl TrafficLightController {
     /// Request distance of light `i` (m).
     pub fn approach_dist(&self, i: usize) -> f32 {
         self.approach.get(i).copied().flatten().unwrap_or(DEFAULT_APPROACH)
+    }
+
+    /// Whether a vehicle `gap` m before light `i`'s stop line (negative: over it) at
+    /// `speed` m/s asks it. A distance the program sets counts for everyone; without one
+    /// (unset or 0) a train asks from `TRAIN_APPROACH`, a road vehicle from the default
+    /// (unset) or only at the line (0). Standing at the line, anyone asks.
+    pub fn asks(&self, i: usize, gap: f32, speed: f32, train: bool) -> bool {
+        let reach = match self.approach.get(i).copied().flatten() {
+            Some(d) if d > 0.0 => d,
+            _ if train => TRAIN_APPROACH,
+            Some(d) => d,
+            None => DEFAULT_APPROACH,
+        };
+        gap <= reach || (speed.abs() < 0.5 && gap <= AT_LINE)
     }
 
     /// Run the cycle clock on by `dt` seconds of game time, honouring the stop and jump

@@ -208,6 +208,11 @@ impl AiCar {
         self.body.kind == MotionKind::Rail
     }
 
+    /// A train (`is_train`), which asks a level crossing from far off.
+    pub fn is_train(&self) -> bool {
+        is_train(&self.vehicle.ty.def)
+    }
+
     /// Boarding at a stop: the script is told to open the doors (`AI_Scheduled_AtStation`).
     pub fn at_station(&self) -> bool {
         self.bus.as_ref().map(|b| b.at_station()).unwrap_or(false)
@@ -316,6 +321,12 @@ impl Footprint {
 /// The player's vehicle as the traffic sees it: centre, heading (deg), half length, half
 /// width, speed along the heading (m/s, negative when reversing).
 pub type PlayerBox = (DVec3, f64, f32, f32, f32);
+
+/// A train: a `.ovh` of `[type] 2` (the A3 underground, the OHE railcar, the regional
+/// trains). A tram is rail-bound too but no train: it asks its lights as a car does.
+pub fn is_train(def: &omsi_vehicle::Vehicle) -> bool {
+    matches!(def.kind, omsi_vehicle::VehicleKind::Other(2))
+}
 
 /// A random car out of the player's range: still on the map and still driving, but without
 /// a body, a script or a picture - a few numbers. It comes back as the same car (type,

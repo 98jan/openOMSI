@@ -24,7 +24,7 @@ pub use ai_state::{
 };
 pub use extend::LINK_TOLERANCE;
 pub use lane::{arc_point, pool_density, wrap_deg, Lane, LaneBuilder, LaneKey, LaneKind, AIR_NO_LIMIT_KMH, DEFAULT_PRIORITY};
-pub use lights::{Aspect, LightStop, TrafficLightController, DEFAULT_APPROACH, UNLINKED_PHASE};
+pub use lights::{Aspect, LightStop, TrafficLightController, AT_LINE, DEFAULT_APPROACH, TRAIN_APPROACH, UNLINKED_PHASE};
 #[cfg(test)]
 use ai_state::smooth01;
 #[cfg(test)]

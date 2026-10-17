@@ -50,6 +50,8 @@ mod lateral_tests;
 mod emergency_tests;
 #[cfg(test)]
 mod signal_tests;
+#[cfg(test)]
+mod request_tests;
 
 use crate::ai_motion::{
     back_in_ramp, pull_out_ramps, AiBody, MotionKind, BACK_IN_LAT_ACCEL, PULL_OUT_ACCEL,
