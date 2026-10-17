@@ -886,7 +886,9 @@ pub fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
             if m & 0o170000 == 0o120000 {
                 let mut target = String::new();
                 e.read_to_string(&mut target)?;
-                std::os::unix::fs::symlink(target, &out)?;
+                if link_stays_inside(&rel, Path::new(&target)) {
+                    std::os::unix::fs::symlink(target, &out)?;
+                }
                 continue;
             }
         }
@@ -896,12 +898,27 @@ pub fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
         #[cfg(unix)]
         if let Some(m) = mode {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(m & 0o7777))?;
+            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(m & 0o777))?;
         }
         #[cfg(not(unix))]
         let _ = mode;
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn link_stays_inside(rel: &Path, target: &Path) -> bool {
+    use std::path::Component;
+    let depth = rel.parent().map_or(0, |p| p.components().count());
+    target
+        .components()
+        .try_fold(depth, |d, c| match c {
+            Component::Normal(_) => Some(d + 1),
+            Component::CurDir => Some(d),
+            Component::ParentDir => d.checked_sub(1),
+            Component::RootDir | Component::Prefix(_) => None,
+        })
+        .is_some()
 }
 
 /// What the archive's top-level item `name` replaces in the installation.
@@ -1445,6 +1462,33 @@ mod tests {
         }
         assert!(install_archive_with(&bad, &place, false).is_err());
         assert_eq!(std::fs::read_to_string(dir.join("openomsi")).unwrap(), "new game");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_and_setuid_bits_do_not_leave_the_unpacked_folder() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("omsi-unpack-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let zip = root.join("pack.zip");
+        {
+            let mut z = zip::ZipWriter::new(std::fs::File::create(&zip).unwrap());
+            let o = zip::write::SimpleFileOptions::default();
+            z.add_symlink("App.app/Contents/Current", "Versions/A", o).unwrap();
+            z.add_symlink("App.app/escape", "../../outside", o).unwrap();
+            z.add_symlink("App.app/absolute", "/etc", o).unwrap();
+            z.start_file("App.app/run", o.unix_permissions(0o4755)).unwrap();
+            z.write_all(b"x").unwrap();
+            z.finish().unwrap();
+        }
+        let to = root.join("out");
+        unpack(&zip, &to).unwrap();
+        assert_eq!(std::fs::read_link(to.join("App.app/Contents/Current")).unwrap(), Path::new("Versions/A"));
+        assert!(!to.join("App.app/escape").is_symlink());
+        assert!(!to.join("App.app/absolute").is_symlink());
+        assert_eq!(std::fs::metadata(to.join("App.app/run")).unwrap().permissions().mode() & 0o7777, 0o755);
         let _ = std::fs::remove_dir_all(&root);
     }
 }
