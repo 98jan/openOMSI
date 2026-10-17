@@ -9,6 +9,9 @@ license = "AGPL-3.0-only"
 omsi-cfg = { path = "../omsi-cfg" }
 # (the updater: install, go back, the bad versions; no graphics in it)
 omsi-platform = { path = "../omsi-platform" }
+omsi-launcher-core = { path = "../omsi-launcher-core" }
+anyhow.workspace = true
+log.workspace = true
 serde_json.workspace = true
 
 [target.'cfg(unix)'.dependencies]

@@ -112,7 +112,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_GROUND_LANES` | bool | off | use | sim | Along every street lane, every metre, how far the ground lies over or under the lane. |
 | `OMSI_LAN_TRACE` | text | - | use | app | LAN CSV file: where the host's people are drawn. |
 | `OMSI_LIST_ALIGNED` | bool | off | use | scene | Log the splines aligned to the terrain. |
-| `OMSI_PROFILE` | bool | off | use | app, render, scene, sim, xr | Time per stage of the frame, logged. |
+| `OMSI_PROFILE` | bool | off | use | app, platform, render, scene, sim, xr | Time per stage of the frame, logged. |
 | `OMSI_PROFILE_GPU` | bool | off | use | app | Profile: wait for the GPU so its time shows as a stage of its own. |
 | `OMSI_PROFILE_JSON` | text | - | use | app | With OMSI_PROFILE and --exit-after: the exit summary (after the 15 s warm-up) as JSON into this file, see scripts/compare-performance.py. |
 | `OMSI_SUSP_TRACE` | text | - | use | app | Offscreen CSV: body height and each wheel's travel and load every frame. |
@@ -366,7 +366,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_HEALTH_URL` | text | built-in | use | platform | Another list of broken releases (URL or file:///...json) for the start guard instead of release/health.json on GitHub. |
 | `OMSI_INSTANCE` | text | - | use | app, lan, launcher-core | The id of a game instance started by the launcher (set for the child process). |
 | `OMSI_LAN_IP` | text | - | use | net | a.b.c.d[,e.f.g.h]: LAN addresses to offer first (when the detection gets them wrong). |
-| `OMSI_LAUNCHER` | text | - | use | app | Program a plain start opens as the launcher instead of the desktop launcher (openomsi-launcher-app) beside the game. |
+| `OMSI_LAUNCHER` | text | - | use | app, guard | Program a plain start opens as the launcher instead of the desktop launcher (openomsi-launcher-app) beside the game. |
 | `OMSI_OFFICIAL_KEY` | text | - | use | lan | File of the official server's signing key. |
 | `OMSI_PLUGIN_HOST32` | text | beside the game | use | plugin | Path of omsi-plugin-host32.exe. |
 | `OMSI_PRESENCE_URL` | text | built-in | use | platform | Base URL of the presence ("playing now") service. |

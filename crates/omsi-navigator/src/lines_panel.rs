@@ -136,7 +136,7 @@ pub struct LinesView {
     pub(super) jump: bool,
     /// Bumped whenever the choice changes: the ways are drawn again.
     version: u64,
-    /// The ways' mesh (buffer 10): the version it was built for, its size and anchor.
+    /// The ways' mesh (buffer 18): the version it was built for, its size and anchor.
     mesh: Option<(u64, u32, DVec2)>,
     /// The panel and its list, and what a click lands on (map picture pixels).
     panel: Option<Rect>,
@@ -260,7 +260,7 @@ impl Navigator {
         }
     }
 
-    /// The view goes to a line just ticked, and the ticked ways (and their stops) are a mesh (buffer 10): its new
+    /// The view goes to a line just ticked, and the ticked ways (and their stops) are a mesh (buffer 18): its new
     /// vertices, or `None` when the buffer is as it was.
     pub(super) fn lines_mesh(&mut self, anchor: DVec2, w: f32, h: f32, s: f32) -> Option<Vec<Vertex>> {
         let sf = self.surface.clone().filter(|_| self.city.lines.open)?;

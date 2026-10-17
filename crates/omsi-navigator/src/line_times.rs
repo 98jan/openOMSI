@@ -53,9 +53,11 @@ pub struct StopTime<'a> {
 pub struct LineTimes(HashMap<String, Sheet>);
 
 impl LineTimes {
-    pub fn load(map_dir: &Path, chrono: &[std::path::PathBuf]) -> LineTimes {
+    pub fn load(map_dir: &Path, chrono: &[std::path::PathBuf], date: i32) -> LineTimes {
         let began = std::time::Instant::now();
         let data = TimetableData::load_with_chrono(map_dir, chrono, &omsi_map::chrono_deactivated_lines(chrono));
+        let calendar = omsi_map::Calendar::load(&map_dir.join("Holidays.txt")).unwrap_or_default();
+        let school_bit = if calendar.in_holiday_range(date) { 1 << 9 } else { 1 << 8 };
         let mut links: HashMap<(i64, i64), f64> = HashMap::new();
         for l in &data.stn_links {
             links.entry((l.from_id, l.to_id)).or_insert(l.length);
@@ -69,6 +71,9 @@ impl LineTimes {
         for line in &data.lines {
             for tour in &line.tours {
                 let mask = tour.extra.trim().parse::<i32>().unwrap_or(1023);
+                if mask & school_bit == 0 {
+                    continue;
+                }
                 for tt in &tour.trips {
                     let Some(ti) = data.trips.iter().position(|x| x.name.eq_ignore_ascii_case(&tt.trip)) else { continue };
                     let trip = &data.trips[ti];

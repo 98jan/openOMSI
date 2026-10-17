@@ -44,6 +44,8 @@ pub(super) fn options_pages(app: &App) -> Vec<Page> {
     let graphics: Vec<(String, String)> = vec![
         pick("graphics", "Graphics", later),
         preset_row(&file, "Quality preset", "Sets most of the graphics options at once"),
+        app.can_optimise().then(|| button("Optimise for my PC", "Start", "Measures while you drive and adjusts the graphics for a smooth frame rate; your settings are saved first", "optimise")),
+        omsi_launcher_lib::optimise::backup().is_some().then(|| button("Restore my previous settings", "Restore", "The graphics settings as they were before the last optimisation", "optimise_restore")),
         pick("msaa", "Anti-aliasing", later),
         pick("render_scale", "Render scale", later),
         pick("anisotropy", "Anisotropic", later),

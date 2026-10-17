@@ -292,6 +292,16 @@ fn graphics_presets(mode: String) -> Answer {
     Ok(json!(core::graphics_presets_for(mode).into_iter().map(|(name, v)| json!({ "name": name, "settings": v })).collect::<Vec<_>>()))
 }
 
+fn optimise_arm(target: u32) -> Answer {
+    core::optimise::arm(target).map_err(err)?;
+    Ok(core::optimise::status())
+}
+
+fn optimise_restore() -> Answer {
+    let _one = SETTINGS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    core::optimise::restore().map_err(err)
+}
+
 fn graphics_profiles() -> Answer {
     to_json(core::graphics_profiles())
 }
@@ -451,18 +461,9 @@ fn server_query(address: String) -> Answer {
     }))
 }
 
-/// A code host's status page (its gateway is the session's port + 10), else its tunnel.
+/// A code host's first responsive status endpoint, including its tunnel.
 fn host_status(code: &str) -> Result<omsi_net::ws::ServerInfo, String> {
-    let c = omsi_net::SessionCode::decode(code)?;
-    for a in c.addrs().into_iter().take(3) {
-        if let Ok(i) = omsi_net::ws::query(&format!("http://{}:{}", a.ip(), a.port().saturating_add(10)), false) {
-            return Ok(i);
-        }
-    }
-    match omsi_net::bridge::lookup_tunnel(c.session) {
-        Some(url) => omsi_net::ws::query(&url, false),
-        None => Err("the host did not answer".into()),
-    }
+    omsi_net::ws::query_session(code)
 }
 
 fn base64(bytes: &[u8]) -> String {
@@ -692,6 +693,13 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "graphics_profiles" => graphics_profiles(),
         "graphics_profile_save" => graphics_profile_save(arg::<String>(args, "name")?, arg::<Value>(args, "settings")?),
         "graphics_profile_delete" => graphics_profile_delete(arg::<String>(args, "name")?),
+        "optimise_status" => Ok(core::optimise::status()),
+        "optimise_arm" => optimise_arm(arg::<u32>(args, "target")?),
+        "optimise_cancel" => {
+            core::optimise::disarm();
+            Ok(core::optimise::status())
+        }
+        "optimise_restore" => optimise_restore(),
         "keybindings_get" => keybindings_get(),
         "keybindings_save" => keybindings_save(arg::<Value>(args, "bindings")?),
         "radio_stations" => radio_stations(),
