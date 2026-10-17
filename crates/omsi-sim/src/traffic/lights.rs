@@ -189,9 +189,14 @@ impl TrafficLightController {
                     // rest: the main road stays green round it until a request comes
                     // (Winsenburg's win-4: replayed once, it ran through yellow and red
                     // with nobody waiting and flickered between green and yellow, #1722).
-                    let no_progress = ((to as f64 - p.time as f64).rem_euclid(cycle)).abs() < 1e-6;
+                    // A jump past the cycle's end starts the next cycle at 0, it is not
+                    // wrapped round: Städtedreieck's Bergerplatz jumps to 130 s of its
+                    // 127 s cycle, and taken as 3 s it ran its night flashing in every
+                    // daytime cycle.
+                    let target = if to as f64 >= cycle { 0.0 } else { (to as f64).rem_euclid(cycle) };
+                    let no_progress = ((target - p.time as f64).rem_euclid(cycle)).abs() < 1e-6;
                     self.rewound = (!p.if_request && to > 1e-6 && to < p.time - 1e-6).then_some(k);
-                    self.time = (to as f64).rem_euclid(cycle);
+                    self.time = target;
                     self.passed.clear();
                     // A jump at the cycle boundary can target zero (for example TCSP17's
                     // `[traffic_light_jump] 4 84 1 0`). At cycle position zero that is a

@@ -1114,3 +1114,19 @@ fn a_stop_does_not_hold_red_and_yellow() {
     }
     assert!(c.held && (c.time - 27.0).abs() < 1e-3, "a stop in the green holds: {:.1} s", c.time);
 }
+
+#[test]
+fn a_jump_past_the_cycle_end_starts_the_next_cycle() {
+    // a 50 s cycle, dark for its first 10 s: at 45 s it jumps to 56 s while nobody asks.
+    // That is the next cycle's start, in the dark phase, not 6 s into it in the green.
+    let mut c = TrafficLightController::from_program(
+        vec![(vec![(13, 10.0), (6, 25.0), (9, 3.0), (0, 0.0)], None)],
+        Some(50.0),
+        &[],
+        &[[0.0, 45.0, 1.0, 56.0]],
+    );
+    c.time = 44.0;
+    c.advance(1.5);
+    assert!((c.time - 0.5).abs() < 1e-3, "the clock went on at {:.2} s", c.time);
+    assert_eq!(c.state(0), 13);
+}
