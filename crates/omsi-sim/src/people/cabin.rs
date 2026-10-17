@@ -552,7 +552,7 @@ pub struct BusNow {
     /// get off there.
     pub served: Option<i64>,
     /// The IBIS route it is set to (the player's bus; None: no route, or not known).
-    pub route: Option<Arc<IbisRoute>>,
+    pub route: Option<Arc<SetRoute>>,
 }
 
 /// What passengers feel stepping into a bus (OMSI reads the same fields: the vehicle's

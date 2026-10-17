@@ -33,7 +33,7 @@ pub struct PlayerBusView {
     pub tt_stop: Option<(i64, Option<String>)>,
     pub act_busstop: String,
     /// The IBIS route it is set to (`IBIS_RouteIndex`, `IBIS_busstop`).
-    pub route: Option<IbisRoute>,
+    pub route: Option<SetRoute>,
     /// What depends on the passenger cabin (none without one: nobody rides it).
     pub cabin: Option<CabinView>,
 }
@@ -83,7 +83,7 @@ impl PeopleSim {
         // the IBIS route it is set to, where everybody gets off at the last stop
         let route = v.host.hof.as_ref().zip(v.var("IBIS_RouteIndex").filter(|r| r.is_finite() && *r >= 0.0)).and_then(|(hof, r)| {
             let at = v.var("IBIS_busstop").filter(|k| k.is_finite() && *k >= 0.0).map(|k| k.round() as usize);
-            IbisRoute::of(hof, r.round() as usize, at)
+            SetRoute::from_depot(hof, r.round() as usize, at)
         });
         PlayerBusView {
             position: v.position,

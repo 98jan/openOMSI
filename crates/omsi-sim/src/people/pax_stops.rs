@@ -72,7 +72,7 @@ impl PeopleSim {
                 // a bus not in service, or at its own terminus, empties and takes nobody
                 // (0x61f3e3); one in free drive only lets its riders off. So does one at the
                 // last stop of the IBIS route it is set to, whatever the destination shown.
-                let ends_route = bn.route.as_ref().is_some_and(|r| r.ends_at(s));
+                let ends_route = bn.route.as_ref().is_some_and(|r| r.is_last_stop(s));
                 match if ends_route { AtStop::Empties } else { at_stop(*id, s, bn.terminus.as_deref(), &bn.takes) } {
                     AtStop::Empties => {
                         reg.all_exit = true;
@@ -114,7 +114,7 @@ impl PeopleSim {
                 // (or the destination of another route of its service ending where its own
                 // does: a circular's people wait for the stop it ends at)
                 let f = fit(stop, s, p.dest.as_deref(), termini, bn.terminus.as_deref()?, &bn.takes)
-                    .or_else(|| bn.route.as_ref().and_then(|r| r.takes_for(termini)))?;
+                    .or_else(|| bn.route.as_ref().and_then(|r| r.takes_waiting_for(termini)))?;
                 Some((*id, f, (bn.pos - self.people[i].position).length()))
             })),
         }
@@ -126,14 +126,14 @@ impl PeopleSim {
     /// own height. None for anybody else. The ground under them is not asked: at a sloped or
     /// angled kerb it found the road as well, and the people waiting sank into the street in
     /// front of the buses.
-    pub fn wait_floor(&self, i: usize) -> Option<f64> {
+    pub fn waiting_height(&self, i: usize) -> Option<f64> {
         let p = self.pax(i)?;
         if p.inside.is_some() || !matches!(p.task, Task::WaitingForBus | Task::WalkingToBusstop) {
             return None;
         }
         let s = self.stops.get(&p.stop?)?;
         Some(match p.spot.and_then(|k| s.spots.get(k)) {
-            Some(sp) => spot_floor(sp, s.pos.z),
+            Some(sp) => place_floor(sp, s.pos.z),
             None => s.pos.z,
         })
     }

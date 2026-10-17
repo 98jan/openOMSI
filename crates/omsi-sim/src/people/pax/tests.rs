@@ -529,16 +529,16 @@ fn route_test_hof() -> omsi_vehicle::Hof {
 #[test]
 fn everybody_leaves_at_the_last_stop_of_the_ibis_route() {
     let hof = route_test_hof();
-    let out = IbisRoute::of(&hof, 0, Some(1)).unwrap();
-    assert!(out.ends_at(&test_stop("Hospital Gate", "")));
-    assert!(!out.ends_at(&test_stop("Mill Lane", "")));
-    assert!(!out.ends_at(&test_stop("Station", "")));
-    let back = IbisRoute::of(&hof, 1, None).unwrap();
-    assert!(back.ends_at(&test_stop("Station", "")));
-    let at_start = IbisRoute::of(&hof, 2, Some(0)).unwrap();
-    assert!(!at_start.ends_at(&test_stop("Station", "")), "a loop does not empty where it sets off");
-    assert!(IbisRoute::of(&hof, 2, Some(3)).unwrap().ends_at(&test_stop("Station", "")));
-    assert_eq!(IbisRoute::of(&hof, 3, None), None, "no such route");
+    let out = SetRoute::from_depot(&hof, 0, Some(1)).unwrap();
+    assert!(out.is_last_stop(&test_stop("Hospital Gate", "")));
+    assert!(!out.is_last_stop(&test_stop("Mill Lane", "")));
+    assert!(!out.is_last_stop(&test_stop("Station", "")));
+    let back = SetRoute::from_depot(&hof, 1, None).unwrap();
+    assert!(back.is_last_stop(&test_stop("Station", "")));
+    let at_start = SetRoute::from_depot(&hof, 2, Some(0)).unwrap();
+    assert!(!at_start.is_last_stop(&test_stop("Station", "")), "a loop does not empty where it sets off");
+    assert!(SetRoute::from_depot(&hof, 2, Some(3)).unwrap().is_last_stop(&test_stop("Station", "")));
+    assert_eq!(SetRoute::from_depot(&hof, 3, None), None, "no such route");
 }
 
 /// A bus on the loop takes the people waiting for the station: the depot file's route of
@@ -551,12 +551,12 @@ fn a_circular_takes_the_people_waiting_for_where_it_ends() {
     hof.info_trips.push(omsi_vehicle::hof::InfoTrip { code: "901".into(), route: "20".into(), line: "9".into(), ..Default::default() });
     hof.info_busstop_lists.push(vec!["Hospital Gate".into(), "Station".into()]);
     let set = |names: &[&str]| -> HashSet<String> { names.iter().map(|s| s.to_string()).collect() };
-    let loop_ = IbisRoute::of(&hof, 2, Some(1)).unwrap();
-    assert_eq!(loop_.takes_for(&set(&["7 Station"])), Some(Fit::Terminus));
-    assert_eq!(loop_.takes_for(&set(&["Station"])), Some(Fit::Terminus), "the route's number in front");
-    assert_eq!(loop_.takes_for(&set(&["07HOSPITAL"])), None);
-    assert_eq!(loop_.takes_for(&set(&["9 Station"])), None, "another line");
-    assert_eq!(IbisRoute::of(&hof, 0, None).unwrap().takes_for(&set(&["7 Station"])), None);
+    let loop_ = SetRoute::from_depot(&hof, 2, Some(1)).unwrap();
+    assert_eq!(loop_.takes_waiting_for(&set(&["7 Station"])), Some(Fit::Terminus));
+    assert_eq!(loop_.takes_waiting_for(&set(&["Station"])), Some(Fit::Terminus), "the route's number in front");
+    assert_eq!(loop_.takes_waiting_for(&set(&["07HOSPITAL"])), None);
+    assert_eq!(loop_.takes_waiting_for(&set(&["9 Station"])), None, "another line");
+    assert_eq!(SetRoute::from_depot(&hof, 0, None).unwrap().takes_waiting_for(&set(&["7 Station"])), None);
 }
 
 /// The people waiting at a stop, and walking back to their place, keep the floor of that
@@ -564,7 +564,7 @@ fn a_circular_takes_the_people_waiting_for_where_it_ends() {
 /// stop's own height. Anybody else goes by the ground.
 #[test]
 fn the_people_waiting_keep_the_floor_of_their_place() {
-    let dir = std::env::temp_dir().join(format!("omsi-wait-floor-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("omsi-pax-place-height-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("person.hum"), "[model]\nmodel.cfg\n").unwrap();
     std::fs::write(dir.join("model.cfg"), "").unwrap();
@@ -613,7 +613,7 @@ fn the_people_waiting_keep_the_floor_of_their_place() {
     };
     let floor = |h: &mut PeopleSim, task, spot| {
         h.people = vec![person(task, spot)];
-        h.wait_floor(0)
+        h.waiting_height(0)
     };
     let near = |a: Option<f64>, b: f64| a.is_some_and(|a| (a - b).abs() < 1e-6);
     assert!(near(floor(&mut h, Task::WaitingForBus, Some(0)), 10.2));
