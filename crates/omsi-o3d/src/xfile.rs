@@ -20,7 +20,6 @@ enum Token<'a> {
     Mark(u8),
     /// a name or keyword; in text files numbers are words too, read by `Tok::scalar`
     Word(Cow<'a, str>),
-    /// a string without its quotes
     Quoted(Cow<'a, str>),
     Int(u32),
     Float(f64),
@@ -58,7 +57,6 @@ enum Source<'a> {
     Binary { data: &'a [u8], doubles: bool },
 }
 
-/// The read position; copied to look ahead.
 #[derive(Clone, Copy, Default)]
 struct Cursor {
     at: usize,
@@ -92,7 +90,6 @@ const TYPE_WORDS: [&str; 13] = [
 ];
 
 impl<'a> Tok<'a> {
-    /// Bytes not read yet: the most any count in the file can stand for.
     fn left(&self) -> usize {
         let len = match self.src {
             Source::Text(s) => s.len(),
@@ -235,11 +232,26 @@ impl<'a> Tok<'a> {
         }
     }
 
-    /// Step into a data object: past its name, if it has one, and its `{`.
-    fn enter(&mut self) -> Result<(), O3dError> {
-        if !self.at("{") {
-            self.next();
+    /// The name and the GUID a data object may have before its `{`; gives the name.
+    fn label(&mut self) -> Option<String> {
+        let mut name = None;
+        for _ in 0..2 {
+            let save = self.cur;
+            match self.next() {
+                Some(Token::Guid) => {}
+                Some(Token::Word(w)) if name.is_none() => name = Some(w.into_owned()),
+                _ => {
+                    self.cur = save;
+                    break;
+                }
+            }
         }
+        name
+    }
+
+    /// Step into a data object: past its label and its `{`.
+    fn enter(&mut self) -> Result<(), O3dError> {
+        self.label();
         self.expect("{")
     }
 
@@ -387,17 +399,21 @@ fn parse_objects(t: &mut Tok, ctx: &mut Ctx, xform: Mat4) -> Result<(), O3dError
                     ctx.named_materials.insert(name, material);
                 }
             }
-            _ => skip_object(t)?,
+            _ => skip_object(t, &tok)?,
         }
     }
     Ok(())
 }
 
-/// An object the reader does not use: `Name [id] { ... }`.
-fn skip_object(t: &mut Tok) -> Result<(), O3dError> {
-    if !t.at("{") {
-        t.next();
+/// An object the reader does not use (`Name [id] { ... }`), after its first token; separators
+/// left between objects (the `;;` after a face list) are passed over.
+fn skip_object(t: &mut Tok, first: &Token) -> Result<(), O3dError> {
+    match first {
+        Token::Mark(b'{') => return t.skip_block(),
+        Token::Mark(_) => return Ok(()),
+        _ => {}
     }
+    t.label();
     if t.at("{") {
         t.next();
         t.skip_block()?;
@@ -449,7 +465,7 @@ fn parse_frame(t: &mut Tok, ctx: &mut Ctx, parent: Mat4, depth: usize) -> Result
                     ctx.named_materials.insert(name, material);
                 }
             }
-            _ => skip_object(t)?,
+            _ => skip_object(t, &tok)?,
         }
     }
 }
@@ -558,23 +574,31 @@ fn parse_mesh(t: &mut Tok, ctx: &mut Ctx, xform: Mat4) -> Result<(), O3dError> {
                         "{" => {
                             // Keep this slot even if the named material is defined later or
                             // absent: dropping it changes every following face material index.
-                            let name = t.next().ok_or_else(|| {
-                                O3dError::XFile("eof in material reference".into())
-                            })?;
-                            if matches!(name.key(), "{" | "}" | "") {
-                                return Err(O3dError::XFile(
-                                    "missing material reference name".into(),
-                                ));
+                            // A reference by GUID alone (`{ <guid> }`) keeps the slot too; it
+                            // names nothing this reader can look up.
+                            let (mut name, mut by_guid) = (None, false);
+                            loop {
+                                match t.next() {
+                                    Some(Token::Mark(b'}')) => break,
+                                    Some(Token::Word(w)) if name.is_none() => name = Some(w.into_owned()),
+                                    Some(Token::Mark(b'{')) | None => {
+                                        return Err(O3dError::XFile("unclosed material reference".into()));
+                                    }
+                                    Some(_) => by_guid = true,
+                                }
                             }
-                            material_refs.push((mats.len(), name.key().to_string()));
+                            match name {
+                                Some(name) => material_refs.push((mats.len(), name)),
+                                None if by_guid => {}
+                                None => return Err(O3dError::XFile("missing material reference name".into())),
+                            }
                             mats.push(Material::default());
-                            t.skip_block()?;
                         }
                         _ => {}
                     }
                 }
             }
-            _ => skip_object(t)?,
+            _ => skip_object(t, &tok)?,
         }
     }
     if mats.is_empty() {
@@ -744,7 +768,7 @@ impl VertexDeclaration {
 
 /// A material declaration after its `Material` token, either inline or a named object.
 fn parse_material(t: &mut Tok) -> Result<(Option<String>, Material), O3dError> {
-    let name = if t.at("{") { None } else { t.next().map(|n| n.key().to_string()) };
+    let name = t.label();
     t.expect("{")?;
     let diffuse = [t.number()?, t.number()?, t.number()?, t.number()?];
     let power = t.number()?;
@@ -1203,6 +1227,38 @@ mod binary_tests {
         let x = "xof 0303txt 0032\nMesh { 1; 0;0;0;; 0;;\n DeclData { 1; 42;0;3;0;; 1; 7; } }\n";
         let m = parse_x(x.as_bytes()).unwrap();
         assert_eq!(m.vertices[0].normal, Vec3::Z);
+    }
+
+    /// Objects and references may carry a GUID after their name, or only a GUID.
+    #[test]
+    fn binary_guids_after_names_and_in_references() {
+        let mut x = XBin::new(false);
+        let guid = |x: &mut XBin| {
+            x.token(5).buf.extend_from_slice(&[0x5a; 16]);
+        };
+        x.name("Material").name("Glass");
+        guid(&mut x);
+        x.open().float_list(&[0.2, 0.4, 0.6, 0.5, 30.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0]).close();
+        x.name("Frame").name("Window");
+        guid(&mut x);
+        x.open().name("Mesh");
+        guid(&mut x);
+        x.open();
+        x.int_list(&[3]).float_list(&[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        x.int_list(&[2, 3, 0, 1, 2, 3, 0, 2, 1]);
+        x.name("MeshMaterialList").open().int_list(&[2, 2, 0, 1]);
+        x.open();
+        guid(&mut x);
+        x.close();
+        x.open().name("Glass");
+        guid(&mut x);
+        x.close();
+        x.close().close().close();
+        let m = parse_x(&x.buf).unwrap();
+        assert_eq!(m.triangles.len(), 2);
+        assert_eq!(m.materials.len(), 2);
+        assert_eq!(m.materials[0], Material::default());
+        assert_eq!(m.materials[1].diffuse, [0.2, 0.4, 0.6, 0.5]);
     }
 
     #[test]
