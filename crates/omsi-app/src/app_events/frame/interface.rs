@@ -92,6 +92,12 @@ impl App {
                 say(note_key(&t), t, NoticeKind::Action);
             }
         }
+        // the latest `$msg` of the player's bus scripts, which OMSI writes on the screen: a
+        // note while the script keeps saying it and for a few seconds after (AI vehicles'
+        // messages are not shown)
+        if let Some(m) = self.player.as_ref().and_then(|p| p.vehicle.host.fresh_message(SCRIPT_MESSAGE_SECS)) {
+            say(format!("script $msg {}", note_key(m)), m.to_string(), NoticeKind::Info);
+        }
         // what is under the cursor, in the player's language (the scripts only
         // know internal, mostly German names)
         let names = describe::names(&self.args.root, &self.settings.language);
@@ -512,6 +518,10 @@ impl App {
         }
     }
 }
+
+/// How long (seconds of play) a `$msg` of the player's bus scripts stays a note after the
+/// script last said it.
+const SCRIPT_MESSAGE_SECS: f64 = 4.0;
 
 /// The kind of card a message of the game's is (`App::service_msg`): what went wrong is an
 /// alert, a key to press is to do, a slow driver a warning, a change made is done, the

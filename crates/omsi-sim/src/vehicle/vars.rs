@@ -138,6 +138,7 @@ impl VehicleInstance {
     pub fn trial_triggers(&mut self, names: &[&str]) -> Vec<f32> {
         let (state, vm) = (self.state.clone(), self.vm.clone());
         let (fired, fired_files, messages, time_written) = (self.host.fired_triggers.len(), self.host.fired_file_triggers.len(), self.host.messages.clone(), self.host.time_written);
+        let last_message = self.host.last_message.clone();
         let fired_vars = self.host.fired_trigger_vars.len();
         let network_sounds = self.host.network_sound_triggers.len();
         for n in names {
@@ -151,6 +152,7 @@ impl VehicleInstance {
         self.host.network_sound_triggers.truncate(network_sounds);
         self.host.fired_file_triggers.truncate(fired_files);
         self.host.messages = messages;
+        self.host.last_message = last_message;
         self.host.time_written = time_written;
         out
     }
