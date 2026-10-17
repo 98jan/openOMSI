@@ -7,6 +7,9 @@ use glam::Vec2;
 use omsi_plugin::ui::UiState;
 use omsi_ui::Rect;
 
+/// The most of the screen a card that takes clicks without the mouse may cover (`grab`).
+const GRAB_MOST: f32 = 0.25;
+
 /// What the left button holds.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Drag {
@@ -42,16 +45,26 @@ impl PluginPanels {
     /// Whether a press at `(x, y)` (physical pixels on the window) while the panels do not
     /// have the mouse is theirs all the same: the topmost panel there takes its clicks
     /// (`grab = true`).
+    ///
+    /// A card that covers more than a quarter of the screen, or that one sees through (its
+    /// background less than half opaque), takes none: a large or invisible panel would take
+    /// the clicks the driver means for the cab. (A card in the navigator's board lies on the
+    /// navigator's own card.)
     pub fn grabs_at(&self, ui: &UiState, x: f32, y: f32) -> bool {
-        let k = self.scale.max(0.25);
+        let [sw, sh, s] = ui.screen();
+        let screen = sw * sh * s * s;
         for e in ui.panels().iter().rev().filter(|e| e.panel.visible) {
             let Some(card) = self.cards.get(&Key::Panel(e.owner, e.id.clone())) else { continue };
             if card.seen != self.frame {
                 continue;
             }
+            // (each card at its own scale: the navigator's for the panel in its board)
+            let k = card.scale.max(0.25);
             let local = (Vec2::new(x, y) - card.origin) / k;
             if Rect::new(0.0, 0.0, card.laid.w, card.laid.h).contains(local) {
-                return e.panel.grab;
+                let small = card.laid.w * card.laid.h * k * k <= GRAB_MOST * screen;
+                let seen = card.laid.flat || card.laid.background.0[3] >= 0.5;
+                return e.panel.grab && small && seen;
             }
         }
         false
@@ -100,12 +113,18 @@ mod tests {
     use super::*;
     use omsi_plugin::ui::panel_from_source;
 
-    /// A card of `src` laid out `w` x `h` at `origin`, as the last frame showed it.
-    fn shown(panels: &mut PluginPanels, ui: &mut UiState, owner: u64, id: &str, src: &str, origin: Vec2) {
+    /// A card of `src` laid out `w` x `h` on an opaque background at `origin`, as the last
+    /// frame showed it.
+    #[allow(clippy::too_many_arguments)]
+    fn sized(panels: &mut PluginPanels, ui: &mut UiState, owner: u64, id: &str, src: &str, origin: Vec2, (w, h): (f32, f32), alpha: f32) {
         ui.set(owner, id, panel_from_source(src).unwrap()).unwrap();
-        let laid = Laid { w: 200.0, h: 100.0, ..Laid::default() };
-        let card = Card { revision: 0, scale: 1.0, backdrop: 1.0, laid, tex: None, drawn: None, origin, y: None, seen: panels.frame };
+        let laid = Laid { w, h, background: omsi_ui::Color::rgba(20, 20, 20, alpha), ..Laid::default() };
+        let card = Card { revision: 0, scale: 1.0, backdrop: 1.0, laid, tex: None, drawn: None, origin, y: None, seen: panels.frame, full_h: h, room: f32::INFINITY };
         panels.cards.insert(Key::Panel(owner, id.to_string()), card);
+    }
+
+    fn shown(panels: &mut PluginPanels, ui: &mut UiState, owner: u64, id: &str, src: &str, origin: Vec2) {
+        sized(panels, ui, owner, id, src, origin, (200.0, 100.0), 1.0);
     }
 
     #[test]
@@ -120,6 +139,12 @@ mod tests {
         // a plain panel over it hides it where they overlap
         shown(&mut panels, &mut ui, 2, "over", "{}", Vec2::new(250.0, 100.0));
         assert!(!panels.grabs_at(&ui, 260.0, 150.0) && panels.grabs_at(&ui, 150.0, 150.0));
+        // a card over a quarter of the screen (1920 x 1080 until the game says), or one seen
+        // through, takes no click without the mouse (review of #2883)
+        sized(&mut panels, &mut ui, 3, "big", "{ grab = true }", Vec2::new(600.0, 300.0), (1100.0, 600.0), 1.0);
+        assert!(!panels.grabs_at(&ui, 700.0, 400.0));
+        sized(&mut panels, &mut ui, 3, "glass", "{ grab = true }", Vec2::new(100.0, 700.0), (200.0, 100.0), 0.2);
+        assert!(!panels.grabs_at(&ui, 150.0, 750.0));
         // a card not shown in the last frame takes nothing
         panels.frame += 1;
         assert!(!panels.grabs_at(&ui, 150.0, 150.0));

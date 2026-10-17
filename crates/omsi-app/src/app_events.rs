@@ -344,14 +344,15 @@ impl ApplicationHandler for App {
                     self.plugin_click(state == ElementState::Pressed);
                     return;
                 }
-                // ... and so are those on a panel that takes them without the mouse (`grab`: a
-                // card clicked away or kept), with the release
-                if self.plugin_grab(state == ElementState::Pressed) {
-                    return;
-                }
                 self.alt_tap_spoilt();
                 // ... and the game's own panels' (the quick menu, the forms, the editor)
                 if self.game_panel_click(state == ElementState::Pressed) {
+                    return;
+                }
+                // ... and those on a plugin's panel that takes them without the mouse (`grab`:
+                // a card clicked away or kept), with the release - under the game's own
+                // panels, as the plugins' panels are drawn
+                if self.plugin_grab(state == ElementState::Pressed) {
                     return;
                 }
                 if self.input.touch.enabled {

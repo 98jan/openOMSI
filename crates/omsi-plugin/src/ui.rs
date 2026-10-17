@@ -18,7 +18,8 @@ use std::rc::Rc;
 /// 3: the navigator's board (`anchor = "navigator"`, `ui.dock`).
 /// 4: boxes, stop lists, bars of several parts, a badge's weight, a table's column
 /// alignments and coloured cells.
-pub const VERSION: i64 = 4;
+/// 5: panels that take a click without the mouse (`grab`).
+pub const VERSION: i64 = 5;
 /// Most panels of one plugin.
 pub const MAX_PANELS: usize = 16;
 /// Most elements of one panel, those in rows included.
@@ -460,6 +461,11 @@ impl UiState {
             e.revision = serial;
         }
         Ok(())
+    }
+
+    /// Whether `element` of a plugin's panel is a text field (a click on it starts typing).
+    pub fn is_field(&self, owner: u64, id: &str, element: &str) -> bool {
+        self.panels.iter().find(|p| p.owner == owner && p.id == id).and_then(|e| find_in(&e.panel.children, element)).is_some_and(|e| matches!(e.kind, Kind::Input { .. }))
     }
 
     /// The value of a checkbox, slider, field or tabs.
@@ -1301,6 +1307,10 @@ mod tests {
         assert_eq!(p.accent, Some(Rgba([0xF4, 0x7F, 0x30, 255])));
         assert!(p.visible && !p.clickable && !p.grab && p.background.is_none());
         assert!(panel("{ grab = true }").unwrap().grab);
+        // (a click from a grab starts no typing: the game asks which parts are fields)
+        let mut ui = UiState::default();
+        ui.set(1, "p", panel(r#"{ children = { { type = "input", id = "name" }, { type = "button", id = "ok", text = "OK" } } }"#).unwrap()).unwrap();
+        assert!(ui.is_field(1, "p", "name") && !ui.is_field(1, "p", "ok") && !ui.is_field(2, "p", "name"));
         // (the hidden text and the unknown type are left out)
         assert_eq!(p.children.len(), 4);
         assert_eq!(p.children[0].kind, Kind::Text { text: "Linie 42".into(), size: 18.0, weight: Weight::Bold, align: Align::Left, wrap: true });
