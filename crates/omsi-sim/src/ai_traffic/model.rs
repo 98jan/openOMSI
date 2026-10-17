@@ -328,6 +328,16 @@ pub fn is_train(def: &omsi_vehicle::Vehicle) -> bool {
     matches!(def.kind, omsi_vehicle::VehicleKind::Other(2))
 }
 
+/// The player's rail vehicle on the track, set before each `tick`: the rail lane, the
+/// distance along it, whether it faces the lane's direction, and whether it is a train.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlayerRail {
+    pub lane: usize,
+    pub s: f32,
+    pub along: bool,
+    pub train: bool,
+}
+
 /// A random car out of the player's range: still on the map and still driving, but without
 /// a body, a script or a picture - a few numbers. It comes back as the same car (type,
 /// paint, id) where it has got to when the player comes near, and it only ever leaves the

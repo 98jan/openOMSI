@@ -156,3 +156,38 @@ fn a_timetable_train_asks_past_its_planned_lanes() {
     t.cars[i].state = st;
     assert!(asked(&mut t), "the train never asked the crossing beyond its plan");
 }
+
+/// A track of 700 m forking into two crossing paths, light 0 straight on and light 1 on
+/// the branch to the right.
+fn forked_track() -> Network {
+    let rail = |start: DVec3, length: f64, radius: f64| LaneBuilder::arc(start, 0.0, length, radius, 0.0, LaneKind::Rail, 1.435);
+    let mut straight = rail(DVec3::ZERO, 10.0, 0.0);
+    straight.traffic_light = Some((0, 0));
+    let mut branch = rail(DVec3::ZERO, 10.0, 60.0);
+    branch.traffic_light = Some((0, 1));
+    let mut net = Network { lanes: vec![rail(DVec3::new(0.0, -700.0, 0.0), 700.0, 0.0), straight, branch], ..Default::default() };
+    net.link(1.5);
+    net
+}
+
+#[test]
+fn the_players_train_asks_the_lights_on_every_branch_ahead() {
+    let f = Fixture::new();
+    let run = |s: f32, along: bool, train: bool, speed: f32| {
+        let mut t = traffic(&f, forked_track());
+        let mut ctl = TrafficLightController::new(vec![vec![(0, 400.0), (6, 20.0)]; 2], 0.0);
+        ctl.approach = vec![None, None];
+        t.lights = vec![ctl];
+        t.player_rail = Some(PlayerRail { lane: 0, s, along, train });
+        let p = t.net.lanes[0].at(s).0;
+        t.tick(0.02, Some((p, 0.0, 10.0, 1.4, speed)));
+        (t.lights[0].request[0], t.lights[0].request[1])
+    };
+    // a train 450 m off asks both branches' lights
+    assert_eq!(run(250.0, true, true, 15.0), (true, true));
+    // a tram there does not, but does 30 m off (the default distance)
+    assert_eq!(run(250.0, true, false, 8.0), (false, false));
+    assert_eq!(run(660.0, true, false, 8.0), (true, true));
+    // backing away from the fork it asks nothing
+    assert_eq!(run(660.0, true, false, -2.0), (false, false));
+}

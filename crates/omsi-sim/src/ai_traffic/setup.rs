@@ -133,6 +133,7 @@ impl TrafficSim {
             emergency: Default::default(),
             player_turn: 0.0,
             player_blinker: 0,
+            player_rail: None,
             player_signal_age: f32::MAX,
             player_signalling: 0.0,
             way_users: Vec::new(),

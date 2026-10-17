@@ -336,6 +336,29 @@ impl TrafficSim {
                 }
             }
         }
+        // the player's tram or train asks the lights on the track ahead as an AI one does (a
+        // train a level crossing from far off), on every branch of a fork: the points
+        // decide which it takes, and the light of the other branch turns for nobody
+        if let (Some(r), Some(p)) = (self.player_rail, player) {
+            let (half_len, speed) = (p.2, p.4);
+            // (only driving the lanes' way: their lights are for that direction)
+            let forward = if speed.abs() < 0.3 { r.along } else { r.along == (speed > 0.0) };
+            if forward && r.lane < self.net.lanes.len() {
+                let mut way = vec![(r.lane, -r.s)];
+                way.extend(self.track_after(r.lane, -r.s, if r.train { train_reach } else { reach }));
+                for (l, d) in way {
+                    let Some((ci, li)) = self.net.lanes[l].traffic_light else { continue };
+                    let length = self.net.lanes[l].length();
+                    if let Some(ctl) = self.lights.get_mut(ci) {
+                        if ctl.asks(li, d - half_len, speed, r.train) && d + length + half_len >= 0.0 {
+                            if let Some(q) = ctl.request.get_mut(li) {
+                                *q = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         // the player's bus and the other players' vehicles ask too: a depot gate (Spandau's
         // `Omnibushof_S_1`, the exit arm on light 1) opens only for whoever asks, and the
         // player driving out of the depot at the start of a duty found it shut
