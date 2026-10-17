@@ -1,0 +1,124 @@
+//! Tests of walking: steps, slopes, kneeling and the cab's sound.
+
+use super::*;
+
+fn walker() -> OnFoot {
+    OnFoot {
+        pos: DVec3::ZERO,
+        heading: 0.0,
+        vel: DVec2::ZERO,
+        lift: 0.0,
+        vz: 0.0,
+        seat: None,
+        inside: None,
+        cam: FootCam::First,
+        yaw: 0.0,
+        pitch: 0.0,
+        eye: None,
+        eye_yaw: 0.0,
+        lag: DVec3::ZERO,
+        settle: 0.0,
+        view_before: "driver".into(),
+        kind: 0,
+        face_seat: false,
+        transit: None,
+        arrive: None,
+        kneel: false,
+        crouch: 0.0,
+        door_request: None,
+        door_request_send: 0.0,
+        walkable: None,
+    }
+}
+
+/// The bus's sound fades in as the eyes come in through its wall, inside its box (and
+/// a coupled part's), and not at all from outside.
+#[test]
+fn the_cab_is_heard_by_how_far_in_the_eyes_are() {
+    let mut def = omsi_vehicle::Vehicle::default();
+    def.bounding_box = Some([2.5, 12.0, 3.0, 0.0, -0.5, 1.5]);
+    let ty = Arc::new(omsi_sim::VehicleType {
+        def,
+        model: Default::default(),
+        model_dir: Default::default(),
+        program: Arc::new(omsi_script::compile(&Default::default())),
+        meshes: Vec::new(),
+        paint_schemes: Vec::new(),
+        texchanges: Vec::new(),
+        wheel_meshes: Vec::new(),
+        suspension_axles: Vec::new(),
+        missing_packs: Vec::new(),
+        mesh_bounds: Vec::new(),
+        mesh_boxes: Vec::new(),
+    });
+    let mut v = omsi_sim::VehicleInstance::new(ty, omsi_sim::VehicleHost::new(Default::default()));
+    v.position = DVec3::new(1200.0, -300.0, 40.0);
+    v.heading = 30.0;
+    let bb = v.ty.def.bounding_box.expect("a bounding box");
+    let xf = v.world_transform();
+    let at = |x: f32, y: f32| xf.transform_point3(glam::Vec3::new(x, y, bb[5])).as_dvec3();
+    let wall = bb[3] + bb[0] * 0.5;
+    assert_eq!(super::inside_amount(&v, at(wall + 1.0, bb[4])), 0.0, "outside");
+    assert_eq!(super::inside_amount(&v, at(bb[3], bb[4])), 1.0, "the aisle");
+    let half = super::inside_amount(&v, at(wall - super::CAB_SOUND_DEPTH * 0.5, bb[4]));
+    assert!((half - 0.5).abs() < 0.02, "{half}");
+}
+
+/// C kneels: the eyes go down to about a metre over a moment (a picture from below,
+/// #1148), the walk becomes a shuffle, and C again stands up; not on a seat.
+/// A kerb's edge is a step, not a slope; a bank of 60 degrees beside the road is climbed
+/// a step high and no higher however small the bits it is walked up in; a ramp of 30
+/// degrees all the way.
+#[test]
+fn steep_ground_is_climbed_no_more_than_a_step() {
+    let kerb = |x: f64, _: f64| Some(if x > 0.0 { 0.15 } else { 0.0 });
+    assert!(steepness(kerb, DVec2::new(0.01, 0.0), 0.15) <= STEEP);
+    let bank = |x: f64, _: f64| Some(x.max(0.0) * 60f64.to_radians().tan());
+    let ramp = |x: f64, _: f64| Some(x.max(0.0) * 30f64.to_radians().tan());
+    let climb = |ground: &dyn Fn(f64, f64) -> Option<f64>| {
+        let (mut x, mut walkable, mut z) = (-1.0, 0.0, 0.0);
+        for _ in 0..400 {
+            let at = DVec2::new(x + 0.01, 0.0);
+            let g = ground(at.x, at.y).unwrap();
+            let steep = steepness(ground, at, g);
+            if g - z > STEP || !may_climb(g, steep, walkable) {
+                break;
+            }
+            if steep <= STEEP {
+                walkable = g;
+            }
+            (x, z) = (at.x, g);
+        }
+        z
+    };
+    let up = climb(&bank);
+    // (the foot of the bank, within the quarter metre the slope is measured over, still
+    // counts as walkable)
+    assert!(up < STEP + SLOPE_RUN * 60f64.to_radians().tan() && up > STEP, "up the bank to {up}");
+    assert!(climb(&ramp) > 1.5, "up the ramp");
+}
+
+#[test]
+fn kneeling_lowers_the_eyes_and_slows_the_walk() {
+    let mut f = walker();
+    assert_eq!(f.eye_drop(), DVec3::ZERO);
+    assert_eq!(f.pace(false), WALK);
+    assert!(f.toggle_kneel() && f.kneel);
+    f.ease_crouch(0.05);
+    assert!(f.crouch > 0.2 && f.crouch < 0.9, "{}", f.crouch);
+    for _ in 0..60 {
+        f.ease_crouch(1.0 / 60.0);
+    }
+    assert_eq!(f.crouch, 1.0);
+    assert_eq!(f.eye_drop().z, -KNEEL_DROP);
+    assert_eq!((f.pace(false), f.pace(true)), (KNEEL_WALK, KNEEL_WALK));
+    assert!(f.toggle_kneel() && !f.kneel);
+    for _ in 0..60 {
+        f.ease_crouch(1.0 / 60.0);
+    }
+    assert_eq!(f.eye_drop(), DVec3::ZERO);
+    assert_eq!(f.pace(true), RUN);
+    // (seated: nothing to kneel on)
+    f.seat = Some((BusId::Player, 3));
+    assert!(!f.toggle_kneel() && !f.kneel);
+}
