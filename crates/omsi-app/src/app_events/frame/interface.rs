@@ -92,6 +92,14 @@ impl App {
                 say(note_key(&t), t, NoticeKind::Action);
             }
         }
+        // the latest `$msg` of the player's bus scripts, which OMSI writes on the screen: a
+        // note while the script keeps saying it and for a few seconds after (AI vehicles'
+        // messages are not shown)
+        let script_says = self.player.as_ref().and_then(|p| p.vehicle.host.fresh_message(SCRIPT_MESSAGE_SECS));
+        // (one note whose text follows the script: a value it prints changes every frame)
+        if let Some(text) = script_says {
+            say("bus script message".to_string(), text.to_string(), NoticeKind::Info);
+        }
         // what is under the cursor, in the player's language (the scripts only
         // know internal, mostly German names)
         let names = describe::names(&self.args.root, &self.settings.language);
@@ -158,6 +166,10 @@ impl App {
         }
         self.menus.note_watch.frame(dt, &said, &mut self.menus.notices);
         self.integrations.update_watch.tick(&mut self.menus.notices);
+        if let Some((before, text, left)) = omsi_lan::mods::upload::notice() {
+            self.menus.notices.retain(|n| n.text != before);
+            crate::ui::push_notice(&mut self.menus.notices, crate::ui::Notice { kind: crate::ui::NoticeKind::Info, text, left, total: left });
+        }
         for n in self.menus.notices.iter_mut() {
             n.left -= dt;
         }
@@ -241,19 +253,18 @@ impl App {
                 _ => nav.clear_route(),
             }
             if let Some(sch) = self.session.schedule.as_ref() {
-                if nav.map_net().is_some() {
+                if nav.map_net().is_some() && !nav.stop_names_learnt() {
                     nav.learn_stop_names(&sch.stop_names());
                 }
             }
             // the timetable's vehicles the traffic does not drive, where the timetable has them
             if let (Some(sch), true) = (self.session.schedule.as_ref(), nav.show_ai && (nav.enabled || nav.map_open())) {
-                let cars: Vec<(DVec3, String)> = self
-                    .session
-                    .traffic
-                    .as_ref()
-                    .map(|t| t.cars.iter().filter(|c| !c.gone && c.bus.is_some()).map(|c| (c.vehicle.position, c.vehicle.host.tt_line.clone())).collect())
-                    .unwrap_or_default();
-                nav.update_live(sch, self.clock.time, dt, &cars);
+                let cars: Vec<(DVec3, String)> = match self.session.traffic.as_ref().filter(|_| nav.live_due(dt)) {
+                    Some(t) => t.cars.iter().filter(|c| !c.gone && c.bus.is_some()).map(|c| (c.vehicle.position, c.vehicle.host.tt_line.clone())).collect(),
+                    None => Vec::new(),
+                };
+                let ground = self.world.as_ref().map(|w| w.data());
+                nav.update_live(sch, self.clock.time, dt, &cars, &|p| ground.as_ref().is_some_and(|d| d.has_ground(p.x, p.y)));
             }
             let (outside_temp, inside_temp) = match p {
                 Some(p) => vehicle_temperatures(p),
@@ -272,7 +283,8 @@ impl App {
                 (None, None) => return,
             };
             let frame = navigator::NavFrame {
-                traffic: self.session.traffic.as_ref(),
+                traffic: self.session.traffic.as_deref(),
+                touch: crate::platform::touch_controls(),
                 players: self.net.lan.as_ref().map(|l| crate::lan::nav_players(&self.net.remotes, l.my_id)).unwrap_or_default(),
                 bus: at,
                 heading,
@@ -287,6 +299,7 @@ impl App {
                 stop_requested: p.is_some_and(|p| navigator::stop_requested(&p.vehicle)),
                 time: self.clock.time,
                 weekday: self.clock.weekday(),
+                date: self.clock.date_code(),
                 language: &self.settings.language,
                 screen: if vr_active {
                     (1440.0, 1440.0)
@@ -511,6 +524,10 @@ impl App {
         }
     }
 }
+
+/// How long (seconds of play) a `$msg` of the player's bus scripts stays a note after the
+/// script last said it.
+const SCRIPT_MESSAGE_SECS: f64 = 4.0;
 
 /// The kind of card a message of the game's is (`App::service_msg`): what went wrong is an
 /// alert, a key to press is to do, a slow driver a warning, a change made is done, the

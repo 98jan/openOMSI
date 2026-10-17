@@ -21,6 +21,8 @@ pub const STEPS_PER_FRAME: u32 = 4;
 /// A part that moved further than this between two steps was put somewhere (placed, taken
 /// over, recovered): it is drawn where it is, not swept there.
 const JUMP: f64 = 10.0;
+const OLDER_STEPS: usize = 5;
+pub const MOST_BEHIND: f32 = OLDER_STEPS as f32 * SIM_DT;
 
 /// Add a frame of `frame_dt` seconds to `accum` and take out the whole steps of `dt` it
 /// holds: how many to run now, at most `per_frame`. Steps beyond those wait in `accum` for
@@ -62,7 +64,7 @@ impl TrafficSim {
         let steps = advance_fixed_clock(&mut self.sim_accum, frame_dt, SIM_DT, STEPS_PER_FRAME, MAX_SIM_STEPS);
         let mut split = [0.0; 3];
         for k in 0..steps {
-            if k + 2 >= steps {
+            if k + 1 + OLDER_STEPS as u32 >= steps {
                 self.remember_poses();
             }
             self.step_scripts = self.scripts_due && k + 1 == steps;
@@ -81,8 +83,10 @@ impl TrafficSim {
     /// times a second, for every car, was allocator traffic for nothing.)
     fn remember_poses(&mut self) {
         let p = &mut self.poses;
-        std::mem::swap(&mut p.before, &mut p.earlier);
-        std::mem::swap(&mut p.before_at, &mut p.earlier_at);
+        let mut kept = if p.older.len() >= OLDER_STEPS { p.older.pop_back().unwrap_or_default() } else { Default::default() };
+        std::mem::swap(&mut kept.0, &mut p.before);
+        std::mem::swap(&mut kept.1, &mut p.before_at);
+        p.older.push_front(kept);
         p.before.clear();
         p.before_at.clear();
         for c in &self.cars {
@@ -101,7 +105,7 @@ impl TrafficSim {
     }
 
     pub fn show_between_at(&mut self, behind: f32) {
-        let a = self.frame_alpha - behind.clamp(0.0, SIM_DT) / SIM_DT;
+        let a = shown_alpha(self.frame_alpha, behind);
         let p = &mut self.poses;
         p.shown.clear();
         p.actual.clear();
@@ -116,15 +120,19 @@ impl TrafficSim {
             if (v.position - before[0].0).length() > JUMP {
                 continue;
             }
-            let earlier = span(&p.earlier_at, c.id, n)
-                .map(|e| &p.earlier[e..e + n])
-                .filter(|e| (before[0].0 - e[0].0).length() <= JUMP);
+            let mut kept: [&[PartPose]; 1 + OLDER_STEPS] = [before; 1 + OLDER_STEPS];
+            let mut back = 1;
+            for (poses, at) in &p.older {
+                let Some(e) = span(at, c.id, n).map(|e| &poses[e..e + n]).filter(|e| (kept[back - 1][0].0 - e[0].0).length() <= JUMP) else { break };
+                kept[back] = e;
+                back += 1;
+            }
             let k = p.actual.len();
             p.shown.push((i, k as u32));
             p.actual.push((v.position, v.heading, v.pitch, v.bank));
             p.actual.extend(v.trailers.iter().map(|t| (t.position, t.heading, t.pitch, t.bank)));
             let now = &p.actual[k..k + n];
-            let (from, to, w) = shown(earlier, before, now, a);
+            let (from, to, w) = shown(&kept[..back], now, a);
             (v.position, v.heading, v.pitch, v.bank) = between(from[0], to[0], w);
             for (j, t) in v.trailers.iter_mut().enumerate() {
                 (t.position, t.heading, t.pitch, t.bank) = between(from[j + 1], to[j + 1], w);
@@ -159,17 +167,24 @@ pub struct StepPoses {
     pub before: Vec<PartPose>,
     /// ... where each car's begin in `before` and how many there are, by id.
     pub before_at: HashMap<u64, (u32, u32)>,
-    earlier: Vec<PartPose>,
-    earlier_at: HashMap<u64, (u32, u32)>,
+    older: std::collections::VecDeque<(Vec<PartPose>, HashMap<u64, (u32, u32)>)>,
     /// The cars `show_between` moved (index) and where their real poses begin in `actual`.
     shown: Vec<(usize, u32)>,
     actual: Vec<PartPose>,
 }
 
-fn shown<'a>(earlier: Option<&'a [PartPose]>, before: &'a [PartPose], now: &'a [PartPose], a: f32) -> (&'a [PartPose], &'a [PartPose], f32) {
-    match earlier.filter(|_| a < 0.0) {
-        Some(e) => (e, before, 1.0 + a),
-        None => (before, now, a.max(0.0)),
+fn shown_alpha(frame_alpha: f32, behind: f32) -> f32 {
+    frame_alpha - behind.clamp(0.0, MOST_BEHIND) / SIM_DT
+}
+
+fn shown<'a>(kept: &[&'a [PartPose]], now: &'a [PartPose], a: f32) -> (&'a [PartPose], &'a [PartPose], f32) {
+    if a >= 0.0 {
+        return (kept[0], now, a);
+    }
+    let back = (-a).ceil() as usize;
+    match kept.get(back) {
+        Some(from) => (from, kept[back - 1], a + back as f32),
+        None => (kept[kept.len() - 1], kept[kept.len() - 1], 0.0),
     }
 }
 
@@ -197,14 +212,39 @@ mod tests {
         let at = |y: f64| [(DVec3::new(0.0, y, 0.0), 0.0, 0.0, 0.0)];
         let (earlier, before, now) = (at(0.0), at(1.0), at(2.0));
         let y = |a: f32| {
-            let (from, to, w) = shown(Some(&earlier), &before, &now, a);
+            let (from, to, w) = shown(&[&before, &earlier], &now, a);
             between(from[0], to[0], w).0.y
         };
         assert!((y(0.25) - 1.25).abs() < 1e-9);
         assert!((y(-0.25) - 0.75).abs() < 1e-9);
         assert!((y(-1e-6) - y(0.0)).abs() < 1e-5, "no jump where the step is");
-        let (from, to, w) = shown(None, &before, &now, -0.25);
+        let (from, to, w) = shown(&[&before], &now, -0.25);
         assert!((between(from[0], to[0], w).0.y - 1.0).abs() < 1e-9, "without the step before: where it stood before the last");
+    }
+
+    #[test]
+    fn a_picture_steps_back_is_drawn_between_the_steps_kept_then() {
+        let at = |y: f64| [(DVec3::new(0.0, y, 0.0), 0.0, 0.0, 0.0)];
+        let steps: Vec<_> = (0..=OLDER_STEPS + 1).map(|k| at(k as f64)).collect();
+        let now = &steps[OLDER_STEPS + 1];
+        let kept: Vec<&[PartPose]> = (0..=OLDER_STEPS).rev().map(|k| &steps[k][..]).collect();
+        let y = |a: f32| {
+            let (from, to, w) = shown(&kept, now, a);
+            between(from[0], to[0], w).0.y
+        };
+        let deepest = shown_alpha(0.0, 1.0);
+        assert!((deepest + OLDER_STEPS as f32).abs() < 1e-5, "as far back as the steps kept: {deepest}");
+        assert!((shown_alpha(0.5, 0.05) + 2.0).abs() < 1e-5);
+        assert!((y(deepest) - 0.0).abs() < 1e-6, "{}", y(deepest));
+        assert!((y(deepest + 0.5) - 0.5).abs() < 1e-6);
+        assert!((y(-1.5) - (OLDER_STEPS as f64 - 1.5)).abs() < 1e-6);
+        assert!((y(0.5) - (OLDER_STEPS as f64 + 0.5)).abs() < 1e-6);
+        for k in 1..OLDER_STEPS {
+            let edge = -(k as f32);
+            assert!((y(edge - 1e-5) - y(edge)).abs() < 1e-4, "no jump {k} steps back");
+        }
+        let (from, to, w) = shown(&kept[..2], now, -3.5);
+        assert!((between(from[0], to[0], w).0.y - (OLDER_STEPS as f64 - 1.0)).abs() < 1e-9, "past the steps kept: the oldest");
     }
 
     /// The same seconds give the same steps whether they come as 15, 30, 60 or 144 frames

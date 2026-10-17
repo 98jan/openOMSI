@@ -42,6 +42,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+mod unpack;
+pub use unpack::unpack;
+
 /// The project on GitHub.
 pub const REPO: &str = "openOMSI-org/openOMSI";
 pub const REPO_URL: &str = "https://github.com/openOMSI-org/openOMSI";
@@ -860,50 +863,6 @@ fn aside_of(target: &Path) -> PathBuf {
     first
 }
 
-/// Unpack `zip` into `to` (a fresh folder), with the files' Unix modes and links.
-pub fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
-    let _ = std::fs::remove_dir_all(to);
-    std::fs::create_dir_all(to)?;
-    let mut a = zip::ZipArchive::new(std::fs::File::open(zip)?)?;
-    for i in 0..a.len() {
-        let mut e = a.by_index(i)?;
-        let Some(rel) = e.enclosed_name() else { continue };
-        // (macOS' resource forks, which ditto keeps beside the files)
-        if rel.components().next().map(|c| c.as_os_str() == "__MACOSX").unwrap_or(false) || rel.file_name().map(|n| n.to_string_lossy().starts_with("._")).unwrap_or(false) {
-            continue;
-        }
-        let out = to.join(&rel);
-        if e.is_dir() {
-            std::fs::create_dir_all(&out)?;
-            continue;
-        }
-        if let Some(p) = out.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        let mode = e.unix_mode();
-        #[cfg(unix)]
-        if let Some(m) = mode {
-            if m & 0o170000 == 0o120000 {
-                let mut target = String::new();
-                e.read_to_string(&mut target)?;
-                std::os::unix::fs::symlink(target, &out)?;
-                continue;
-            }
-        }
-        let mut f = std::fs::File::create(&out)?;
-        std::io::copy(&mut e, &mut f)?;
-        drop(f);
-        #[cfg(unix)]
-        if let Some(m) = mode {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(m & 0o7777))?;
-        }
-        #[cfg(not(unix))]
-        let _ = mode;
-    }
-    Ok(())
-}
-
 /// What the archive's top-level item `name` replaces in the installation.
 pub(crate) fn target_of(name: &str, place: &Place) -> PathBuf {
     // (the macOS app, whatever the player named the one that runs)
@@ -928,6 +887,9 @@ pub(crate) fn install_archive_with(zip: &Path, place: &Place, self_test: bool) -
     let staging = place.dir.join(STAGING);
     unpack(zip, &staging).map_err(|e| anyhow::anyhow!("could not unpack the update into {} ({e})", short_path(&place.dir)))?;
     let mut items: Vec<String> = std::fs::read_dir(&staging)?.flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect();
+    if place.bundle.is_some() {
+        items.retain(|n| n.to_ascii_lowercase().ends_with(".app"));
+    }
     items.sort();
     if items.is_empty() {
         anyhow::bail!("the update archive is empty");
@@ -1445,6 +1407,35 @@ mod tests {
         }
         assert!(install_archive_with(&bad, &place, false).is_err());
         assert_eq!(std::fs::read_to_string(dir.join("openomsi")).unwrap(), "new game");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_app_bundle_update_leaves_the_applications_folder_alone() {
+        let root = std::env::temp_dir().join(format!("omsi_update_app_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("Applications");
+        let bundle = dir.join("openOMSI.app");
+        std::fs::create_dir_all(bundle.join("Contents/MacOS")).unwrap();
+        std::fs::write(bundle.join("Contents/MacOS/openomsi"), "old game").unwrap();
+        std::fs::write(dir.join("Other.txt"), "theirs").unwrap();
+        let zip_path = root.join("new.zip");
+        {
+            let mut z = zip::ZipWriter::new(std::fs::File::create(&zip_path).unwrap());
+            let o = zip::write::SimpleFileOptions::default().unix_permissions(0o755);
+            for (n, body) in [("openOMSI.app/Contents/MacOS/openomsi", "new game"), ("README.md", "readme"), ("LICENSE", "license")] {
+                z.start_file(n, o).unwrap();
+                z.write_all(body.as_bytes()).unwrap();
+            }
+            z.finish().unwrap();
+        }
+        let place = Place { dir: dir.clone(), bundle: Some(bundle.clone()), exe: bundle.join("Contents/MacOS/openomsi") };
+        install_archive_with(&zip_path, &place, false).unwrap();
+        assert_eq!(std::fs::read_to_string(bundle.join("Contents/MacOS/openomsi")).unwrap(), "new game");
+        assert!(!dir.join("README.md").exists());
+        assert!(!dir.join("LICENSE").exists());
+        assert_eq!(std::fs::read_to_string(dir.join("Other.txt")).unwrap(), "theirs");
+        assert!(!dir.join(STAGING).exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

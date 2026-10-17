@@ -1698,12 +1698,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 
 [[package]]
-name = "float_next_after"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bf7cc16383c4b8d58b9905a8509f02926ce3058053c056376248d958c9df1e8"
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2762,38 +2756,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lyon_geom"
-version = "1.0.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4336502e29e32af93cf2dad2214ed6003c17ceb5bd499df77b1de663b9042b92"
-dependencies = [
- "arrayvec",
- "euclid",
- "num-traits",
-]
-
-[[package]]
-name = "lyon_path"
-version = "1.0.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c463f9c428b7fc5ec885dcd39ce4aa61e29111d0e33483f6f98c74e89d8621e"
-dependencies = [
- "lyon_geom",
- "num-traits",
-]
-
-[[package]]
-name = "lyon_tessellation"
-version = "1.0.22"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43b8dcf906637ecef61b3c0740c7a4e7f27caeb31257cfac0cc579ce15be6005"
-dependencies = [
- "float_next_after",
- "lyon_path",
- "num-traits",
-]
-
-[[package]]
 name = "lzma-rust2"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3459,6 +3421,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "omsi-admin"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "ring",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "omsi-app"
 version = "0.1.0"
 dependencies = [
@@ -3467,7 +3439,6 @@ dependencies = [
  "anyhow",
  "arboard",
  "clap",
- "ct2rs",
  "env_logger",
  "gilrs",
  "glam",
@@ -3479,6 +3450,7 @@ dependencies = [
  "mimalloc",
  "ndk-context",
  "objc2 0.6.5",
+ "omsi-admin",
  "omsi-audio",
  "omsi-career",
  "omsi-cfg",
@@ -3494,6 +3466,8 @@ dependencies = [
  "omsi-map",
  "omsi-mapdraw",
  "omsi-model",
+ "omsi-mt",
+ "omsi-navigator",
  "omsi-net",
  "omsi-o3d",
  "omsi-photo",
@@ -3524,7 +3498,6 @@ dependencies = [
  "rustrict",
  "serde",
  "serde_json",
- "sha2",
  "steamworks",
  "ureq",
  "wgpu",
@@ -3630,8 +3603,11 @@ dependencies = [
 name = "omsi-guard"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "libc",
+ "log",
  "omsi-cfg",
+ "omsi-launcher-core",
  "omsi-platform",
  "serde_json",
  "windows 0.62.2",
@@ -3667,6 +3643,7 @@ dependencies = [
  "omsi-script",
  "omsi-sim",
  "omsi-vehicle",
+ "serde_json",
  "windows 0.62.2",
  "winit",
 ]
@@ -3676,16 +3653,20 @@ name = "omsi-lan"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "flate2",
  "glam",
  "hashbrown 0.17.1",
  "libc",
  "log",
+ "omsi-admin",
  "omsi-cfg",
  "omsi-map",
+ "omsi-model",
  "omsi-net",
  "omsi-o3d",
  "omsi-script",
  "omsi-sim",
+ "omsi-texture",
  "omsi-vehicle",
  "rayon",
  "ring",
@@ -3695,6 +3676,7 @@ dependencies = [
  "sha2",
  "windows 0.62.2",
  "zip",
+ "zstd",
 ]
 
 [[package]]
@@ -3744,7 +3726,6 @@ dependencies = [
  "hashbrown 0.17.1",
  "log",
  "omsi-cfg",
- "omsi-lan",
  "omsi-launcher-core",
  "omsi-map",
  "omsi-net",
@@ -3784,6 +3765,39 @@ version = "0.1.0"
 dependencies = [
  "log",
  "omsi-cfg",
+]
+
+[[package]]
+name = "omsi-mt"
+version = "0.1.0"
+dependencies = [
+ "ct2rs",
+ "log",
+ "omsi-ui",
+ "parking_lot",
+ "serde_json",
+ "sha2",
+ "ureq",
+]
+
+[[package]]
+name = "omsi-navigator"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
+ "omsi-lan",
+ "omsi-map",
+ "omsi-mapdraw",
+ "omsi-render",
+ "omsi-scene",
+ "omsi-sim",
+ "omsi-texture",
+ "omsi-timetable",
+ "omsi-ui",
+ "wgpu",
 ]
 
 [[package]]
@@ -3831,6 +3845,7 @@ dependencies = [
  "log",
  "omsi-cfg",
  "omsi-launcher-core",
+ "serde",
  "serde_json",
  "sha2",
  "ureq",
@@ -3893,12 +3908,12 @@ dependencies = [
 name = "omsi-scene"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "glam",
  "hashbrown 0.17.1",
  "image",
  "log",
- "lyon_tessellation",
  "omsi-audio",
  "omsi-cfg",
  "omsi-content",
@@ -3918,8 +3933,10 @@ dependencies = [
  "omsi-weather",
  "omsi-world",
  "parking_lot",
+ "png",
  "pollster 1.0.1",
  "rayon",
+ "serde_json",
  "wgpu",
  "zip",
 ]
@@ -4026,6 +4043,7 @@ dependencies = [
  "image",
  "log",
  "naga",
+ "omsi-cfg",
  "pollster 1.0.1",
  "resvg",
  "wgpu",
@@ -7271,14 +7289,15 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.6.0"
+version = "9.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+checksum = "a954114b47a54df49f83d2722814e86b23d4bb1b54a1b90fb7d92b41619ddc22"
 dependencies = [
  "crc32fast",
  "flate2",
  "indexmap",
  "memchr",
+ "nix",
  "typed-path",
  "zopfli",
 ]
@@ -7305,6 +7324,34 @@ dependencies = [
  "crc32fast",
  "log",
  "simd-adler32",
+]
+
+[[package]]
+name = "zstd"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64d80649ab6db9d9f6f9c80a40becd948eda4714a0a5ac8c4d157a32231c7882"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.1.1+zstd.1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aeec9eaf2dffbbd09201e23bd0ffcbaa33bb8e9266a10734fd7ed90a85eca078"
+dependencies = [
+ "cc",
+ "pkg-config",
 ]
 
 [[package]]

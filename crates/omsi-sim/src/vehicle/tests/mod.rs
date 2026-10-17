@@ -5,6 +5,7 @@ use super::*;
 use std::sync::Arc;
 
 mod articulation;
+mod fuel;
 mod scripts_props;
 
 #[test]
@@ -839,6 +840,43 @@ fn string_only_restore_preserves_and_reuploads_main_and_articulated_displays() {
             assert!(v.update_text_textures().is_empty());
         }
     }
+}
+
+#[test]
+fn remote_strings_are_visible_to_scripts_and_restored_before_visuals() {
+    let mut v = restored_display_vehicle();
+    for def in &v.ty.model.text_textures {
+        v.text_textures
+            .push(crate::texttex::TextTextureState::new(def.clone(), None));
+    }
+    let request = v.ty.program.str_var("line_request").unwrap();
+    let display = v.ty.program.str_var("line_display").unwrap();
+    let power = v.ty.program.var("power").unwrap();
+    // The frame copies request to display: it must see the owner request immediately.
+    v.update_ai_with_strings(
+        0.02,
+        &AiFrame::default(),
+        &[],
+        &[(power, 0.0)],
+        &[(request, "owner request")],
+    );
+    assert_eq!(v.str_var("line_display"), "owner request");
+    // That script result must not overwrite an independently synchronized display.
+    v.update_ai_with_strings(
+        0.02,
+        &AiFrame::default(),
+        &[],
+        &[(power, 0.0)],
+        &[(request, "other request"), (display, "owner display")],
+    );
+    assert_eq!(v.str_var("line_display"), "owner display");
+    assert_eq!(v.var("power"), Some(0.0));
+    v.update_text_textures();
+    assert!(
+        v.text_textures
+            .iter()
+            .any(|t| t.last_text.as_deref() == Some("owner display"))
+    );
 }
 
 /// A railcar running alone (no coupled parts) is put on its track without a panic (#2259).

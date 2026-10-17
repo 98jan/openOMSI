@@ -30,7 +30,7 @@ fn main() {
     let k = size as f32 / (hi - lo).max_element();
     let mut img = image::RgbaImage::from_pixel(size, size, image::Rgba([214, 230, 196, 255]));
     let px = |p: Vec2| Vec2::new((p.x - lo.x) * k, size as f32 - (p.y - lo.y) * k);
-    let mut tri = |img: &mut image::RgbaImage, a: Vec2, b: Vec2, c: Vec2, col: [u8; 4]| {
+    let tri = |img: &mut image::RgbaImage, a: Vec2, b: Vec2, c: Vec2, col: [u8; 4]| {
         let (a, b, c) = (px(a), px(b), px(c));
         let mn = a.min(b).min(c).max(Vec2::ZERO);
         let mx = a.max(b).max(c).min(Vec2::splat(size as f32 - 1.0));

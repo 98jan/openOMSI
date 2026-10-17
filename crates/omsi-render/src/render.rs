@@ -225,9 +225,34 @@ impl Renderer {
             self.options.msaa,
             self.adapter_name
         );
-        // Release render targets before building their single-sample replacements. Keeping
-        // the old targets alive while the new renderer is built can turn a recoverable OOM
-        // into another allocation failure.
+        if let Some(c) = CEILING.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            c.msaa = 1;
+        }
+        let options = RenderOptions {
+            msaa: 1,
+            ..self.options
+        };
+        self.rebuild_in_place(scene, options);
+    }
+
+    pub fn rebuild_with(&mut self, scene: &mut Scene, options: RenderOptions) -> bool {
+        let options = match ceiling() {
+            Some(c) => RenderOptions { msaa: c.msaa_for(options.msaa), ssao: options.ssao && c.ssao, shadow_size: options.shadow_size.clamp(512, c.shadow_size), ..options },
+            None => options,
+        };
+        let options = if options.ray_tracing && options.msaa > 4 && !omsi_cfg::flags::OMSI_FULL_GPU.is_set() { RenderOptions { msaa: 4, ..options } } else { options };
+        if options == self.options {
+            return false;
+        }
+        log::info!("graphics rebuilt: {}x MSAA, shadow map {}, SSAO {}", options.msaa, options.shadow_size, options.ssao);
+        self.rebuild_in_place(scene, options);
+        true
+    }
+
+    fn rebuild_in_place(&mut self, scene: &mut Scene, options: RenderOptions) {
+        // Release render targets before building their replacements. Keeping the old
+        // targets alive while the new renderer is built can turn a recoverable OOM into
+        // another allocation failure.
         self.targets.depth = None;
         self.targets.msaa_targets.clear();
         self.targets.ao = None;
@@ -236,10 +261,6 @@ impl Renderer {
         self.targets.triple_targets = None;
         self.targets.glass_picture = None;
         self.targets.target_use.clear();
-        let options = RenderOptions {
-            msaa: 1,
-            ..self.options
-        };
         let mesh_pages = self.mesh_pages;
         *self = Renderer { mesh_pages, ..self.rebuilt(options) };
         scene.dirty = true;
@@ -629,6 +650,9 @@ impl Renderer {
         }
         // OMSI_GPU_TIMERS: GPU time per pass, one frame at a time
         self.collect_gpu_timers();
+        let mut pictures = self.pictures.get();
+        pictures[with_overlays as usize] += 1;
+        self.pictures.set(pictures);
         let mut timers = PassTimers {
             set: self.gpu_timers[with_overlays as usize]
                 .as_ref()
@@ -689,7 +713,8 @@ impl Renderer {
         self.encode_shadow_maps(&mut enc.shadow, scene, &sh, &shadow_batches, &mut timers);
         self.encode_lamp_shadows(&mut enc.shadow, scene, &f, &shadow_batches, &mut timers);
         self.encode_precip_map(&mut enc.shadow, scene, &sh, &shadow_batches, &mut timers);
-        self.encode_depth_prepass(&mut enc.prepass, scene, &f, &plan.prepass_batches, &mut timers);
+        let prepass_batches = if self.shares_prepass_depth(&f, &plan) { plan.prefill_batches() } else { &plan.prepass_batches };
+        self.encode_depth_prepass(&mut enc.prepass, scene, &f, prepass_batches, &mut timers);
         if f.enhanced && f.lead_view && f.prepass_on && self.device_lost().is_none() {
             if let (Some(s), Some(ao)) = (self.tone.lamp_sight.as_mut(), self.targets.ao.as_ref()) {
                 s.encode(&self.device, &self.queue, &mut enc.prepass, &ao.depth_view, vp_mat, f.ro, f.cam_rel);
@@ -700,7 +725,16 @@ impl Renderer {
         }
         self.encode_sky_cube(&mut enc.prepass, scene, &f, probe_redraw, &mut timers);
         self.encode_probe(&mut enc.prepass, scene, probe_redraw, &mut timers);
-        let main_parts = self.encode_main_pass(&mut enc.picture, scene, &f, &plan, &main_bundles, &mut timers);
+        let mut main_parts = self.encode_main_pass(&mut enc.picture, scene, &f, &plan, &main_bundles, &mut timers);
+        // Turning the recorded passes into Metal commands is the costliest CPU step of a
+        // frame (wgpu checks every draw): the shadow maps, the prepass, the main pass and
+        // the passes after it are finished side by side on helper threads and this one.
+        let big =
+            shadow_batches.iter().map(|b| b.len()).sum::<usize>() + plan.prepass_batches.len() > 64 || !main_parts.is_empty();
+        if big && !f.env.no_post_split {
+            let rest = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("after the main pass") });
+            main_parts.push(std::mem::replace(&mut enc.picture, rest));
+        }
         let puddles_on = self.encode_scene_reflections(&mut enc.picture, scene, &f, &plan, &cu, &mut timers);
         self.encode_fog_lamps(&mut enc.picture, scene, &f, vp_mat, puddles_on, &mut timers);
         self.encode_rain_film(&mut enc.picture, scene, &f, &plan.rain_batches, puddles_on);
@@ -710,11 +744,6 @@ impl Renderer {
         }
         self.encode_upscale(&mut enc.picture, scene, &f, &mut timers);
         clock.stage(self, "encode", "mirror.encode");
-        // Turning the recorded passes into Metal commands is the costliest CPU step of a
-        // frame (wgpu checks every draw): the shadow maps and the prepass are finished on
-        // helper threads while this one finishes the picture.
-        let big =
-            shadow_batches.iter().map(|b| b.len()).sum::<usize>() + plan.prepass_batches.len() > 64 || !main_parts.is_empty();
         self.finish_and_submit(enc, main_parts, big, with_overlays, &mut clock, timers);
     }
 
@@ -810,11 +839,13 @@ impl Renderer {
         let view = tex.create_view(&Default::default());
         // a picture on its own: the enhanced exposure is where the light puts it at once
         self.instant_exposure = true;
+        let max_scene = self.options.max_scene.take();
         if let Some(rig) = rig {
             self.render_triple(scene, &view, width, height, camera, lighting, rig);
         } else {
             self.render(scene, &view, width, height, camera, lighting);
         }
+        self.options.max_scene = max_scene;
         self.instant_exposure = false;
         let mut out = self.read_texture(&tex, wgpu::TextureAspect::All)?;
         // BGRA surfaces → swap

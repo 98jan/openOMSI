@@ -304,7 +304,7 @@ impl Offscreen<'_> {
             let viewport = settings.hud_viewport((w, h));
             let overlay_start = scene.overlays.len();
             hud.update(renderer, scene, &lines);
-            crate::ui::shift_overlays(scene, overlay_start, viewport[0]);
+            scene.shift_overlays(overlay_start, viewport[0]);
             // the navigator, as the window shows it (its camera settled first)
             if settings.navigator {
                 let mut nav = navigator::Navigator::new(true, settings.ui_opacity, &settings.navigator_corner);
@@ -327,6 +327,9 @@ impl Offscreen<'_> {
                 nav.set_map(world.navigation_map());
                 nav.set_surface(omsi_map::package::Package::open(&world.map_dir));
                 nav.set_layers(world.map_layers());
+                if let Some(spec) = omsi_cfg::flags::OMSI_NAV_LINES.var() {
+                    nav.debug_lines(spec);
+                }
                 let (line, terminus, stops, trip) = navigator::duty_parts(duty.as_ref());
                 if let (Some((key, name)), Some(sch)) = (trip, schedule.as_ref()) {
                     let lanes = sch.trip_route_in(nav.map_net().unwrap(), &name);
@@ -335,14 +338,16 @@ impl Offscreen<'_> {
                 }
                 if let Some(sch) = schedule.as_ref() {
                     let cars: Vec<(glam::DVec3, String)> = traffic.as_ref().map(|t| t.cars.iter().filter(|c| !c.gone && c.bus.is_some()).map(|c| (c.vehicle.position, c.vehicle.host.tt_line.clone())).collect()).unwrap_or_default();
+                    let ground = world.data();
                     // (a few trips' routes a call: called until they all are there)
                     for _ in 0..80 {
-                        nav.update_live(sch, clock.time, 0.6, &cars);
+                        nav.update_live(sch, clock.time, 0.6, &cars, &|p| ground.has_ground(p.x, p.y));
                     }
                 }
                 let (outside_temp, inside_temp) = crate::app_events::vehicle_temperatures(p);
                 let frame = navigator::NavFrame {
-                    traffic: traffic.as_ref(),
+                    traffic: traffic.as_deref(),
+                    touch: crate::platform::touch_controls(),
                     players: lan_off.as_ref().map(|l| lan::nav_players(remotes_off, l.my_id)).unwrap_or_default(),
                     bus: p.vehicle.position,
                     heading: p.vehicle.heading,
@@ -357,6 +362,7 @@ impl Offscreen<'_> {
                     stop_requested: navigator::stop_requested(&p.vehicle),
                     time: clock.time,
                     weekday: clock.weekday(),
+                    date: clock.date_code(),
                     language: &settings.language,
                     screen: (viewport[2], viewport[3]),
                     ui_scale: settings.ui_scale,
@@ -477,8 +483,9 @@ impl Offscreen<'_> {
         // been there, then - with the budget raised to MB - the textures that come near again
         // with the camera are read back)
         if omsi_cfg::flags::OMSI_TEXTURE_MEMORY.is_set() || omsi_cfg::flags::OMSI_VIDEO_MEMORY.is_set() {
-            world.set_texture_budget(texture_budget());
-            world.set_video_memory_limit(video_memory_limit(settings));
+            let video = video_memory_limit(settings);
+            world.set_texture_budget(texture_budget(video));
+            world.set_video_memory_limit(video);
             let from: Vec<f64> = omsi_cfg::flags::OMSI_BUDGET_FROM.var()
                 .unwrap_or_default()
                 .split(',')

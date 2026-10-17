@@ -714,7 +714,7 @@ fn inner_streets(l: &Layers) -> Vec<Vec2> {
     let mut grid: HashMap<(i32, i32), Vec<u32>> = HashMap::new();
     for (i, (t, _)) in tris.iter().enumerate() {
         let (a, b) = (key(t[0].min(t[1]).min(t[2])), key(t[0].max(t[1]).max(t[2])));
-        if (b.0 - a.0) as i64 * (b.1 - a.1) as i64 > 2500 {
+        if (b.0 as i64 - a.0 as i64 + 1) * (b.1 as i64 - a.1 as i64 + 1) > 2500 {
             continue;
         }
         for y in a.1..=b.1 {
@@ -1160,7 +1160,7 @@ pub fn cached(root: &Path, map_dir: &Path, ground_textures: &[omsi_map::global::
     let l = generate(root, map_dir, ground_textures, tiles, chrono_dirs);
     if let Some(p) = path {
         let _ = std::fs::create_dir_all(p.parent().unwrap_or(Path::new(".")));
-        let tmp = p.with_extension("tmp");
+        let tmp = p.with_extension(format!("{}.tmp", std::process::id()));
         if std::fs::write(&tmp, l.to_bytes(key)).is_ok() {
             let _ = std::fs::rename(&tmp, &p);
         }

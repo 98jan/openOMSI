@@ -239,6 +239,7 @@ impl PeopleSim {
                 walk_open: None,
                 places_off: cv.places_off.clone(),
                 served: None,
+                route: b.route.clone().map(Arc::new),
                 cabin,
                 pos: b.position,
                 rot: b.rot,
@@ -264,7 +265,7 @@ impl PeopleSim {
                 })
                 .collect();
             let mut visits = HashMap::new();
-            for c in t.cars.iter().filter(|c| c.is_bus()) {
+            for c in t.cars.iter().filter(|c| c.is_bus() || c.vehicle.ty.def.passenger_cabin.is_some()) {
                 let from_eye = self.eye.map(|e| (c.vehicle.position - e.pos).length()).unwrap_or(f64::MAX);
                 // (the timetable buses near every player: the people waiting around the other
                 // LAN players board them too)
@@ -320,6 +321,7 @@ impl PeopleSim {
                             .for_each(|o| *o = true);
                     }
                 }
+                let walk_open = (!c.is_bus()).then(|| Self::doors_open(&c.vehicle, cabin.entries.len(), cabin.exits.len()));
                 self.seats
                     .entry(BusId::Ai(c.id))
                     .or_insert_with(|| vec![false; cabin.seats.len()]);
@@ -327,7 +329,7 @@ impl PeopleSim {
                 let trailers = part_frames(&c.vehicle, &cabin);
                 out.push(BusNow {
                     terminus: c.bus.as_ref().map(|b| b.terminus.trim().to_string()).filter(|t| !t.is_empty()),
-                    takes: Takes::Terminus,
+                    takes: if c.is_bus() { Takes::Terminus } else { Takes::Nobody },
                     id: BusId::Ai(c.id),
                     next_stop: c
                         .bus
@@ -342,9 +344,10 @@ impl PeopleSim {
                                 .map(|lane| lane.at(stop.s).0);
                             self.request_stop(stop.id, None, position)
                         }),
-                    walk_open: None,
+                    walk_open,
                     places_off: places_off(&c.vehicle, &cabin),
                     served,
+                    route: None,
                     cabin,
                     pos: c.vehicle.position,
                     rot: c.vehicle.body_rotation(),
@@ -400,6 +403,7 @@ impl PeopleSim {
             takes: Takes::Nobody,
             places_off: Vec::new(),
             served: None,
+            route: None,
             id,
             next_stop: None,
             entry_open: vec![false; cabin.entries.len()],
@@ -508,6 +512,7 @@ impl PeopleSim {
                 takes: Takes::Nobody,
                 places_off: Vec::new(),
                 served: None,
+                route: None,
                 id: BusId::Ai(remote_bus_id(player)),
                 next_stop: None,
                 entry_open: vec![false; cabin.entries.len()],

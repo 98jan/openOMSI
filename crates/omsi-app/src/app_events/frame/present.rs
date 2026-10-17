@@ -147,10 +147,15 @@ impl App {
                     s.config.height,
                     image::ColorType::Rgba8,
                 ) } {
-                Ok(()) => log::info!(
-                    "input script: window picture written to {}",
-                    path.display()
-                ),
+                Ok(()) => {
+                    log::info!("input script: window picture written to {}", path.display());
+                    if !include_touch {
+                        crate::platform::to_gallery(&path);
+                        if cfg!(target_os = "android") {
+                            self.service_msg = Some((omsi_ui::tr("Screenshot saved to the gallery").into_owned(), 4.0));
+                        }
+                    }
+                }
                 Err(e) => log::warn!(
                     "input script: {} could not be written: {e}",
                     path.display()
@@ -557,8 +562,7 @@ impl App {
         // max_fps (the original's [maxFPS]; OMSI_MAX_FPS for a test): the rest of
         // the frame's time is slept, not spun, so a limit gives the CPU back
         // (and keeps a laptop cool enough not to slow itself down)
-        let max_fps = omsi_cfg::flags::OMSI_MAX_FPS.parse::<u32>()
-            .unwrap_or(self.settings.max_fps);
+        let max_fps = if self.optimiser_holds_frame_rate() { 1000 } else { omsi_cfg::flags::OMSI_MAX_FPS.parse::<u32>().unwrap_or(self.settings.max_fps) };
         let asked = max_fps;
         // 0 = the screen's refresh rate: frames the screen never shows only heat the
         // machine (with V-sync off and no limit an M4 drew 300 frames a second in the

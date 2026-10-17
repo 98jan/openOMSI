@@ -1,4 +1,5 @@
-//! The simulation's own thread, pipelined with the picture (`OMSI_SIM_THREAD`, off unless set).
+//! The simulation's own thread, pipelined with the picture (the game's `sim_thread` setting,
+//! on by default; `OMSI_SIM_THREAD=0` / `=1` over it - see `set_enabled`).
 //!
 //! The window's frame runs its stages one after the other on the main thread (`WINDOW_FRAME`;
 //! the simulation's once per tick of the fixed step, see `tick`), so a frame costs the
@@ -237,11 +238,63 @@ pub struct Pipeline {
     stand_in: Option<Box<TrafficSim>>,
     /// The scenery came back from a step whose commands the view has not applied yet.
     scenery_stepped: bool,
+    lag: DrawnLag,
+    started: Option<Instant>,
 }
 
-/// `OMSI_SIM_THREAD`: the window's simulation steps go to the sim thread.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct DrawnLag {
+    now: f32,
+    last: f32,
+    span: f32,
+    lag: f32,
+}
+
+impl DrawnLag {
+    const SPAN: f32 = 0.25;
+    const EASE: f32 = 0.1;
+
+    pub(crate) fn note(&mut self, owed: f32, frame_secs: f32) {
+        let frame_secs = frame_secs.max(0.0);
+        self.now = self.now.max(owed);
+        self.span += frame_secs;
+        if self.span >= Self::SPAN {
+            self.last = self.now;
+            self.now = 0.0;
+            self.span = 0.0;
+        }
+        let most = self.now.max(self.last);
+        self.lag = if most >= self.lag { most } else { (self.lag - Self::EASE * frame_secs).max(most) };
+    }
+
+    pub(crate) fn behind(&self, behind: f32, owed: f32) -> f32 {
+        behind + self.lag.max(owed) - owed
+    }
+}
+
+static ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Whether the window's simulation steps go to the sim thread: decided once, as the game
+/// starts (`set_enabled`), never in the middle of a session; off until then (the offscreen
+/// run and the tests step inline).
 pub fn enabled() -> bool {
-    omsi_cfg::flags::OMSI_SIM_THREAD.is_set()
+    ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The game's choice for the session to come: `OMSI_SIM_THREAD` when it is set (`0`,
+/// `false`, `off` or `no`: inline; anything else: the sim thread), else `setting`.
+pub fn set_enabled(setting: bool) -> bool {
+    let on = choice(omsi_cfg::flags::OMSI_SIM_THREAD.var(), setting);
+    ENABLED.store(on, std::sync::atomic::Ordering::Relaxed);
+    on
+}
+
+/// `OMSI_SIM_THREAD`'s value over the setting (see `set_enabled`).
+fn choice(var: Option<&str>, setting: bool) -> bool {
+    match var {
+        Some(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "0" | "false" | "off" | "no"),
+        None => setting,
+    }
 }
 
 /// An empty traffic: nothing on the road, no lanes. It stands in `Traffic::sim` while the real
@@ -272,6 +325,14 @@ impl Pipeline {
     /// tick, the player's box as the stage saw it). The frame's ticks are made in their order.
     pub fn owe_traffic(&mut self, dt: f32, player: Option<PlayerBox>) {
         self.owed.push(OwedStep { dt, player });
+    }
+
+    pub fn traffic_behind(&self, behind: f32) -> f32 {
+        self.lag.behind(behind, self.owed_secs())
+    }
+
+    fn owed_secs(&self) -> f32 {
+        self.owed.iter().map(|o| o.dt).sum()
     }
 
     /// Whether the scripted stage leaves the scenery's step to the sim thread this frame: the
@@ -326,6 +387,9 @@ impl Pipeline {
         if self.out.is_some() {
             return people;
         }
+        let now = Instant::now();
+        let frame_secs = self.started.replace(now).map_or(0.0, |t| (now - t).as_secs_f32());
+        self.lag.note(self.owed_secs(), frame_secs);
         let mut job = SimJob::default();
         let owed = std::mem::take(&mut self.owed);
         if let (false, Some(sim)) = (owed.is_empty(), sim) {

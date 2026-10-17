@@ -6,7 +6,6 @@ license.workspace = true
 description = "openOMSI's scene: the map and its vehicles turned into the renderer's meshes, materials, lights and textures, and the world they were built from"
 
 [dependencies]
-lyon_tessellation = "1.0.22"
 omsi-audio = { path = "../omsi-audio" }
 omsi-cfg = { path = "../omsi-cfg" }
 omsi-content = { path = "../omsi-content" }
@@ -26,12 +25,15 @@ omsi-vehicle = { path = "../omsi-vehicle" }
 omsi-weather = { path = "../omsi-weather" }
 omsi-world = { path = "../omsi-world" }
 anyhow.workspace = true
+ab_glyph.workspace = true
 glam.workspace = true
 hashbrown.workspace = true
 image.workspace = true
+png = "0.18"
 log.workspace = true
 parking_lot.workspace = true
 rayon.workspace = true
+serde_json.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]

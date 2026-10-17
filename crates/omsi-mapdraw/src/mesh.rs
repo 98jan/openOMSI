@@ -113,7 +113,7 @@ impl MapData {
                 }
                 let (x0, y0) = ((lo.x / PAVED_CELL).floor() as i32, (lo.y / PAVED_CELL).floor() as i32);
                 let (x1, y1) = ((hi.x / PAVED_CELL).floor() as i32, (hi.y / PAVED_CELL).floor() as i32);
-                if (x1 - x0) as i64 * (y1 - y0) as i64 > 40_000 {
+                if (x1 as i64 - x0 as i64 + 1) * (y1 as i64 - y0 as i64 + 1) > 40_000 {
                     continue;
                 }
                 for y in y0..=y1 {
@@ -180,7 +180,7 @@ impl MapData {
         let k = self.shift(anchor);
         let c = (centre - self.layers.origin).as_vec2();
         let v = |q: Vec2| (q + k).extend(0.0);
-        let cells: Vec<&Cell> = self.cells_near(c, radius as f32).collect();
+        let cells: Vec<&Cell> = self.cells_near(c, radius as f32 + CELL * 1.25).collect();
         let land_order = [
             (layers::LAND_GRASS, pal.grass),
             (layers::LAND_FIELD, pal.field),
@@ -197,7 +197,7 @@ impl MapData {
             }
         }
         if look.trees {
-            for cell in &cells {
+            for cell in self.cells_near(c, radius as f32) {
                 for &i in &cell.trees {
                     let t = self.layers.trees[i as usize];
                     let q = v(Vec2::new(t[0], t[1]));

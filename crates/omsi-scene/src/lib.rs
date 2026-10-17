@@ -63,6 +63,14 @@ mod vehicles;
 mod lanes;
 mod season_looks;
 pub mod host;
+pub mod head_idle;
+pub mod hud;
+pub mod editor;
+pub mod tiles;
+pub mod schedule_paper;
+pub mod check;
+pub mod export;
+pub mod camera_util;
 
 pub use staging::*;
 pub use batching::*;

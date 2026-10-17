@@ -2,7 +2,17 @@
 
 use super::*;
 
+/// The first station reached this long after the trip's departure, or later, is not where the
+/// trip begins (s): it comes in from elsewhere first, the map's edge.
+const FIRST_STOP_LATE: f64 = 30.0;
+
 impl TripTimes {
+    /// Whether the trip begins at its first stop (it leaves from there at its departure),
+    /// rather than running in from the map's edge to it first.
+    pub fn begins_at_stop(&self) -> bool {
+        self.stations.first().is_some_and(|s| s.0 < FIRST_STOP_LATE)
+    }
+
     pub fn new(
         stations: &[i64],
         profile: Option<&omsi_timetable::TripProfile>,

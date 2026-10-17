@@ -71,10 +71,20 @@ pub(crate) struct Args {
     /// LAN play: join the host at ip[:port], or `auto` to find one on the local network.
     #[arg(long)]
     pub(crate) lan_join: Option<String>,
+    /// Discovered gateway to try if a direct UDP join gets no answer.
+    #[arg(long)]
+    pub(crate) lan_ws_fallback: Option<String>,
     /// Dedicated server: host a session from this server.cfg (written with the defaults when
     /// missing), with no window, no sound and no graphics card.
     #[arg(long)]
     pub(crate) server: Option<PathBuf>,
+    /// Dedicated server: this map instead of server.cfg's `map` (maps/<folder>/global.cfg).
+    #[arg(long)]
+    pub(crate) server_map: Option<String>,
+    /// Print the installed maps (as server.cfg names them), one a line, and end: for a
+    /// server's start script. With --server, a missing server.cfg is written first.
+    #[arg(long)]
+    pub(crate) list_maps: bool,
     /// Your name as the other players see it.
     #[arg(long, default_value = "Driver")]
     pub(crate) lan_name: String,
@@ -133,7 +143,7 @@ pub(crate) struct Args {
     #[arg(long)]
     pub(crate) setstr: Option<String>,
     /// Weather file (relative to root), e.g. Weather/Bodennebel.owt; `natural` (or none) is
-    /// the physical weather model, `cycle` the weather cycle.
+    /// the physical weather model, `cycle` the weather cycle, `tomorrow` map-group live weather.
     #[arg(long)]
     pub(crate) weather: Option<String>,
     /// Passengers at bus stops (window and offscreen).
@@ -205,6 +215,10 @@ pub(crate) struct Args {
     /// saved with its variables.
     #[arg(skip)]
     pub(crate) situation_others: Vec<SituationOther>,
+    /// The vehicle put down is not a new one (a part uncoupled from the bus): its tank stays
+    /// as it was, whatever the "full tank" setting says.
+    #[arg(skip)]
+    pub(crate) keep_fuel: bool,
     /// The trip of the duty the bus was placed at (`duty_start::place_on_duty`).
     #[arg(skip)]
     pub(crate) duty_trip: Option<usize>,

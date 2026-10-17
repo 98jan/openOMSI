@@ -21,6 +21,15 @@ pub(crate) fn only_relative(pictures: Vec<String>) -> Vec<String> {
     pictures.into_iter().map(|p| if freetex_ok(&p) { p } else { String::new() }).collect()
 }
 
+/// Is `s` a vehicle's fingerprint (`v2-`, or the older `v1-`, and 64 lower-case hex digits)?
+/// (`v2` hashes the bus file's path too; `v1` is still recognised on the wire but no longer
+/// produced - see the game's `lan_mods::identity`.)
+pub fn is_fingerprint(s: &str) -> bool {
+    s.strip_prefix("v2-")
+        .or_else(|| s.strip_prefix("v1-"))
+        .is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

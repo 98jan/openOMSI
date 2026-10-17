@@ -2,7 +2,7 @@
 //! two of their states (or carried on from the last one for a moment), on a clock that
 //! follows theirs smoothly (`PlayClock`).
 
-use crate::mirror::{lerp_angle, PlayClock};
+use crate::mirror::{PlayClock, lerp_angle};
 use omsi_net::Pose;
 use std::time::Instant;
 
@@ -17,6 +17,12 @@ pub struct PoseTrack {
     offset: Option<f64>,
     /// The moment of theirs drawn (see `PlayClock`).
     play: PlayClock,
+    /// Timestamp on the owner clock currently used for pose and animation playback.
+    pub draw_time: Option<f64>,
+    /// Additional buffer required by animation samples sent less often than poses.
+    pub min_delay: f64,
+    /// Changes when the owner clock restarts, invalidating dependent animation samples.
+    pub generation: u64,
 }
 
 /// Seconds on our clock (for comparing with the others' `sent_ms`).
@@ -41,7 +47,13 @@ impl PoseTrack {
             let sent = p.sent_ms as f64 / 1000.0;
             if self.samples.back().map(|b| sent <= b.0).unwrap_or(false) {
                 // (their game started again: its clock began anew)
-                if self.samples.back().map(|b| b.0 - sent > 30.0).unwrap_or(false) {
+                if self
+                    .samples
+                    .back()
+                    .map(|b| b.0 - sent > 30.0)
+                    .unwrap_or(false)
+                {
+                    self.generation = self.generation.wrapping_add(1);
                     self.samples.clear();
                     self.offset = None;
                     self.play = Default::default();
@@ -68,6 +80,7 @@ impl PoseTrack {
     /// or carried on from the last one along its way for a short while. None without
     /// stamped states (an older game).
     pub fn interpolated(&mut self) -> Option<Pose> {
+        self.draw_time = None;
         // (`OMSI_NO_INTERP=1`: the old way, for comparing)
         static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
         if *OFF.get_or_init(|| omsi_cfg::flags::OMSI_NO_INTERP.is_set()) {
@@ -80,7 +93,12 @@ impl PoseTrack {
         // the wheels and the walker waited for each state and then jumped to it
         let n = self.samples.len();
         let gap = if n >= 2 {
-            self.samples.iter().skip(n.saturating_sub(4)).zip(self.samples.iter().skip(n.saturating_sub(4) + 1)).map(|(a, b)| b.0 - a.0).fold(0.0f64, f64::max)
+            self.samples
+                .iter()
+                .skip(n.saturating_sub(4))
+                .zip(self.samples.iter().skip(n.saturating_sub(4) + 1))
+                .map(|(a, b)| b.0 - a.0)
+                .fold(0.0f64, f64::max)
         } else {
             0.05
         };
@@ -88,7 +106,16 @@ impl PoseTrack {
         // few hundredths of a second whenever one of their frames had taken long, and on
         // again when that one was no longer among the last four - the bus jumped)
         let now = lan_now();
-        let t = self.play.step(now, now - off - (gap * 2.0 + 0.02).clamp(INTERP_DELAY, 0.45), 0.5);
+        let t = self.play.step(
+            now,
+            now - off
+                - (gap * 2.0 + 0.02).clamp(
+                    INTERP_DELAY.max(self.min_delay),
+                    0.45f64.max(self.min_delay),
+                ),
+            0.5,
+        );
+        self.draw_time = Some(t);
         let k = self.samples.iter().rposition(|(st, _)| *st <= t);
         let Some(k) = k else {
             return self.samples.front().map(|x| x.1.clone());
@@ -107,8 +134,16 @@ impl PoseTrack {
             }
             // the walker on foot goes on its own way (held back, it stood still and jumped
             // on with every state, and the planted feet were torn along behind)
-            if let Some(w) = p.walker.as_mut().filter(|w| w.aboard.is_none() && !w.seated) {
-                let c = if w.course.is_finite() { w.course } else { w.heading } as f64;
+            if let Some(w) = p
+                .walker
+                .as_mut()
+                .filter(|w| w.aboard.is_none() && !w.seated)
+            {
+                let c = if w.course.is_finite() {
+                    w.course
+                } else {
+                    w.heading
+                } as f64;
                 let wd = w.speed as f64 * ahead;
                 w.x += c.to_radians().sin() * wd;
                 w.y += c.to_radians().cos() * wd;
@@ -117,7 +152,11 @@ impl PoseTrack {
         }
         let (ta, a) = &self.samples[k];
         let (tb, b) = &self.samples[k + 1];
-        let f = if tb > ta { ((t - ta) / (tb - ta)).clamp(0.0, 1.0) } else { 1.0 };
+        let f = if tb > ta {
+            ((t - ta) / (tb - ta)).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
         // a jump (placed elsewhere): no gliding across it
         if ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt() > 40.0 {
             return Some(if f < 0.5 { a.clone() } else { b.clone() });
@@ -136,7 +175,10 @@ impl PoseTrack {
         p.rpm = lf(a.rpm, b.rpm);
         let mix = |x: &[f32], y: &[f32]| -> Vec<f32> {
             if x.len() == y.len() {
-                x.iter().zip(y).map(|(u, v)| u + (v - u) * f as f32).collect()
+                x.iter()
+                    .zip(y)
+                    .map(|(u, v)| u + (v - u) * f as f32)
+                    .collect()
             } else {
                 y.to_vec()
             }
@@ -174,5 +216,73 @@ impl PoseTrack {
     /// Whether their clock against ours is known yet (a stamped state came).
     pub fn has_offset(&self) -> bool {
         self.offset.is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn animations_share_the_pose_playback_timestamp_and_required_buffer() {
+        let mut track = PoseTrack {
+            min_delay: 0.42,
+            ..Default::default()
+        };
+        let at = Instant::now();
+        let history = [
+            (
+                at,
+                Pose {
+                    sent_ms: 1000,
+                    ..Default::default()
+                },
+            ),
+            (
+                at,
+                Pose {
+                    sent_ms: 1100,
+                    ..Default::default()
+                },
+            ),
+        ]
+        .into_iter()
+        .collect();
+        track.take(&history);
+        assert!(track.interpolated().is_some());
+        let t = track.draw_time.expect("pose playback timestamp");
+        assert!((0.65..0.8).contains(&t), "buffered owner timestamp: {t}");
+    }
+
+    #[test]
+    fn a_restarted_owner_clock_invalidates_dependent_animation_samples() {
+        let mut track = PoseTrack::default();
+        let at = Instant::now();
+        track.take(
+            &[(
+                at,
+                Pose {
+                    sent_ms: 40000,
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        );
+        assert_eq!(track.generation, 0);
+        track.take(
+            &[(
+                at,
+                Pose {
+                    sent_ms: 100,
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect(),
+        );
+        assert_eq!(track.generation, 1);
+        assert_eq!(track.samples.len(), 1);
+        assert_eq!(track.samples[0].1.sent_ms, 100);
     }
 }

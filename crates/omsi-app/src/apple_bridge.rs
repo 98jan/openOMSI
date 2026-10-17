@@ -499,7 +499,7 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
                 anyhow::bail!("no address");
             }
             if !s.servers.iter().any(|e| e.address == address) {
-                s.servers.push(ServerEntry { name: st("name"), address: address.clone() });
+                s.servers.push(ServerEntry { name: st("name"), address: address.clone(), protocol: JoinProto::Auto });
                 s.save_servers();
             }
             s.ask_server(&address, 0.0);
@@ -511,12 +511,15 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
         }
         "server_ask" => s.ask_server(&st("address"), a.get("every").and_then(|v| v.as_f64()).unwrap_or(10.0) as f32),
         "server_join" => {
-            let proto = match st("proto").as_str() {
-                "udp" => JoinProto::Udp,
-                "ws" => JoinProto::WebSocket,
-                _ => JoinProto::Auto,
+            let address = st("address");
+            let proto = match a.get("proto").and_then(Value::as_str) {
+                Some("udp") => JoinProto::Udp,
+                Some("ws" | "websocket") => JoinProto::WebSocket,
+                Some(_) => JoinProto::Auto,
+                None => s.servers.iter().find(|e| e.address == address)
+                    .map(|e| e.protocol).unwrap_or_default(),
             };
-            s.join_server(&st("address"), proto);
+            s.join_server(&address, proto);
         }
         "server_leave" => s.leave_server(),
         "stop" => s.stop(a.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32),
@@ -593,6 +596,7 @@ fn preview_release() {
 
 fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
     let mut renderer: Option<omsi_render::Renderer> = None;
+    let mut quality = crate::launcher::showroom::Quality::now();
     let mut failed = false;
     let mut showroom = crate::launcher::showroom::Showroom::new();
     let mut last = Instant::now();
@@ -600,7 +604,14 @@ fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
     let mut asked = Instant::now();
     while let Ok(m) = rx.recv() {
         match m {
-            PreviewMsg::Want(look) => showroom.want(look),
+            PreviewMsg::Want(look) => {
+                if showroom.follow(&mut quality, false) {
+                    renderer = None;
+                    failed = false;
+                    delivered = u64::MAX;
+                }
+                showroom.want(look);
+            }
             PreviewMsg::Orbit(dx, dy) => showroom.orbit(dx, dy),
             PreviewMsg::Zoom(k) => showroom.zoom_by(k),
             PreviewMsg::Release => return,
@@ -612,9 +623,8 @@ fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
                 }
                 asked = Instant::now();
                 if renderer.is_none() && !failed {
-                    let settings = crate::settings::Settings::load();
                     let instance = crate::startup::graphics_instance();
-                    match pollster::block_on(omsi_render::Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), crate::launcher::showroom_options(&settings))) {
+                    match pollster::block_on(omsi_render::Renderer::new_with(&instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb), quality.options)) {
                         Ok(r) => renderer = Some(r),
                         Err(e) => {
                             log::warn!("launcher preview: no renderer: {e:#}");
