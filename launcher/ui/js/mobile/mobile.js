@@ -117,6 +117,13 @@ function MobileDrive() {
           <span class="m-row-value">${t('Leave the server')}</span>
         </button>
       </div>`}
+      ${c.lan_mode === 'host' && html`<div class="m-group">
+        <button class="m-row" onClick=${() => choose({ lan_mode: 'off' })}>
+          <span class="m-row-icon"><${Icon} name="users" /></span>
+          <span class="m-row-label">${t('Host my next duty')}<small>${t('Start the duty to create your session, then return to Multiplayer to copy the code.')}</small></span>
+          <span class="m-row-value">${t('Cancel')}</span>
+        </button>
+      </div>`}
       <div class="m-group">
         ${row('map', 'map', 'Map', mapLabel, joined ? t('Set by {server}', { server: srv.name || c.lan_addr }) : null, joined)}
         ${row('bus', 'bus', 'Bus', v ? v.name : s.vehicles || !s.boot?.root ? '-' : html`<${Spinner} />`)}
@@ -283,13 +290,13 @@ function TimeSheet() {
       <button onClick=${() => step(-60)} disabled=${realTime()}>-1 h</button><button onClick=${() => step(-5)} disabled=${realTime()}>-5</button>
       <b class="num">${hhmm(c.time)}</b>
       <button onClick=${() => step(5)} disabled=${realTime()}>+5</button><button onClick=${() => step(60)} disabled=${realTime()}>+1 h</button>
-      ${!realTime() && html`<button title=${t('Current time')} onClick=${() => choose({ time: localNow().time })}><${Icon} name="clock" /></button>`}
+      <button title=${t('Current time')} onClick=${() => choose({ time: localNow().time })} disabled=${realTime()}><${Icon} name="clock" /></button>
     </div>
     <div class="m-dial">
       <button onClick=${() => day(-7)} disabled=${realDate()}>-7</button><button onClick=${() => day(-1)} disabled=${realDate()}>-1</button>
       <b>${longDate(c.date)}</b>
       <button onClick=${() => day(1)} disabled=${realDate()}>+1</button><button onClick=${() => day(7)} disabled=${realDate()}>+7</button>
-      ${!realDate() && html`<button title=${t('Current date')} onClick=${() => choose({ date: localNow().date, season: 'auto', own_date: null })}><${Icon} name="calendar" /></button>`}
+      <button title=${t('Current date')} onClick=${() => choose({ date: localNow().date, season: 'auto', own_date: null })} disabled=${realDate()}><${Icon} name="calendar" /></button>
     </div>
     <div class="m-seg">${SEASONS.map(([v, l]) => html`<button class=${c.season === v ? 'on' : ''} onClick=${() => setSeason(v, c.phase)}>${t(l)}</button>`)}</div>
     ${c.season !== 'auto' && html`<div class="m-seg">${PHASES.map(([v, l]) => html`<button class=${c.phase === v ? 'on' : ''} onClick=${() => setSeason(c.season, v)}>${t(l)}</button>`)}</div>`}

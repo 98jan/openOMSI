@@ -200,9 +200,10 @@ fn serve(rx: std::sync::mpsc::Receiver<Value>, reply: Reply) {
             "map" => {
                 let out = reply.clone();
                 let (map, date, trip) = (s("map"), s("date"), s("trip"));
+                let surface = req.get("surface").and_then(Value::as_bool).unwrap_or(true);
                 std::thread::spawn(move || {
                     let global = omsi_cfg::find_in_roots(&map).map(|(_, p)| p).or_else(|| omsi_launcher_lib::content_path(&map).ok()).unwrap_or_else(|| PathBuf::from(&map));
-                    let v = omsi_launcher_model::mapview::export(&map, &global, &date, &trip, 0.6);
+                    let v = omsi_launcher_model::mapview::export(&map, &global, &date, &trip, 0.6, surface);
                     out(&id, json!({ "ok": true }), v.to_string().as_bytes());
                 });
             }

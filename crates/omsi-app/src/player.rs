@@ -558,7 +558,7 @@ impl Player {
         if self.vehicle.ty.model.interior_lights.is_empty() {
             "This bus has no saloon lights".into()
         } else if !done.is_empty() {
-            format!("Saloon lights {}", if on { "on" } else { "off" })
+            (if on { "Saloon lights on" } else { "Saloon lights off" }).to_string()
         } else if on {
             // the switches are thrown, but the lamps stay dark: no current
             "Saloon light switches on - no power (battery off?)".into()

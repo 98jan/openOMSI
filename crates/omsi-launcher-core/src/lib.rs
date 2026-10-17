@@ -12,6 +12,7 @@ pub mod index;
 pub mod install;
 pub mod instances;
 pub mod mods;
+pub mod optimise;
 mod hof_sync;
 mod file_dialog;
 
