@@ -90,8 +90,12 @@ try {
   failed = true;
 } finally {
   ws.close();
+  const gone = new Promise((r) => browser.once('exit', r));
   browser.kill();
+  await Promise.race([gone, new Promise((r) => setTimeout(r, 5000))]);
   server.close();
-  rmSync(profile, { recursive: true, force: true });
+  try {
+    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch {}
 }
 process.exit(failed ? 1 : 0);

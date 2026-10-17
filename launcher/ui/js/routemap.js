@@ -95,14 +95,14 @@ function drawSurface(g, pkg, v, W, H) {
 
 const LOOKS = {
   light: {
-    land: '#f3f1ea', grass: '#d8ecc8', forest: '#c3e0ae', field: '#eef0d8', paved: '#eceae4', sand: '#f3ead2', water: '#a6d3f5',
+    land: '#d8ecc8', grass: '#d8ecc8', forest: '#c3e0ae', field: '#eef0d8', paved: '#eceae4', sand: '#f3ead2', water: '#a6d3f5',
     park: '#d3eac1', built: '#efebe3', sport: '#cfe9c8', river: '#a6d3f5', border: '#b9a9c9',
     road: '#ffffff', roadEdge: '#dcd8cf', main: '#fbe08a', mainEdge: '#e5bd55', foot: '#f8f7f3', footEdge: '#e4e1d9', area: '#efedea', areaEdge: '#dedbd6',
     roof: '#e9e6df', roofEdge: '#d6d1c7', shadow: 'rgba(60,64,52,0.10)', rail: '#b2afa8', railDash: '#ffffff', tram: '#a59fb2',
     route: '#0a84ff', routeEdge: '#0060df', pin: '#ffffff', card: 'rgba(255,255,255,0.96)', cardShadow: 'rgba(0,0,0,0.16)', text: '#1c1c1e', dim: '#6e6e73', entry: '#ff9f0a',
   },
   dark: {
-    land: '#26282b', grass: '#22322a', forest: '#1f3527', field: '#2b2f29', paved: '#2e3033', sand: '#36332b', water: '#1d3550',
+    land: '#22322a', grass: '#22322a', forest: '#1f3527', field: '#2b2f29', paved: '#2e3033', sand: '#36332b', water: '#1d3550',
     park: '#213628', built: '#2c2d31', sport: '#22362b', river: '#1d3550', border: '#6b5d7a',
     road: '#4a4d53', roadEdge: '#323438', main: '#8a7a4e', mainEdge: '#5c5236', foot: '#34363a', footEdge: '#2c2e31', area: '#313337', areaEdge: '#2a2c2f',
     roof: '#3a3c41', roofEdge: '#46494f', shadow: 'rgba(0,0,0,0.28)', rail: '#5d5f64', railDash: '#2f3134', tram: '#6a6478',
@@ -114,26 +114,37 @@ let LOOK = LOOKS.light;
 const CHUNK = 1024;
 const LAND = [[0, 'grass'], [2, 'field'], [4, 'sand'], [3, 'paved'], [1, 'forest'], [5, 'water']];
 
+function pathOf(c) {
+  if (c.path) return c.path;
+  const { t, s, e } = c;
+  const path = new Path2D();
+  for (let i = s; i < e; i += 6) {
+    path.moveTo(t[i], t[i + 1]);
+    path.lineTo(t[i + 2], t[i + 3]);
+    path.lineTo(t[i + 4], t[i + 5]);
+    path.closePath();
+  }
+  return (c.path = path);
+}
+
 /** The layers' triangles and outlines as Path2D objects in map metres, made once. */
 function layerPaths(l) {
   if (l.paths) return l.paths;
   const tris = (t) => {
     const out = [];
     for (let s = 0; s + 5 < t.length; s += CHUNK * 6) {
-      const path = new Path2D();
+      const e = Math.min(s + CHUNK * 6, t.length - 5);
       const lo = [Infinity, Infinity];
       const hi = [-Infinity, -Infinity];
-      for (let i = s; i < s + CHUNK * 6 && i + 5 < t.length; i += 6) {
-        path.moveTo(t[i], t[i + 1]);
-        path.lineTo(t[i + 2], t[i + 3]);
-        path.lineTo(t[i + 4], t[i + 5]);
-        path.closePath();
-        lo[0] = Math.min(lo[0], t[i], t[i + 2], t[i + 4]);
-        lo[1] = Math.min(lo[1], t[i + 1], t[i + 3], t[i + 5]);
-        hi[0] = Math.max(hi[0], t[i], t[i + 2], t[i + 4]);
-        hi[1] = Math.max(hi[1], t[i + 1], t[i + 3], t[i + 5]);
+      for (let i = s; i < e; i += 2) {
+        const x = t[i];
+        const y = t[i + 1];
+        if (x < lo[0]) lo[0] = x;
+        if (x > hi[0]) hi[0] = x;
+        if (y < lo[1]) lo[1] = y;
+        if (y > hi[1]) hi[1] = y;
       }
-      out.push({ path, lo, hi });
+      out.push({ t, s, e, lo, hi, path: null });
     }
     return out;
   };
@@ -175,8 +186,8 @@ function drawLayers(g, l, v, W, H) {
     g.fillStyle = g.strokeStyle = color;
     g.lineWidth = seam * v.mpp; // (no seams between neighbouring triangles)
     for (const c of seen(chunks)) {
-      g.fill(c.path);
-      g.stroke(c.path);
+      g.fill(pathOf(c));
+      g.stroke(pathOf(c));
     }
   };
   for (const [k, key] of LAND) fill(P.land[k], LOOK[key]);
@@ -186,7 +197,7 @@ function drawLayers(g, l, v, W, H) {
   for (const [k, f, e] of paved) {
     g.strokeStyle = LOOK[e];
     g.lineWidth = 2 * v.mpp;
-    for (const c of seen(P.paved[k])) g.stroke(c.path);
+    for (const c of seen(P.paved[k])) g.stroke(pathOf(c));
     fill(P.paved[k], LOOK[f]);
   }
   g.strokeStyle = LOOK.rail;
@@ -214,10 +225,70 @@ function drawLayers(g, l, v, W, H) {
   g.restore();
 }
 
+const surfaces = new Map();
+let drawn = 0;
+
+export async function readRouteMap(map, date, trip, surface = true) {
+  return JSON.parse(new TextDecoder().decode(await call('route_map', { map, date, trip, surface })));
+}
+
+const surfaceNow = new Map();
+
+function surfaceOf(map, date) {
+  const at = `${map}|${date}`;
+  if (!surfaces.has(at)) {
+    surfaces.set(at, readRouteMap(map, date, '', true).then(
+      (d) => {
+        const s = { package: d.package, layers: d.layers };
+        surfaceNow.set(at, s);
+        return s;
+      },
+      () => (surfaces.delete(at), null),
+    ));
+  }
+  return surfaces.get(at);
+}
+
 function load(map, date, trip) {
   const key = `${map}|${date}|${trip}`;
-  if (!cache.has(key)) cache.set(key, call('route_map', { map, date, trip }).then(onRoute, (e) => ({ error: e.message })));
+  if (!cache.has(key)) cache.set(key, readRouteMap(map, date, trip, false).then(onRoute, (e) => ({ error: e.message })));
   return cache.get(key);
+}
+
+const withSurface = (d, s) => ({ ...d, package: s?.package ?? d.package, layers: s?.layers ?? d.layers, id: ++drawn });
+
+function roadPaths(d) {
+  if (d.roadPaths) return d.roadPaths;
+  const groups = new Map();
+  for (const r of d.roads) {
+    const w = Math.round(r.w * 2) / 2;
+    const k = `${r.main ? 1 : 0}|${w}`;
+    if (!groups.has(k)) groups.set(k, { main: !!r.main, w, path: new Path2D() });
+    const path = groups.get(k).path;
+    for (let i = 0; i + 1 < r.p.length; i += 2) (i ? path.lineTo : path.moveTo).call(path, r.p[i], r.p[i + 1]);
+  }
+  return (d.roadPaths = [...groups.values()]);
+}
+
+function drawRoads(g, d, v, W, H) {
+  const paved = !!d.layers && v.mpp < 2.5;
+  g.save();
+  g.translate(W / 2 - v.cx / v.mpp, H / 2 + v.cy / v.mpp);
+  g.scale(1 / v.mpp, -1 / v.mpp);
+  g.lineCap = g.lineJoin = 'round';
+  for (let pass = 0; pass < 4; pass++) {
+    const main = pass % 2 === 1;
+    const top = pass > 1;
+    const gold = main && !paved;
+    g.strokeStyle = top ? (gold ? LOOK.main : LOOK.road) : gold ? LOOK.mainEdge : LOOK.roadEdge;
+    for (const r of roadPaths(d)) {
+      if (r.main !== main) continue;
+      const w = paved ? Math.max(r.w - 1.2, 1.5) : r.w;
+      g.lineWidth = Math.max((w + (top ? 0 : paved ? 0 : 1.2)) / v.mpp, top ? (main ? 2.2 : 1.4) : main ? 3.4 : 2.6) * v.mpp;
+      g.stroke(r.path);
+    }
+  }
+  g.restore();
 }
 
 export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, height = 340, inset }) {
@@ -225,21 +296,27 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
   const cv = useRef();
   const [data, setData] = useState(null);
   const view = useRef(null);
+  const base = useRef(null);
+  const settle = useRef(0);
   const [hover, setHover] = useState(-1);
 
   useEffect(() => {
     if (!map) return;
     let alive = true;
+    const surface = surfaceOf(map, date);
     load(map, date, trip).then((d) => {
       if (!alive) return;
-      setData(d);
+      const now = surfaceNow.get(`${map}|${date}`);
+      setData(d.error ? d : withSurface(d, now));
       view.current = null;
+      if (d.error || now) return;
+      surface.then((s) => alive && s && setData((cur) => (cur && !cur.error ? withSurface(cur, s) : cur)));
     });
     return () => (alive = false);
   }, [map, date, trip]);
 
   // the picture, drawn again whenever anything it shows changes
-  const draw = () => {
+  const draw = (fast = false) => {
     const c = cv.current;
     const d = data;
     if (!c || !d || d.error) return;
@@ -269,36 +346,35 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
       view.current = { cx: (lo[0] + hi[0]) / 2 - ox * span, cy: (lo[1] + hi[1]) / 2 + oy * span, mpp: span };
     }
     const v = view.current;
+    const key = `${d.id}|${W}x${H}@${dpr}|${LOOK === LOOKS.light}`;
+    const b = base.current;
+    const moved = !b || b.view.cx !== v.cx || b.view.cy !== v.cy || b.view.mpp !== v.mpp;
+    if (!b || b.key !== key || (moved && fast !== true)) {
+      const canvas = b?.canvas || document.createElement('canvas');
+      Object.assign(canvas, { width: Math.round(W * dpr), height: Math.round(H * dpr) });
+      const bg = canvas.getContext('2d');
+      bg.setTransform(dpr, 0, 0, dpr, 0, 0);
+      bg.fillStyle = LOOK.land;
+      bg.fillRect(0, 0, W, H);
+      if (d.package) drawSurface(bg, d.package, v, W, H);
+      if (d.layers) drawLayers(bg, d.layers, v, W, H);
+      drawRoads(bg, d, v, W, H);
+      base.current = { canvas, key, view: { ...v } };
+    }
     const g = c.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, W, H);
+    g.fillStyle = LOOK.land;
+    g.fillRect(0, 0, W, H);
+    const bv = base.current.view;
+    const k = bv.mpp / v.mpp;
+    g.drawImage(base.current.canvas, W / 2 + (bv.cx - v.cx) / v.mpp - (W / 2) * k, H / 2 - (bv.cy - v.cy) / v.mpp - (H / 2) * k, W * k, H * k);
     const X = (x) => W / 2 + (x - v.cx) / v.mpp;
     const Y = (y) => H / 2 - (y - v.cy) / v.mpp;
     const line = (p) => {
       g.beginPath();
       for (let i = 0; i < p.length; i += 2) (i ? g.lineTo : g.moveTo).call(g, X(p[i]), Y(p[i + 1]));
     };
-    g.fillStyle = LOOK.land;
-    g.fillRect(0, 0, W, H);
-    if (d.package) drawSurface(g, d.package, v, W, H);
-    if (d.layers) drawLayers(g, d.layers, v, W, H);
     g.lineCap = g.lineJoin = 'round';
-    // the roads' middles: where a road has a paved surface it lies under it, where not it is
-    // the road (its edge, then the white)
-    const paved = !!d.layers && v.mpp < 2.5;
-    for (let pass = 0; pass < 4; pass++) {
-      const main = pass % 2 === 1;
-      const top = pass > 1;
-      for (const r of d.roads) {
-        if (!!r.main !== main) continue;
-        line(r.p);
-        const gold = main && !paved;
-        g.strokeStyle = top ? (gold ? LOOK.main : LOOK.road) : gold ? LOOK.mainEdge : LOOK.roadEdge;
-        const w = paved ? Math.max(r.w - 1.2, 1.5) : r.w;
-        g.lineWidth = Math.max((w + (top ? 0 : paved ? 0 : 1.2)) / v.mpp, top ? (r.main ? 2.2 : 1.4) : r.main ? 3.4 : 2.6);
-        g.stroke();
-      }
-    }
     for (const [color, wide] of [[LOOK.routeEdge, 7], [LOOK.route, 4.6]]) {
       g.strokeStyle = color;
       g.lineWidth = wide;
@@ -378,7 +454,8 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
   };
   const latest = useRef(draw);
   latest.current = draw;
-  useEffect(draw, [data, hover, entry, stops.map((x) => `${x.time} ${x.name}`).join('|')]);
+  useEffect(() => draw(), [data, hover, entry, stops.map((x) => `${x.time} ${x.name}`).join('|')]);
+  useEffect(() => () => clearTimeout(settle.current), []);
   useEffect(() => {
     const redraw = () => latest.current();
     const ro = new ResizeObserver(redraw);
@@ -430,7 +507,7 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
           d.p = p;
           view.current.cx -= dx * view.current.mpp;
           view.current.cy += dy * view.current.mpp;
-          draw();
+          draw(true);
         } else {
           const h = entryAt(p);
           if (h !== hover) setHover(h);
@@ -439,6 +516,7 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
       onPointerUp=${(e) => {
         const d = drag.current;
         drag.current = null;
+        if (d?.moved) draw();
         if (d && d.moved < 5) {
           const i = entryAt(at(e));
           if (i >= 0) onEntry?.(data.entries[i].index);
@@ -457,7 +535,9 @@ export function RouteMap({ map, date, trip, stops = [], entry = -1, onEntry, hei
         v.mpp = Math.min(Math.max(v.mpp * (e.deltaY > 0 ? 1.15 : 1 / 1.15), 0.15), 200);
         v.cx = wx - (px - W / 2) * v.mpp;
         v.cy = wy + (py - H / 2) * v.mpp;
-        draw();
+        draw(true);
+        clearTimeout(settle.current);
+        settle.current = setTimeout(() => latest.current(), 160);
       }}>
     <canvas ref=${cv}></canvas>
     ${!data && html`<div class="state"><${Spinner} /> ${t('Reading the map…')}</div>`}
