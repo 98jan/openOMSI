@@ -37627,6 +37627,7 @@ _version: 2
   ca: "Consells"
 
 "Shift+U puts the bus into service: the electrics, the engine and the lights in one go":
+  fr: "Maj+U met le bus en service : le circuit électrique, le moteur et les feux d'un coup"
   zh-tw: "Shift+U 可一次完成巴士的開車準備：開啟電源、啟動引擎及開燈"
   es: "Mayús+U pone el autobús en servicio: electricidad, motor y luces de una vez"
   de: "Umschalt+U macht den Bus betriebsbereit: Elektrik, Motor und Licht in einem Zug"
@@ -37636,6 +37637,7 @@ _version: 2
   ca: "Maj+U posa l'autobús en servei: sistema elèctric, motor i llums alhora"
 
 "F1 is the driver's seat, F2 the passengers' view, F3 outside the bus and F4 the free camera":
+  fr: "F1 est le poste de conduite, F2 la vue passagers, F3 l'extérieur du bus et F4 la caméra libre"
   zh-tw: "F1 為駕駛座視角，F2 為乘客視角，F3 為車外視角，F4 為自由視角"
   es: "F1 es el puesto del conductor, F2 la vista de pasajeros, F3 la vista exterior y F4 la cámara libre"
   de: "F1 ist der Fahrerplatz, F2 die Sicht der Fahrgäste, F3 außen am Bus und F4 die freie Kamera"
@@ -37645,6 +37647,7 @@ _version: 2
   ca: "F1 és el lloc del conductor, F2 la vista dels passatgers, F3 l'exterior de l'autobús i F4 la càmera lliure"
 
 "Esc opens the menu: the options, the line and tour, saving and the photo mode":
+  fr: "Échap ouvre le menu : les options, la ligne et le service, la sauvegarde et le mode photo"
   zh-tw: "Esc 開啟選單：選項、路線與車次、儲存及拍照模式"
   es: "Esc abre el menú: opciones, línea y turno, guardado y modo foto"
   de: "Esc öffnet das Menü: Optionen, Linie und Umlauf, Speichern und Fotomodus"
@@ -37654,6 +37657,7 @@ _version: 2
   ca: "Esc obre el menú: opcions, línia i torn, desament i mode foto"
 
 "Shift+N switches the navigator between the map, the map with the next stops, and off":
+  fr: "Maj+N fait passer le navigateur de la carte à la carte avec les prochains arrêts, puis l'éteint"
   zh-tw: "Shift+N 可切換導航顯示：地圖、地圖與後續站點，或關閉"
   es: "Mayús+N alterna el navegador entre el mapa, el mapa con las próximas paradas y desactivado"
   de: "Umschalt+N schaltet das Navi zwischen Karte, Karte mit den nächsten Haltestellen und aus"
@@ -37663,6 +37667,7 @@ _version: 2
   ca: "Maj+N canvia el navegador entre el mapa, el mapa amb les properes parades i desactivat"
 
 "Insert shows the timetable of your trip":
+  fr: "Inser affiche l'horaire de votre course"
   zh-tw: "Insert 顯示目前行程的時間表"
   es: "Insert muestra el horario del trayecto"
   de: "Einfg zeigt den Fahrplan deiner Fahrt"
@@ -37672,6 +37677,7 @@ _version: 2
   ca: "Ins mostra l'horari del trajecte"
 
 "Shift+M opens the city map":
+  fr: "Maj+M ouvre le plan de la ville"
   zh-tw: "Shift+M 開啟城市地圖"
   es: "Mayús+M abre el mapa de la ciudad"
   de: "Umschalt+M öffnet den Stadtplan"
@@ -37681,6 +37687,7 @@ _version: 2
   ca: "Maj+M obre el mapa de la ciutat"
 
 "P pauses the game; Alt+S saves the situation":
+  fr: "P met le jeu en pause ; Alt+S enregistre la situation"
   zh-tw: "P 暫停遊戲；Alt+S 儲存目前情境"
   es: "P pausa el juego; Alt+S guarda la situación"
   de: "P hält das Spiel an; Alt+S speichert die Situation"
@@ -37690,6 +37697,7 @@ _version: 2
   ca: "P posa el joc en pausa; Alt+S desa la situació"
 
 "Shift+Y shows the information bar: the time, the speed, the temperatures and the next stop":
+  fr: "Maj+Y affiche la barre d'informations : l'heure, la vitesse, les températures et le prochain arrêt"
   zh-tw: "Shift+Y 顯示資訊列：時間、速度、溫度及下一站"
   es: "Mayús+Y muestra la barra de información: hora, velocidad, temperaturas y próxima parada"
   de: "Umschalt+Y zeigt die Infoleiste: Uhrzeit, Tempo, Temperaturen und die nächste Haltestelle"
@@ -37837,6 +37845,7 @@ _version: 2
   ca: "Humitat amb glaçades"
 
 "W A S D: move, Space: up, Ctrl: down, Shift: faster, drag or arrows: look":
+  fr: "W A S D : se déplacer, Espace : monter, Ctrl : descendre, Maj : plus vite, glisser ou flèches : regarder"
   zh-tw: "W A S D：移動，Space：上升，Ctrl：下降，Shift：加速，拖曳滑鼠或方向鍵：轉動視角"
   es: "W A S D: moverse, Espacio: subir, Ctrl: bajar, Mayús: más rápido, arrastrar o flechas: mirar"
   de: "W A S D: bewegen, Leertaste: hoch, Strg: runter, Umschalt: schneller, Ziehen oder Pfeile: umsehen"
@@ -37846,6 +37855,7 @@ _version: 2
   ca: "W A S D: moure't, Espai: amunt, Ctrl: avall, Maj: més ràpid, arrossegar o fletxes: mirar"
 
 "Move the clock.":
+  fr: "Avancer ou reculer l'horloge."
   es: "Ajusta el reloj."
   zh-tw: "調整時間。"
   de: "Die Uhr verstellen."
@@ -46911,51 +46921,61 @@ _version: 2
   sv: "Förbättrad grafik: hur mycket ljusare natten visas"
 
 "How loud the ambience is":
+  fr: "Volume de l'ambiance"
   es: "Volumen del ambiente"
   zh-tw: "環境音效的音量"
   ca: "Volum del so ambient"
 
 "The place, the weather, the birds of the season and the town's life, from real recordings":
+  fr: "Le lieu, la météo, les oiseaux de la saison et la vie de la ville, d'après de vrais enregistrements"
   es: "El lugar, el tiempo, las aves de la estación y la vida de la ciudad, a partir de grabaciones reales"
   zh-tw: "以實際錄音呈現場所、天氣、季節鳥鳴與城鎮生活的聲音"
   ca: "El lloc, el temps, els ocells de cada estació i la vida de la ciutat, a partir d'enregistraments reals"
 
 "Hold the cursor while steering":
+  fr: "Retenir le curseur pendant la conduite"
   es: "Retener el cursor al dirigir"
   zh-tw: "轉向時鎖定游標"
   ca: "Retén el cursor mentre dirigeixes"
 
 "The wheel reaches its lock past the window's edges; off: the crosshair stays free and without delay, as in OMSI":
+  fr: "Le volant atteint la butée au-delà des bords de la fenêtre ; désactivé : le viseur reste libre et sans délai, comme dans OMSI"
   es: "El volante alcanza su tope más allá de los bordes de la ventana; desactivado: la cruceta queda libre y sin retardo, como en OMSI"
   zh-tw: "超出視窗邊緣時方向盤達到轉向極限；關閉時準星可自由移動且沒有延遲，如同 OMSI"
   ca: "El volant arriba al límit més enllà de les vores de la finestra; desactivat: la creu queda lliure i sense retard, com a OMSI"
 
 "Steering and view":
+  fr: "Direction et vue"
   es: "Dirección y vista"
   zh-tw: "轉向與視角"
   ca: "Direcció i vista"
 
 "Stick smoothing":
+  fr: "Lissage du stick"
   es: "Suavizado del stick"
   zh-tw: "搖桿平滑度"
   ca: "Suavitzat de la palanca"
 
 "Steering speed":
+  fr: "Vitesse de braquage"
   es: "Velocidad de la dirección"
   zh-tw: "轉向速度"
   ca: "Velocitat de direcció"
 
 "Evens out the small shakes of the stick (off: the stick as it reads)":
+  fr: "Lisse les petits tremblements du stick (désactivé : le stick tel qu'il est lu)"
   es: "Suaviza las pequeñas oscilaciones del stick (desactivado: usa la lectura directa)"
   zh-tw: "平滑搖桿的細微晃動（關閉時直接使用讀取值）"
   ca: "Suavitza les petites oscil·lacions de la palanca (desactivat: lectura directa)"
 
 "Ignore movement round the stick's centre (raise it if the bus steers by itself)":
+  fr: "Ignore les mouvements autour du centre du stick (augmentez-la si le bus tourne tout seul)"
   es: "Ignora el movimiento cerca del centro del stick (aumenta el valor si el autobús gira solo)"
   zh-tw: "忽略搖桿中心附近的移動（若巴士自行轉向，請提高此值）"
   ca: "Ignora el moviment al voltant del centre de la palanca (augmenta-ho si l'autobús gira sol)"
 
 "Seconds the stick takes to turn the wheel from the middle to the full lock - more is smoother":
+  fr: "Secondes que met le stick pour braquer le volant du centre à la butée - plus c'est long, plus c'est doux"
   es: "Segundos que tarda el stick en girar el volante desde el centro hasta el tope: un valor mayor suaviza el movimiento"
   zh-tw: "搖桿將方向盤從中央轉至極限所需的秒數：越高越平滑"
   ca: "Segons que triga la palanca a girar el volant des del centre fins al límit: com més temps, més suau"
@@ -47092,21 +47112,25 @@ _version: 2
   sv: "Lägre är snabbare: dropparna på rutan målas mer sällan, mindre stänk och färre strimmor; Låg visar OMSI 2:s eget regn på rutan (från nästa buss som laddas)"
 
 "Switch off to keep the camera still while you steer":
+  fr: "Désactivez pour garder la caméra fixe pendant que vous tournez"
   es: "Desactívalo para que la cámara no se mueva al girar"
   zh-tw: "關閉後，轉向時視角保持固定"
   ca: "Desactiva-ho per mantenir la càmera quieta mentre gires"
 
 "TrackIR yaw sensitivity":
+  fr: "Sensibilité TrackIR du lacet"
   es: "Sensibilidad de guiñada de TrackIR"
   zh-tw: "TrackIR 水平旋轉靈敏度"
   ca: "Sensibilitat del gir horitzontal de TrackIR"
 
 "TrackIR pitch sensitivity":
+  fr: "Sensibilité TrackIR du tangage"
   es: "Sensibilidad de cabeceo de TrackIR"
   zh-tw: "TrackIR 俯仰靈敏度"
   ca: "Sensibilitat del gir vertical de TrackIR"
 
 "TrackIR roll sensitivity":
+  fr: "Sensibilité TrackIR du roulis"
   es: "Sensibilidad de alabeo de TrackIR"
   zh-tw: "TrackIR 側傾靈敏度"
   ca: "Sensibilitat de la inclinació lateral de TrackIR"
@@ -47157,66 +47181,79 @@ _version: 2
   ca: "Inverteix l'eix Z de TrackIR"
 
 "Use native TrackIR on Windows, or OpenTrack on UDP port {}":
+  fr: "TrackIR natif sous Windows, ou OpenTrack sur le port UDP {}"
   es: "Usa TrackIR nativo en Windows u OpenTrack en el puerto UDP {}"
   zh-tw: "在 Windows 使用原生 TrackIR，或透過 UDP 連接埠 {} 使用 OpenTrack"
   ca: "Fes servir TrackIR natiu a Windows o OpenTrack al port UDP {}"
 
 "Head tilt. 100% is 1:1; the low end is deliberately finer.":
+  fr: "Inclinaison de la tête. 100 % correspond à 1:1 ; le bas de l'échelle est volontairement plus fin."
   es: "Inclinación lateral de la cabeza. 100% equivale a 1:1; los valores bajos permiten un ajuste más preciso."
   zh-tw: "頭部側傾。100% 為 1:1；低值範圍提供更細緻的調整。"
   ca: "Inclinació lateral del cap. El 100% correspon a 1:1; la part baixa de l'escala permet un ajust més fi."
 
 "Left / right head movement. 100% is 1:1; the low end is deliberately finer.":
+  fr: "Mouvement de la tête gauche / droite. 100 % correspond à 1:1 ; le bas de l'échelle est volontairement plus fin."
   es: "Movimiento de cabeza a izquierda / derecha. 100% equivale a 1:1; los valores bajos permiten un ajuste más preciso."
   zh-tw: "頭部左右移動。100% 為 1:1；低值範圍提供更細緻的調整。"
   ca: "Moviment del cap a esquerra / dreta. El 100% correspon a 1:1; la part baixa de l'escala permet un ajust més fi."
 
 "Up / down head movement. 100% is 1:1; the low end is deliberately finer.":
+  fr: "Mouvement de la tête haut / bas. 100 % correspond à 1:1 ; le bas de l'échelle est volontairement plus fin."
   es: "Movimiento de cabeza arriba / abajo. 100% equivale a 1:1; los valores bajos permiten un ajuste más preciso."
   zh-tw: "頭部上下移動。100% 為 1:1；低值範圍提供更細緻的調整。"
   ca: "Moviment del cap amunt / avall. El 100% correspon a 1:1; la part baixa de l'escala permet un ajust més fi."
 
 "Move your head forward / back. 100% is 1:1; the low end is deliberately finer.":
+  fr: "Déplacer la tête en avant / en arrière. 100 % correspond à 1:1 ; le bas de l'échelle est volontairement plus fin."
   es: "Mueve la cabeza hacia delante / atrás. 100% equivale a 1:1; los valores bajos permiten un ajuste más preciso."
   zh-tw: "頭部前後移動。100% 為 1:1；低值範圍提供更細緻的調整。"
   ca: "Mou el cap endavant / enrere. El 100% correspon a 1:1; la part baixa de l'escala permet un ajust més fi."
 
 "Move your head left / right. 100% is 1:1; the low end is deliberately finer.":
+  fr: "Déplacer la tête à gauche / à droite. 100 % correspond à 1:1 ; le bas de l'échelle est volontairement plus fin."
   es: "Mueve la cabeza a izquierda / derecha. 100% equivale a 1:1; los valores bajos permiten un ajuste más preciso."
   zh-tw: "頭部左右移動。100% 為 1:1；低值範圍提供更細緻的調整。"
   ca: "Mou el cap a esquerra / dreta. El 100% correspon a 1:1; la part baixa de l'escala permet un ajust més fi."
 
 "Move your head up / down. 100% is 1:1; the low end is deliberately finer.":
+  fr: "Déplacer la tête en haut / en bas. 100 % correspond à 1:1 ; le bas de l'échelle est volontairement plus fin."
   es: "Mueve la cabeza arriba / abajo. 100% equivale a 1:1; los valores bajos permiten un ajuste más preciso."
   zh-tw: "頭部上下移動。100% 為 1:1；低值範圍提供更細緻的調整。"
   ca: "Mou el cap amunt / avall. El 100% correspon a 1:1; la part baixa de l'escala permet un ajust més fi."
 
 "Reverse forward / back head movement":
+  fr: "Inverser le mouvement de la tête avant / arrière"
   es: "Invierte el movimiento de cabeza hacia delante / atrás"
   zh-tw: "反轉頭部前後移動"
   ca: "Inverteix el moviment del cap endavant / enrere"
 
 "Reverse head tilt":
+  fr: "Inverser l'inclinaison de la tête"
   es: "Invierte la inclinación lateral de la cabeza"
   zh-tw: "反轉頭部側傾"
   ca: "Inverteix la inclinació lateral del cap"
 
 "Reverse left / right head movement":
+  fr: "Inverser le mouvement de la tête gauche / droite"
   es: "Invierte el movimiento de cabeza a izquierda / derecha"
   zh-tw: "反轉頭部左右移動"
   ca: "Inverteix el moviment del cap a esquerra / dreta"
 
 "Reverse left / right head rotation":
+  fr: "Inverser la rotation de la tête gauche / droite"
   es: "Invierte el giro de cabeza a izquierda / derecha"
   zh-tw: "反轉頭部水平旋轉"
   ca: "Inverteix el gir del cap a esquerra / dreta"
 
 "Reverse up / down head movement":
+  fr: "Inverser le mouvement de la tête haut / bas"
   es: "Invierte el movimiento de cabeza arriba / abajo"
   zh-tw: "反轉頭部上下移動"
   ca: "Inverteix el moviment del cap amunt / avall"
 
 "Reverse up / down head rotation":
+  fr: "Inverser la rotation de la tête haut / bas"
   es: "Invierte el giro de cabeza arriba / abajo"
   zh-tw: "反轉頭部俯仰"
   ca: "Inverteix el gir del cap amunt / avall"
@@ -47291,16 +47328,19 @@ _version: 2
   ca: "Comandament"
 
 "Controller configuration was not saved: {e}":
+  fr: "La configuration des manettes n'a pas été enregistrée : {e}"
   es: "No se ha guardado la configuración del mando: {e}"
   zh-tw: "無法儲存控制器設定：{e}"
   ca: "No s'ha desat la configuració del comandament: {e}"
 
 "Controller mappings were not reloaded: {e}":
+  fr: "Les affectations des manettes n'ont pas été rechargées : {e}"
   es: "No se han recargado las asignaciones del mando: {e}"
   zh-tw: "無法重新載入控制器對應設定：{e}"
   ca: "No s'han tornat a carregar les assignacions del comandament: {e}"
 
 "Controller type":
+  fr: "Type de manette"
   es: "Tipo de mando"
   zh-tw: "控制器類型"
   ca: "Tipus de comandament"
@@ -47316,6 +47356,7 @@ _version: 2
   ca: "Desconnectat"
 
 "Found by its name and USB ids":
+  fr: "Reconnue par son nom et ses identifiants USB"
   es: "Detectado por su nombre e identificadores USB"
   zh-tw: "依名稱與 USB 識別碼找到"
   pt: "Encontrado pelo nome e pelos IDs USB"
@@ -47337,16 +47378,19 @@ _version: 2
   ca: "Sense assignar"
 
 "Default buttons":
+  fr: "Boutons par défaut"
   es: "Botones predeterminados"
   zh-tw: "預設按鈕"
   ca: "Botons per defecte"
 
 "Left stick / triggers":
+  fr: "Stick gauche / gâchettes"
   es: "Stick izquierdo / gatillos"
   zh-tw: "左搖桿／扳機"
   ca: "Palanca esquerra / gallets"
 
 "Left stick steers, left trigger brakes, right trigger is the throttle":
+  fr: "Le stick gauche dirige, la gâchette gauche freine, la gâchette droite accélère"
   es: "El stick izquierdo gira, el gatillo izquierdo frena y el derecho acelera"
   zh-tw: "左搖桿轉向、左扳機煞車、右扳機油門"
   ca: "La palanca esquerra dirigeix, el gallet esquerre frena i el dret accelera"
@@ -47357,21 +47401,25 @@ _version: 2
   ca: "Direcció / fre, accelerador"
 
 "No Xbox or PlayStation pad found":
+  fr: "Aucune manette Xbox ou PlayStation trouvée"
   es: "No se ha encontrado ningún mando Xbox o PlayStation"
   zh-tw: "找不到 Xbox 或 PlayStation 手把"
   ca: "No s'ha trobat cap comandament Xbox ni PlayStation"
 
 "Connect a pad, or choose its type below to see the button names":
+  fr: "Branchez une manette, ou choisissez son type ci-dessous pour voir le nom des boutons"
   es: "Conecta un mando o elige su tipo más abajo para ver los nombres de los botones"
   zh-tw: "連接手把，或在下方選擇類型以查看按鈕名稱"
   ca: "Connecta un comandament o tria'n el tipus a sota per veure els noms dels botons"
 
 "Names the buttons below for the pad you hold: Automatic, Xbox, PlayStation 4 or PlayStation 5":
+  fr: "Nomme les boutons ci-dessous selon votre manette : Automatique, Xbox, PlayStation 4 ou PlayStation 5"
   es: "Muestra los nombres de los botones de tu mando: Automático, Xbox, PlayStation 4 o PlayStation 5"
   zh-tw: "依手把類型顯示下方按鈕名稱：自動、Xbox、PlayStation 4 或 PlayStation 5"
   ca: "Mostra els noms dels botons del teu comandament: Automàtic, Xbox, PlayStation 4 o PlayStation 5"
 
 "A gamepad with no buttons set up drives the cabin with these; set up its buttons under Devices to use your own":
+  fr: "Une manette sans boutons configurés conduit avec ceux-ci ; configurez ses boutons sous Périphériques pour utiliser les vôtres"
   es: "Un mando sin botones configurados usa estos controles en la cabina; configura sus botones en Dispositivos para usar los tuyos"
   zh-tw: "尚未設定按鈕的手把會以這些按鈕操作駕駛室；可在「裝置」中自訂按鈕"
   ca: "Un comandament sense botons configurats fa servir aquests controls al lloc de conducció; configura'n els botons a Dispositius per fer servir els teus"
@@ -50413,18 +50461,21 @@ _version: 2
   fr: "connexion..."
 
 "Host's mods: looking what is needed...":
+  fr: "Mods de l'hôte : recherche de ce qui manque..."
   zh-tw: "主機的模組：正在檢查所需檔案..."
   es: "Mods del anfitrión: comprobando qué hace falta..."
   pt: "Mods do anfitrião: verificando o que é necessário..."
   ca: "Mods de l'amfitrió: s'està comprovant què cal..."
 
 "Host's mods could not be downloaded; playing with what is installed here":
+  fr: "Les mods de l'hôte n'ont pas pu être téléchargés ; partie avec ce qui est installé ici"
   zh-tw: "無法下載主機的模組；將使用本機已安裝的內容遊玩"
   es: "No se han podido descargar los mods del anfitrión; se usará el contenido instalado aquí"
   pt: "Não foi possível baixar os mods do anfitrião; jogando com o que está instalado aqui"
   ca: "No s'han pogut baixar els mods de l'amfitrió; es juga amb el contingut instal·lat aquí"
 
 "Developer tools":
+  fr: "Outils de développement"
   zh-tw: "開發者工具"
   es: "Herramientas de desarrollo"
   pt: "Ferramentas de desenvolvedor"
@@ -50437,54 +50488,63 @@ _version: 2
   ca: "Tanca (Ctrl+Maj+D)"
 
 "Nothing watched: pick variables from the list below":
+  fr: "Rien de surveillé : choisissez des variables dans la liste ci-dessous"
   zh-tw: "尚未監看任何變數：請從下方清單選擇"
   es: "No hay variables en seguimiento: elígelas en la lista inferior"
   pt: "Nada sendo observado: escolha variáveis na lista abaixo"
   ca: "No hi ha cap variable en seguiment: tria'n de la llista de sota"
 
 "Stop watching":
+  fr: "Ne plus surveiller"
   zh-tw: "停止監看"
   es: "Dejar de seguir"
   pt: "Parar de observar"
   ca: "Atura el seguiment"
 
 "Over the picture":
+  fr: "Par-dessus l'image"
   zh-tw: "畫面疊加顯示"
   es: "Sobre la imagen"
   pt: "Sobre a imagem"
   ca: "Sobre la imatge"
 
 "This bus has no mirrors":
+  fr: "Ce bus n'a pas de rétroviseurs"
   zh-tw: "此巴士沒有後視鏡"
   es: "Este autobús no tiene espejos"
   pt: "Este ônibus não tem espelhos"
   ca: "Aquest autobús no té retrovisors"
 
 "Copy the block":
+  fr: "Copier le bloc"
   zh-tw: "複製此區塊"
   es: "Copiar el bloque"
   pt: "Copiar o bloco"
   ca: "Copia el bloc"
 
 "As the bus has it":
+  fr: "Comme dans le bus"
   zh-tw: "巴士原始設定"
   es: "Según la configuración del autobús"
   pt: "Como o ônibus define"
   ca: "Configuració original de l'autobús"
 
 "Read a file again when it changes":
+  fr: "Relire un fichier quand il change"
   zh-tw: "檔案變更時重新讀取"
   es: "Volver a leer un archivo cuando cambie"
   pt: "Reler um arquivo quando ele mudar"
   ca: "Torna a llegir un fitxer quan canviï"
 
 "Read again now":
+  fr: "Relire maintenant"
   zh-tw: "立即重新讀取"
   es: "Volver a leer ahora"
   pt: "Reler agora"
   ca: "Torna'l a llegir ara"
 
 "Open the log":
+  fr: "Ouvrir le journal"
   zh-tw: "開啟記錄檔"
   es: "Abrir el registro"
   pt: "Abrir o log"
@@ -50497,6 +50557,7 @@ _version: 2
   ca: "Última acció"
 
 "Files looked at":
+  fr: "Fichiers consultés"
   zh-tw: "已檢查的檔案"
   es: "Archivos revisados"
   pt: "Arquivos consultados"
@@ -52681,6 +52742,7 @@ _version: 2
   zh-tw: "若地圖包含對應套件，在小地圖及城市地圖的道路下方顯示地圖本身的水域、綠地、河流及鐵路"
 
 "The Minimap and the city map in a light look":
+  fr: "La minicarte et le plan de la ville en couleurs claires"
   zh-tw: "以淺色外觀顯示小地圖及城市地圖"
 
 " is not set up: it steers; set up its pedals and buttons in the launcher (Controls → Game controllers)":
@@ -53395,3 +53457,141 @@ _version: 2
   hi: "हर नई बस भरी टंकी के साथ शुरू होती है (कई नक्शों में पेट्रोल पंप नहीं होता); सहेजी गई स्थिति अपना ईंधन रखती है"
   ca: "Cada autobús nou comença amb el dipòsit ple (molts mapes no tenen benzinera); una situació desada conserva el seu"
   sv: "Varje ny buss börjar med full tank (många kartor saknar bensinstation); en sparad situation behåller sin egen"
+"Air pressure is low (spring brake {:.1} bar): the spring brake holds until the compressor has filled the tanks - keep the engine running":
+  fr: "Pression d'air basse (frein à ressort {:.1} bar) : le frein à ressort reste serré tant que le compresseur n'a pas rempli les réservoirs - laissez tourner le moteur"
+"Air pressure is low ({:.1} bar in the tanks, spring brake {:.1} bar): the spring brake holds until the compressor has filled the tanks - keep the engine running":
+  fr: "Pression d'air basse ({:.1} bar dans les réservoirs, frein à ressort {:.1} bar) : le frein à ressort reste serré tant que le compresseur n'a pas rempli les réservoirs - laissez tourner le moteur"
+"Air pressure is low ({v:.1} bar)":
+  fr: "Pression d'air basse ({v:.1} bar)"
+"Axles and wheels":
+  fr: "Essieux et roues"
+"Bounding boxes":
+  fr: "Boîtes englobantes"
+"Cabin / outside view":
+  fr: "Vue cabine / extérieure"
+"Camera keys off: in the free view the keys work the bus, the mouse turns the camera":
+  fr: "Touches de caméra désactivées : en vue libre, les touches commandent le bus et la souris tourne la caméra"
+"Camera keys on: W, A, S, D, Q, E and the arrows fly the free camera":
+  fr: "Touches de caméra activées : W, A, S, D, Q, E et les flèches déplacent la caméra libre"
+"Centre of gravity":
+  fr: "Centre de gravité"
+"Change due: {owed:.2}":
+  fr: "Monnaie à rendre : {owed:.2}"
+"Could not place {}: {e:#}":
+  fr: "Impossible de placer {} : {e:#}"
+"Could not place {name}: {e}":
+  fr: "Impossible de placer {name} : {e}"
+"Could not start the game again: {e}":
+  fr: "Impossible de relancer le jeu : {e}"
+"Depot file: {}":
+  fr: "Fichier de dépôt : {}"
+"Depot file: {e}":
+  fr: "Fichier de dépôt : {e}"
+"Developer tools closed":
+  fr: "Outils de développement fermés"
+"Developer tools (Ctrl+Shift+D closes them)":
+  fr: "Outils de développement (Ctrl+Maj+D pour les fermer)"
+"Esc menu: Drive the next vehicle":
+  fr: "menu Échap : Conduire le véhicule suivant"
+"Event was not added: {e}":
+  fr: "L'évènement n'a pas été ajouté : {e}"
+"Fleet number {n}":
+  fr: "Numéro de parc {n}"
+"G at its driver's door":
+  fr: "G à sa porte conducteur"
+"Ground flattened to {:.2} m":
+  fr: "Sol aplani à {:.2} m"
+"Ground lowered {:.2} m":
+  fr: "Sol abaissé de {:.2} m"
+"Ground raised {:.2} m":
+  fr: "Sol relevé de {:.2} m"
+"Host's mods could not be fetched: {e}":
+  fr: "Les mods de l'hôte n'ont pas pu être récupérés : {e}"
+"Host's mods: everything the host uses is installed here":
+  fr: "Mods de l'hôte : tout ce qu'il utilise est installé ici"
+"Insert: new panel - Delete: remove it - C: show another mirror":
+  fr: "Inser : nouveau panneau - Suppr : le retirer - C : afficher un autre rétroviseur"
+"Interior lights":
+  fr: "Éclairage intérieur"
+"Its log is in the openOMSI data folder (launcher.log).":
+  fr: "Son journal se trouve dans le dossier de données d'openOMSI (launcher.log)."
+"Its log is in the openOMSI data folder (launcher.log); Microsoft Edge WebView2 {} is installed.":
+  fr: "Son journal se trouve dans le dossier de données d'openOMSI (launcher.log) ; Microsoft Edge WebView2 {} est installé."
+"Key binding was not saved: {e}":
+  fr: "La touche n'a pas été enregistrée : {e}"
+"Kneeling: C (or Space) stands up again":
+  fr: "Accroupi : C (ou Espace) pour se relever"
+"Kneeling: the button again stands up":
+  fr: "Accroupi : le même bouton pour se relever"
+"LAN: other players join with the code {}  (or by an address: {})":
+  fr: "LAN : les autres joueurs rejoignent avec le code {}  (ou par une adresse : {})"
+"LAN: the host's weather: {}":
+  fr: "LAN : la météo de l'hôte : {}"
+"Left indicator":
+  fr: "Clignotant gauche"
+"Left stick click":
+  fr: "Clic du stick gauche"
+"No home folder was found to keep the key bindings in":
+  fr: "Aucun dossier personnel trouvé pour y garder les touches"
+"Open / close all doors":
+  fr: "Ouvrir / fermer toutes les portes"
+"Passenger wants: {name}  {value:.2}":
+  fr: "Le passager veut : {name}  {value:.2}"
+"Placing: click to set it down (wheel / Q / E turn, R turns round, Esc takes it away)":
+  fr: "Placement : cliquez pour le poser (molette / Q / E pour tourner, R pour faire demi-tour, Échap pour l'enlever)"
+"Placing: it would stand in another vehicle here":
+  fr: "Placement : il chevaucherait un autre véhicule ici"
+"Placing: point at the ground (wheel / Q / E turn, R turns round, Esc takes it away)":
+  fr: "Placement : visez le sol (molette / Q / E pour tourner, R pour faire demi-tour, Échap pour l'enlever)"
+"Refuelling... (drive off to stop)":
+  fr: "Plein en cours... (démarrez pour arrêter)"
+"Refuelling stopped":
+  fr: "Plein arrêté"
+"Reloaded from its files: {}":
+  fr: "Rechargé depuis ses fichiers : {}"
+"Right indicator":
+  fr: "Clignotant droit"
+"R: put the cursor on a mirror panel (Shift+R: every mirror)":
+  fr: "R : placer le curseur sur un panneau de rétroviseur (Maj+R : tous les rétroviseurs)"
+"Saloon lights on":
+  fr: "Éclairage du salon allumé"
+"Seats and standing places":
+  fr: "Places assises et debout"
+"Sent to the server: {action}":
+  fr: "Envoyé au serveur : {action}"
+"Stop skipped: {name}":
+  fr: "Arrêt sauté : {name}"
+"The bus could not be loaded: {}":
+  fr: "Le bus n'a pas pu être chargé : {}"
+"The game cannot draw on this computer: {e:#}":
+  fr: "Le jeu ne peut pas s'afficher sur cet ordinateur : {e:#}"
+"The game cannot open its window: {e}":
+  fr: "Le jeu ne peut pas ouvrir sa fenêtre : {e}"
+"The game's window cannot be drawn into: {e:#}":
+  fr: "Impossible de dessiner dans la fenêtre du jeu : {e:#}"
+"The graphics card cannot keep up: {what}":
+  fr: "La carte graphique ne suit pas : {what}"
+"The graphics driver reset the card: the game started again with lighter graphics for this drive. Settings → Graphics keeps yours for the next start.":
+  fr: "Le pilote graphique a réinitialisé la carte : le jeu a redémarré avec des graphismes allégés pour cette partie. Paramètres → Graphismes garde les vôtres pour le prochain lancement."
+"The launcher's window needs WebKitGTK 4.1 (the package libwebkit2gtk-4.1-0 on Debian and Ubuntu, webkit2gtk4.1 on Fedora, webkit2gtk-4.1 on Arch).":
+  fr: "La fenêtre du lanceur a besoin de WebKitGTK 4.1 (le paquet libwebkit2gtk-4.1-0 sur Debian et Ubuntu, webkit2gtk4.1 sur Fedora, webkit2gtk-4.1 sur Arch)."
+"The server does not offer {name}":
+  fr: "Le serveur ne propose pas {name}"
+"This map uses {objects} objects and {splines} splines that are not installed (add-ons: {}{more}). The list is in {}":
+  fr: "Cette carte utilise {objects} objets et {splines} splines qui ne sont pas installés (add-ons : {}{more}). La liste se trouve dans {}"
+"Tickets and stampers":
+  fr: "Billets et composteurs"
+"Time speed x{s}":
+  fr: "Vitesse du temps x{s}"
+"Tomorrow.io: set your private API key first":
+  fr: "Tomorrow.io : indiquez d'abord votre clé d'API privée"
+"Voice: joining the voice channel ...":
+  fr: "Voix : connexion au salon vocal ..."
+"Voice: start GreenTeaSpeak with the openOMSI plugin to talk":
+  fr: "Voix : lancez GreenTeaSpeak avec le plugin openOMSI pour parler"
+"Voice: your microphone is muted":
+  fr: "Voix : votre micro est coupé"
+"Washing stopped":
+  fr: "Lavage arrêté"
+"Weather cycle {}":
+  fr: "Cycle météo {}"
