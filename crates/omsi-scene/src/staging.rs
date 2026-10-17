@@ -405,8 +405,17 @@ pub struct ScriptedObject {
     /// when none is), and the alphas last given.
     pub alpha_slots: Vec<LampSlots>,
     pub alpha_last: Vec<Vec<f32>>,
-    /// Its lamps its script switches, with the variable that does (`scripted_lamps`).
-    pub lamps: Vec<(omsi_render::Corona, String)>,
+    pub script_lamps: Vec<ScriptLamp>,
+}
+
+/// A lamp of a scenery object that the object's own script switches (see
+/// `lamps_switched_by_script`): its glow, the variable that sets how bright it is, and how
+/// bright that made it at the script's last step.
+#[derive(Clone, Debug)]
+pub struct ScriptLamp {
+    pub glow: omsi_render::Corona,
+    pub variable: String,
+    pub level: f32,
 }
 
 /// Where a ray lands on a page (`[htmltexture]`) of a scenery object: see

@@ -903,7 +903,7 @@ pub fn collect(
         }
     }
     // scenery lamps their own script switches, as bright as it says
-    crate::scripted::scripted_lamp_coronas(&world.scripted.lock().views, camera_pos, CORONA_RANGE, &mut scene.coronas);
+    crate::scripted::push_script_lamp_glows(&world.scripted.lock().views, camera_pos, CORONA_RANGE, &mut scene.coronas);
     for list in world.particle_objects.lock().values() {
         for po in list {
             if (po.pos - camera_pos).length() < 1500.0 {

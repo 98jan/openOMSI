@@ -354,7 +354,7 @@ impl World {
                         htmls: Vec::new(),
                         alpha_slots: Vec::new(),
                         alpha_last: Vec::new(),
-                        lamps: Vec::new(),
+                        script_lamps: Vec::new(),
                     });
                 }
                 // An editor-only object still lays its paths out: OMSI's invisible
@@ -893,7 +893,7 @@ fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, l
             continue;
         }
         // (and a lamp the object's own script switches follows its script, by day and by
-        // night: see `scripted_lamps`)
+        // night: see `lamps_switched_by_script`)
         if lamp.is_none() && script_switched(ot, &sw) {
             continue;
         }
@@ -937,23 +937,27 @@ fn script_switched(ot: &ObjectType, sw: &LightSwitch) -> bool {
 /// and by night, as in OMSI. Kept with the static lamps, which glow whenever it is dark,
 /// Gerolstein's departure boards showed their orange "due" and green "departing" lamps all
 /// night.
-pub(super) fn scripted_lamps(ot: &ObjectType, pos: DVec3, xf: Mat4) -> Vec<(omsi_render::Corona, String)> {
+pub(super) fn lamps_switched_by_script(ot: &ObjectType, pos: DVec3, xf: Mat4) -> Vec<crate::staging::ScriptLamp> {
     if ot.program.is_none() {
         return Vec::new();
     }
-    let switches: Mutex<Vec<LightSwitch>> = Mutex::new(Vec::new());
-    let coronas = model_lights_owned(&ot.model, &|_| xf, pos, &|var| {
-        switches.lock().push(LightSwitch::parse(var));
+    // (the model's lamps, each with its switch, in the order they are made)
+    let named: Mutex<Vec<LightSwitch>> = Mutex::new(Vec::new());
+    let glows = model_lights_owned(&ot.model, &|_| xf, pos, &|var| {
+        named.lock().push(LightSwitch::parse(var));
         1.0
     }, &[]);
-    let switches = switches.into_inner();
-    coronas
-        .into_iter()
-        .filter_map(|(c, k)| match switches.get(k) {
-            Some(sw @ LightSwitch::Variable(v)) if script_switched(ot, sw) => Some((c, v.clone())),
-            _ => None,
-        })
-        .collect()
+    let named = named.into_inner();
+    let mut out = Vec::new();
+    for (glow, k) in glows {
+        let Some(switch) = named.get(k) else { continue };
+        if let LightSwitch::Variable(variable) = switch {
+            if script_switched(ot, switch) {
+                out.push(crate::staging::ScriptLamp { glow, variable: variable.clone(), level: 0.0 });
+            }
+        }
+    }
+    out
 }
 
 /// Add what placing a tile counted to the load statistics.
@@ -1215,34 +1219,30 @@ mod hidden_script_tests {
 }
 
 #[cfg(test)]
-mod scripted_lamp_tests {
+mod script_lamp_tests {
     use super::*;
 
-    /// A platform board with two lamps: "board_due" named by a variable of its script (its
-    /// {init} sets it to 0.75), "porch" by a variable the script does not have.
-    fn board() -> ObjectType {
-        let lamp = |variable: &str, x: f32| omsi_model::LightEnh2 {
-            pos: [x, 0.0, 2.0],
-            omni: true,
-            color: [255.0, 160.0, 0.0],
-            size: 0.2,
+    /// A level crossing sign: its warning lamp "warn_blink" is a variable of its script
+    /// ({init} sets 0.4), its street lamp "street_lamp" is not.
+    fn crossing_sign() -> ObjectType {
+        let mut prog = omsi_script::Program::default();
+        let blink = prog.declare_script_var("warn_blink");
+        let init = omsi_script::compile::Block { ops: vec![omsi_script::Op::Push(0.4), omsi_script::Op::Store(blink)], ..Default::default() };
+        prog.blocks.push(init);
+        prog.init.push(0);
+        let lamp = |variable: &str, z: f32| omsi_model::LightEnh2 {
+            pos: [0.0, 0.3, z],
+            omni: false,
+            color: [255.0, 40.0, 0.0],
+            size: 0.12,
             factor: 1.0,
             variable: variable.to_string(),
             ..Default::default()
         };
-        let mut prog = omsi_script::Program::default();
-        let due = prog.declare_script_var("board_due");
-        prog.blocks.push(omsi_script::compile::Block {
-            ops: vec![omsi_script::Op::Push(0.75), omsi_script::Op::Store(due)],
-            ..Default::default()
-        });
-        prog.init.push(0);
+        let mesh = MeshDef { light_enh_2: vec![lamp("street_lamp", 5.5), lamp("warn_blink", 2.1)], ..Default::default() };
         ObjectType {
             sco: SceneryObject::default(),
-            model: Model {
-                meshes: vec![MeshDef { light_enh_2: vec![lamp("board_due", 0.0), lamp("porch", 1.0)], ..Default::default() }],
-                ..Default::default()
-            },
+            model: Model { meshes: vec![mesh], ..Default::default() },
             meshes: Vec::new(),
             mesh_def_index: Vec::new(),
             sound_path: Default::default(), model_dir: Default::default(),
@@ -1257,54 +1257,60 @@ mod scripted_lamp_tests {
         }
     }
 
-    /// The lamp the board's script switches leaves the static lamps (which glow whenever
-    /// it is dark) and glows as bright as its variable says, by day as well; the other lamp
-    /// stays static.
-    #[test]
-    fn a_lamp_its_script_switches_follows_the_script() {
-        let ot = Arc::new(board());
-        let pos = DVec3::new(10.0, 20.0, 0.0);
-        let mut state = TileState::default();
-        object_lights(&mut state, &ot, pos, Mat4::IDENTITY, None, 1);
-        assert!(!state.coronas.is_empty());
-        assert!(state.coronas.iter().all(|c| matches!(&c.switch, LightSwitch::Variable(v) if v == "porch")), "only the porch lamp is static");
-        let lamps = scripted_lamps(&ot, pos, Mat4::IDENTITY);
-        assert!(!lamps.is_empty() && lamps.iter().all(|(_, v)| v == "board_due"));
-        // a traffic light's lamps are its phase's: none of them is static either way
-        let mut state = TileState::default();
-        object_lights(&mut state, &ot, pos, Mat4::IDENTITY, Some((7, 0, false)), 1);
-        assert!(state.coronas.is_empty());
-
-        let mut set = ScriptedSet::default();
-        set.push(ScriptedObject {
+    fn placed(ot: &Arc<ObjectType>, at: DVec3, script_lamps: Vec<crate::staging::ScriptLamp>) -> ScriptedObject {
+        ScriptedObject {
             ty: ot.clone(),
-            pos,
+            pos: at,
             xf: Mat4::IDENTITY,
             instances: Vec::new(),
             inst: omsi_sim::scenery::SceneryInstance::new(ot.program.clone().unwrap(), &[], omsi_sim::SimClock::default(), &[]),
             controller: None,
             light_index: 0,
             light_parent: None,
-            map_id: 3,
+            map_id: 11,
             variants: Vec::new(),
             sounds: None,
-            tile: (0, 0),
+            tile: (2, -1),
             var_parent: None,
             texts: Vec::new(),
             arrivals: false,
             htmls: Vec::new(),
             alpha_slots: Vec::new(),
             alpha_last: Vec::new(),
-            lamps,
-        });
-        let mut out = Vec::new();
-        crate::scripted::scripted_lamp_coronas(&set.views, DVec3::ZERO, 1500.0, &mut out);
-        assert!(!out.is_empty());
-        assert!(out.iter().all(|c| (c.brightness - 0.75).abs() < 1e-5), "{out:?}");
-        // switched off by its script: dark
-        set.views[0].lamp_lit.iter_mut().for_each(|l| *l = 0.0);
-        out.clear();
-        crate::scripted::scripted_lamp_coronas(&set.views, DVec3::ZERO, 1500.0, &mut out);
-        assert!(out.is_empty());
+            script_lamps,
+        }
+    }
+
+    /// The warning lamp goes with the script (40 % bright after its {init}, dark when the
+    /// script sets 0, left out beyond the range); the street lamp stays a static lamp; on
+    /// a traffic light neither is static.
+    #[test]
+    fn script_lamps_glow_as_their_variable_says() {
+        let ot = Arc::new(crossing_sign());
+        let at = DVec3::new(-300.0, 45.0, 12.0);
+        let mut statics = TileState::default();
+        object_lights(&mut statics, &ot, at, Mat4::IDENTITY, None, 1);
+        let static_switches: Vec<_> = statics.coronas.iter().map(|c| c.switch.clone()).collect();
+        assert!(!static_switches.is_empty());
+        assert!(static_switches.iter().all(|s| *s == LightSwitch::Variable("street_lamp".into())), "{static_switches:?}");
+        let lamps = lamps_switched_by_script(&ot, at, Mat4::IDENTITY);
+        assert!(!lamps.is_empty() && lamps.iter().all(|l| l.variable == "warn_blink"));
+        let mut signal = TileState::default();
+        object_lights(&mut signal, &ot, at, Mat4::IDENTITY, Some((2, 1, false)), 1);
+        assert_eq!(signal.coronas.len(), 0);
+
+        let mut set = ScriptedSet::default();
+        set.push(placed(&ot, at, lamps));
+        let glows = |set: &ScriptedSet, camera: DVec3| {
+            let mut out = Vec::new();
+            crate::scripted::push_script_lamp_glows(&set.views, camera, 400.0, &mut out);
+            out.iter().map(|g| g.brightness).collect::<Vec<f32>>()
+        };
+        let near = at + DVec3::new(50.0, 0.0, 0.0);
+        assert!(glows(&set, near).iter().all(|b| (b - 0.4).abs() < 1e-5), "{:?}", glows(&set, near));
+        assert!(!glows(&set, near).is_empty());
+        assert!(glows(&set, at + DVec3::new(0.0, 450.0, 0.0)).is_empty(), "450 m off, beyond the range");
+        set.views[0].script_lamps.iter_mut().for_each(|l| l.level = 0.0);
+        assert!(glows(&set, near).is_empty());
     }
 }

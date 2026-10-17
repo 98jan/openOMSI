@@ -1115,7 +1115,7 @@ fn scenery_mouseevent_hit_and_trigger() {
         htmls: Vec::new(),
         alpha_slots: Vec::new(),
         alpha_last: Vec::new(),
-        lamps: Vec::new(),
+        script_lamps: Vec::new(),
     });
 
     // 1. Raycast towards (0, 1, 0) should hit the quad at (0, 5, 0)
@@ -1212,7 +1212,7 @@ fn every_object_a_scenery_step_shows_finds_its_view_behind_a_silenced_one() {
             htmls: Vec::new(),
             alpha_slots: Vec::new(),
             alpha_last: Vec::new(),
-            lamps: Vec::new(),
+            script_lamps: Vec::new(),
         });
     }
     let mut scenery = omsi_sim::scenery::SceneryState::default();
