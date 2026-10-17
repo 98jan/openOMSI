@@ -169,22 +169,18 @@ impl VehicleInstance {
         // (the vehicle's own lights and the coupled parts' - which read this vehicle's
         // variables too - by their plans' sources, resolved against this vehicle's variables
         // as the names were: each part's lamp was a look-up by name every frame)
-        // (a train car running its own scripts, see `part_scripts`: by its own copy's)
+        // (a train car with a `CarRun`: by its own variables)
         for t in &mut self.trailers {
-            match &t.own {
-                Some(o) => t.props_plan.refresh(&t.ty, &o.var_index),
-                None => t.props_plan.refresh(&t.ty, &self.var_index),
-            }
+            let index = t.run.as_deref().map_or(&self.var_index, |r| &r.names);
+            t.props_plan.refresh(&t.ty, index);
         }
         let value = |part: Option<&TrailerPart>, n: &str| -> f32 {
             let n = n.trim();
-            n.parse::<f32>().ok().or_else(|| match part.and_then(|t| t.own.as_ref()) {
-                Some(o) => o.var(n),
-                None => self.var(n),
-            }).unwrap_or(0.0)
+            let run = part.and_then(|t| t.run.as_deref());
+            n.parse::<f32>().ok().or_else(|| run.map_or_else(|| self.var(n), |r| r.get(n))).unwrap_or(0.0)
         };
         let fade = |part: Option<&TrailerPart>, model: &omsi_model::Model, fades: &mut Vec<f32>, lights: &[PropSource]| {
-            let vars = part.and_then(|t| t.own.as_ref()).map_or(&self.state.vars, |o| &o.state.vars);
+            let vars = part.and_then(|t| t.run.as_deref()).map_or(&self.state.vars, |r| &r.state.vars);
             let mut k = 0;
             for md in &model.meshes {
                 for l in &md.light_enh_2 {
@@ -231,7 +227,7 @@ impl VehicleInstance {
                 let value = |n: &str| self.var(n).unwrap_or(0.0);
                 ps.update_over(dt, self.position, self.body_rotation(), &|| self.particle_ground(), &value);
                 for (t, set) in self.trailers.iter().zip(parts.iter_mut()) {
-                    let value = |n: &str| t.own_var(n).or_else(|| self.var(n)).unwrap_or(0.0);
+                    let value = |n: &str| t.run_var(n).or_else(|| self.var(n)).unwrap_or(0.0);
                     set.update_over(dt, t.position, t.body_rotation(), &|| [-t.ground_lift(), 0.0, 0.0], &value);
                 }
             }

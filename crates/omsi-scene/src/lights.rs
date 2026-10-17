@@ -148,7 +148,7 @@ pub fn vehicle_lights(
     // visited the leading section, which made rear lamps, destination lights and section-
     // local headlights appear dead even though the coupled part was rendered correctly.
     // (a train car running its own scripts reads its own copy of the variables: its head
-    // and tail lamps are its own, see `omsi_sim::vehicle::PartScripts`)
+    // and tail lamps are its own, see `omsi_sim::vehicle::CarRun`)
     for t in &v.trailers {
         let part_mesh_xf = |def_index: usize| -> glam::Mat4 {
             match t.ty.meshes.iter().position(|m| m.def_index == def_index) {
@@ -156,8 +156,8 @@ pub fn vehicle_lights(
                 None => t.body_rotation(),
             }
         };
-        let part_value = |name: &str| -> f32 { t.own_var(name.trim()).unwrap_or_else(|| value_of(name)) };
-        crate::model_lights_extend(&t.ty.model, &part_mesh_xf, t.position, &part_value, &t.light_fade, coronas);
+        let car_value = |name: &str| -> f32 { t.run_var(name.trim()).unwrap_or_else(|| value_of(name)) };
+        crate::model_lights_extend(&t.ty.model, &part_mesh_xf, t.position, &car_value, &t.light_fade, coronas);
     }
     let body = v.body_rotation();
     // headlights: the spotlight selected by Spot_Select

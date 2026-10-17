@@ -21,11 +21,11 @@ use engine_vars::Ev;
 pub use pax_vars::PaxVars;
 mod reload;
 pub use damage::{BrokenGlass, DynamicImpact, VehicleDent};
+mod car_run;
 mod contact;
 mod coupling;
 mod drive;
 mod instance;
-mod part_scripts;
 mod pose;
 mod program_ids;
 mod props;
@@ -39,7 +39,7 @@ mod weather;
 
 pub use contact::*;
 pub use coupling::*;
-pub use part_scripts::PartScripts;
+pub use car_run::CarRun;
 #[cfg(test)]
 use drive::*;
 pub use pose::*;
