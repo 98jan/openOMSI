@@ -71,6 +71,9 @@ pub(crate) struct Args {
     /// LAN play: join the host at ip[:port], or `auto` to find one on the local network.
     #[arg(long)]
     pub(crate) lan_join: Option<String>,
+    /// Discovered gateway to try if a direct UDP join gets no answer.
+    #[arg(long)]
+    pub(crate) lan_ws_fallback: Option<String>,
     /// Dedicated server: host a session from this server.cfg (written with the defaults when
     /// missing), with no window, no sound and no graphics card.
     #[arg(long)]

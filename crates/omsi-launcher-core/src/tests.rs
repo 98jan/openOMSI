@@ -91,6 +91,7 @@ fn a_picked_trip_starts_the_rest_of_the_tour() {
     assert!(!alone.iter().any(|x| x == "--whole-tour"));
 }
 
+include!("lan_join_tests.rs");
 #[test]
 fn a_duty_keeps_its_plate_and_older_files_load_without_one() {
     let old: Duty = serde_json::from_str(r#"{"map":"maps/x/global.cfg","bus":"Vehicles/x.bus","time":"09:00"}"#).unwrap();
