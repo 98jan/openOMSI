@@ -158,6 +158,10 @@ impl App {
         }
         self.menus.note_watch.frame(dt, &said, &mut self.menus.notices);
         self.integrations.update_watch.tick(&mut self.menus.notices);
+        if let Some((before, text, left)) = omsi_lan::mods::upload::notice() {
+            self.menus.notices.retain(|n| n.text != before);
+            crate::ui::push_notice(&mut self.menus.notices, crate::ui::Notice { kind: crate::ui::NoticeKind::Info, text, left, total: left });
+        }
         for n in self.menus.notices.iter_mut() {
             n.left -= dt;
         }

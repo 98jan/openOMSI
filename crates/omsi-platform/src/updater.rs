@@ -42,6 +42,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+mod unpack;
+pub use unpack::unpack;
+
 /// The project on GitHub.
 pub const REPO: &str = "openOMSI-org/openOMSI";
 pub const REPO_URL: &str = "https://github.com/openOMSI-org/openOMSI";
@@ -858,50 +861,6 @@ fn aside_of(target: &Path) -> PathBuf {
         }
     }
     first
-}
-
-/// Unpack `zip` into `to` (a fresh folder), with the files' Unix modes and links.
-pub fn unpack(zip: &Path, to: &Path) -> anyhow::Result<()> {
-    let _ = std::fs::remove_dir_all(to);
-    std::fs::create_dir_all(to)?;
-    let mut a = zip::ZipArchive::new(std::fs::File::open(zip)?)?;
-    for i in 0..a.len() {
-        let mut e = a.by_index(i)?;
-        let Some(rel) = e.enclosed_name() else { continue };
-        // (macOS' resource forks, which ditto keeps beside the files)
-        if rel.components().next().map(|c| c.as_os_str() == "__MACOSX").unwrap_or(false) || rel.file_name().map(|n| n.to_string_lossy().starts_with("._")).unwrap_or(false) {
-            continue;
-        }
-        let out = to.join(&rel);
-        if e.is_dir() {
-            std::fs::create_dir_all(&out)?;
-            continue;
-        }
-        if let Some(p) = out.parent() {
-            std::fs::create_dir_all(p)?;
-        }
-        let mode = e.unix_mode();
-        #[cfg(unix)]
-        if let Some(m) = mode {
-            if m & 0o170000 == 0o120000 {
-                let mut target = String::new();
-                e.read_to_string(&mut target)?;
-                std::os::unix::fs::symlink(target, &out)?;
-                continue;
-            }
-        }
-        let mut f = std::fs::File::create(&out)?;
-        std::io::copy(&mut e, &mut f)?;
-        drop(f);
-        #[cfg(unix)]
-        if let Some(m) = mode {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&out, std::fs::Permissions::from_mode(m & 0o7777))?;
-        }
-        #[cfg(not(unix))]
-        let _ = mode;
-    }
-    Ok(())
 }
 
 /// What the archive's top-level item `name` replaces in the installation.
