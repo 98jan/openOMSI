@@ -49,6 +49,12 @@ function Read-Lines([string]$path) {
 }
 # a line of a program's output: stderr comes as an error record (its text in the message;
 # an empty line has none)
+# openomsi.exe that Windows did not start (an antivirus, Smart App Control, a download still
+# blocked): the reason and the way out - no other folder or map would do
+function Not-Started([string]$why) {
+    Quit 1 "openomsi.exe could not be started: $why`nWindows or an antivirus may block a program just downloaded: right-click the .zip, Properties, tick Unblock and extract it again; or allow openomsi.exe in Windows Security (Protection history) or your antivirus." "O openomsi.exe não pôde ser iniciado: $why`nO Windows ou um antivírus podem bloquear um programa recém-baixado: clique com o botão direito no .zip, Propriedades, marque Desbloquear e extraia de novo; ou permita o openomsi.exe na Segurança do Windows (Histórico de proteção) ou no seu antivírus."
+}
+
 function Out-Text($o) {
     if ($o -is [Management.Automation.ErrorRecord]) { return [string]$o.Exception.Message }
     return [string]$o
@@ -92,8 +98,11 @@ function Cfg-Set([string]$key, [string]$value) {
 # with the reason shown when the folder is not a complete OMSI 2
 function List-Maps([string]$root) {
     $ErrorActionPreference = 'Continue'
-    $all = & $exe --root $root --server $cfg --list-maps 2>&1
-    $code = $LASTEXITCODE
+    # (no exit code: the program did not start at all)
+    $global:LASTEXITCODE = $null
+    try { $all = @(& $exe --root $root --server $cfg --list-maps 2>&1) } catch { Not-Started $_.Exception.Message }
+    $code = $global:LASTEXITCODE
+    if ($null -eq $code) { Not-Started ((@($all) | ForEach-Object { Out-Text $_ }) -join ' ') }
     $maps = @($all | Where-Object { $_ -is [string] -and $_.Trim() })
     if ($code -eq 0) { return ,[string[]]$maps }
     foreach ($e in $all) {
@@ -292,15 +301,17 @@ $writer.AutoFlush = $true
 $code = 0
 try {
     $ErrorActionPreference = 'Continue'
+    $global:LASTEXITCODE = $null
     & $exe --root $root --server $cfg --server-map $Map 2>&1 | ForEach-Object {
         $line = Out-Text $_
         Write-Host $line
         $writer.WriteLine($line)
     }
-    $code = $LASTEXITCODE
+    $code = $global:LASTEXITCODE
 } finally {
     $writer.Dispose()
 }
+if ($null -eq $code) { Not-Started (T 'see the line above' 'veja a linha acima') }
 switch ($code) {
     0 { }
     1 { Say 'The server stopped (code 1): the OMSI 2 folder is incomplete or wrong, or another error - see the lines above. run-server.cmd -Setup chooses the folder again.' 'O servidor parou (código 1): a pasta do OMSI 2 está incompleta ou errada, ou outro erro - veja as linhas acima. run-server.cmd -Setup escolhe a pasta de novo.' }
