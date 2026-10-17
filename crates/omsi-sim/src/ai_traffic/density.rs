@@ -108,6 +108,46 @@ impl TrafficSim {
         }
     }
 
+    /// How much random traffic a street lane brings (`Lane::density`) where its paths set
+    /// densities per group: each group's density there (its `[rule] trafficdensity`, or what
+    /// it inherits) times how much traffic the map makes of that group relative to its
+    /// first group (the `unsched_trafficdens.txt` factors, never more than the lane's
+    /// own), the largest over the groups. A lane open to some traffic stays a little above
+    /// 0. Taking the rarest group's rule as it was, BRT Berlin's Kurfürstendamm bus lanes,
+    /// open only to ambulances (3.0 at a factor of 0.0002), spawned queues of ambulances.
+    /// None: the lane keeps the density its paths gave it (no rules per group, or the map
+    /// has no `unsched_trafficdens.txt`).
+    pub fn spawn_density(&self, lane: &crate::traffic::Lane) -> Option<f32> {
+        if lane.kind != LaneKind::Street || lane.group_density.is_empty() || !self.group_curves {
+            return None;
+        }
+        let first = self.groups.first().map(|g| g.factor).filter(|f| *f > 0.0)?;
+        let mut best: Option<f32> = None;
+        for (g, group) in self.groups.iter().enumerate() {
+            let Some(u) = self.group_uvg.get(g).copied().flatten() else { continue };
+            // (a group without street vehicles brings nobody here)
+            if !self.types.iter().any(|t| t.3 == g && t.2 == LaneKind::Street) {
+                continue;
+            }
+            let here = lane.pool_density(&self.uvg_defaults, u);
+            if here <= 0.0 {
+                continue;
+            }
+            let share = (group.factor / first).clamp(0.0, 1.0);
+            best = Some(best.unwrap_or(0.0).max(here * share));
+        }
+        Some(best.map_or(0.0, |d| d.max(SPAWN_DENSITY_FLOOR)))
+    }
+
+    /// `spawn_density` for the lanes `lanes` (those of a new tile, or all at the start).
+    pub fn set_spawn_densities(&mut self, lanes: std::ops::Range<usize>) {
+        for l in lanes {
+            if let Some(d) = self.net.lanes.get(l).and_then(|lane| self.spawn_density(lane)) {
+                self.net.lanes[l].density = d;
+            }
+        }
+    }
+
     /// A random vehicle type for a lane of `kind`: on a street `lane`, of the groups that
     /// lane carries, as much as it carries of each.
     pub fn pick_type(&mut self, kind: LaneKind, lane: Option<usize>) -> Option<Arc<VehicleType>> {
@@ -167,6 +207,9 @@ impl TrafficSim {
             .map(|t| t.0.clone())
     }
 }
+
+/// The least `spawn_density` of a lane open to some random traffic.
+pub const SPAWN_DENSITY_FLOOR: f32 = 0.05;
 
 /// How many times the base street target the neighbourhood asks for, from the trafficdensity
 /// of each street lane starting near the player (0 for a no_cars lane): the count of lanes
