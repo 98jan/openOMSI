@@ -4,7 +4,7 @@ cd "$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 app="${1:-dist/macos/openOMSI.app}"
 out="${2:-out/openOMSI.dmg}"
 tmp=$(mktemp -d)
-trap 'hdiutil detach -force "$tmp/mnt" >/dev/null 2>&1; rm -rf "$tmp"' EXIT
+trap 'hdiutil detach -force "$tmp/mnt" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
 mkdir "$tmp/stage" "$tmp/mnt"
 ditto "$app" "$tmp/stage/openOMSI.app"
 ln -s /Applications "$tmp/stage/Applications"
