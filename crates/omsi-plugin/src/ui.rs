@@ -156,12 +156,15 @@ pub struct Panel {
     /// While the panels have the mouse it can be moved by dragging it (where it has nothing
     /// clickable); the place it is moved to stays when it is set again.
     pub draggable: bool,
+    /// A click on it is its own even while the panels do not have the mouse (a card the
+    /// driver clicks away or keeps): the cab behind it gets none.
+    pub grab: bool,
     pub children: Vec<Element>,
 }
 
 impl Default for Panel {
     fn default() -> Panel {
-        Panel { anchor: Anchor::TopLeft, x: 0.0, y: 0.0, width: 300.0, padding: 12.0, gap: 6.0, background: None, radius: 12.0, accent: None, visible: true, clickable: false, draggable: false, children: Vec::new() }
+        Panel { anchor: Anchor::TopLeft, x: 0.0, y: 0.0, width: 300.0, padding: 12.0, gap: 6.0, background: None, radius: 12.0, accent: None, visible: true, clickable: false, draggable: false, grab: false, children: Vec::new() }
     }
 }
 
@@ -763,6 +766,7 @@ pub fn parse_panel(t: &Value, folder: Option<&Path>) -> Result<Panel, String> {
         visible: r.boolean("visible", true)?,
         clickable: r.boolean("clickable", false)?,
         draggable: r.boolean("draggable", false)?,
+        grab: r.boolean("grab", false)?,
         children: r.children("children", 0, &mut count)?,
     })
 }
@@ -1295,7 +1299,8 @@ mod tests {
         assert_eq!(p.anchor, Anchor::BottomRight);
         assert_eq!((p.x, p.y, p.width, p.padding, p.gap, p.radius), (16.0, 0.0, 340.0, 12.0, 6.0, 12.0));
         assert_eq!(p.accent, Some(Rgba([0xF4, 0x7F, 0x30, 255])));
-        assert!(p.visible && !p.clickable && p.background.is_none());
+        assert!(p.visible && !p.clickable && !p.grab && p.background.is_none());
+        assert!(panel("{ grab = true }").unwrap().grab);
         // (the hidden text and the unknown type are left out)
         assert_eq!(p.children.len(), 4);
         assert_eq!(p.children[0].kind, Kind::Text { text: "Linie 42".into(), size: 18.0, weight: Weight::Bold, align: Align::Left, wrap: true });

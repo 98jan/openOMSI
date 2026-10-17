@@ -734,6 +734,7 @@ pub fn toast_panel(t: &Toast) -> Panel {
         visible: true,
         clickable: false,
         draggable: false,
+        grab: false,
         children,
     }
 }
@@ -1000,6 +1001,9 @@ pub struct PluginPanels {
     /// The height of the panel in the navigator's board as last laid out (physical pixels):
     /// the room the navigator makes for it. None: no such panel.
     pub docked: Option<f32>,
+    /// The left button went down on a panel that takes clicks without the mouse (`grab`):
+    /// its release is the panel's too, not the cab's.
+    pub grabbed: bool,
 }
 
 impl PluginPanels {

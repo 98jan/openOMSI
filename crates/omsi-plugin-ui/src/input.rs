@@ -39,6 +39,24 @@ pub fn moved(at: Vec2, by: (f32, f32), w: f32, h: f32, screen: Vec2) -> Vec2 {
 }
 
 impl PluginPanels {
+    /// Whether a press at `(x, y)` (physical pixels on the window) while the panels do not
+    /// have the mouse is theirs all the same: the topmost panel there takes its clicks
+    /// (`grab = true`).
+    pub fn grabs_at(&self, ui: &UiState, x: f32, y: f32) -> bool {
+        let k = self.scale.max(0.25);
+        for e in ui.panels().iter().rev().filter(|e| e.panel.visible) {
+            let Some(card) = self.cards.get(&Key::Panel(e.owner, e.id.clone())) else { continue };
+            if card.seen != self.frame {
+                continue;
+            }
+            let local = (Vec2::new(x, y) - card.origin) / k;
+            if Rect::new(0.0, 0.0, card.laid.w, card.laid.h).contains(local) {
+                return e.panel.grab;
+            }
+        }
+        false
+    }
+
     /// What a press at `(x, y)` (physical pixels on the window) is on: the topmost panel's
     /// part there.
     pub fn press_at(&self, ui: &UiState, x: f32, y: f32) -> Option<Press> {
@@ -73,5 +91,37 @@ impl PluginPanels {
             });
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{Card, Laid};
+    use super::*;
+    use omsi_plugin::ui::panel_from_source;
+
+    /// A card of `src` laid out `w` x `h` at `origin`, as the last frame showed it.
+    fn shown(panels: &mut PluginPanels, ui: &mut UiState, owner: u64, id: &str, src: &str, origin: Vec2) {
+        ui.set(owner, id, panel_from_source(src).unwrap()).unwrap();
+        let laid = Laid { w: 200.0, h: 100.0, ..Laid::default() };
+        let card = Card { revision: 0, scale: 1.0, backdrop: 1.0, laid, tex: None, drawn: None, origin, y: None, seen: panels.frame };
+        panels.cards.insert(Key::Panel(owner, id.to_string()), card);
+    }
+
+    #[test]
+    fn a_grabbing_panel_takes_a_click_without_the_mouse() {
+        let (mut panels, mut ui) = (PluginPanels { scale: 1.0, ..Default::default() }, UiState::default());
+        shown(&mut panels, &mut ui, 1, "card", "{ grab = true }", Vec2::new(100.0, 100.0));
+        shown(&mut panels, &mut ui, 1, "plain", "{}", Vec2::new(400.0, 100.0));
+        assert!(panels.grabs_at(&ui, 150.0, 150.0));
+        // beside it, and on a panel that does not grab: the cab's
+        assert!(!panels.grabs_at(&ui, 50.0, 150.0));
+        assert!(!panels.grabs_at(&ui, 450.0, 150.0));
+        // a plain panel over it hides it where they overlap
+        shown(&mut panels, &mut ui, 2, "over", "{}", Vec2::new(250.0, 100.0));
+        assert!(!panels.grabs_at(&ui, 260.0, 150.0) && panels.grabs_at(&ui, 150.0, 150.0));
+        // a card not shown in the last frame takes nothing
+        panels.frame += 1;
+        assert!(!panels.grabs_at(&ui, 150.0, 150.0));
     }
 }
