@@ -26,7 +26,7 @@ pub fn query_session(code: &str) -> Result<ServerInfo, String> {
         let url = crate::bridge::lookup_tunnel(code.session).ok_or("the host did not answer")?;
         super::query(&url, false)
     }));
-    first_success(jobs, Duration::from_secs(10))
+    first_success(jobs, Duration::from_secs(15))
 }
 
 fn first_success<T: Send + 'static>(jobs: Vec<Query<T>>, timeout: Duration) -> Result<T, String> {
@@ -37,19 +37,25 @@ fn first_success<T: Send + 'static>(jobs: Vec<Query<T>>, timeout: Duration) -> R
         let _ = std::thread::Builder::new()
             .name("session status".into())
             .spawn(move || {
-                if let Ok(value) = job() {
-                    let _ = tx.send(value);
-                }
+                let _ = tx.send(job());
             });
     }
     drop(tx);
-    match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        Ok(value) => Ok(value),
-        Err(mpsc::RecvTimeoutError::Disconnected) => Err("the host did not answer".into()),
-        Err(mpsc::RecvTimeoutError::Timeout) => Err(format!(
-            "the host did not answer within {} seconds",
-            timeout.as_secs_f32()
-        )),
+    let mut failure = None;
+    loop {
+        match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(Ok(value)) => return Ok(value),
+            Ok(Err(e)) => failure = Some(e),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(failure.unwrap_or_else(|| "the host did not answer".into()))
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                return Err(format!(
+                    "the host did not answer within {} seconds",
+                    timeout.as_secs_f32()
+                ))
+            }
+        }
     }
 }
 
@@ -137,7 +143,7 @@ mod tests {
         let jobs: Vec<super::Query<&str>> = vec![Box::new(|| Err("unreachable".into()))];
         assert_eq!(
             super::first_success(jobs, Duration::from_secs(1)).unwrap_err(),
-            "the host did not answer"
+            "unreachable"
         );
     }
 

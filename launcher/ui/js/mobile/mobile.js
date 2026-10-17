@@ -117,6 +117,13 @@ function MobileDrive() {
           <span class="m-row-value">${t('Leave the server')}</span>
         </button>
       </div>`}
+      ${c.lan_mode === 'host' && html`<div class="m-group">
+        <button class="m-row" onClick=${() => choose({ lan_mode: 'off' })}>
+          <span class="m-row-icon"><${Icon} name="users" /></span>
+          <span class="m-row-label">${t('Host my next duty')}<small>${t('Start the duty to create your session, then return to Multiplayer to copy the code.')}</small></span>
+          <span class="m-row-value">${t('Cancel')}</span>
+        </button>
+      </div>`}
       <div class="m-group">
         ${row('map', 'map', 'Map', mapLabel, joined ? t('Set by {server}', { server: srv.name || c.lan_addr }) : null, joined)}
         ${row('bus', 'bus', 'Bus', v ? v.name : s.vehicles || !s.boot?.root ? '-' : html`<${Spinner} />`)}

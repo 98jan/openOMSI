@@ -69,6 +69,7 @@ function JoinByCode() {
       const check = await call('check_join', { text: asked });
       if (id !== request.current) return;
       if (!check.ok) return setResult({ code: asked, error: check.text });
+      if (!/^OMSI-/i.test(asked)) return setResult({ code: asked, validated: true });
       setResult({ code: asked, busy: true, validated: true });
       try {
         const host = await call('server_query', { address: asked });
@@ -84,6 +85,7 @@ function JoinByCode() {
   const current = result?.code === code.trim() ? result : null;
   const host = current?.host;
   const full = host && host.max_players > 0 && host.players >= host.max_players;
+  const ready = host || (current?.validated && !current.busy);
   const join = () => {
     if (!current || full || (!host && !current.unavailable && !current.validated)) return;
     request.current++;
@@ -96,7 +98,7 @@ function JoinByCode() {
   };
   return html`<div class="multiplayer-flow">
     <${Card} body=${false}>
-      <${FlowSteps} labels=${['Enter session code', 'Confirm session', 'Choose a bus and start']} current=${host ? 1 : 0} />
+      <${FlowSteps} labels=${['Enter session code', 'Confirm session', 'Choose a bus and start']} current=${ready ? 2 : 0} />
       <div class="card-body stack">
         <div><h2>${t('Join friends')}</h2><p class="muted small">${t('Confirm the session first, then choose your bus on the Drive page. The game has not connected yet.')}</p></div>
         <div class="field">
@@ -111,7 +113,7 @@ function JoinByCode() {
         </div>
         <div id="multiplayer-code-status" role="status" aria-live="polite">
           ${current?.busy && html`<div class="row muted small"><${Spinner} />${t('Checking the session...')}</div><div class="muted small">${t('You can choose a bus without waiting for session details. The game connects when you start driving.')}</div>`}
-          ${current?.error && html`<${Notice} kind="danger"><b>${t('Could not validate the code')}</b><div class="muted small">${t('Copy the complete code again and retry.')}</div><${ErrorDetails} text=${current.error} /></${Notice}>`}
+          ${current?.error && html`<${Notice} kind="danger"><b>${t('Could not validate the code')}</b><div class="muted small selectable">${current.error}</div></${Notice}>`}
           ${current?.unavailable && html`<${Notice} kind="warn"><b>${t('Could not read the session details')}</b><div class="muted small">${t('Ask your friend to keep the game running and send the latest code. Retry, or continue without session details.')}</div><${ErrorDetails} text=${current.unavailable} /></${Notice}>`}
         </div>
         ${host && html`<section class="multiplayer-session-summary" aria-label=${t('Session details')}>
@@ -123,7 +125,7 @@ function JoinByCode() {
         </section>`}
         ${full && html`<${Notice} kind="warn">${t('The session is full. Ask your friend to make room, then confirm again.')}</${Notice}>`}
         ${host?.map && !s.maps?.some((m) => m.file.toLowerCase() === host.map.replace(/\\/g, '/').toLowerCase()) && html`<${Notice} kind="warn">${t('The server plays {}, which is not installed here: it is fetched from the server on joining.', [host.map])}</${Notice}>`}
-        ${!full && (host || current?.unavailable || current?.validated) && html`<div><${Button} kind=${host ? 'primary' : ''} icon="bus" label=${host ? 'Choose a bus' : 'Choose a bus without session details'} onClick=${join} /></div>`}
+        ${!full && (host || current?.unavailable || current?.validated) && html`<div><${Button} kind=${ready ? 'primary' : ''} icon="bus" label=${ready ? 'Choose a bus' : 'Choose a bus without session details'} onClick=${join} /></div>`}
       </div>
     </${Card}>
     <${FirstTimeHelp}><ol class="multiplayer-help muted small">
@@ -160,7 +162,8 @@ function HostByCode() {
           <div><${Button} icon="gamepad" label="Running games" onClick=${() => set({ page: 'games' })} /></div>
         ` : html`
           <p class="muted small">${t('Choose your map, bus and duty on the Drive page. No game starts until you press Start the duty.')}</p>
-          <div><${Button} kind="primary" icon="bus" label="Set up a hosted duty" onClick=${prepare} /></div>
+          <div class="row"><${Button} kind="primary" icon="bus" label="Set up a hosted duty" onClick=${prepare} />
+            ${hosting && html`<${Button} kind="ghost" label="Cancel" onClick=${() => choose({ lan_mode: 'off' })} />`}</div>
         `}
       </div>
     </${Card}>

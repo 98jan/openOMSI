@@ -996,7 +996,9 @@ html.phone, html.phone body { font-size: 15px; -webkit-tap-highlight-color: tran
 .multiplayer-session-summary dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 .multiplayer-duty-notice { flex: none; margin-bottom: 12px; }
 .page-drive:has(.multiplayer-duty-notice):not(:has(.lay)) { display: flex; flex-direction: column; }
-.page-drive:has(.multiplayer-duty-notice) .classic-drive { flex: 1; min-height: 0; }
+@media (min-width: 901px) {
+  .page-drive:has(.multiplayer-duty-notice):not(:has(.lay)) .classic-drive { flex: 1; min-height: 0; }
+}
 @media (max-width: 1100px) {
   .multiplayer-flow { grid-template-columns: minmax(0, 1fr); }
 }
