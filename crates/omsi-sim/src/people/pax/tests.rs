@@ -73,6 +73,7 @@ fn arriving_ai_uses_the_timetable_stop_not_a_neighbour() {
         takes: Takes::Terminus,
         places_off: Vec::new(),
         served: None,
+        route: None,
     };
     let register = |humans: &mut PeopleSim, bus: &BusNow| {
         humans
@@ -503,4 +504,39 @@ fn the_other_platform_of_the_stop_keeps_the_request_point() {
     assert!(!rider.wants_stop_at(&other, DVec3::Y * (point + 10.0), true));
     assert_eq!(rider.stop_request_at, Some((43, point)));
     assert!(rider.wants_stop_at(&other, DVec3::Y * (point - 10.0), true));
+}
+
+/// A depot file of one line, 7, with three routes: out to the hospital (its sign
+/// `07HOSPITAL`, no stop's name), back to the station, and a loop from the station round
+/// to the station.
+fn route_test_hof() -> omsi_vehicle::Hof {
+    use omsi_vehicle::hof::{InfoTrip, Terminus};
+    let mut hof = omsi_vehicle::Hof::default();
+    let terminus = |code: i32, id: &str| Terminus { code, texture_id: id.into(), terminus_stop: Some(id.into()), ..Default::default() };
+    hof.termini = vec![terminus(10, "07HOSPITAL"), terminus(11, "7 Station"), terminus(12, "7 Town Loop")];
+    let mut route = |code: &str, terminus: &str, stops: &[&str]| {
+        hof.info_trips.push(InfoTrip { code: code.into(), route: terminus.into(), line: "7".into(), ..Default::default() });
+        hof.info_busstop_lists.push(stops.iter().map(|s| s.to_string()).collect());
+    };
+    route("701", "10", &["Station", "Mill Lane", "Hospital Gate#north side"]);
+    route("702", "11", &["Hospital Gate", "Mill Lane", "Station"]);
+    route("703", "12", &["Station", "Mill Lane", "Old Bridge", "Station"]);
+    hof
+}
+
+/// The bus empties at the last stop of the IBIS route it is set to, whatever its sign says
+/// (`07HOSPITAL` names no stop); on a loop, not at the first stop, only coming back to it.
+#[test]
+fn everybody_leaves_at_the_last_stop_of_the_ibis_route() {
+    let hof = route_test_hof();
+    let out = IbisRoute::of(&hof, 0, Some(1)).unwrap();
+    assert!(out.ends_at(&test_stop("Hospital Gate", "")));
+    assert!(!out.ends_at(&test_stop("Mill Lane", "")));
+    assert!(!out.ends_at(&test_stop("Station", "")));
+    let back = IbisRoute::of(&hof, 1, None).unwrap();
+    assert!(back.ends_at(&test_stop("Station", "")));
+    let at_start = IbisRoute::of(&hof, 2, Some(0)).unwrap();
+    assert!(!at_start.ends_at(&test_stop("Station", "")), "a loop does not empty where it sets off");
+    assert!(IbisRoute::of(&hof, 2, Some(3)).unwrap().ends_at(&test_stop("Station", "")));
+    assert_eq!(IbisRoute::of(&hof, 3, None), None, "no such route");
 }

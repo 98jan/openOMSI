@@ -536,6 +536,37 @@ pub enum Takes {
     Nobody,
 }
 
+/// The IBIS route a bus is set to (`IBIS_RouteIndex` into its depot file's trips), as the
+/// people at the stops go by it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct IbisRoute {
+    /// The route's last stop (`[infosystem_busstop_list]`), where everybody gets off whatever
+    /// the destination shown: Caxias City's route to `016HOSPITALDUQUE`, which is no stop's
+    /// name, ends at `016 hospital duque final`. None on a circular route while the bus is
+    /// still at its first stop, which is also its last.
+    pub end: Option<String>,
+}
+
+impl IbisRoute {
+    /// Route `route` of depot file `hof`, the IBIS at stop `at` of its list (`IBIS_busstop`;
+    /// None: not known). None for no such route or one without stops.
+    pub fn of(hof: &omsi_vehicle::Hof, route: usize, at: Option<usize>) -> Option<IbisRoute> {
+        // (a list names a stop by its ident; some depot files add `#` and a note to it)
+        let ident = |s: &str| s.split('#').next().unwrap_or("").trim().to_string();
+        let last_of = |r: usize| hof.info_busstop_lists.get(r).and_then(|l| l.last()).map(|s| ident(s)).filter(|s| !s.is_empty());
+        let list = hof.info_busstop_lists.get(route)?;
+        let end = last_of(route)?;
+        let circular = list.first().is_some_and(|s| ident(s).eq_ignore_ascii_case(&end)) && list.len() > 1;
+        let end = (!circular || at.is_some_and(|k| k > 0)).then_some(end);
+        Some(IbisRoute { end })
+    }
+
+    /// Whether everybody gets off at `stop`: the route ends there.
+    pub fn ends_at(&self, stop: &PaxStop) -> bool {
+        self.end.as_deref().is_some_and(|e| stop.is_named(e))
+    }
+}
+
 /// What a bus near a stop does there (sub_61f238 from 0x61f3e3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AtStop {

@@ -70,8 +70,10 @@ impl PeopleSim {
                     reg.next = Some(*id);
                 }
                 // a bus not in service, or at its own terminus, empties and takes nobody
-                // (0x61f3e3); one in free drive only lets its riders off
-                match at_stop(*id, s, bn.terminus.as_deref(), &bn.takes) {
+                // (0x61f3e3); one in free drive only lets its riders off. So does one at the
+                // last stop of the IBIS route it is set to, whatever the destination shown.
+                let ends_route = bn.route.as_ref().is_some_and(|r| r.ends_at(s));
+                match if ends_route { AtStop::Empties } else { at_stop(*id, s, bn.terminus.as_deref(), &bn.takes) } {
                     AtStop::Empties => {
                         reg.all_exit = true;
                         continue;

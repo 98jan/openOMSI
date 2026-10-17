@@ -32,6 +32,8 @@ pub struct PlayerBusView {
     /// `act_busstop`, the stop its scripts name.
     pub tt_stop: Option<(i64, Option<String>)>,
     pub act_busstop: String,
+    /// The IBIS route it is set to (`IBIS_RouteIndex`, `IBIS_busstop`).
+    pub route: Option<IbisRoute>,
     /// What depends on the passenger cabin (none without one: nobody rides it).
     pub cabin: Option<CabinView>,
 }
@@ -78,6 +80,11 @@ impl PeopleSim {
         let tt_stop = usize::try_from(v.host.tt_busstop_index).ok().and_then(|index| {
             v.host.tt_stop_ids.get(index).map(|id| (*id, v.host.tt_stops.get(index).map(|stop| stop.0.clone())))
         });
+        // the IBIS route it is set to, where everybody gets off at the last stop
+        let route = v.host.hof.as_ref().zip(v.var("IBIS_RouteIndex").filter(|r| r.is_finite() && *r >= 0.0)).and_then(|(hof, r)| {
+            let at = v.var("IBIS_busstop").filter(|k| k.is_finite() && *k >= 0.0).map(|k| k.round() as usize);
+            IbisRoute::of(hof, r.round() as usize, at)
+        });
         PlayerBusView {
             position: v.position,
             heading: v.heading,
@@ -92,6 +99,7 @@ impl PeopleSim {
             terminus,
             tt_stop,
             act_busstop: v.str_var("act_busstop").to_string(),
+            route,
             cabin,
         }
     }
