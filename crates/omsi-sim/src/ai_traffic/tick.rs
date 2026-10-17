@@ -303,8 +303,9 @@ impl TrafficSim {
             .flat_map(|c| c.approach.iter().flatten().copied())
             .fold(160.0f32, f32::max)
             .min(1200.0);
-        // (a train asks a light without a distance of its own from far off, C1b)
-        let train_reach = reach.max(crate::traffic::TRAIN_APPROACH);
+        // (how far ahead a rail vehicle looks for lights: a level crossing asks no distance
+        // and is asked from far off)
+        let rail_reach = reach.max(crate::traffic::RAIL_ASK_DISTANCE);
         let mut indicating: Vec<(PlayerBox, u8)> = Vec::new();
         for c in &self.cars {
             // (a car indicating stands on the paths marked with its turn: the rear sections
@@ -319,15 +320,15 @@ impl TrafficSim {
                     }
                 }
             }
-            let train = c.is_train();
-            let way = if train { self.train_way(&c.state, train_reach) } else { self.way_lanes(&c.state, reach) };
+            let rail = c.is_train();
+            let way = if rail { self.train_way(&c.state, rail_reach) } else { self.way_lanes(&c.state, reach) };
             for (l, d) in way {
                 if let Some((ci, li)) = self.net.lanes[l].traffic_light {
                     if let Some(ctl) = self.lights.get_mut(ci) {
                         let gap = d - c.state.front;
                         // (asked until its rear has left the lane, not its middle; a car
                         // standing at the line asks whatever the light's distance)
-                        if ctl.asks(li, gap, c.state.speed, train) && d + self.net.lanes[l].length() + c.state.rear >= 0.0 {
+                        if ctl.is_asked_by(li, gap, c.state.speed, rail) && d + self.net.lanes[l].length() + c.state.rear >= 0.0 {
                             if let Some(r) = ctl.request.get_mut(li) {
                                 *r = true;
                             }
@@ -344,16 +345,18 @@ impl TrafficSim {
             // (only driving the lanes' way: their lights are for that direction)
             let forward = if speed.abs() < 0.3 { r.along } else { r.along == (speed > 0.0) };
             if forward && r.lane < self.net.lanes.len() {
-                let mut way = vec![(r.lane, -r.s)];
-                way.extend(self.track_after(r.lane, -r.s, if r.train { train_reach } else { reach }));
-                for (l, d) in way {
-                    let Some((ci, li)) = self.net.lanes[l].traffic_light else { continue };
-                    let length = self.net.lanes[l].length();
-                    if let Some(ctl) = self.lights.get_mut(ci) {
-                        if ctl.asks(li, d - half_len, speed, r.train) && d + length + half_len >= 0.0 {
-                            if let Some(q) = ctl.request.get_mut(li) {
-                                *q = true;
-                            }
+                let ahead = self.track_after(r.lane, -r.s, if r.train { rail_reach } else { reach });
+                let lit: Vec<(usize, usize, f32, f32)> = std::iter::once((r.lane, -r.s))
+                    .chain(ahead)
+                    .filter_map(|(lane, d)| self.net.lanes[lane].traffic_light.map(|(ci, li)| (ci, li, d, self.net.lanes[lane].length())))
+                    .collect();
+                for (ci, li, d, lane_len) in lit {
+                    // (while some of the player's vehicle is still on the light's lane)
+                    let still_on = d + lane_len + half_len >= 0.0;
+                    let Some(ctl) = self.lights.get_mut(ci) else { continue };
+                    if still_on && ctl.is_asked_by(li, d - half_len, speed, r.train) {
+                        if let Some(q) = ctl.request.get_mut(li) {
+                            *q = true;
                         }
                     }
                 }
@@ -407,7 +410,7 @@ impl TrafficSim {
             for (l, d) in self.lanes_ahead_of(pos, heading, reach) {
                 if let Some((ci, li)) = self.net.lanes[l].traffic_light {
                     // (`d` from the vehicle's middle; standing at the line it asks)
-                    if self.lights.get(ci).is_some_and(|ctl| d <= ctl.approach_dist(li) || ctl.asks(li, d - half_len, speed, false)) {
+                    if self.lights.get(ci).is_some_and(|ctl| d <= ctl.approach_dist(li) || ctl.is_asked_by(li, d - half_len, speed, false)) {
                         near.push((ci, li, self.net.lanes[l].turn, d));
                     }
                 }

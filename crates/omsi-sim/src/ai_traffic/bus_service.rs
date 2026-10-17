@@ -286,11 +286,11 @@ const INTERPOLATED_STOP_WAIT: f64 = 120.0;
 
 /// How long a bus arriving at `now` stands at a stop it is to leave at `depart`.
 fn early_wait(depart: f64, now: f64, layover: bool, rail: bool) -> f64 {
-    early_wait_uncapped(depart, now, layover, rail).min(LAYOVER_WAIT)
+    time_to_departure(depart, now, layover, rail).min(LAYOVER_WAIT)
 }
 
-/// `early_wait` without its cap.
-fn early_wait_uncapped(depart: f64, now: f64, layover: bool, rail: bool) -> f64 {
+/// The time from `now` until a bus leaves a stop it is to leave at `depart`, however long.
+fn time_to_departure(depart: f64, now: f64, layover: bool, rail: bool) -> f64 {
     let lead = if layover {
         0.0
     } else if rail {
@@ -549,9 +549,10 @@ impl BusService {
     /// So the two knobs the OMSI timetable editor offers per station decide this between
     /// them: the departure-time box (`Edits_dep`/`CheckBoxes_dep`) and the stop setting
     /// (`ComboBoxes_stopping`). Stopping and waiting are not the same thing.
-    /// The front stop is the trip's last.
-    fn at_trip_end(&self) -> bool {
-        (self.stops.len() == 1 && !self.route_open) || self.stops.front().is_some_and(|s| self.last_stop == Some(s.id))
+    /// Whether the stop the bus is at (the front one) ends its trip.
+    fn standing_at_last_stop(&self) -> bool {
+        let Some(front) = self.stops.front() else { return false };
+        self.last_stop == Some(front.id) || (self.stops.len() == 1 && !self.route_open)
     }
 
     fn waits_here(&self, layover: bool, rail: bool, early: f64) -> bool {
@@ -582,7 +583,8 @@ impl BusService {
         // at the trip's last stop the bus stands until its time there, however long:
         // Städtedreieck's AmpelKI buses stand on the Bergerplatz detectors from 20:00 to
         // 04:00 for the night program, and left after half an hour
-        let scheduled = if self.at_trip_end() { early_wait_uncapped(depart, now, layover, rail) } else { early_wait(depart, now, layover, rail) };
+        let until_departure = time_to_departure(depart, now, layover, rail);
+        let scheduled = if self.standing_at_last_stop() { until_departure } else { until_departure.min(LAYOVER_WAIT) };
         if timed_stop { scheduled } else { scheduled.min(INTERPOLATED_STOP_WAIT) }
     }
 

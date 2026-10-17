@@ -220,7 +220,9 @@ mod tests {
     /// A multiple-unit car: each free end shows white where the car leads and red where it
     /// trails, from its own place in the train.
     fn unit_car() -> Arc<VehicleType> {
-        let dir = std::env::temp_dir().join(format!("omsi-car-run-test-{}", std::process::id()));
+        static MADE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("omsi-car-run-test-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("cab_ends.osc");
         let list = dir.join("cab_ends_varlist.txt");

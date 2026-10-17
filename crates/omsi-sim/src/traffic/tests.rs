@@ -1089,44 +1089,54 @@ fn a_way_on_that_leads_only_into_closed_lanes_is_not_taken() {
     assert_eq!(car.choose_after(&net, 0), Some(1));
 }
 
+/// A two-light program with a stop placed in each kind of phase: in the changeover (one
+/// light red-and-yellow, the other red) a request does not hold the clock, in the green it
+/// does.
 #[test]
-fn a_stop_does_not_hold_red_and_yellow() {
-    // light 0 green to 18 s, yellow, red; light 1 red to 23 s, red-and-yellow 23-25 s,
-    // green to 33 s. A stop asked for at 24 s (light 1 in red-and-yellow, light 0 red)
-    // lets the clock on; one at 27 s (light 1 green) holds it.
-    let lights = vec![
-        (vec![(6, 18.0), (9, 3.0), (0, 0.0)], None),
-        (vec![(0, 23.0), (3, 2.0), (6, 8.0), (9, 3.0), (0, 0.0)], None),
-    ];
-    let mut c = TrafficLightController::from_program(lights.clone(), Some(40.0), &[[1.0, 24.0, 0.0]], &[]);
-    c.time = 22.0;
-    c.request[1] = true;
-    for _ in 0..40 {
-        c.advance(0.1);
-    }
-    assert!(!c.held && c.time > 25.5, "the queue held the changeover at {:.1} s", c.time);
-    assert_eq!(c.state(1), 6);
-    let mut c = TrafficLightController::from_program(lights, Some(40.0), &[[1.0, 27.0, 0.0]], &[]);
-    c.time = 22.0;
-    c.request[1] = true;
-    for _ in 0..100 {
-        c.advance(0.1);
-    }
-    assert!(c.held && (c.time - 27.0).abs() < 1e-3, "a stop in the green holds: {:.1} s", c.time);
+fn stop_points_hold_only_where_traffic_goes() {
+    // light 0: green 0-30 s, yellow 3 s, red; light 1: red to 36 s, red-and-yellow 36-38 s,
+    // green 38-50 s, yellow, red
+    let program = || {
+        vec![
+            (vec![(6, 30.0), (9, 3.0), (0, 0.0)], None),
+            (vec![(0, 36.0), (3, 2.0), (6, 12.0), (9, 3.0), (0, 0.0)], None),
+        ]
+    };
+    let run = |stop_at: f32, seconds: f32| {
+        let mut ctl = TrafficLightController::from_program(program(), Some(60.0), &[[1.0, stop_at, 0.0]], &[]);
+        ctl.time = 34.5;
+        ctl.request[1] = true;
+        let steps = (seconds / 0.05) as usize;
+        for _ in 0..steps {
+            ctl.advance(0.05);
+        }
+        ctl
+    };
+    let in_changeover = run(37.0, 6.0);
+    assert!(!in_changeover.held, "held at {:.2} s", in_changeover.time);
+    assert!(in_changeover.time > 40.0);
+    assert_eq!(in_changeover.state(1), 6, "light 1 went on to green");
+    let in_green = run(42.0, 12.0);
+    assert!(in_green.held, "a request in the green holds it");
+    assert!((in_green.time - 42.0).abs() < 1e-3, "{:.2}", in_green.time);
 }
 
+/// A jump to a time beyond the cycle goes on at the start of the next cycle.
 #[test]
-fn a_jump_past_the_cycle_end_starts_the_next_cycle() {
-    // a 50 s cycle, dark for its first 10 s: at 45 s it jumps to 56 s while nobody asks.
-    // That is the next cycle's start, in the dark phase, not 6 s into it in the green.
-    let mut c = TrafficLightController::from_program(
-        vec![(vec![(13, 10.0), (6, 25.0), (9, 3.0), (0, 0.0)], None)],
-        Some(50.0),
-        &[],
-        &[[0.0, 45.0, 1.0, 56.0]],
-    );
-    c.time = 44.0;
-    c.advance(1.5);
-    assert!((c.time - 0.5).abs() < 1e-3, "the clock went on at {:.2} s", c.time);
-    assert_eq!(c.state(0), 13);
+fn jumps_beyond_the_cycle_restart_it() {
+    // a 90 s cycle that flashes yellow (13) for its first 15 s; at 80 s, unasked, it jumps
+    // to 97 s. Wrapped round that would be 7 s, still flashing; it must be 0.
+    let program = vec![(vec![(13, 15.0), (6, 60.0), (9, 3.0), (0, 0.0)], None)];
+    let mut ctl = TrafficLightController::from_program(program, Some(90.0), &[], &[[0.0, 80.0, 1.0, 97.0]]);
+    ctl.time = 79.0;
+    for _ in 0..12 {
+        ctl.advance(0.25);
+    }
+    assert!((ctl.time - 2.0).abs() < 1e-3, "clock at {:.2} s", ctl.time);
+    assert_eq!(ctl.state(0), 13);
+    // a jump inside the cycle still lands where it says
+    let mut inside = TrafficLightController::from_program(vec![(vec![(6, 60.0), (0, 0.0)], None)], Some(90.0), &[], &[[0.0, 80.0, 1.0, 10.0]]);
+    inside.time = 79.5;
+    inside.advance(1.0);
+    assert!((inside.time - 10.5).abs() < 1e-3, "{:.2}", inside.time);
 }
