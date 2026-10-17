@@ -538,13 +538,30 @@ enum BlockKind {
     Trigger(String),
 }
 
+/// An `{if}` being compiled: its condition's jump until an `{else}` or the `{endif}` gives
+/// it a target, and the jumps that go on at the `{endif}`.
+struct OpenIf {
+    to_else: Option<usize>,
+    to_endif: Vec<usize>,
+}
+
+impl OpenIf {
+    /// At the `{endif}` (or the block's end): every jump still open lands here.
+    fn close(self, block: &mut Block) {
+        let here = block.ops.len() as u32;
+        for at in self.to_else.into_iter().chain(self.to_endif) {
+            patch(&mut block.ops[at], here);
+        }
+    }
+}
+
 impl<'a> Compiler<'a> {
     fn err(&mut self, file: &Path, line: usize, msg: String) {
         self.p.errors.push(ScriptError { file: file.to_path_buf(), line, message: msg });
     }
 
     fn compile_file(&mut self, f: &CfgFile) {
-        let mut cur: Option<(Vec<BlockKind>, Block, Vec<(usize, bool, Vec<usize>)>)> = None; // kinds (aliases), block, if-stack: (jump op index, has_else, later elses' jumps)
+        let mut cur: Option<(Vec<BlockKind>, Block, Vec<OpenIf>)> = None; // kinds (aliases), block, the `{if}`s open in it
         // `{else}` without an open `{if}` (a stray `{endif}` closed it early): in OMSI a
         // reached `{else}` skips to the next `{endif}`, so it jumps there here too - the
         // Procity's dashboard blanked its odometer every frame through such an `{else}`
@@ -592,13 +609,9 @@ impl<'a> Compiler<'a> {
                                     for idx in orphan_elses.drain(..) {
                                         patch(&mut block.ops[idx], end);
                                     }
-                                    for (idx, _, extra) in ifs {
+                                    for open in ifs {
                                         log::debug!("{}:{}: {{end}} with open {{if}}", f.path.display(), line_no);
-                                        let end = block.ops.len() as u32;
-                                        patch(&mut block.ops[idx], end);
-                                        for e in extra {
-                                            patch(&mut block.ops[e], end);
-                                        }
+                                        open.close(&mut block);
                                     }
                                     self.finish_block(kinds, block);
                                 } else {
@@ -608,7 +621,7 @@ impl<'a> Compiler<'a> {
                             }
                             "if" => {
                                 if let Some((_, block, ifs)) = cur.as_mut() {
-                                    ifs.push((block.ops.len(), false, Vec::new()));
+                                    ifs.push(OpenIf { to_else: Some(block.ops.len()), to_endif: Vec::new() });
                                     block.ops.push(Op::JumpIfZero(u32::MAX));
                                 } else {
                                     // (code between blocks is never run - Omsi.exe reads only
@@ -619,25 +632,18 @@ impl<'a> Compiler<'a> {
                             }
                             "else" => {
                                 if let Some((_, block, ifs)) = cur.as_mut() {
-                                    if let Some((idx, has_else, extra)) = ifs.last_mut() {
-                                        if *has_else {
-                                            // A second `{else}` also jumps to the `{endif}` when
-                                            // reached, as every reached `{else}` does in OMSI:
-                                            // `{if} X {else} Y {else} Z {endif}` never runs Z.
-                                            // DBC Chicago Citybus `cashdesk.osc` blanks its
-                                            // farebox after such an `{else}`.
-                                            log::debug!("{}:{}: double {{else}}", f.path.display(), line_no);
-                                            extra.push(block.ops.len());
-                                            block.ops.push(Op::Jump(u32::MAX));
-                                            continue;
-                                        }
-                                        // jump over the else branch from the end of the if branch
-                                        let jmp = block.ops.len();
+                                    if let Some(open) = ifs.last_mut() {
+                                        // Every `{else}` reached goes on at the `{endif}`, a
+                                        // second one too: `{if} X {else} Y {else} Z {endif}`
+                                        // never runs Z (DBC Chicago Citybus `cashdesk.osc`
+                                        // blanks its farebox after such an `{else}`).
+                                        open.to_endif.push(block.ops.len());
                                         block.ops.push(Op::Jump(u32::MAX));
-                                        let target = block.ops.len() as u32;
-                                        patch(&mut block.ops[*idx], target);
-                                        *idx = jmp;
-                                        *has_else = true;
+                                        let else_starts = block.ops.len() as u32;
+                                        match open.to_else.take() {
+                                            Some(cond) => patch(&mut block.ops[cond], else_starts),
+                                            None => log::debug!("{}:{}: double {{else}}", f.path.display(), line_no),
+                                        }
                                     } else {
                                         log::debug!("{}:{}: {{else}} without {{if}}", f.path.display(), line_no);
                                         orphan_elses.push(block.ops.len());
@@ -649,12 +655,8 @@ impl<'a> Compiler<'a> {
                             }
                             "endif" => {
                                 if let Some((_, block, ifs)) = cur.as_mut() {
-                                    if let Some((idx, _, extra)) = ifs.pop() {
-                                        let target = block.ops.len() as u32;
-                                        patch(&mut block.ops[idx], target);
-                                        for e in extra {
-                                            patch(&mut block.ops[e], target);
-                                        }
+                                    if let Some(open) = ifs.pop() {
+                                        open.close(block);
                                     } else {
                                         log::debug!("{}:{}: {{endif}} without {{if}}", f.path.display(), line_no);
                                         let target = block.ops.len() as u32;

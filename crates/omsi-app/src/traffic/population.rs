@@ -127,25 +127,33 @@ impl Traffic {
         self.sim.unseen(p, r, |v| self.occluded(world, v, p, r))
     }
 
-    /// `hidden` for every part of car `c` (radius `r` for the vehicle itself): a train goes
-    /// only once none of its cars can be seen. Judged by its engine alone, the Interzonen
-    /// train at Spandau Hbf vanished as its engine went behind a building, its coaches in
-    /// plain view.
-    fn all_hidden(&self, world: &World, c: &omsi_sim::ai_traffic::model::AiCar, r: f64) -> bool {
-        self.hidden(world, c.vehicle.position, r)
-            && c.vehicle.trailers.iter().all(|t| {
-                let half = t.ty.def.bounding_box.map(|b| b[1] as f64 * 0.5).unwrap_or(r);
-                self.hidden(world, t.position, half.max(2.0))
-            })
+    /// Whether nobody can see any car of `car` (`r`: the leading vehicle's radius; a
+    /// coupled car's is half its length). The Interzonen train at Spandau Hbf, judged by its
+    /// engine alone, vanished as the engine went behind a building, its coaches in view.
+    fn out_of_sight(&self, world: &World, car: &omsi_sim::ai_traffic::model::AiCar, r: f64) -> bool {
+        if !self.hidden(world, car.vehicle.position, r) {
+            return false;
+        }
+        for part in &car.vehicle.trailers {
+            let reach = part.ty.def.bounding_box.map_or(r, |bb| 0.5 * f64::from(bb[1])).max(2.0);
+            if !self.hidden(world, part.position, reach) {
+                return false;
+            }
+        }
+        true
     }
 
     /// The vehicle at `p` on `lane` stands over a tile the map does not have, while the
     /// lane's own tile is loaded: its ground is missing for good, not unloaded.
     fn over_missing_tile(&self, world: &World, lane: usize, p: DVec3) -> bool {
-        let ts = omsi_map::tile_size();
-        let here = ((p.x / ts).floor() as i32, (p.y / ts).floor() as i32);
-        let home = self.sim.net.lanes.get(lane).and_then(|l| l.key).map(|k| k.tile);
-        ground_missing_for_good(home, here, |t| world.has_tile(t), |t| world.has_ground((t.0 as f64 + 0.5) * ts, (t.1 as f64 + 0.5) * ts))
+        let size = omsi_map::tile_size();
+        let Some(key) = self.sim.net.lanes.get(lane).and_then(|l| l.key) else { return false };
+        let under = [p.x, p.y].map(|c| (c / size).floor() as i32);
+        let centre = |t: (i32, i32)| ((f64::from(t.0) + 0.5) * size, (f64::from(t.1) + 0.5) * size);
+        ground_missing_for_good(Some(key.tile), (under[0], under[1]), |t| world.has_tile(t), |t| {
+            let (x, y) = centre(t);
+            world.has_ground(x, y)
+        })
     }
 
     /// Spawn cars until `target` are within `spawn_radius` of `center`; despawn far ones.
@@ -238,13 +246,13 @@ impl Traffic {
             } else if at_edge {
                 // (its trip comes back with the tiles; kept until nobody saw it, a bus stood
                 // with its passengers at the far end of a straight road for good)
-                self.all_hidden(world, c, r) || (c.stopped > 8.0 && from_eye > 180.0) || c.stopped > 150.0
+                self.out_of_sight(world, c, r) || (c.stopped > 8.0 && from_eye > 180.0) || c.stopped > 150.0
             } else if !random {
                 // a timetable bus standing for minutes away from its stops and lights is in a
                 // jam that does not clear: it goes once nobody sees it, as one at the edge
                 // (kept for good, the jam behind it never cleared)
-                c.is_bus() && c.stopped > 240.0 && !c.at_station() && !c.light_hold && (from_eye > 40.0 || self.all_hidden(world, c, r))
-            } else if at_end && (!c.is_bus() || self.all_hidden(world, c, r) || (c.stopped > 8.0 && from_eye > 180.0) || c.stopped > 150.0 || (c.stopped > 25.0 && queued.contains(&c.id) && from_eye > 25.0)) {
+                c.is_bus() && c.stopped > 240.0 && !c.at_station() && !c.light_hold && (from_eye > 40.0 || self.out_of_sight(world, c, r))
+            } else if at_end && (!c.is_bus() || self.out_of_sight(world, c, r) || (c.stopped > 8.0 && from_eye > 180.0) || c.stopped > 150.0 || (c.stopped > 25.0 && queued.contains(&c.id) && from_eye > 25.0)) {
                 // (and in view too once others wait behind it: a fire engine at the end of a
                 // dead-end street held a queue of fourteen cars for two and a half minutes)
                 // (taken at once it vanished in plain view 300 m ahead; but a car kept
@@ -263,7 +271,7 @@ impl Traffic {
                 // an invisible wall with the traffic queued up behind it for as long as the
                 // player looked)
                 (dist > VISIBLE_RANGE * 1.3 && from_eye > NEAR_HIDE)
-                    || self.all_hidden(world, c, r)
+                    || self.out_of_sight(world, c, r)
                     || (c.gone && c.stopped > 240.0 && from_eye > 40.0)
                     || (c.gone && c.progress.1 > PHANTOM_WAIT && matches!(c.why.0, "" | "parked" | "people") && from_eye > 25.0)
             } else {

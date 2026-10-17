@@ -514,21 +514,18 @@ fn exec_cold(s: &mut Stacks, op: &Op, p: &Program, state: &mut State, host: &mut
             let at = t.char_indices().nth(keep).map(|(i, _)| i).unwrap_or(t.len());
             t.truncate(at);
         }
-        // The `$SetLength*` ops leave their length on the number stack: Omsi.exe's executor
-        // (0x5d4a50) pops it first only for the ops in its bit set at 0x5d5bac, which holds
-        // `$cutBegin` and `$cutEnd` but not these. The Kruger++ matrix display uses the
-        // length again after it; popped, its `*L[...]` commands show as text.
-        Op::StrSetLengthL => {
-            let n = omsi_round(s.top());
-            s.sst[0] = set_length(&s.sst[0], n, Align::Left);
-        }
-        Op::StrSetLengthR => {
-            let n = omsi_round(s.top());
-            s.sst[0] = set_length(&s.sst[0], n, Align::Right);
-        }
-        Op::StrSetLengthC => {
-            let n = omsi_round(s.top());
-            s.sst[0] = set_length(&s.sst[0], n, Align::Center);
+        // `$SetLength*` read their width and leave it on the number stack: Omsi.exe's
+        // executor (0x5d4a50) pops before an op only for the ops in the bit set at 0x5d5bac,
+        // where `$cutBegin` and `$cutEnd` are and these are not. The Kruger++ matrix display
+        // reads the width again; popped, its `*L[...]` commands showed as text.
+        Op::StrSetLengthL | Op::StrSetLengthR | Op::StrSetLengthC => {
+            let align = match op {
+                Op::StrSetLengthL => Align::Left,
+                Op::StrSetLengthR => Align::Right,
+                _ => Align::Center,
+            };
+            let width = omsi_round(s.top());
+            s.sst[0] = set_length(&s.sst[0], width, align);
         }
         Op::StrIntToStr => {
             use std::fmt::Write;
@@ -969,46 +966,42 @@ mod tests {
         assert_eq!(st.vars[p.var("a").unwrap() as usize], 2.0);
     }
 
-    /// `$SetLengthL/R/C` keep their length on the number stack; `$cutBegin` and `$cutEnd`
-    /// pop theirs.
+    /// Runs `body` as an {init} block: variable `result` and the top string after it.
+    fn after_init(body: &str) -> (f32, String) {
+        let p = prog(&format!("{{init}}\n{body}\n{{end}}\n"));
+        let mut st = State::new(&p);
+        let mut vm = Vm::new();
+        vm.run_init(&p, &mut st, &mut NullHost);
+        (p.var("result").map_or(f32::NAN, |r| st.vars[r as usize]), vm.stacks.top_str().to_string())
+    }
+
+    /// The width of `$SetLength*` stays on the number stack (added to the 3 below it here),
+    /// the count of `$cutBegin` / `$cutEnd` is taken off (the 3 is on top again).
     #[test]
-    fn set_length_keeps_its_number_cut_pops_it() {
-        for (op, text) in [("$SetLengthL", "ab   "), ("$SetLengthR", "   ab"), ("$SetLengthC", " ab  ")] {
-            let p = prog(&format!("{{init}}\n7 \"ab\" 5 {op} (S.L.a)\n{{end}}\n"));
-            let mut st = State::new(&p);
-            let mut vm = Vm::new();
-            vm.run_init(&p, &mut st, &mut NullHost);
-            assert_eq!(st.vars[p.var("a").unwrap() as usize], 5.0, "{op}");
-            assert_eq!(vm.stacks.top_str(), text, "{op}");
+    fn length_ops_and_the_number_stack() {
+        let padded = [("$SetLengthR", "   xyz"), ("$SetLengthL", "xyz   ")];
+        for (op, want) in padded {
+            assert_eq!(after_init(&format!("3 \"xyz\" 6 {op} + (S.L.result)")), (9.0, want.to_string()), "{op}");
         }
-        for op in ["$cutBegin", "$cutEnd"] {
-            let p = prog(&format!("{{init}}\n7 \"abcd\" 1 {op} (S.L.a)\n{{end}}\n"));
-            let mut st = State::new(&p);
-            let mut vm = Vm::new();
-            vm.run_init(&p, &mut st, &mut NullHost);
-            assert_eq!(st.vars[p.var("a").unwrap() as usize], 7.0, "{op}");
-            assert_eq!(vm.stacks.top_str().chars().count(), 3, "{op}");
+        let (sum, centred) = after_init("3 \"xyz\" 6 $SetLengthC + (S.L.result)");
+        assert_eq!((sum, centred.trim(), centred.len()), (9.0, "xyz", 6));
+        for op in ["$cutEnd", "$cutBegin"] {
+            let (w, cut) = after_init(&format!("3 \"wxyz\" 2 {op} (S.L.result)"));
+            assert_eq!((w, cut.len()), (3.0, 2), "{op}");
         }
     }
 
-    /// Every reached `{else}` jumps to the `{endif}`: with two of them the code after the
-    /// second never runs, on either branch, and an inner `{if}` keeps its own `{else}`.
+    /// More than one `{else}`: each one reached goes on at the `{endif}`, inside a nested
+    /// `{if}` too, and the code after the `{endif}` runs on every path.
     #[test]
-    fn second_else_jumps_to_the_endif() {
-        for (c, d, a, b) in [(1, 1, 1.0, 4.0), (1, 0, 1.0, 5.0), (0, 1, 2.0, 7.0)] {
-            let p = prog(&format!(
-                "{{init}}\n\
-                 {c} {{if}} 1 (S.L.a) {{else}} 2 (S.L.a) {{else}} 3 (S.L.a) 9 (S.L.result) {{endif}}\n\
-                 {c} {{if}} {d} {{if}} 4 {{else}} 5 {{else}} 6 {{endif}} (S.L.b) {{else}} 7 (S.L.b) {{endif}}\n\
-                 {{end}}\n"
-            ));
-            let mut st = State::new(&p);
-            let mut vm = Vm::new();
-            vm.run_init(&p, &mut st, &mut NullHost);
-            assert_eq!(st.vars[p.var("a").unwrap() as usize], a, "c={c} d={d}");
-            assert_eq!(st.vars[p.var("b").unwrap() as usize], b, "c={c} d={d}");
-            assert_eq!(st.vars[p.var("result").unwrap() as usize], 0.0, "c={c} d={d}");
+    fn extra_elses_end_their_if() {
+        let chain = "{if} 10 (S.L.result) {else} 20 (S.L.result) {else} 30 (S.L.result) {else} 40 (S.L.result) {endif}";
+        for (cond, want) in [(1, 10.0), (0, 20.0)] {
+            let (w, _) = after_init(&format!("{cond} {chain} (L.L.result) 0.5 + (S.L.result)"));
+            assert_eq!(w, want + 0.5, "condition {cond}");
         }
+        let nested = "1 {if} 0 {if} 1 (S.L.result) {else} 2 (S.L.result) {else} 3 (S.L.result) {endif} {else} 4 (S.L.result) {endif}";
+        assert_eq!(after_init(nested).0, 2.0);
     }
 
     /// Aachen ibox / ticket-printer buttons (#744): the press trigger sets a flag, `_drag`
@@ -1161,13 +1154,13 @@ mod str_op_tests {
                 s.push_str(v)
             }
             Op::StrSetLengthL | Op::StrSetLengthR | Op::StrSetLengthC => {
-                let n = omsi_round(s.top());
                 let align = match op {
                     Op::StrSetLengthL => Align::Left,
                     Op::StrSetLengthR => Align::Right,
                     _ => Align::Center,
                 };
-                let v = set_length(&s.pop_str(), n, align);
+                // (the width stays on the stack, see `exec_cold`)
+                let v = set_length(&s.pop_str(), omsi_round(s.top()), align);
                 s.push_str(v)
             }
             Op::StrIntToStr => {
