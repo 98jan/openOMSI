@@ -72,6 +72,20 @@ pub struct AiLists {
     pub default_group: usize,
 }
 
+/// Put an OMSI 1 car group into `groups`: in the place of a car group of the same name read
+/// before (it starts over), else at the end. Its index.
+fn put_car_group(groups: &mut Vec<AiGroup>, group: AiGroup) -> usize {
+    let key = group.name.trim().to_ascii_lowercase();
+    for (i, old) in groups.iter_mut().enumerate() {
+        if !old.is_depot && old.name.trim().to_ascii_lowercase() == key {
+            *old = group;
+            return i;
+        }
+    }
+    groups.push(group);
+    groups.len() - 1
+}
+
 impl AiLists {
     pub fn load(path: &Path) -> Result<AiLists, omsi_cfg::CfgError> {
         let f = CfgFile::read(path)?;
@@ -110,23 +124,19 @@ impl AiLists {
                 // rest of the file with it and the map had no traffic.
                 "aigroup" => {
                     let name = r.str().to_string();
-                    let n = r.str().trim().parse::<usize>().unwrap_or(0).min(10_000).min(r.lines().len().saturating_sub(r.pos()));
-                    let places: Vec<i64> = (0..n).filter_map(|_| r.str().trim().parse::<i64>().ok()).collect();
-                    let hof = r.str().trim().to_string();
-                    let g = AiGroup { name, hof: (!hof.is_empty()).then_some(hof), ..Default::default() };
-                    let same = a.groups.iter().position(|x| !x.is_depot && x.name.trim().eq_ignore_ascii_case(g.name.trim()));
-                    let i = match same {
-                        Some(i) => {
-                            a.groups[i] = g;
-                            old_groups.retain(|(at, _)| *at != i);
-                            i
+                    let lines_left = r.lines().len().saturating_sub(r.pos());
+                    let count = r.str().trim().parse::<usize>().unwrap_or(0).min(10_000).min(lines_left);
+                    let mut places = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        if let Ok(place) = r.str().trim().parse::<i64>() {
+                            places.push(place);
                         }
-                        None => {
-                            a.groups.push(g);
-                            a.groups.len() - 1
-                        }
-                    };
-                    old_groups.push((i, places));
+                    }
+                    let depot_line = r.str().trim();
+                    let hof = if depot_line.is_empty() { None } else { Some(depot_line.to_string()) };
+                    let slot = put_car_group(&mut a.groups, AiGroup { name, hof, ..Default::default() });
+                    old_groups.retain(|(g, _)| *g != slot);
+                    old_groups.push((slot, places));
                     depot = None;
                 }
                 "aigroup_2" => {
@@ -569,35 +579,45 @@ mod legacy_tests {
         assert_eq!(a.groups[a.default_group].name, "Ambulance");
     }
 
-    /// OMSI 1's list: `[aigroup]` names places in `[ailist]` and ends after its depot line
-    /// (no `[end]`), a car group of a name read before starts over, the old type group is a
-    /// place followed by number and repaint pairs, and what no group takes is "NotInGroup".
+    /// An OMSI 1 list made up for the test: places in `[ailist]` (an empty line counts as
+    /// a place), a car group read twice, a depot with an old type group, a new group after
+    /// them, and the cars no group takes.
     #[test]
-    fn the_omsi_1_groups_name_places_in_the_list() {
-        let f = "[ailist]\n0\n-1\n5\nvehicles\\Kombi\\kombi.ovh\nvehicles\\Lorry\\lorry.ovh\nvehicles\\Coach\\coach.bus\nvehicles\\Moped\\moped.ovh\nvehicles\\Van\\van.ovh\n\
-            [aigroup]\nStadtverkehr\n2\n0\n1\n\n\
-            [aigroup]\nLandverkehr\n1\n1\nHof Waldbach\n\
-            [aigroup]\nstadtverkehr\n1\n4\n\n\
-            [aigroup_depot]\nLinienbusse\nHof Waldbach\n\
-            [aigroup_depot_typgroup]\n2\n101\nrot\n102\nblau\n[end]\n\
-            [aigroup_2]\nTaxis\n\nvehicles\\Taxi\\taxi.ovh\t3\n[end]\n";
-        let a = super::AiLists::parse(&omsi_cfg::CfgFile::from_str("ailists.cfg", f));
-        let names: Vec<&str> = a.groups.iter().map(|g| g.name.as_str()).collect();
-        assert_eq!(names, ["stadtverkehr", "Landverkehr", "Linienbusse", "Taxis", "NotInGroup"]);
-        let files = |i: usize| a.groups[i].vehicles.iter().map(|v| (v.file.as_str(), v.weight)).collect::<Vec<_>>();
-        assert_eq!(files(0), [("vehicles\\Van\\van.ovh", 1.0)]);
-        assert_eq!(a.groups[0].hof, None);
-        assert_eq!(files(1), [("vehicles\\Lorry\\lorry.ovh", 1.0)]);
-        assert_eq!(a.groups[1].hof.as_deref(), Some("Hof Waldbach"));
-        let tg = &a.groups[2].typgroups;
-        assert_eq!(tg.len(), 1);
-        assert_eq!(tg[0].file, "vehicles\\Coach\\coach.bus");
-        assert_eq!(tg[0].entries.iter().map(|e| (e.number.as_str(), e.paint.as_str())).collect::<Vec<_>>(), [("101", "rot"), ("102", "blau")]);
-        assert_eq!(files(3), [("vehicles\\Taxi\\taxi.ovh", 3.0)]);
-        // the kombi lost its group when "Stadtverkehr" started over; the coach is only in a
-        // depot's type group
-        assert_eq!(files(4).iter().map(|v| v.0).collect::<Vec<_>>(), ["vehicles\\Kombi\\kombi.ovh", "vehicles\\Coach\\coach.bus", "vehicles\\Moped\\moped.ovh"]);
-        assert_eq!(a.default_group, 4);
+    fn old_groups_point_into_the_vehicle_list() {
+        let list = [
+            "[ailist]", "", "-1", "6",
+            "Vehicles\\Sedan_A\\sedan.ovh", "", "Vehicles\\Truck_7t\\truck.ovh",
+            "Vehicles\\Bus_SL\\sl.bus", "Vehicles\\Bicycle\\bike.ovh", "Vehicles\\Pickup\\pickup.ovh",
+            "[aigroup]", "Innenstadt", "3", "0", "4", "9", "",
+            "[aigroup_depot]", "Nordbus", "Betriebshof Nord",
+            "[aigroup_depot_typgroup]", "3", "4711", "weiss", "4712", "", "[end]",
+            "[aigroup]", "Umland", "1", "2", "Betriebshof Nord",
+            "[aigroup]", "INNENSTADT ", "1", "5", "",
+            "[aigroup_2]", "Lieferwagen", "", "Vehicles\\Van\\van.ovh\t2", "[end]",
+        ]
+        .join("\n");
+        let lists = super::AiLists::parse(&omsi_cfg::CfgFile::from_str("ailists.cfg", &list));
+        let by_name = |n: &str| lists.groups.iter().find(|g| g.name.trim().eq_ignore_ascii_case(n)).unwrap();
+        let cars = |n: &str| by_name(n).vehicles.iter().map(|v| v.file.rsplit('\\').next().unwrap().to_string()).collect::<Vec<_>>();
+        // read again, "Innenstadt" starts over where it was: only the pickup (place 5)
+        assert_eq!(lists.groups[0].name, "INNENSTADT");
+        assert_eq!(cars("innenstadt"), ["pickup.ovh"]);
+        assert!(by_name("innenstadt").vehicles.iter().all(|v| v.weight == 1.0));
+        assert_eq!(cars("umland"), ["truck.ovh"]);
+        assert_eq!(by_name("umland").hof.as_deref(), Some("Betriebshof Nord"));
+        let depot = by_name("nordbus");
+        assert!(depot.is_depot);
+        let fleet = &depot.typgroups[..];
+        assert_eq!(fleet.len(), 1);
+        assert!(fleet[0].file.ends_with("sl.bus"), "{}", fleet[0].file);
+        let pairs: Vec<(&str, &str)> = fleet[0].entries.iter().map(|e| (&e.number[..], &e.paint[..])).collect();
+        assert_eq!(pairs, [("4711", "weiss"), ("4712", "")]);
+        assert_eq!(by_name("lieferwagen").vehicles[0].weight, 2.0);
+        // the sedan and the bicycle were "Innenstadt"'s first time only; the bus is a
+        // depot's: all three are left over
+        let rest = by_name("NotInGroup");
+        assert_eq!(lists.groups[lists.default_group].name, rest.name);
+        assert_eq!(cars("NotInGroup"), ["sedan.ovh", "sl.bus", "bike.ovh"]);
     }
 
     #[test]
