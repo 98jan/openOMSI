@@ -690,7 +690,7 @@ declared to call the function (a plain `.lua` file has them all).
 | `omsi.ui.toast(text, [opts])` | true, or false and the reason | A notification card at the top right, newest at the top; it goes after `opts.seconds` (1 to 60, default 5). `opts`: `title`, `icon`, `color`. A plugin shows 8 at most: a ninth makes its oldest go. *Permission: `ui`.* | 0.2.21 |
 | `omsi.ui.toggle(panel)` | boolean | Shows a hidden panel or hides a shown one; whether it shows now. *Permission: `ui`.* | 0.2.22 |
 | `omsi.ui.typing()` | boolean | Whether the player types into a text field of a plugin now (the keys then go to the field, not to the bus). | 0.2.22 |
-| `omsi.ui.update(panel, element, values)` | true, or false and the reason | Changes one element of a panel in place, by its id: `text`, `color`, `value` (a bar, a slider), `checked`, `selected`, `name` (an icon), `values` (a chart), `rows` (a table), `src` (an image) - cheaper than setting the whole panel again. *Permission: `ui`.* | 0.2.22 |
+| `omsi.ui.update(panel, element, values)` | true, or false and the reason | Changes one element of a panel in place, by its id: `text`, `color`, `value` (a bar, a slider), `segments` (a bar), `checked`, `selected`, `name` (an icon), `values` (a chart), `rows` and `aligns` (a table), `stops` (a stop list), `src` (an image) - cheaper than setting the whole panel again. *Permission: `ui`.* | 0.2.22 |
 | `omsi.ui.value(panel, element)` | any | The value of a checkbox, slider, text field or tabs element now (as `ui_change` gives it). *Permission: `ui`.* | 0.2.22 |
 
 #### Events, timers and watches

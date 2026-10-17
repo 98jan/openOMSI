@@ -495,14 +495,19 @@ impl Layout<'_> {
                     background.map(color).unwrap_or(TRACK),
                     None,
                 );
-                // (parts side by side, each its share of the whole, a hair apart)
-                let total: f32 = segments.iter().map(|s| s.0).sum();
+                // (parts side by side, a hair apart: each as wide as the bar is high at least,
+                // so that it shows as a round part of its own, and the rest of the width
+                // shared by their values - none reaches into the next)
+                let parts: Vec<&(f32, pui::Rgba)> = segments.iter().filter(|s| s.0 > 0.0).collect();
+                let total: f32 = parts.iter().map(|s| s.0).sum();
                 if total > 0.0 {
+                    let least = height.min(track.w / parts.len() as f32);
+                    let spare = (track.w - least * parts.len() as f32).max(0.0);
                     let mut x = track.x;
-                    for (v, c) in segments.iter().filter(|s| s.0 > 0.0) {
-                        let w = (track.w * v / total).min(track.right() - x);
-                        let seg = Rect::new(x, track.y, (w - 1.0).max(*height).min(track.right() - x), *height);
-                        self.rounded(seg, height * 0.5, color(*c), None);
+                    for (i, (v, c)) in parts.iter().enumerate() {
+                        let w = least + spare * v / total;
+                        let drawn = if i + 1 == parts.len() { track.right() - x } else { w - 1.0 };
+                        self.rounded(Rect::new(x, track.y, drawn.max(0.0), *height), (height * 0.5).min(drawn * 0.5).max(0.0), color(*c), None);
                         x += w;
                     }
                 } else if *value > 0.0 {

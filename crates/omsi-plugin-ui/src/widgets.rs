@@ -300,6 +300,22 @@ mod tests {
         assert!(parts[1] > 2.5 * parts[0], "{parts:?}");
     }
 
+    /// A part far smaller than the others is still a round part of its own, and it does not
+    /// reach into the next one (review of #2881).
+    #[test]
+    fn a_bars_parts_do_not_overlap() {
+        let fonts = Fonts::new();
+        let p = panel_from_source(r##"{ width = 300, padding = 0, children = { { type = "bar", height = 8, segments = { { value = 0.01 }, { value = 100 }, { value = 0.01 } } } } }"##).unwrap();
+        let l = layout(&p, &fonts, 1.0);
+        let parts: Vec<Rect> = l.items.iter().filter_map(|i| match i { Item::Rounded { r, .. } if r.h == 8.0 && r.w < 300.0 => Some(*r), _ => None }).collect();
+        assert_eq!(parts.len(), 3, "{parts:?}");
+        for w in parts.windows(2) {
+            assert!(w[0].right() <= w[1].x, "{parts:?}");
+        }
+        assert!(parts[0].w >= 7.0 && parts[2].w >= 7.0, "{parts:?}");
+        assert!((parts[2].right() - 300.0).abs() < 0.01, "{parts:?}");
+    }
+
     #[test]
     fn controls_take_their_room_and_their_hits() {
         let fonts = Fonts::new();

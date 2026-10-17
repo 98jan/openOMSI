@@ -822,15 +822,28 @@ fn patch(e: &mut Element, fields: &Value, folder: Option<&Path>) -> Result<(), S
         _ => {}
     }
     match &mut e.kind {
-        Kind::Bar { value, .. } if has("value") => *value = r.number("value", 0.0, 0.0, 1.0)?,
-        Kind::Bar { segments, .. } if has("segments") => *segments = r.segments("segments")?,
+        Kind::Bar { value, segments, .. } if has("value") || has("segments") => {
+            if has("value") {
+                *value = r.number("value", 0.0, 0.0, 1.0)?;
+            }
+            if has("segments") {
+                *segments = r.segments("segments")?;
+            }
+        }
         Kind::Stops { stops, .. } if has("stops") => *stops = r.stops("stops")?,
         Kind::Slider { value, min, max, .. } if has("value") => *value = r.number("value", *min, min.min(*max), max.max(*min))?,
         Kind::Checkbox { checked, .. } if has("checked") => *checked = r.boolean("checked", false)?,
         Kind::Tabs { selected, tabs } if has("selected") => *selected = (r.number("selected", 1.0, 1.0, tabs.len().max(1) as f32)? as usize).saturating_sub(1),
         Kind::Icon { name, .. } if has("name") => *name = r.string("name")?.unwrap_or_default(),
         Kind::Chart { values, .. } if has("values") => *values = r.numbers("values")?,
-        Kind::Table { rows, inks, .. } if has("rows") => (*rows, *inks) = r.rows("rows")?,
+        Kind::Table { rows, inks, aligns, .. } if has("rows") || has("aligns") => {
+            if has("rows") {
+                (*rows, *inks) = r.rows("rows")?;
+            }
+            if has("aligns") {
+                *aligns = r.aligns("aligns")?;
+            }
+        }
         Kind::Image { path, .. } if has("src") => *path = r.image("src")?,
         _ => {}
     }
@@ -1229,6 +1242,17 @@ mod tests {
         ui.set(1, "p", p).unwrap();
         ui.update(1, "p", "next", &Value::map([("text", "Next 08:20".into())]), None).unwrap();
         assert!(matches!(&ui.get(1, "p").unwrap().panel.children[0].kind, Kind::Box { children, .. } if matches!(&children[0].kind, Kind::Text { text, .. } if text == "Next 08:20")));
+        // a table's alignments and a bar's parts change in place too, with its rows or value
+        let mut p = panel(r##"{ children = { { type = "table", id = "t", rows = { { "a", "b" } } }, { type = "bar", id = "b", value = 0.5 } } }"##).unwrap();
+        p.children[0].id = Some("t".into());
+        ui.set(1, "q", p).unwrap();
+        let cells = Value::List(vec![Value::List(vec!["x".into(), "y".into()])]);
+        ui.update(1, "q", "t", &Value::map([("aligns", Value::List(vec!["left".into(), "right".into()])), ("rows", cells)]), None).unwrap();
+        let parts = Value::List(vec![Value::map([("value", 1i64.into())])]);
+        ui.update(1, "q", "b", &Value::map([("value", 0.25.into()), ("segments", parts)]), None).unwrap();
+        let q = &ui.get(1, "q").unwrap().panel;
+        assert!(matches!(&q.children[0].kind, Kind::Table { aligns, rows, .. } if aligns == &[Align::Left, Align::Right] && rows[0][1] == "y"));
+        assert!(matches!(&q.children[1].kind, Kind::Bar { value, segments, .. } if *value == 0.25 && segments.len() == 1));
         for (src, want) in [
             (r#"{ children = { { type = "table", aligns = { "middle" } } } }"#, "children[1].aligns: \"middle\" is no alignment"),
             (r#"{ children = { { type = "stops", stops = { { state = "gone" } } } } }"#, "children[1].stops[1].state: \"gone\" is no state"),
