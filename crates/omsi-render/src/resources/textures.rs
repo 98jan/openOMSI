@@ -2,7 +2,7 @@
 //! the GPU), render targets, replacing, shrinking and rebinding them.
 
 use crate::*;
-use crate::pipelines::mip::MipFilter;
+use crate::pipelines::mip::MipAverage;
 
 /// An RGBA picture borrowed for an upload.
 pub(crate) struct RgbaRef<'a> {
@@ -557,10 +557,10 @@ impl Renderer {
     }
 
     pub(crate) fn upload_rgba_gpu_mips(&self, width: u32, height: u32, rgba: &[u8]) -> GpuTexture {
-        self.upload_rgba_filtered_mips(width, height, rgba, MipFilter::AlphaWeighted)
+        self.upload_rgba_mips_with(width, height, rgba, MipAverage::ByCoverage)
     }
 
-    fn upload_rgba_filtered_mips(&self, width: u32, height: u32, rgba: &[u8], filter: MipFilter) -> GpuTexture {
+    fn upload_rgba_mips_with(&self, width: u32, height: u32, rgba: &[u8], average: MipAverage) -> GpuTexture {
         let img = RgbaRef {
             width,
             height,
@@ -602,7 +602,7 @@ impl Renderer {
             },
             size,
         );
-        self.generate_mip_chain(&texture, mip_count, filter);
+        self.generate_mip_chain(&texture, mip_count, average);
         let view = texture.create_view(&Default::default());
         GpuTexture {
             texture,
@@ -621,11 +621,8 @@ impl Renderer {
     /// Build all lower levels of `texture` by rendering each level from the last. The
     /// texture has already received its level-zero pixels and was created with render-attach
     /// usage by [`upload_rgba_gpu_mips`].
-    pub(crate) fn generate_mip_chain(&self, texture: &wgpu::Texture, mip_count: u32, filter: MipFilter) {
-        let pipeline = match filter {
-            MipFilter::AlphaWeighted => &self.mip_pipeline,
-            MipFilter::Plain => &self.mip_plain_pipeline,
-        };
+    pub(crate) fn generate_mip_chain(&self, texture: &wgpu::Texture, mip_count: u32, average: MipAverage) {
+        let pipeline = if average == MipAverage::Independent { &self.mip_text_pipeline } else { &self.mip_pipeline };
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -827,7 +824,7 @@ impl Renderer {
     /// Replace the top pixels of a dynamic texture and rebuild its mip chain. Returns true
     /// when the texture had to be recreated (and its materials therefore need rebinding).
     /// This is used for OMSI script textures after `STFilter` and for text textures; their
-    /// levels average colour and alpha each on its own, as OMSI's do (`MipFilter::Plain`).
+    /// levels average colour and alpha each on its own, as OMSI's do (`MipAverage::Independent`).
     pub fn update_texture_mips(
         &self,
         scene: &mut Scene,
@@ -841,12 +838,12 @@ impl Renderer {
         let img = fitted.as_ref().unwrap_or(img);
         let levels = (32 - img.width.max(img.height).leading_zeros()).max(1);
         if old.size != (img.width, img.height) || old.texture.mip_level_count() != levels {
-            scene.textures[id] = self.upload_rgba_filtered_mips(img.width, img.height, &img.rgba, MipFilter::Plain);
+            scene.textures[id] = self.upload_rgba_mips_with(img.width, img.height, &img.rgba, MipAverage::Independent);
             return true;
         }
         self.update_texture(scene, id, img);
         if levels > 1 {
-            self.generate_mip_chain(&scene.textures[id].texture, levels, MipFilter::Plain);
+            self.generate_mip_chain(&scene.textures[id].texture, levels, MipAverage::Independent);
         }
         false
     }

@@ -9,7 +9,7 @@
 // the plain average is kept: on opaque materials the alpha channel is often only the envmap
 // mask, and 0 there (lamps, wheels) must not turn the colour black.
 //
-// `fs_plain` averages colour and alpha each on its own, as OMSI does for text and script
+// `fs_text` averages colour and alpha each on its own, as OMSI does for text and script
 // textures (the cab displays, `[CTC]` pictures): alpha-weighted, the white of a digit kept
 // full brightness out to the edge of its fading alpha, and digits grew bold and ran together
 // from a few metres off.
@@ -26,58 +26,54 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VsOut {
     return out;
 }
 
-// The k-th source texel under destination texel `i` along one axis (source size `s`,
-// destination size `d`) and its weight. Counted in 1/d of a source texel the destination
-// texel spans [i*s, (i+1)*s) and source texel j spans [j*d, (j+1)*d): all whole numbers, so
-// the weights are exact and add up to 1. A footprint touches at most 4 texels (s <= 2d+1).
-fn tap(i: u32, s: u32, d: u32, k: u32) -> vec2<f32> {
-    let lo = i * s;
-    let hi = lo + s;
-    let j = lo / d + k;
-    let a = max(j * d, lo);
-    let b = min(j * d + d, hi);
-    let w = select(0.0, f32(b - a) / f32(s), b > a);
-    return vec2<f32>(f32(min(j, s - 1u)), w);
+// How much of destination texel `i` source texel `j` covers along one axis (source size
+// `s`, destination size `d`). In units of 1/d of a source texel the destination texel runs
+// from i*s to (i+1)*s and source texel j from j*d to (j+1)*d: whole numbers, so the shares
+// are exact and add up to 1.
+fn share(i: u32, j: u32, s: u32, d: u32) -> f32 {
+    let start = max(i * s, j * d);
+    let end = min((i + 1u) * s, (j + 1u) * d);
+    if (end <= start) {
+        return 0.0;
+    }
+    return f32(end - start) / f32(s);
 }
 
-struct Box { weighted: vec3<f32>, plain: vec3<f32>, alpha: f32 };
+// The texels of the bigger level under one texel of the smaller, summed by their shares:
+// colour times alpha, colour alone, and alpha. They are at most four a side (s <= 2d + 1).
+struct Mix { by_alpha: vec3<f32>, colour: vec3<f32>, cover: f32 };
 
-fn box_average(pos: vec2<f32>) -> Box {
-    let src = textureDimensions(t_src);
-    let dst = max(src / 2u, vec2<u32>(1u));
-    let at = min(vec2<u32>(pos), dst - vec2<u32>(1u));
-    var b: Box;
-    b.weighted = vec3<f32>(0.0);
-    b.plain = vec3<f32>(0.0);
-    b.alpha = 0.0;
-    for (var ky = 0u; ky < 4u; ky = ky + 1u) {
-        let ty = tap(at.y, src.y, dst.y, ky);
-        if (ty.y <= 0.0) {
-            continue;
-        }
-        for (var kx = 0u; kx < 4u; kx = kx + 1u) {
-            let tx = tap(at.x, src.x, dst.x, kx);
-            let w = tx.y * ty.y;
-            if (w <= 0.0) {
-                continue;
-            }
-            let q = textureLoad(t_src, vec2<i32>(i32(tx.x), i32(ty.x)), 0);
-            b.weighted = b.weighted + q.rgb * (q.a * w);
-            b.plain = b.plain + q.rgb * w;
-            b.alpha = b.alpha + q.a * w;
+fn mix_under(pos: vec2<f32>) -> Mix {
+    let s = textureDimensions(t_src);
+    let d = max(s / 2u, vec2<u32>(1u));
+    let at = min(vec2<u32>(pos), d - vec2<u32>(1u));
+    let first = at * s / d;
+    let last = min(((at + vec2<u32>(1u)) * s - vec2<u32>(1u)) / d, s - vec2<u32>(1u));
+    var m = Mix(vec3<f32>(0.0), vec3<f32>(0.0), 0.0);
+    for (var y = first.y; y <= last.y; y = y + 1u) {
+        let wy = share(at.y, y, s.y, d.y);
+        for (var x = first.x; x <= last.x; x = x + 1u) {
+            let w = wy * share(at.x, x, s.x, d.x);
+            let q = textureLoad(t_src, vec2<i32>(i32(x), i32(y)), 0);
+            m.by_alpha = m.by_alpha + q.rgb * (q.a * w);
+            m.colour = m.colour + q.rgb * w;
+            m.cover = m.cover + q.a * w;
         }
     }
-    return b;
+    return m;
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let b = box_average(in.clip.xy);
-    return vec4<f32>(select(b.plain, b.weighted / b.alpha, b.alpha > 2.5e-6), b.alpha);
+    let m = mix_under(in.clip.xy);
+    if (m.cover > 2.5e-6) {
+        return vec4<f32>(m.by_alpha / m.cover, m.cover);
+    }
+    return vec4<f32>(m.colour, m.cover);
 }
 
 @fragment
-fn fs_plain(in: VsOut) -> @location(0) vec4<f32> {
-    let b = box_average(in.clip.xy);
-    return vec4<f32>(b.plain, b.alpha);
+fn fs_text(in: VsOut) -> @location(0) vec4<f32> {
+    let m = mix_under(in.clip.xy);
+    return vec4<f32>(m.colour, m.cover);
 }

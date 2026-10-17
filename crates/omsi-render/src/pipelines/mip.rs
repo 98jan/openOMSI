@@ -2,25 +2,25 @@
 
 use super::common::*;
 
-/// How the levels of a texture are averaged (see `mip.wgsl`).
+/// How a texture's smaller levels average the bigger (see `mip.wgsl`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum MipFilter {
-    /// Colour weighted by alpha (the plain average where all alpha is 0): textures of the
-    /// content, so trees and fences keep dark transparent texels out of their edges.
-    AlphaWeighted,
-    /// Colour and alpha each averaged on their own: text and script textures, as in OMSI.
-    Plain,
+pub(crate) enum MipAverage {
+    /// Colour weighted by alpha (colour alone where all alpha is 0), for the content's
+    /// textures: dark transparent texels stay out of the edges of trees and fences.
+    ByCoverage,
+    /// Colour and alpha apart, as OMSI does for text and script textures.
+    Independent,
 }
 
 pub(crate) struct Mip {
     pub pipeline: wgpu::RenderPipeline,
-    pub plain_pipeline: wgpu::RenderPipeline,
+    pub text_pipeline: wgpu::RenderPipeline,
     pub layout: wgpu::BindGroupLayout,
     pub sampler: wgpu::Sampler,
 }
 
 pub(crate) fn build(device: &wgpu::Device) -> Mip {
-    // --- mipmaps on the GPU: the CPU box filter took up to a second per bus spawn
+    // --- mipmaps on the GPU: the CPU box average took up to a second per bus spawn
     log::info!("renderer: compiling the mip maps shaders");
     let mip_shader = compile_shader(device, wgpu::ShaderModuleDescriptor {
         label: Some("mip"),
@@ -36,9 +36,9 @@ pub(crate) fn build(device: &wgpu::Device) -> Mip {
         immediate_size: 0,
     });
     let mip_pipeline = no_vertex_pipeline("mip", &mip_pl, &mip_shader, "fs_main", &[target(wgpu::TextureFormat::Rgba8UnormSrgb, None)]).create(device);
-    let plain_pipeline = no_vertex_pipeline("mip plain", &mip_pl, &mip_shader, "fs_plain", &[target(wgpu::TextureFormat::Rgba8UnormSrgb, None)]).create(device);
+    let text_pipeline = no_vertex_pipeline("mip text", &mip_pl, &mip_shader, "fs_text", &[target(wgpu::TextureFormat::Rgba8UnormSrgb, None)]).create(device);
     let mip_sampler = clamped_linear_sampler(device);
-    Mip { pipeline: mip_pipeline, plain_pipeline, layout: mip_layout, sampler: mip_sampler }
+    Mip { pipeline: mip_pipeline, text_pipeline, layout: mip_layout, sampler: mip_sampler }
 }
 
 #[cfg(test)]
@@ -57,15 +57,16 @@ mod tests {
             .collect()
     }
 
-    /// `tap` of `mip.wgsl`, word for word.
-    fn shader_tap(i: u32, s: u32, d: u32, k: u32) -> (u32, f32) {
-        let lo = i * s;
-        let hi = lo + s;
-        let j = lo / d + k;
-        let a = (j * d).max(lo);
-        let b = (j * d + d).min(hi);
-        let w = if b > a { (b - a) as f32 / s as f32 } else { 0.0 };
-        (j.min(s - 1), w)
+    /// `share` of `mip.wgsl` over the texels `mix_under` visits, on the CPU.
+    fn shader_shares(i: u32, s: u32, d: u32) -> Vec<(u32, f32)> {
+        let (first, last) = (i * s / d, (((i + 1) * s - 1) / d).min(s - 1));
+        (first..=last)
+            .map(|j| {
+                let (from, to) = ((i * s).max(j * d), ((i + 1) * s).min((j + 1) * d));
+                (j, if to > from { (to - from) as f32 / s as f32 } else { 0.0 })
+            })
+            .filter(|t| t.1 > 0.0)
+            .collect()
     }
 
     fn close(a: &[(u32, f32)], b: &[(u32, f32)]) -> bool {
@@ -91,9 +92,10 @@ mod tests {
                 for (j, w) in &f {
                     per_texel[*j as usize] += w;
                 }
-                // the shader's whole-number taps give the same texels and weights
-                let taps: Vec<(u32, f32)> = (0..4).map(|k| shader_tap(i, s, d, k)).filter(|t| t.1 > 0.0).collect();
-                assert!(close(&taps, &f), "{s}->{d} texel {i}: {taps:?} vs {f:?}");
+                // the shader's whole-number shares give the same texels and weights, at most
+                // four of them
+                let shares = shader_shares(i, s, d);
+                assert!(shares.len() <= 4 && close(&shares, &f), "{s}->{d} texel {i}: {shares:?} vs {f:?}");
             }
             // every texel of the bigger level weighs the same in the smaller one
             for w in per_texel {
@@ -113,7 +115,7 @@ mod tests {
     }
 
     /// The smaller level as `mip.wgsl` should make it, on the CPU (sRGB colour, linear alpha).
-    fn reference(src: &[u8], (w, h): (u32, u32), filter: MipFilter) -> Vec<[f32; 4]> {
+    fn reference(src: &[u8], (w, h): (u32, u32), average: MipAverage) -> Vec<[f32; 4]> {
         let (dw, dh) = ((w / 2).max(1), (h / 2).max(1));
         let mut out = Vec::new();
         for y in 0..dh {
@@ -130,7 +132,7 @@ mod tests {
                         alpha += a * wx * wy;
                     }
                 }
-                let rgb = if filter == MipFilter::AlphaWeighted && alpha > 2.5e-6 { weighted.map(|c| c / alpha) } else { plain };
+                let rgb = if average == MipAverage::ByCoverage && alpha > 2.5e-6 { weighted.map(|c| c / alpha) } else { plain };
                 out.push([to_srgb(rgb[0]), to_srgb(rgb[1]), to_srgb(rgb[2]), alpha * 255.0]);
             }
         }
@@ -139,7 +141,7 @@ mod tests {
 
     /// A 15x15 display digit (white, its edge fading out in alpha, on transparent black)
     /// goes down to 7x7 on the GPU as the CPU reference says, for both filters: the text
-    /// filter keeps colour and alpha apart, the other weights colour by alpha.
+    /// average keeps colour and alpha apart, the other weights colour by alpha.
     #[test]
     fn odd_text_textures_go_down_by_their_exact_footprint() {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -162,7 +164,7 @@ mod tests {
                 }
             }
         }
-        for filter in [MipFilter::Plain, MipFilter::AlphaWeighted] {
+        for average in [MipAverage::Independent, MipAverage::ByCoverage] {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
                 label: None,
                 size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
@@ -206,7 +208,7 @@ mod tests {
                     occlusion_query_set: None,
                     multiview_mask: None,
                 });
-                pass.set_pipeline(if filter == MipFilter::Plain { &mip.plain_pipeline } else { &mip.pipeline });
+                pass.set_pipeline(if average == MipAverage::Independent { &mip.text_pipeline } else { &mip.pipeline });
                 pass.set_bind_group(0, &bg, &[]);
                 pass.draw(0..3, 0..1);
             }
@@ -219,17 +221,17 @@ mod tests {
             buf.slice(..).map_async(wgpu::MapMode::Read, |r| r.unwrap());
             device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
             let got = buf.slice(..).get_mapped_range().to_vec();
-            let want = reference(&src, (w, h), filter);
+            let want = reference(&src, (w, h), average);
             for y in 0..dh {
                 for x in 0..dw {
                     let g = &got[(y * 256 + x * 4) as usize..][..4];
                     let e = want[(y * dw + x) as usize];
                     for c in 0..4 {
-                        assert!((g[c] as f32 - e[c]).abs() <= 2.0, "{filter:?} texel {x},{y} channel {c}: {} vs {:.1}", g[c], e[c]);
+                        assert!((g[c] as f32 - e[c]).abs() <= 2.0, "{average:?} texel {x},{y} channel {c}: {} vs {:.1}", g[c], e[c]);
                     }
                 }
             }
-            if filter == MipFilter::Plain {
+            if average == MipAverage::Independent {
                 // the bottom row of the digit is still in the last row of the smaller level
                 assert!(got[(6 * 256 + 3 * 4 + 3) as usize] > 60);
                 // and colour is averaged on its own: a half-covered texel is grey, not white
