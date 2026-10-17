@@ -298,9 +298,21 @@ pub struct UiState {
     screen: [f32; 3],
     serial: u64,
     typing: Option<Typing>,
-    /// The navigator's board in the panels' pixels: width, the most height there is room
-    /// for, the height its panel came to (None: the navigator shows no board).
-    dock: Option<[f32; 3]>,
+    /// The navigator's board (None: the navigator shows none).
+    dock: Option<Dock>,
+}
+
+/// The navigator's board as the plugins see it (`ui.dock`), in the panel's pixels.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Dock {
+    pub width: f32,
+    /// The most height there is room for.
+    pub room: f32,
+    /// The height the panel in it came to (more than `room`: it is cut off there; 0 before
+    /// it is laid out).
+    pub height: f32,
+    /// The plugin whose panel is in it.
+    pub owner: Option<u64>,
 }
 
 impl Default for UiState {
@@ -470,14 +482,14 @@ impl UiState {
         self.screen
     }
 
-    /// The game says where the navigator's board is (width, room, the height of the panel in
-    /// it; the panels' pixels), or that it shows none.
-    pub fn set_dock(&mut self, dock: Option<[f32; 3]>) {
+    /// The game says where the navigator's board is and whose panel is in it, or that it
+    /// shows none.
+    pub fn set_dock(&mut self, dock: Option<Dock>) {
         self.dock = dock;
     }
 
     /// `omsi.ui.dock()`: the navigator's board, None while it shows none.
-    pub fn dock(&self) -> Option<[f32; 3]> {
+    pub fn dock(&self) -> Option<Dock> {
         self.dock
     }
 
@@ -1062,8 +1074,9 @@ mod tests {
         // the game says where the board is, or that there is none
         let mut ui = UiState::default();
         assert_eq!(ui.dock(), None);
-        ui.set_dock(Some([360.0, 420.0, 96.0]));
-        assert_eq!(ui.dock(), Some([360.0, 420.0, 96.0]));
+        let d = Dock { width: 360.0, room: 420.0, height: 96.0, owner: Some(7) };
+        ui.set_dock(Some(d));
+        assert_eq!(ui.dock(), Some(d));
     }
 
     #[test]

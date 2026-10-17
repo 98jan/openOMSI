@@ -762,6 +762,19 @@ pub fn place(p: &Panel, w: f32, h: f32, screen: Vec2) -> Vec2 {
     Vec2::new(along(ax, w, screen.x, p.x), along(ay, h, screen.y, p.y))
 }
 
+/// A card cut off at the height `h` (its own pixels): what lies below is not drawn - the
+/// card's texture ends there - and takes no click. (The hits keep their places in the list:
+/// the shapes they light refer to them by it.)
+fn cut(l: &mut Laid, h: f32) {
+    if l.h <= h {
+        return;
+    }
+    l.h = h;
+    for x in &mut l.hits {
+        x.r.h = (h - x.r.y).clamp(0.0, x.r.h);
+    }
+}
+
 /// The hit under `p` (card pixels): the last one drawn there.
 pub fn hit_at(laid: &Laid, p: Vec2) -> Option<usize> {
     laid.hits.iter().rposition(|h| h.r.contains(p))
@@ -936,6 +949,10 @@ struct Card {
     /// A notification's place in the stack (logical), eased.
     y: Option<f32>,
     seen: u64,
+    /// The height it came to before it was cut off to fit the navigator's board, and the
+    /// room there it was cut off to (infinite for a card of its own).
+    full_h: f32,
+    room: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -1100,8 +1117,12 @@ impl PluginPanels {
                 origin: Vec2::ZERO,
                 y: None,
                 seen: 0,
+                full_h: 0.0,
+                room: 0.0,
             });
-            if card.revision != e.revision || card.scale != ck || card.backdrop != f.backdrop || card.laid.w != width {
+            // (the most a panel in the board may be high, in its own pixels)
+            let room = dock.map_or(f32::INFINITY, |d| (d.room / ck).floor().max(1.0));
+            if card.revision != e.revision || card.scale != ck || card.backdrop != f.backdrop || card.laid.w != width || card.room != room {
                 let caret = typing.as_ref().filter(|t| t.0 == e.owner && t.1 == e.id).map(|t| t.2.as_str());
                 card.laid = match dock {
                     Some(_) => {
@@ -1111,6 +1132,9 @@ impl PluginPanels {
                     }
                     None => layout_typing(&e.panel, fonts, f.backdrop, caret),
                 };
+                card.full_h = card.laid.h;
+                card.room = room;
+                cut(&mut card.laid, room);
                 card.revision = e.revision;
                 card.scale = ck;
                 card.backdrop = f.backdrop;
@@ -1119,7 +1143,7 @@ impl PluginPanels {
             match dock {
                 Some(d) => {
                     self.docked = Some((card.laid.h * ck).ceil());
-                    dock_said = Some([width, d.room / ck, card.laid.h]);
+                    dock_said = Some(pui::Dock { width, room: d.room / ck, height: card.full_h, owner: Some(e.owner) });
                     // (until the navigator made room for it, it is laid out, not shown)
                     let Some(at) = d.at else { continue };
                     card.origin = Vec2::new(at.x.round(), at.y.round());
@@ -1133,7 +1157,7 @@ impl PluginPanels {
         }
         if let Some(d) = f.dock {
             let s = d.scale.max(0.25);
-            ui.set_dock(Some(dock_said.unwrap_or([(d.width / s).max(40.0), d.room / s, 0.0])));
+            ui.set_dock(Some(dock_said.unwrap_or(pui::Dock { width: (d.width / s).max(40.0), room: d.room / s, height: 0.0, owner: None })));
         }
         // the notifications, newest at the top, under the navigator when it is in the way
         let right = screen.x - 16.0;
@@ -1157,6 +1181,8 @@ impl PluginPanels {
                 origin: Vec2::ZERO,
                 y: None,
                 seen: 0,
+                full_h: 0.0,
+                room: f32::INFINITY,
             });
             if card.scale != k || card.backdrop != f.backdrop {
                 card.laid = layout(&toast_panel(t), fonts, f.backdrop);
@@ -1192,9 +1218,10 @@ impl PluginPanels {
                 continue;
             };
             card.seen = self.frame;
-            // (a card's own scale: the navigator's for the panel in its board)
+            // (a card's own scale: the navigator's for the panel in its board, which casts no
+            // shadow and so needs no room round it: what was cut off stays out of the texture)
             let k = card.scale.max(0.25);
-            let margin = (MARGIN * k).ceil();
+            let margin = if card.laid.flat { 0.0 } else { (MARGIN * k).ceil() };
             let hot = match key {
                 Key::Panel(..) if focused => {
                     let local = (cursor - card.origin) / k;
@@ -1274,6 +1301,30 @@ mod tests {
 
     fn panel(src: &str) -> Panel {
         panel_from_source(src).unwrap()
+    }
+
+    /// A panel too tall for the navigator's board is cut off: drawn and clicked only down to
+    /// the room there (review of #2880).
+    #[test]
+    fn a_card_cut_off_takes_no_click_below() {
+        let fonts = Fonts::new();
+        let p = panel(r#"{ width = 200, padding = 0, gap = 0, children = {
+            { type = "button", id = "a", text = "A" },
+            { type = "button", id = "b", text = "B" },
+            { type = "button", id = "c", text = "C" },
+        } }"#);
+        let mut l = layout(&p, &fonts, 1.0);
+        let full = l.h;
+        let (n, hot) = (l.hits.len(), l.items.clone());
+        cut(&mut l, full * 0.5);
+        assert_eq!((l.h, l.hits.len(), &l.items), (full * 0.5, n, &hot), "the height only, and the hits keep their places");
+        assert_eq!(l.hits.iter().find(|h| h.element.as_deref() == Some("c")).unwrap().r.h, 0.0);
+        assert!(hit_at(&l, Vec2::new(10.0, full * 0.9)).is_none());
+        assert!(hit_at(&l, Vec2::new(10.0, 5.0)).is_some());
+        // (one that fits is left as it is)
+        let mut m = layout(&p, &fonts, 1.0);
+        cut(&mut m, full + 10.0);
+        assert_eq!(m.h, full);
     }
 
     #[test]

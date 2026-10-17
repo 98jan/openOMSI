@@ -361,8 +361,10 @@ else
 end
 ```
 
-`omsi.ui.dock()` gives the board's width, the most height there is room for, and the height
-the panel came to, in the panel's pixels: a plugin can leave out rows that do not fit.
+`omsi.ui.dock()` gives the board's width, the most height there is room for, the height the
+panel came to, in the panel's pixels, and whether the panel in the board is this plugin's. A
+panel taller than the room is cut off at the bottom (what is cut off takes no click either), so
+a plugin can leave out rows that do not fit.
 
 #### Elements
 
@@ -673,7 +675,7 @@ declared to call the function (a plain `.lua` file has them all).
 | --- | --- | --- | --- |
 | `omsi.message(text, [seconds])` | nil | A line of text on the screen (5 seconds when not given). *Permission: `ui`.* | 0.1.5 |
 | `omsi.ui.clear()` | nil | Removes every panel of the plugin. *Permission: `ui`.* | 0.2.21 |
-| `omsi.ui.dock()` | width, room, height | The navigator's board, where a panel with `anchor = "navigator"` goes, in that panel's pixels: its width, the most height there is room for, and the height the panel there came to (0 before it is laid out). Nothing while the navigator shows no board: it is off, or Shift+N put its lower part away. | 0.3.36 |
+| `omsi.ui.dock()` | width, room, height, mine | The navigator's board, where a panel with `anchor = "navigator"` goes, in that panel's pixels: its width, the most height there is room for, the height the panel there came to (0 before it is laid out; more than `room`: it is cut off at the bottom), and whether that panel is this plugin's (the first one asked for has the board, another waits). Nothing while the navigator shows no board: it is off, or Shift+N put its lower part away. | 0.3.36 |
 | `omsi.ui.focus(on)` | boolean | `true`: the panels get the mouse (the cursor shows, a click goes to the panel under it and none to the bus); `false`, Esc or a menu of the game gives it back. Returns the new state. *Permission: `ui`.* | 0.2.21 |
 | `omsi.ui.focused()` | boolean | Whether the panels have the mouse. | 0.2.21 |
 | `omsi.ui.moved(panel)` | dx, dy | How far the player dragged a panel from where its table puts it (pixels). | 0.2.22 |
