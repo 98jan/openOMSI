@@ -153,14 +153,6 @@ impl Navigator {
                 }
             }
         }
-        if self.show_ai {
-            for v in self.live_vehicles().into_iter().filter(|v| !v.rail) {
-                if (v.pos - f.bus).truncate().length() > self.zoom * 3.5 + 150.0 {
-                    continue;
-                }
-                transit.push((v.pos, v.heading, Some(v.line.clone())));
-            }
-        }
         // (drawn over the route and the houses in their order, with no depth: a vehicle's edge,
         // body and windscreen lie one on the other, and at a depth of their own they fought
         // over it from far)

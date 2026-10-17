@@ -321,3 +321,15 @@ fn redraw_rate_holds_steady_at_its_edges() {
     assert_eq!(run(&[31.0, 29.0, 31.0]), 1);
     assert_eq!(run(&[25.0, 40.0]), 1);
 }
+
+#[test]
+fn the_map_zooms_in_for_a_turn_and_out_on_the_straight() {
+    assert_eq!(zoom_target(0.0, None, 0.0), 150.0);
+    assert_eq!(zoom_target(80.0, None, 0.0), 320.0);
+    assert_eq!(zoom_target(-20.0, None, 0.0), zoom_target(20.0, None, 0.0));
+    assert_eq!(zoom_target(80.0, Some(1000.0), 0.0), 320.0);
+    assert!(zoom_target(70.0, Some(100.0), 0.0) < 220.0);
+    assert_eq!(zoom_target(70.0, Some(0.0), 0.0), 150.0);
+    assert!(zoom_target(50.0, None, 30.0) < zoom_target(50.0, None, 5.0));
+    assert!(zoom_target(50.0, None, -30.0) >= 150.0);
+}
