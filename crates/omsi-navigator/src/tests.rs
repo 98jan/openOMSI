@@ -307,3 +307,113 @@ fn crowded_stop_markers_and_labels_do_not_overlap() {
     assert!(stop_label_rect(p, 150.0, 1.0, win, &[win]).is_none());
 }
 
+/// A navigator with the synthetic example of the docs (three lines: two buses and a tram) as its package.
+fn with_example_lines() -> Navigator {
+    let mut n = Navigator::new(true, 0.85, "bottom-left");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/examples");
+    n.set_surface(omsi_map::package::Package::open(&dir));
+    assert!(n.surface.is_some(), "the example is a package");
+    n
+}
+
+#[test]
+fn the_lines_panel_lists_the_lines_of_one_kind_of_vehicle_and_one_group() {
+    let mut n = with_example_lines();
+    // buses first: E1 and E2; the BRT tab keeps E2; the tram tab has T1
+    assert_eq!(n.shown_lines(), vec![0, 1]);
+    n.lines_click(LinesHit::Filter(omsi_map::package::GROUP_BRT));
+    assert_eq!(n.shown_lines(), vec![1]);
+    n.lines_click(LinesHit::Modal(omsi_map::package::MODAL_TRAM));
+    assert_eq!(n.shown_lines(), vec![2]);
+}
+
+#[test]
+fn a_line_is_ticked_and_unticked_and_a_double_click_opens_it() {
+    let mut n = with_example_lines();
+    n.lines_click(LinesHit::Toggle(0));
+    assert_eq!(n.city.lines.selected, vec![0]);
+    n.lines_click(LinesHit::Toggle(0));
+    assert!(n.city.lines.selected.is_empty());
+    // a click on a name ticks it; a second one within a moment opens its data
+    n.time = 10.0;
+    n.lines_click(LinesHit::Focus(1));
+    assert_eq!((n.city.lines.selected.clone(), n.city.lines.focus), (vec![1], None));
+    n.time = 10.2;
+    n.lines_click(LinesHit::Focus(1));
+    assert_eq!((n.city.lines.selected.clone(), n.city.lines.focus), (vec![1], Some(1)));
+    // a line that does not exist is left alone
+    n.lines_click(LinesHit::Toggle(99));
+    assert_eq!(n.city.lines.selected, vec![1]);
+}
+
+#[test]
+fn select_all_ticks_what_is_on_show_and_clears_it_the_second_time() {
+    let mut n = with_example_lines();
+    n.lines_click(LinesHit::All);
+    assert_eq!(n.city.lines.selected, vec![0, 1]);
+    n.lines_click(LinesHit::All);
+    assert!(n.city.lines.selected.is_empty());
+}
+
+#[test]
+fn the_route_of_the_line_in_focus_is_picked() {
+    let mut n = with_example_lines();
+    n.debug_lines("E1;1");
+    assert_eq!((n.city.lines.open, n.city.lines.selected.clone(), n.city.lines.focus), (true, vec![0], Some(0)));
+    assert_eq!(n.city.lines.route.get(&0), Some(&1));
+    n.lines_click(LinesHit::RoutePick(0));
+    assert_eq!(n.city.lines.route.get(&0), Some(&0));
+    // an unknown number opens nothing
+    let mut other = with_example_lines();
+    other.debug_lines("nope");
+    assert!(!other.city.lines.open);
+}
+
+#[test]
+fn the_timetable_is_read_on_a_worker_and_the_frame_does_not_wait_for_it() {
+    let mut n = with_example_lines();
+    n.date = 19900101;
+    // (asked for the first time: a worker starts, and what comes back is "not yet" or, if it was quick, the timetable)
+    let first = n.line_times();
+    assert!(first.is_some() || n.times_job.is_some());
+    let began = std::time::Instant::now();
+    let mut got = first;
+    while got.is_none() && began.elapsed() < std::time::Duration::from_secs(10) {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        got = n.line_times();
+    }
+    assert!(got.is_some(), "the worker answers");
+    // (kept: asked again, it is the same and no worker runs)
+    assert!(n.times_job.is_none());
+    assert!(std::sync::Arc::ptr_eq(&got.unwrap(), &n.line_times().unwrap()));
+    // a new date is read again, on a worker
+    n.date = 19910101;
+    let again = n.line_times();
+    assert!(again.is_some() || n.times_job.as_ref().is_some_and(|j| j.0 == 19910101));
+}
+
+#[test]
+fn redraw_rate_holds_steady_at_its_edges() {
+    let run = |fps: &[f32]| fps.iter().fold(1, |n, f| draw_every(n, 1.0 / f));
+    assert_eq!(run(&[60.0]), 1);
+    assert_eq!(run(&[74.0, 76.5, 74.5, 77.0]), 1);
+    assert_eq!(run(&[144.0]), 2);
+    assert_eq!(run(&[144.0, 148.0, 152.0, 147.0]), 2);
+    assert_eq!(run(&[240.0]), 4);
+    assert_eq!(run(&[25.0]), 2);
+    assert_eq!(run(&[25.0, 31.0, 29.5, 31.5]), 2);
+    assert_eq!(run(&[31.0, 29.0, 31.0]), 1);
+    assert_eq!(run(&[25.0, 40.0]), 1);
+}
+
+#[test]
+fn the_map_zooms_in_for_a_turn_and_out_on_the_straight() {
+    assert_eq!(zoom_target(0.0, None, 0.0), 150.0);
+    assert_eq!(zoom_target(80.0, None, 0.0), 320.0);
+    assert_eq!(zoom_target(-20.0, None, 0.0), zoom_target(20.0, None, 0.0));
+    assert_eq!(zoom_target(80.0, Some(1000.0), 0.0), 320.0);
+    assert!(zoom_target(70.0, Some(100.0), 0.0) < 220.0);
+    assert_eq!(zoom_target(70.0, Some(0.0), 0.0), 150.0);
+    assert!(zoom_target(50.0, None, 30.0) < zoom_target(50.0, None, 5.0));
+    assert!(zoom_target(50.0, None, -30.0) >= 150.0);
+}

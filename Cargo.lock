@@ -3592,8 +3592,11 @@ dependencies = [
 name = "omsi-guard"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "libc",
+ "log",
  "omsi-cfg",
+ "omsi-launcher-core",
  "omsi-platform",
  "serde_json",
  "windows 0.62.2",
@@ -3782,6 +3785,7 @@ dependencies = [
  "omsi-scene",
  "omsi-sim",
  "omsi-texture",
+ "omsi-timetable",
  "omsi-ui",
  "wgpu",
 ]

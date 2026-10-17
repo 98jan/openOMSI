@@ -18,6 +18,7 @@ pub mod keys;
 pub mod launcher_pads;
 pub mod pedal;
 pub mod stock_keys;
+pub mod diagnostics;
 
 #[cfg(windows)]
 mod dinput;
