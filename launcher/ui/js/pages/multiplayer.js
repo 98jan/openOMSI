@@ -69,6 +69,7 @@ function JoinByCode() {
       const check = await call('check_join', { text: asked });
       if (id !== request.current) return;
       if (!check.ok) return setResult({ code: asked, error: check.text });
+      setResult({ code: asked, busy: true, validated: true });
       try {
         const host = await call('server_query', { address: asked });
         if (id === request.current) setResult({ code: asked, host });
@@ -84,7 +85,9 @@ function JoinByCode() {
   const host = current?.host;
   const full = host && host.max_players > 0 && host.players >= host.max_players;
   const join = () => {
-    if (!current || full || (!host && !current.unavailable)) return;
+    if (!current || full || (!host && !current.unavailable && !current.validated)) return;
+    request.current++;
+    setResult(null);
     const map = (host?.map || '').replace(/\\/g, '/');
     const own = map && S.maps?.some((m) => m.file.toLowerCase() === map.toLowerCase());
     choose({ lan_mode: 'join', lan_addr: current.code, lan_map: map, ...serverJoined(host), ...(own ? { map } : {}) });
@@ -107,7 +110,7 @@ function JoinByCode() {
           <span class="help" id="multiplayer-code-help">${t('Paste the complete code from your friend. Leading and trailing spaces are removed.')}</span>
         </div>
         <div id="multiplayer-code-status" role="status" aria-live="polite">
-          ${current?.busy && html`<div class="row muted small"><${Spinner} />${t('Checking the session...')}</div>`}
+          ${current?.busy && html`<div class="row muted small"><${Spinner} />${t('Checking the session...')}</div><div class="muted small">${t('You can choose a bus without waiting for session details. The game connects when you start driving.')}</div>`}
           ${current?.error && html`<${Notice} kind="danger"><b>${t('Could not validate the code')}</b><div class="muted small">${t('Copy the complete code again and retry.')}</div><${ErrorDetails} text=${current.error} /></${Notice}>`}
           ${current?.unavailable && html`<${Notice} kind="warn"><b>${t('Could not read the session details')}</b><div class="muted small">${t('Ask your friend to keep the game running and send the latest code. Retry, or continue without session details.')}</div><${ErrorDetails} text=${current.unavailable} /></${Notice}>`}
         </div>
@@ -120,7 +123,7 @@ function JoinByCode() {
         </section>`}
         ${full && html`<${Notice} kind="warn">${t('The session is full. Ask your friend to make room, then confirm again.')}</${Notice}>`}
         ${host?.map && !s.maps?.some((m) => m.file.toLowerCase() === host.map.replace(/\\/g, '/').toLowerCase()) && html`<${Notice} kind="warn">${t('The server plays {}, which is not installed here: it is fetched from the server on joining.', [host.map])}</${Notice}>`}
-        ${!full && (host || current?.unavailable) && html`<div><${Button} kind=${host ? 'primary' : ''} icon="bus" label=${host ? 'Choose a bus' : 'Choose a bus without session details'} onClick=${join} /></div>`}
+        ${!full && (host || current?.unavailable || current?.validated) && html`<div><${Button} kind=${host ? 'primary' : ''} icon="bus" label=${host ? 'Choose a bus' : 'Choose a bus without session details'} onClick=${join} /></div>`}
       </div>
     </${Card}>
     <${FirstTimeHelp}><ol class="multiplayer-help muted small">

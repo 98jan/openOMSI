@@ -53512,3 +53512,6 @@ _version: 2
 
 "Enter session code":
   zh-tw: "輸入連線碼"
+
+"You can choose a bus without waiting for session details. The game connects when you start driving.":
+  zh-tw: "你可以不等房間資料，先選擇巴士。開始駕駛時才會真正連線。"

@@ -79,5 +79,6 @@ without one.
 
 Serve `launcher/` locally, then open `/tests/multiplayer-check.html` and press **Run multiplayer
 checks**. These checks render the real page with local command fixtures; they cover code
-validation, full and unavailable sessions, stale queries, the server list, and host setup.
+validation, full and unavailable sessions, continuing while status is pending, stale queries,
+the server list, and host setup.
 They do not start a game, query a remote server, or change a real saved duty.

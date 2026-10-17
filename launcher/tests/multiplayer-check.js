@@ -108,6 +108,20 @@ export async function run(root) {
     await mount();
 
     scenario = 'slow';
+    pending = null;
+    await type('OMSI-DIRECT');
+    await click('Confirm session');
+    await until(() => !!pending);
+    assert(button('Choose a bus without session details'), 'Allow direct continuation while status is still pending');
+    await click('Choose a bus without session details');
+    assert(S.page === 'drive' && S.choice.lan_addr === 'OMSI-DIRECT', 'Keep the validated code when skipping status');
+    pending();
+    await sleep(100);
+    assert(!S.choice.lan_server.asked, 'A skipped query must not change the selected duty later');
+    report.push('PASS a slow status query does not block direct joining');
+    await mount();
+
+    scenario = 'slow';
     await type('OMSI-OLD');
     await click('Confirm session');
     await until(() => !!pending);
