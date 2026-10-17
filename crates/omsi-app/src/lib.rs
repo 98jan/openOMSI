@@ -119,7 +119,7 @@ mod support_bundle;
 mod duty_start;
 mod input_script;
 mod app_impl;
-mod launcher_link;
+use omsi_guard::launcher_link;
 use omsi_lan::mods as lan_mods;
 mod memory;
 mod offscreen;
@@ -275,7 +275,7 @@ pub fn run() -> Result<()> {
         if omsi_cfg::flags::OMSI_LAUNCHER.is_set() && open_launcher()? {
             return Ok(());
         }
-        return open_app_launcher();
+        return open_app_launcher(fatal_message);
     }
     let Some(app) = make_app(args, server_cfg)? else { return Ok(()) };
     // a game session's start goes into the start guard's journal (a version whose sessions
