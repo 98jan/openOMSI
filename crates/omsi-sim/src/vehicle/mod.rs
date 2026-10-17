@@ -25,6 +25,7 @@ mod contact;
 mod coupling;
 mod drive;
 mod instance;
+mod part_scripts;
 mod pose;
 mod program_ids;
 mod props;
@@ -38,6 +39,7 @@ mod weather;
 
 pub use contact::*;
 pub use coupling::*;
+pub use part_scripts::PartScripts;
 #[cfg(test)]
 use drive::*;
 pub use pose::*;
