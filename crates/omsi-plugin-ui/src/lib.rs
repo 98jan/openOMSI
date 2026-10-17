@@ -495,22 +495,7 @@ impl Layout<'_> {
                     background.map(color).unwrap_or(TRACK),
                     None,
                 );
-                // (parts side by side, a hair apart: each as wide as the bar is high at least,
-                // so that it shows as a round part of its own, and the rest of the width
-                // shared by their values - none reaches into the next)
-                let parts: Vec<&(f32, pui::Rgba)> = segments.iter().filter(|s| s.0 > 0.0).collect();
-                let total: f32 = parts.iter().map(|s| s.0).sum();
-                if total > 0.0 {
-                    let least = height.min(track.w / parts.len() as f32);
-                    let spare = (track.w - least * parts.len() as f32).max(0.0);
-                    let mut x = track.x;
-                    for (i, (v, c)) in parts.iter().enumerate() {
-                        let w = least + spare * v / total;
-                        let drawn = if i + 1 == parts.len() { track.right() - x } else { w - 1.0 };
-                        self.rounded(Rect::new(x, track.y, drawn.max(0.0), *height), (height * 0.5).min(drawn * 0.5).max(0.0), color(*c), None);
-                        x += w;
-                    }
-                } else if *value > 0.0 {
+                if !self.bar_parts(track, segments) && *value > 0.0 {
                     let fill = (r.w * value).max(*height).min(r.w);
                     self.rounded(
                         Rect::new(track.x, track.y, fill, *height),
@@ -520,23 +505,7 @@ impl Layout<'_> {
                     );
                 }
             }
-            Kind::Badge { text, text_color, weight: wt } => {
-                let wt = weight(*wt);
-                let w = self.natural(e).min(r.w);
-                let b = Rect::new(r.x, r.y + (r.h - BADGE_H) * 0.5, w, BADGE_H);
-                let fill = e.color.map(color).unwrap_or(ACCENT);
-                self.rounded(b, BADGE_H * 0.5, fill, None);
-                let t = self.fit(text, BADGE_PX, wt, w - 2.0 * BADGE_PAD);
-                let tw = self.width(&t, BADGE_PX, wt);
-                let y = self.baseline(b.y, b.h, BADGE_PX, wt);
-                self.text(
-                    t,
-                    BADGE_PX,
-                    wt,
-                    Vec2::new(b.x + (b.w - tw) * 0.5, y),
-                    text_color.map(color).unwrap_or(ink_on(fill)),
-                );
-            }
+            Kind::Badge { text, text_color, weight: wt } => self.badge(e, r, text, *text_color, weight(*wt)),
             Kind::Divider => {
                 let c = e.color.map(color).unwrap_or(DIVIDER);
                 let line = if in_row {

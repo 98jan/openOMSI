@@ -1,10 +1,10 @@
 //! The panels' elements in the navigator's look (`omsi.ui` version 4): boxes - a tinted card
 //! with a stripe, for a note or an advice - and stop lists, the stops on a rail with their
-//! times, as the navigator's duty board drew them.
+//! times, as the navigator's duty board drew them; and a bar's parts and a badge's weight.
 
-use super::{color, Item, Layout, ACCENT};
+use super::{color, ink_on, Item, Layout, ACCENT, BADGE_H, BADGE_PAD, BADGE_PX};
 use glam::Vec2;
-use omsi_plugin::ui::{Element, Kind, Stop, StopState};
+use omsi_plugin::ui::{Element, Kind, Rgba, Stop, StopState};
 use omsi_ui::{Color, Rect, Weight};
 
 /// A box's room round what is in it (the stripe's side, the others), and its stripe.
@@ -77,6 +77,41 @@ impl Layout<'_> {
             }
             _ => {}
         }
+    }
+
+    /// A bar's parts on its `track` (`segments`): side by side, a hair apart, each as wide as
+    /// the bar is high at least, so that it shows as a round part of its own, and the rest of
+    /// the width shared by their values - none reaches into the next. False when there are none
+    /// to draw (the bar shows its `value` then).
+    pub(crate) fn bar_parts(&mut self, track: Rect, segments: &[(f32, Rgba)]) -> bool {
+        let parts: Vec<&(f32, Rgba)> = segments.iter().filter(|s| s.0 > 0.0).collect();
+        let total: f32 = parts.iter().map(|s| s.0).sum();
+        if total <= 0.0 {
+            return false;
+        }
+        let height = track.h;
+        let least = height.min(track.w / parts.len() as f32);
+        let spare = (track.w - least * parts.len() as f32).max(0.0);
+        let mut x = track.x;
+        for (i, (v, c)) in parts.iter().enumerate() {
+            let w = least + spare * v / total;
+            let drawn = if i + 1 == parts.len() { track.right() - x } else { w - 1.0 };
+            self.rounded(Rect::new(x, track.y, drawn.max(0.0), height), (height * 0.5).min(drawn * 0.5).max(0.0), color(*c), None);
+            x += w;
+        }
+        true
+    }
+
+    /// A badge: its text in its weight on a rounded fill, `BADGE_H` high, in the middle of `r`.
+    pub(crate) fn badge(&mut self, e: &Element, r: Rect, text: &str, text_color: Option<Rgba>, wt: Weight) {
+        let w = self.natural(e).min(r.w);
+        let b = Rect::new(r.x, r.y + (r.h - BADGE_H) * 0.5, w, BADGE_H);
+        let fill = e.color.map(color).unwrap_or(ACCENT);
+        self.rounded(b, BADGE_H * 0.5, fill, None);
+        let t = self.fit(text, BADGE_PX, wt, w - 2.0 * BADGE_PAD);
+        let tw = self.width(&t, BADGE_PX, wt);
+        let y = self.baseline(b.y, b.h, BADGE_PX, wt);
+        self.text(t, BADGE_PX, wt, Vec2::new(b.x + (b.w - tw) * 0.5, y), text_color.map(color).unwrap_or(ink_on(fill)));
     }
 
     /// A circle (a rounded square as wide as it is high).
