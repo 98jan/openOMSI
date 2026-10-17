@@ -762,6 +762,38 @@ pub struct MapInfo {
     /// Installed as a mod (in the content folder).
     #[serde(default)]
     pub installed: bool,
+    /// The first and last year of the map's `[years]` (global.cfg), when it gives them: a
+    /// date outside is moved into them ([`date_in_years`]).
+    #[serde(default)]
+    pub years: Option<(i32, i32)>,
+}
+
+/// A map's `[years]` as dates are fitted to them: `0 0` is none, a first year of 0 none
+/// before, a last year of 0 (or before the first) none after.
+fn map_years(g: &omsi_map::GlobalCfg) -> Option<(i32, i32)> {
+    let (first, last) = g.years;
+    if first <= 0 && last <= 0 {
+        return None;
+    }
+    let first = if first > 0 { first } else { i32::MIN };
+    Some((first, if last > 0 && last >= first { last } else { i32::MAX }))
+}
+
+/// `date` (YYYY-MM-DD) moved into a map's `[years]` when it lies outside them, as OMSI 2
+/// starts a map on a day inside them, so that its AI lists, chrono and timetables fit: the
+/// same day of the nearest year they allow (the 29th of February the 28th in a year without
+/// one). A date inside them, or one that cannot be read, stays as it is.
+pub fn date_in_years(date: &str, years: Option<(i32, i32)>) -> String {
+    let Some((first, last)) = years else { return date.to_string() };
+    let parts: Vec<i32> = date.trim().split('-').filter_map(|x| x.trim().parse().ok()).collect();
+    let [year, month, day] = parts[..] else { return date.to_string() };
+    let fitted = year.clamp(first, last);
+    if fitted == year {
+        return date.to_string();
+    }
+    let leap = fitted % 4 == 0 && (fitted % 100 != 0 || fitted % 400 == 0);
+    let day = if month == 2 && day == 29 && !leap { 28 } else { day };
+    format!("{fitted:04}-{month:02}-{day:02}")
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -850,7 +882,7 @@ fn read_map(d: &Path, folder: &str, lang: &str) -> (Option<MapInfo>, Vec<PathBuf
     }
     // (the depot groups' first: a plain car group's name line is no depot)
     let hof = omsi_map::ailists::AiLists::load(&d.join("ailists.cfg")).ok().and_then(|l| l.groups.iter().filter(|g| g.is_depot).chain(l.groups.iter()).find_map(|g| g.hof.clone())).unwrap_or_default();
-    (Some(MapInfo { name: if g.name.trim().is_empty() { folder.to_string() } else { g.name.trim().to_string() }, friendly, file: format!("maps/{folder}/global.cfg"), description, entry_points: entries, hof, installed: in_content(d) }), deps)
+    (Some(MapInfo { name: if g.name.trim().is_empty() { folder.to_string() } else { g.name.trim().to_string() }, friendly, file: format!("maps/{folder}/global.cfg"), description, entry_points: entries, hof, installed: in_content(d), years: map_years(&g) }), deps)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -2902,7 +2934,12 @@ fn duty_args_for_root(d: &Duty, root: &Path) -> Result<Vec<String>> {
         date = Some(format!("{year:04}-{mo:02}-{dd:02}"));
     }
     if let Some(dt) = date {
-        a.extend(["--date".into(), dt]);
+        // (a date outside the map's [years] starts on a day inside them, as OMSI 2 does: the
+        // machine's calendar or an old saved duty would load a map without its buses)
+        let file = root.join(&d.map);
+        let file = if file.is_file() { file } else { resolve_content(&d.map).unwrap_or(file) };
+        let years = omsi_map::GlobalCfg::load(&file).ok().and_then(|g| map_years(&g));
+        a.extend(["--date".into(), date_in_years(&dt, years)]);
     }
     if let Some(w) = d.weather.as_deref().filter(|x| !x.trim().is_empty()) {
         a.extend(["--weather".into(), w.trim().to_string()]);

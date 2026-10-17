@@ -397,3 +397,23 @@ fn settings_defaults_and_automatic_values() {
     let text = settings_to_text(&json!({ "view_distance": 900, "video_memory": 1500.0 }), None);
     assert!(text.contains("\nview_distance=900\n") && text.contains("\nvideo_memory=1500\n"), "{text}");
 }
+
+/// A date outside a map's `[years]` moves to the same day of the nearest year inside them; a
+/// date inside, a map without years and an unreadable date stay as they are.
+#[test]
+fn a_date_outside_the_maps_years_moves_into_them() {
+    let y = Some((1985, 1995));
+    assert_eq!(date_in_years("1989-05-30", y), "1989-05-30");
+    assert_eq!(date_in_years("2026-10-17", y), "1995-10-17");
+    assert_eq!(date_in_years("1970-01-02", y), "1985-01-02");
+    assert_eq!(date_in_years("2024-02-29", Some((1990, 1993))), "1993-02-28");
+    assert_eq!(date_in_years("2024-02-29", Some((1990, 1992))), "1992-02-29");
+    assert_eq!(date_in_years("2026-10-17", None), "2026-10-17");
+    assert_eq!(date_in_years("someday", y), "someday");
+    let mut g = omsi_map::GlobalCfg::default();
+    assert_eq!(map_years(&g), None);
+    g.years = (2003, 0);
+    assert_eq!(map_years(&g), Some((2003, i32::MAX)));
+    g.years = (1985, 1995);
+    assert_eq!(map_years(&g), Some((1985, 1995)));
+}
