@@ -80,14 +80,15 @@ You need **OMSI 2** installed (Steam or retail) with its stock content.
    * **macOS:** `openOMSI.app`. If macOS refuses an app from the internet: right-click →
      *Open* → *Open*, or run `xattr -dr com.apple.quarantine /path/to/openOMSI.app` once.
    * **Linux:** `./openomsi` (`chmod +x openomsi` first if needed). It needs a Vulkan or
-     OpenGL driver, and **WebKitGTK 4.1** for the launcher window (`libwebkit2gtk-4.1-0` on
+     OpenGL driver (Mesa: `mesa-vulkan-drivers`, or your GPU vendor's driver), and **WebKitGTK 4.1** for the launcher window (`libwebkit2gtk-4.1-0` on
      Debian/Ubuntu, `webkit2gtk4.1` on Fedora, `webkit2gtk-4.1` on Arch; for the Steam Deck
      see the [user guide](docs/USER_GUIDE.md#the-launcher)).
    * **Android:** see [docs/ANDROID.md](docs/ANDROID.md) - the OMSI 2 folder is copied onto
      the device first.
 3. **Find OMSI 2.** The launcher usually finds the installation by itself (Steam libraries and
-   the usual folders). If not, open **Setup** → *Choose the OMSI 2 folder* and pick the folder
-   with `Omsi.exe`, `maps` and `Vehicles` in it (Steam: `…\Steam\steamapps\common\OMSI 2`).
+   the usual folders). If not, open **Setup**, press **Browse…** under *Choose the OMSI 2
+   folder*, pick the folder with `Omsi.exe`, `maps` and `Vehicles` in it (Steam:
+   `…\Steam\steamapps\common\OMSI 2`) and press **Save**.
 4. **Drive:** choose a map, line, tour and bus on the **Drive** page and press **Start the duty**.
 
 **Mods** are installed on the **Mods** page (a folder or an archive, or dropped onto the
@@ -95,7 +96,8 @@ window) or put into the `Mods` folder next to the game.
 
 ### When something goes wrong
 
-* **"OMSI 2 was not found"** - choose the folder under **Setup** (step 3).
+* **"OMSI 2 was not found"** - choose the folder under **Setup** (step 3); when it is not
+  saved, the message says what the chosen folder lacks.
 * **The game closes after a few seconds, or "the graphics device was lost"** - update the
   graphics driver (from NVIDIA, AMD or Intel, not the one Windows installs). On Windows,
   **Settings → Graphics → Graphics API** can switch to DirectX 12, OpenGL or ANGLE (DirectX 11).
@@ -105,11 +107,15 @@ window) or put into the `Mods` folder next to the game.
   objects* off (also under **Settings → Gameplay**).
 * **Multiplayer: you do not meet the others** - every player needs the host's map. A map
   installed through the Mods page is passed on; one in the OMSI 2 folder is not.
+* **Keys do not do what you set** - the **Controls** page shows which driving keys are in
+  use (Settings → Driving → *Driving keys*); a key changed there takes effect at once.
 * **Anything else** - when the game ends on an error, the launcher shows it with *Copy report*
   and *Report on GitHub*. Logs are in `~/.openomsi` (Windows: `C:\Users\<you>\.openomsi`),
-  `game.log` for the last game. `openomsi --export-diagnostics <file.zip>` saves a support
-  package (system, graphics card, driver, settings, controllers, last map and bus - no paths,
-  names, chat or addresses); nothing is sent, so look inside before you attach it to an issue.
+  `game.log` for the last game. **Settings → General → Support → Support package** saves a
+  support package into `~/.openomsi` (`openomsi --export-diagnostics <file.zip>` does the same
+  from the command line): system, graphics card, driver, settings, controllers, last map and
+  bus - no paths, names, chat or addresses. Nothing is sent; look inside before you attach it
+  to an issue.
 
 ## Goals
 

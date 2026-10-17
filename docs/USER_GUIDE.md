@@ -77,8 +77,8 @@ cameras). Every vehicle key of `Inputs/keyboard.cfg` works as it does in OMSI: t
 Shift+Num 8, brake Shift+Num 2, steering Shift+Num 4/6, **E** battery and ignition, **M**
 starter, **N**/**R** the automatic, **.** the parking brake. W, S and D are OMSI's wiper,
 viewpoint and **D of the automatic gearbox**, so hold shift for those: **Shift+D** selects D.
-Settings → Driving → *Driving keys* (`drive_keys`, `--drive-keys`) changes this: *W A S D
-only*, *Arrow keys only* (all four arrows drive and W/A/S/D are left to OMSI) or *Custom
+Settings → Driving → *Driving keys* (`drive_keys`, `--drive-keys`) changes this: *W A S D +
+arrows* (the default, as described here), *W A S D only*, *Arrow keys only* (all four arrows drive and W/A/S/D are left to OMSI) or *Custom
 controls* (only the layout of the Controls page).
 
 To start a stock SD200: **E** (battery - it puts the ignition key in as well), **M** held for a
@@ -94,7 +94,7 @@ launcher again; mods, content and settings stay. On Android the system's install
 whether to update the app; Update replaces openOMSI and starts it again, Cancel leaves it as
 it was. No update is installed while a game runs. Settings → General → *Updates*: *Look for
 updates when the launcher starts* (on by default), *Update channel* (Stable, the tested
-releases, by default; Beta, every new version as soon as it is built, for testers), *Install
+releases, by default; Beta, every beta as soon as it is published, for testers), *Install
 updates without asking* (off by default), and the version line with **Check now**. A folder
 openOMSI cannot write to (Program Files, an app opened straight from Downloads on macOS) is
 reported with what to do. A download that breaks goes on where it stopped (up to four times),
@@ -191,9 +191,9 @@ where keyboard.cfg does not make it the ticket desk camera.
 The mouse wheel (and **=** / **-**, a pinch on a phone) zooms: outside the camera comes closer,
 inside the bus the view narrows, as in OMSI; **Ctrl**+wheel outside narrows the view instead
 (a telephoto, the camera stays where it is). F1-F4 driver / passenger / outside / map (free) camera, F5-F8 the destination
-sign and roller blind keys as in OMSI, Alt+S quick save (OMSI's `quicksave`), F9 write the
+sign and roller blind keys as in OMSI, Ctrl+S quick save (OMSI's `quicksave`; Alt+S works too), F9 write the
 run into the personnel file, WASD+QE in the free camera (**Ctrl**+click on the ground there
-moves the bus to the nearest street), left click on cockpit elements, **V** the chat line in a
+moves the bus to the nearest street), left click on cockpit elements, the chat key (**/** by default, see Controls) the chat line in a
 LAN session.
 
 **Esc** opens the game menu, drawn in the launcher's style: its lines on a rail on the left,
@@ -312,7 +312,7 @@ The menu on the left groups the pages: **Play** (Drive, Multiplayer, Running gam
   (volumes and the radio stations), *Gameplay* (passengers, traffic, collisions, maintenance,
   the clock and the weather sync), *General* (the launcher's look and layout, language, the
   game's interface size, chat, photo mode, the navigator, updates, resetting every setting)
-  and *Content test*.
+  and *Content test* (not on phones and tablets).
   **Discord Rich Presence** (Settings → General, on by default) shows the launcher or your
   map, bus, line and multiplayer status in Discord; Discord must be running on the same
   computer.
@@ -963,8 +963,8 @@ In the launcher, multiplayer is on the **Multiplayer** page:
 * **Servers**: a list of dedicated servers (see [SERVER.md](SERVER.md)) to add, ask and
   join, over UDP or WebSocket.
 
-From the command line, `--lan-host [port]` hosts a session (UDP, port 27015 by default; the
-next free one of the ten after it when that is taken), `--lan-join <where>` joins one and
+From the command line, `--lan-host [port]` hosts a session (UDP, port 27015 by default, or
+the first free one of 27015 to 27024 when no port is given; a port given is used as it is), `--lan-join <where>` joins one and
 `--lan-name` is your name. `--lan-join` takes the session code, an `ip`, `ip:port`, a host
 name, a bare port (a host on this machine) or `auto` (find a host on the local network by
 broadcast).
@@ -980,7 +980,8 @@ gets through, the host's free Cloudflare quick tunnel is the way in (the game fe
 `cloudflared` itself the first time it hosts). When nothing answers within 10 s, the
 joining game gives up and says why that may be. Two routers that both change their port
 for every destination (some mobile networks) cannot be punched through; a dedicated server
-or a VPN works there. A busy host (loading a heavy part of the map) still answers, and the
+or a VPN works there. Whichever way, the host's firewall must let the game receive UDP on
+its port (27015 by default; Windows counts a Hamachi network as public). A busy host (loading a heavy part of the map) still answers, and the
 joining game waits up to 8 s for it before it loads anything. The joining game plays on
 the host's map whatever map was chosen before, when that map is installed or comes with
 the host's mods (below); one that is not is said in the HUD.
@@ -1075,5 +1076,5 @@ plays its own installed sound file - sound files are never transferred - with it
 sound configuration's interior, exterior and position rules; a stand-in bus plays none.
 A player who joins later does not hear earlier events again.
 
-All players need the same openOMSI version: a host turns away a game of another LAN
-protocol version (with a message saying so). Windows, macOS and Linux play together.
+All players need the same LAN protocol version: a host turns away a game of another one
+(with a message saying so). Windows, macOS and Linux play together.
