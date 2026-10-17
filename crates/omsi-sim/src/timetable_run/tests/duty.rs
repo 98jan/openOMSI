@@ -1000,3 +1000,27 @@ fn a_stop_passed_and_served_further_on_is_stepped_back_to() {
     d.step_back(at(260.0), 60.0);
     assert_eq!(d.next_stop, 2, "nearer to the next stop: no step back");
 }
+
+/// Passing through the circle of a stop further on is not reaching it: only standing there
+/// with a door open counts the stops in between as skipped.
+#[test]
+fn a_later_stop_counts_only_with_the_doors_open() {
+    let stops = [(0.0, 0.0, 0.0), (250.0, 50.0, 50.0), (600.0, 120.0, 120.0), (900.0, 190.0, 190.0), (1300.0, 270.0, 270.0), (1800.0, 360.0, 360.0)];
+    let mut trip = planned(0.0, &stops);
+    trip.set_dirs();
+    let mut duty = PlayerDuty::new("31".into(), "4".into(), vec![trip], 0, 0, true);
+    duty.placed = true;
+    duty.heading = 90.0;
+    let east = |x: f64| glam::DVec3::new(x, 0.0, 0.0);
+    duty.progress_at(east(0.0), 0.0, true);
+    duty.progress_at(east(40.0), 15.0, false);
+    assert_eq!(duty.next_stop, 1, "away from the first stop");
+    for (x, t) in [(895.0, 60.0), (900.0, 61.0), (906.0, 62.0)] {
+        duty.progress_at(east(x), t, false);
+    }
+    assert_eq!(duty.next_stop, 1, "rolled through the fourth stop's circle");
+    assert_eq!(duty.take_skipped(), None);
+    duty.progress_at(east(1301.0), 80.0, true);
+    assert_eq!(duty.next_stop, 4);
+    assert_eq!(duty.take_skipped(), Some((3, 2, 5)), "stops 2 to 4 passed, at stop 5");
+}

@@ -829,8 +829,7 @@ impl World {
             // Maps copied from a `[worldcoordinates]` map keep such leftovers (Ahlheim's
             // Bostoner Weg: 588 objects past the edge, redrawn by the author where they
             // belong), and drawn they stood as houses and bushes in the road (#787).
-            let edge = tile_size() + 1e-3;
-            if !absolute && !((-1e-3..=edge).contains(&o.pos[0]) && (-1e-3..=edge).contains(&o.pos[1])) {
+            if hidden_off_tile(absolute, ot.sco.tree.is_some(), o.pos) {
                 if outside == 0 || debug_outside {
                     log::info!("object {} id {} at ({:.1}, {:.1}) lies outside tile ({tx}, {ty}): not shown, as in OMSI", o.file, o.id, o.pos[0], o.pos[1]);
                 }
@@ -1268,3 +1267,36 @@ pub type SplineEnds = HashMap<i64, (DVec3, DVec3, i64, i64, String)>;
 
 /// Metres between the points the ambience keeps along a lane, a track, a wire or a tunnel.
 const SOUND_LINE_STEP: f32 = 10.0;
+
+/// Whether an `[object]` record at `pos` (in its tile's frame) is left out for lying past
+/// its tile's edge: one standing on the terrain is (see `stage_objects`), and so is a
+/// `[tree]` record whatever its height is given as: OMSI 2 draws no tree past its own
+/// tile's edge (Tettau's tree 4480766, 0.85 m off its tile, stands in the road at
+/// Feshalle when drawn). Spline rows are not records of
+/// this kind: their trees are drawn wherever they fall.
+fn hidden_off_tile(absolute: bool, tree: bool, pos: [f64; 3]) -> bool {
+    let edge = tile_size() + 1e-3;
+    let inside = (-1e-3..=edge).contains(&pos[0]) && (-1e-3..=edge).contains(&pos[1]);
+    !inside && (!absolute || tree)
+}
+
+#[cfg(test)]
+mod off_tile_tests {
+    use super::hidden_off_tile;
+
+    #[test]
+    fn a_tree_past_its_tiles_edge_is_left_out() {
+        let t = omsi_map::tile_size();
+        let off = [t + 0.85, 120.0, 0.0];
+        let on = [t - 0.85, 120.0, 0.0];
+        // a tree off its tile, on the terrain or at an absolute height: not drawn
+        assert!(hidden_off_tile(false, true, off));
+        assert!(hidden_off_tile(true, true, off));
+        assert!(!hidden_off_tile(false, true, on));
+        assert!(!hidden_off_tile(true, true, on));
+        // a crossing (absolute height) off its tile stays; one on the terrain goes (#787)
+        assert!(!hidden_off_tile(true, false, off));
+        assert!(hidden_off_tile(false, false, off));
+        assert!(hidden_off_tile(false, false, [120.0, -0.5, 0.0]));
+    }
+}

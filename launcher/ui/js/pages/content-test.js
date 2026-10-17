@@ -4,7 +4,7 @@
 // every warning and error of its loaders listed, what it names and lacks looked for. What a
 // modder used to read off the terminal while working on their content.
 
-import { html, useState, useEffect } from '../../vendor/preact-htm.js';
+import { html, useState, useEffect, useMemo } from '../../vendor/preact-htm.js';
 import { useStore, toast } from '../store.js';
 import { t } from '../i18n.js';
 import { call } from '../api.js';
@@ -104,6 +104,15 @@ export function ContentTest() {
   const maps = s.maps || [];
   const [kind, setKind] = useState('bus');
   const [bus, setBus] = useState(s.choice?.bus || vehicles[0]?.file || '');
+  const [maker, setMaker] = useState('');
+  const makers = useMemo(() => [...new Set(vehicles.map((v) => v.manufacturer).filter(Boolean))].sort(), [vehicles]);
+  const sorted = useMemo(() => [...vehicles].sort((a, b) => (a.manufacturer || '').localeCompare(b.manufacturer || '') || (a.name || a.file).localeCompare(b.name || b.file)), [vehicles]);
+  const buses = sorted.filter((v) => !maker || v.manufacturer === maker);
+  const pickMaker = (m) => {
+    setMaker(m);
+    const of = sorted.filter((v) => !m || v.manufacturer === m);
+    if (!of.some((v) => v.file === bus)) setBus(of[0]?.file || '');
+  };
   const [map, setMap] = useState(s.choice?.map || maps[0]?.file || '');
   const [mods, setMods] = useState([]);
   const [mod, setMod] = useState('');
@@ -150,7 +159,8 @@ export function ContentTest() {
   const sum = result?.summary || {};
   const items = sum.items || [];
   const picker = {
-    bus: html`<${Select} value=${bus} options=${vehicles.map((v) => [v.file, v.name ? `${v.name} (${v.file.split('/').pop()})` : v.file])} onChange=${setBus} raw placeholder="Choose a bus" />`,
+    bus: html`<div class="row"><div style="flex:0 0 200px;min-width:0"><${Select} raw value=${maker} options=${[['', t('All makers')], ...makers.map((m) => [m, m])]} onChange=${pickMaker} /></div>
+      <div class="grow" style="min-width:0"><${Select} value=${bus} options=${buses.map((v) => [v.file, v.name ? `${v.name} (${v.file.split('/').pop()})` : v.file])} onChange=${setBus} raw placeholder="Choose a bus" /></div></div>`,
     map: html`<${Select} value=${map} options=${maps.map((m) => [m.file, m.friendly || m.name || m.file])} onChange=${setMap} raw placeholder="Choose a map" />`,
     mod: mods.length
       ? html`<${Select} value=${mod} options=${mods.map((m) => [m.id, `${m.name} (${m.paths.length > 1 ? t('{n} folders', { n: m.paths.length }) : m.paths[0]})`])} onChange=${setMod} raw />`

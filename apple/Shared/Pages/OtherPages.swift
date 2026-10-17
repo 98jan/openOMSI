@@ -127,6 +127,7 @@ struct ServerCard: View {
                 Button("Leave") { store.act("server_leave") }.buttonStyle(.launcher(.plain, small: true))
             } else {
                 Button("Join") { store.act("server_join", ["address": server.address]); store.page = .drive; store.phoneTab = "drive" }.buttonStyle(.launcher(.primary, small: true))
+                    .disabled(server.info?.ok != true)
             }
             Button { store.act("server_ask", ["address": server.address, "every": 10]) } label: { Image(systemName: "arrow.clockwise") }
                 .buttonStyle(.launcher(.ghost, small: true)).help("Refresh")

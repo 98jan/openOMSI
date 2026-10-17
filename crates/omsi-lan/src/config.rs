@@ -27,6 +27,8 @@ pub struct LanConfig {
     pub lan_name: String,
     pub lan_host: Option<u16>,
     pub lan_join: Option<String>,
+    /// Discovered gateway to try if an Auto UDP join gets no answer.
+    pub lan_ws_fallback: Option<String>,
     /// A dedicated server (`--server`).
     pub server: bool,
     /// Where the bus starts and what it drives: entry point, spawn, depot, line, tour, trip.

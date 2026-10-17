@@ -92,10 +92,13 @@ try {
   ws.close();
   const exited = browser.exitCode !== null || browser.signalCode !== null ? Promise.resolve() : new Promise((r) => browser.once('exit', r));
   browser.kill();
-  await exited;
+  await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
+  if (browser.exitCode === null && browser.signalCode === null) browser.kill('SIGKILL');
   server.close();
   try {
-    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
-  } catch {}
+    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (e) {
+    console.warn(`the browser profile ${profile} was not removed: ${e.message}`);
+  }
 }
 process.exit(failed ? 1 : 0);

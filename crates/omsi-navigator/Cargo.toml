@@ -14,6 +14,7 @@ omsi-render = { path = "../omsi-render" }
 omsi-scene = { path = "../omsi-scene" }
 omsi-sim = { path = "../omsi-sim" }
 omsi-texture = { path = "../omsi-texture" }
+omsi-timetable = { path = "../omsi-timetable" }
 omsi-ui = { path = "../omsi-ui" }
 glam.workspace = true
 hashbrown.workspace = true

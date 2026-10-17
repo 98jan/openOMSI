@@ -97,10 +97,10 @@ fn simplify(pts: &[Vec3], tol: f32) -> Vec<Vec3> {
 /// stops stand - points in metres from `origin`, rounded to the decimetre, as flat
 /// `[x0, y0, x1, y1, ...]` lists. `colors` are the game's city map colours (casing, road, main
 /// road, route) as CSS.
-pub fn export(map: &str, global: &Path, date: &str, trip: &str, tolerance: f32) -> serde_json::Value {
+pub fn export(map: &str, global: &Path, date: &str, trip: &str, tolerance: f32, surface: bool) -> serde_json::Value {
     use serde_json::json;
     let look = Look { map: map.to_string(), global: global.to_path_buf(), date: date.to_string(), trip: trip.to_string(), entry: -1 };
-    let roads = read_map(&look);
+    let roads = roads_of(&look);
     let path = trip_of(&look);
     let o = roads.origin;
     let flat = |pts: &[DVec3]| -> Vec<f32> {
@@ -126,8 +126,11 @@ pub fn export(map: &str, global: &Path, date: &str, trip: &str, tolerance: f32) 
         "lo": rel(roads.lo), "hi": rel(roads.hi),
         "roads": list, "route": route, "stops": stops, "entries": entries,
         "colors": [css(casing), css(road), css(main), css(red)],
-        "package": package_view(global, o, roads.lo, roads.hi, tolerance),
-        "layers": layers_view(roads.layers.as_deref(), o),
+        // (the package's credit always: the page shows it over the game's ground too, which
+        // asks for no surface)
+        "credit": global.parent().and_then(omsi_map::package::Package::open).map(|p| p.credit),
+        "package": if surface { package_view(global, o, roads.lo, roads.hi, tolerance) } else { serde_json::Value::Null },
+        "layers": if surface { layers_view(roads.layers.as_deref(), o) } else { serde_json::Value::Null },
     })
 }
 
@@ -198,16 +201,7 @@ fn trip_of(look: &Look) -> omsi_launcher_lib::TripPath {
 pub fn overview(look: Look) -> serde_json::Value {
     use serde_json::json;
     const TOLERANCE: f32 = 1.2;
-    static CACHE: std::sync::Mutex<Option<(PathBuf, String, Arc<Roads>)>> = std::sync::Mutex::new(None);
-    let cached = CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|(g, d, _)| *g == look.global && *d == look.date).map(|c| c.2.clone());
-    let roads = match cached {
-        Some(r) => r,
-        None => {
-            let r = Arc::new(read_map(&look));
-            *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((look.global.clone(), look.date.clone(), r.clone()));
-            r
-        }
-    };
+    let roads = roads_of(&look);
     let trip = trip_of(&look);
     let o = roads.origin;
     let r1 = |v: f64| (v * 10.0).round() / 10.0;
@@ -242,6 +236,28 @@ pub fn overview(look: Look) -> serde_json::Value {
         "lanes": roads.net.lanes.len(),
         "layers": layers_view(roads.layers.as_deref(), o),
     })
+}
+
+/// The map's network and layers for the launcher's map (`omsi_navigator::MapGround`), and the
+/// world point the page measures from (`export`'s `origin`).
+pub fn map_network(map: &str, global: &Path, date: &str) -> (DVec2, Arc<Network>, Option<Arc<omsi_map::layers::Layers>>) {
+    let look = Look { map: map.to_string(), global: global.to_path_buf(), date: date.to_string(), trip: String::new(), entry: -1 };
+    let roads = roads_of(&look);
+    (roads.origin, roads.net.clone(), roads.layers.clone())
+}
+
+/// The map's data (`read_map`) for `look`'s map and date, read once and kept for the next
+/// call on the same map and date: the route map and the ground the game builds for the
+/// launcher's map (`map_network`) share it.
+fn roads_of(look: &Look) -> Arc<Roads> {
+    static CACHE: std::sync::Mutex<Option<(PathBuf, String, Arc<Roads>)>> = std::sync::Mutex::new(None);
+    let cached = CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|(g, d, _)| *g == look.global && *d == look.date).map(|c| c.2.clone());
+    if let Some(roads) = cached {
+        return roads;
+    }
+    let roads = Arc::new(read_map(look));
+    *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((look.global.clone(), look.date.clone(), roads.clone()));
+    roads
 }
 
 /// The map's own data, read the way the game reads it for its city map: every tile's paths

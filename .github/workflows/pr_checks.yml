@@ -15,6 +15,7 @@ permissions:
 jobs:
   files:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       BASE: ${{ github.event.pull_request.base.sha }}
       LOCALES: crates/omsi-app/locales/app.yml
@@ -40,6 +41,7 @@ jobs:
           exit $status
 
       - name: Translations
+        if: ${{ !cancelled() }}
         run: |
           if git diff --quiet "$BASE" HEAD -- "$LOCALES"; then
             echo "$LOCALES is not changed."

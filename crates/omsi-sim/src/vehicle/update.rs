@@ -446,6 +446,7 @@ impl VehicleInstance {
             return;
         }
         let mut trailers = std::mem::take(&mut self.trailers);
+        super::car_run::set_couplings(&mut trailers);
         let mut lead: Option<(DVec3, Mat4, f64)> = None;
         let mut turn = self.turning();
         for t in &mut trailers {
@@ -477,6 +478,7 @@ impl VehicleInstance {
             return;
         }
         let mut trailers = std::mem::take(&mut self.trailers);
+        super::car_run::set_couplings(&mut trailers);
         let mut lead: Option<(DVec3, Mat4, f64)> = None;
         let mut turn = self.turning();
         if self.ty.def.is_rail() {
