@@ -14,12 +14,30 @@ impl Player {
     ///
     /// `spread` is the half-angle of those rings in radians; the window passes the angle
     /// six pixels subtend, so aiming is equally forgiving at any resolution.
+    ///
+    /// A switch behind another part of the bus cannot be reached through it ([`Self::reach`]):
+    /// from outside any part hides it, from the cab only an opaque one.
     pub(crate) fn pick(&self, origin: DVec3, dir: Vec3, spread: f32) -> Option<usize> {
-        let i = pick_in(&self.vehicle, origin, dir, spread)?;
-        if self.occlude_controls && self.control_hidden(origin, dir, None, i) {
+        let (i, centre) = pick_in(&self.vehicle, origin, dir, spread, self.reach(origin, dir))?;
+        if !centre && self.occlude_controls && self.control_hidden(origin, dir, None, i) {
             return None;
         }
         Some(i)
+    }
+
+    /// How far along a ray a switch of the bus or its coupled parts can be reached: up to the
+    /// nearest part that hides it. From outside (`occlude_controls`) any part does, walls and
+    /// windows; from the cab only opaque parts, not glass. (Studio Polygon's Renown has engine
+    /// hatches modelled behind its dashboard, which took clicks on the dashboard, and a black
+    /// cab top in front of the sun blinds.)
+    fn reach(&self, origin: DVec3, dir: Vec3) -> Reach {
+        let (dir, outside) = (dir.normalize_or_zero(), self.occlude_controls);
+        let v = &self.vehicle;
+        let mut t = hiding_distance(&v.ty, &v.mesh_props, |i| v.mesh_local_transform(i), (origin - v.position).as_vec3(), dir, outside);
+        for tr in &v.trailers {
+            t = t.min(hiding_distance(&tr.ty, &tr.mesh_props, |i| tr.mesh_local_transform(i), (origin - tr.position).as_vec3(), dir, outside));
+        }
+        Reach(t)
     }
 
     /// The page (`[htmltexture]`, or a script texture an `.opl` plugin draws) under a ray and
@@ -38,8 +56,8 @@ impl Player {
 
     /// The same forgiving pick as `pick`, for the coupled sections of an articulated bus.
     pub(crate) fn pick_trailer(&self, origin: DVec3, dir: Vec3, spread: f32) -> Option<(usize, usize)> {
-        let (ti, i) = pick_trailer_in(&self.vehicle, origin, dir, spread)?;
-        if self.occlude_controls && self.control_hidden(origin, dir, Some(ti), i) {
+        let ((ti, i), centre) = pick_trailer_in(&self.vehicle, origin, dir, spread, self.reach(origin, dir))?;
+        if !centre && self.occlude_controls && self.control_hidden(origin, dir, Some(ti), i) {
             return None;
         }
         Some((ti, i))
