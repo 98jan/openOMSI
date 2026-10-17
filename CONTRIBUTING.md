@@ -15,7 +15,8 @@ Thanks for helping! A few rules keep the project healthy:
 
 1. Work on a branch of your own (of your fork), never on `main`, and open a pull request
    against `main`. Unfinished work can be opened as a draft.
-2. Fill in the template: what the player notices, how to test it, what could break.
+2. Fill in the template: what the player notices, how to test it, before/after screenshots
+   if anything changes on screen (launcher or game), what could break.
 3. The checks run on every push, and test builds for Windows, macOS, Linux and Android are
    linked in a comment, so anyone can try the change before it is merged.
 4. One maintainer other than the author approves it, and it is merged. Some parts need a
