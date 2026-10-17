@@ -1112,6 +1112,10 @@ pub fn resolution_of(text: &str) -> Option<(u32, u32)> {
     Some((w?, h?))
 }
 
+pub fn fullscreen_scene_cap(fullscreen: bool, spanned: bool, resolution: Option<(u32, u32)>) -> Option<(u32, u32)> {
+    resolution.filter(|_| fullscreen && !spanned)
+}
+
 #[cfg(test)]
 mod resolution_tests {
     #[test]
@@ -1120,6 +1124,15 @@ mod resolution_tests {
         assert_eq!(super::resolution_of("resolution=auto\n"), None);
         assert_eq!(super::resolution_of("window_size=1920*1080\n"), Some((1920, 1080)));
         assert_eq!(super::resolution_of("vsync=1\n"), None);
+    }
+
+    #[test]
+    fn the_scene_cap_follows_fullscreen_both_ways() {
+        let set = Some((1280, 720));
+        assert_eq!(super::fullscreen_scene_cap(true, false, set), set);
+        assert_eq!(super::fullscreen_scene_cap(false, false, set), None);
+        assert_eq!(super::fullscreen_scene_cap(true, true, set), None);
+        assert_eq!(super::fullscreen_scene_cap(true, false, None), None);
     }
 }
 
