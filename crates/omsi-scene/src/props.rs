@@ -1317,13 +1317,19 @@ pub(super) fn stand_in_mesh(m: &MeshData, defs: &[MaterialDef], xf: &Mat4, pos: 
     if width > 2.0 * loaded {
         return true;
     }
-    if width <= loaded || m.positions.is_empty() {
+    if width <= FAR_BACKDROP_MIN || m.positions.is_empty() {
         return false;
     }
     // a picture that never hides what is drawn after it, wherever it starts: a backdrop
-    if !defs.is_empty() && defs.iter().all(|d| d.no_z_write || d.no_z_check) {
+    if width > loaded && !defs.is_empty() && defs.iter().all(|d| d.no_z_write || d.no_z_check) {
         return true;
     }
+    // A mesh modelled wholly beyond the tiles OMSI loads with its object is seen in OMSI
+    // only from those tiles, whatever its size past a few streets': London's Walworth Road
+    // junction carries a copy of the Elephant & Castle buildings some 1.2 km north of it,
+    // a backdrop for the view from there, and drawn from everywhere it stood across London
+    // Road at the line 45 terminus. A small part far off is no backdrop and keeps its
+    // object in the far view.
     // Measure the offset in the model's own frame, before heading rotates its bounds:
     // the world AABB of a diagonal card can include its origin although the card is
     // wholly far away. Small offset parts and ordinary long models keep the far view.
@@ -1335,6 +1341,10 @@ pub(super) fn stand_in_mesh(m: &MeshData, defs: &[MaterialDef], xf: &Mat4, pos: 
     );
     xf.transform_vector3(nearest).length() as f64 > loaded
 }
+
+/// The width (m) from which a mesh wholly beyond the tiles loaded with its object is a
+/// backdrop for them (`stand_in_mesh`): a block of a few streets, not a house or a sign.
+const FAR_BACKDROP_MIN: f64 = 150.0;
 
 /// World bounds (min x, min y, max x, max y) of a mesh placed with `xf` at `origin`.
 pub(super) fn mesh_bounds(m: &MeshData, xf: &Mat4, origin: DVec3) -> [f64; 4] {
