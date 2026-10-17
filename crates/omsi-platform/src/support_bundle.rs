@@ -230,8 +230,8 @@ mod tests {
         archive(&path, &json!({"schema_version": 1}), &[("game.log".into(), "chat: SECRET".into())]).unwrap();
         let mut z = zip::ZipArchive::new(std::fs::File::open(&path).unwrap()).unwrap();
         assert_eq!(z.len(), 3);
-        assert_eq!(z.by_index(0).unwrap().name(), "diagnostics.txt");
-        assert_eq!(z.by_index(1).unwrap().name(), "diagnostics.json");
+        assert_eq!(z.by_index(0).unwrap().name().unwrap(), "diagnostics.txt");
+        assert_eq!(z.by_index(1).unwrap().name().unwrap(), "diagnostics.json");
         let mut log = String::new();
         z.by_name("logs/game.log").unwrap().read_to_string(&mut log).unwrap();
         assert!(!log.contains("SECRET"));
