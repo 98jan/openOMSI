@@ -1088,3 +1088,29 @@ fn a_way_on_that_leads_only_into_closed_lanes_is_not_taken() {
     let mut car = AiState::new(0, 0.0, 5);
     assert_eq!(car.choose_after(&net, 0), Some(1));
 }
+
+#[test]
+fn a_stop_does_not_hold_red_and_yellow() {
+    // light 0 green to 18 s, yellow, red; light 1 red to 23 s, red-and-yellow 23-25 s,
+    // green to 33 s. A stop asked for at 24 s (light 1 in red-and-yellow, light 0 red)
+    // lets the clock on; one at 27 s (light 1 green) holds it.
+    let lights = vec![
+        (vec![(6, 18.0), (9, 3.0), (0, 0.0)], None),
+        (vec![(0, 23.0), (3, 2.0), (6, 8.0), (9, 3.0), (0, 0.0)], None),
+    ];
+    let mut c = TrafficLightController::from_program(lights.clone(), Some(40.0), &[[1.0, 24.0, 0.0]], &[]);
+    c.time = 22.0;
+    c.request[1] = true;
+    for _ in 0..40 {
+        c.advance(0.1);
+    }
+    assert!(!c.held && c.time > 25.5, "the queue held the changeover at {:.1} s", c.time);
+    assert_eq!(c.state(1), 6);
+    let mut c = TrafficLightController::from_program(lights, Some(40.0), &[[1.0, 27.0, 0.0]], &[]);
+    c.time = 22.0;
+    c.request[1] = true;
+    for _ in 0..100 {
+        c.advance(0.1);
+    }
+    assert!(c.held && (c.time - 27.0).abs() < 1e-3, "a stop in the green holds: {:.1} s", c.time);
+}
