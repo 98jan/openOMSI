@@ -56188,6 +56188,7 @@ _version: 2
   ms: "Memuat turun bas pemain lain: {pct}% ({} daripada {})"
   tl: "Dina-download ang bus ng ibang manlalaro: {pct}% ({} sa {})"
   sv: "Laddar ner en annan spelares buss: {pct}% ({} av {})"
+  sr: "Preuzimanje autobusa drugog igrača: {pct}% ({} od {})"
 
 "Another player's bus is here ({}): it is shown now":
   ca: "Ha arribat l'autobús d'un altre jugador ({}): ja es mostra"
@@ -56217,6 +56218,7 @@ _version: 2
   ms: "Bas pemain lain sudah tiba ({}): kini dipaparkan"
   tl: "Narito na ang bus ng ibang manlalaro ({}): ipinapakita na ito"
   sv: "En annan spelares buss är här ({}): den visas nu"
+  sr: "Autobus drugog igrača je stigao ({}): sada se prikazuje"
 
 "loading their bus: {}%":
   ca: "carregant el seu autobús: {}%"
@@ -56246,6 +56248,7 @@ _version: 2
   ms: "memuatkan bas: {}%"
   tl: "nilo-load ang bus: {}%"
   sv: "laddar bussen: {}%"
+  sr: "učitavanje njihovog autobusa: {}%"
 
 "loading their bus...":
   ca: "carregant el seu autobús..."
@@ -56275,6 +56278,7 @@ _version: 2
   ms: "memuatkan bas..."
   tl: "nilo-load ang bus..."
   sv: "laddar bussen..."
+  sr: "učitavanje njihovog autobusa..."
 
 "their bus is not to be had":
   ca: "el seu autobús no està disponible"
@@ -56304,6 +56308,7 @@ _version: 2
   ms: "bas tidak tersedia"
   tl: "hindi makuha ang bus"
   sv: "bussen går inte att få"
+  sr: "njihov autobus nije dostupan"
 
 "their bus is not installed here":
   ca: "el seu autobús no està instal·lat aquí"
@@ -56333,6 +56338,7 @@ _version: 2
   ms: "bas tidak dipasang di sini"
   tl: "hindi naka-install dito ang bus"
   sv: "bussen är inte installerad här"
+  sr: "njihov autobus nije instaliran ovde"
 
 "their bus is not to be had: another stands in":
   ca: "el seu autobús no està disponible: n'hi ha un altre al seu lloc"
@@ -56362,6 +56368,7 @@ _version: 2
   ms: "bas tidak tersedia: diganti bas lain"
   tl: "hindi makuha ang bus: iba ang nakatayo sa lugar nito"
   sv: "bussen går inte att få: en annan står i dess ställe"
+  sr: "njihov autobus nije dostupan: drugi ga zamenjuje"
 
 "their bus could not be read":
   ca: "no s'ha pogut llegir el seu autobús"
@@ -56391,6 +56398,7 @@ _version: 2
   ms: "bas tidak dapat dibaca"
   tl: "hindi mabasa ang bus"
   sv: "bussen kunde inte läsas"
+  sr: "njihov autobus nije mogao da se pročita"
 
 "LINE DATA":
   es: "DATOS DE LA LÍNEA"
