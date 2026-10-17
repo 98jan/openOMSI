@@ -326,8 +326,9 @@ impl World {
             // (a `[helparrow]` object goes on: it is put up hidden, and drawn while the route
             // arrows are on - see `World::show_help_arrows`)
             if ot.sco.only_editor || ot.meshes.is_empty() {
-                // invisible sound sources (ambient sound objects) still run their script
-                if let (Some(program), true) = (&ot.program, ot.sco.sound.is_some()) {
+                // invisible sound sources (ambient sound objects) and children of a
+                // crossing naming one of its lights still run their script
+                if let (Some(program), Some(light_parent)) = (&ot.program, hidden_script(&ot, o, &index.traffic_light_parents)) {
                     let inst = omsi_sim::scenery::SceneryInstance::new(
                         program.clone(),
                         &ot.mesh_defs(),
@@ -342,7 +343,7 @@ impl World {
                         inst,
                         controller: None,
                         light_index: 0,
-                        light_parent: None,
+                        light_parent,
                         map_id: o.id,
                         variants: Vec::new(),
                         sounds: None,
@@ -803,6 +804,16 @@ fn placed_object_lanes(
 }
 
 /// Whether a placed object is a traffic lamp: (crossing, light index, lit by any light).
+/// Whether an editor-only (or meshless) object runs its script, and if so the crossing
+/// light it reads (`ScriptedObject::light_parent`). A sound source does, and so does a
+/// child of a crossing that names one of its lights: it reads that light's phase as a
+/// visible lamp does. Gerolstein's "BU Gong" (light 4 of the station crossing) read phase
+/// 0, red, without it, and rang every two seconds day and night.
+fn hidden_script(ot: &ObjectType, o: &StagedObject, crossings: &hashbrown::HashSet<i64>) -> Option<Option<(i64, usize)>> {
+    let light = light_child_of(crossings, o.lamp_parent, &o.extra);
+    (ot.sco.sound.is_some() || light.is_some()).then_some(light)
+}
+
 fn object_lamp(ot: &ObjectType, o: &StagedObject, pos: DVec3, index: &MapIndex) -> Option<(i64, usize, bool)> {
     // (OMSI hands `TrafficLightPhase` to any child of a crossing whose first string
     // names one of its lights, `[trafficlight]` or not - see `names_traffic_light`;
@@ -1112,5 +1123,58 @@ mod embedded_light_tests {
             assert_eq!(placed.color, source.color);
             assert_eq!(placed.intensity, 1.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod hidden_script_tests {
+    use super::*;
+
+    fn editor_only(sound: bool) -> Arc<ObjectType> {
+        Arc::new(ObjectType {
+            sco: SceneryObject { only_editor: true, sound: sound.then(|| "bell.cfg".to_string()), ..Default::default() },
+            model: Model::default(),
+            meshes: Vec::new(),
+            mesh_def_index: Vec::new(),
+            sound_path: Default::default(), model_dir: Default::default(),
+            mesh_visible: Vec::new(), mesh_pivots: Vec::new(),
+            mesh_shadow: Vec::new(), mesh_casts: Vec::new(), has_mouse_events: false, program: None,
+            lower_lods: Vec::new(), lod0_min: 0.0, paint_scheme_count: 0,
+            dynamic_textures: Vec::new(), holes: Vec::new(), deform: None,
+            collision: None, paint: false, camera: Default::default(),
+            collision_shape: Default::default(),
+            embedded_lights: Default::default(),
+        })
+    }
+
+    fn child(ot: &Arc<ObjectType>, parent: Option<i64>, extra: &[&str]) -> StagedObject {
+        StagedObject {
+            ot: ot.clone(),
+            id: 11,
+            place: Placement::Ground { x: 0.0, y: 0.0, z: 0.0, rot: [0.0; 3] },
+            rules: Vec::new(),
+            extra: extra.iter().map(|s| s.to_string()).collect(),
+            lamp_parent: parent,
+            parked: false,
+            map_object: true,
+            instance: 0,
+            key: 11,
+        }
+    }
+
+    /// An editor-only bell on a level crossing that names the crossing's light 3 runs its
+    /// script reading that light, as a visible lamp does; one naming no light (or of a
+    /// crossing without lights) is a plain sound source; a silent one naming no light runs
+    /// nothing.
+    #[test]
+    fn an_editor_only_crossing_child_reads_its_light() {
+        let crossings: hashbrown::HashSet<i64> = [500].into_iter().collect();
+        let bell = editor_only(true);
+        assert_eq!(hidden_script(&bell, &child(&bell, Some(500), &["3"]), &crossings), Some(Some((500, 3))));
+        assert_eq!(hidden_script(&bell, &child(&bell, Some(500), &["Platform"]), &crossings), Some(None));
+        assert_eq!(hidden_script(&bell, &child(&bell, Some(501), &["3"]), &crossings), Some(None));
+        let mute = editor_only(false);
+        assert_eq!(hidden_script(&mute, &child(&mute, Some(500), &["3"]), &crossings), Some(Some((500, 3))));
+        assert_eq!(hidden_script(&mute, &child(&mute, None, &["3"]), &crossings), None);
     }
 }
