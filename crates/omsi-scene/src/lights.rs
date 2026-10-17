@@ -644,6 +644,24 @@ mod cookie_tests {
 }
 
 #[cfg(test)]
+mod bitmap_tests {
+    /// A lamp's effect bitmap named `.bmp` but shipped only as a `.dds` of the same name is
+    /// found, as a material's texture is (the Helferlein signals' `Eff_li.bmp`); with no
+    /// picture of that name at all the standard glow stays.
+    #[test]
+    fn a_light_bitmap_shipped_as_dds_is_found() {
+        let dir = std::env::temp_dir().join("openomsi-light-bitmap-dds-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("Signals/texture")).unwrap();
+        std::fs::write(dir.join("Signals/texture/Glimmer_lamp.dds"), b"DDS ").unwrap();
+        let id = super::corona_texture_id(&dir.join("Signals"), "Glimmer_lamp.bmp");
+        assert_ne!(id, 0, "the .dds stands in for the .bmp");
+        assert_eq!(id, super::texture_id_of(dir.join("Signals/texture/Glimmer_lamp.dds")));
+        assert_eq!(super::corona_texture_id(&dir.join("Signals"), "Nowhere_lamp.bmp"), 0);
+    }
+}
+
+#[cfg(test)]
 mod spot_tests {
     #[test]
     fn a_full_beam_reaches_further_than_the_low_beam() {
@@ -1060,8 +1078,9 @@ fn texture_id_of(path: std::path::PathBuf) -> u16 {
 }
 
 /// The picture id of a light's `bitmap`, looked for as the model's own textures are (its
-/// folder's `texture\`, the folder, the vehicle's `texture\`, the game's `Texture\`); 0 (the
-/// standard glow) when there is no such file.
+/// folder's `texture\`, the folder, the vehicle's `texture\`, the game's `Texture\`, a `.dds`
+/// of the same name first, then the other picture formats); 0 (the standard glow) when there
+/// is no such file.
 pub fn corona_texture_id(model_dir: &std::path::Path, name: &str) -> u16 {
     // (every lit lamp of every vehicle asks every frame: looked up once, and found again by
     // the folder and the name as they are - a key made of copies of them was two
@@ -1072,14 +1091,11 @@ pub fn corona_texture_id(model_dir: &std::path::Path, name: &str) -> u16 {
         return id;
     }
     let root = CORONA_TEXTURES.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|t| t.root.clone()).unwrap_or_default();
-    let mut id = 0;
-    for d in crate::texture_dirs(&root, model_dir) {
-        let p = omsi_cfg::resolve_path(&d, name);
-        if omsi_cfg::vfs::is_file(&p) {
-            id = texture_id_of(p);
-            break;
-        }
-    }
+    // (found as a material's texture is: the Helferlein signals' `Eff_li.bmp` ships only
+    // as `Eff_li.dds`, and looked for under its own name alone the plain glow was drawn)
+    let dirs = crate::texture_dirs(&root, model_dir);
+    let dirs: Vec<&std::path::Path> = dirs.iter().map(|d| d.as_path()).collect();
+    let id = omsi_texture::find_texture(name, &dirs).map(texture_id_of).unwrap_or(0);
     KNOWN
         .lock()
         .unwrap_or_else(|e| e.into_inner())
