@@ -310,10 +310,10 @@ impl Navigator {
         Self::unproject(&cam, w, h, x - self.city.rect[0], y - self.city.rect[1]).map(|d| self.city.center + d)
     }
 
-    /// A mouse press while the map is open: on it, a drag or a button; outside, it closes.
+    /// A mouse press while the map is open: on it, a drag or a button; outside, nothing (the map
+    /// closes with its cross or Escape only).
     pub fn map_press(&mut self, x: f32, y: f32) {
         if !self.map_hit(x, y) {
-            self.city.open = false;
             return;
         }
         let local = Vec2::new(x - self.city.rect[0], y - self.city.rect[1]);
