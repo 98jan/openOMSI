@@ -53395,3 +53395,120 @@ _version: 2
   hi: "हर नई बस भरी टंकी के साथ शुरू होती है (कई नक्शों में पेट्रोल पंप नहीं होता); सहेजी गई स्थिति अपना ईंधन रखती है"
   ca: "Cada autobús nou comença amb el dipòsit ple (molts mapes no tenen benzinera); una situació desada conserva el seu"
   sv: "Varje ny buss börjar med full tank (många kartor saknar bensinstation); en sparad situation behåller sin egen"
+
+"Connection progress":
+  zh-tw: "連線進度"
+
+"Join friends":
+  zh-tw: "加入朋友"
+
+"Invite friends":
+  zh-tw: "邀請朋友"
+
+"Confirm session":
+  zh-tw: "確認房間"
+
+"Confirm the session first, then choose your bus on the Drive page. The game has not connected yet.":
+  zh-tw: "先確認房間，再到「駕駛」頁選車。目前尚未連線。"
+
+"Paste the complete code from your friend. Leading and trailing spaces are removed.":
+  zh-tw: "貼上朋友提供的完整連線碼，會自動移除前後空白。"
+
+"Checking the session...":
+  zh-tw: "正在確認房間…"
+
+"Could not read the session details":
+  zh-tw: "無法讀取房間資料"
+
+"Ask your friend to keep the game running and send the latest code. Retry, or continue without session details.":
+  zh-tw: "請朋友保持遊戲開啟並重新提供最新連線碼。你可以重試，或不讀取房間資料繼續選車。"
+
+"The session is full. Ask your friend to make room, then confirm again.":
+  zh-tw: "房間已滿。請朋友空出位置後，再次確認房間。"
+
+"Choose a bus without session details":
+  zh-tw: "不讀取房間資料，繼續選車"
+
+"How to join":
+  zh-tw: "如何加入朋友"
+
+"Ask your friend to start a hosted duty and copy the session code.":
+  zh-tw: "請朋友先以房主身分開始班次，再複製連線碼。"
+
+"Paste the code here and confirm the session.":
+  zh-tw: "在這裡貼上連線碼，然後確認房間。"
+
+"Choose your bus on the Drive page, then press Join and drive.":
+  zh-tw: "到「駕駛」頁選擇巴士，再按「加入並駕駛」。"
+
+"Set up a hosted duty":
+  zh-tw: "設定房主班次"
+
+"Start your hosted duty first. A session code appears only after the game starts.":
+  zh-tw: "先以房主身分開始班次，遊戲啟動後才會產生連線碼。"
+
+"Preparing the internet connection...":
+  zh-tw: "正在準備網際網路連線…"
+
+"Internet connection preparation failed":
+  zh-tw: "網際網路連線準備失敗"
+
+"You can still set up a LAN game. Internet access is not ready yet.":
+  zh-tw: "你仍可設定區域網路遊戲，目前尚未準備好網際網路連線。"
+
+"Choose your map, bus and duty on the Drive page, then start the duty. Come back here to copy the code.":
+  zh-tw: "到「駕駛」頁選擇地圖、巴士及班次，開始班次後回到這裡複製連線碼。"
+
+"Set up a hosted duty, then choose your map and bus on the Drive page.":
+  zh-tw: "先設定房主班次，再到「駕駛」頁選擇地圖及巴士。"
+
+"How to invite friends":
+  zh-tw: "如何邀請朋友"
+
+"Choose your map, bus and duty, then start the game as host.":
+  zh-tw: "選擇地圖、巴士及班次，然後以房主身分開始遊戲。"
+
+"Return to Multiplayer to copy your running session code.":
+  zh-tw: "回到「多人遊戲」複製正在執行的班次連線碼。"
+
+"Send the complete code to your friends; they choose Join friends.":
+  zh-tw: "把完整連線碼傳給朋友，請他們選擇「加入朋友」。"
+
+"Start the duty to create your session, then return to Multiplayer to copy the code.":
+  zh-tw: "開始班次後才會建立房間，再回到「多人遊戲」複製連線碼。"
+
+"The session is selected, not connected yet. Choose your bus and press Join and drive.":
+  zh-tw: "已選擇房間，目前尚未連線。請選擇巴士，再按「加入並駕駛」。"
+
+"First time here?":
+  zh-tw: "第一次使用？"
+
+"Technical details":
+  zh-tw: "技術詳細資料"
+
+"Choose a bus and start":
+  zh-tw: "選車與開始"
+
+"Check again":
+  zh-tw: "重新確認"
+
+"Could not validate the code":
+  zh-tw: "無法確認連線碼"
+
+"Copy the complete code again and retry.":
+  zh-tw: "請重新複製完整連線碼後再試一次。"
+
+"Session details":
+  zh-tw: "房間資料"
+
+"Choose your bus next. The game connects only when you start driving.":
+  zh-tw: "下一步選擇你的巴士，開始駕駛時才會真正連線。"
+
+"Internet preparation could not be started. You can still set up a LAN game.":
+  zh-tw: "無法啟動網際網路連線準備，你仍可設定區域網路遊戲。"
+
+"Choose your map, bus and duty on the Drive page. No game starts until you press Start the duty.":
+  zh-tw: "到「駕駛」頁選擇地圖、巴士及班次，按下「開始班次」才會啟動遊戲。"
+
+"Enter session code":
+  zh-tw: "輸入連線碼"
