@@ -85,6 +85,14 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   bottom opens the profile. It folds to its icons with the arrow at its bottom, and stays so;
   the numbers on Mods and Running games stay on their icons.
 
+- The launcher's route map opens fast and follows the mouse smoothly on a big map: the
+  roads and the route show at once and the surfaces (paved roads, land, houses) a moment
+  later, read once per map and date, not again with each trip, and only the part in view is
+  prepared; they come from the game as they are instead of being read and written again on the
+  way; dragging and zooming move a picture of the map and draw it anew when the mouse lets
+  go; the roads are drawn in a few strokes instead of one per road. Around the map's tiles
+  the land has the map's own green, no more grey that looked as if it were still loading.
+
 ### Fixes
 
 **Navigator**
@@ -113,11 +121,20 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 - Night in the city costs less: the classic picture lights a place with its eight strongest
   lamps, as Direct3D lit OMSI 2's, and every light grid cell keeps its strongest lamps
   rather than the first ones listed [#1467](https://github.com/openOMSI-org/openOMSI/issues/1467).
+- It rains again on computers that draw with the reduced set of pipelines after a graphics
+  failure (`~/.openomsi/gpu-fallback.cfg`): since 0.3.34 the new rain was left out there, and
+  an Apple M1 that fell back once had no streaks for the rest of the version. Buses and
+  shelters keep the rain out there as well.
 
 **Controls**
 
 - The steering wheel comes back after a turn the way a bus's does: gently at town speed and
   damped on its way back, without swinging past the centre [#2103](https://github.com/openOMSI-org/openOMSI/issues/2103).
+
+**Launcher**
+
+- The bus picker's preview and details fill their side of the window for every bus: a bus
+  with a short description no longer leaves an empty strip left of its preview.
 
 **Traffic and timetable**
 

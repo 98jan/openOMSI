@@ -225,9 +225,34 @@ impl Renderer {
             self.options.msaa,
             self.adapter_name
         );
-        // Release render targets before building their single-sample replacements. Keeping
-        // the old targets alive while the new renderer is built can turn a recoverable OOM
-        // into another allocation failure.
+        if let Some(c) = CEILING.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            c.msaa = 1;
+        }
+        let options = RenderOptions {
+            msaa: 1,
+            ..self.options
+        };
+        self.rebuild_in_place(scene, options);
+    }
+
+    pub fn rebuild_with(&mut self, scene: &mut Scene, options: RenderOptions) -> bool {
+        let options = match ceiling() {
+            Some(c) => RenderOptions { msaa: c.msaa_for(options.msaa), ssao: options.ssao && c.ssao, shadow_size: options.shadow_size.clamp(512, c.shadow_size), ..options },
+            None => options,
+        };
+        let options = if options.ray_tracing && options.msaa > 4 && !omsi_cfg::flags::OMSI_FULL_GPU.is_set() { RenderOptions { msaa: 4, ..options } } else { options };
+        if options == self.options {
+            return false;
+        }
+        log::info!("graphics rebuilt: {}x MSAA, shadow map {}, SSAO {}", options.msaa, options.shadow_size, options.ssao);
+        self.rebuild_in_place(scene, options);
+        true
+    }
+
+    fn rebuild_in_place(&mut self, scene: &mut Scene, options: RenderOptions) {
+        // Release render targets before building their replacements. Keeping the old
+        // targets alive while the new renderer is built can turn a recoverable OOM into
+        // another allocation failure.
         self.targets.depth = None;
         self.targets.msaa_targets.clear();
         self.targets.ao = None;
@@ -236,10 +261,6 @@ impl Renderer {
         self.targets.triple_targets = None;
         self.targets.glass_picture = None;
         self.targets.target_use.clear();
-        let options = RenderOptions {
-            msaa: 1,
-            ..self.options
-        };
         let mesh_pages = self.mesh_pages;
         *self = Renderer { mesh_pages, ..self.rebuilt(options) };
         scene.dirty = true;

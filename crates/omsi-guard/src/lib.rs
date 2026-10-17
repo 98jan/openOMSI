@@ -32,6 +32,7 @@
 
 pub mod dialog;
 pub mod journal;
+pub mod launcher_link;
 mod process;
 pub mod rescue;
 mod watch;

@@ -302,3 +302,58 @@ fn the_switch_and_the_setting() {
         assert!(choice(Some(on), false), "{on:?}");
     }
 }
+
+fn drawn_gaps(frames: &[f32]) -> Vec<(f32, f32)> {
+    let mut clock = crate::tick::FixedStep::new(crate::tick::RATE_HZ);
+    let tick = clock.dt();
+    let mut lag = DrawnLag::default();
+    let mut out = Vec::new();
+    for &dt in frames {
+        let ticks = clock.advance(dt);
+        let owed = ticks.n as f32 * tick;
+        let behind = (1.0 - ticks.alpha) * tick;
+        let b = lag.behind(behind, owed);
+        lag.note(owed, dt);
+        out.push((owed + b - behind, b));
+    }
+    out
+}
+
+#[test]
+fn pipelined_traffic_is_drawn_a_steady_time_behind_at_any_frame_rate() {
+    for fps in [25.0f32, 40.0, 75.0, 100.0, 144.0, 160.0, 240.0, 500.0] {
+        let gaps = drawn_gaps(&vec![1.0 / fps; fps as usize * 3]);
+        let settled = &gaps[fps as usize..];
+        for &(gap, b) in settled {
+            assert!(b <= crate::ai_traffic::fixed_step::MOST_BEHIND, "{fps} fps: {b}");
+            assert!((gap - settled[0].0).abs() < 1e-4, "{fps} fps: {gap} after {}", settled[0].0);
+        }
+    }
+}
+
+#[test]
+fn after_a_hitch_the_traffic_eases_back_without_a_jump() {
+    for (fps, hitch) in [(144.0f32, 0.03f32), (144.0, 0.1), (60.0, 0.1), (160.0, 0.07), (75.0, 0.5)] {
+        let n = fps as usize * 4;
+        let at = fps as usize * 2;
+        let mut frames = vec![1.0 / fps; n];
+        frames[at] = hitch;
+        let gaps = drawn_gaps(&frames);
+        for k in fps as usize + 1..n {
+            let (gap, b) = gaps[k];
+            assert!(b <= crate::ai_traffic::fixed_step::MOST_BEHIND + 1e-6, "{fps} fps, hitch {hitch}: {b} at frame {k}");
+            let step = gap - gaps[k - 1].0;
+            assert!(k == at || step <= 1e-5, "{fps} fps, hitch {hitch}: the cars fell back {step} at frame {k}");
+            assert!(step >= -DrawnLag::EASE * frames[k] - 1e-5, "{fps} fps, hitch {hitch}: the cars jumped {step} at frame {k}");
+        }
+    }
+}
+
+#[test]
+fn nothing_owed_draws_where_the_ticks_say() {
+    let mut lag = DrawnLag::default();
+    for _ in 0..100 {
+        lag.note(0.0, 0.01);
+    }
+    assert_eq!(lag.behind(0.004, 0.0), 0.004);
+}

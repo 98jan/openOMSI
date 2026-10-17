@@ -1,12 +1,12 @@
 // Multiplayer: hosting the next duty, joining a friend's session by its code, and servers
 // that are always on.
 
-import { html, useState, useEffect } from '../../vendor/preact-htm.js';
+import { html, useState, useEffect, useRef } from '../../vendor/preact-htm.js';
 import { S, useStore, set, toast } from '../store.js';
 import { t } from '../i18n.js';
 import { call } from '../api.js';
 import { Icon } from '../icons.js';
-import { Button, Card, Field, Input, Empty, PageHead, Spinner, Tabs, Toggle, Notice, Tag } from '../ui.js';
+import { Button, Card, Field, Input, Empty, PageHead, Spinner, Tabs, Segmented, Notice, Tag } from '../ui.js';
 import { choose, cached, serverJoined, allowedBus } from '../data.js';
 
 export function MultiplayerPage() {
@@ -18,59 +18,175 @@ export function MultiplayerPage() {
   `;
 }
 
+function FlowSteps({ labels, current }) {
+  return html`<ol class="multiplayer-steps" aria-label=${t('Connection progress')}>
+    ${labels.map((label, i) => html`<li class=${i <= current ? 'on' : ''} aria-current=${i === current ? 'step' : undefined}>
+      <span class="n" aria-hidden="true">${i < current ? '✓' : i + 1}</span><span>${t(label)}</span>
+    </li>`)}
+  </ol>`;
+}
+
+function runningHost(s) {
+  return (s.poll.instances || []).filter((i) => i.running !== false).map((i) => i.lan_status).find((x) => x?.role === 'host');
+}
+
 function ByCode() {
   const s = useStore();
-  const c = s.choice;
-  const hosting = c.lan_mode === 'host';
-  const session = (s.poll.instances || []).filter((i) => i.running !== false).map((i) => i.lan_status).find((x) => x?.role === 'host');
-  const [code, setCode] = useState(c.lan_mode === 'join' ? c.lan_addr : '');
-  const [check, setCheck] = useState(null);
-  const [host, setHost] = useState(null);
-  useEffect(() => {
-    setHost(null);
-    if (!code.trim()) return setCheck(null);
+  const [mode, setMode] = useState(() => runningHost(s) || s.choice.lan_mode === 'host' ? 'host' : 'join');
+  return html`<div class="stack multiplayer-by-code">
+    <${Segmented} value=${mode} options=${[['join', 'Join friends'], ['host', 'Invite friends']]} onChange=${setMode} />
+    ${mode === 'join' ? html`<${JoinByCode} />` : html`<${HostByCode} />`}
+  </div>`;
+}
+
+function FirstTimeHelp({ children }) {
+  return html`<details class="card multiplayer-help-panel"><summary>${t('First time here?')}</summary>
+    <div class="card-body">${children}</div>
+  </details>`;
+}
+
+function ErrorDetails({ text }) {
+  return html`<details class="multiplayer-error-details"><summary>${t('Technical details')}</summary><div class="small selectable">${text}</div></details>`;
+}
+
+function JoinByCode() {
+  const s = useStore();
+  const [code, setCode] = useState(s.choice.lan_mode === 'join' ? s.choice.lan_addr : '');
+  const [result, setResult] = useState(null);
+  const request = useRef(0);
+  useEffect(() => () => { request.current++; }, []);
+  const edit = (text) => {
+    request.current++;
+    setCode(text);
+    setResult(null);
+  };
+  const confirm = async () => {
     const asked = code.trim();
-    const id = setTimeout(() => {
-      call('check_join', { text: code }).then(setCheck).catch(() => setCheck(null));
-      if (/^OMSI-/i.test(asked)) call('server_query', { address: asked }).then((h) => setHost({ ...h, code: asked })).catch(() => setHost(null));
-    }, 300);
-    return () => clearTimeout(id);
-  }, [code]);
+    if (!asked || result?.busy) return;
+    const id = ++request.current;
+    setResult({ code: asked, busy: true });
+    try {
+      const check = await call('check_join', { text: asked });
+      if (id !== request.current) return;
+      if (!check.ok) return setResult({ code: asked, error: check.text });
+      if (!/^OMSI-/i.test(asked)) return setResult({ code: asked, validated: true });
+      setResult({ code: asked, busy: true, validated: true });
+      try {
+        const host = await call('server_query', { address: asked });
+        if (id === request.current) setResult({ code: asked, host });
+      } catch (e) {
+        // A valid UDP session can be reachable even when its status gateway is not.
+        if (id === request.current) setResult({ code: asked, unavailable: e.message });
+      }
+    } catch (e) {
+      if (id === request.current) setResult({ code: asked, error: e.message });
+    }
+  };
+  const current = result?.code === code.trim() ? result : null;
+  const host = current?.host;
+  const full = host && host.max_players > 0 && host.players >= host.max_players;
+  const ready = host || (current?.validated && !current.busy);
   const join = () => {
-    if (!code.trim()) return toast(t('Paste a session code first'), 'error');
-    const known = host?.code === code.trim() ? host : null;
-    if (known?.map && S.maps?.some((m) => m.file.toLowerCase() === known.map.replace(/\\/g, '/').toLowerCase())) choose({ map: known.map.replace(/\\/g, '/') });
-    choose({ lan_mode: 'join', lan_addr: code.trim(), lan_map: known?.map || '', ...serverJoined(known) });
+    if (!current || full || (!host && !current.unavailable && !current.validated)) return;
+    request.current++;
+    setResult(null);
+    const map = (host?.map || '').replace(/\\/g, '/');
+    const own = map && S.maps?.some((m) => m.file.toLowerCase() === map.toLowerCase());
+    choose({ lan_mode: 'join', lan_addr: current.code, lan_map: map, ...serverJoined(host), ...(own ? { map } : {}) });
     choose(allowedBus());
     set({ page: 'drive' });
   };
-  return html`<div class="grid-2" style="align-items:start">
-    <${Card} title="Host a game">
-      <div class="stack">
-        <p class="muted">${t('Your next duty opens a session. Give the code to your friends: it works at home and over the internet.')}</p>
-        <${Toggle} checked=${hosting} label="Host my next duty" onChange=${(on) => {
-          choose({ lan_mode: on ? 'host' : 'off' });
-          if (on) call('prepare_tunnel').catch(() => {});
-        }} />
-        ${session
-          ? html`<div class="field"><span class="label">${t('Session code')}</span>
-              <div class="row"><code class="input selectable" style="display:flex;align-items:center">${session.code}</code>
-              <${Button} icon="copy" title="Copy the code" onClick=${() => navigator.clipboard.writeText(session.code).then(() => toast(t('Session code copied'), 'ok'))} /></div>
-              <span class="help">${t(session.tunnel ? 'Friends can join from anywhere' : 'Getting ready for friends on the internet...')}</span></div>`
-          : html`<p class="dim small">${t(hosting ? 'Start a duty on the Drive page: the code appears here.' : 'Turn on hosting, then start a duty on the Drive page.')}</p>`}
-        <div><${Button} icon="bus" label="Go to Drive" onClick=${() => set({ page: 'drive' })} /></div>
+  return html`<div class="multiplayer-flow">
+    <${Card} body=${false}>
+      <${FlowSteps} labels=${['Enter session code', 'Confirm session', 'Choose a bus and start']} current=${ready ? 2 : 0} />
+      <div class="card-body stack">
+        <div><h2>${t('Join friends')}</h2><p class="muted small">${t('Confirm the session first, then choose your bus on the Drive page. The game has not connected yet.')}</p></div>
+        <div class="field">
+          <label for="multiplayer-code">${t('Session code')}</label>
+          <div class="row multiplayer-code-row">
+            <${Input} id="multiplayer-code" value=${code} placeholder="OMSI-XXXX-XXXX-..." onInput=${edit}
+              aria-describedby="multiplayer-code-help multiplayer-code-status" aria-invalid=${!!current?.error}
+              onKeyDown=${(e) => { if (e.key === 'Enter') { e.preventDefault(); confirm(); } }} />
+            <${Button} kind=${host || current?.unavailable ? '' : 'primary'} label=${host ? 'Check again' : 'Confirm session'} icon="search" disabled=${!code.trim() || current?.busy} onClick=${confirm} />
+          </div>
+          <span class="help" id="multiplayer-code-help">${t('Paste the complete code from your friend. Leading and trailing spaces are removed.')}</span>
+        </div>
+        <div id="multiplayer-code-status" role="status" aria-live="polite">
+          ${current?.busy && html`<div class="row muted small"><${Spinner} />${t('Checking the session...')}</div><div class="muted small">${t('You can choose a bus without waiting for session details. The game connects when you start driving.')}</div>`}
+          ${current?.error && html`<${Notice} kind="danger"><b>${t('Could not validate the code')}</b><div class="muted small selectable">${current.error}</div></${Notice}>`}
+          ${current?.unavailable && html`<${Notice} kind="warn"><b>${t('Could not read the session details')}</b><div class="muted small">${t('Ask your friend to keep the game running and send the latest code. Retry, or continue without session details.')}</div><${ErrorDetails} text=${current.unavailable} /></${Notice}>`}
+        </div>
+        ${host && html`<section class="multiplayer-session-summary" aria-label=${t('Session details')}>
+          <div class="row wrap"><${Icon} name="users" /><b>${host.name}</b><${Tag}>${t('{n} of {max} players', { n: host.players, max: host.max_players })}</${Tag}></div>
+          <dl><div><dt>${t('Map')}</dt><dd>${s.maps?.find((m) => m.file.toLowerCase() === (host.map || '').replace(/\\/g, '/').toLowerCase())?.name || host.map || t('Unknown')}</dd></div>
+          ${host.time && html`<div><dt>${t('Time')}</dt><dd>${host.time}</dd></div>`}
+          ${host.weather && html`<div><dt>${t('Weather')}</dt><dd>${host.weather}</dd></div>`}</dl>
+          <p class="muted small">${t('Choose your bus next. The game connects only when you start driving.')}</p>
+        </section>`}
+        ${full && html`<${Notice} kind="warn">${t('The session is full. Ask your friend to make room, then confirm again.')}</${Notice}>`}
+        ${host?.map && !s.maps?.some((m) => m.file.toLowerCase() === host.map.replace(/\\/g, '/').toLowerCase()) && html`<${Notice} kind="warn">${t('The server plays {}, which is not installed here: it is fetched from the server on joining.', [host.map])}</${Notice}>`}
+        ${!full && (host || current?.unavailable || current?.validated) && html`<div><${Button} kind=${ready ? 'primary' : ''} icon="bus" label=${ready ? 'Choose a bus' : 'Choose a bus without session details'} onClick=${join} /></div>`}
       </div>
     </${Card}>
-    <${Card} title="Connect by Code">
-      <div class="stack">
-        <p class="muted">${t("Paste the code your friend's game shows. The map, time and weather are the host's; you choose your bus.")}</p>
-        <${Input} value=${code} placeholder="OMSI-XXXX-XXXX-..." onInput=${setCode} />
-        ${check && html`<div class=${'small ' + (check.ok ? 'dim' : '')} style=${check.ok ? '' : 'color:var(--danger)'}>${check.text}</div>`}
-        ${host && html`<${Notice} icon="users"><b>${host.name}</b><div class="muted small">${host.map} - ${t('{n} of {max} players', { n: host.players, max: host.max_players })}</div></${Notice}>`}
-        <div><${Button} kind="primary" icon="play" label="Choose a bus and join" onClick=${join} /></div>
-      </div>
-    </${Card}>
+    <${FirstTimeHelp}><ol class="multiplayer-help muted small">
+      <li>${t('Ask your friend to start a hosted duty and copy the session code.')}</li>
+      <li>${t('Paste the code here and confirm the session.')}</li>
+      <li>${t('Choose your bus on the Drive page, then press Join and drive.')}</li>
+    </ol></${FirstTimeHelp}>
   </div>`;
+}
+
+function HostByCode() {
+  const s = useStore();
+  const session = runningHost(s);
+  const hosting = s.choice.lan_mode === 'host';
+  const prepare = () => {
+    choose({ lan_mode: 'host' });
+    set({ page: 'drive' });
+    // The command starts preparation in the background; it does not report tunnel readiness.
+    call('prepare_tunnel').catch(() => toast(t('Internet preparation could not be started. You can still set up a LAN game.'), 'error'));
+  };
+  const copy = () => navigator.clipboard.writeText(session.code)
+    .then(() => toast(t('Session code copied'), 'ok'), (e) => toast(e.message, 'error'));
+  return html`<div class="multiplayer-flow">
+    <${Card} body=${false}>
+      <${FlowSteps} labels=${['Set up a hosted duty', 'Start the duty', 'Copy code']} current=${session?.code ? 2 : hosting ? 1 : 0} />
+      <div class="card-body stack">
+        <div><h2>${t('Invite friends')}</h2><p class="muted small">${t('Start your hosted duty first. A session code appears only after the game starts.')}</p></div>
+        ${session?.code ? html`
+          <div class="session-code"><div class="grow"><div class="section-title">${t('Session code')}</div><div class="code selectable">${session.code}</div></div>
+            <${Button} kind="primary" icon="copy" label="Copy code" onClick=${copy} />
+          </div>
+          <${Notice} kind=${session.tunnel ? '' : 'warn'}>${t(session.tunnel ? 'Friends can join from anywhere' : 'Getting ready for friends on the internet...')}</${Notice}>
+          <p class="muted small">${t('Your friends paste it into Multiplayer → Connect by Code.')}</p>
+          <div><${Button} icon="gamepad" label="Running games" onClick=${() => set({ page: 'games' })} /></div>
+        ` : html`
+          <p class="muted small">${t('Choose your map, bus and duty on the Drive page. No game starts until you press Start the duty.')}</p>
+          <div class="row"><${Button} kind="primary" icon="bus" label="Set up a hosted duty" onClick=${prepare} />
+            ${hosting && html`<${Button} kind="ghost" label="Cancel" onClick=${() => choose({ lan_mode: 'off' })} />`}</div>
+        `}
+      </div>
+    </${Card}>
+    <${FirstTimeHelp}><ol class="multiplayer-help muted small">
+      <li>${t('Choose your map, bus and duty, then start the game as host.')}</li>
+      <li>${t('Return to Multiplayer to copy your running session code.')}</li>
+      <li>${t('Send the complete code to your friends; they choose Join friends.')}</li>
+    </ol></${FirstTimeHelp}>
+  </div>`;
+}
+
+/** Choosing a session is not connecting: the actual game still has to start. */
+export function MultiplayerDutyNotice() {
+  const s = useStore();
+  const c = s.choice;
+  if (!c || !['host', 'join'].includes(c.lan_mode)) return null;
+  const host = c.lan_mode === 'host';
+  return html`<div class="multiplayer-duty-notice"><${Notice} icon="users">
+    <div class="row wrap"><div class="grow"><b>${t(host ? 'Host my next duty' : 'Choose a bus and start')}</b>
+      <div class="muted small">${t(host ? 'Start the duty to create your session, then return to Multiplayer to copy the code.' : 'The session is selected, not connected yet. Choose your bus and press Join and drive.')}</div>
+    </div><${Button} small label="Multiplayer" onClick=${() => set({ page: 'multiplayer' })} />
+    <${Button} small kind="ghost" label="Cancel" onClick=${() => choose({ lan_mode: 'off', lan_addr: '', lan_map: '', lan_server: null })} /></div>
+  </${Notice}></div>`;
 }
 
 function Servers() {

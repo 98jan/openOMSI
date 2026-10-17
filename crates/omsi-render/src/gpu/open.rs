@@ -118,6 +118,8 @@ impl Renderer {
         // a small or shared graphics chip gets a lighter picture (see `lighter_picture`)
         GL_BACKEND.store(info.backend == wgpu::Backend::Gl, std::sync::atomic::Ordering::Relaxed);
         let (options, lighter) = gpu_memory::lighter_picture(&info, vram, options);
+        let most = gpu_memory::ceiling(&info, vram);
+        *CEILING.lock().unwrap_or_else(|e| e.into_inner()) = Some(if intel_vulkan_safe { gpu_memory::Ceiling { msaa: 1, ssao: false, shadow_size: most.shadow_size.min(2048), ..most } } else { most });
         let shadow_size = options
             .shadow_size
             .clamp(512, if intel_vulkan_safe { 2048 } else { 8192 });
@@ -277,6 +279,9 @@ impl Renderer {
             .filter(|&n| n <= wanted)
             .find(|&n| supported(n))
             .unwrap_or(1);
+        if let Some(c) = CEILING.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            c.sample_counts = [1, 2, 4, 8].into_iter().filter(|&n| supported(n)).fold(0, |m, n| m | n);
+        }
         if msaa != wanted {
             log::warn!("{}x MSAA is not supported by {} (the device takes {:?} samples for {:?}, {:?} for the HDR target, {:?} for depth); using {}x", wanted, info.name, flags_of(format).supported_sample_counts(), format, flags_of(targets[1]).supported_sample_counts(), flags_of(DEPTH_FORMAT).supported_sample_counts(), msaa);
         }
@@ -381,6 +386,12 @@ impl Opened {
                 log::warn!("{}: the graphics device was lost while the chosen MSAA was tried again ({why}); keeping to what worked before", info.name);
                 return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
             }
+            if basic_pipelines() && rainfall_pipeline() {
+                log::warn!("{}: the graphics device was lost while the basic pipelines were made ({why}); opening it again without the rainfall", info.name);
+                RAINFALL_LEFT_OUT.store(true, std::sync::atomic::Ordering::Relaxed);
+                fallback_store(&name, Some((1, true)));
+                return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
+            }
             if basic_pipelines() {
                 return Err(anyhow!("the graphics device was lost while the pipelines were made: {why}"));
             }
@@ -475,7 +486,11 @@ impl Renderer {
             match errors.iter().flatten().chain(&caught).next() {
                 None => {
                     if msaa != options.msaa || basic {
-                        log::warn!("{}: drawing with {}x MSAA{}", info.name, msaa, if basic { ", without the snowfall, the lamps in the fog and the street lamps' shadows" } else { "" });
+                        log::warn!("{}: drawing with {}x MSAA{}", info.name, msaa, match (basic, rainfall_pipeline()) {
+                            (true, true) => ", without the snowfall, the lamps in the fog and the street lamps' shadows",
+                            (true, false) => ", without the snowfall, the rainfall, the lamps in the fog and the street lamps' shadows",
+                            _ => "",
+                        });
                     }
                     // (a fallback that worked is the first try next time; the full set
                     // working again forgets it)

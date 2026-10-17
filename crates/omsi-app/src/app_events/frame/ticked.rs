@@ -74,11 +74,11 @@ impl App {
         Some(DrawnPose { uid: p.uid, sim, drawn })
     }
 
-    pub(super) fn drawn_behind(&self) -> f32 {
+    pub(super) fn traffic_drawn_behind(&self) -> f32 {
         if self.paused {
             0.0
         } else {
-            self.fixed_tick.behind()
+            self.pipeline.traffic_behind(self.fixed_tick.behind())
         }
     }
 
