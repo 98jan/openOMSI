@@ -350,6 +350,7 @@ impl PeopleSim {
         }
         // the people in the way (sub_626860)
         let (mut block, free_r, free_l) = if st == 1 || st == 5 { self.pax_blockers(i, buses, bus_ix) } else { (0, true, true) };
+        let wait_floor = self.wait_floor(i);
         let p = self.pax_mut(i).unwrap();
         // Inside a bus, people going opposite ways along the aisle or the stairs stood face to
         // face for good (the whole upper deck of a double-decker on its way out, the people
@@ -407,8 +408,11 @@ impl PeopleSim {
             // tick in every state but turning (0x62b852 -> 0x7aec3c, not when seated); the
             // waiting people stood at the height of their [passpos]'s object - a shelter
             // on the terrain - 25-35 cm down in the platform
+            // (the people waiting keep the floor of their place: see `wait_floor`)
             if p.inside.is_none() && p.pax_state != 2.0 {
-                if let Some(g) = world.walk_height_near(p.pos.x, p.pos.y, p.pos.z) {
+                if let Some(f) = wait_floor {
+                    p.pos.z = f;
+                } else if let Some(g) = world.walk_height_near(p.pos.x, p.pos.y, p.pos.z) {
                     p.pos.z = g;
                 }
             }
@@ -443,13 +447,13 @@ impl PeopleSim {
             step.z = if slope.is_finite() { moved as f64 * slope } else { d.z };
         } else {
             let at = p.pos + step;
-            step.z = match world.walk_height_near(at.x, at.y, p.pos.z) {
+            step.z = match wait_floor.or_else(|| world.walk_height_near(at.x, at.y, p.pos.z)) {
                 Some(g) => g - p.pos.z,
                 None => 0.0,
             };
         }
         p.pos += step;
-        if p.inside.is_none() && p.pax_state != 2.0 {
+        if p.inside.is_none() && p.pax_state != 2.0 && wait_floor.is_none() {
             if let Some(stop) = p.stop {
                 if let Some(s) = self.stops.get(&stop) {
                     let floor = s.pos.z;

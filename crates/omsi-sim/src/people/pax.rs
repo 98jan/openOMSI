@@ -323,6 +323,16 @@ pub struct WaitSpot {
     pub height: f32,
 }
 
+/// The floor of waiting place `sp` of a stop standing at height `stop_z`: a standing
+/// place's point; a seat's hip less its height, not below the stop (0x62e5d1).
+pub fn spot_floor(sp: &WaitSpot, stop_z: f64) -> f64 {
+    if sp.height == 0.0 {
+        sp.pos.z
+    } else {
+        sp.pos.z.min((sp.pos.z - sp.height as f64).max(stop_z))
+    }
+}
+
 /// What Omsi.exe keeps of a bus stop for the people (the station record, sub_620058).
 pub struct PaxStop {
     pub name: String,

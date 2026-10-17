@@ -174,9 +174,7 @@ impl PeopleSim {
                     Some(sp) => {
                         // a seat: in front of it, the hip at its height (0x62e5d1)
                         let mut tgt = sp.pos;
-                        if sp.height != 0.0 {
-                            tgt.z = tgt.z.min((sp.pos.z - sp.height as f64).max(stop_pos.map(|s| s.z).unwrap_or(tgt.z)));
-                        }
+                        tgt.z = spot_floor(&sp, stop_pos.map(|s| s.z).unwrap_or(tgt.z));
                         p.target = tgt;
                         p.target_yaw = sp.face.to_radians();
                     }

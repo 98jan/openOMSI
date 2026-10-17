@@ -120,6 +120,24 @@ impl PeopleSim {
         }
     }
 
+    /// The floor person `i` stands on while waiting at a stop, or walking back to their place
+    /// there: the floor of their waiting place (a seat's `[passpos]` is the hip, its floor
+    /// the seat's height lower, as `Task::WalkingToBusstop` aims for it), else the stop's
+    /// own height. None for anybody else. The ground under them is not asked: at a sloped or
+    /// angled kerb it found the road as well, and the people waiting sank into the street in
+    /// front of the buses.
+    pub fn wait_floor(&self, i: usize) -> Option<f64> {
+        let p = self.pax(i)?;
+        if p.inside.is_some() || !matches!(p.task, Task::WaitingForBus | Task::WalkingToBusstop) {
+            return None;
+        }
+        let s = self.stops.get(&p.stop?)?;
+        Some(match p.spot.and_then(|k| s.spots.get(k)) {
+            Some(sp) => spot_floor(sp, s.pos.z),
+            None => s.pos.z,
+        })
+    }
+
     /// Whether the bus stands in the stop's box (the flag of its entry, sub_61ee18).
     pub fn in_stop_box(&self, stop: i64, bus: BusId) -> bool {
         self.stops.get(&stop).is_some_and(|s| s.buses.iter().any(|b| b.0 == bus && b.1))

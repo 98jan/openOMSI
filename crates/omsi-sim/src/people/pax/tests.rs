@@ -558,3 +558,67 @@ fn a_circular_takes_the_people_waiting_for_where_it_ends() {
     assert_eq!(loop_.takes_for(&set(&["9 Station"])), None, "another line");
     assert_eq!(IbisRoute::of(&hof, 0, None).unwrap().takes_for(&set(&["7 Station"])), None);
 }
+
+/// The people waiting at a stop, and walking back to their place, keep the floor of that
+/// place: a standing place's point, a seat's hip less its height; without a place the
+/// stop's own height. Anybody else goes by the ground.
+#[test]
+fn the_people_waiting_keep_the_floor_of_their_place() {
+    let dir = std::env::temp_dir().join(format!("omsi-wait-floor-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("person.hum"), "[model]\nmodel.cfg\n").unwrap();
+    std::fs::write(dir.join("model.cfg"), "").unwrap();
+    let ty = Arc::new(HumanType::load(&dir.join("person.hum")).unwrap());
+    std::fs::remove_dir_all(&dir).ok();
+    let mut stop = test_stop("Kerbside", "");
+    stop.pos.z = 10.0;
+    stop.spots = vec![
+        WaitSpot { pos: DVec3::new(1.0, 0.0, 10.2), face: 0.0, height: 0.0 },
+        WaitSpot { pos: DVec3::new(2.0, 0.0, 10.6), face: 0.0, height: 0.45 },
+    ];
+    stop.taken = vec![false; 2];
+    let mut h = PeopleSim::new(Path::new("/nonexistent"), 200);
+    h.stops.insert(4, stop);
+    let person = |task: Task, spot: Option<usize>| {
+        let mut pax = Pax::new(1.1, 0.5);
+        pax.stop = Some(4);
+        pax.spot = spot;
+        pax.task = task;
+        Person {
+            id: 1,
+            ty: ty.clone(),
+            variant: 0,
+            position: DVec3::ZERO,
+            heading: 0.0,
+            lheading: 0.0,
+            place: Place::Ground,
+            vel: DVec2::ZERO,
+            pace: 1.1,
+            activity: Activity::Stand,
+            anim: OmsiAnim::default(),
+            state: State::Pax(Box::new(pax)),
+            t_state: 0.0,
+            interior: 0.0,
+            tilt: Mat4::IDENTITY,
+            age: 40.0,
+            stuck: 0.0,
+            ghost: 0.0,
+            car_wait: 0.0,
+            detour: 0.0,
+            detour_side: 0.0,
+            why: "",
+            puppet: None,
+            remote: false,
+        }
+    };
+    let floor = |h: &mut PeopleSim, task, spot| {
+        h.people = vec![person(task, spot)];
+        h.wait_floor(0)
+    };
+    let near = |a: Option<f64>, b: f64| a.is_some_and(|a| (a - b).abs() < 1e-6);
+    assert!(near(floor(&mut h, Task::WaitingForBus, Some(0)), 10.2));
+    assert!(near(floor(&mut h, Task::WaitingForBus, Some(1)), 10.15), "the seat's floor");
+    assert!(near(floor(&mut h, Task::WalkingToBusstop, Some(1)), 10.15), "walking back to it");
+    assert!(near(floor(&mut h, Task::WaitingForBus, None), 10.0), "the stop's own height");
+    assert_eq!(floor(&mut h, Task::ToBus, None), None, "off to a bus: the ground");
+}
