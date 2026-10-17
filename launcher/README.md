@@ -74,3 +74,11 @@ without one.
   what is missing, covered, cut off or not opening, and fails then. A pull request that changes
   the launcher's page runs it (`.github/workflows/pr_checks.yml`). A new option of the Drive
   page goes into that list, so that no layout can lack it.
+
+### Multiplayer interface regression checks
+
+Serve `launcher/` locally, then open `/tests/multiplayer-check.html` and press **Run multiplayer
+checks**. These checks render the real page with local command fixtures; they cover code
+validation, full and unavailable sessions, continuing while status is pending, stale queries,
+the server list, and host setup.
+They do not start a game, query a remote server, or change a real saved duty.
