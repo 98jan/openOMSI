@@ -965,6 +965,26 @@ mod tests {
         assert_eq!(st.vars[p.var("a").unwrap() as usize], 2.0);
     }
 
+    /// Every reached `{else}` jumps to the `{endif}`: with two of them the code after the
+    /// second never runs, on either branch, and an inner `{if}` keeps its own `{else}`.
+    #[test]
+    fn second_else_jumps_to_the_endif() {
+        for (c, d, a, b) in [(1, 1, 1.0, 4.0), (1, 0, 1.0, 5.0), (0, 1, 2.0, 7.0)] {
+            let p = prog(&format!(
+                "{{init}}\n\
+                 {c} {{if}} 1 (S.L.a) {{else}} 2 (S.L.a) {{else}} 3 (S.L.a) 9 (S.L.result) {{endif}}\n\
+                 {c} {{if}} {d} {{if}} 4 {{else}} 5 {{else}} 6 {{endif}} (S.L.b) {{else}} 7 (S.L.b) {{endif}}\n\
+                 {{end}}\n"
+            ));
+            let mut st = State::new(&p);
+            let mut vm = Vm::new();
+            vm.run_init(&p, &mut st, &mut NullHost);
+            assert_eq!(st.vars[p.var("a").unwrap() as usize], a, "c={c} d={d}");
+            assert_eq!(st.vars[p.var("b").unwrap() as usize], b, "c={c} d={d}");
+            assert_eq!(st.vars[p.var("result").unwrap() as usize], 0.0, "c={c} d={d}");
+        }
+    }
+
     /// Aachen ibox / ticket-printer buttons (#744): the press trigger sets a flag, `_drag`
     /// and `_off` clear it, and the frame script is what acts. The frame must run while the
     /// flag is still set - openOMSI does that from `Player::click` via `update_scripts_only`.
