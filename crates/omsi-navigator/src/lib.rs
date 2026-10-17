@@ -373,6 +373,8 @@ pub struct Navigator {
     /// How the city map is turned: 0 as the map is drawn, 1 real north up (where the package says which way it lies), 2 the
     /// heading of the bus up. A click on the compass changes it.
     pub orient: u8,
+    /// The package the worker of the contour marks was started for (its surface version + 1; 0 = none yet).
+    marks_started: u64,
     /// The light look of the maps (the `nav_light` setting).
     pub light: bool,
     /// The map's own layers (houses, ground, paving: `omsi_scene::mapgen`), once read, and a
@@ -558,6 +560,7 @@ impl Navigator {
             show_surface: true,
             show_contours: false,
             orient: 0,
+            marks_started: 0,
             light: false,
             map_data: None,
             map_version: 0,

@@ -484,3 +484,29 @@ fn the_map_zooms_in_for_a_turn_and_out_on_the_straight() {
     assert!(zoom_target(50.0, None, 30.0) < zoom_target(50.0, None, 5.0));
     assert!(zoom_target(50.0, None, -30.0) >= 150.0);
 }
+
+#[test]
+fn the_heights_of_the_contours_are_made_on_a_worker_and_only_with_the_terrain_on() {
+    let mut n = with_example_lines();
+    let sf = n.surface.clone().unwrap();
+    let win = Rect::new(0.0, 0.0, 1000.0, 600.0);
+    let at = |_q: DVec3| Vec2::new(500.0, 300.0);
+    // terrain off: nothing is asked for, nothing is started
+    n.city.mpp = 2.0;
+    let mut ui = Painter::new();
+    n.terrain_labels(&mut ui, &at, win, 1.0);
+    assert_eq!(n.marks_started, 0);
+    assert!(sf.contour_marks_ready().is_none());
+    // terrain on: the frame does not make them; a worker does, and the labels follow
+    n.show_contours = true;
+    n.terrain_labels(&mut ui, &at, win, 1.0);
+    assert_eq!(n.marks_started, n.surface_version + 1);
+    let began = std::time::Instant::now();
+    while sf.contour_marks_ready().is_none() && began.elapsed() < std::time::Duration::from_secs(10) {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(sf.contour_marks_ready().is_some_and(|m| !m.is_empty()), "the worker made the marks");
+    let before = ui.verts.len();
+    n.terrain_labels(&mut ui, &at, win, 1.0);
+    assert!(ui.verts.len() > before, "the heights are written once they are there");
+}

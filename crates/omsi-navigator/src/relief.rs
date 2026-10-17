@@ -43,18 +43,37 @@ impl Navigator {
         Some(([1.0, 0.5, 0.2][band], band as u64))
     }
 
+    /// Starts the worker that makes the marks of the package's contour lines, once for each package (the frames go on without
+    /// them until it is done).
+    pub(super) fn start_contour_marks(&mut self, sf: &std::sync::Arc<omsi_map::package::Package>) {
+        if self.marks_started == self.surface_version + 1 {
+            return;
+        }
+        self.marks_started = self.surface_version + 1;
+        let sf = sf.clone();
+        let _ = std::thread::Builder::new().name("navigator contours".into()).spawn(move || {
+            sf.contour_marks();
+        });
+    }
+
     /// The height written on the contour lines, in metres: on every mark up close, from further away on the index
     /// lines only; each with a halo, none over another.
     pub(super) fn terrain_labels(&mut self, ui: &mut Painter, on_screen: &dyn Fn(DVec3) -> Vec2, win: Rect, s: f32) {
         let (Some(sf), true) = (self.surface.clone(), self.city.mpp < 40.0) else { return };
+        // (terrain off: nothing is done for it, and the marks are not even asked for)
         if self.contour_band().is_none() {
             return;
         }
+        // the marks are made on a worker the first time (they walk the whole package), and shown when they are there
+        let Some(marks) = sf.contour_marks_ready() else {
+            self.start_contour_marks(&sf);
+            return;
+        };
         let pal = super::style::palette(self.light);
         let (px, close) = (11.5 * s, self.city.mpp < 6.0);
         let col = pal.contour.alpha(0.9);
         let mut shown: Vec<Vec2> = Vec::new();
-        for (at, height, index) in sf.contour_marks() {
+        for (at, height, index) in marks {
             if !close && !*index {
                 continue;
             }
