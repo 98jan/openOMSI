@@ -514,16 +514,20 @@ fn exec_cold(s: &mut Stacks, op: &Op, p: &Program, state: &mut State, host: &mut
             let at = t.char_indices().nth(keep).map(|(i, _)| i).unwrap_or(t.len());
             t.truncate(at);
         }
+        // The `$SetLength*` ops leave their length on the number stack: Omsi.exe's executor
+        // (0x5d4a50) pops it first only for the ops in its bit set at 0x5d5bac, which holds
+        // `$cutBegin` and `$cutEnd` but not these. The Kruger++ matrix display uses the
+        // length again after it; popped, its `*L[...]` commands show as text.
         Op::StrSetLengthL => {
-            let n = omsi_round(s.pop());
+            let n = omsi_round(s.top());
             s.sst[0] = set_length(&s.sst[0], n, Align::Left);
         }
         Op::StrSetLengthR => {
-            let n = omsi_round(s.pop());
+            let n = omsi_round(s.top());
             s.sst[0] = set_length(&s.sst[0], n, Align::Right);
         }
         Op::StrSetLengthC => {
-            let n = omsi_round(s.pop());
+            let n = omsi_round(s.top());
             s.sst[0] = set_length(&s.sst[0], n, Align::Center);
         }
         Op::StrIntToStr => {
@@ -965,6 +969,28 @@ mod tests {
         assert_eq!(st.vars[p.var("a").unwrap() as usize], 2.0);
     }
 
+    /// `$SetLengthL/R/C` keep their length on the number stack; `$cutBegin` and `$cutEnd`
+    /// pop theirs.
+    #[test]
+    fn set_length_keeps_its_number_cut_pops_it() {
+        for (op, text) in [("$SetLengthL", "ab   "), ("$SetLengthR", "   ab"), ("$SetLengthC", " ab  ")] {
+            let p = prog(&format!("{{init}}\n7 \"ab\" 5 {op} (S.L.a)\n{{end}}\n"));
+            let mut st = State::new(&p);
+            let mut vm = Vm::new();
+            vm.run_init(&p, &mut st, &mut NullHost);
+            assert_eq!(st.vars[p.var("a").unwrap() as usize], 5.0, "{op}");
+            assert_eq!(vm.stacks.top_str(), text, "{op}");
+        }
+        for op in ["$cutBegin", "$cutEnd"] {
+            let p = prog(&format!("{{init}}\n7 \"abcd\" 1 {op} (S.L.a)\n{{end}}\n"));
+            let mut st = State::new(&p);
+            let mut vm = Vm::new();
+            vm.run_init(&p, &mut st, &mut NullHost);
+            assert_eq!(st.vars[p.var("a").unwrap() as usize], 7.0, "{op}");
+            assert_eq!(vm.stacks.top_str().chars().count(), 3, "{op}");
+        }
+    }
+
     /// Every reached `{else}` jumps to the `{endif}`: with two of them the code after the
     /// second never runs, on either branch, and an inner `{if}` keeps its own `{else}`.
     #[test]
@@ -1135,7 +1161,7 @@ mod str_op_tests {
                 s.push_str(v)
             }
             Op::StrSetLengthL | Op::StrSetLengthR | Op::StrSetLengthC => {
-                let n = omsi_round(s.pop());
+                let n = omsi_round(s.top());
                 let align = match op {
                     Op::StrSetLengthL => Align::Left,
                     Op::StrSetLengthR => Align::Right,
