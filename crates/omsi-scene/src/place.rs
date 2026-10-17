@@ -354,6 +354,7 @@ impl World {
                         htmls: Vec::new(),
                         alpha_slots: Vec::new(),
                         alpha_last: Vec::new(),
+                        lamps: Vec::new(),
                     });
                 }
                 // An editor-only object still lays its paths out: OMSI's invisible
@@ -891,6 +892,11 @@ fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, l
         if lamp.is_some() && matches!(sw, LightSwitch::Variable(_)) {
             continue;
         }
+        // (and a lamp the object's own script switches follows its script, by day and by
+        // night: see `scripted_lamps`)
+        if lamp.is_none() && script_switched(ot, &sw) {
+            continue;
+        }
         state.coronas.push(StaticCorona {
             corona: c,
             switch: sw,
@@ -919,6 +925,35 @@ fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, l
             ..Default::default()
         });
     }
+}
+
+/// A lamp of a scenery object whose brightness is a variable of the object's own script.
+fn script_switched(ot: &ObjectType, sw: &LightSwitch) -> bool {
+    matches!(sw, LightSwitch::Variable(v) if ot.program.as_ref().is_some_and(|p| p.has_script_var(v)))
+}
+
+/// The lamps of a scenery object (not a traffic light: its lamps glow with its phase) that
+/// its own script switches, with the variable that does: they follow that variable by day
+/// and by night, as in OMSI. Kept with the static lamps, which glow whenever it is dark,
+/// Gerolstein's departure boards showed their orange "due" and green "departing" lamps all
+/// night.
+pub(super) fn scripted_lamps(ot: &ObjectType, pos: DVec3, xf: Mat4) -> Vec<(omsi_render::Corona, String)> {
+    if ot.program.is_none() {
+        return Vec::new();
+    }
+    let switches: Mutex<Vec<LightSwitch>> = Mutex::new(Vec::new());
+    let coronas = model_lights_owned(&ot.model, &|_| xf, pos, &|var| {
+        switches.lock().push(LightSwitch::parse(var));
+        1.0
+    }, &[]);
+    let switches = switches.into_inner();
+    coronas
+        .into_iter()
+        .filter_map(|(c, k)| match switches.get(k) {
+            Some(sw @ LightSwitch::Variable(v)) if script_switched(ot, sw) => Some((c, v.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Add what placing a tile counted to the load statistics.
@@ -1176,5 +1211,100 @@ mod hidden_script_tests {
         let mute = editor_only(false);
         assert_eq!(hidden_script(&mute, &child(&mute, Some(500), &["3"]), &crossings), Some(Some((500, 3))));
         assert_eq!(hidden_script(&mute, &child(&mute, None, &["3"]), &crossings), None);
+    }
+}
+
+#[cfg(test)]
+mod scripted_lamp_tests {
+    use super::*;
+
+    /// A platform board with two lamps: "board_due" named by a variable of its script (its
+    /// {init} sets it to 0.75), "porch" by a variable the script does not have.
+    fn board() -> ObjectType {
+        let lamp = |variable: &str, x: f32| omsi_model::LightEnh2 {
+            pos: [x, 0.0, 2.0],
+            omni: true,
+            color: [255.0, 160.0, 0.0],
+            size: 0.2,
+            factor: 1.0,
+            variable: variable.to_string(),
+            ..Default::default()
+        };
+        let mut prog = omsi_script::Program::default();
+        let due = prog.declare_script_var("board_due");
+        prog.blocks.push(omsi_script::compile::Block {
+            ops: vec![omsi_script::Op::Push(0.75), omsi_script::Op::Store(due)],
+            ..Default::default()
+        });
+        prog.init.push(0);
+        ObjectType {
+            sco: SceneryObject::default(),
+            model: Model {
+                meshes: vec![MeshDef { light_enh_2: vec![lamp("board_due", 0.0), lamp("porch", 1.0)], ..Default::default() }],
+                ..Default::default()
+            },
+            meshes: Vec::new(),
+            mesh_def_index: Vec::new(),
+            sound_path: Default::default(), model_dir: Default::default(),
+            mesh_visible: Vec::new(), mesh_pivots: Vec::new(),
+            mesh_shadow: Vec::new(), mesh_casts: Vec::new(), has_mouse_events: false,
+            program: Some(Arc::new(prog)),
+            lower_lods: Vec::new(), lod0_min: 0.0, paint_scheme_count: 0,
+            dynamic_textures: Vec::new(), holes: Vec::new(), deform: None,
+            collision: None, paint: false, camera: Default::default(),
+            collision_shape: Default::default(),
+            embedded_lights: Default::default(),
+        }
+    }
+
+    /// The lamp the board's script switches leaves the static lamps (which glow whenever
+    /// it is dark) and glows as bright as its variable says, by day as well; the other lamp
+    /// stays static.
+    #[test]
+    fn a_lamp_its_script_switches_follows_the_script() {
+        let ot = Arc::new(board());
+        let pos = DVec3::new(10.0, 20.0, 0.0);
+        let mut state = TileState::default();
+        object_lights(&mut state, &ot, pos, Mat4::IDENTITY, None, 1);
+        assert!(!state.coronas.is_empty());
+        assert!(state.coronas.iter().all(|c| matches!(&c.switch, LightSwitch::Variable(v) if v == "porch")), "only the porch lamp is static");
+        let lamps = scripted_lamps(&ot, pos, Mat4::IDENTITY);
+        assert!(!lamps.is_empty() && lamps.iter().all(|(_, v)| v == "board_due"));
+        // a traffic light's lamps are its phase's: none of them is static either way
+        let mut state = TileState::default();
+        object_lights(&mut state, &ot, pos, Mat4::IDENTITY, Some((7, 0, false)), 1);
+        assert!(state.coronas.is_empty());
+
+        let mut set = ScriptedSet::default();
+        set.push(ScriptedObject {
+            ty: ot.clone(),
+            pos,
+            xf: Mat4::IDENTITY,
+            instances: Vec::new(),
+            inst: omsi_sim::scenery::SceneryInstance::new(ot.program.clone().unwrap(), &[], omsi_sim::SimClock::default(), &[]),
+            controller: None,
+            light_index: 0,
+            light_parent: None,
+            map_id: 3,
+            variants: Vec::new(),
+            sounds: None,
+            tile: (0, 0),
+            var_parent: None,
+            texts: Vec::new(),
+            arrivals: false,
+            htmls: Vec::new(),
+            alpha_slots: Vec::new(),
+            alpha_last: Vec::new(),
+            lamps,
+        });
+        let mut out = Vec::new();
+        crate::scripted::scripted_lamp_coronas(&set.views, DVec3::ZERO, 1500.0, &mut out);
+        assert!(!out.is_empty());
+        assert!(out.iter().all(|c| (c.brightness - 0.75).abs() < 1e-5), "{out:?}");
+        // switched off by its script: dark
+        set.views[0].lamp_lit.iter_mut().for_each(|l| *l = 0.0);
+        out.clear();
+        crate::scripted::scripted_lamp_coronas(&set.views, DVec3::ZERO, 1500.0, &mut out);
+        assert!(out.is_empty());
     }
 }

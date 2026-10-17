@@ -1277,7 +1277,9 @@ impl World {
                 alpha_last.push(a);
             }
         }
+        let lamps = if lamp.is_none() { crate::place::scripted_lamps(ot, pos, xf) } else { Vec::new() };
         if inst.is_dynamic()
+            || !lamps.is_empty()
             || !object_variants.is_empty()
             || ot.sco.sound.is_some()
             || !script_texts.is_empty()
@@ -1312,6 +1314,7 @@ impl World {
                 htmls: html_pages,
                 alpha_slots: if faded { alpha_slots } else { Vec::new() },
                 alpha_last,
+                lamps,
             });
         }
     }

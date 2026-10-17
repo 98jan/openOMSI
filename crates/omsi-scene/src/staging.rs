@@ -405,6 +405,8 @@ pub struct ScriptedObject {
     /// when none is), and the alphas last given.
     pub alpha_slots: Vec<LampSlots>,
     pub alpha_last: Vec<Vec<f32>>,
+    /// Its lamps its script switches, with the variable that does (`scripted_lamps`).
+    pub lamps: Vec<(omsi_render::Corona, String)>,
 }
 
 /// Where a ray lands on a page (`[htmltexture]`) of a scenery object: see
