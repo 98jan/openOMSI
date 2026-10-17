@@ -127,6 +127,27 @@ impl Traffic {
         self.sim.unseen(p, r, |v| self.occluded(world, v, p, r))
     }
 
+    /// `hidden` for every part of car `c` (radius `r` for the vehicle itself): a train goes
+    /// only once none of its cars can be seen. Judged by its engine alone, the Interzonen
+    /// train at Spandau Hbf vanished as its engine went behind a building, its coaches in
+    /// plain view.
+    fn all_hidden(&self, world: &World, c: &omsi_sim::ai_traffic::model::AiCar, r: f64) -> bool {
+        self.hidden(world, c.vehicle.position, r)
+            && c.vehicle.trailers.iter().all(|t| {
+                let half = t.ty.def.bounding_box.map(|b| b[1] as f64 * 0.5).unwrap_or(r);
+                self.hidden(world, t.position, half.max(2.0))
+            })
+    }
+
+    /// The vehicle at `p` on `lane` stands over a tile the map does not have, while the
+    /// lane's own tile is loaded: its ground is missing for good, not unloaded.
+    fn over_missing_tile(&self, world: &World, lane: usize, p: DVec3) -> bool {
+        let ts = omsi_map::tile_size();
+        let here = ((p.x / ts).floor() as i32, (p.y / ts).floor() as i32);
+        let home = self.sim.net.lanes.get(lane).and_then(|l| l.key).map(|k| k.tile);
+        ground_missing_for_good(home, here, |t| world.has_tile(t), |t| world.has_ground((t.0 as f64 + 0.5) * ts, (t.1 as f64 + 0.5) * ts))
+    }
+
     /// Spawn cars until `target` are within `spawn_radius` of `center`; despawn far ones.
     pub fn populate(
         &mut self,
@@ -187,7 +208,10 @@ impl Traffic {
                 .get(c.state.lane)
                 .map(|l| l.kind == LaneKind::Air)
                 .unwrap_or(false);
-            let unloaded = !flying && !world.has_ground(p.x, p.y);
+            // (not where its lane, of a loaded tile, reaches over a tile the map does not
+            // have: Gerolstein's railway north of the station spans three missing tiles, and
+            // the S5 vanished just before the station)
+            let unloaded = !flying && !world.has_ground(p.x, p.y) && !self.over_missing_tile(world, c.state.lane, p);
             off_ground += unloaded as usize;
             let random = !c.is_bus() || c.gone;
             let r = (c.state.length as f64 * 0.5).max(2.0);
@@ -214,13 +238,13 @@ impl Traffic {
             } else if at_edge {
                 // (its trip comes back with the tiles; kept until nobody saw it, a bus stood
                 // with its passengers at the far end of a straight road for good)
-                self.hidden(world, p, r) || (c.stopped > 8.0 && from_eye > 180.0) || c.stopped > 150.0
+                self.all_hidden(world, c, r) || (c.stopped > 8.0 && from_eye > 180.0) || c.stopped > 150.0
             } else if !random {
                 // a timetable bus standing for minutes away from its stops and lights is in a
                 // jam that does not clear: it goes once nobody sees it, as one at the edge
                 // (kept for good, the jam behind it never cleared)
-                c.is_bus() && c.stopped > 240.0 && !c.at_station() && !c.light_hold && (from_eye > 40.0 || self.hidden(world, p, r))
-            } else if at_end && (!c.is_bus() || self.hidden(world, p, r) || (c.stopped > 8.0 && from_eye > 180.0) || c.stopped > 150.0 || (c.stopped > 25.0 && queued.contains(&c.id) && from_eye > 25.0)) {
+                c.is_bus() && c.stopped > 240.0 && !c.at_station() && !c.light_hold && (from_eye > 40.0 || self.all_hidden(world, c, r))
+            } else if at_end && (!c.is_bus() || self.all_hidden(world, c, r) || (c.stopped > 8.0 && from_eye > 180.0) || c.stopped > 150.0 || (c.stopped > 25.0 && queued.contains(&c.id) && from_eye > 25.0)) {
                 // (and in view too once others wait behind it: a fire engine at the end of a
                 // dead-end street held a queue of fourteen cars for two and a half minutes)
                 // (taken at once it vanished in plain view 300 m ahead; but a car kept
@@ -239,7 +263,7 @@ impl Traffic {
                 // an invisible wall with the traffic queued up behind it for as long as the
                 // player looked)
                 (dist > VISIBLE_RANGE * 1.3 && from_eye > NEAR_HIDE)
-                    || self.hidden(world, p, r)
+                    || self.all_hidden(world, c, r)
                     || (c.gone && c.stopped > 240.0 && from_eye > 40.0)
                     || (c.gone && c.progress.1 > PHANTOM_WAIT && matches!(c.why.0, "" | "parked" | "people") && from_eye > 25.0)
             } else {
@@ -752,5 +776,30 @@ impl Traffic {
             self.sim.count_near = None;
             done.push(c);
         }
+    }
+}
+
+/// A vehicle over tile `here` on a lane of tile `home` stands where the map has no tile at
+/// all (`map_has`) while the lane's own tile is loaded (`loaded`).
+fn ground_missing_for_good(home: Option<(i32, i32)>, here: (i32, i32), map_has: impl Fn((i32, i32)) -> bool, loaded: impl Fn((i32, i32)) -> bool) -> bool {
+    home.is_some_and(|home| home != here && !map_has(here) && loaded(home))
+}
+
+#[cfg(test)]
+mod missing_tile_tests {
+    use super::ground_missing_for_good;
+
+    /// A railway of tile (4, 7) reaching north over (4, 8), (4, 9) and (4, 10), which the
+    /// map does not have: the train there is not on unloaded ground while (4, 7) is loaded.
+    #[test]
+    fn a_lane_over_tiles_the_map_lacks_keeps_its_vehicles() {
+        let map_has = |t: (i32, i32)| !(t.0 == 4 && (8..=10).contains(&t.1));
+        assert!(ground_missing_for_good(Some((4, 7)), (4, 9), map_has, |_| true));
+        // its own tile unloaded: it goes with it
+        assert!(!ground_missing_for_good(Some((4, 7)), (4, 9), map_has, |_| false));
+        // over a tile the map has, which is unloaded: it goes
+        assert!(!ground_missing_for_good(Some((4, 7)), (5, 7), map_has, |_| true));
+        // no tile of its own known
+        assert!(!ground_missing_for_good(None, (4, 9), map_has, |_| true));
     }
 }
