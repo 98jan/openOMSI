@@ -308,6 +308,13 @@ impl ScheduleSim {
             if !trip_has_stations(&self.data.trips[d.trip]) {
                 continue;
             }
+            // nor one that does not begin at a stop: one that comes in from the map's edge
+            // first stood at the start of its track early, in the way of the trains coming
+            // in (X10 Berlin's S7 trains, edge to edge through Zoologischer Garten, put out
+            // a quarter of an hour early)
+            if !self.times_of(i).begins_at_stop() {
+                continue;
+            }
             let prev_end = self.dep_time(k) + self.times_of(k).duration;
             // only a break the bus that drove the previous trip waits out (`may_take_on`):
             // after a longer one that bus has gone, and an identical one stood there again
