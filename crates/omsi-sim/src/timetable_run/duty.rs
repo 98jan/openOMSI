@@ -598,8 +598,8 @@ impl PlayerDuty {
         self.heading = bus.heading;
         self.position = Some(bus.position);
         let standing = bus.physics.velocity_kmh().abs() < 0.36;
-        let serving = standing && Self::doors_open(bus);
-        let served = self.advance_serving(bus.position, day_time, serving);
+        let doors_open_here = Self::doors_open(bus) && standing;
+        let served = self.progress_at(bus.position, day_time, doors_open_here);
         if self.at_stop && Self::doors_open(bus) {
             self.passed.doors = true;
         } else if !self.at_stop && standing && Self::doors_open(bus) {
@@ -620,7 +620,7 @@ impl PlayerDuty {
         if self.trip_index + 1 < self.trips.len() && self.served_terminus.is_some() {
             self.set_trip(self.trip_index + 1);
             log::info!("duty: terminus served, on to trip {} {} to {}", self.trip_index + 1, self.trip().name, self.trip().terminus);
-            self.advance_serving(bus.position, day_time, serving);
+            self.progress_at(bus.position, day_time, doors_open_here);
         }
         self.feed_host(bus, day_time);
         served
@@ -757,15 +757,15 @@ impl PlayerDuty {
         self.next_stop = k;
     }
 
-    /// `advance_serving` with the bus standing at `pos` with a door open (tests).
+    /// [`Self::progress_at`] for a bus standing at `pos` with a door open (tests).
     #[cfg(test)]
     pub(crate) fn advance(&mut self, pos: glam::DVec3, day_time: f64) -> Option<(f64, f64)> {
-        self.advance_serving(pos, day_time, true)
+        self.progress_at(pos, day_time, true)
     }
 
-    /// The duty's progress with the bus at `pos` (see [`PlayerDuty::update`]); `serving`:
-    /// it stands there with a door open.
-    pub(crate) fn advance_serving(&mut self, pos: glam::DVec3, day_time: f64, serving: bool) -> Option<(f64, f64)> {
+    /// The duty's progress with the bus at `pos` (see [`PlayerDuty::update`]);
+    /// `doors_open_here`: it stands with a door open.
+    pub(crate) fn progress_at(&mut self, pos: glam::DVec3, day_time: f64, doors_open_here: bool) -> Option<(f64, f64)> {
         if !self.placed {
             // (stops beyond the loaded tiles have no place yet: a few seconds for the
             // navigator's map, unless the bus stands at a stop of its trip)
@@ -826,7 +826,7 @@ impl PlayerDuty {
         // Reached means standing there with a door open: driving out of a terminal stand
         // through the circle of a later stop of the same loop fast-forwarded the duty past
         // every stop in between
-        if !self.at_stop && serving {
+        if doors_open_here && !self.at_stop {
             self.catch_up(pos, forward_of(self.heading));
         }
         let trip = &self.trips[self.trip_index];

@@ -1001,25 +1001,26 @@ fn a_stop_passed_and_served_further_on_is_stepped_back_to() {
     assert_eq!(d.next_stop, 2, "nearer to the next stop: no step back");
 }
 
-/// A later stop of the trip counts as reached past the ones before only where the bus
-/// stands with a door open: driving through its circle on the way does not skip the stops
-/// in between.
+/// Passing through the circle of a stop further on is not reaching it: only standing there
+/// with a door open counts the stops in between as skipped.
 #[test]
-fn driving_through_a_later_stop_does_not_skip_the_ones_before() {
-    let mut trip = planned(0.0, &[(0.0, 0.0, 0.0), (300.0, 60.0, 60.0), (700.0, 150.0, 150.0), (1100.0, 240.0, 240.0), (1600.0, 330.0, 330.0)]);
+fn a_later_stop_counts_only_with_the_doors_open() {
+    let stops = [(0.0, 0.0, 0.0), (250.0, 50.0, 50.0), (600.0, 120.0, 120.0), (900.0, 190.0, 190.0), (1300.0, 270.0, 270.0), (1800.0, 360.0, 360.0)];
+    let mut trip = planned(0.0, &stops);
     trip.set_dirs();
-    let mut d = PlayerDuty::new("9".into(), "2".into(), vec![trip], 0, 0, true);
-    d.placed = true;
-    d.heading = 90.0;
-    d.advance_serving(glam::DVec3::new(0.0, 0.0, 0.0), 0.0, true);
-    d.advance_serving(glam::DVec3::new(60.0, 0.0, 0.0), 20.0, false);
-    assert_eq!(d.next_stop, 1);
-    // rolling through stop 4's circle (numbered from 1) without stopping
-    d.advance_serving(glam::DVec3::new(1100.0, 0.0, 0.0), 40.0, false);
-    assert_eq!(d.next_stop, 1, "fast-forwarded past stops 2 and 3");
-    assert_eq!(d.take_skipped(), None);
-    // standing there with the doors open: stops 2 and 3 were passed
-    d.advance_serving(glam::DVec3::new(1101.0, 0.0, 0.0), 50.0, true);
-    assert_eq!(d.next_stop, 3);
-    assert_eq!(d.take_skipped(), Some((2, 2, 4)));
+    let mut duty = PlayerDuty::new("31".into(), "4".into(), vec![trip], 0, 0, true);
+    duty.placed = true;
+    duty.heading = 90.0;
+    let east = |x: f64| glam::DVec3::new(x, 0.0, 0.0);
+    duty.progress_at(east(0.0), 0.0, true);
+    duty.progress_at(east(40.0), 15.0, false);
+    assert_eq!(duty.next_stop, 1, "away from the first stop");
+    for (x, t) in [(895.0, 60.0), (900.0, 61.0), (906.0, 62.0)] {
+        duty.progress_at(east(x), t, false);
+    }
+    assert_eq!(duty.next_stop, 1, "rolled through the fourth stop's circle");
+    assert_eq!(duty.take_skipped(), None);
+    duty.progress_at(east(1301.0), 80.0, true);
+    assert_eq!(duty.next_stop, 4);
+    assert_eq!(duty.take_skipped(), Some((3, 2, 5)), "stops 2 to 4 passed, at stop 5");
 }

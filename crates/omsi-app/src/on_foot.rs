@@ -40,12 +40,12 @@ const DOOR_REACH: f64 = 3.2;
 const RADIUS: f64 = 0.28;
 /// The highest step the feet take (m).
 const STEP: f64 = 0.45;
-/// Ground steeper than this (the tangent of 50 degrees) is no ground to walk up: it is
-/// climbed no more than a step above where the walker last stood on walkable ground.
-const STEEP: f64 = 1.191_753_6;
-/// Half the run over which the ground's slope is measured (m): a kerb's edge is a step
-/// over it, not a slope.
-const SLOPE_RUN: f64 = 0.25;
+/// The steepest ground walked up as ground, as a gradient (tan 50 degrees); anything
+/// steeper is climbed no more than a step above the walker's last footing.
+const MAX_WALK_GRADIENT: f64 = 1.191_753_6;
+/// The gradient is taken between points this far either side (m), so that a kerb's edge
+/// reads as a step and not as a wall.
+const GRADIENT_HALF_SPAN: f64 = 0.25;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FootCam {
@@ -98,9 +98,9 @@ pub(crate) struct OnFoot {
     pub crouch: f32,
     pub door_request: Option<omsi_sim::people::DoorRequest>,
     pub door_request_send: f32,
-    /// The height the walker last stood at on walkable ground (no steeper than `STEEP`);
-    /// None after stepping out of a bus or the cab, until the ground stepped onto sets it.
-    pub walkable: Option<f64>,
+    /// Height of the last ground the walker stood on that was not too steep to walk; None
+    /// out of a bus or the cab until the ground stepped onto gives it.
+    pub footing: Option<f64>,
 }
 
 /// What a walk leads to once walked.
@@ -209,20 +209,19 @@ impl OnFoot {
     }
 }
 
-/// How steep the ground is at `at`, the tangent of its slope: its heights `height` gives
-/// `SLOPE_RUN` either side of the point along both axes (one not found: the point's own,
-/// `here`).
-fn steepness(height: impl Fn(f64, f64) -> Option<f64>, at: DVec2, here: f64) -> f64 {
-    let h = |dx: f64, dy: f64| height(at.x + dx, at.y + dy).unwrap_or(here);
-    let gx = (h(SLOPE_RUN, 0.0) - h(-SLOPE_RUN, 0.0)) / (2.0 * SLOPE_RUN);
-    let gy = (h(0.0, SLOPE_RUN) - h(0.0, -SLOPE_RUN)) / (2.0 * SLOPE_RUN);
-    (gx * gx + gy * gy).sqrt()
+/// The ground's gradient at `at` (rise over run, any direction), from the heights
+/// `height_at` finds `GRADIENT_HALF_SPAN` east, west, north and south of it; where it finds
+/// none, the height `at` has (`here`) stands in.
+fn ground_gradient(height_at: impl Fn(f64, f64) -> Option<f64>, at: DVec2, here: f64) -> f64 {
+    let span = GRADIENT_HALF_SPAN;
+    let [east, west, north, south] = [(span, 0.0), (-span, 0.0), (0.0, span), (0.0, -span)].map(|(dx, dy)| height_at(at.x + dx, at.y + dy).unwrap_or(here));
+    (east - west).hypot(north - south) / (2.0 * span)
 }
 
-/// Whether the feet may come onto ground at height `g` as steep as `steep` (a tangent),
-/// having last stood on walkable ground at height `walkable`.
-fn may_climb(g: f64, steep: f64, walkable: f64) -> bool {
-    steep <= STEEP || g <= walkable + STEP
+/// Ground at height `g` with gradient `gradient` is too steep for the feet when it is
+/// steeper than walkable ground and higher than a step over the last `footing`.
+fn too_steep_to_climb(g: f64, gradient: f64, footing: f64) -> bool {
+    gradient > MAX_WALK_GRADIENT && g > footing + STEP
 }
 
 fn wrap(a: f64) -> f64 {
@@ -403,7 +402,7 @@ impl App {
             crouch: 0.0,
             door_request: None,
             door_request_send: 0.0,
-            walkable: None,
+            footing: None,
         });
         self.view = "foot".into();
         self.service_msg = Some(("On foot: W A S D walk, Shift runs, C kneels, F4 free camera / F1 back, G sits down (by the driver's place: back at the wheel), Ctrl+Shift+G steps out of the bus".into(), 7.0));
@@ -536,7 +535,7 @@ impl App {
             crouch: 0.0,
             door_request: None,
             door_request_send: 0.0,
-            walkable: None,
+            footing: None,
         });
         self.view = "foot".into();
     }
@@ -1060,7 +1059,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
         f.seat = None;
         f.lift = 0.0;
         f.vz = 0.0;
-        f.walkable = None;
+        f.footing = None;
         f.pos = tr.from.lerp(tr.to, k);
         f.vel = (tr.to - tr.from).truncate() / tr.dur as f64;
         if f.vel.length() > 0.1 {
@@ -1178,19 +1177,21 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
             // a covered terminus the walker went up the bank beside it onto the deck, a few
             // centimetres a frame, each a step of its own. Stepping out of a bus starts the
             // limit afresh from the ground stepped onto.
-            let walkable = *f.walkable.get_or_insert(z);
+            let footing = *f.footing.get_or_insert(z);
             let ground = w.walk_height_reach(next.x, next.y, z + f.lift, 1.0);
-            let steep = ground.filter(|g| *g > walkable + STEP).map(|g| steepness(|x, y| w.walk_height_reach(x, y, g, 0.5), next, g));
+            let gradient_at = |g: f64| ground_gradient(|x, y| w.walk_height_reach(x, y, g, 0.5), next, g);
+            // (the gradient is only needed for ground above a step over the footing)
+            let blocked = ground.is_some_and(|g| g > footing + STEP && too_steep_to_climb(g, gradient_at(g), footing));
             match ground {
-                Some(g) if g - (z + f.lift) > STEP || steep.is_some_and(|s| !may_climb(g, s, walkable)) => {
+                Some(g) if blocked || g - (z + f.lift) > STEP => {
                     // too high a step: stay (and lose the speed into it)
                     next = f.pos.truncate();
                     f.vel *= 0.3;
                 }
                 Some(g) => {
                     let feet = z + f.lift;
-                    if steepness(|x, y| w.walk_height_reach(x, y, g, 0.5), next, g) <= STEEP {
-                        f.walkable = Some(g);
+                    if gradient_at(g) <= MAX_WALK_GRADIENT {
+                        f.footing = Some(g);
                     }
                     if g >= feet - 0.02 || f.grounded() && feet - g < 0.4 {
                         // on the ground (down a kerb the feet follow it)
@@ -1215,7 +1216,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
         if f.inside.is_some() {
             f.vz = 0.0;
             f.lift = 0.0;
-            f.walkable = None;
+            f.footing = None;
         }
         if f.vz > 0.0 || f.lift > 0.0 {
             f.vz -= 9.81 * dt64;

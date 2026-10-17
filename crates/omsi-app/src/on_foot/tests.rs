@@ -27,7 +27,7 @@ fn walker() -> OnFoot {
         crouch: 0.0,
         door_request: None,
         door_request_send: 0.0,
-        walkable: None,
+        footing: None,
     }
 }
 
@@ -64,40 +64,39 @@ fn the_cab_is_heard_by_how_far_in_the_eyes_are() {
     assert!((half - 0.5).abs() < 0.02, "{half}");
 }
 
-/// C kneels: the eyes go down to about a metre over a moment (a picture from below,
-/// #1148), the walk becomes a shuffle, and C again stands up; not on a seat.
-/// A kerb's edge is a step, not a slope; a bank of 60 degrees beside the road is climbed
-/// a step high and no higher however small the bits it is walked up in; a ramp of 30
-/// degrees all the way.
+/// Walking north up made-up ground: a 12 cm kerb is a step; a 55 degree embankment is
+/// climbed one step high however finely it is walked; a 20 degree path all the way.
 #[test]
-fn steep_ground_is_climbed_no_more_than_a_step() {
-    let kerb = |x: f64, _: f64| Some(if x > 0.0 { 0.15 } else { 0.0 });
-    assert!(steepness(kerb, DVec2::new(0.01, 0.0), 0.15) <= STEEP);
-    let bank = |x: f64, _: f64| Some(x.max(0.0) * 60f64.to_radians().tan());
-    let ramp = |x: f64, _: f64| Some(x.max(0.0) * 30f64.to_radians().tan());
-    let climb = |ground: &dyn Fn(f64, f64) -> Option<f64>| {
-        let (mut x, mut walkable, mut z) = (-1.0, 0.0, 0.0);
-        for _ in 0..400 {
-            let at = DVec2::new(x + 0.01, 0.0);
-            let g = ground(at.x, at.y).unwrap();
-            let steep = steepness(ground, at, g);
-            if g - z > STEP || !may_climb(g, steep, walkable) {
-                break;
+fn embankments_stop_a_step_above_the_footing() {
+    let kerb = |_: f64, y: f64| Some(if y >= 0.0 { 0.12 } else { 0.0 });
+    assert!(ground_gradient(kerb, DVec2::new(3.0, 0.02), 0.12) <= MAX_WALK_GRADIENT, "a kerb is no embankment");
+    let slope = |deg: f64| move |_: f64, y: f64| Some(y.max(0.0) * deg.to_radians().tan());
+    let walk_north = |ground: &dyn Fn(f64, f64) -> Option<f64>| {
+        let (mut y, mut z) = (-0.8, 0.0);
+        let mut footing = 0.0;
+        for _ in 0..1000 {
+            let next = DVec2::new(3.0, y + 0.005);
+            let g = ground(next.x, next.y).unwrap();
+            let gradient = ground_gradient(ground, next, g);
+            if g - z > STEP || too_steep_to_climb(g, gradient, footing) {
+                return z;
             }
-            if steep <= STEEP {
-                walkable = g;
+            if gradient <= MAX_WALK_GRADIENT {
+                footing = g;
             }
-            (x, z) = (at.x, g);
+            (y, z) = (next.y, g);
         }
         z
     };
-    let up = climb(&bank);
-    // (the foot of the bank, within the quarter metre the slope is measured over, still
-    // counts as walkable)
-    assert!(up < STEP + SLOPE_RUN * 60f64.to_radians().tan() && up > STEP, "up the bank to {up}");
-    assert!(climb(&ramp) > 1.5, "up the ramp");
+    let embankment = walk_north(&slope(55.0));
+    // (its foot, within the half span the gradient is taken over, still gives footing)
+    let foot_allowance = GRADIENT_HALF_SPAN * 55f64.to_radians().tan();
+    assert!(embankment > STEP && embankment < STEP + foot_allowance, "climbed to {embankment:.2} m");
+    assert!(walk_north(&slope(20.0)) > 1.5, "the path");
 }
 
+/// C kneels: the eyes go down to about a metre over a moment (a picture from below,
+/// #1148), the walk becomes a shuffle, and C again stands up; not on a seat.
 #[test]
 fn kneeling_lowers_the_eyes_and_slows_the_walk() {
     let mut f = walker();

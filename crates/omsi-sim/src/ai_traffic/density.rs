@@ -121,22 +121,19 @@ impl TrafficSim {
         if lane.kind != LaneKind::Street || lane.group_density.is_empty() || !self.group_curves {
             return None;
         }
-        let first = self.groups.first().map(|g| g.factor).filter(|f| *f > 0.0)?;
-        let mut best: Option<f32> = None;
+        let reference = self.groups.first().map(|g| g.factor).filter(|f| *f > 0.0)?;
+        let mut busiest: Option<f32> = None;
         for (g, group) in self.groups.iter().enumerate() {
-            let Some(u) = self.group_uvg.get(g).copied().flatten() else { continue };
-            // (a group without street vehicles brings nobody here)
-            if !self.types.iter().any(|t| t.3 == g && t.2 == LaneKind::Street) {
-                continue;
+            // (a group with no street vehicles brings nobody here)
+            let on_streets = self.types.iter().any(|t| t.3 == g && t.2 == LaneKind::Street);
+            let Some(rules) = self.group_uvg.get(g).copied().flatten().filter(|_| on_streets) else { continue };
+            let density_here = lane.pool_density(&self.uvg_defaults, rules);
+            if density_here > 0.0 {
+                let weighed = density_here * (group.factor / reference).clamp(0.0, 1.0);
+                busiest = Some(busiest.map_or(weighed, |b| b.max(weighed)));
             }
-            let here = lane.pool_density(&self.uvg_defaults, u);
-            if here <= 0.0 {
-                continue;
-            }
-            let share = (group.factor / first).clamp(0.0, 1.0);
-            best = Some(best.unwrap_or(0.0).max(here * share));
         }
-        Some(best.map_or(0.0, |d| d.max(SPAWN_DENSITY_FLOOR)))
+        Some(busiest.map_or(0.0, |d| d.max(SPAWN_DENSITY_FLOOR)))
     }
 
     /// `spawn_density` for the lanes `lanes` (those of a new tile, or all at the start).
