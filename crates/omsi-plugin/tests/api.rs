@@ -226,6 +226,24 @@ fn settings_make_a_panel_and_tell_their_changes() {
 }
 
 #[test]
+fn the_navigators_board_is_told_to_the_plugin() {
+    let mut g = Game::new();
+    let src = r##"
+        assert(omsi.ui.version == 3)
+        function on_frame()
+          local n = select("#", omsi.ui.dock())
+          if n == 0 then omsi.message("no board") return end
+          local w, room, h = omsi.ui.dock()
+          omsi.message(string.format("%d %d %d", w, room, h))
+        end
+    "##;
+    let mut p = run("dock", src, &mut g, 1);
+    p.ui.borrow_mut().set_dock(Some([360.0, 420.0, 96.0]));
+    p.frame(&mut g);
+    assert_eq!(g.messages, ["no board", "360 420 96"]);
+}
+
+#[test]
 fn errors_name_the_function_and_argument() {
     let mut g = Game::new();
     run("errs", r#"

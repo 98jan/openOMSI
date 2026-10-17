@@ -3159,6 +3159,16 @@
       "permission": "ui"
     },
     {
+      "name": "ui.dock",
+      "group": "ui",
+      "since": "0.3.36",
+      "doc": "The navigator's board, where a panel with `anchor = \"navigator\"` goes, in that panel's pixels: its width, the most height there is room for, and the height the panel there came to (0 before it is laid out). Nothing while the navigator shows no board: it is off, or Shift+N put its lower part away.",
+      "params": [],
+      "returns": "width, room, height",
+      "multi": true,
+      "permission": null
+    },
+    {
       "name": "ui.focus",
       "group": "ui",
       "since": "0.2.21",

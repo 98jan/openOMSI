@@ -6,6 +6,7 @@ use super::{def, multi, o, p, rec};
 use crate::api::{ApiError, ApiFn, Ctx, Value};
 
 const NEW: &str = crate::api::VERSION;
+const V36: &str = "0.3.36";
 /// Longest `lan.send` text: the session's command messages carry 160 characters, and the
 /// plugin's name goes with it.
 pub const LAN_MAX: usize = 120;
@@ -136,4 +137,8 @@ pub static FNS: &[ApiFn] = &[
         Ok::<_, ApiError>(multi(m.map(|(x, y)| [Value::from(x), Value::from(y)])))
     }),
     def!("ui.typing", "ui", [], "boolean", "Whether the player types into a text field of a plugin now (the keys then go to the field, not to the bus).", NEW, None, false, |c, a| c.state().ui().typing().is_some()),
+    def!("ui.dock", "ui", [], "width, room, height", "The navigator's board, where a panel with `anchor = \"navigator\"` goes, in that panel's pixels: its width, the most height there is room for, and the height the panel there came to (0 before it is laid out). Nothing while the navigator shows no board: it is off, or Shift+N put its lower part away.", V36, None, true, |c, a| {
+        let d = c.state().ui().dock();
+        multi(d.map(|d| d.map(|x| Value::Num(x as f64))))
+    }),
 ];

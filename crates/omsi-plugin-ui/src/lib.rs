@@ -116,6 +116,8 @@ pub struct Laid {
     pub items: Vec<Item>,
     /// The clickable parts, in the order they are drawn (the last one under the mouse wins).
     pub hits: Vec<Hit>,
+    /// Drawn without a shadow round it (a panel in the navigator's board).
+    pub flat: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -811,12 +813,14 @@ pub fn draw_card(
         }
     };
     let n = p.len();
-    p.shadow(
-        Rect::new(card.x, card.y + 2.0, card.w, card.h),
-        laid.radius,
-        SHADOW_BLUR,
-        SHADOW,
-    );
+    if !laid.flat {
+        p.shadow(
+            Rect::new(card.x, card.y + 2.0, card.w, card.h),
+            laid.radius,
+            SHADOW_BLUR,
+            SHADOW,
+        );
+    }
     put(&p, n, 0, 0);
     let n = p.len();
     p.rect(card, laid.background);
@@ -955,6 +959,22 @@ pub struct PanelsFrame {
     pub backdrop: f32,
     /// The navigator's panel (physical x0, y0, x1, y1), which the notifications stay clear of.
     pub navigator: Option<[f32; 4]>,
+    /// The navigator's board, where the panel with `anchor = "navigator"` goes (None: the
+    /// navigator shows none).
+    pub dock: Option<Dock>,
+}
+
+/// The navigator's board under its map.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Dock {
+    /// Its width and the most height it may take (physical pixels).
+    pub width: f32,
+    pub room: f32,
+    /// The navigator's scale: physical pixels per point of it (the panel is laid out in those).
+    pub scale: f32,
+    /// Its top left on the window (physical pixels), once the navigator made room for the
+    /// panel ([`PluginPanels::docked`]); None until then.
+    pub at: Option<Vec2>,
 }
 
 /// The plugins' panels on the screen.
@@ -973,6 +993,9 @@ pub struct PluginPanels {
     pub drag: Option<input::Drag>,
     /// The field typed into when the cards were last laid out.
     typing: Option<(u64, String, String)>,
+    /// The height of the panel in the navigator's board as last laid out (physical pixels):
+    /// the room the navigator makes for it. None: no such panel.
+    pub docked: Option<f32>,
 }
 
 impl PluginPanels {
@@ -985,6 +1008,8 @@ impl PluginPanels {
         ui.set_screen(screen.x, screen.y, k);
         ui.set_shown(!f.hidden);
         ui.tick(f.dt);
+        self.docked = None;
+        ui.set_dock(None);
         if !f.hidden && (!ui.panels().is_empty() || !ui.toasts().is_empty()) {
             self.show(r, scene, ui, f, k, screen);
         }
@@ -1041,9 +1066,29 @@ impl PluginPanels {
             }
             self.typing = typing.clone();
         }
-        let margin = (MARGIN * k).ceil();
         let mut cards: Vec<Key> = Vec::new();
+        // (the first panel for the navigator's board is the one there; another waits)
+        let mut dock_taken = false;
+        let mut dock_said = None;
         for e in ui.panels().iter().filter(|e| e.panel.visible) {
+            let dock = match (e.panel.anchor == pui::Anchor::Navigator, f.dock) {
+                (false, _) => None,
+                (true, Some(d)) if !dock_taken => {
+                    dock_taken = true;
+                    Some(d)
+                }
+                // (no board shown: the navigator hears there is a panel for one)
+                (true, None) => {
+                    self.docked.get_or_insert(0.0);
+                    continue;
+                }
+                _ => continue,
+            };
+            // (in the board: the navigator's scale and width, no card of its own round it)
+            let (ck, width) = match dock {
+                Some(d) => (d.scale.max(0.25), (d.width / d.scale.max(0.25)).max(40.0)),
+                None => (k, e.panel.width),
+            };
             let key = Key::Panel(e.owner, e.id.clone());
             let card = self.cards.entry(key.clone()).or_insert_with(|| Card {
                 revision: u64::MAX,
@@ -1056,17 +1101,39 @@ impl PluginPanels {
                 y: None,
                 seen: 0,
             });
-            if card.revision != e.revision || card.scale != k || card.backdrop != f.backdrop {
+            if card.revision != e.revision || card.scale != ck || card.backdrop != f.backdrop || card.laid.w != width {
                 let caret = typing.as_ref().filter(|t| t.0 == e.owner && t.1 == e.id).map(|t| t.2.as_str());
-                card.laid = layout_typing(&e.panel, fonts, f.backdrop, caret);
+                card.laid = match dock {
+                    Some(_) => {
+                        // (over the navigator's own card colour unless it says another)
+                        let p = pui::Panel { width, accent: None, radius: 0.0, background: Some(e.panel.background.unwrap_or(pui::Rgba([0, 0, 0, 0]))), ..e.panel.clone() };
+                        Laid { flat: true, ..layout_typing(&p, fonts, f.backdrop, caret) }
+                    }
+                    None => layout_typing(&e.panel, fonts, f.backdrop, caret),
+                };
                 card.revision = e.revision;
-                card.scale = k;
+                card.scale = ck;
                 card.backdrop = f.backdrop;
                 card.drawn = None;
             }
-            let at = input::moved(place(&e.panel, card.laid.w, card.laid.h, screen), e.moved, card.laid.w, card.laid.h, screen);
-            card.origin = Vec2::new(f.hud[0] + (at.x * k).round(), f.hud[1] + (at.y * k).round());
+            match dock {
+                Some(d) => {
+                    self.docked = Some((card.laid.h * ck).ceil());
+                    dock_said = Some([width, d.room / ck, card.laid.h]);
+                    // (until the navigator made room for it, it is laid out, not shown)
+                    let Some(at) = d.at else { continue };
+                    card.origin = Vec2::new(at.x.round(), at.y.round());
+                }
+                None => {
+                    let at = input::moved(place(&e.panel, card.laid.w, card.laid.h, screen), e.moved, card.laid.w, card.laid.h, screen);
+                    card.origin = Vec2::new(f.hud[0] + (at.x * k).round(), f.hud[1] + (at.y * k).round());
+                }
+            }
             cards.push(key);
+        }
+        if let Some(d) = f.dock {
+            let s = d.scale.max(0.25);
+            ui.set_dock(Some(dock_said.unwrap_or([(d.width / s).max(40.0), d.room / s, 0.0])));
         }
         // the notifications, newest at the top, under the navigator when it is in the way
         let right = screen.x - 16.0;
@@ -1125,6 +1192,9 @@ impl PluginPanels {
                 continue;
             };
             card.seen = self.frame;
+            // (a card's own scale: the navigator's for the panel in its board)
+            let k = card.scale.max(0.25);
+            let margin = (MARGIN * k).ceil();
             let hot = match key {
                 Key::Panel(..) if focused => {
                     let local = (cursor - card.origin) / k;

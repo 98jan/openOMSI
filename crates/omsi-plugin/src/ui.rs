@@ -15,7 +15,8 @@ use std::rc::Rc;
 
 /// `omsi.ui.version`: raised when something is added a plugin may want to test for.
 /// 2: images, checkboxes, sliders, text fields, tabs, charts, tables, draggable panels.
-pub const VERSION: i64 = 2;
+/// 3: the navigator's board (`anchor = "navigator"`, `ui.dock`).
+pub const VERSION: i64 = 3;
 /// Most panels of one plugin.
 pub const MAX_PANELS: usize = 16;
 /// Most elements of one panel, those in rows included.
@@ -65,6 +66,9 @@ pub enum Anchor {
     BottomLeft,
     Bottom,
     BottomRight,
+    /// In the navigator's board, under its map, as wide as the navigator: `x`, `y`, `width`
+    /// and the card's own look are left aside.
+    Navigator,
 }
 
 impl Anchor {
@@ -79,6 +83,7 @@ impl Anchor {
             "bottom_left" => Anchor::BottomLeft,
             "bottom" => Anchor::Bottom,
             "bottom_right" => Anchor::BottomRight,
+            "navigator" => Anchor::Navigator,
             _ => return None,
         })
     }
@@ -95,6 +100,8 @@ impl Anchor {
             Anchor::BottomLeft => (0.0, 1.0),
             Anchor::Bottom => (0.5, 1.0),
             Anchor::BottomRight => (1.0, 1.0),
+            // (not placed on the screen: the navigator says where it goes)
+            Anchor::Navigator => (0.0, 0.0),
         }
     }
 }
@@ -291,12 +298,15 @@ pub struct UiState {
     screen: [f32; 3],
     serial: u64,
     typing: Option<Typing>,
+    /// The navigator's board in the panels' pixels: width, the most height there is room
+    /// for, the height its panel came to (None: the navigator shows no board).
+    dock: Option<[f32; 3]>,
 }
 
 impl Default for UiState {
     fn default() -> Self {
         // (until the game has drawn a frame: a 1080p screen)
-        UiState { panels: Vec::new(), toasts: Vec::new(), clicks: Vec::new(), changes: Vec::new(), focus: None, shown: true, screen: [1920.0, 1080.0, 1.0], serial: 0, typing: None }
+        UiState { panels: Vec::new(), toasts: Vec::new(), clicks: Vec::new(), changes: Vec::new(), focus: None, shown: true, screen: [1920.0, 1080.0, 1.0], serial: 0, typing: None, dock: None }
     }
 }
 
@@ -458,6 +468,17 @@ impl UiState {
     /// `omsi.ui.screen()`: logical width, height, and the interface's scale.
     pub fn screen(&self) -> [f32; 3] {
         self.screen
+    }
+
+    /// The game says where the navigator's board is (width, room, the height of the panel in
+    /// it; the panels' pixels), or that it shows none.
+    pub fn set_dock(&mut self, dock: Option<[f32; 3]>) {
+        self.dock = dock;
+    }
+
+    /// `omsi.ui.dock()`: the navigator's board, None while it shows none.
+    pub fn dock(&self) -> Option<[f32; 3]> {
+        self.dock
     }
 
     pub fn panels(&self) -> &[PanelEntry] {
@@ -1032,6 +1053,17 @@ mod tests {
         for bad in ["F47F30", "#F47F3", "#GGGGGG", "#F47F30C", "#ÄÄÄ"] {
             assert_eq!(Rgba::parse(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn a_panel_for_the_navigators_board() {
+        let p = panel(r##"{ anchor = "navigator", children = { { type = "text", text = "Next: Markt" } } }"##).unwrap();
+        assert_eq!((p.anchor, p.anchor.factors()), (Anchor::Navigator, (0.0, 0.0)));
+        // the game says where the board is, or that there is none
+        let mut ui = UiState::default();
+        assert_eq!(ui.dock(), None);
+        ui.set_dock(Some([360.0, 420.0, 96.0]));
+        assert_eq!(ui.dock(), Some([360.0, 420.0, 96.0]));
     }
 
     #[test]
