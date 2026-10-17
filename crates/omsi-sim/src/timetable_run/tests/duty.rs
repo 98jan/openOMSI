@@ -1000,3 +1000,26 @@ fn a_stop_passed_and_served_further_on_is_stepped_back_to() {
     d.step_back(at(260.0), 60.0);
     assert_eq!(d.next_stop, 2, "nearer to the next stop: no step back");
 }
+
+/// A later stop of the trip counts as reached past the ones before only where the bus
+/// stands with a door open: driving through its circle on the way does not skip the stops
+/// in between.
+#[test]
+fn driving_through_a_later_stop_does_not_skip_the_ones_before() {
+    let mut trip = planned(0.0, &[(0.0, 0.0, 0.0), (300.0, 60.0, 60.0), (700.0, 150.0, 150.0), (1100.0, 240.0, 240.0), (1600.0, 330.0, 330.0)]);
+    trip.set_dirs();
+    let mut d = PlayerDuty::new("9".into(), "2".into(), vec![trip], 0, 0, true);
+    d.placed = true;
+    d.heading = 90.0;
+    d.advance_serving(glam::DVec3::new(0.0, 0.0, 0.0), 0.0, true);
+    d.advance_serving(glam::DVec3::new(60.0, 0.0, 0.0), 20.0, false);
+    assert_eq!(d.next_stop, 1);
+    // rolling through stop 4's circle (numbered from 1) without stopping
+    d.advance_serving(glam::DVec3::new(1100.0, 0.0, 0.0), 40.0, false);
+    assert_eq!(d.next_stop, 1, "fast-forwarded past stops 2 and 3");
+    assert_eq!(d.take_skipped(), None);
+    // standing there with the doors open: stops 2 and 3 were passed
+    d.advance_serving(glam::DVec3::new(1101.0, 0.0, 0.0), 50.0, true);
+    assert_eq!(d.next_stop, 3);
+    assert_eq!(d.take_skipped(), Some((2, 2, 4)));
+}
