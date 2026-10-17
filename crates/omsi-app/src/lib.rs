@@ -110,7 +110,7 @@ mod camera_util;
 // the game controllers, their mappings and force feedback (`omsi-input`), at their old paths
 use omsi_input::{controllers, gamepad_profile, hpattern};
 mod cli;
-mod diagnostics;
+use omsi_input::diagnostics;
 mod perf_overlay;
 mod perf_report;
 pub(crate) use omsi_cfg::profile_keys;

@@ -2,7 +2,7 @@
 
 /// The player's key for `action` when `bindings` (the vehicle's `Inputs/keyboard.cfg`) bind it
 /// to another key than OMSI's own file does; `None` for the stock key or no key at all.
-pub(crate) fn rebound_key(bindings: &[omsi_content::KeyBinding], action: &str) -> Option<String> {
+pub fn rebound_key(bindings: &[omsi_content::KeyBinding], action: &str) -> Option<String> {
     use omsi_content::input::KEY_HOLD;
     let b = bindings.iter().find(|b| b.action.eq_ignore_ascii_case(action) && b.scan_code != 0)?;
     let stock = crate::stock_keys::STOCK_KEYS
@@ -15,7 +15,7 @@ pub(crate) fn rebound_key(bindings: &[omsi_content::KeyBinding], action: &str) -
 /// first (empty when it moves or nothing is pressed). The window's HUD shows them, an
 /// offscreen run logs them. `key(action)` names the player's own key for an action of
 /// `Inputs/keyboard.cfg` when it is not the stock one (see [`rebound_key`]).
-pub(crate) fn standing_reasons(v: &omsi_sim::VehicleInstance, key: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
+pub fn standing_reasons(v: &omsi_sim::VehicleInstance, key: &dyn Fn(&str) -> Option<String>) -> Vec<String> {
     let mut lines = Vec::new();
     let throttle = v.var("throttle").unwrap_or(0.0) > 0.05;
     let slow = v.physics.velocity_kmh().abs() < 3.0;
@@ -113,7 +113,7 @@ pub(crate) fn standing_reasons(v: &omsi_sim::VehicleInstance, key: &dyn Fn(&str)
 }
 
 /// `OMSI_DEBUG_PHYSICS`: one line with the player's pose, speed, wheel contacts and crashes.
-pub(crate) fn log_physics(v: &omsi_sim::VehicleInstance, t: f32) {
+pub fn log_physics(v: &omsi_sim::VehicleInstance, t: f32) {
     let wheels = v
         .rigid
         .as_ref()
