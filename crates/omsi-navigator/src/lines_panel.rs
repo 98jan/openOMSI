@@ -418,7 +418,8 @@ impl Navigator {
         }
         if let Some(i) = focus {
             let l = &lines[i];
-            if self.line_times().is_some_and(|t| t.line(&l.number).is_some()) {
+            // (the button is there while the timetable is being read; if the line has none after all it goes)
+            if self.line_times().is_none_or(|t| t.line(&l.number).is_some()) {
                 let tw = self.fonts.width(lt.timetable.as_str(), 11.5 * s, Weight::Bold) + 40.0 * s;
                 let rr = Rect::new(x0 + pw - pad - tw, top + 8.0 * s, tw, 22.0 * s);
                 ui.rounded(rr, 4.0 * s, if self.city.lines.sheet { Color::rgba(60, 98, 156, 1.0) } else { Color::rgba(40, 46, 56, 1.0) });
@@ -466,7 +467,7 @@ impl Navigator {
         let panel_h = (h - ly - 12.0 * s).max(60.0 * s);
         let list_panel = Rect::new(x0, ly, pw, panel_h);
         ui.rounded(list_panel, 8.0 * s, ink);
-        if let Some(i) = focus.filter(|&i| self.city.lines.sheet && self.line_times().is_some_and(|t| t.line(&lines[i].number).is_some())) {
+        if let Some(i) = focus.filter(|&i| self.city.lines.sheet && self.line_times().is_none_or(|t| t.line(&lines[i].number).is_some())) {
             let rows = self.sheet_panel(ui, &sf, i, list_panel, s, lt, &mut hits);
             self.city.lines.panel = Some(Rect::new(x0, top, pw, ly + panel_h - top));
             self.city.lines.list = Some(rows);
