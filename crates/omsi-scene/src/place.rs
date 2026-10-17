@@ -326,8 +326,9 @@ impl World {
             // (a `[helparrow]` object goes on: it is put up hidden, and drawn while the route
             // arrows are on - see `World::show_help_arrows`)
             if ot.sco.only_editor || ot.meshes.is_empty() {
-                // invisible sound sources (ambient sound objects) still run their script
-                if let (Some(program), true) = (&ot.program, ot.sco.sound.is_some()) {
+                // invisible sound sources (ambient sound objects) and children of a
+                // crossing naming one of its lights still run their script
+                if let (Some(program), Some(light_parent)) = (&ot.program, hidden_script(&ot, o, &index.traffic_light_parents)) {
                     let inst = omsi_sim::scenery::SceneryInstance::new(
                         program.clone(),
                         &ot.mesh_defs(),
@@ -342,7 +343,7 @@ impl World {
                         inst,
                         controller: None,
                         light_index: 0,
-                        light_parent: None,
+                        light_parent,
                         map_id: o.id,
                         variants: Vec::new(),
                         sounds: None,
@@ -353,6 +354,7 @@ impl World {
                         htmls: Vec::new(),
                         alpha_slots: Vec::new(),
                         alpha_last: Vec::new(),
+                        script_lamps: Vec::new(),
                     });
                 }
                 // An editor-only object still lays its paths out: OMSI's invisible
@@ -803,6 +805,16 @@ fn placed_object_lanes(
 }
 
 /// Whether a placed object is a traffic lamp: (crossing, light index, lit by any light).
+/// Whether an editor-only (or meshless) object runs its script, and if so the crossing
+/// light it reads (`ScriptedObject::light_parent`). A sound source does, and so does a
+/// child of a crossing that names one of its lights: it reads that light's phase as a
+/// visible lamp does. Gerolstein's "BU Gong" (light 4 of the station crossing) read phase
+/// 0, red, without it, and rang every two seconds day and night.
+fn hidden_script(ot: &ObjectType, o: &StagedObject, crossings: &hashbrown::HashSet<i64>) -> Option<Option<(i64, usize)>> {
+    let light = light_child_of(crossings, o.lamp_parent, &o.extra);
+    (ot.sco.sound.is_some() || light.is_some()).then_some(light)
+}
+
 fn object_lamp(ot: &ObjectType, o: &StagedObject, pos: DVec3, index: &MapIndex) -> Option<(i64, usize, bool)> {
     // (OMSI hands `TrafficLightPhase` to any child of a crossing whose first string
     // names one of its lights, `[trafficlight]` or not - see `names_traffic_light`;
@@ -880,6 +892,11 @@ fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, l
         if lamp.is_some() && matches!(sw, LightSwitch::Variable(_)) {
             continue;
         }
+        // (and a lamp the object's own script switches follows its script, by day and by
+        // night: see `lamps_switched_by_script`)
+        if lamp.is_none() && script_switched(ot, &sw) {
+            continue;
+        }
         state.coronas.push(StaticCorona {
             corona: c,
             switch: sw,
@@ -908,6 +925,39 @@ fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, l
             ..Default::default()
         });
     }
+}
+
+/// A lamp of a scenery object whose brightness is a variable of the object's own script.
+fn script_switched(ot: &ObjectType, sw: &LightSwitch) -> bool {
+    matches!(sw, LightSwitch::Variable(v) if ot.program.as_ref().is_some_and(|p| p.has_script_var(v)))
+}
+
+/// The lamps of a scenery object (not a traffic light: its lamps glow with its phase) that
+/// its own script switches, with the variable that does: they follow that variable by day
+/// and by night, as in OMSI. Kept with the static lamps, which glow whenever it is dark,
+/// Gerolstein's departure boards showed their orange "due" and green "departing" lamps all
+/// night.
+pub(super) fn lamps_switched_by_script(ot: &ObjectType, pos: DVec3, xf: Mat4) -> Vec<crate::staging::ScriptLamp> {
+    if ot.program.is_none() {
+        return Vec::new();
+    }
+    // (the model's lamps, each with its switch, in the order they are made)
+    let named: Mutex<Vec<LightSwitch>> = Mutex::new(Vec::new());
+    let glows = model_lights_owned(&ot.model, &|_| xf, pos, &|var| {
+        named.lock().push(LightSwitch::parse(var));
+        1.0
+    }, &[]);
+    let named = named.into_inner();
+    let mut out = Vec::new();
+    for (glow, k) in glows {
+        let Some(switch) = named.get(k) else { continue };
+        if let LightSwitch::Variable(variable) = switch {
+            if script_switched(ot, switch) {
+                out.push(crate::staging::ScriptLamp { glow, variable: variable.clone(), level: 0.0 });
+            }
+        }
+    }
+    out
 }
 
 /// Add what placing a tile counted to the load statistics.
@@ -1112,5 +1162,155 @@ mod embedded_light_tests {
             assert_eq!(placed.color, source.color);
             assert_eq!(placed.intensity, 1.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod hidden_script_tests {
+    use super::*;
+
+    fn editor_only(sound: bool) -> Arc<ObjectType> {
+        Arc::new(ObjectType {
+            sco: SceneryObject { only_editor: true, sound: sound.then(|| "bell.cfg".to_string()), ..Default::default() },
+            model: Model::default(),
+            meshes: Vec::new(),
+            mesh_def_index: Vec::new(),
+            sound_path: Default::default(), model_dir: Default::default(),
+            mesh_visible: Vec::new(), mesh_pivots: Vec::new(),
+            mesh_shadow: Vec::new(), mesh_casts: Vec::new(), has_mouse_events: false, program: None,
+            lower_lods: Vec::new(), lod0_min: 0.0, paint_scheme_count: 0,
+            dynamic_textures: Vec::new(), holes: Vec::new(), deform: None,
+            collision: None, paint: false, camera: Default::default(),
+            collision_shape: Default::default(),
+            embedded_lights: Default::default(),
+        })
+    }
+
+    fn child(ot: &Arc<ObjectType>, parent: Option<i64>, extra: &[&str]) -> StagedObject {
+        StagedObject {
+            ot: ot.clone(),
+            id: 11,
+            place: Placement::Ground { x: 0.0, y: 0.0, z: 0.0, rot: [0.0; 3] },
+            rules: Vec::new(),
+            extra: extra.iter().map(|s| s.to_string()).collect(),
+            lamp_parent: parent,
+            parked: false,
+            map_object: true,
+            instance: 0,
+            key: 11,
+        }
+    }
+
+    /// An editor-only bell on a level crossing that names the crossing's light 3 runs its
+    /// script reading that light, as a visible lamp does; one naming no light (or of a
+    /// crossing without lights) is a plain sound source; a silent one naming no light runs
+    /// nothing.
+    #[test]
+    fn an_editor_only_crossing_child_reads_its_light() {
+        let crossings: hashbrown::HashSet<i64> = [500].into_iter().collect();
+        let bell = editor_only(true);
+        assert_eq!(hidden_script(&bell, &child(&bell, Some(500), &["3"]), &crossings), Some(Some((500, 3))));
+        assert_eq!(hidden_script(&bell, &child(&bell, Some(500), &["Platform"]), &crossings), Some(None));
+        assert_eq!(hidden_script(&bell, &child(&bell, Some(501), &["3"]), &crossings), Some(None));
+        let mute = editor_only(false);
+        assert_eq!(hidden_script(&mute, &child(&mute, Some(500), &["3"]), &crossings), Some(Some((500, 3))));
+        assert_eq!(hidden_script(&mute, &child(&mute, None, &["3"]), &crossings), None);
+    }
+}
+
+#[cfg(test)]
+mod script_lamp_tests {
+    use super::*;
+
+    /// A level crossing sign: its warning lamp "warn_blink" is a variable of its script
+    /// ({init} sets 0.4), its street lamp "street_lamp" is not.
+    fn crossing_sign() -> ObjectType {
+        let mut prog = omsi_script::Program::default();
+        let blink = prog.declare_script_var("warn_blink");
+        let init = omsi_script::compile::Block { ops: vec![omsi_script::Op::Push(0.4), omsi_script::Op::Store(blink)], ..Default::default() };
+        prog.blocks.push(init);
+        prog.init.push(0);
+        let lamp = |variable: &str, z: f32| omsi_model::LightEnh2 {
+            pos: [0.0, 0.3, z],
+            omni: false,
+            color: [255.0, 40.0, 0.0],
+            size: 0.12,
+            factor: 1.0,
+            variable: variable.to_string(),
+            ..Default::default()
+        };
+        let mesh = MeshDef { light_enh_2: vec![lamp("street_lamp", 5.5), lamp("warn_blink", 2.1)], ..Default::default() };
+        ObjectType {
+            sco: SceneryObject::default(),
+            model: Model { meshes: vec![mesh], ..Default::default() },
+            meshes: Vec::new(),
+            mesh_def_index: Vec::new(),
+            sound_path: Default::default(), model_dir: Default::default(),
+            mesh_visible: Vec::new(), mesh_pivots: Vec::new(),
+            mesh_shadow: Vec::new(), mesh_casts: Vec::new(), has_mouse_events: false,
+            program: Some(Arc::new(prog)),
+            lower_lods: Vec::new(), lod0_min: 0.0, paint_scheme_count: 0,
+            dynamic_textures: Vec::new(), holes: Vec::new(), deform: None,
+            collision: None, paint: false, camera: Default::default(),
+            collision_shape: Default::default(),
+            embedded_lights: Default::default(),
+        }
+    }
+
+    fn placed(ot: &Arc<ObjectType>, at: DVec3, script_lamps: Vec<crate::staging::ScriptLamp>) -> ScriptedObject {
+        ScriptedObject {
+            ty: ot.clone(),
+            pos: at,
+            xf: Mat4::IDENTITY,
+            instances: Vec::new(),
+            inst: omsi_sim::scenery::SceneryInstance::new(ot.program.clone().unwrap(), &[], omsi_sim::SimClock::default(), &[]),
+            controller: None,
+            light_index: 0,
+            light_parent: None,
+            map_id: 11,
+            variants: Vec::new(),
+            sounds: None,
+            tile: (2, -1),
+            var_parent: None,
+            texts: Vec::new(),
+            arrivals: false,
+            htmls: Vec::new(),
+            alpha_slots: Vec::new(),
+            alpha_last: Vec::new(),
+            script_lamps,
+        }
+    }
+
+    /// The warning lamp goes with the script (40 % bright after its {init}, dark when the
+    /// script sets 0, left out beyond the range); the street lamp stays a static lamp; on
+    /// a traffic light neither is static.
+    #[test]
+    fn script_lamps_glow_as_their_variable_says() {
+        let ot = Arc::new(crossing_sign());
+        let at = DVec3::new(-300.0, 45.0, 12.0);
+        let mut statics = TileState::default();
+        object_lights(&mut statics, &ot, at, Mat4::IDENTITY, None, 1);
+        let static_switches: Vec<_> = statics.coronas.iter().map(|c| c.switch.clone()).collect();
+        assert!(!static_switches.is_empty());
+        assert!(static_switches.iter().all(|s| *s == LightSwitch::Variable("street_lamp".into())), "{static_switches:?}");
+        let lamps = lamps_switched_by_script(&ot, at, Mat4::IDENTITY);
+        assert!(!lamps.is_empty() && lamps.iter().all(|l| l.variable == "warn_blink"));
+        let mut signal = TileState::default();
+        object_lights(&mut signal, &ot, at, Mat4::IDENTITY, Some((2, 1, false)), 1);
+        assert_eq!(signal.coronas.len(), 0);
+
+        let mut set = ScriptedSet::default();
+        set.push(placed(&ot, at, lamps));
+        let glows = |set: &ScriptedSet, camera: DVec3| {
+            let mut out = Vec::new();
+            crate::scripted::push_script_lamp_glows(&set.views, camera, 400.0, &mut out);
+            out.iter().map(|g| g.brightness).collect::<Vec<f32>>()
+        };
+        let near = at + DVec3::new(50.0, 0.0, 0.0);
+        assert!(glows(&set, near).iter().all(|b| (b - 0.4).abs() < 1e-5), "{:?}", glows(&set, near));
+        assert!(!glows(&set, near).is_empty());
+        assert!(glows(&set, at + DVec3::new(0.0, 450.0, 0.0)).is_empty(), "450 m off, beyond the range");
+        set.views[0].script_lamps.iter_mut().for_each(|l| l.level = 0.0);
+        assert!(glows(&set, near).is_empty());
     }
 }

@@ -1088,3 +1088,65 @@ fn a_way_on_that_leads_only_into_closed_lanes_is_not_taken() {
     let mut car = AiState::new(0, 0.0, 5);
     assert_eq!(car.choose_after(&net, 0), Some(1));
 }
+
+/// A two-light program with stops in several kinds of phase: in the changeover (a light in
+/// red-and-yellow) a request does not hold the clock; in the green, all red or a flashing
+/// rest it does.
+#[test]
+fn stop_points_hold_only_where_traffic_goes() {
+    // light 0: green 0-30 s, yellow 3 s, red; light 1: red to 36 s, red-and-yellow 36-38 s,
+    // green 38-50 s, yellow, red
+    let program = || {
+        vec![
+            (vec![(6, 30.0), (9, 3.0), (0, 0.0)], None),
+            (vec![(0, 36.0), (3, 2.0), (6, 12.0), (9, 3.0), (0, 0.0)], None),
+        ]
+    };
+    let run = |stop_at: f32, seconds: f32| {
+        let mut ctl = TrafficLightController::from_program(program(), Some(60.0), &[[1.0, stop_at, 0.0]], &[]);
+        ctl.time = 34.5;
+        ctl.request[1] = true;
+        let steps = (seconds / 0.05) as usize;
+        for _ in 0..steps {
+            ctl.advance(0.05);
+        }
+        ctl
+    };
+    let in_changeover = run(37.0, 6.0);
+    assert!(!in_changeover.held, "held at {:.2} s", in_changeover.time);
+    assert!(in_changeover.time > 40.0);
+    assert_eq!(in_changeover.state(1), 6, "light 1 went on to green");
+    let in_green = run(42.0, 12.0);
+    assert!(in_green.held, "a request in the green holds it");
+    assert!((in_green.time - 42.0).abs() < 1e-3, "{:.2}", in_green.time);
+    // all red (both lights red at 34 s) and a dark rest hold too
+    let all_red = run(34.8, 6.0);
+    assert!(all_red.held && (all_red.time - 34.8).abs() < 1e-3, "{:.2}", all_red.time);
+    let mut dark_rest = TrafficLightController::from_program(vec![(vec![(13, 20.0), (0, 0.0)], None)], Some(40.0), &[[0.0, 5.0, 0.0]], &[]);
+    dark_rest.time = 4.0;
+    dark_rest.request[0] = true;
+    for _ in 0..80 {
+        dark_rest.advance(0.05);
+    }
+    assert!(dark_rest.held && (dark_rest.time - 5.0).abs() < 1e-3, "{:.2}", dark_rest.time);
+}
+
+/// A jump to a time beyond the cycle goes on at the start of the next cycle.
+#[test]
+fn jumps_beyond_the_cycle_restart_it() {
+    // a 90 s cycle that flashes yellow (13) for its first 15 s; at 80 s, unasked, it jumps
+    // to 97 s. Wrapped round that would be 7 s, still flashing; it must be 0.
+    let program = vec![(vec![(13, 15.0), (6, 60.0), (9, 3.0), (0, 0.0)], None)];
+    let mut ctl = TrafficLightController::from_program(program, Some(90.0), &[], &[[0.0, 80.0, 1.0, 97.0]]);
+    ctl.time = 79.0;
+    for _ in 0..12 {
+        ctl.advance(0.25);
+    }
+    assert!((ctl.time - 2.0).abs() < 1e-3, "clock at {:.2} s", ctl.time);
+    assert_eq!(ctl.state(0), 13);
+    // a jump inside the cycle still lands where it says
+    let mut inside = TrafficLightController::from_program(vec![(vec![(6, 60.0), (0, 0.0)], None)], Some(90.0), &[], &[[0.0, 80.0, 1.0, 10.0]]);
+    inside.time = 79.5;
+    inside.advance(1.0);
+    assert!((inside.time - 10.5).abs() < 1e-3, "{:.2}", inside.time);
+}

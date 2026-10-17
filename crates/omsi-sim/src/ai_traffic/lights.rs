@@ -273,6 +273,53 @@ impl TrafficSim {
         self.lights.get(c)?.time_until_go(li)
     }
 
+    /// The lanes a train asks the lights of, out to `reach`: its way as planned and, past the
+    /// plan (some ninety metres or ten lanes), its timetable route on, or for a train
+    /// without one every branch of the track on.
+    pub fn train_way(&self, st: &AiState, reach: f32) -> Vec<(usize, f32)> {
+        let mut way = self.way_lanes(st, reach);
+        let Some(&(last, d)) = way.last() else { return way };
+        if d + self.net.lanes[last].length() >= reach {
+            return way;
+        }
+        let from = st.route_index.min(st.route.len());
+        if let Some(k) = st.route[from..].iter().position(|&l| l == last) {
+            let mut d = d + self.net.lanes[last].length();
+            for &l in &st.route[from + k + 1..] {
+                if d > reach {
+                    break;
+                }
+                way.push((l, d));
+                d += self.net.lanes[l].length();
+            }
+        } else if st.route.is_empty() {
+            way.extend(self.track_after(last, d, reach));
+        }
+        way
+    }
+
+    /// The lanes after `lane` within `reach` metres, on every branch of a fork (which one a
+    /// train takes is the points' business), each with the distance to its start from
+    /// where `lane` starts at `start` (m). Asking the branch it will not take only turns
+    /// that light for nobody.
+    pub fn track_after(&self, lane: usize, start: f32, reach: f32) -> Vec<(usize, f32)> {
+        let mut out: Vec<(usize, f32)> = Vec::new();
+        let mut open = vec![(lane, start + self.net.lanes[lane].length())];
+        while let Some((l, to_end)) = open.pop() {
+            if to_end > reach || out.len() > 64 {
+                continue;
+            }
+            for &n in &self.net.lanes[l].next {
+                if n == lane || out.iter().any(|o| o.0 == n) {
+                    continue;
+                }
+                out.push((n, to_end));
+                open.push((n, to_end + self.net.lanes[n].length()));
+            }
+        }
+        out
+    }
+
     /// The street lanes a vehicle standing at `pos` facing `heading` is on and will drive
     /// onto within `reach` metres, each with the distance from the vehicle to its start
     /// (0 for the lane it is on): the way straight on and the gentle turns (within 60° of

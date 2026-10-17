@@ -553,16 +553,10 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
                 out.push((format!("{}: {now}...", tr("Route number")), "routes".into()));
             }
             if let Some(hof) = app.player.as_ref().and_then(|p| p.vehicle.host.hof.clone()) {
-                let mut termini: Vec<(String, i32, usize)> = hof
-                    .termini
-                    .iter()
-                    .enumerate()
-                    .map(|(i, t)| (t.menu_name(), t.code, i))
-                    .collect();
-                // (alphabetical, by name; picked by its row: several may share a name or a code)
-                termini.sort_by_key(|(name, ..)| name.trim().to_lowercase());
-                for (name, code, i) in termini {
-                    out.push((format!("{:>3}  {}", code, name.trim()), format!("dest {i}")));
+                // (in the depot file's order, as OMSI lists them, not alphabetical; picked by
+                // its row, since several may share a name or a code)
+                for (i, t) in hof.termini.iter().enumerate() {
+                    out.push((format!("{:>3}  {}", t.code, t.menu_name().trim()), format!("dest {i}")));
                 }
             }
             if out.is_empty() {

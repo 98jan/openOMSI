@@ -60,6 +60,7 @@ fn emergency_stop(on: bool) -> (u8, f32) {
         terminus: None,
         tt_stop: None,
         act_busstop: String::new(),
+        route: None,
         cabin: None,
     };
     for _ in 0..100 {

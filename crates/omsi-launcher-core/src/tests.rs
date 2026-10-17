@@ -398,3 +398,29 @@ fn settings_defaults_and_automatic_values() {
     let text = settings_to_text(&json!({ "view_distance": 900, "video_memory": 1500.0 }), None);
     assert!(text.contains("\nview_distance=900\n") && text.contains("\nvideo_memory=1500\n"), "{text}");
 }
+
+/// Dates fitted to a map's year span: moved to the nearest allowed year keeping the day,
+/// 29 February to the 28th in a year without it; inside the span, with no span, or not a
+/// date: unchanged. And the spans `[years]` gives.
+#[test]
+fn dates_are_fitted_to_the_maps_year_span() {
+    let nineties = Some((1991, 1999));
+    for (date, fitted) in [("1996-07-04", "1996-07-04"), ("2031-03-15", "1999-03-15"), ("1960-12-01", "1991-12-01"), ("1999-12-31", "1999-12-31")] {
+        assert_eq!(fit_date_to_years(date, nineties), fitted);
+    }
+    assert_eq!(fit_date_to_years("2028-02-29", Some((2001, 2003))), "2003-02-28");
+    assert_eq!(fit_date_to_years("2028-02-29", Some((1979, 1980))), "1980-02-29");
+    assert_eq!(fit_date_to_years("1950-06-30", Some((1972, i32::MAX))), "1972-06-30");
+    assert_eq!(fit_date_to_years("2031-03-15", None), "2031-03-15");
+    assert_eq!(fit_date_to_years("next tuesday", nineties), "next tuesday");
+    let mut g = omsi_map::GlobalCfg::default();
+    let mut span = |years| {
+        g.years = years;
+        year_span_of(&g)
+    };
+    assert_eq!(span((0, 0)), None);
+    assert_eq!(span((0, 1988)), Some((i32::MIN, 1988)));
+    assert_eq!(span((2010, 0)), Some((2010, i32::MAX)));
+    assert_eq!(span((2010, 2004)), Some((2010, i32::MAX)), "a last year before the first");
+    assert_eq!(span((1972, 1989)), Some((1972, 1989)));
+}

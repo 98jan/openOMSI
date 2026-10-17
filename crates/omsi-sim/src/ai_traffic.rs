@@ -50,6 +50,8 @@ mod lateral_tests;
 mod emergency_tests;
 #[cfg(test)]
 mod signal_tests;
+#[cfg(test)]
+mod request_tests;
 
 use crate::ai_motion::{
     back_in_ramp, pull_out_ramps, AiBody, MotionKind, BACK_IN_LAT_ACCEL, PULL_OUT_ACCEL,
@@ -236,6 +238,9 @@ pub struct TrafficSim {
     /// The player's indicators (0 off, 1 left, 2 right, 3 hazard; `lan::indicator`), set
     /// before each `tick`.
     pub player_blinker: u8,
+    /// The player's tram or train on the rails, set before each `tick`: it asks the lights on
+    /// the track ahead as an AI one does (they stayed red for the player).
+    pub player_rail: Option<PlayerRail>,
     /// Seconds since the player's bus last showed the indicator towards the traffic (the
     /// lamps go dark half of the time).
     pub player_signal_age: f32,
