@@ -238,6 +238,39 @@ fn picture(backend: wgpu::Backend, device_type: wgpu::DeviceType, name: &str, vr
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ceiling {
+    pub msaa: u32,
+    pub ssao: bool,
+    pub shadow_size: u32,
+    pub sample_counts: u32,
+}
+
+impl Ceiling {
+    pub fn msaa_for(&self, wanted: u32) -> u32 {
+        let usable = |n: u32| n <= self.msaa && self.sample_counts & n != 0;
+        [1, 2, 4, 8].into_iter().filter(|&n| n >= wanted && usable(n)).min().or_else(|| [8, 4, 2, 1].into_iter().find(|&n| usable(n))).unwrap_or(1)
+    }
+}
+
+pub(super) fn ceiling(info: &wgpu::AdapterInfo, vram: Option<u64>) -> Ceiling {
+    ceiling_for(info.backend, info.device_type, &info.name, vram, amd_opengl_on_windows(info))
+}
+
+fn ceiling_for(backend: wgpu::Backend, device_type: wgpu::DeviceType, name: &str, vram: Option<u64>, amd_gl: bool) -> Ceiling {
+    let ssao = backend != wgpu::Backend::Gl;
+    let sample_counts = 1 | 2 | 4 | 8;
+    if omsi_cfg::flags::OMSI_FULL_GPU.is_set() {
+        return Ceiling { msaa: 8, ssao, shadow_size: 8192, sample_counts };
+    }
+    let msaa = if amd_gl { 1 } else { 8 };
+    match picture(backend, device_type, name, vram) {
+        Picture::Weak => Ceiling { msaa: 1, ssao: false, shadow_size: 1024, sample_counts },
+        Picture::Modest => Ceiling { msaa: msaa.min(2), ssao: false, shadow_size: 2048, sample_counts },
+        Picture::AsAsked => Ceiling { msaa, ssao, shadow_size: 8192, sample_counts },
+    }
+}
+
 /// The settings `options` lightened for this chip (see [`picture`]), and whether they
 /// were; SSAO is off on OpenGL whatever its memory (#422), and MSAA on AMD's OpenGL driver
 /// for Windows. OMSI_FULL_GPU=1 keeps the settings as they are.
@@ -442,7 +475,7 @@ impl Renderer {
 
 #[cfg(all(test, not(target_os = "android")))]
 mod tests {
-    use super::{chip_name, dxgi_names_card, one_card, picture, rest_of_card, shared_chip_by_name, GpuMemory, Picture};
+    use super::{ceiling_for, chip_name, dxgi_names_card, one_card, picture, rest_of_card, shared_chip_by_name, Ceiling, GpuMemory, Picture};
     use wgpu::{Backend, DeviceType};
 
     /// The game's bound on the card: the setting and nine tenths of the driver's budget,
@@ -481,6 +514,27 @@ mod tests {
         assert_eq!(picture(Backend::Gl, DeviceType::Other, "", Some(16304)), Picture::AsAsked);
         assert_eq!(picture(Backend::Gl, DeviceType::Other, "", Some(2048)), Picture::Weak);
         assert_eq!(picture(Backend::Dx12, DeviceType::IntegratedGpu, "", Some(8192)), Picture::Weak);
+    }
+
+    #[test]
+    fn the_ceiling_of_a_chip_is_what_its_lighter_picture_allows() {
+        let c = |b, d, v, amd| ceiling_for(b, d, "", v, amd);
+        let all = 1 | 2 | 4 | 8;
+        assert_eq!(c(Backend::Vulkan, DeviceType::DiscreteGpu, Some(20421), false), Ceiling { msaa: 8, ssao: true, shadow_size: 8192, sample_counts: all });
+        assert_eq!(c(Backend::Vulkan, DeviceType::DiscreteGpu, Some(4076), false), Ceiling { msaa: 2, ssao: false, shadow_size: 2048, sample_counts: all });
+        assert_eq!(c(Backend::Dx12, DeviceType::IntegratedGpu, Some(8192), false), Ceiling { msaa: 1, ssao: false, shadow_size: 1024, sample_counts: all });
+        assert_eq!(c(Backend::Gl, DeviceType::Other, Some(16304), true), Ceiling { msaa: 1, ssao: false, shadow_size: 8192, sample_counts: all });
+    }
+
+    #[test]
+    fn a_rebuild_takes_a_sample_count_the_device_has() {
+        let apple = Ceiling { msaa: 8, ssao: true, shadow_size: 8192, sample_counts: 1 | 4 };
+        assert_eq!(apple.msaa_for(2), 4, "2x was not asked for when the device was opened");
+        assert_eq!(apple.msaa_for(1), 1);
+        assert_eq!(apple.msaa_for(8), 4);
+        let modest = Ceiling { msaa: 2, ssao: false, shadow_size: 2048, sample_counts: 1 | 2 | 4 | 8 };
+        assert_eq!(modest.msaa_for(4), 2);
+        assert_eq!(modest.msaa_for(2), 2);
     }
 
     const ANGLE_7900: &str = "ANGLE (AMD, AMD Radeon RX 7900 XT (0x0000744C) Direct3D11 vs_5_0 ps_5_0, D3D11-32.0.31041.1004)";

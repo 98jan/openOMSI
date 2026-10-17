@@ -111,7 +111,7 @@ mod camera_util;
 // the game controllers, their mappings and force feedback (`omsi-input`), at their old paths
 use omsi_input::{controllers, gamepad_profile, hpattern};
 mod cli;
-mod diagnostics;
+use omsi_input::diagnostics;
 mod perf_overlay;
 mod perf_report;
 pub(crate) use omsi_cfg::profile_keys;
@@ -120,12 +120,13 @@ mod support_bundle;
 mod duty_start;
 mod input_script;
 mod app_impl;
-mod launcher_link;
+use omsi_guard::launcher_link;
 use omsi_lan::mods as lan_mods;
 mod memory;
 mod offscreen;
 pub(crate) use omsi_sim::ground_gap;
 mod on_foot;
+mod optimiser;
 use omsi_scene::route_arrows;
 mod server;
 mod player;
@@ -275,7 +276,7 @@ pub fn run() -> Result<()> {
         if omsi_cfg::flags::OMSI_LAUNCHER.is_set() && open_launcher()? {
             return Ok(());
         }
-        return open_app_launcher();
+        return open_app_launcher(fatal_message);
     }
     let Some(app) = make_app(args, server_cfg)? else { return Ok(()) };
     // a game session's start goes into the start guard's journal (a version whose sessions
@@ -313,6 +314,7 @@ fn game_event_loop() -> Result<EventLoop<()>> {
 /// installation and the content roots (mods, archives). None when the program has
 /// nothing more to do (a fatal error was shown).
 pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option<server::ServerCfg>)>> {
+    optimiser::recover_cut_short();
     ui_language(&settings::Settings::load().language);
     units::Units::from_setting(&settings::Settings::load().units).set();
     // (a server has no interface to translate)
@@ -766,6 +768,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             frame_stages: Vec::new(),
             overlay: crate::perf_overlay::new(),
             texture_cut_at: None,
+            optimiser: Default::default(),
         },
         sound: SoundState {
             radio,

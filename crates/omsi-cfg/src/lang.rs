@@ -9,6 +9,7 @@ pub const LANGUAGES: &[(&str, &str, &str, &[&str])] = &[
     ("DEU", "Deutsch", "de", &["de", "ger", "german", "deutsch"]),
     ("FRA", "Français", "fr", &["fr", "fre", "french", "francais", "français"]),
     ("RUS", "Русский", "ru", &["ru", "russian", "русский"]),
+    ("SRP", "Srpski (latinica)", "sr", &["sr", "srp", "sr-latn", "sr_latn", "serbian", "serbian latin", "srpski"]),
     ("UKR", "Українська", "uk", &["uk", "ua", "ukrainian", "українська"]),
     ("BEL", "Беларуская", "be", &["be", "by", "belarusian", "беларуская"]),
     ("KAZ", "Қазақша", "kk", &["kk", "kz", "kazakh", "қазақша"]),
@@ -49,4 +50,26 @@ pub fn language_code(s: &str) -> &'static str {
 pub fn language_iso(code: &str) -> &'static str {
     let c = language_code(code);
     LANGUAGES.iter().find(|l| l.0 == c).map(|l| if l.2 == "en" { "" } else { l.2 }).unwrap_or("")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{language_code, language_iso};
+
+    #[test]
+    fn serbian_latin_aliases_resolve_to_the_sr_locale() {
+        for alias in [
+            "SRP",
+            "sr",
+            "srp",
+            "sr-Latn",
+            "sr_latn",
+            "serbian",
+            "serbian latin",
+            "srpski",
+        ] {
+            assert_eq!(language_code(alias), "SRP", "{alias}");
+            assert_eq!(language_iso(alias), "sr", "{alias}");
+        }
+    }
 }

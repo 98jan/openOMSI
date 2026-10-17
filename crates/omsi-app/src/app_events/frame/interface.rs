@@ -251,7 +251,8 @@ impl App {
                     Some(t) => t.cars.iter().filter(|c| !c.gone && c.bus.is_some()).map(|c| (c.vehicle.position, c.vehicle.host.tt_line.clone())).collect(),
                     None => Vec::new(),
                 };
-                nav.update_live(sch, self.clock.time, dt, &cars);
+                let ground = self.world.as_ref().map(|w| w.data());
+                nav.update_live(sch, self.clock.time, dt, &cars, &|p| ground.as_ref().is_some_and(|d| d.has_ground(p.x, p.y)));
             }
             let (outside_temp, inside_temp) = match p {
                 Some(p) => vehicle_temperatures(p),
@@ -286,6 +287,7 @@ impl App {
                 stop_requested: p.is_some_and(|p| navigator::stop_requested(&p.vehicle)),
                 time: self.clock.time,
                 weekday: self.clock.weekday(),
+                date: self.clock.date_code(),
                 language: &self.settings.language,
                 screen: if vr_active {
                     (1440.0, 1440.0)

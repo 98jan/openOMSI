@@ -34,6 +34,7 @@ as before.**
     markers.cfg                optional: icons on the map (section 7)
     regions.cfg                optional: municipalities, their names as a watermark, where the bus is (section 8)
     icons/                     optional: the pictures markers.cfg names
+    lines.lin                  optional: the map's lines, for the Lines panel of the city map (section 9)
 ```
 
 - The folder name and the file names are fixed; nothing is searched or configured. A missing file is a
@@ -159,11 +160,36 @@ with the municipality and the street, and, on the city map, the municipality, "Y
 street's limit as a road sign (the heavy vehicles' limit smaller, when it is another). Without them none of it
 appears.
 
-## 9. Trying it
+## 9. Lines: `lines.lin`
+
+Tab separated, one record a line, `#` comments. Positions are metres of the author's grid, relative to `ORIGEM`.
+
+```
+ORIGEM	0.0	0.0
+L	110	BRT	North - Central	bus	19900101	0
+R	18.9	35	35	0	Every day	Articulated	North Terminal - Central Terminal
+P	1250.4 4428.6 1320.0 4330.8 ...
+S	1260.8 4409.6 1310.0 4341.5 ...
+```
+
+- `L`: the number, the group (`BRT`, `EXP`, anything else is a feeder), the name, then optionally the kind of vehicle
+  (`bus` by default, `tram`, `metro`, `rail`) and the dates (yyyymmdd) the line runs from and to, 0 for open. A map with
+  eras has a record for each form a line took, and the panel lists the forms that hold on the session's date.
+- `R`: a route of the line (one or two, out and back): km, stops, minutes, circular (0 or 1), days, model, itinerary.
+  `P` is its way and `S` its stops.
+
+With the file the city map gets a **Lines** button: a panel with the data of the line in focus (length, stops, trip
+time, days, model, route 1 or 2), and the list of the map's lines with a tick box each, in tabs by kind of vehicle and
+(for buses) by group. A click on a line ticks it, a second one opens its data. A ticked line is drawn on the map in a
+colour of its own, with its stops; the vehicles that run it (read from the line they show) get a ring in its colour,
+and the card counts them. The route of the trip the player drives is not changed. Without the file there is no button.
+
+## 10. Trying it
 
 - **The example in this repository**, `docs/examples/openomsi-realmap/`: a few made-up shapes (a lake, a
   river, a railway, a border, a park, a wood), three names, a street with a 30 km/h limit, two icons (a stop and a
-  station) and one region, in the tile grid of the tutorial map **Grundorf**, about 2.5 KB in all, with no data of
+  station), one region and three lines (two bus lines and a tram), in the tile grid of the tutorial map **Grundorf**,
+  about 3 KB in all, with no data of
   OMSI 2 or OpenStreetMap. Copy the folder to `Maps/Grundorf/openomsi-realmap/` in the content folder, start
   Grundorf and open the navigator (Shift+N) and the city map (Shift+M): near the start of the map the row under the
   next stop says "Exampleton | Example Street".

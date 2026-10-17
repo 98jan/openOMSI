@@ -143,6 +143,7 @@ pub(crate) struct PerfState {
     pub(crate) frame_stages: Vec<f32>,
     pub(crate) overlay: crate::perf_overlay::PerfOverlay,
     pub(crate) texture_cut_at: Option<Instant>,
+    pub(crate) optimiser: crate::optimiser::Optimiser,
 }
 
 /// The drawing around the renderer: the wgpu instance and surface, the tile streaming, the

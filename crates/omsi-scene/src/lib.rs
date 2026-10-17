@@ -69,6 +69,7 @@ pub mod tiles;
 pub mod schedule_paper;
 pub mod check;
 pub mod export;
+pub mod camera_util;
 
 pub use staging::*;
 pub use batching::*;
