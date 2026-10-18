@@ -377,8 +377,8 @@ pub struct Navigator {
     surface_version: u64,
     /// The surface is drawn (the `nav_surface` setting).
     pub show_surface: bool,
-    /// The terrain view of the city map: contour lines and their heights, where the map's package carries them (the
-    /// `nav_contours` setting; a button on the map).
+    /// The terrain view of the city map: contour lines and their heights, where the map's package carries them (a button
+    /// on the map; not kept between runs).
     pub show_contours: bool,
     /// The package the worker of the contour marks was started for (its surface version + 1; 0 = none yet).
     marks_started: u64,

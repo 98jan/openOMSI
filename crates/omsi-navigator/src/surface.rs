@@ -7,8 +7,9 @@ use omsi_map::package::{self, Package};
 /// The package's surface as vertices relative to `anchor`, to be drawn under the roads, in the
 /// maps' own colours (`pal`). `near` limits it to the chunks within a radius of a point (the
 /// small map); `None` builds the whole map. `terrain`: the terrain view, which leaves out the land use (only water,
-/// rivers and rail stay; the contour lines are `build_contours`).
-pub(super) fn build_surface(p: &mut Painter, pkg: &Package, anchor: DVec2, near: Option<(DVec2, f64)>, pal: &super::style::Palette, terrain: bool) {
+/// rivers and rail stay; the contour lines are `build_contours`). Returns what it read of the package (the contour lines are
+/// in it: they are not read a second time).
+pub(super) fn build_surface(p: &mut Painter, pkg: &Package, anchor: DVec2, near: Option<(DVec2, f64)>, pal: &super::style::Palette, terrain: bool) -> package::Layers {
     let rel = |q: (f64, f64)| Vec3::new((q.0 - anchor.x) as f32, (q.1 - anchor.y) as f32, 0.0);
     let area = near.map(|(c, r)| ((c.x - r, c.y - r), (c.x + r, c.y + r)));
     let layers = pkg.layers(area);
@@ -37,14 +38,14 @@ pub(super) fn build_surface(p: &mut Painter, pkg: &Package, anchor: DVec2, near:
             }
         }
     }
+    layers
 }
 
 /// The ground's contour lines (the terrain view), the index lines heavier, as strong as the factor `k` says (1 up close,
 /// fainter from far). Drawn after the map's own land, which would cover them, and under the roads.
-pub(super) fn build_contours(p: &mut Painter, pkg: &Package, anchor: DVec2, near: Option<(DVec2, f64)>, pal: &super::style::Palette, k: f32) {
+pub(super) fn build_contours(p: &mut Painter, layers: &package::Layers, anchor: DVec2, pal: &super::style::Palette, k: f32) {
     let rel = |q: (f64, f64)| Vec3::new((q.0 - anchor.x) as f32, (q.1 - anchor.y) as f32, 0.0);
-    let area = near.map(|(c, r)| ((c.x - r, c.y - r), (c.x + r, c.y + r)));
-    for l in &pkg.layers(area).contours {
+    for l in &layers.contours {
         let v: Vec<Vec3> = l.points.iter().map(|q| rel(*q)).collect();
         if l.class == package::LINE_CONTOUR_INDEX {
             p.ribbon(&v, 1.9, 1.5, pal.contour.alpha(0.9 * k), false);

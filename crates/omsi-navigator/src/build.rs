@@ -60,14 +60,15 @@ impl Built {
 /// carriageway is a band, as from far); `houses`: build them too.
 pub(super) fn build(parts: &GroundParts, anchor: DVec2, reach: f64, pal: &Palette, look: GroundLook, paved: bool, houses: bool) -> Built {
     let mut p = Painter::new();
+    let mut layers = None;
     if let Some(sf) = parts.surface.as_deref() {
-        super::surface::build_surface(&mut p, sf, anchor, Some((anchor, reach)), pal, parts.contours.is_some());
+        layers = Some(super::surface::build_surface(&mut p, sf, anchor, Some((anchor, reach)), pal, parts.contours.is_some()));
     }
     if let Some(md) = parts.md.as_deref() {
         md.build_land(&mut p, anchor, anchor, reach, pal, look);
     }
-    if let (Some(sf), Some(k)) = (parts.surface.as_deref(), parts.contours) {
-        super::surface::build_contours(&mut p, sf, anchor, Some((anchor, reach)), pal, k);
+    if let (Some(layers), Some(k)) = (layers.as_ref(), parts.contours) {
+        super::surface::build_contours(&mut p, layers, anchor, pal, k);
     }
     let paved = paved && parts.md.is_some();
     let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
