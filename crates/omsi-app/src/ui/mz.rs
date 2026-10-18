@@ -55,23 +55,10 @@ impl Ui {
         format!("{}…", t.iter().collect::<String>())
     }
 
-    /// The cover with rounded corners (cut into its own alpha).
+    /// The cover, square.
     fn mz_art(&mut self, r: &Renderer, scene: &mut Scene, p: &std::path::Path) -> Option<TextureId> {
         let entry = self.images.entry(p.to_path_buf()).or_insert_with(|| {
-            omsi_texture::decode_file(p).ok().map(|mut img| {
-                let (w, h) = (img.width as i32, img.height as i32);
-                let rad = (w.min(h) as f32 * 0.14).max(1.0);
-                for y in 0..h {
-                    for x in 0..w {
-                        let dx = (rad - x.min(w - 1 - x) as f32 - 0.5).max(0.0);
-                        let dy = (rad - y.min(h - 1 - y) as f32 - 0.5).max(0.0);
-                        let d = (dx * dx + dy * dy).sqrt() - rad;
-                        let a = (0.5 - d).clamp(0.0, 1.0);
-                        let o = ((y * w + x) * 4 + 3) as usize;
-                        img.rgba[o] = (img.rgba[o] as f32 * a) as u8;
-                    }
-                }
-                img.has_alpha = true;
+            omsi_texture::decode_file(p).ok().map(|img| {
                 (r.add_texture(scene, &img, false), img.width, img.height)
             })
         });
@@ -144,7 +131,7 @@ impl Ui {
         let (ax, ay) = (x0 + pad, y0 + 8.0 * s + 4.0 * s * e);
         match v.art.as_deref().and_then(|p| self.mz_art(r, scene, p)) {
             Some(tex) => scene.overlays.push((tex, [ax, ay, ax + art, ay + art])),
-            None => self.text.rounded(r, scene, [ax, ay, ax + art, ay + art], art * 0.14, key_bg),
+            None => self.text.rounded(r, scene, [ax, ay, ax + art, ay + art], 0.0, key_bg),
         }
         let tx = ax + art + 12.0 * s;
         let title = if v.title.is_empty() { "MileZero".to_string() } else { v.title.clone() };
