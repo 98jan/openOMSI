@@ -281,14 +281,22 @@ fn hash_stream(mut reader: impl Read) -> std::io::Result<Option<(u64, String)>> 
     use sha2::{Digest, Sha256};
 
     let mut hasher = Sha256::new();
+    // A Read is allowed to return fewer than 8 bytes even before EOF. Collect
+    // the whole magic header first so a short read cannot bypass filtering.
+    let mut header = [0u8; 8];
+    let mut head_len = 0;
+    while head_len < header.len() {
+        let n = reader.read(&mut header[head_len..])?;
+        if n == 0 { break; }
+        head_len += n;
+    }
+    if crate::mods::looks_executable(&header[..head_len]) { return Ok(None); }
+    hasher.update(&header[..head_len]);
+    let mut size = head_len as u64;
     let mut buffer = [0u8; 64 * 1024];
-    let mut size = 0u64;
     loop {
         let n = reader.read(&mut buffer)?;
         if n == 0 { break; }
-        if size == 0 && crate::mods::looks_executable(&buffer[..n.min(8)]) {
-            return Ok(None);
-        }
         size += n as u64;
         if size > crate::mods::MAX_FILE { return Ok(None); }
         hasher.update(&buffer[..n]);
@@ -378,6 +386,20 @@ mod hash_stream_tests {
     #[test]
     fn rejects_program_headers() {
         assert!(hash_stream(Cursor::new(b"MZfake executable".as_slice())).unwrap().is_none());
+    }
+
+    #[test]
+    fn rejects_program_headers_even_across_short_reads() {
+        struct OneByte<'a>(&'a [u8]);
+        impl std::io::Read for OneByte<'_> {
+            fn read(&mut self, dst: &mut [u8]) -> std::io::Result<usize> {
+                if self.0.is_empty() || dst.is_empty() { return Ok(0); }
+                dst[0] = self.0[0];
+                self.0 = &self.0[1..];
+                Ok(1)
+            }
+        }
+        assert!(hash_stream(OneByte(b"MZfake executable")).unwrap().is_none());
     }
 }
 
