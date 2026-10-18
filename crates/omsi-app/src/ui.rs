@@ -201,6 +201,7 @@ pub struct ChatWidget {
     pub rect: [f32; 4],
     pub hovered: bool,
     pub caret_t: f32,
+    translations: chat::TranslationCache,
 }
 
 impl ChatWidget {
@@ -583,13 +584,16 @@ impl Ui {
             {
                 let tc = &self.text;
                 let measure = |t: &str| tc.width_raw(t, px as f32);
+                let language = omsi_ui::i18n::language();
                 let mut i = end;
                 while i > 0 && rows.len() < CHAT_SHOWN {
                     i -= 1;
                     let line = &c.lines[i];
                     let color = if line.starts_with("* ") { [255, 226, 140, 230] } else { [255, 255, 255, 230] };
-                    let line = chat::translated_chat_line(line, |key| crate::_rust_i18n_try_translate(&omsi_ui::i18n::language(), key).map(|text| text.into_owned()));
-                    for (k, t) in wrap_rows(&line, width, indent, &measure).into_iter().enumerate().rev() {
+                    let line = self.chat.translations.line(line, &language, |key| {
+                        crate::_rust_i18n_try_translate(&language, key).map(|text| text.into_owned())
+                    });
+                    for (k, t) in wrap_rows(line.as_ref(), width, indent, &measure).into_iter().enumerate().rev() {
                         if rows.len() == CHAT_SHOWN {
                             break;
                         }
