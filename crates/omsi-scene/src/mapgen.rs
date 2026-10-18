@@ -280,8 +280,11 @@ fn type_info(root: &Path, file: &str, paints: &crate::road_paint::PaintCache) ->
     if top_tris.is_empty() {
         return Some(info);
     }
-    let (w, h) = (((size.x / HOUSE_CELL).ceil() as usize + 3).min(2200), ((size.y / HOUSE_CELL).ceil() as usize + 3).min(2200));
-    let org = lo.truncate() - Vec2::splat(HOUSE_CELL * 1.5);
+    // (a quarter of a metre, coarser for the biggest objects: the grids stay under 800 cells a side, and
+    // so does what many of them cost side by side)
+    let cell = HOUSE_CELL.max(size.x.max(size.y) / 800.0);
+    let (w, h) = (((size.x / cell).ceil() as usize + 3).min(900), ((size.y / cell).ceil() as usize + 3).min(900));
+    let org = lo.truncate() - Vec2::splat(cell * 1.5);
     let mut cells = vec![false; w * h];
     for t in &top_tris {
         let a = (t[1] - t[0]).perp_dot(t[2] - t[0]);
@@ -290,11 +293,11 @@ fn type_info(root: &Path, file: &str, paints: &crate::road_paint::PaintCache) ->
         }
         let tlo = t[0].min(t[1]).min(t[2]);
         let thi = t[0].max(t[1]).max(t[2]);
-        let (x0, y0) = (((tlo.x - org.x) / HOUSE_CELL).floor().max(0.0) as usize, ((tlo.y - org.y) / HOUSE_CELL).floor().max(0.0) as usize);
-        let (x1, y1) = ((((thi.x - org.x) / HOUSE_CELL).ceil() as usize).min(w), (((thi.y - org.y) / HOUSE_CELL).ceil() as usize).min(h));
+        let (x0, y0) = (((tlo.x - org.x) / cell).floor().max(0.0) as usize, ((tlo.y - org.y) / cell).floor().max(0.0) as usize);
+        let (x1, y1) = ((((thi.x - org.x) / cell).ceil() as usize).min(w), (((thi.y - org.y) / cell).ceil() as usize).min(h));
         for y in y0..y1 {
             for x in x0..x1 {
-                let q = org + Vec2::new((x as f32 + 0.5) * HOUSE_CELL, (y as f32 + 0.5) * HOUSE_CELL);
+                let q = org + Vec2::new((x as f32 + 0.5) * cell, (y as f32 + 0.5) * cell);
                 let s = a.signum();
                 let e0 = (t[1] - t[0]).perp_dot(q - t[0]) * s;
                 let e1 = (t[2] - t[1]).perp_dot(q - t[1]) * s;
@@ -320,7 +323,7 @@ fn type_info(root: &Path, file: &str, paints: &crate::road_paint::PaintCache) ->
         out
     };
     let cells = grow(&grow(&cells, true), false);
-    let covered = cells.iter().filter(|c| **c).count() as f32 * HOUSE_CELL * HOUSE_CELL;
+    let covered = cells.iter().filter(|c| **c).count() as f32 * cell * cell;
     // (a roof over little of its box is a frame, a canopy, a mast - unless a great deal is
     // roofed: a block of houses in one object has the yards between them in its box)
     if covered < 12.0 || (covered < size.x * size.y * 0.25 && covered < 400.0) {
@@ -343,9 +346,9 @@ fn type_info(root: &Path, file: &str, paints: &crate::road_paint::PaintCache) ->
         // (the face seen from above is a line: its two farthest corners)
         let pts = [t[0].truncate(), t[1].truncate(), t[2].truncate()];
         let (a, b) = [(0, 1), (1, 2), (0, 2)].iter().map(|&(i, j)| (pts[i], pts[j])).max_by(|x, y| x.0.distance_squared(x.1).total_cmp(&y.0.distance_squared(y.1))).unwrap();
-        let steps = ((b - a).length() / (HOUSE_CELL * 0.5)).ceil().max(1.0) as usize;
+        let steps = ((b - a).length() / (cell * 0.5)).ceil().max(1.0) as usize;
         for k in 0..=steps {
-            let q = (a.lerp(b, k as f32 / steps as f32) - org) / HOUSE_CELL;
+            let q = (a.lerp(b, k as f32 / steps as f32) - org) / cell;
             let (x, y) = (q.x as i64, q.y as i64);
             if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h {
                 walls[y as usize * w + x as usize] = true;
@@ -356,12 +359,12 @@ fn type_info(root: &Path, file: &str, paints: &crate::road_paint::PaintCache) ->
     // shelter over the lanes, a carport): the roof is solid where walls enclose it or stand
     // within 1.6 m of it (the eaves), and open elsewhere (gaps of half a metre in a wall - a
     // doorway - are closed).
-    let solid = solid_roof_cells(&cells, &walls, w, h);
+    let solid = solid_roof_cells(&cells, &walls, w, h, cell);
     let open: Vec<bool> = (0..w * h).map(|k| cells[k] && !solid[k]).collect();
     for (mask, is_open) in [(&solid, false), (&open, true)] {
         let rings: Vec<Vec<Vec2>> = layers::trace_cells(mask, w, h)
             .into_iter()
-            .map(|r| layers::simplify_ring(&r, 0.45).into_iter().map(|p| org + p * HOUSE_CELL).collect::<Vec<Vec2>>())
+            .map(|r| layers::simplify_ring(&r, 0.45).into_iter().map(|p| org + p * cell).collect::<Vec<Vec2>>())
             .filter(|r: &Vec<Vec2>| r.len() >= 3 && layers::area2(r).abs() * 0.5 >= if is_open { 6.0 } else { 4.0 })
             .collect();
         for outer in rings.iter().filter(|r| layers::area2(r) > 0.0) {
@@ -394,11 +397,11 @@ fn type_info(root: &Path, file: &str, paints: &crate::road_paint::PaintCache) ->
     Some(info)
 }
 
-/// The cells of a roof (`roof`, a grid `w` x `h` of cells of `HOUSE_CELL`) that are a house's: those
+/// The cells of a roof (`roof`, a grid `w` x `h` of cells `cell` metres across) that are a house's: those
 /// that walls (`walls`, the cells the walls reaching the ground stand in) enclose or stand within
 /// 1.6 m of (the eaves). The rest is a roof on posts. A gap in a wall of half a metre - a doorway -
 /// is closed.
-fn solid_roof_cells(roof: &[bool], walls: &[bool], w: usize, h: usize) -> Vec<bool> {
+fn solid_roof_cells(roof: &[bool], walls: &[bool], w: usize, h: usize, cell: f32) -> Vec<bool> {
     let spread = |m: &[bool], r: i64| -> Vec<bool> {
         let mut out = m.to_vec();
         for y in 0..h as i64 {
@@ -440,7 +443,7 @@ fn solid_roof_cells(roof: &[bool], walls: &[bool], w: usize, h: usize) -> Vec<bo
             stack.push(k + w);
         }
     }
-    let near = spread(walls, (1.6 / HOUSE_CELL).ceil() as i64);
+    let near = spread(walls, (1.6 / cell).ceil() as i64);
     (0..w * h).map(|k| roof[k] && (near[k] || !outside[k])).collect()
 }
 
@@ -721,9 +724,12 @@ pub fn generate(root: &Path, map_dir: &Path, ground_textures: &[omsi_map::global
     out.paved[layers::PAVE_INNER] = inner_streets(&out);
     keep_paint_on_paving(&mut out);
     log::info!(
-        "map layers: {} tiles, {} houses, {} trees, {} paved triangles, {} land triangles, {} lines, {} object types, {:.1} s",
+        "map layers: {} tiles, {} houses ({} models of {} faces, {} placed), {} trees, {} paved triangles, {} land triangles, {} lines, {} object types, {:.1} s",
         out.tiles.len(),
         out.buildings.len(),
+        out.models.len(),
+        out.models.iter().map(|m| m.len()).sum::<usize>(),
+        out.instances.len(),
         out.trees.len(),
         out.paved.iter().map(|p| p.len() / 3).sum::<usize>(),
         out.land.iter().map(|p| p.len() / 3).sum::<usize>(),
@@ -764,7 +770,12 @@ fn inner_streets(l: &Layers) -> Vec<Vec2> {
         }
     }
     let margin = ((RIM + 1.0) / RIM_CELL).ceil() as usize;
-    l.tiles
+    // (a tile's grids are a few millions of nodes, some forty megabytes at their biggest: four tiles
+    // at a time, not one for each of the machine's threads, which on a laptop of 8 GB is the difference
+    // between a map generated and a machine swapping)
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build();
+    let work = || -> Vec<Vec2> {
+        l.tiles
         .par_iter()
         .flat_map_iter(|t| {
             let (tlo, thi) = (Vec2::new(t[0], t[1]), Vec2::new(t[2], t[3]));
@@ -811,6 +822,7 @@ fn inner_streets(l: &Layers) -> Vec<Vec2> {
             let inside = seal_hairlines(&inside, n, 2);
             let carriageway = seal_hairlines(&carriageway, n, 2);
             let d = distance_to_outside(&inside, n);
+            drop(inside);
             // (the tile's own nodes: the neighbours' parts are theirs)
             let m = core + 1;
             let mut v = vec![0.0f32; m * m];
@@ -825,25 +837,36 @@ fn inner_streets(l: &Layers) -> Vec<Vec2> {
             out.into_iter()
         })
         .collect()
+    };
+    match pool {
+        Ok(pool) => pool.install(work),
+        Err(_) => work(),
+    }
 }
 
 /// The set nodes of an `n` x `n` grid with gaps of up to `2 r` nodes closed (a box dilation,
 /// then a box erosion, each in two passes).
 fn seal_hairlines(m: &[bool], n: usize, r: usize) -> Vec<bool> {
-    let pass = |src: &[bool], want: bool, horizontal: bool| -> Vec<bool> {
-        // want = true: a node is set when any node within r is (dilation); false: when all are
-        let mut out = vec![false; n * n];
+    // one pass of a box filter along rows or columns, from `src` into `dst`: a node is set when
+    // any node within r is (dilation, `want`), or when all are (erosion)
+    let pass = |src: &[bool], dst: &mut [bool], want: bool, horizontal: bool| {
         for y in 0..n {
             for x in 0..n {
                 let (lo, hi) = if horizontal { (x.saturating_sub(r), (x + r).min(n - 1)) } else { (y.saturating_sub(r), (y + r).min(n - 1)) };
                 let at = |k: usize| if horizontal { src[y * n + k] } else { src[k * n + x] };
-                out[y * n + x] = if want { (lo..=hi).any(at) } else { (lo..=hi).all(at) };
+                dst[y * n + x] = if want { (lo..=hi).any(at) } else { (lo..=hi).all(at) };
             }
         }
-        out
     };
-    let dilated = pass(&pass(m, true, true), true, false);
-    pass(&pass(&dilated, false, true), false, false)
+    // (two buffers passed back and forth: a grid of a tile is millions of nodes, and one is made
+    // for every tile that is being worked on at once)
+    let mut a = m.to_vec();
+    let mut b = vec![false; n * n];
+    for (want, horizontal) in [(true, true), (true, false), (false, true), (false, false)] {
+        pass(&a, &mut b, want, horizontal);
+        std::mem::swap(&mut a, &mut b);
+    }
+    a
 }
 
 /// Paint off the paving - a stripe of a texture that reaches past the road's faces - is no paint
@@ -1291,7 +1314,7 @@ mod tests {
             walls[y * w + 10] = true;
             walls[y * w + 49] = true;
         }
-        let solid = solid_roof_cells(&roof, &walls, w, h);
+        let solid = solid_roof_cells(&roof, &walls, w, h, HOUSE_CELL);
         assert!(solid[20 * w + 30], "a room's roof is solid, walled in");
         assert!(solid[11 * w + 54], "within the eaves of a wall: solid");
         assert!(!solid[11 * w + 60], "past the eaves, with the wall far off: open");
@@ -1301,7 +1324,7 @@ mod tests {
     }
 
     fn solve_none(roof: &[bool], w: usize, h: usize) -> bool {
-        solid_roof_cells(roof, &vec![false; w * h], w, h).iter().all(|c| !c)
+        solid_roof_cells(roof, &vec![false; w * h], w, h, HOUSE_CELL).iter().all(|c| !c)
     }
 
     #[test]
