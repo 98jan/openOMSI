@@ -13,7 +13,7 @@ use std::{
 #[test]
 #[ignore = "subprocess helper, exercised by the process wait tests"]
 fn process_wait_child() {
-    let gate = std::env::var_os("OMSI_TEST_WAIT_GATE").expect("helper gate");
+    let gate = std::env::var_os("PLUGIN_WAIT_TEST_GATE").expect("helper gate");
     let deadline = Instant::now() + Duration::from_secs(30);
     while !Path::new(&gate).exists() {
         if Instant::now() > deadline {
@@ -42,7 +42,7 @@ fn game() -> Game {
 fn child(gate: &Path) -> String {
     let quote = |s: &str| json::encode(&Value::Str(s.into()));
     format!(
-        r#"assert(omsi.process.start({}, {{"--exact", "process_wait_child", "--ignored"}}, {{env = {{OMSI_TEST_WAIT_GATE = {}}}}}))"#,
+        r#"assert(omsi.process.start({}, {{"--exact", "process_wait_child", "--ignored"}}, {{env = {{PLUGIN_WAIT_TEST_GATE = {}}}}}))"#,
         quote(std::env::current_exe().unwrap().to_str().unwrap()),
         quote(gate.to_str().unwrap())
     )
