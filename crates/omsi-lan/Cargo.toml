@@ -23,6 +23,8 @@ flate2.workspace = true
 # the fonts of a fetched bus, shared as the world's are (`mods::vehicles::fonts_of`)
 parking_lot.workspace = true
 zstd.workspace = true
+# `map_pack`: a map packed into a .zip for a server on another machine
+zip.workspace = true
 anyhow.workspace = true
 glam.workspace = true
 hashbrown.workspace = true
@@ -43,7 +45,6 @@ libc.workspace = true
 windows = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography"] }
 
 [dev-dependencies]
-# the tests: the box's picture, and `mods::quarantine`'s scan of a mod archive, read in place
-# as the game reads one
+# the tests: the box's picture (a mod archive is read in place with `zip`, a dependency for
+# `map_pack`'s archives)
 image.workspace = true
-zip.workspace = true
