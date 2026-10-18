@@ -490,6 +490,8 @@ impl App {
                     title: song.title,
                     artist: song.artist,
                     dj: song.dj,
+                    duration: song.duration,
+                    light: self.menus.navigator.as_ref().map_or(self.settings.nav_light, |n| n.light),
                     art: song.art,
                     elapsed: m.elapsed(),
                     playing: m.is_playing(),

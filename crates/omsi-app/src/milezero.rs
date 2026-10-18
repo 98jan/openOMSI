@@ -31,6 +31,8 @@ pub(crate) struct Song {
     pub art: Option<std::path::PathBuf>,
     /// Unix seconds the song started (from the station's history), when known.
     pub started: Option<i64>,
+    /// The song's length in seconds (looked up by name), when found.
+    pub duration: Option<f32>,
 }
 
 #[derive(Default)]
@@ -80,6 +82,14 @@ fn get_json(agent: &ureq::Agent, url: &str) -> Option<serde_json::Value> {
 
 use std::io::Read;
 
+/// The length of a song, from the public iTunes search (the station's own API has none).
+fn itunes_length(agent: &ureq::Agent, artist: &str, title: &str) -> Option<f32> {
+    let enc = |t: &str| t.bytes().map(|b| if b.is_ascii_alphanumeric() { (b as char).to_string() } else { format!("%{b:02X}") }).collect::<String>();
+    let first = artist.split(',').next().unwrap_or(artist);
+    let v = get_json(agent, &format!("https://itunes.apple.com/search?entity=song&limit=1&term={}", enc(&format!("{first} {title}"))))?;
+    v["results"][0]["trackTimeMillis"].as_f64().map(|ms| ms as f32 / 1000.0)
+}
+
 fn poll(shared: Arc<Mutex<Shared>>, stop: Arc<AtomicBool>) {
     let agent = agent();
     let dir = std::env::temp_dir().join("openomsi-milezero");
@@ -103,7 +113,8 @@ fn poll(shared: Arc<Mutex<Shared>>, stop: Arc<AtomicBool>) {
                     }
                     Some(path)
                 });
-                let song = Song { title: text("title"), artist: text("artist"), dj: np["dj"]["display_name"].as_str().unwrap_or("").to_string(), art, started };
+                let duration = itunes_length(&agent, &text("artist"), &text("title"));
+                let song = Song { title: text("title"), artist: text("artist"), dj: np["dj"]["display_name"].as_str().unwrap_or("").to_string(), art, started, duration };
                 shared.lock().unwrap().song = Some(song);
             }
         }

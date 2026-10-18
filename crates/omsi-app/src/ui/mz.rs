@@ -1,6 +1,6 @@
 //! The MileZero card over (or under) the navigator: a small bar with the cover, the song, the
-//! artist and the seconds played, which opens into the full card - the station's name for
-//! the DJ, the stream quality, play/pause and a song request - while the mouse is over it.
+//! artist and the time played, which opens into the full card - the DJ, the stream quality,
+//! play/pause and a song request - while the mouse is over it. Light or dark like the map.
 
 use super::*;
 
@@ -22,6 +22,7 @@ pub struct MzView {
     pub dj: String,
     pub art: Option<std::path::PathBuf>,
     pub elapsed: Option<f32>,
+    pub duration: Option<f32>,
     pub playing: bool,
     pub loading: bool,
     pub quality: &'static str,
@@ -30,9 +31,11 @@ pub struct MzView {
     pub status: Option<String>,
     /// The mouse is over the card (or a request is being typed).
     pub hover: bool,
+    /// The light look (the map's `nav_light`).
+    pub light: bool,
 }
 
-/// A song is of no known length (the station does not say): the bar fills over this.
+/// The bar's length for a song whose length is not known.
 const BAR_SECS: f32 = 210.0;
 
 fn clock(secs: f32) -> String {
@@ -52,11 +55,24 @@ impl Ui {
         format!("{}…", t.iter().collect::<String>())
     }
 
+    /// The cover with rounded corners (cut into its own alpha).
     fn mz_art(&mut self, r: &Renderer, scene: &mut Scene, p: &std::path::Path) -> Option<TextureId> {
         let entry = self.images.entry(p.to_path_buf()).or_insert_with(|| {
-            omsi_texture::decode_file(p).ok().map(|img| {
-                let (iw, ih) = (img.width, img.height);
-                (r.add_texture(scene, &img, false), iw, ih)
+            omsi_texture::decode_file(p).ok().map(|mut img| {
+                let (w, h) = (img.width as i32, img.height as i32);
+                let rad = (w.min(h) as f32 * 0.14).max(1.0);
+                for y in 0..h {
+                    for x in 0..w {
+                        let dx = (rad - x.min(w - 1 - x) as f32 - 0.5).max(0.0);
+                        let dy = (rad - y.min(h - 1 - y) as f32 - 0.5).max(0.0);
+                        let d = (dx * dx + dy * dy).sqrt() - rad;
+                        let a = (0.5 - d).clamp(0.0, 1.0);
+                        let o = ((y * w + x) * 4 + 3) as usize;
+                        img.rgba[o] = (img.rgba[o] as f32 * a) as u8;
+                    }
+                }
+                img.has_alpha = true;
+                (r.add_texture(scene, &img, false), img.width, img.height)
             })
         });
         entry.map(|e| e.0)
@@ -70,6 +86,12 @@ impl Ui {
         let t = self.mz_fit(text, px, (x_max - x).max(10.0));
         let l = self.text.label_op(r, scene, &t, px.round() as u32, c, a);
         scene.overlays.push((l.tex, [x.round(), y.round(), x.round() + l.w as f32, y.round() + l.h as f32]));
+    }
+
+    fn mz_icon(&mut self, r: &Renderer, scene: &mut Scene, name: &str, px: f32, rgba: [u8; 4], x: f32, y: f32) {
+        if let Some(t) = self.text.icon(r, scene, name, px.round() as u32, rgba) {
+            scene.overlays.push((t, [x.round(), y.round(), x.round() + px.round(), y.round() + px.round()]));
+        }
     }
 
     pub(super) fn draw_milezero(&mut self, r: &Renderer, scene: &mut Scene, f: &Frame, s: f32, dt: f32) {
@@ -89,9 +111,10 @@ impl Ui {
         }
         let e = *k * *k * (3.0 - 2.0 * *k);
         let gap = 8.0 * s;
-        let (small_w, small_h, big_w) = ((f.nav_rect.map_or(280.0 * s, |a| a[2] - a[0])).clamp(250.0 * s, 360.0 * s), 52.0 * s, 340.0 * s);
-        let w = (small_w + (big_w.max(small_w) - small_w) * e).round();
-        let h = (small_h + (190.0 * s - small_h) * e).round();
+        let small_w = f.nav_rect.map_or(280.0 * s, |a| a[2] - a[0]).max(250.0 * s);
+        let (small_h, big_h) = (52.0 * s, 196.0 * s);
+        let w = small_w.round();
+        let h = (small_h + (big_h - small_h) * e).round();
         let (x0, y0) = match f.nav_rect {
             Some(a) => {
                 let left = (a[0] + a[2]) * 0.5 < f.width * 0.5;
@@ -106,75 +129,94 @@ impl Ui {
         let (x1, y1) = (x0 + w, y0 + h);
         self.mz.rect = Some([x0, y0, x1, y1]);
         self.mz.extent = h + gap;
-        self.text.shadow(r, scene, [x0, y0, x1, y1], 12.0 * s, 20.0 * s, 4.0 * s, 80);
-        self.text.rounded(r, scene, [x0, y0, x1, y1], 12.0 * s, [24, 24, 28, 248]);
-        let white = [237, 237, 237, 0];
-        let grey = [160, 160, 170, 0];
-        let ratio = v.elapsed.map_or(0.0, |t| (t / BAR_SECS).min(0.98));
-        let pad = 10.0 * s;
-        // the cover: 34 px in the small card, 92 px in the full one
-        let art = 34.0 * s + (92.0 * s - 34.0 * s) * e;
-        let (ax, ay) = (x0 + pad, y0 + (small_h - 34.0 * s) * 0.5 * (1.0 - e) + 12.0 * s * e);
+        // the colours of the dark and the light look
+        let (bg, text_c, grey, track, accent, key_bg, key_text) = if v.light {
+            ([250, 250, 252, 250], [28, 28, 34, 0], [104, 104, 116, 0], [0, 0, 0, 34], [40, 96, 235, 255], [226, 227, 234, 255], [28, 28, 34, 255])
+        } else {
+            ([24, 24, 28, 248], [237, 237, 237, 0], [160, 160, 170, 0], [255, 255, 255, 44], [92, 130, 255, 255], [58, 58, 70, 255], [237, 237, 237, 255])
+        };
+        self.text.shadow(r, scene, [x0, y0, x1, y1], 14.0 * s, 20.0 * s, 4.0 * s, if v.light { 50 } else { 80 });
+        self.text.rounded(r, scene, [x0, y0, x1, y1], 14.0 * s, bg);
+        let pad = 12.0 * s;
+        let xr = x1 - pad;
+        // the cover: 36 px in the small card, 88 in the full one
+        let art = 36.0 * s + 52.0 * s * e;
+        let (ax, ay) = (x0 + pad, y0 + 8.0 * s + 4.0 * s * e);
         match v.art.as_deref().and_then(|p| self.mz_art(r, scene, p)) {
             Some(tex) => scene.overlays.push((tex, [ax, ay, ax + art, ay + art])),
-            None => self.text.rounded(r, scene, [ax, ay, ax + art, ay + art], 6.0 * s, [52, 52, 62, 255]),
+            None => self.text.rounded(r, scene, [ax, ay, ax + art, ay + art], art * 0.14, key_bg),
         }
-        let tx = ax + art + 10.0 * s;
-        let small = 1.0 - e;
-        let xr = x1 - pad;
+        let tx = ax + art + 12.0 * s;
         let title = if v.title.is_empty() { "MileZero".to_string() } else { v.title.clone() };
         let artist = if v.artist.is_empty() { "Live radio".to_string() } else { v.artist.clone() };
-        // small card: the song, the artist, the seconds played
-        let time_w = 38.0 * s;
-        self.mz_label(r, scene, xr, &title, 13.0 * s, white, small, tx, y0 + 8.0 * s);
-        self.mz_label(r, scene, xr, &artist, 11.0 * s, grey, small, tx, y0 + 26.0 * s);
-        if let Some(t) = v.elapsed {
-            self.mz_label(r, scene, xr, &clock(t), 11.0 * s, grey, small, x1 - pad - time_w + 8.0 * s, y0 + 8.0 * s);
+        let small = 1.0 - e;
+        // the time: played, and of how long where the length is known
+        let time = v.elapsed.map(|t| match v.duration {
+            Some(d) => format!("{} / {}", clock(t.min(d)), clock(d)),
+            None => clock(t),
+        });
+        let ratio = v.elapsed.map_or(0.0, |t| (t / v.duration.unwrap_or(BAR_SECS).max(1.0)).min(1.0));
+        // small card
+        let time_w = time.as_ref().map_or(0.0, |t| self.text.width_raw(t, 11.0 * s) + 8.0 * s);
+        self.mz_label(r, scene, xr - time_w, &title, 13.0 * s, text_c, small, tx, y0 + 9.0 * s);
+        self.mz_label(r, scene, xr, &artist, 11.0 * s, grey, small, tx, y0 + 27.0 * s);
+        if let Some(t) = &time {
+            self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, small, xr - time_w + 8.0 * s, y0 + 10.0 * s);
         }
-        // full card: everything the station says
-        self.mz_label(r, scene, xr, &title, 16.0 * s, white, e, tx, y0 + 14.0 * s);
-        self.mz_label(r, scene, xr, &artist, 13.0 * s, grey, e, tx, y0 + 38.0 * s);
+        // full card
+        self.mz_label(r, scene, xr, &title, 16.0 * s, text_c, e, tx, y0 + 14.0 * s);
+        self.mz_label(r, scene, xr, &artist, 13.0 * s, grey, e, tx, y0 + 36.0 * s);
         if !v.dj.is_empty() {
-            self.mz_label(r, scene, xr, &format!("On air: {}", v.dj), 12.0 * s, [120, 160, 255, 0], e, tx, y0 + 62.0 * s);
+            self.mz_label(r, scene, xr, &format!("On air: {}", v.dj), 12.0 * s, accent, e, tx, y0 + 58.0 * s);
         }
-        self.mz_label(r, scene, xr, &format!("{} (auto quality)", v.quality), 11.0 * s, grey, e, tx, y0 + 82.0 * s);
-        // the bar along the bottom of both
-        let by = y1 - 12.0 * s;
-        let (bx0, bx1) = (x0 + pad, x1 - pad);
-        self.text.rounded(r, scene, [bx0, by, bx1, by + 3.0 * s], 1.5 * s, [255, 255, 255, 40]);
+        self.mz_label(r, scene, xr, &format!("{} · auto quality", v.quality), 11.0 * s, grey, e, tx, y0 + 76.0 * s);
+        // the bar along the bottom, with the times above it in the full card
+        let (bx0, bx1) = (x0 + pad, xr);
+        let by = y1 - 8.0 * s - 4.0 * s * e - (if e > 0.5 { 6.0 * s * e } else { 0.0 });
+        let bh = 4.0 * s;
+        self.text.rounded(r, scene, [bx0, by, bx1, by + bh], bh * 0.5, track);
         if ratio > 0.0 {
-            self.text.rounded(r, scene, [bx0, by, bx0 + (bx1 - bx0) * ratio, by + 3.0 * s], 1.5 * s, [92, 130, 255, 255]);
+            self.text.rounded(r, scene, [bx0, by, (bx0 + (bx1 - bx0) * ratio).max(bx0 + bh), by + bh], bh * 0.5, accent);
         }
-        if e > 0.5 {
-            if let Some(t) = v.elapsed {
-                self.mz_label(r, scene, xr, &clock(t), 11.0 * s, grey, e, bx0, by - 18.0 * s);
-            }
+        if let Some(t) = &time {
+            let tw = self.text.width_raw(t, 11.0 * s);
+            self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, e, xr - tw, by - 18.0 * s);
         }
         // buttons (only once the card is nearly open, so a click on the small one does nothing)
         if e > 0.9 {
-            let bh = 28.0 * s;
-            let row_y = y0 + 108.0 * s;
-            let play = [x0 + pad, row_y, x0 + pad + 104.0 * s, row_y + bh];
-            let req = [play[2] + 8.0 * s, row_y, play[2] + 8.0 * s + 104.0 * s, row_y + bh];
-            let (name, tint) = if v.loading { ("Loading ...", [70, 70, 90, 255]) } else if v.playing { ("Pause", [60, 90, 200, 255]) } else { ("Play", [60, 110, 230, 255]) };
-            self.text.rounded(r, scene, play, 8.0 * s, tint);
-            self.text.rounded(r, scene, req, 8.0 * s, [58, 58, 70, 255]);
-            for (rect, text) in [(play, name), (req, "Request")] {
-                let l = self.text.label_op(r, scene, text, (12.0 * s).round() as u32, white, 1.0);
-                let (lx, ly) = ((rect[0] + rect[2] - l.w as f32) * 0.5, (rect[1] + rect[3] - l.h as f32) * 0.5);
-                scene.overlays.push((l.tex, [lx.round(), ly.round(), lx.round() + l.w as f32, ly.round() + l.h as f32]));
+            let bh = 30.0 * s;
+            let row_y = y0 + 104.0 * s;
+            let bw = (w - pad * 2.0 - 8.0 * s) * 0.5;
+            let play = [x0 + pad, row_y, x0 + pad + bw, row_y + bh];
+            let req = [play[2] + 8.0 * s, row_y, xr, row_y + bh];
+            let (name, icon, tint) = if v.loading { ("Loading", "radio", [110, 120, 160, 255]) } else if v.playing { ("Pause", "pause", accent) } else { ("Play", "play_arrow", accent) };
+            self.text.rounded(r, scene, play, bh * 0.5, tint);
+            self.text.rounded(r, scene, req, bh * 0.5, key_bg);
+            for (rect, text, icon, color) in [(play, name, icon, [255, 255, 255, 255]), (req, "Request", "radio", key_text)] {
+                let ip = 16.0 * s;
+                let l = self.text.label_op(r, scene, text, (12.0 * s).round() as u32, [color[0], color[1], color[2], 0], 1.0);
+                let total = ip + 6.0 * s + l.w as f32;
+                let lx = ((rect[0] + rect[2] - total) * 0.5).round();
+                self.mz_icon(r, scene, icon, ip, color, lx, (rect[1] + rect[3] - ip) * 0.5);
+                let tx = lx + ip + 6.0 * s;
+                let ty = ((rect[1] + rect[3] - l.h as f32) * 0.5).round();
+                scene.overlays.push((l.tex, [tx, ty, tx + l.w as f32, ty + l.h as f32]));
             }
             self.mz.play = Some(play);
             self.mz.request = Some(req);
             // the request being typed, or what became of the last one
-            let line_y = y0 + 142.0 * s;
             let line = match (&v.typing, &v.status) {
-                (Some(t), _) => Some((format!("Request: {t}|   (Enter sends, Esc cancels)"), [237, 237, 237, 0])),
-                (None, Some(s)) => Some((s.clone(), [150, 200, 150, 0])),
+                (Some(t), _) => Some((format!("{t}|"), text_c, "close")),
+                (None, Some(m)) => Some((m.clone(), [60, 160, 100, 0], "")),
                 _ => None,
             };
-            if let Some((text, c)) = line {
-                self.mz_label(r, scene, xr, &text, 12.0 * s, c, 1.0, x0 + pad, line_y);
+            if let Some((text, c, _)) = line {
+                let ly = y0 + 142.0 * s;
+                let chip = [x0 + pad, ly - 3.0 * s, xr, ly + 19.0 * s];
+                self.text.rounded(r, scene, chip, 8.0 * s, key_bg);
+                let shown = if v.typing.is_some() && text.len() <= 1 { "Type a song and press Enter (Esc cancels)".to_string() } else { text };
+                let c = if v.typing.is_some() && shown.starts_with("Type a song") { grey } else { c };
+                self.mz_label(r, scene, xr - 6.0 * s, &shown, 12.0 * s, c, 1.0, x0 + pad + 8.0 * s, ly);
             }
         }
     }
