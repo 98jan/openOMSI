@@ -103,7 +103,7 @@ impl Ui {
         let slot = if f.nav_rect.is_none() { self.mz.slot } else { None };
         let embedded = slot.is_some();
         let small_w = slot.map_or_else(|| f.nav_rect.map_or(280.0 * s, |a| a[2] - a[0]).max(250.0 * s), |q| q[2] - q[0]);
-        let (small_h, big_h) = (slot.map_or(52.0 * s, |q| q[3] - q[1]), 152.0 * s + if v.typing.is_some() || v.status.is_some() { 26.0 * s } else { 0.0 });
+        let (small_h, big_h) = (slot.map_or(52.0 * s, |q| q[3] - q[1]), 144.0 * s + if v.typing.is_some() || v.status.is_some() { 26.0 * s } else { 0.0 });
         let w = small_w.round();
         let h = (small_h + (big_h - small_h) * e).round();
         let (x0, y0) = match f.nav_rect {
@@ -134,9 +134,13 @@ impl Ui {
         }
         let pad = 12.0 * s;
         let xr = x1 - pad;
+        if embedded && e < 0.5 {
+            // (a divider, as between the bar's other parts)
+            self.text.rounded(r, scene, [x0 - 6.0 * s, y0 + 5.0 * s, x0 - 5.0 * s + 1.0, y1 - 5.0 * s], 0.0, [120, 120, 120, 255]);
+        }
         // the cover: 36 px in the small card, 88 in the full one
         let small_art = if embedded { small_h - 8.0 * s } else { 36.0 * s };
-        let art = small_art + (88.0 * s - small_art) * e;
+        let art = small_art + (72.0 * s - small_art) * e;
         let (ax, ay) = (x0 + if embedded { 4.0 * s } else { pad } + (pad - if embedded { 4.0 * s } else { pad }) * e, y0 + (small_h - small_art) * 0.5 * (1.0 - e) + 12.0 * s * e);
         match v.art.as_deref().and_then(|p| self.mz_art(r, scene, p)) {
             Some(tex) => scene.overlays.push((tex, [ax, ay, ax + art, ay + art])),
@@ -192,7 +196,7 @@ impl Ui {
         // buttons (only once the card is nearly open, so a click on the small one does nothing)
         if e > 0.9 {
             let bh = 30.0 * s;
-            let row_y = y0 + 100.0 * s;
+            let row_y = y0 + 92.0 * s;
             let bw = (w - pad * 2.0 - 8.0 * s) * 0.5;
             let play = [x0 + pad, row_y, x0 + pad + bw, row_y + bh];
             let req = [play[2] + 8.0 * s, row_y, xr, row_y + bh];
@@ -218,7 +222,7 @@ impl Ui {
                 _ => None,
             };
             if let Some((text, c, _)) = line {
-                let ly = y0 + 138.0 * s;
+                let ly = y0 + 130.0 * s;
                 let chip = [x0 + pad, ly - 3.0 * s, xr, ly + 19.0 * s];
                 self.text.rounded(r, scene, chip, 8.0 * s, key_bg);
                 let shown = if v.typing.is_some() && text.len() <= 1 { "Type a song and press Enter (Esc cancels)".to_string() } else { text };

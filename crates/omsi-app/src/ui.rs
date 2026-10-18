@@ -686,7 +686,7 @@ impl Ui {
             }
             self.text.rounded(r, scene, [x, y, x + w, y + h], 8.0 * s, [28, 28, 28, (255.0 * self.text.backdrop.min(1.0)) as u8]);
             for (k, l) in labels.iter().enumerate() {
-                let (lx, ly) = (x + (w - l.w as f32) * 0.5, y + pad * 0.4 + k as f32 * lh);
+                let (lx, ly) = (x + (w - mz_room - l.w as f32) * 0.5, y + pad * 0.4 + k as f32 * lh);
                 scene.overlays.push((l.tex, [lx, ly, lx + l.w as f32, ly + l.h as f32]));
             }
             self.info_rect = Some([x, y, x + w, y + h]);
