@@ -88,41 +88,9 @@ impl VehicleInstance {
             };
             state.vars[id as usize] = value;
         }
-        // Model directives such as [visible] refer to vehicle variables too. Register their
-        // names before mesh properties are resolved, even when the vehicle's varlists omit
-        // them; scripts and model directives then share the same runtime variable table.
-        // A model-only variable has no script slot to initialise it: it starts at the value
-        // its meshes' [visible] ask for when they all ask for the same one (a display shown
-        // as the model means it), and at 0 when several meshes pick between values with it
-        // (a selector: the one for 0 shows, as with a declared variable nobody set).
-        let mut model_only: Vec<(String, Option<f32>)> = Vec::new();
-        for (name, value) in ty.model.meshes.iter().filter_map(|m| m.visible.as_ref()) {
-            let key = name.to_ascii_lowercase();
-            if var_index.contains_key(&key) {
-                continue;
-            }
-            match model_only.iter_mut().find(|(k, _)| *k == key) {
-                Some((_, v)) => {
-                    if *v != Some(*value) {
-                        *v = None;
-                    }
-                }
-                None => model_only.push((key, Some(*value))),
-            }
-        }
-        // (the variables of the further conditions - a range, a negated one, the second of a
-        // mesh's `[visible]`s - start at 0)
-        for c in ty.model.meshes.iter().flat_map(|m| m.visible_groups()).flatten() {
-            let key = c.variable.to_ascii_lowercase();
-            if !var_index.contains_key(&key) && !model_only.iter().any(|(k, _)| *k == key) {
-                model_only.push((key, None));
-            }
-        }
-        for (key, value) in model_only {
-            let id = state.vars.len() as omsi_script::VarId;
-            state.vars.push(value.unwrap_or(0.0));
-            var_index.insert(key, id);
-        }
+        // Model conditions do not declare variables. In original OMSI 2 an unknown
+        // [visible] name leaves the mesh shown, while [matl_change] keeps its base
+        // material. Preserve the missing lookup instead of inventing a runtime slot.
         // `Axle_Springfactor_*` (varlist_roadvehicle.txt): the engine's spring scale, which
         // air-suspension scripts overwrite with their bellows pressure; a steel-sprung bus
         // never writes it and must not ride on springs of zero
