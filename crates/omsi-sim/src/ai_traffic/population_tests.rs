@@ -107,3 +107,51 @@ fn the_timetable_has_a_budget_of_its_own() {
     t.no_timetable_buses = true;
     assert_eq!(t.scheduled_room(), Some(0));
 }
+
+/// A lane's spawn density weighs each group's rule there by how much traffic the map makes
+/// of that group: a lane open only to a rare group stays nearly empty.
+#[test]
+fn a_lane_open_only_to_a_rare_group_spawns_little() {
+    use super::scenario_tests::{street, Fixture};
+    use super::setup::RandomTypes;
+    let f = Fixture::new();
+    let lane = |x: f64, rules: Vec<(u16, f32)>| {
+        let mut l = street(DVec3::new(x, 0.0, 0.0), 0.0, 100.0);
+        l.group_density = rules;
+        l
+    };
+    // the delivery vans' rule of 2.5 only, cars at their default beside a tow truck rule of
+    // 4, tow trucks only (4 at a fortieth of the cars' traffic, so 0.1), and cars at 0.8
+    // with the vans at their 2.5 (at half the cars' traffic: 1.25); then one without rules
+    let lanes = vec![
+        lane(0.0, vec![(0, 0.0), (1, 2.5)]),
+        lane(10.0, vec![(2, 4.0)]),
+        lane(20.0, vec![(0, 0.0), (2, 4.0)]),
+        lane(30.0, vec![(0, 0.8), (1, 2.5)]),
+        lane(40.0, Vec::new()),
+    ];
+    let mut net = Network { lanes, ..Default::default() };
+    net.build_grid();
+    net.compute_reach();
+    let group = |name: &str, factor: f32| omsi_map::ailists::UnschedGroup { name: name.into(), factor, densities: Vec::new() };
+    let random = RandomTypes {
+        types: (0..3).map(|g| (f.ty.clone(), 1.0, LaneKind::Street, g)).collect(),
+        groups: vec![group("cars", 2.0), group("vans", 1.0), group("tow", 0.05)],
+        group_curves: true,
+        group_uvg: vec![Some(0), Some(1), Some(2)],
+        uvg_defaults: vec![1, 0, 0],
+    };
+    let t = TrafficSim::assemble(&f.dir, net, random, Vec::new(), HashMap::new(), (Vec::new(), Vec::new()), Vec::new(), (1.0, 0), 0);
+    let d: Vec<f32> = t.net.lanes.iter().map(|l| l.density).collect();
+    assert!((d[0] - 1.25).abs() < 1e-4, "{d:?}");
+    assert!((d[1] - 1.0).abs() < 1e-4, "{d:?}");
+    assert!((d[2] - 0.1).abs() < 1e-4, "{d:?}");
+    assert!((d[3] - 1.25).abs() < 1e-4, "{d:?}");
+    assert!((d[4] - 1.0).abs() < 1e-4, "{d:?}");
+    // a very rare group keeps its lane a little above 0
+    let mut l = lane(0.0, vec![(0, 0.0), (2, 4.0)]);
+    l.density = 4.0;
+    let mut t = t;
+    t.groups[2].factor = 0.0004;
+    assert_eq!(t.spawn_density(&l), Some(super::density::SPAWN_DENSITY_FLOOR));
+}

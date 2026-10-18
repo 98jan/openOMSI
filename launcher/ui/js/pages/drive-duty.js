@@ -125,11 +125,12 @@ function TourBus({ tour }) {
     .filter(Boolean)
     .slice(0, 10);
   if (!buses.length) return null;
-  return html`<div class="row muted small" style="gap:6px;flex-wrap:wrap;align-items:center">
+  return html`<div class="row muted small tour-buses" style="gap:6px;flex-wrap:wrap;align-items:center">
     <span>${t('Buses the timetable gives this tour:')}</span>
     ${buses.map(({ v, paint, number }) => {
       const on = v.file === c.bus && (c.paint || '') === paint;
-      return html`<${Button} small kind=${on ? 'primary' : ''} icon=${on ? 'check' : 'bus'} label=${[v.name, paint].filter(Boolean).join(' - ')} onClick=${() => choose({ bus: v.file, paint, number, hof_manual: false })} />`;
+      const name = [v.name, paint].filter(Boolean).join(' - ');
+      return html`<${Button} small kind=${on ? 'primary' : ''} icon=${on ? 'check' : 'bus'} title=${name} onClick=${() => choose({ bus: v.file, paint, number, hof_manual: false })}><span class="ellipsis">${name}</span></${Button}>`;
     })}
   </div>`;
 }
@@ -218,7 +219,7 @@ function Ibis() {
           ${i.routes.slice(0, 3).map((r) => {
             const [line, route] = ibisCodes(i, r.code, s.choice.line);
             return html`<tr>
-              <td class="ellipsis">${(r.name || r.terminus).trim()}</td>
+              <td class="ellipsis" title=${(r.name || r.terminus).trim()}>${(r.name || r.terminus).trim()}</td>
               <td><span class="line-badge">${line}</span></td>
               <td><span class="line-badge">${route}</span></td>
             </tr>`;
@@ -247,7 +248,7 @@ export function Roadbook({ tour, trips, current, now }) {
     <div class="roadbook-trips" ref=${ref}>
       ${trips.map((x, i) => html`<button type="button" class=${'trip-row' + (i === current ? ' on' : '') + (x.arrival < now - 60 && i !== current ? ' past' : '')} onClick=${() => pickTrip(x)}>
         <span class="num time">${hms(x.departure)}</span>
-        ${depotRun(x) ? html`<span class="muted small">${t('Depot run')}</span>` : html`<span class="line-badge">${x.line}</span>`}
+        <span class="kind">${depotRun(x) ? html`<span class="depot">${t('Depot run')}</span>` : html`<span class="line-badge">${x.line}</span>`}</span>
         <span class="grow" title=${`${x.from} → ${x.terminus}`}><span class="ellipsis">${x.terminus}</span><span class="muted small ellipsis">${x.from} | ${hms(x.arrival)}</span></span>
       </button>`)}
     </div>

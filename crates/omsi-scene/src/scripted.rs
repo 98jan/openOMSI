@@ -63,10 +63,24 @@ pub struct ScriptedView {
     /// the mouse).
     pub mesh_xf: Vec<Mat4>,
     pub mesh_visible: Vec<bool>,
+    pub script_lamps: Vec<crate::staging::ScriptLamp>,
 }
 
 pub(crate) fn view_of(views: &[ScriptedView], key: u64) -> Option<usize> {
     views.binary_search_by_key(&key, |v| v.key).ok()
+}
+
+/// Add the glow of the lamps scenery scripts switch within `range` of the camera, each as
+/// bright as its variable was at the last step, by day as well as by night.
+pub(crate) fn push_script_lamp_glows(views: &[ScriptedView], camera_pos: DVec3, range: f64, out: &mut Vec<omsi_render::Corona>) {
+    let near = |v: &&ScriptedView| v.pos.distance(camera_pos) <= range;
+    for view in views.iter().filter(near) {
+        for lamp in view.script_lamps.iter().filter(|l| l.level > 0.0) {
+            let mut glow = lamp.glow;
+            glow.brightness *= lamp.level.min(1.0);
+            out.push(glow);
+        }
+    }
 }
 
 impl ScriptedSet {
@@ -92,8 +106,13 @@ impl ScriptedSet {
             htmls,
             alpha_slots,
             alpha_last,
+            mut script_lamps,
         } = o;
         let key = self.inbox.next_key();
+        // (as its script's {init} left them, until its first step)
+        for lamp in &mut script_lamps {
+            lamp.level = inst.var(&lamp.variable).unwrap_or(0.0);
+        }
         let (program, mesh_xf, mesh_visible) = (inst.program.clone(), inst.mesh_transforms.clone(), inst.mesh_visible.clone());
         let mut s = omsi_sim::scenery::SceneryObject::new(key, map_id, pos, tile, inst, ty.sco.night_map_mode);
         s.controller = controller;
@@ -105,6 +124,8 @@ impl ScriptedSet {
         s.text_last = vec![None; texts.len()];
         s.has_pages = !htmls.is_empty();
         s.needs_vars = !variants.is_empty() || !alpha_slots.is_empty() || !ty.dynamic_textures.is_empty() || ty.sco.sound.is_some();
+        // (lamps it switches read its variables too)
+        s.needs_vars |= !script_lamps.is_empty();
         s.switch_dirs = ty.sco.path_switch_dir.clone();
         if s.switch_dirs.iter().any(|d| d.is_some()) {
             s.sco_path = Some(Arc::from(ty.sco.path.as_path()));
@@ -127,6 +148,7 @@ impl ScriptedSet {
             alpha_last,
             mesh_xf,
             mesh_visible,
+            script_lamps,
         });
     }
 
@@ -734,6 +756,9 @@ impl World {
             };
             for (inst, slot, base, item, name) in &v.variants {
                 renderer.set_material(scene, *inst, *slot, if change_picks_item(switch_value(name)) { *item } else { *base });
+            }
+            for lamp in &mut v.script_lamps {
+                lamp.level = var(&lamp.variable).unwrap_or(0.0);
             }
             if !v.ty.dynamic_textures.is_empty() {
                 let selection = scenery_texture_selection(&v.ty, &var);

@@ -238,6 +238,38 @@ pub struct Pipeline {
     stand_in: Option<Box<TrafficSim>>,
     /// The scenery came back from a step whose commands the view has not applied yet.
     scenery_stepped: bool,
+    lag: DrawnLag,
+    started: Option<Instant>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct DrawnLag {
+    now: f32,
+    last: f32,
+    span: f32,
+    lag: f32,
+}
+
+impl DrawnLag {
+    const SPAN: f32 = 0.25;
+    const EASE: f32 = 0.1;
+
+    pub(crate) fn note(&mut self, owed: f32, frame_secs: f32) {
+        let frame_secs = frame_secs.max(0.0);
+        self.now = self.now.max(owed);
+        self.span += frame_secs;
+        if self.span >= Self::SPAN {
+            self.last = self.now;
+            self.now = 0.0;
+            self.span = 0.0;
+        }
+        let most = self.now.max(self.last);
+        self.lag = if most >= self.lag { most } else { (self.lag - Self::EASE * frame_secs).max(most) };
+    }
+
+    pub(crate) fn behind(&self, behind: f32, owed: f32) -> f32 {
+        behind + self.lag.max(owed) - owed
+    }
 }
 
 static ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -295,6 +327,14 @@ impl Pipeline {
         self.owed.push(OwedStep { dt, player });
     }
 
+    pub fn traffic_behind(&self, behind: f32) -> f32 {
+        self.lag.behind(behind, self.owed_secs())
+    }
+
+    fn owed_secs(&self) -> f32 {
+        self.owed.iter().map(|o| o.dt).sum()
+    }
+
     /// Whether the scripted stage leaves the scenery's step to the sim thread this frame: the
     /// scripts read the lights after the traffic's step, so only with the traffic's step
     /// going there too, or without a traffic (whose lights read unlinked anyway).
@@ -347,6 +387,9 @@ impl Pipeline {
         if self.out.is_some() {
             return people;
         }
+        let now = Instant::now();
+        let frame_secs = self.started.replace(now).map_or(0.0, |t| (now - t).as_secs_f32());
+        self.lag.note(self.owed_secs(), frame_secs);
         let mut job = SimJob::default();
         let owed = std::mem::take(&mut self.owed);
         if let (false, Some(sim)) = (owed.is_empty(), sim) {
