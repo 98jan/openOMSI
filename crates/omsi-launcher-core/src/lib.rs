@@ -1652,7 +1652,7 @@ pub fn ibis_info(bus: &str, hof_name: &str, line: &str, terminus: &str, stops: &
         routes.push(IbisRoute { code: t.code.clone(), route: t.route.clone(), name: t.name.clone(), terminus_code: code, terminus });
     }
     let stops: Vec<&str> = stops.iter().map(String::as_str).collect();
-    let trip_route = omsi_vehicle::hof::trip_terminus(hof, line, terminus, &stops).and_then(|(_, r)| r).map(|r| hof.info_trips[r].code.clone());
+    let trip_route = (!terminus.trim().is_empty()).then(|| omsi_vehicle::hof::trip_terminus(hof, line, terminus, &stops)).flatten().and_then(|(_, r)| r).map(|r| hof.info_trips[r].code.clone());
     Ok(IbisInfo { hof: hof.name.clone(), line_code: line_digits, routes, trip_route })
 }
 

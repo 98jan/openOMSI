@@ -207,7 +207,7 @@ function ibisCodes(info, code, line) {
 function Ibis({ trip }) {
   const s = useStore();
   const x = s.ibis;
-  useEffect(() => void loadIbis(trip), [trip]);
+  useEffect(() => void loadIbis(trip || null), [trip]);
   if (!x || s.choice.free) return null;
   const i = x.info;
   let body;
