@@ -375,7 +375,9 @@ impl Navigator {
             }
         }
         self.draw_terrain_button(ui, pad, bs, right, s);
-        self.draw_compass(ui, w, h, s);
+        // (the panel's left edge, when it is open: the compass keeps to the left of it)
+        let panel_left = (self.city.lines.open && self.surface.as_ref().is_some_and(|sf| !sf.lines().is_empty())).then(|| bx - 12.0 * s - (332.0 * s).min(w * 0.42));
+        self.draw_compass(ui, w, h, s, panel_left);
     }
 
     /// The Lines button, only where the package has lines: `bs` high at `y`, its right edge at `right`; returns the new `right`.

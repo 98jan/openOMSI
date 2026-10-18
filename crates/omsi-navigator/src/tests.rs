@@ -536,3 +536,17 @@ fn opening_a_line_does_not_read_the_timetable_but_pressing_the_button_does() {
     let first = n.line_times();
     assert!(first.is_some() || n.times_job.is_some());
 }
+
+#[test]
+fn the_compass_keeps_clear_of_the_open_lines_panel() {
+    let (w, h, s) = (1600.0f32, 900.0f32, 1.0f32);
+    let r = 24.0 * s;
+    // no panel: bottom right
+    let free = orient::compass_centre(w, h, s, None);
+    assert!((free.x - (w - 36.0 * s - r)).abs() < 1e-3);
+    // the panel open (its left edge as the city map lays it out: the column at w - 52, 12 px of gap, 332 px wide)
+    let left = (w - 52.0 * s) - 12.0 * s - 332.0 * s;
+    let beside = orient::compass_centre(w, h, s, Some(left));
+    assert!(beside.x + r <= left, "the disc ends before the panel begins: {} vs {left}", beside.x + r);
+    assert_eq!(beside.y, free.y, "only moved sideways");
+}

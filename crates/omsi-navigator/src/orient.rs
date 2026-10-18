@@ -19,10 +19,10 @@ impl Navigator {
 
     /// The compass, bottom right: where real north lies on the screen (red tip), and how the map is turned now (as it is
     /// drawn, real north up, or the bus's heading up). A click on it changes how (see `orient`).
-    pub(super) fn draw_compass(&mut self, ui: &mut Painter, w: f32, h: f32, s: f32) {
+    pub(super) fn draw_compass(&mut self, ui: &mut Painter, w: f32, h: f32, s: f32, panel_left: Option<f32>) {
         let pal = super::style::palette(self.light);
         let r = 24.0 * s;
-        let c = Vec2::new(w - 36.0 * s - r, h - 62.0 * s - r);
+        let c = compass_centre(w, h, s, panel_left);
         let north = self.surface.as_ref().map_or(0.0, |sf| sf.north() as f64);
         let disc = Rect::new(c.x - r, c.y - r, 2.0 * r, 2.0 * r);
         ui.shadow(disc, r, 8.0 * s, Color::rgba(0, 0, 0, 0.14));
@@ -44,4 +44,12 @@ impl Navigator {
         ui.text(&mut self.atlas, &self.fonts, &name, 10.5 * s, Weight::Medium, Vec2::new(c.x, c.y + r + 13.0 * s), Align::Center, pal.card_text);
         self.city.buttons.push((Rect::new(disc.x, disc.y, disc.w, disc.h + 16.0 * s), 7));
     }
+}
+
+/// Where the compass sits: bottom right, and, while the lines panel is open (`panel_left`: its left edge), to the left of it, so
+/// that it is not drawn over the list and does not take the clicks of its corner.
+pub(super) fn compass_centre(w: f32, h: f32, s: f32, panel_left: Option<f32>) -> Vec2 {
+    let r = 24.0 * s;
+    let x = w - 36.0 * s - r;
+    Vec2::new(panel_left.map_or(x, |left| x.min(left - 12.0 * s - r)), h - 62.0 * s - r)
 }
