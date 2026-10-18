@@ -61446,6 +61446,7 @@ _version: 2
   id: "Medan"
   ms: "Rupa bumi"
   tl: "Lupain"
+  sr: "Teren"
 "North":
   es: "Norte"
   ca: "Nord"
@@ -61474,6 +61475,7 @@ _version: 2
   id: "Utara"
   ms: "Utara"
   tl: "Hilaga"
+  sr: "Sever"
 "Heading":
   es: "Rumbo"
   ca: "Rumb"
@@ -61502,3 +61504,4 @@ _version: 2
   id: "Haluan"
   ms: "Haluan"
   tl: "Direksyon"
+  sr: "Pravac"

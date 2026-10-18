@@ -377,8 +377,8 @@ pub struct Navigator {
     surface_version: u64,
     /// The surface is drawn (the `nav_surface` setting).
     pub show_surface: bool,
-    /// The terrain view of the city map: contour lines and their heights, where the map's package carries them (the
-    /// `nav_contours` setting; a button on the map).
+    /// The terrain view of the city map: contour lines and their heights, where the map's package carries them (a button
+    /// on the map; not kept between runs).
     pub show_contours: bool,
     /// How the city map is turned: 0 as the map is drawn, 1 real north up (where the package says which way it lies), 2 the
     /// heading of the bus up. A click on the compass changes it.

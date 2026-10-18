@@ -448,7 +448,7 @@ impl Navigator {
         let radius = (w.max(h) as f64 * mpp * (0.8 + 1.4 * tilt as f64)).max(500.0);
         let detail = (mpp < 0.7) as u64 | ((mpp < 2.2) as u64) << 1 | ((mpp < 3.5) as u64) << 2 | ((mpp < 6.0) as u64) << 3;
         let band = self.contour_band();
-        let key = self.look_key() ^ detail << 40 ^ self.global_version << 48 ^ band.map_or(0, |b| 1 + b.1) << 36;
+        let key = self.look_key() ^ detail << 40 ^ self.global_version << 48 ^ band.map_or(0, |b| 1 + b.1) << 60;
         let mut arrived = None;
         if let Some(job) = self.city_job.as_ref() {
             match job.poll() {
@@ -662,7 +662,7 @@ impl Navigator {
                 ui.text_rotated(&mut self.atlas, &self.fonts, name, px, Weight::Medium, p, ang, pal.label);
             }
         }
-        self.terrain_labels(&mut ui, &on_screen, win, s);
+        self.terrain_labels(&mut ui, &on_screen, win, s, &mut taken);
         for (k, p) in markers.into_iter().rev() {
             if self.city.mpp < 4.0 || k == 0 || k + 1 == n_stops {
                 stop_pin(&mut ui, &mut self.atlas, p, k == 0, k + 1 == n_stops, s);
