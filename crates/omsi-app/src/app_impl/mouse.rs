@@ -772,3 +772,31 @@ mod reach_tests {
         assert!(part_in_reach(DVec3::new(-2.0, 17.0, 1.7), DVec3::new(0.0, 12.0, 0.0), 180.0, Some(rear)));
     }
 }
+
+impl App {
+    /// A key pressed while a MileZero song request is being typed: true when it was taken.
+    pub(crate) fn milezero_typing(&mut self, event: &winit::event::KeyEvent) -> bool {
+        use winit::keyboard::{Key, NamedKey};
+        let mz = &mut self.sound.milezero;
+        if event.state != ElementState::Pressed || mz.typing.is_none() {
+            return false;
+        }
+        match &event.logical_key {
+            Key::Named(NamedKey::Enter) => mz.submit(),
+            Key::Named(NamedKey::Escape) => mz.typing = None,
+            Key::Named(NamedKey::Backspace) => {
+                if let Some(t) = mz.typing.as_mut() {
+                    t.pop();
+                }
+            }
+            _ => {
+                if let (Some(t), Some(text)) = (mz.typing.as_mut(), event.text.as_deref()) {
+                    if t.chars().count() < 200 {
+                        t.extend(text.chars().filter(|c| !c.is_control()));
+                    }
+                }
+            }
+        }
+        true
+    }
+}

@@ -202,24 +202,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 // a MileZero song request being typed takes the keyboard
-                if event.state == ElementState::Pressed && self.sound.milezero.typing.is_some() {
-                    use winit::keyboard::{Key, NamedKey};
-                    match &event.logical_key {
-                        Key::Named(NamedKey::Enter) => self.sound.milezero.submit(),
-                        Key::Named(NamedKey::Escape) => self.sound.milezero.typing = None,
-                        Key::Named(NamedKey::Backspace) => {
-                            if let Some(t) = self.sound.milezero.typing.as_mut() {
-                                t.pop();
-                            }
-                        }
-                        _ => {
-                            if let (Some(t), Some(text)) = (self.sound.milezero.typing.as_mut(), event.text.as_deref()) {
-                                if t.chars().count() < 200 {
-                                    t.extend(text.chars().filter(|c| !c.is_control()));
-                                }
-                            }
-                        }
-                    }
+                if self.milezero_typing(&event) {
                     return;
                 }
                 // '/' opens the chat's input box wherever the keyboard has it (the key
