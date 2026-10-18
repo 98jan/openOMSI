@@ -121,6 +121,8 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
             // puddles and the wet asphalt the renderer draws (the same wetness:
             // none under snow, OMSI_WETNESS as the picture takes it)
             let wetness = puddles::road_wetness(*cx.weather.wetness, wt.snow);
+            // (the vehicles' own wheel spray goes with the same water: only through puddles)
+            omsi_sim::particles::set_road_water(Some(puddles::road_water_hook(w, wetness)));
             if (wetness > 0.0 || !cx.weather.spray.is_empty()) && !omsi_cfg::flags::OMSI_NO_SPRAY.is_set() {
                 let __ts = Instant::now();
                 steps::throw_spray(

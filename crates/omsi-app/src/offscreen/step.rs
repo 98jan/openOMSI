@@ -847,6 +847,7 @@ impl Offscreen<'_> {
         // A dedicated server's picture (a 64x36 offscreen one) is never looked at: no spray
         // to throw for every AI car in the rain
         let spray_wet = puddles::road_wetness(*wetness, weather.snow);
+        omsi_sim::particles::set_road_water(Some(puddles::road_water_hook(world, spray_wet)));
         let server = crate::server::SERVER_MODE.load(std::sync::atomic::Ordering::Relaxed);
         if !server && (spray_wet > 0.0 || !spray.is_empty()) && !omsi_cfg::flags::OMSI_NO_SPRAY.is_set() {
             let eye = traffic
