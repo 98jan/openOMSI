@@ -183,6 +183,29 @@ impl ControlNames {
         names.iter().find_map(|n| self.text(n)).map(str::to_string)
     }
 
+    /// Localise a complete label first, then compose unknown mod controls from the same
+    /// cockpit vocabulary. The caller supplies its catalogue, keeping UI tables out of input.
+    pub fn control_localized(&self, event: &str, lookup: impl Fn(&str) -> Option<String>) -> String {
+        let label = self.control(event);
+        if let Some(text) = lookup(&label) {
+            return text;
+        }
+        // Mouse-only variants add a location or a second button to an official label.
+        for (suffix, extra) in [(" (outside)", "outside"), (" 2", "2")] {
+            if let Some(base) = label.strip_suffix(suffix) {
+                if let Some(text) = lookup(base) {
+                    return if extra == "2" {
+                        format!("{text} 2")
+                    } else {
+                        format!("{text} ({})", lookup(extra).unwrap_or_else(|| extra.to_string()))
+                    };
+                }
+            }
+        }
+        let word = |key: &str| lookup(key).unwrap_or_else(|| key.to_string());
+        translate_inner(event, Some(&word))
+    }
+
     /// A part of the bus that is not a control, from its mesh file name.
     pub fn part(&self, mesh_stem: &str) -> String {
         if self.lang == "DEU" {
@@ -424,6 +447,11 @@ const WORDS: &[(&str, &str)] = &[
 const DEVICE_WORDS: &[&str] = &["switch", "button", "lever", "rotary switch", "micro switch", "master switch"];
 const SIDE_WORDS: &[&str] = &["left", "right", "front", "rear", "outer", "inner", "upper left", "upper right", "lower left", "lower right", "front left", "front right", "rear left", "rear right"];
 
+/// Catalogue keys used to compose control names, including names supplied by mods.
+pub fn control_vocabulary() -> impl Iterator<Item = &'static str> {
+    WORDS.iter().map(|(_, text)| *text).filter(|text| !text.is_empty()).chain(["on/off"])
+}
+
 fn dictionary() -> &'static HashMap<&'static str, &'static str> {
     static D: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
     D.get_or_init(|| WORDS.iter().copied().collect())
@@ -465,6 +493,10 @@ fn split_compound(word: &str) -> Option<Vec<&'static str>> {
 
 /// Turn an internal name into an English phrase.
 pub fn translate(name: &str) -> String {
+    translate_inner(name, None)
+}
+
+fn translate_inner(name: &str, localize: Option<&dyn Fn(&str) -> String>) -> String {
     let d = dictionary();
     let toks = tokens(name);
     let mut words: Vec<String> = Vec::new();
@@ -509,18 +541,24 @@ pub fn translate(name: &str) -> String {
     // a doubled word from a compound and its neighbour ("door door leaf")
     words.dedup();
     // "switch lift down" → "lift down switch"
-    if words.len() > 1 && DEVICE_WORDS.contains(&words[0].as_str()) {
+    if localize.is_none() && words.len() > 1 && DEVICE_WORDS.contains(&words[0].as_str()) {
         let w = words.remove(0);
         words.push(w);
     }
     // "driver's door left" → "left driver's door"
-    if words.len() > 1 && SIDE_WORDS.contains(&words[words.len() - 1].as_str()) && !SIDE_WORDS.contains(&words[words.len() - 2].as_str()) {
+    if localize.is_none() && words.len() > 1 && SIDE_WORDS.contains(&words[words.len() - 1].as_str()) && !SIDE_WORDS.contains(&words[words.len() - 2].as_str()) {
         let w = words.pop().unwrap_or_default();
         words.insert(0, w);
     }
+    if let Some(tr) = localize {
+        for word in &mut words {
+            *word = tr(word);
+        }
+    }
     let mut s = words.join(" ");
     if on_off {
-        s.push_str(" on/off");
+        s.push(' ');
+        s.push_str(&localize.map(|tr| tr("on/off")).unwrap_or_else(|| "on/off".into()));
     }
     if s.trim().is_empty() {
         return humanize(name);

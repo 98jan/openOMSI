@@ -104,7 +104,7 @@ impl App {
         // know internal, mostly German names)
         let names = describe::names(&self.args.root, &self.settings.language);
         // next to the cursor (`ui`), when the setting asks for it
-        let tooltip = self.menus.hover.as_ref().map(|h| names.control(h));
+        let tooltip = self.menus.hover.as_ref().map(|h| crate::cockpit_tooltips::control(names, h, &self.settings.language));
         // the editors' keys while one is on: help to look up, not news - they stay in the
         // corner as long as the editor does
         let mut lines: Vec<String> = mirror_help;

@@ -108,6 +108,7 @@ mod applog;
 mod app_events;
 mod bus_service;
 mod camera_util;
+mod cockpit_tooltips;
 // the game controllers, their mappings and force feedback (`omsi-input`), at their old paths
 use omsi_input::{controllers, gamepad_profile, hpattern};
 mod cli;
