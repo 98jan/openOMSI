@@ -17,6 +17,8 @@ pub(super) struct GroundParts {
     pub net: Option<Arc<Network>>,
     pub md: Option<Arc<MapData>>,
     pub surface: Option<Arc<omsi_map::package::Package>>,
+    /// The terrain view: how strong the contour lines are (None: off).
+    pub contours: Option<f32>,
 }
 
 /// What a build makes, relative to `anchor`: the ground, and the houses' shadows, standing
@@ -58,11 +60,15 @@ impl Built {
 /// carriageway is a band, as from far); `houses`: build them too.
 pub(super) fn build(parts: &GroundParts, anchor: DVec2, reach: f64, pal: &Palette, look: GroundLook, paved: bool, houses: Option<usize>) -> Built {
     let mut p = Painter::new();
+    let mut layers = None;
     if let Some(sf) = parts.surface.as_deref() {
-        super::surface::build_surface(&mut p, sf, anchor, Some((anchor, reach)), pal);
+        layers = Some(super::surface::build_surface(&mut p, sf, anchor, Some((anchor, reach)), pal, parts.contours.is_some()));
     }
     if let Some(md) = parts.md.as_deref() {
         md.build_land(&mut p, anchor, anchor, reach, pal, look);
+    }
+    if let (Some(layers), Some(k)) = (layers.as_ref(), parts.contours) {
+        super::surface::build_contours(&mut p, layers, anchor, pal, k);
     }
     let paved = paved && parts.md.is_some();
     let rel = |q: DVec3| Vec3::new((q.x - anchor.x) as f32, (q.y - anchor.y) as f32, 0.0);
@@ -114,7 +120,7 @@ impl MapGround {
                 (l, c)
             })
             .collect();
-        MapGround { parts: GroundParts { roads: Arc::new(roads), net: Some(net), md, surface: package.map(Arc::new) } }
+        MapGround { parts: GroundParts { roads: Arc::new(roads), net: Some(net), md, surface: package.map(Arc::new), contours: None } }
     }
 
     /// Everything within `reach` of `anchor` as the city map shows it at `mpp` metres a pixel
@@ -210,13 +216,14 @@ impl Navigator {
     }
 
     /// What a build reads now (`net`: the network the roads are drawn from).
-    pub(super) fn ground_parts(&mut self, net: Option<&Network>) -> GroundParts {
+    pub(super) fn ground_parts(&mut self, net: Option<&Network>, contours: Option<f32>) -> GroundParts {
         let roads = net.map(|n| self.road_list(n)).unwrap_or_default();
         GroundParts {
             roads,
             net: self.global.clone(),
             md: self.map_data.clone(),
             surface: self.surface.clone().filter(|_| self.show_surface),
+            contours,
         }
     }
 }
