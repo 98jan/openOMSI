@@ -62005,3 +62005,63 @@ _version: 2
   ms: "Rupa bumi"
   tl: "Lupain"
   sr: "Teren"
+"MileZero integration":
+  ru: "Интеграция MileZero"
+  de: "MileZero-Integration"
+  fr: "Intégration MileZero"
+  es: "Integración de MileZero"
+"The MileZero radio over the navigator: what plays, a play button (paused until you press it), song requests; the stream quality follows your connection":
+  ru: "Радио MileZero над навигатором: что играет, кнопка воспроизведения (пока не нажата, пауза), заказ песен; качество потока подстраивается под соединение"
+  de: "Das MileZero-Radio über dem Navigator: was läuft, eine Wiedergabetaste (pausiert, bis Sie sie drücken), Musikwünsche; die Streamqualität folgt Ihrer Verbindung"
+  fr: "La radio MileZero au-dessus du navigateur : ce qui passe, un bouton de lecture (en pause tant que vous n'appuyez pas), demandes de morceaux ; la qualité du flux suit votre connexion"
+  es: "La radio MileZero sobre el navegador: qué suena, un botón de reproducción (en pausa hasta que lo pulses), peticiones de canciones; la calidad del flujo sigue tu conexión"
+"Loading":
+  ru: "Загрузка"
+  de: "Lädt"
+  fr: "Chargement"
+  es: "Cargando"
+"Request":
+  ru: "Заказать"
+  de: "Wunsch"
+  fr: "Demander"
+  es: "Pedir"
+"Live radio":
+  ru: "Прямой эфир"
+  de: "Live-Radio"
+  fr: "Radio en direct"
+  es: "Radio en directo"
+"On air: {}":
+  ru: "В эфире: {}"
+  de: "Auf Sendung: {}"
+  fr: "À l'antenne : {}"
+  es: "En el aire: {}"
+"{} · auto quality":
+  ru: "{} · авто-качество"
+  de: "{} · automatische Qualität"
+  fr: "{} · qualité auto"
+  es: "{} · calidad automática"
+"Type a song and press Enter (Esc cancels)":
+  ru: "Введите песню и нажмите Enter (Esc — отмена)"
+  de: "Titel eingeben und Enter drücken (Esc bricht ab)"
+  fr: "Saisissez un morceau puis Entrée (Échap annule)"
+  es: "Escribe una canción y pulsa Enter (Esc cancela)"
+"Sending the request ...":
+  ru: "Отправка заказа ..."
+  de: "Wunsch wird gesendet ..."
+  fr: "Envoi de la demande ..."
+  es: "Enviando la petición ..."
+"Request sent":
+  ru: "Заказ отправлен"
+  de: "Wunsch gesendet"
+  fr: "Demande envoyée"
+  es: "Petición enviada"
+"You have been blocked from sending requests":
+  ru: "Вам запрещено отправлять заказы"
+  de: "Sie dürfen keine Wünsche senden"
+  fr: "Vous ne pouvez plus envoyer de demandes"
+  es: "Se te ha bloqueado el envío de peticiones"
+"The request could not be sent":
+  ru: "Не удалось отправить заказ"
+  de: "Der Wunsch konnte nicht gesendet werden"
+  fr: "La demande n'a pas pu être envoyée"
+  es: "No se pudo enviar la petición"

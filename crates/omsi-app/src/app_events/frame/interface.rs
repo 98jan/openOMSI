@@ -492,7 +492,7 @@ impl App {
                     dj: song.dj,
                     duration: song.duration,
                     light: self.menus.navigator.as_ref().map_or(self.settings.nav_light, |n| n.light),
-                    art: song.art,
+                    art: song.cover,
                     elapsed: m.elapsed(),
                     playing: m.is_playing(),
                     loading: m.loading(),

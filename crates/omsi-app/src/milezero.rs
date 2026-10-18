@@ -27,8 +27,8 @@ pub(crate) struct Song {
     pub title: String,
     pub artist: String,
     pub dj: String,
-    /// The cover, downloaded to a file.
-    pub art: Option<std::path::PathBuf>,
+    /// The cover, decoded on the poller's thread, with the address it came from.
+    pub cover: Option<(String, Arc<omsi_texture::Image>)>,
     /// Unix seconds the song started (from the station's history), when known.
     pub started: Option<i64>,
     /// The song's length in seconds (looked up by name), when found.
@@ -53,6 +53,8 @@ struct Playing {
 
 pub(crate) struct Milezero {
     shared: Arc<Mutex<Shared>>,
+    /// The running poller's own token: every poller gets a new one, so an old poller that has
+    /// not yet noticed its stop is never started again by a quick off and on.
     stop: Arc<AtomicBool>,
     polling: bool,
     /// The player pressed play (it is always paused when the game starts).
@@ -103,18 +105,18 @@ fn poll(shared: Arc<Mutex<Shared>>, stop: Arc<AtomicBool>) {
             if np.is_object() && key != last_title {
                 last_title = key.clone();
                 let started = get_json(&agent, &format!("{HUB}/api/public/history?limit=1")).and_then(|h| h[0]["played_at"].as_i64());
-                let art = np["art"].as_str().filter(|u| u.starts_with("https://")).and_then(|u| {
-                    let name: String = u.chars().filter(|c| c.is_ascii_alphanumeric()).rev().take(40).collect();
-                    let path = dir.join(format!("{name}.jpg"));
-                    if !path.exists() {
-                        let mut bytes = Vec::new();
-                        agent.get(u).call().ok()?.into_reader().take(4 << 20).read_to_end(&mut bytes).ok()?;
-                        std::fs::write(&path, bytes).ok()?;
-                    }
-                    Some(path)
+                // (downloaded and decoded here, never on the frame; the file is not kept)
+                let cover = np["art"].as_str().filter(|u| u.starts_with("https://")).and_then(|u| {
+                    let path = dir.join("cover.tmp");
+                    let mut bytes = Vec::new();
+                    agent.get(u).call().ok()?.into_reader().take(4 << 20).read_to_end(&mut bytes).ok()?;
+                    std::fs::write(&path, bytes).ok()?;
+                    let img = omsi_texture::decode_file(&path).ok();
+                    let _ = std::fs::remove_file(&path);
+                    img.map(|i| (u.to_string(), Arc::new(i)))
                 });
                 let duration = itunes_length(&agent, &text("artist"), &text("title"));
-                let song = Song { title: text("title"), artist: text("artist"), dj: np["dj"]["display_name"].as_str().unwrap_or("").to_string(), art, started, duration };
+                let song = Song { title: text("title"), artist: text("artist"), dj: np["dj"]["display_name"].as_str().unwrap_or("").to_string(), cover, started, duration };
                 shared.lock().unwrap().song = Some(song);
             }
         }
@@ -178,13 +180,9 @@ impl Milezero {
         let dt = self.last.elapsed().as_secs_f32().min(0.5);
         self.last = Instant::now();
         if enabled && !self.polling {
-            self.polling = true;
-            self.stop.store(false, Ordering::Relaxed);
-            let (s, st) = (self.shared.clone(), self.stop.clone());
-            let _ = std::thread::Builder::new().name("milezero".into()).spawn(move || poll(s, st));
+            self.start_poller();
         } else if !enabled && self.polling {
-            self.polling = false;
-            self.stop.store(true, Ordering::Relaxed);
+            self.stop_poller();
             self.want_play = false;
             self.typing = None;
         }
@@ -225,6 +223,18 @@ impl Milezero {
         }
     }
 
+    fn start_poller(&mut self) {
+        self.polling = true;
+        self.stop = Arc::new(AtomicBool::new(false));
+        let (s, st) = (self.shared.clone(), self.stop.clone());
+        let _ = std::thread::Builder::new().name("milezero".into()).spawn(move || poll(s, st));
+    }
+
+    fn stop_poller(&mut self) {
+        self.polling = false;
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
     fn restart(&mut self, audio: &AudioEngine, volume: f32) {
         if let Some(p) = self.playing.take() {
             p.buf.close();
@@ -244,5 +254,24 @@ impl Milezero {
 impl Drop for Milezero {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A quick off and on leaves the first poller stopped (its own token) and the second running.
+    #[test]
+    fn a_quick_toggle_stops_the_old_poller_and_starts_a_new_one() {
+        let mut m = Milezero::default();
+        m.start_poller();
+        let first = m.stop.clone();
+        m.stop_poller();
+        m.start_poller();
+        assert!(first.load(Ordering::Relaxed), "the first poller must stay stopped");
+        assert!(!m.stop.load(Ordering::Relaxed), "the second one runs");
+        assert!(!Arc::ptr_eq(&first, &m.stop));
+        m.stop_poller();
     }
 }

@@ -14,6 +14,8 @@ pub struct MzState {
     pub request: Option<[f32; 4]>,
     /// The room it takes beside the navigator, with its gap, for the notices to keep clear.
     pub extent: f32,
+    /// The cover on the GPU (its address and texture): one at a time, the one before is freed.
+    cover: Option<(String, TextureId)>,
     /// Where the card sits inside the information bar (navigator off), when it does.
     pub slot: Option<[f32; 4]>,
 }
@@ -22,7 +24,7 @@ pub struct MzView {
     pub title: String,
     pub artist: String,
     pub dj: String,
-    pub art: Option<std::path::PathBuf>,
+    pub art: Option<(String, std::sync::Arc<omsi_texture::Image>)>,
     pub elapsed: Option<f32>,
     pub duration: Option<f32>,
     pub playing: bool,
@@ -58,13 +60,18 @@ impl Ui {
     }
 
     /// The cover, square.
-    fn mz_art(&mut self, r: &Renderer, scene: &mut Scene, p: &std::path::Path) -> Option<TextureId> {
-        let entry = self.images.entry(p.to_path_buf()).or_insert_with(|| {
-            omsi_texture::decode_file(p).ok().map(|img| {
-                (r.add_texture(scene, &img, false), img.width, img.height)
-            })
-        });
-        entry.map(|e| e.0)
+    fn mz_art(&mut self, r: &Renderer, scene: &mut Scene, key: &str, img: &omsi_texture::Image) -> TextureId {
+        if let Some((k, t)) = &self.mz.cover {
+            if k == key {
+                return *t;
+            }
+        }
+        if let Some((_, old)) = self.mz.cover.take() {
+            r.free_texture(scene, old);
+        }
+        let t = r.add_texture(scene, img, false);
+        self.mz.cover = Some((key.to_string(), t));
+        t
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -90,6 +97,9 @@ impl Ui {
         self.mz.extent = 0.0;
         let Some(v) = f.milezero else {
             self.mz.k = 0.0;
+            if let Some((_, old)) = self.mz.cover.take() {
+                r.free_texture(scene, old);
+            }
             return;
         };
         let target = if v.hover { 1.0 } else { 0.0 };
@@ -145,13 +155,14 @@ impl Ui {
         let small_art = if embedded { small_h - 8.0 * s } else { 36.0 * s };
         let art = small_art + (72.0 * s - small_art) * e;
         let (ax, ay) = (x0 + if embedded { 10.0 * s } else { pad } + (pad - if embedded { 10.0 * s } else { pad }) * e, y0 + (small_h - small_art) * 0.5 * (1.0 - e) + 12.0 * s * e);
-        match v.art.as_deref().and_then(|p| self.mz_art(r, scene, p)) {
+        let cover = v.art.as_ref().map(|(k, img)| self.mz_art(r, scene, k, img));
+        match cover {
             Some(tex) => scene.overlays.push((tex, [ax, ay, ax + art, ay + art])),
             None => self.text.rounded(r, scene, [ax, ay, ax + art, ay + art], 0.0, key_bg),
         }
         let tx = ax + art + (if embedded { 8.0 * s } else { 12.0 * s }) * (1.0 - e) + 12.0 * s * e;
         let title = if v.title.is_empty() { "MileZero".to_string() } else { v.title.clone() };
-        let artist = if v.artist.is_empty() { "Live radio".to_string() } else { v.artist.clone() };
+        let artist = if v.artist.is_empty() { omsi_ui::tr("Live radio").into_owned() } else { v.artist.clone() };
         let small = 1.0 - e;
         // the time: played, and of how long where the length is known
         let time = v.elapsed.map(|t| match v.duration {
@@ -173,9 +184,9 @@ impl Ui {
             self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, small, xr - time_w + 8.0 * s, y);
         }
         if !v.dj.is_empty() {
-            self.mz_label(r, scene, xr, &format!("On air: {}", v.dj), 12.0 * s, accent, e, tx, y0 + 54.0 * s);
+            self.mz_label(r, scene, xr, &omsi_ui::tr("On air: {}").replacen("{}", &v.dj, 1), 12.0 * s, accent, e, tx, y0 + 54.0 * s);
         }
-        self.mz_label(r, scene, xr, &format!("{} · auto quality", v.quality), 11.0 * s, grey, e, tx, y0 + 70.0 * s);
+        self.mz_label(r, scene, xr, &omsi_ui::tr("{} · auto quality").replacen("{}", v.quality, 1), 11.0 * s, grey, e, tx, y0 + 70.0 * s);
         // the bar along the bottom, with the times above it in the full card
         let (bx0, bx1) = (x0 + pad, xr);
         let by = y1 - 8.0 * s - 4.0 * s * e - (if e > 0.5 { 6.0 * s * e } else { 0.0 });
@@ -203,10 +214,10 @@ impl Ui {
             let bw = (w - pad * 2.0 - 8.0 * s) * 0.5;
             let play = [x0 + pad, row_y, x0 + pad + bw, row_y + bh];
             let req = [play[2] + 8.0 * s, row_y, xr, row_y + bh];
-            let (name, icon, tint) = if v.loading { ("Loading", "radio", [110, 120, 160, 255]) } else if v.playing { ("Pause", "pause", accent) } else { ("Play", "play_arrow", accent) };
+            let (name, icon, tint) = if v.loading { (omsi_ui::tr("Loading").into_owned(), "radio", [110, 120, 160, 255]) } else if v.playing { (omsi_ui::tr("Pause").into_owned(), "pause", accent) } else { (omsi_ui::tr("Play").into_owned(), "play_arrow", accent) };
             self.text.rounded(r, scene, play, bh * 0.5, tint);
             self.text.rounded(r, scene, req, bh * 0.5, key_bg);
-            for (rect, text, icon, color) in [(play, name, icon, [255, 255, 255, 255]), (req, "Request", "radio", key_text)] {
+            for (rect, text, icon, color) in [(play, name.as_str(), icon, [255, 255, 255, 255]), (req, omsi_ui::tr("Request").as_ref(), "radio", key_text)] {
                 let ip = 16.0 * s;
                 let l = self.text.label_op(r, scene, text, (12.0 * s).round() as u32, [color[0], color[1], color[2], 0], 1.0);
                 let total = ip + 6.0 * s + l.w as f32;
@@ -221,14 +232,14 @@ impl Ui {
             // the request being typed, or what became of the last one
             let line = match (&v.typing, &v.status) {
                 (Some(t), _) => Some((format!("{t}|"), text_c, "close")),
-                (None, Some(m)) => Some((m.clone(), [60, 160, 100, 0], "")),
+                (None, Some(m)) => Some((omsi_ui::tr(m).into_owned(), [60, 160, 100, 0], "")),
                 _ => None,
             };
             if let Some((text, c, _)) = line {
                 let ly = y0 + 124.0 * s;
                 let chip = [x0 + pad, ly - 3.0 * s, xr, ly + 19.0 * s];
                 self.text.rounded(r, scene, chip, 8.0 * s, key_bg);
-                let shown = if v.typing.is_some() && text.len() <= 1 { "Type a song and press Enter (Esc cancels)".to_string() } else { text };
+                let shown = if v.typing.is_some() && text.len() <= 1 { omsi_ui::tr("Type a song and press Enter (Esc cancels)").into_owned() } else { text };
                 let c = if v.typing.is_some() && shown.starts_with("Type a song") { grey } else { c };
                 self.mz_label(r, scene, xr - 6.0 * s, &shown, 12.0 * s, c, 1.0, x0 + pad + 8.0 * s, ly);
             }
