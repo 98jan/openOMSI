@@ -6,7 +6,8 @@ import { S, useStore, set, toast } from '../store.js';
 import { t } from '../i18n.js';
 import { call } from '../api.js';
 import { Icon } from '../icons.js';
-import { Button, Card, Field, Input, Empty, PageHead, Spinner, Tabs, Segmented, Notice, Tag } from '../ui.js';
+import { serverJoinProtocol, serverJoinSettings } from '../server-join.js';
+import { Button, Card, Field, Input, Empty, PageHead, Spinner, Tabs, Segmented, Select, Notice, Tag } from '../ui.js';
 import { choose, cached, serverJoined, allowedBus } from '../data.js';
 
 export function MultiplayerPage() {
@@ -92,7 +93,7 @@ function JoinByCode() {
     setResult(null);
     const map = (host?.map || '').replace(/\\/g, '/');
     const own = map && S.maps?.some((m) => m.file.toLowerCase() === map.toLowerCase());
-    choose({ lan_mode: 'join', lan_addr: current.code, lan_map: map, ...serverJoined(host), ...(own ? { map } : {}) });
+    choose({ lan_mode: 'join', lan_addr: current.code, lan_ws_fallback: null, lan_map: map, ...serverJoined(host), ...(own ? { map } : {}) });
     choose(allowedBus());
     set({ page: 'drive' });
   };
@@ -224,14 +225,18 @@ function Servers() {
   };
   const join = (x) => {
     const i = info[x.address]?.ok;
-    if (!i) return toast(t('The server has not answered yet (is its address right? is it running?)'), 'error');
-    const map = (i.map || '').replace(/\\/g, '/');
+    let connection;
+    try {
+      connection = serverJoinSettings(x.address, x.protocol || 'auto', i);
+    } catch (error) {
+      return toast(t(error.message), 'error');
+    }
+    const map = (i?.map || '').replace(/\\/g, '/');
     if (map && s.maps?.some((m) => m.file.toLowerCase() === map.toLowerCase())) choose({ map });
     else if (map) toast(t('The server plays {}, which is not installed here: it is fetched from the server on joining.', [map]));
-    const web = /^(https?|wss?):\/\//.test(x.address) || x.address === 'openomsi';
-    choose({ lan_mode: 'join', lan_addr: !web && i.reached_at ? i.reached_at : x.address, lan_map: i.map || '', ...serverJoined({ ...i, name: x.name || i.name }) });
+    choose({ lan_mode: 'join', ...connection, lan_map: i?.map || '', ...serverJoined(i ? { ...i, name: x.name || i.name } : null) });
     choose(allowedBus());
-    toast(t('Joined {} - choose your bus and duty, then Start the duty', [x.name || i.name]), 'ok');
+    toast(t('Joined {} - choose your bus and duty, then Start the duty', [x.name || i?.name || x.address]), 'ok');
     set({ page: 'drive' });
   };
   return html`<div class="stack">
@@ -249,6 +254,7 @@ function Servers() {
         : list.map((x) => {
             const st = info[x.address] || {};
             const i = st.ok;
+            const autoLabel = i ? `${t('Auto')} (${serverJoinProtocol(x.address, 'auto', i) === 'udp' ? 'UDP' : 'WS'})` : t('Auto');
             return html`<${Card} body=${false}><div class="card-body row" style="align-items:flex-start;gap:14px">
               ${i?.icon ? html`<img src=${i.icon} width="48" height="48" style="border-radius:8px" />` : html`<div class="avatar" style="width:48px;height:48px;border-radius:8px"><${Icon} name="globe" /></div>`}
               <div class="grow stack" style="gap:4px;min-width:0">
@@ -258,6 +264,7 @@ function Servers() {
                 ${i && html`<div class="muted small">${[i.map, t('{n} of {max} players', { n: i.players, max: i.max_players }), i.time, i.weather].filter(Boolean).join(' - ')}</div>`}
                 ${i?.motd && html`<div class="dim small">${i.motd}</div>`}
               </div>
+              <div style="width:130px"><${Select} raw value=${x.protocol || 'auto'} options=${[['auto', autoLabel], ['udp', t('UDP')], ['websocket', t('WebSocket')]]} onChange=${(protocol) => save(list.map((y) => y === x ? { ...y, protocol } : y))} /></div>
               <${Button} small kind="ghost" icon="refresh" title="Refresh" onClick=${() => ask(x.address)} />
               ${x.address !== 'openomsi' && html`<${Button} small kind="ghost" icon="trash" title="Remove from the list" onClick=${() => save(list.filter((y) => y !== x))} />`}
               <${Button} kind="primary" icon="play" label="Join" disabled=${!i} onClick=${() => join(x)} />

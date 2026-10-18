@@ -8,6 +8,7 @@
 //! tells the page when they changed, `instances` keeps track of the games started.
 
 pub mod crash;
+pub mod depot;
 pub mod index;
 pub mod install;
 pub mod instances;
@@ -762,6 +763,44 @@ pub struct MapInfo {
     /// Installed as a mod (in the content folder).
     #[serde(default)]
     pub installed: bool,
+    /// The years the map's `[years]` (global.cfg) allows, first and last, when it sets any;
+    /// a date outside them is moved in ([`fit_date_to_years`]).
+    #[serde(default)]
+    pub year_span: Option<(i32, i32)>,
+}
+
+/// The span of years a map's `[years]` allows: none for `0 0`; no first year when the first
+/// is 0, no last when the last is 0 or before the first.
+fn year_span_of(g: &omsi_map::GlobalCfg) -> Option<(i32, i32)> {
+    match g.years {
+        (first, last) if first <= 0 && last <= 0 => None,
+        (first, last) => {
+            let from = if first > 0 { first } else { i32::MIN };
+            let to = if last > 0 && last >= from { last } else { i32::MAX };
+            Some((from, to))
+        }
+    }
+}
+
+fn is_leap_year(y: i32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+/// `date` (YYYY-MM-DD) fitted to a map's year span, as OMSI 2 starts a map on a day it
+/// allows so that its AI lists, chrono and timetables fit: the same day in the nearest
+/// allowed year (29 February becomes the 28th where that year has none). A date inside the
+/// span, or one that is no date, is kept.
+pub fn fit_date_to_years(date: &str, span: Option<(i32, i32)>) -> String {
+    let mut fields = date.trim().splitn(3, '-').map(|f| f.trim().parse::<i32>());
+    let (Some((from, to)), Some(Ok(year)), Some(Ok(month)), Some(Ok(day))) = (span, fields.next(), fields.next(), fields.next()) else {
+        return date.to_string();
+    };
+    if (from..=to).contains(&year) {
+        return date.to_string();
+    }
+    let year = year.clamp(from, to);
+    let day = if (month, day) == (2, 29) && !is_leap_year(year) { 28 } else { day };
+    format!("{year:04}-{month:02}-{day:02}")
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -850,7 +889,7 @@ fn read_map(d: &Path, folder: &str, lang: &str) -> (Option<MapInfo>, Vec<PathBuf
     }
     // (the depot groups' first: a plain car group's name line is no depot)
     let hof = omsi_map::ailists::AiLists::load(&d.join("ailists.cfg")).ok().and_then(|l| l.groups.iter().filter(|g| g.is_depot).chain(l.groups.iter()).find_map(|g| g.hof.clone())).unwrap_or_default();
-    (Some(MapInfo { name: if g.name.trim().is_empty() { folder.to_string() } else { g.name.trim().to_string() }, friendly, file: format!("maps/{folder}/global.cfg"), description, entry_points: entries, hof, installed: in_content(d) }), deps)
+    (Some(MapInfo { name: if g.name.trim().is_empty() { folder.to_string() } else { g.name.trim().to_string() }, friendly, file: format!("maps/{folder}/global.cfg"), description, entry_points: entries, hof, installed: in_content(d), year_span: year_span_of(&g) }), deps)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -2676,6 +2715,8 @@ pub struct Duty {
     pub lan: Option<String>,
     /// The name the other LAN players see (default: the profile).
     pub lan_name: Option<String>,
+    /// Discovered web gateway to try if the initial UDP join gets no answer (Auto only).
+    pub lan_ws_fallback: Option<String>,
     /// Season override: spring / summer / autumn / winter, with a phase `-early` / `-late`
     /// (`autumn-late`; none = the middle; empty = by date).
     pub season: Option<String>,
@@ -2685,6 +2726,9 @@ pub struct Duty {
     /// A situation file to continue (the map's `laststn.osn`): nothing else of the duty.
     #[serde(default)]
     pub situation: Option<String>,
+    /// The depot bus driven: it starts with the wear it was left with (see [`depot`]).
+    #[serde(default)]
+    pub depot: Option<String>,
 }
 
 /// The situation the game left on `map` last (`laststn.osn` in the map's folder: the
@@ -2868,6 +2912,9 @@ fn duty_args_for_root(d: &Duty, root: &Path) -> Result<Vec<String>> {
     if let Some(n) = d.number.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
         a.extend(["--number".into(), n.to_string()]);
     }
+    if let Some(id) = d.depot.as_deref().map(str::trim).filter(|i| !i.is_empty()) {
+        a.extend(["--depot".into(), id.to_string()]);
+    }
     // (a vehicle file taken for a depot from a broken ailists.cfg by older launchers is none)
     if let Some(h) = d.hof.as_deref().filter(|h| !h.trim().is_empty() && !h.to_ascii_lowercase().contains(".bus") && !h.to_ascii_lowercase().contains(".ovh")) {
         a.extend(["--hof".into(), h.trim().to_string()]);
@@ -2902,7 +2949,12 @@ fn duty_args_for_root(d: &Duty, root: &Path) -> Result<Vec<String>> {
         date = Some(format!("{year:04}-{mo:02}-{dd:02}"));
     }
     if let Some(dt) = date {
-        a.extend(["--date".into(), dt]);
+        // (a date outside the map's [years] starts on a day inside them, as OMSI 2 does: the
+        // machine's calendar or an old saved duty would load a map without its buses)
+        let file = root.join(&d.map);
+        let file = if file.is_file() { file } else { resolve_content(&d.map).unwrap_or(file) };
+        let span = omsi_map::GlobalCfg::load(&file).ok().and_then(|g| year_span_of(&g));
+        a.extend(["--date".into(), fit_date_to_years(&dt, span)]);
     }
     if let Some(w) = d.weather.as_deref().filter(|x| !x.trim().is_empty()) {
         a.extend(["--weather".into(), w.trim().to_string()]);
@@ -2950,6 +3002,7 @@ fn duty_args_for_root(d: &Duty, root: &Path) -> Result<Vec<String>> {
             let target = target.trim();
             omsi_net::describe_join(target).map_err(|e| anyhow!("LAN join: {e}"))?;
             a.extend(["--lan-join".into(), if target.is_empty() { "auto".into() } else { target.to_string() }]);
+            if let Some(url) = d.lan_ws_fallback.as_deref().filter(|url| !url.is_empty()) { a.extend(["--lan-ws-fallback".into(), url.to_string()]); }
         } else {
             return Err(anyhow!("LAN play: '{lan}' is neither host nor join:<code or address>"));
         }

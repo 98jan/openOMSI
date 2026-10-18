@@ -147,7 +147,16 @@ pub fn mirror_view_in(position: DVec3, rot: glam::Mat4, c: &omsi_vehicle::Camera
     let (y, p) = ((c.yaw + off[0]).to_radians(), (c.pitch + off[1]).to_radians());
     let m = glam::Vec3::new(p.cos() * y.sin(), p.cos() * y.cos(), p.sin());
     let r = d - m * (2.0 * d.dot(m));
-    omsi_vehicle::Camera { yaw: r.x.atan2(r.y).to_degrees(), pitch: r.z.clamp(-1.0, 1.0).asin().to_degrees(), ..c.clone() }
+    omsi_vehicle::Camera { yaw: r.x.atan2(r.y).to_degrees(), pitch: mirror_pitch_deg(r), ..c.clone() }
+}
+
+/// The pitch Omsi.exe gives a mirror camera looking along `r` (0x7efc60, arcsine 0x45a3d4):
+/// the arcsine of the rise over the run on the ground, kept within [-1, 1] - so 30 degrees
+/// down looks 35.26 degrees down, and from 45 degrees down on straight down. (The elevation
+/// of `r` itself turned the Lion's City's corner mirror up to the saloon from the kerb.)
+fn mirror_pitch_deg(r: glam::Vec3) -> f32 {
+    let run = r.x.hypot(r.y).max(f32::MIN_POSITIVE);
+    (r.z / run).clamp(-1.0, 1.0).asin().to_degrees()
 }
 
 /// A mirror camera as the player has set it: moved by a shift (bus frame, m) and with
@@ -160,6 +169,23 @@ pub fn adjusted(c: &omsi_vehicle::Camera, s: [f32; 3], dfov: f32) -> omsi_vehicl
 #[cfg(test)]
 mod tests {
     use glam::{DVec3, Mat4};
+
+    /// Pitch for a ray going down or up by `deg` degrees, seen from a few headings.
+    #[test]
+    fn mirror_pitch_is_the_arcsine_of_rise_over_run() {
+        for heading in [0.0f32, 40.0, 135.0, 260.0] {
+            let pitch = |deg: f32| {
+                let (h, e) = (heading.to_radians(), deg.to_radians());
+                super::mirror_pitch_deg(glam::Vec3::new(h.sin() * e.cos(), h.cos() * e.cos(), e.sin()))
+            };
+            let want = |deg: f32| deg.to_radians().tan().clamp(-1.0, 1.0).asin().to_degrees();
+            for deg in [0.0, 12.0, -30.0, 44.0, -60.0] {
+                assert!((pitch(deg) - want(deg)).abs() < 1e-3, "{heading} {deg}: {}", pitch(deg));
+            }
+            assert!((pitch(-30.0) + 35.264).abs() < 1e-2);
+        }
+        assert_eq!(super::mirror_pitch_deg(glam::Vec3::NEG_Z), -90.0);
+    }
 
     /// A mirror's camera looks along the eye's ray reflected in its face; a static one looks
     /// where it is pointed, wherever the eye is, turned by the player's offset.

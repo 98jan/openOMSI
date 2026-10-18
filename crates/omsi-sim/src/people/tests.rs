@@ -798,6 +798,7 @@ fn places_follow_their_own_variables() {
         next_stop: None,
         places_off: Vec::new(),
         served: None,
+        route: None,
     };
     let taken = places_taken(&bn, &[(BusId::Player, 1), (BusId::Ai(2), 2)]);
     assert_eq!(taken, [("fold_seat_down".to_string(), true)]);
@@ -848,6 +849,7 @@ fn riders_get_off_at_a_timetable_stop_the_nearby_stops_do_not_have() {
         next_stop: None,
         places_off: Vec::new(),
         served,
+        route: None,
     };
     let mut h = PeopleSim::new(Path::new("/nonexistent"), 200);
     let reg = h.register_buses(&[bus(Some(496193))], 0.0);
@@ -906,6 +908,7 @@ fn a_doorway_is_busy_while_somebody_stands_in_it() {
         next_stop: None,
         places_off: Vec::new(),
         served: None,
+        route: None,
     };
     let step_in = bn.world(Vec3::new(1.35, 4.0, 0.0));
     assert_eq!(doorways_taken(&bn, &[(None, step_in)]), (vec![true], vec![false]));
@@ -1019,6 +1022,7 @@ fn walking_can_find_a_biarticulated_bus_at_its_last_section() {
         next_stop: None,
         places_off: Vec::new(),
         served: None,
+        route: None,
     };
     let mut people = PeopleSim::new(Path::new("/nonexistent"), 0);
     Arc::make_mut(&mut people.last_buses).push(bus);
@@ -1062,6 +1066,7 @@ fn riders_are_drawn_on_the_bus_where_it_is_drawn() {
         next_stop: None,
         places_off: Vec::new(),
         served: None,
+        route: None,
     };
     let local = Vec3::new(0.6, -2.0, 0.9);
     let (at, faces, tilt) = (bn.world(local), heading + 90.0, bn.tilt_at(local));
