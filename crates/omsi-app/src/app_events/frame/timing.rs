@@ -53,7 +53,7 @@ impl App {
             crate::platform::exit(event_loop);
             return None;
         }
-        let desktop_vsync = self.settings.vsync && !self.vr_active();
+        let desktop_vsync = self.settings.vsync && !self.vr_active() && !self.optimiser_holds_frame_rate();
         if let (Some(surface), Some(renderer)) = (self.gfx.surface.as_mut(), self.renderer.as_ref()) {
             surface.set_vsync(renderer, desktop_vsync);
         }
@@ -92,6 +92,7 @@ impl App {
             .sum();
         let wait_this_frame = (waited - self.perf.governor_wait_prev).max(0.0) as f32;
         self.perf.governor_wait_prev = waited;
+        self.optimiser_frame(raw_dt, wait_this_frame);
         if self.perf.total_frames > 60 {
             if raw_dt > 0.05 {
                 self.perf.spikes += 1;
@@ -144,7 +145,8 @@ impl App {
                 self.perf.governor = (0.0, 0, 0.0);
                 let free = self.settings.render_scale <= 0.0
                     && (self.settings.max_fps == 0 || self.settings.max_fps >= 50)
-                    && !omsi_cfg::flags::OMSI_FIXED_SCALE.is_set();
+                    && !omsi_cfg::flags::OMSI_FIXED_SCALE.is_set()
+                    && !self.optimiser_holds_frame_rate();
                 if let (Some(r), true) = (self.renderer.as_mut(), free) {
                     let s = r.dynamic_scale();
                     let mut step = render_scale_step(fps, wait_share);

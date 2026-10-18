@@ -194,6 +194,8 @@ pub struct NavFrame<'a> {
     /// Seconds of the day and weekday (0 = Monday).
     pub time: f64,
     pub weekday: i32,
+    /// The date of the session (yyyymmdd): which form of each line holds (a map with eras).
+    pub date: i32,
     pub language: &'a str,
     /// Window size in physical pixels.
     pub screen: (f32, f32),
@@ -272,10 +274,9 @@ struct Roads {
     look: u64,
     anchor: DVec2,
     lanes_seen: usize,
-    /// Vertices of the ground (buffer 0) and of the houses: their shadows (buffer 12), standing
-    /// (8) and flat (13).
-    verts: usize,
+    /// Vertices of the houses: their shadows (buffer 12), standing (8) and flat (13).
     houses: [usize; 3],
+    runs: [cull::Runs; 4],
     built_at: f32,
 }
 
@@ -413,6 +414,14 @@ pub struct Navigator {
     trip_paths: HashMap<usize, Option<std::sync::Arc<live::TripPath>>>,
     /// What the package names: icons, names, where the bus is.
     place: place::PlaceView,
+    /// The date of the session (yyyymmdd).
+    date: i32,
+    /// The game's clock (seconds of the day) and weekday (0 = Monday): the timetable lights the next departure.
+    day_clock: (f64, i32),
+    /// The map's timetable for the lines panel, for the date it was read for.
+    times: Option<(i32, std::sync::Arc<line_times::LineTimes>)>,
+    /// The worker reading it (for which date, and where the result comes).
+    times_job: Option<(i32, std::sync::mpsc::Receiver<std::sync::Arc<line_times::LineTimes>>)>,
     /// How far the panel has faded in (Shift+N fades it in and out rather than cutting).
     shown: f32,
     /// The trip's next stops (place, name, the bus's heading there) and where the bus is,
@@ -577,6 +586,10 @@ impl Navigator {
             live_tt: HashMap::new(),
             trip_paths: HashMap::new(),
             place: Default::default(),
+            date: 0,
+            day_clock: (0.0, 0),
+            times: None,
+            times_job: None,
             shown: if enabled { 1.0 } else { 0.0 },
             stop_spots: Vec::new(),
             bus_at: DVec3::ZERO,
@@ -1135,6 +1148,8 @@ impl Navigator {
             self.shown = target;
         }
         self.time += f.dt;
+        self.date = f.date;
+        self.day_clock = (f.time, f.weekday);
         if let Some(rx) = self.building.as_ref() {
             if let Ok((net, pos, streets, surface, hints)) = rx.try_recv() {
                 self.name_hints = hints;
@@ -1317,12 +1332,15 @@ fn same_paths(net: &Network, traffic: &Network, l: usize) -> Vec<usize> {
 
 impl<'a> NavFrame<'a> {
     fn clone_ref(&self) -> NavFrame<'a> {
-        NavFrame { traffic: self.traffic, touch: self.touch, players: self.players.clone(), bus: self.bus, heading: self.heading, speed_kmh: self.speed_kmh, outside_temp: self.outside_temp, inside_temp: self.inside_temp, line: self.line.clone(), terminus: self.terminus.clone(), stops: self.stops.clone(), delay: self.delay, passengers: self.passengers, time: self.time, weekday: self.weekday, language: self.language, screen: self.screen, ui_scale: self.ui_scale, follow_window: self.follow_window, dt: self.dt, stop_requested: self.stop_requested, info_rect: self.info_rect, touch_gap: self.touch_gap }
+        NavFrame { traffic: self.traffic, touch: self.touch, players: self.players.clone(), bus: self.bus, heading: self.heading, speed_kmh: self.speed_kmh, outside_temp: self.outside_temp, inside_temp: self.inside_temp, line: self.line.clone(), terminus: self.terminus.clone(), stops: self.stops.clone(), delay: self.delay, passengers: self.passengers, time: self.time, weekday: self.weekday, date: self.date, language: self.language, screen: self.screen, ui_scale: self.ui_scale, follow_window: self.follow_window, dt: self.dt, stop_requested: self.stop_requested, info_rect: self.info_rect, touch_gap: self.touch_gap }
     }
 }
 
 
 pub use omsi_mapdraw::roads::{self, *};
+mod line_times;
+mod lines_panel;
+mod lines_sheet;
 mod place;
 mod surface;
 pub use omsi_mapdraw::style;
@@ -1330,8 +1348,11 @@ pub use omsi_mapdraw as mapmesh;
 mod panel;
 mod live;
 mod build;
+pub use build::{Built, MapGround};
+mod cull;
 mod city_map;
 pub use city_map::*;
+use lines_panel::*;
 #[cfg(test)]
 mod tests;
 

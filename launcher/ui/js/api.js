@@ -51,7 +51,7 @@ async function mock(cmd) {
 // (the desktop window's own commands; every other one is the launcher's, `omsi-launcher-api`)
 const OWN = new Set(['pick_folder', 'pick_file', 'pick_mod', 'pick_hofs', 'open_path', 'open_url', 'update_relaunch', 'selftest_done', 'fit_zoom']);
 // (commands answering bytes rather than JSON)
-const BYTES = new Set(['preview_frame', 'route_map']);
+const BYTES = new Set(['preview_frame', 'route_map', 'map_ground']);
 
 /** Call a command; rejects with the error text the command gave. */
 export function call(cmd, args = {}) {

@@ -48,7 +48,7 @@ pub struct ObjectType {
     pub camera: std::sync::OnceLock<crate::camera_arm::BlockerShape>,
     /// The collision mesh as the vehicles meet it (built on first use).
     pub collision_shape: std::sync::OnceLock<Arc<omsi_sim::collision::MeshShape>>,
-    /// Per `[maplight]`: whether it sits inside its own pole fixture (worked out on first
+    /// Per `[maplight]`: whether it is its own pole fixture's bulb (worked out on first
     /// use, see `place::embedded_pole_light`): its lamp's shadow map leaves the fixture out.
     pub embedded_lights: std::sync::OnceLock<Vec<bool>>,
 }
@@ -405,6 +405,17 @@ pub struct ScriptedObject {
     /// when none is), and the alphas last given.
     pub alpha_slots: Vec<LampSlots>,
     pub alpha_last: Vec<Vec<f32>>,
+    pub script_lamps: Vec<ScriptLamp>,
+}
+
+/// A lamp of a scenery object that the object's own script switches (see
+/// `lamps_switched_by_script`): its glow, the variable that sets how bright it is, and how
+/// bright that made it at the script's last step.
+#[derive(Clone, Debug)]
+pub struct ScriptLamp {
+    pub glow: omsi_render::Corona,
+    pub variable: String,
+    pub level: f32,
 }
 
 /// Where a ray lands on a page (`[htmltexture]`) of a scenery object: see

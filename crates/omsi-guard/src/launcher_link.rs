@@ -2,14 +2,15 @@
 //! omsi-launcher-core, `openomsi-launcher-app`) beside the game, or any program
 //! `OMSI_LAUNCHER` names. A plain start opens it; the game has no launcher window of its own.
 
-use super::*;
+use anyhow::{anyhow, Result};
+use std::path::{Path, PathBuf};
 
 /// The desktop launcher's program name.
 const APP_LAUNCHER: &str = if cfg!(windows) { "openomsi-launcher-app.exe" } else { "openomsi-launcher-app" };
 
 /// The desktop launcher: beside this program (in the same bundle on macOS; a development
 /// build's folder when it was built into the same target folder, see docs/BUILDING.md).
-pub(crate) fn find_app_launcher() -> Option<PathBuf> {
+pub fn find_app_launcher() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let bin = exe.parent()?.join(APP_LAUNCHER);
     bin.is_file().then_some(bin)
@@ -19,8 +20,9 @@ pub(crate) fn find_app_launcher() -> Option<PathBuf> {
 /// (a system without its web view: no WebKitGTK library on Linux, no WebView2 runtime on an
 /// old Windows - which is offered to be installed), the player is told why and where it
 /// should be, and the program ends with an error. The start guard counts the launcher as
-/// started (`omsi_guard::healthy`) once it runs, and a start that failed as one to heal.
-pub(crate) fn open_app_launcher() -> Result<()> {
+/// started (`healthy`) once it runs, and a start that failed as one to heal. `fatal_message`
+/// shows the player what went wrong (the game's own dialog).
+pub fn open_app_launcher(fatal_message: fn(&str)) -> Result<()> {
     let exe = std::env::current_exe().unwrap_or_default();
     let dir = exe.parent().map(Path::to_path_buf).unwrap_or_default();
     let Some(bin) = find_app_launcher() else {
@@ -42,7 +44,7 @@ pub(crate) fn open_app_launcher() -> Result<()> {
         fatal_message(&text);
         anyhow::bail!("{text}");
     }
-    omsi_guard::healthy(omsi_guard::journal::Kind::Launcher);
+    crate::healthy(crate::journal::Kind::Launcher);
     Ok(())
 }
 
@@ -155,7 +157,7 @@ fn webview_hint() -> String {
 
 /// Start the program `OMSI_LAUNCHER` names and return once it is running. `Ok(false)` when
 /// it names none that is there.
-pub(crate) fn open_launcher() -> Result<bool> {
+pub fn open_launcher() -> Result<bool> {
     let Some(bin) = omsi_cfg::flags::OMSI_LAUNCHER.os().map(PathBuf::from).filter(|p| p.is_file()) else {
         return Ok(false);
     };

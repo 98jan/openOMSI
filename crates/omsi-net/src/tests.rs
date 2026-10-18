@@ -1,6 +1,7 @@
 //! Tests of the session (they open UDP sockets on the loopback).
 
 use super::*;
+mod bus_info;
 
 fn pose(x: f64) -> Pose {
     Pose {
@@ -77,8 +78,8 @@ fn info_carries_the_freetex_pictures_and_an_older_info_has_none() {
     assert_eq!(q.freetex, p.freetex);
     assert_eq!(q.texts, p.texts);
     // an older game's INFO ends with the figure: no pictures, everything else as before
-    let older = text.rsplit_once('|').unwrap().0;
-    let q = Pose::decode_info(&older.split('|').collect::<Vec<_>>()).unwrap();
+    let older: Vec<&str> = text.split('|').take(14).collect();
+    let q = Pose::decode_info(&older).unwrap();
     assert!(q.freetex.is_empty());
     assert_eq!(q.texts, p.texts);
     // and with everything else at its longest the INFO still fits one datagram

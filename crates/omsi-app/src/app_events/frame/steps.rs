@@ -35,6 +35,11 @@ pub(crate) fn traffic_tick(
         // `omsi_net::vars`, for a copy of the same vehicle files)
         t.other_priority = remotes.remotes.iter().filter(|(_, r)| r.vehicle().var("TrafficPriority").is_some_and(|v| v > 0.5)).map(|(id, _)| *id).collect();
         t.player_blinker = player.map(|p| lan::indicator(&p.vehicle)).unwrap_or(0);
+        // (the player's tram or train asks the lights on the rails ahead)
+        t.player_rail = player.and_then(|p| {
+            let r = p.rail.as_ref()?;
+            Some(omsi_sim::ai_traffic::model::PlayerRail { lane: r.lane, s: r.s, along: r.along, train: omsi_sim::ai_traffic::model::is_train(&p.vehicle.ty.def) })
+        });
         t.tick(dt, player.map(|p| player_outline(p)));
         let t0 = Instant::now();
         world.set_switches(scenery, &t.switch_requests());

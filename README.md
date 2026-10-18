@@ -40,8 +40,8 @@ the tested ones become stable releases, and the newest stable release is always 
 
 | Platform | File |
 | --- | --- |
-| Windows x64 / ARM64 | `openOMSI-<version>-windows-x64.zip` / `-windows-arm64.zip` - run `openomsi.exe` |
-| macOS (Apple silicon / Intel) | `openOMSI-<version>-macos-arm64.zip` / `-macos-x64.zip` - open `openOMSI.app` |
+| Windows x64 / ARM64 | `openOMSI-<version>-windows-x64-setup.exe` / `-windows-arm64-setup.exe` - installs openOMSI for you, no administrator rights (or the `.zip`: run `openomsi.exe`) |
+| macOS (Apple silicon / Intel) | `openOMSI-<version>-macos-arm64.dmg` / `-macos-x64.dmg` - drag `openOMSI.app` onto Applications (or the `.zip`) |
 | Linux x64 / ARM64 | `openOMSI-<version>-linux-x64.zip` / `-linux-arm64.zip` - run `openomsi` |
 | Android (arm64, 8.0+) | `openOMSI-<version>-android-arm64.apk` - see [docs/ANDROID.md](docs/ANDROID.md) |
 | Dedicated server | `openOMSI-<version>-server-linux-x64.zip` (also `-linux-arm64`, `-windows-x64`, `-windows-arm64`) - see [docs/SERVER.md](docs/SERVER.md) |
@@ -195,11 +195,20 @@ coffee or support it on Ko-fi - thank you!
   <a href="https://ko-fi.com/usonance"><img alt="Support me on Ko-fi" src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" height="48"></a>
 </p>
 
+## Acknowledgements
+
+Some ideas and fixes in openOMSI date back to the public work of
+[neoOMSI](https://github.com/neoOMSI/neoOMSI): their reports and pull requests pointed at
+bugs and features that we then implemented in our own code. Thank you.
+
 ## License
 
 openOMSI is released under the [GNU Affero General Public License, version 3 only](LICENSE)
 (`AGPL-3.0-only`). The historical MIT copyright and permission notice is retained in
 `LICENSE`; earlier MIT releases keep their terms. Third-party files keep their own licenses.
+The launcher's bus preview encodes its pictures with
+[jpeg-encoder](https://crates.io/crates/jpeg-encoder): this software is based in part on the
+work of the Independent JPEG Group.
 The openOMSI name and original project logos are marks of `usonskyyyy`, who created
 the original codebase; see [TRADEMARKS.md](TRADEMARKS.md). The official organization is
 [openOMSI.org (`openOMSI-org`)](https://github.com/openOMSI-org).

@@ -2568,6 +2568,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "jpeg-encoder"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0370574b86f7eca156b9f298392b5e69a23f8c86f3f865add60bbc2e79467a6"
+
+[[package]]
 name = "js-sys"
 version = "0.3.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3421,6 +3427,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "omsi-admin"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "ring",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "omsi-app"
 version = "0.1.0"
 dependencies = [
@@ -3435,11 +3451,13 @@ dependencies = [
  "hashbrown 0.17.1",
  "image",
  "jni 0.21.1",
+ "jpeg-encoder",
  "libc",
  "log",
  "mimalloc",
  "ndk-context",
  "objc2 0.6.5",
+ "omsi-admin",
  "omsi-audio",
  "omsi-career",
  "omsi-cfg",
@@ -3592,8 +3610,11 @@ dependencies = [
 name = "omsi-guard"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "libc",
+ "log",
  "omsi-cfg",
+ "omsi-launcher-core",
  "omsi-platform",
  "serde_json",
  "windows 0.62.2",
@@ -3639,10 +3660,12 @@ name = "omsi-lan"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "flate2",
  "glam",
  "hashbrown 0.17.1",
  "libc",
  "log",
+ "omsi-admin",
  "omsi-cfg",
  "omsi-map",
  "omsi-model",
@@ -3650,6 +3673,7 @@ dependencies = [
  "omsi-o3d",
  "omsi-script",
  "omsi-sim",
+ "omsi-texture",
  "omsi-vehicle",
  "rayon",
  "ring",
@@ -3659,6 +3683,7 @@ dependencies = [
  "sha2",
  "windows 0.62.2",
  "zip",
+ "zstd",
 ]
 
 [[package]]
@@ -3777,6 +3802,7 @@ dependencies = [
  "omsi-scene",
  "omsi-sim",
  "omsi-texture",
+ "omsi-timetable",
  "omsi-ui",
  "wgpu",
 ]
@@ -3802,6 +3828,7 @@ dependencies = [
  "encoding_rs",
  "glam",
  "gltf",
+ "half",
  "log",
  "omsi-cfg",
  "serde_json",
@@ -7270,14 +7297,15 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.6.0"
+version = "9.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
+checksum = "a954114b47a54df49f83d2722814e86b23d4bb1b54a1b90fb7d92b41619ddc22"
 dependencies = [
  "crc32fast",
  "flate2",
  "indexmap",
  "memchr",
+ "nix",
  "typed-path",
  "zopfli",
 ]
@@ -7304,6 +7332,34 @@ dependencies = [
  "crc32fast",
  "log",
  "simd-adler32",
+]
+
+[[package]]
+name = "zstd"
+version = "0.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
+dependencies = [
+ "zstd-safe",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64d80649ab6db9d9f6f9c80a40becd948eda4714a0a5ac8c4d157a32231c7882"
+dependencies = [
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-sys"
+version = "2.1.1+zstd.1.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aeec9eaf2dffbbd09201e23bd0ffcbaa33bb8e9266a10734fd7ed90a85eca078"
+dependencies = [
+ "cc",
+ "pkg-config",
 ]
 
 [[package]]

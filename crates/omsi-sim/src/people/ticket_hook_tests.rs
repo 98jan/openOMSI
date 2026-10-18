@@ -160,6 +160,7 @@ fn player_bus(tag: &str) -> BusNow {
         next_stop: None,
         places_off: Vec::new(),
         served: Some(77),
+        route: None,
     }
 }
 

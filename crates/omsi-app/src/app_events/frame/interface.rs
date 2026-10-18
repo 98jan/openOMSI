@@ -97,6 +97,14 @@ impl App {
                 say(note_key(&t), t, NoticeKind::Action);
             }
         }
+        // the latest `$msg` of the player's bus scripts, which OMSI writes on the screen: a
+        // note while the script keeps saying it and for a few seconds after (AI vehicles'
+        // messages are not shown)
+        let script_says = self.player.as_ref().and_then(|p| p.vehicle.host.fresh_message(SCRIPT_MESSAGE_SECS));
+        // (one note whose text follows the script: a value it prints changes every frame)
+        if let Some(text) = script_says {
+            say("bus script message".to_string(), text.to_string(), NoticeKind::Info);
+        }
         // what is under the cursor, in the player's language (the scripts only
         // know internal, mostly German names)
         let names = describe::names(&self.args.root, &self.settings.language);
@@ -163,6 +171,10 @@ impl App {
         }
         self.menus.note_watch.frame(dt, &said, &mut self.menus.notices);
         self.integrations.update_watch.tick(&mut self.menus.notices);
+        if let Some((before, text, left)) = omsi_lan::mods::upload::notice() {
+            self.menus.notices.retain(|n| n.text != before);
+            crate::ui::push_notice(&mut self.menus.notices, crate::ui::Notice { kind: crate::ui::NoticeKind::Info, text, left, total: left });
+        }
         for n in self.menus.notices.iter_mut() {
             n.left -= dt;
         }
@@ -292,6 +304,7 @@ impl App {
                 stop_requested: p.is_some_and(|p| navigator::stop_requested(&p.vehicle)),
                 time: self.clock.time,
                 weekday: self.clock.weekday(),
+                date: self.clock.date_code(),
                 language: &self.settings.language,
                 screen: if vr_active {
                     (1440.0, 1440.0)
@@ -517,6 +530,10 @@ impl App {
         }
     }
 }
+
+/// How long (seconds of play) a `$msg` of the player's bus scripts stays a note after the
+/// script last said it.
+const SCRIPT_MESSAGE_SECS: f64 = 4.0;
 
 /// The kind of card a message of the game's is (`App::service_msg`): what went wrong is an
 /// alert, a key to press is to do, a slow driver a warning, a change made is done, the

@@ -271,7 +271,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // 12 % at the normal, and three quarters of that, left the windows showing the
         // saloon where the vanilla picture shows the street.
         let share = clamp(alpha * min(material.params2.y, 1.0), 0.0, 1.0) * camera.cam_pos.w;
-        f0 = vec3<f32>(clamp((share - 1.0 / 21.0) * 21.0 / 20.0, 0.04, 0.9));
+        f0 = vec3<f32>(select(clamp((share - 1.0 / 21.0) * 21.0 / 20.0, 0.04, 0.9), 0.04, probe_only));
     } else if (reflective_env) {
         // Paint reflects its few per cent through a smooth clear coat; much more than a few
         // per cent is polished metal - but only where the model says so with a mask of its
@@ -741,7 +741,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             // (a window lit from inside shows some 80 cd/m² - a room's 300 lux off its
             // walls and through a curtain - an illuminated sign more: over the dark street
             // round it, well over the screen's white, and the eye's glare blooms round it)
-            emit = emit + nm * select(enh.exposure.z * 3.6, max(enh.exposure.z * 2.0, 0.8), switched);
+            emit = emit + nm * select(enh.exposure.z * 3.6, mix(max(enh.exposure.z * 2.0, 0.8), 0.8, near_player_vehicle(in.world) * inside_vehicle(camera.cam_pos.xyz) * (1.0 - outside)), switched);
         }
     }
     if (material.params2.x > 0.5 && !terrain && !glass) {
