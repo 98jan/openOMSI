@@ -194,11 +194,12 @@ impl Offscreen<'_> {
             ref camera,
             ref mut scene,
             ref spray,
+            ref settings,
             ..
         } = *self;
         {
             let vehicles = steps::light_vehicles(player_ref.as_ref(), traffic.as_ref(), remotes_off);
-            world_lights(renderer, world, scene, weather, daylight, camera.position, &vehicles);
+            world_lights(renderer, world, scene, weather, daylight, camera.position, &vehicles, &settings.vehicle_smoke, player_ref.is_some());
             let (kind, rate) = precip_of(weather);
             let mut rn = rain::Rain::new();
             rn.set(kind, rate, world.settings.rain_quality());
