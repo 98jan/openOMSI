@@ -14,6 +14,8 @@ pub struct MzState {
     pub request: Option<[f32; 4]>,
     /// The room it takes beside the navigator, with its gap, for the notices to keep clear.
     pub extent: f32,
+    /// Where the card sits inside the information bar (navigator off), when it does.
+    pub slot: Option<[f32; 4]>,
 }
 
 pub struct MzView {
@@ -98,8 +100,10 @@ impl Ui {
         }
         let e = *k * *k * (3.0 - 2.0 * *k);
         let gap = 8.0 * s;
-        let small_w = f.nav_rect.map_or(280.0 * s, |a| a[2] - a[0]).max(250.0 * s);
-        let (small_h, big_h) = (52.0 * s, 196.0 * s);
+        let slot = if f.nav_rect.is_none() { self.mz.slot } else { None };
+        let embedded = slot.is_some();
+        let small_w = slot.map_or_else(|| f.nav_rect.map_or(280.0 * s, |a| a[2] - a[0]).max(250.0 * s), |q| q[2] - q[0]);
+        let (small_h, big_h) = (slot.map_or(52.0 * s, |q| q[3] - q[1]), 196.0 * s);
         let w = small_w.round();
         let h = (small_h + (big_h - small_h) * e).round();
         let (x0, y0) = match f.nav_rect {
@@ -109,7 +113,7 @@ impl Ui {
                 let y = if a[1] > f.height * 0.5 { a[1] - gap - h } else { a[3] + gap };
                 (x, y)
             }
-            None => ((f.width - w) * 0.5, 70.0 * s),
+            None => slot.map_or(((f.width - w) * 0.5, 70.0 * s), |q| (q[0], q[1])),
         };
         let x0 = x0.clamp(8.0 * s, (f.width - w - 8.0 * s).max(8.0 * s)).round();
         let y0 = y0.clamp(0.0, (f.height - h).max(0.0)).round();
@@ -117,23 +121,28 @@ impl Ui {
         self.mz.rect = Some([x0, y0, x1, y1]);
         self.mz.extent = h + gap;
         // the colours of the dark and the light look
-        let (bg, text_c, grey, track, accent, key_bg, key_text) = if v.light {
+        let (bg, text_c, grey, track, accent, key_bg, key_text) = if v.light && !embedded {
             ([250, 250, 252, 250], [28, 28, 34, 0], [104, 104, 116, 0], [0, 0, 0, 34], [40, 96, 235, 255], [226, 227, 234, 255], [28, 28, 34, 255])
         } else {
             ([24, 24, 28, 248], [237, 237, 237, 0], [160, 160, 170, 0], [255, 255, 255, 44], [92, 130, 255, 255], [58, 58, 70, 255], [237, 237, 237, 255])
         };
-        self.text.shadow(r, scene, [x0, y0, x1, y1], 14.0 * s, 20.0 * s, 4.0 * s, if v.light { 50 } else { 80 });
-        self.text.rounded(r, scene, [x0, y0, x1, y1], 14.0 * s, bg);
+        // (inside the bar the small card has no plate of its own: the bar is its plate)
+        let plate = if embedded { e } else { 1.0 };
+        if plate > 0.02 {
+            self.text.shadow(r, scene, [x0, y0, x1, y1], 14.0 * s, 20.0 * s, 4.0 * s, ((if v.light { 50.0 } else { 80.0 }) * plate) as u8);
+            self.text.rounded(r, scene, [x0, y0, x1, y1], 14.0 * s, [bg[0], bg[1], bg[2], (bg[3] as f32 * plate) as u8]);
+        }
         let pad = 12.0 * s;
         let xr = x1 - pad;
         // the cover: 36 px in the small card, 88 in the full one
-        let art = 36.0 * s + 52.0 * s * e;
-        let (ax, ay) = (x0 + pad, y0 + 8.0 * s + 4.0 * s * e);
+        let small_art = if embedded { small_h - 8.0 * s } else { 36.0 * s };
+        let art = small_art + (88.0 * s - small_art) * e;
+        let (ax, ay) = (x0 + if embedded { 4.0 * s } else { pad } + (pad - if embedded { 4.0 * s } else { pad }) * e, y0 + (small_h - small_art) * 0.5 * (1.0 - e) + 12.0 * s * e);
         match v.art.as_deref().and_then(|p| self.mz_art(r, scene, p)) {
             Some(tex) => scene.overlays.push((tex, [ax, ay, ax + art, ay + art])),
             None => self.text.rounded(r, scene, [ax, ay, ax + art, ay + art], 0.0, key_bg),
         }
-        let tx = ax + art + 12.0 * s;
+        let tx = ax + art + (if embedded { 8.0 * s } else { 12.0 * s }) * small + 12.0 * s * e;
         let title = if v.title.is_empty() { "MileZero".to_string() } else { v.title.clone() };
         let artist = if v.artist.is_empty() { "Live radio".to_string() } else { v.artist.clone() };
         let small = 1.0 - e;
@@ -145,10 +154,18 @@ impl Ui {
         let ratio = v.elapsed.map_or(0.0, |t| (t / v.duration.unwrap_or(BAR_SECS).max(1.0)).min(1.0));
         // small card
         let time_w = time.as_ref().map_or(0.0, |t| self.text.width_raw(t, 11.0 * s) + 8.0 * s);
-        self.mz_label(r, scene, xr - time_w, &title, 13.0 * s, text_c, small, tx, y0 + 9.0 * s);
-        self.mz_label(r, scene, xr, &artist, 11.0 * s, grey, small, tx, y0 + 27.0 * s);
-        if let Some(t) = &time {
-            self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, small, xr - time_w + 8.0 * s, y0 + 10.0 * s);
+        if embedded {
+            let one = format!("{title} · {artist}");
+            self.mz_label(r, scene, xr - time_w, &one, 12.0 * s, text_c, small, tx, y0 + (small_h - 15.0 * s) * 0.5);
+            if let Some(t) = &time {
+                self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, small, xr - time_w + 8.0 * s, y0 + (small_h - 14.0 * s) * 0.5);
+            }
+        } else {
+            self.mz_label(r, scene, xr - time_w, &title, 13.0 * s, text_c, small, tx, y0 + 9.0 * s);
+            self.mz_label(r, scene, xr, &artist, 11.0 * s, grey, small, tx, y0 + 27.0 * s);
+            if let Some(t) = &time {
+                self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, small, xr - time_w + 8.0 * s, y0 + 10.0 * s);
+            }
         }
         // full card
         self.mz_label(r, scene, xr, &title, 16.0 * s, text_c, e, tx, y0 + 14.0 * s);
@@ -161,8 +178,11 @@ impl Ui {
         let (bx0, bx1) = (x0 + pad, xr);
         let by = y1 - 8.0 * s - 4.0 * s * e - (if e > 0.5 { 6.0 * s * e } else { 0.0 });
         let bh = 4.0 * s;
-        self.text.rounded(r, scene, [bx0, by, bx1, by + bh], bh * 0.5, track);
-        if ratio > 0.0 {
+        let bar = if embedded { e } else { 1.0 };
+        if bar > 0.3 {
+            self.text.rounded(r, scene, [bx0, by, bx1, by + bh], bh * 0.5, track);
+        }
+        if ratio > 0.0 && bar > 0.3 {
             self.text.rounded(r, scene, [bx0, by, (bx0 + (bx1 - bx0) * ratio).max(bx0 + bh), by + bh], bh * 0.5, accent);
         }
         if let Some(t) = &time {

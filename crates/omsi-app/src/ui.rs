@@ -653,7 +653,6 @@ impl Ui {
         }
         // --- the notifications: cards over the navigator (under it when it is in a top
         // corner; at the top middle without it)
-        self.draw_milezero(r, scene, f, s, dt);
         self.draw_notices(r, scene, f, s);
         if let Some(fps) = f.fps {
             // (on a small flat card, as the other plates: over a bright sky bare text was hard to read)
@@ -667,6 +666,7 @@ impl Ui {
         // --- the information bar, along the top in the middle: in as many rows as the room
         // it has needs
         self.info_rect = None;
+        self.mz.slot = None;
         // (not under the pause menu's rail, from under which it stood out)
         let rail = f.menu.is_some() && f.menu_kind == MenuKind::Game && f.menu_head.is_none() && !f.vr;
         if let Some(info) = f.info.as_ref().filter(|_| !rail) {
@@ -677,8 +677,13 @@ impl Ui {
             let labels: Vec<Label> = rows.iter().map(|t| self.text.label_op(r, scene, &omsi_ui::tr(t), px, [237, 237, 237, 0], 1.0)).collect();
             let lw = labels.iter().map(|l| l.w).max().unwrap_or(0) as f32;
             let lh = labels.iter().map(|l| l.h).max().unwrap_or(0) as f32;
-            let (w, h) = (lw + pad * 2.0, lh * labels.len() as f32 + pad * 0.8);
+            // (the MileZero card sits at the right end of the bar while the navigator is off)
+            let mz_room = if f.milezero.is_some() && f.nav_rect.is_none() { 250.0 * s + 8.0 * s } else { 0.0 };
+            let (w, h) = (lw + pad * 2.0 + mz_room, lh * labels.len() as f32 + pad * 0.8);
             let x = (x0 + x1 - w) * 0.5;
+            if mz_room > 0.0 {
+                self.mz.slot = Some([x + w - mz_room + 4.0 * s, y + 3.0 * s, x + w - 6.0 * s, y + h - 3.0 * s]);
+            }
             self.text.rounded(r, scene, [x, y, x + w, y + h], 8.0 * s, [28, 28, 28, (255.0 * self.text.backdrop.min(1.0)) as u8]);
             for (k, l) in labels.iter().enumerate() {
                 let (lx, ly) = (x + (w - l.w as f32) * 0.5, y + pad * 0.4 + k as f32 * lh);
@@ -686,6 +691,7 @@ impl Ui {
             }
             self.info_rect = Some([x, y, x + w, y + h]);
         }
+        self.draw_milezero(r, scene, f, s, dt);
         let tutorial_w = (420.0 * s).min(f.width * 0.42);
         // --- the timetable window, on the right (left of a tutorial page, which has the
         // same corner)
