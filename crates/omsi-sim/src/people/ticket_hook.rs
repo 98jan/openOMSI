@@ -234,58 +234,50 @@ impl PeopleSim {
         if c.payment.is_some_and(|v| !v.is_finite() || v < 0.0) { return Err("invalid payment") }
         let mut ticket = c.ticket;
         let mut pick = false;
-        if c.payment.is_some() && !c.changes_ticket() {
+        let changes_ticket = c.changes_ticket();
+        let changes_payment = c.payment.is_some();
+        // (they decide on their way to the door: `new_ticket`)
+        let outside = p.inside.is_none() && p.task == Task::WalkingToBus;
+        let at_desk_yet = p.inside.is_some() && p.task == Task::InBusToPlace && p.ticket == TICKET_BUY && p.sub < 4;
+
+        // The ticket and payment can only be changed for the player's bus,
+        // while the passenger is boarding or on the way to the cash desk.
+        if changes_ticket || changes_payment {
             if p.bus != Some(BusId::Player) {
                 return Err("not a passenger of the player's bus");
             }
-
-            let outside = p.inside.is_none()
-                && p.task == Task::WalkingToBus;
-
-            let at_desk_yet = p.inside.is_some()
-                && p.task == Task::InBusToPlace
-                && p.ticket == TICKET_BUY
-                && p.sub < 4;
-
-            if !outside && !at_desk_yet {
-                return Err(if p.inside.is_some() {
-                    "already asked for the ticket"
-                } else {
-                    "not boarding the bus yet"
-                });
+            // Paying only makes sense for somebody buying a ticket.
+            // Use the requested kind when the plugin changes it in this call.
+            if changes_payment && c.kind.unwrap_or(p.ticket) != TICKET_BUY {
+                return Err("payment requires a ticket purchase");
             }
-        }
-        if c.changes_ticket() {
-            if p.bus != Some(BusId::Player) {
-                return Err("not a passenger of the player's bus");
-            }
-            // (they decide on their way to the door: `new_ticket`)
-            let outside = p.inside.is_none() && p.task == Task::WalkingToBus;
-            let at_desk_yet = p.inside.is_some() && p.task == Task::InBusToPlace && p.ticket == TICKET_BUY && p.sub < 4;
+
             if !outside && !at_desk_yet {
                 return Err(if p.inside.is_some() { "already asked for the ticket" } else { "not boarding the bus yet" });
             }
-            if let Some(kind) = c.kind.filter(|k| *k != p.ticket) {
-                if !outside {
-                    return Err("already in the bus");
+            if changes_ticket {
+                if let Some(kind) = c.kind.filter(|k| *k != p.ticket) {
+                    if !outside {
+                        return Err("already in the bus");
+                    }
+                    match kind {
+                        TICKET_BUY if !has_sale || walk => return Err("the bus sells no tickets"),
+                        TICKET_STAMP if !has_stamper => return Err("the bus has no validator"),
+                        TICKET_NONE | TICKET_STAMP | TICKET_BUY => {}
+                        _ => return Err("no such kind"),
+                    }
                 }
-                match kind {
-                    TICKET_BUY if !has_sale || walk => return Err("the bus sells no tickets"),
-                    TICKET_STAMP if !has_stamper => return Err("the bus has no validator"),
-                    TICKET_NONE | TICKET_STAMP | TICKET_BUY => {}
-                    _ => return Err("no such kind"),
+                if c.ticket.is_some_and(|t| t as usize > pack_len) {
+                    return Err("no such ticket");
                 }
-            }
-            if c.ticket.is_some_and(|t| t as usize > pack_len) {
-                return Err("no such ticket");
-            }
-            // a buyer without a ticket of the pack would wait at the desk for a ticket the
-            // driver cannot give
-            if c.kind.unwrap_or(p.ticket) == TICKET_BUY {
-                if c.ticket == Some(0) {
-                    return Err("a buyer needs a ticket of the pack (from 1)");
+                // a buyer without a ticket of the pack would wait at the desk for a ticket the
+                // driver cannot give
+                if c.kind.unwrap_or(p.ticket) == TICKET_BUY {
+                    if c.ticket == Some(0) {
+                        return Err("a buyer needs a ticket of the pack (from 1)");
+                    }
+                    pick = ticket.unwrap_or(p.ticket_id) == 0;
                 }
-                pick = ticket.unwrap_or(p.ticket_id) == 0;
             }
         }
         if pick {
@@ -296,7 +288,7 @@ impl PeopleSim {
         }
         let pack_price = ticket.map(|t| self.pack_ticket(t).1);
         let p = self.pax_mut(i).unwrap();
-        if c.changes_ticket() {
+        if changes_ticket {
             if let Some(k) = c.kind {
                 p.ticket = k;
             }

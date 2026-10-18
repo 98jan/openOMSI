@@ -375,7 +375,6 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_LAN_IP` | text | - | use | net | a.b.c.d[,e.f.g.h]: LAN addresses to offer first (when the detection gets them wrong). |
 | `OMSI_LAUNCHER` | text | - | use | app, guard | Program a plain start opens as the launcher instead of the desktop launcher (openomsi-launcher-app) beside the game. |
 | `OMSI_OFFICIAL_KEY` | text | - | use | lan | File of the official server's signing key. |
-| `OMSI_PICK_BUSES` | text | - | use | app | Comma-separated .bus file paths to include in the player bus picker; paths may be relative to the OMSI root or absolute. |
 | `OMSI_PLUGIN_HOST32` | text | beside the game | use | plugin | Path of omsi-plugin-host32.exe. |
 | `OMSI_PRESENCE_URL` | text | built-in | use | platform | Base URL of the presence ("playing now") service. |
 | `OMSI_ROOT` | text | found | use | app, lan, launcher-core, o3d, sim | The OMSI 2 installation folder (also the content root for tests that need real content). |

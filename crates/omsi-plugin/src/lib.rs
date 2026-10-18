@@ -232,7 +232,6 @@ impl TicketCall {
             payment: None,
         }
     }
-
 }
 
 /// `AccessScriptTexturePointer`'s `kind`: the button went down on the texture.
