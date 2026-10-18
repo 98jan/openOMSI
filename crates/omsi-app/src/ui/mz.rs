@@ -103,7 +103,7 @@ impl Ui {
         let slot = if f.nav_rect.is_none() { self.mz.slot } else { None };
         let embedded = slot.is_some();
         let small_w = slot.map_or_else(|| f.nav_rect.map_or(280.0 * s, |a| a[2] - a[0]).max(250.0 * s), |q| q[2] - q[0]);
-        let (small_h, big_h) = (slot.map_or(52.0 * s, |q| q[3] - q[1]), 196.0 * s);
+        let (small_h, big_h) = (slot.map_or(52.0 * s, |q| q[3] - q[1]), 152.0 * s + if v.typing.is_some() || v.status.is_some() { 26.0 * s } else { 0.0 });
         let w = small_w.round();
         let h = (small_h + (big_h - small_h) * e).round();
         let (x0, y0) = match f.nav_rect {
@@ -142,7 +142,7 @@ impl Ui {
             Some(tex) => scene.overlays.push((tex, [ax, ay, ax + art, ay + art])),
             None => self.text.rounded(r, scene, [ax, ay, ax + art, ay + art], 0.0, key_bg),
         }
-        let tx = ax + art + (if embedded { 8.0 * s } else { 12.0 * s }) * small + 12.0 * s * e;
+        let tx = ax + art + (if embedded { 8.0 * s } else { 12.0 * s }) * (1.0 - e) + 12.0 * s * e;
         let title = if v.title.is_empty() { "MileZero".to_string() } else { v.title.clone() };
         let artist = if v.artist.is_empty() { "Live radio".to_string() } else { v.artist.clone() };
         let small = 1.0 - e;
@@ -187,12 +187,12 @@ impl Ui {
         }
         if let Some(t) = &time {
             let tw = self.text.width_raw(t, 11.0 * s);
-            self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, e, xr - tw, by - 18.0 * s);
+            self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, e, xr - tw, y0 + 76.0 * s);
         }
         // buttons (only once the card is nearly open, so a click on the small one does nothing)
         if e > 0.9 {
             let bh = 30.0 * s;
-            let row_y = y0 + 104.0 * s;
+            let row_y = y0 + 100.0 * s;
             let bw = (w - pad * 2.0 - 8.0 * s) * 0.5;
             let play = [x0 + pad, row_y, x0 + pad + bw, row_y + bh];
             let req = [play[2] + 8.0 * s, row_y, xr, row_y + bh];
@@ -218,7 +218,7 @@ impl Ui {
                 _ => None,
             };
             if let Some((text, c, _)) = line {
-                let ly = y0 + 142.0 * s;
+                let ly = y0 + 138.0 * s;
                 let chip = [x0 + pad, ly - 3.0 * s, xr, ly + 19.0 * s];
                 self.text.rounded(r, scene, chip, 8.0 * s, key_bg);
                 let shown = if v.typing.is_some() && text.len() <= 1 { "Type a song and press Enter (Esc cancels)".to_string() } else { text };
