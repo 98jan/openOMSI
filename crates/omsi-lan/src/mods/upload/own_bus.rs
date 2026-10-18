@@ -329,7 +329,7 @@ fn hashed_one(rel: &str, p: &Path, cache: &std::collections::HashMap<String, (u6
             log::warn!("LAN mods: file changed while hashing: {}", p.display());
             return None;
         }
-        return Some((Entry { path: rel.to_owned(), size, sha256: hash.clone() }, Some((key, (size, modified, hash))));
+        return Some((Entry { path: rel.to_owned(), size, sha256: hash.clone() }, Some((key, (size, modified, hash)))));
     }
 
     // An archive entry cannot be opened through std::fs. Process just one entry
