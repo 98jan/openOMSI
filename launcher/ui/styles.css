@@ -659,7 +659,7 @@ table.table { width: 100%; border-collapse: collapse; }
   .lay-classicplus .roadbook { border-top: 0; }
 }
 @container (max-width: 479px) {
-  .lay-classicplus .cp-pip { top: 14px; bottom: auto; }
+  .lay-classicplus .duty-stage ~ .cp-pip { top: 14px; bottom: auto; }
 }
 
 @container drive (max-width: 1000px) {
