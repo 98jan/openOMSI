@@ -350,7 +350,7 @@ impl Navigator {
         };
         let jam_note = (self.jam_cost >= 30.0).then(|| {
             let what = if self.jam_cost >= 60.0 { wd.jam } else { wd.slow };
-            (format!("{what} +{:.0} min", (self.jam_cost / 60.0).max(1.0).round()), if self.jam_cost >= 60.0 { style::TRAFFIC[2] } else { style::TRAFFIC[1] })
+            (format!("{what} +{:.0} {}", (self.jam_cost / 60.0).max(1.0).round(), omsi_ui::tr("min")), if self.jam_cost >= 60.0 { style::TRAFFIC[2] } else { style::TRAFFIC[1] })
         });
         match f.stops.first() {
             Some(st) => {
@@ -373,7 +373,7 @@ impl Navigator {
                 if let Some(d) = self.next_dist {
                     parts.push(units.distance(d));
                     let secs = d / (self.speed_avg.max(5.0) as f64) + if self.jam_cost > 0.0 { self.jam_cost as f64 } else { 0.0 };
-                    parts.push(if secs < 60.0 { "<1 min".to_string() } else { format!("{:.0} min", (secs / 60.0).round()) });
+                    parts.push(if secs < 60.0 { omsi_ui::tr("<1 min").into_owned() } else { format!("{:.0} {}", (secs / 60.0).round(), omsi_ui::tr("min")) });
                 }
                 parts.push(format!("{:02}:{:02}", (st.arrival / 3600.0) as i32 % 24, ((st.arrival % 3600.0) / 60.0) as i32));
                 let line2 = parts.join(" · ");
