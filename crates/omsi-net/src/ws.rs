@@ -257,7 +257,7 @@ pub fn ws_url(target: &str) -> Option<String> {
         ("ws://", r)
     } else if t.starts_with("wss://") || t.starts_with("ws://") {
         return Some(t.to_string());
-    } else if t.ends_with(".trycloudflare.com") || t.contains(".trycloudflare.com/") {
+    } else if t.split(['/', '?', '#', ':']).next().is_some_and(|host| host.ends_with(".trycloudflare.com")) {
         ("wss://", t)
     } else {
         return None;
@@ -1068,6 +1068,11 @@ mod tests {
         assert_eq!(ws_url("abc.trycloudflare.com").as_deref(), Some("wss://abc.trycloudflare.com/ws"));
         assert_eq!(ws_url("http://10.0.0.2:27025/").as_deref(), Some("ws://10.0.0.2:27025/ws"));
         assert_eq!(ws_url("192.168.1.4:27015"), None);
+        assert_eq!(ws_url("abc.trycloudflare.com/ws").as_deref(), Some("wss://abc.trycloudflare.com/ws"));
+        assert_eq!(ws_url("abc.trycloudflare.com:443/ws").as_deref(), Some("wss://abc.trycloudflare.com:443/ws"));
+        for bogus in ["play.example.org/abc.trycloudflare.com/", "play.example.org?abc.trycloudflare.com", "play.example.org#abc.trycloudflare.com", "play.example.org:1/abc.trycloudflare.com/"] {
+            assert_eq!(ws_url(bogus), None);
+        }
         assert_eq!(http_base("https://abc.trycloudflare.com").as_deref(), Some("https://abc.trycloudflare.com"));
         assert_eq!(web_bases("192.168.1.4:27015"), ["http://192.168.1.4:27015", "http://192.168.1.4:27025", "https://192.168.1.4"]);
         assert_eq!(web_bases("play.example.org"), ["http://play.example.org:27025", "https://play.example.org", "http://play.example.org"]);

@@ -1341,13 +1341,13 @@ mod choice_tests {
             }
             assert_eq!(server_join_address(address, JoinProto::WebSocket, Some(&info)).unwrap().0, info.reached_at);
         }
-        for address in ["https://play.example.org", "http://play.example.org:27025", "https://play.example.org:27015", "ws://play.example.org/ws", "wss://play.example.org/ws", "openomsi", "OpenOMSI", "abc.trycloudflare.com", "abc.trycloudflare.com/ws"] {
+        for address in ["https://play.example.org", "http://play.example.org:27025", "https://play.example.org:27015", "ws://play.example.org/ws", "wss://play.example.org/ws", "openomsi", "OpenOMSI", "abc.trycloudflare.com", "abc.trycloudflare.com/ws", "abc.trycloudflare.com:443/ws"] {
             for protocol in [JoinProto::Auto, JoinProto::WebSocket] {
                 assert_eq!(server_join_address(address, protocol, Some(&info)).unwrap(), (address.into(), JoinProto::WebSocket));
             }
             assert_eq!(server_join_address(address, JoinProto::Udp, Some(&info)).unwrap_err(), "UDP needs the game's address (host or host:port), not a web link");
         }
-        for address in ["play.example.org:65536", "play.example.org:notaport", "2001:db8::27015"] {
+        for address in ["play.example.org:65536", "play.example.org:notaport", "2001:db8::27015", "play.example.org/abc.trycloudflare.com/", "play.example.org?abc.trycloudflare.com", "play.example.org#abc.trycloudflare.com"] {
             assert_eq!(server_join_address(address, JoinProto::Auto, Some(&info)).unwrap().1, JoinProto::WebSocket);
         }
         assert_eq!(server_join_address("  play.example.org:27015  ", JoinProto::Auto, Some(&info)).unwrap().0, "play.example.org:27015");

@@ -2,7 +2,7 @@
 function isWebAddress(address) {
   return /^(https?|wss?):\/\//.test(address)
     || address.toLowerCase() === 'openomsi'
-    || address.endsWith('.trycloudflare.com') || address.includes('.trycloudflare.com/');
+    || address.split(/[/?#:]/)[0].endsWith('.trycloudflare.com');
 }
 
 export function serverJoinProtocol(address, protocol = 'auto', info) {
