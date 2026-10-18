@@ -4,6 +4,7 @@ use super::*;
 struct Case {
     enabled: bool,
     night_alpha: Option<u8>,
+    night_has_alpha: bool,
     night_rgb: [u8; 3],
     transmap: bool,
     declared_mask: bool,
@@ -17,6 +18,7 @@ impl Default for Case {
         Self {
             enabled: true,
             night_alpha: Some(255),
+            night_has_alpha: true,
             night_rgb: [32, 64, 255],
             transmap: false,
             declared_mask: false,
@@ -51,6 +53,14 @@ fn a_clear_lamp_uses_its_active_night_maps_coverage() {
     for (classic, enhanced) in [(true, false), (false, false), (false, true)] {
         for case in [
             Case::default(),
+            // The scene-side alpha guard leaves RGB maps on diffuse coverage.
+            // Their uploaded alpha is 255, despite not having an alpha channel.
+            Case {
+                enabled: false,
+                night_has_alpha: false,
+                visible: false,
+                ..Default::default()
+            },
             Case {
                 enabled: false,
                 visible: false,
@@ -101,25 +111,31 @@ fn a_clear_lamp_uses_its_active_night_maps_coverage() {
             },
         ] {
             let mut scene = renderer.new_scene();
-            let texture = |r: &mut Renderer, s: &mut Scene, rgba: [u8; 4]| {
+            let texture = |r: &mut Renderer, s: &mut Scene, rgba: [u8; 4], has_alpha| {
                 r.add_texture(
                     s,
                     &omsi_texture::Image {
                         width: 1,
                         height: 1,
                         rgba: rgba.to_vec(),
-                        has_alpha: true,
+                        has_alpha,
                     },
                     false,
                 )
             };
-            let clear = texture(&mut renderer, &mut scene, [0; 4]);
-            let diffuse = texture(&mut renderer, &mut scene, [0, 0, 0, case.diffuse_alpha]);
+            let clear = texture(&mut renderer, &mut scene, [0; 4], true);
+            let diffuse = texture(
+                &mut renderer,
+                &mut scene,
+                [0, 0, 0, case.diffuse_alpha],
+                true,
+            );
             let night = case.night_alpha.map(|a| {
                 texture(
                     &mut renderer,
                     &mut scene,
                     [case.night_rgb[0], case.night_rgb[1], case.night_rgb[2], a],
+                    case.night_has_alpha,
                 )
             });
             let lamp = renderer.add_material_extra(
