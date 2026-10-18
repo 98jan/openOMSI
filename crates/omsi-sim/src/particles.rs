@@ -214,7 +214,8 @@ impl ParticleSet {
             // parent particle's own
             let mut freq = eval(&def.freq.0, value).max(0.0);
             if let Some(water) = road_water.as_ref().filter(|_| freq > 0.0 && is_tyre_spray(&def)) {
-                freq *= water(own.x, own.y).clamp(0.0, 1.0);
+                let k = water(own.x, own.y);
+                freq *= if k.is_finite() { k.clamp(0.0, 1.0) } else { 0.0 };
             }
             let mut sources: Vec<(DVec3, Vec3, f64)> = Vec::new();
             let mut burst_sources: Vec<(DVec3, Vec3, f64)> = Vec::new();
