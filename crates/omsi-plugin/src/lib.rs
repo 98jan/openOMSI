@@ -220,7 +220,7 @@ impl TicketCall {
         }
     }
 
-
+    /// What the answer changes: only what differs from the call (a voice when one is given).
     pub fn change(&self, a: &TicketAnswer) -> TicketChange {
         TicketChange {
             kind: (a.kind != self.kind).then(|| TicketKind::from_code(a.kind)).flatten(),
