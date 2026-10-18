@@ -78,20 +78,24 @@ pub(crate) fn ticket_ask(a: TicketAsk) -> Value {
     ])
 }
 
-/// `people.set_ticket`'s table.
-fn ticket_change(t: &Value) -> Result<TicketChange, ApiError> {
-    let bad = |k: &str, want: &str| ApiError(format!("omsi.people.set_ticket: `{k}` must be {want}"));
-    let field = |k: &str| t.get(k).filter(|v| !v.is_nil());
-    let text = |k: &str| field(k).map(|v| v.to_text().ok_or_else(|| bad(k, "a string"))).transpose();
-    Ok(TicketChange {
-        kind: field("kind").map(|v| v.to_text().and_then(|s| TicketKind::parse(&s)).ok_or_else(|| bad("kind", "\"none\", \"stamp\" or \"buy\""))).transpose()?,
-        ticket: field("ticket").map(|v| v.as_i64().filter(|n| (0..=255).contains(n)).map(|n| n as u8).ok_or_else(|| bad("ticket", "a ticket's number (0 to 255)"))).transpose()?,
-        name: text("name")?,
-        price: field("price").map(|v| v.as_f64().filter(|n| n.is_finite() && *n >= 0.0).map(|n| n as f32).ok_or_else(|| bad("price", "a number of 0 or more"))).transpose()?,
-        voice: text("voice")?,
-        tag: text("tag")?,
-    })
-}
+
+    /// `people.set_ticket`'s table.
+    fn ticket_change(t: &Value) -> Result<TicketChange, ApiError> {
+        let bad = |k: &str, want: &str| ApiError(format!("omsi.people.set_ticket: `{k}` must be {want}"));
+        let field = |k: &str| t.get(k).filter(|v| !v.is_nil());
+        let text = |k: &str| field(k).map(|v| v.to_text().ok_or_else(|| bad(k, "a string"))).transpose();
+
+        Ok(TicketChange {
+            kind: field("kind").map(|v| v.to_text().and_then(|s| TicketKind::parse(&s)).ok_or_else(|| bad("kind", "\"none\", \"stamp\" or \"buy\""))).transpose()?,
+            ticket: field("ticket").map(|v| v.as_i64().filter(|n| (0..=255).contains(n)).map(|n| n as u8).ok_or_else(|| bad("ticket", "a ticket's number (0 to 255)"))).transpose()?,
+            name: text("name")?,
+            price: field("price").map(|v| v.as_f64().filter(|n| n.is_finite() && *n >= 0.0).map(|n| n as f32).ok_or_else(|| bad("price", "a number of 0 or more"))).transpose()?,
+            voice: text("voice")?,
+            tag: text("tag")?,
+            payment: field("payment").map(|v| v.as_f64().filter(|n| n.is_finite() && *n >= 0.0).map(|n| n as f32).ok_or_else(|| bad("payment", "a number of 0 or more"))).transpose()?,
+        })
+    }
+
 
 /// The cars within `r` m of the player's bus (all, without a bus or without `r`).
 fn cars(c: &mut Ctx<'_>, r: Option<f64>) -> Vec<(f64, AiCar)> {

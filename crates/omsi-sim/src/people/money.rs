@@ -93,35 +93,82 @@ impl Money {
     /// coins drawn at random until they cover the price, then every coin that is not needed
     /// (the rest still covers the price less half the smallest coin) taken back again.
     pub fn omsi_coins_for(&mut self, price: f32) -> Vec<usize> {
-        let values: Vec<f32> = match &self.currency {
-            Some(c) => c.coins.iter().map(|(_, v)| *v).collect(),
-            None => return Vec::new(),
-        };
-        if values.is_empty() || values.iter().all(|v| *v <= 0.0) {
+        let all = self.denominations();
+        if all.is_empty() {
             return self.exact_coins_for(price);
         }
-        let half_smallest = self.smallest_value() / 2.0;
-        let mut out: Vec<usize> = Vec::new();
-        let mut sum = 0.0f32;
-        while sum < price && out.len() < 200 {
-            let k = ((self.rand_f() * values.len() as f32) as usize).min(values.len() - 1);
-            sum += values[k];
-            out.push(k);
+
+        let coin_count = self.currency.as_ref().map_or(0, |c| c.coins.len());
+
+        // Preferir billetes para importes altos.
+        // Menos de 5 €: solo monedas.
+        // De 5 € a menos de 10 €: billetes con peso 3.
+        // 10 € o más: billetes con peso 6.
+        let bill_weight: usize = if price >= 10.0 {
+            6
+        } else if price >= 5.0 {
+            3
+        } else {
+            0
+        };
+
+        // Repetir las opciones de billete aumenta su probabilidad de selección.
+        // Cada elemento conserva el índice real de la denominación.
+        let mut choices: Vec<(usize, f32)> = Vec::new();
+
+        for &(id, value) in &all {
+            let is_bill = id >= coin_count;
+
+            if is_bill && bill_weight == 0 {
+                continue;
+            }
+
+            choices.push((id, value));
+
+            if is_bill {
+                for _ in 1..bill_weight {
+                    choices.push((id, value));
+                }
+            }
         }
+
+        if choices.is_empty() {
+            return self.exact_coins_for(price);
+        }
+
+        let half_smallest = self.smallest_value() / 2.0;
+        let mut out: Vec<(usize, f32)> = Vec::new();
+        let mut sum = 0.0f32;
+
+        // Elegir piezas aleatorias hasta alcanzar el importe solicitado.
+        while sum < price && out.len() < 200 {
+            let k = ((self.rand_f() * choices.len() as f32) as usize)
+                .min(choices.len() - 1);
+
+            let (id, value) = choices[k];
+            sum += value;
+            out.push((id, value));
+        }
+
+        // Retirar piezas innecesarias si el resto sigue cubriendo el importe.
         let mut again = true;
+
         while again {
             again = false;
+
             for j in 0..out.len() {
-                if price - half_smallest <= sum - values[out[j]] {
-                    sum -= values[out[j]];
+                if price - half_smallest <= sum - out[j].1 {
+                    sum -= out[j].1;
                     out.remove(j);
                     again = true;
                     break;
                 }
             }
         }
-        out
+
+        out.into_iter().map(|(id, _)| id).collect()
     }
+
 
     /// The value of the smallest coin (the tolerance of the change is half of it).
     pub fn smallest_value(&self) -> f32 {

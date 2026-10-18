@@ -220,7 +220,7 @@ impl TicketCall {
         }
     }
 
-    /// What the answer changes: only what differs from the call (a voice when one is given).
+
     pub fn change(&self, a: &TicketAnswer) -> TicketChange {
         TicketChange {
             kind: (a.kind != self.kind).then(|| TicketKind::from_code(a.kind)).flatten(),
@@ -229,8 +229,10 @@ impl TicketCall {
             price: (a.price.to_bits() != self.price.to_bits() && a.price.is_finite()).then_some(a.price.max(0.0)),
             voice: (!a.voice.trim().is_empty()).then(|| a.voice.clone()),
             tag: None,
+            payment: None,
         }
     }
+
 }
 
 /// `AccessScriptTexturePointer`'s `kind`: the button went down on the texture.
