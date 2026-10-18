@@ -57,6 +57,9 @@ pub struct Building {
     pub open: bool,
     /// The building's model is drawn in 3D (`Layers::instances`), not a prism of the outline.
     pub has_mesh: bool,
+    /// Which of `Layers::instances` it is a part of (`u32::MAX`: none): the 3D map draws the
+    /// footprint instead when it has not the budget to draw the model.
+    pub inst: u32,
 }
 
 /// A placed model: which of `Layers::models`, where (relative to the layers' origin) and which
@@ -100,7 +103,7 @@ pub struct Layers {
 
 const MAGIC: &[u8; 4] = b"OMML";
 /// Bumped whenever the generator changes what it makes: an older cache is read again.
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 
 impl Layers {
     pub fn empty(origin: DVec2) -> Layers {
@@ -159,6 +162,7 @@ impl Layers {
             }
             f(&mut w, b.height);
             w.push(b.open as u8 | (b.has_mesh as u8) << 1);
+            u32_(&mut w, b.inst as usize);
         }
         u32_(&mut w, self.models.len());
         for m in &self.models {
@@ -215,7 +219,7 @@ impl Layers {
             out.paint.push(r.points()?);
         }
         out.paint.resize(PAINT_CLASSES, Vec::new());
-        for _ in 0..r.count(13)? {
+        for _ in 0..r.count(17)? {
             let outline = r.points()?;
             let mut roof = Vec::new();
             for _ in 0..r.count(6)? {
@@ -227,7 +231,8 @@ impl Layers {
             }
             let height = r.f32()?;
             let flags = r.take(1)?[0];
-            out.buildings.push(Building { outline, roof, height, open: flags & 1 != 0, has_mesh: flags & 2 != 0 });
+            let inst = r.u32()?;
+            out.buildings.push(Building { outline, roof, height, open: flags & 1 != 0, has_mesh: flags & 2 != 0, inst });
         }
         for _ in 0..r.count(4)? {
             let n = r.count(36)?;
@@ -476,7 +481,7 @@ mod tests {
         l.paved[PAVE_ROAD] = vec![Vec2::ZERO, Vec2::X * 4.0, Vec2::Y];
         l.paint[PAINT_AMBER] = vec![Vec2::ZERO, Vec2::X, Vec2::Y];
         let outline = vec![Vec2::ZERO, Vec2::new(10.0, 0.0), Vec2::new(10.0, 8.0), Vec2::new(0.0, 8.0)];
-        l.buildings.push(Building { roof: triangulate(&outline), outline, height: 12.5, open: true, has_mesh: true });
+        l.buildings.push(Building { roof: triangulate(&outline), outline, height: 12.5, open: true, has_mesh: true, inst: 0 });
         l.models.push(vec![[Vec3::ZERO, Vec3::X, Vec3::Z]]);
         l.instances.push(Instance { model: 0, at: Vec2::new(3.0, 4.0), heading: 90.0 });
         l.trees.push([5.0, 6.0, 3.0]);

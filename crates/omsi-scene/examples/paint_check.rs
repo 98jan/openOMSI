@@ -4,7 +4,7 @@
 //! Prints how many pieces sit on paint, and where the paint really is when they do not.
 
 use glam::{DVec2, DVec3, Mat4, Vec2, Vec3};
-use omsi_scene::road_paint::{paint_for, TEXEL_NONE};
+use omsi_scene::road_paint::PaintCache;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -21,6 +21,7 @@ fn main() {
     let global = omsi_map::global::GlobalCfg::load(&map_dir.join("global.cfg")).expect("global.cfg");
     omsi_map::configure_grid(&global);
     let ts = omsi_map::tile_size();
+    let cache = PaintCache::default();
     let (mut total, mut on, mut splines) = (0u32, 0u32, 0u32);
     let mut worst: Vec<(String, f32, f32)> = Vec::new();
     for t in &global.tiles {
@@ -55,7 +56,7 @@ fn main() {
                 if tex.patchwork.is_some() || tex.scale_by_length || !tex.file.to_lowercase().contains("asph") {
                     continue;
                 }
-                let Some(paint) = paint_for(&tex.file, &dirs) else { continue };
+                let Some(paint) = cache.get(&tex.file, &dirs) else { continue };
                 if std::env::var_os("DETAIL").is_some() && sp.file.contains("Heerstr2") {
                     println!("{} mirror={} tex={} v_scale={:?} len={:.1} tex_off={:.2}", sp.file, sp.mirror, tex.file, profile.points.iter().map(|p| p.v_scale).collect::<Vec<_>>(), curve.length, curve.tex_offset);
                     println!("  profile pts (x,u): {:?}", profile.points.iter().map(|p| (p.x, p.u)).collect::<Vec<_>>());
@@ -75,7 +76,7 @@ fn main() {
                             }
                             used = true;
                             total += 1;
-                            if paint.at(h.uv.x, h.uv.y) != TEXEL_NONE {
+                            if paint.painted_at(h.uv.x, h.uv.y) {
                                 on += 1;
                             } else if worst.len() < 12 {
                                 worst.push((sp.file.clone(), h.uv.x, h.uv.y));

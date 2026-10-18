@@ -23,6 +23,11 @@ pub struct MapData {
 }
 
 /// Cell of `MapData::paved_cells` (m).
+/// The most triangles of house models one build of the map draws (nearest first); the other
+/// houses are footprints with walls.
+const MODEL_TRIANGLES: usize = 200_000;
+/// Beyond this radius (m) of a build no model is drawn: from so high a roof is a speck.
+const MODEL_RADIUS: f64 = 1500.0;
 const PAVED_CELL: f32 = 2.0;
 
 #[derive(Default)]
@@ -262,7 +267,8 @@ impl MapData {
         }
     }
 
-    /// The houses within `radius` of `centre`, relative to `anchor`, three ways: their shadows
+    /// The houses within `radius` of `centre`, relative to `anchor`, three ways (the models of the
+    /// houses as they are for the nearest `MODEL_TRIANGLES` triangles within `MODEL_RADIUS`): their shadows
     /// on the ground (`shadows`, for a shadow layer), their walls lit by which way they face
     /// and their roofs with a fine edge (`solid`, for a depth-tested layer), both at full height
     /// (the layer's `height` raises them), and their roofs flat from above (`flat`).
@@ -273,6 +279,26 @@ impl MapData {
         let ids: Vec<u32> = self.cells_near(c, radius as f32).flat_map(|cell| cell.buildings.iter().copied()).collect();
         let light = -Vec2::from(SHADOW_DIR).normalize();
         let sd = Vec2::from(SHADOW_DIR);
+        let t0 = std::time::Instant::now();
+        // the models that are drawn as they are: the nearest first, while the build's budget of
+        // triangles lasts and the view is near enough to tell a roof from a prism; the rest of
+        // the houses are footprints with walls
+        let mut inst: Vec<u32> = if radius <= MODEL_RADIUS { self.cells_near(c, radius as f32).flat_map(|cell| cell.instances.iter().copied()).collect() } else { Vec::new() };
+        inst.sort_by(|a, b| {
+            let d = |i: &u32| (self.layers.instances[*i as usize].at - c).length_squared();
+            d(a).total_cmp(&d(b))
+        });
+        let mut drawn: hashbrown::HashSet<u32> = hashbrown::HashSet::new();
+        let mut spent = 0usize;
+        for &i in &inst {
+            let tris = self.layers.models.get(self.layers.instances[i as usize].model as usize).map_or(0, |m| m.len());
+            if spent + tris > MODEL_TRIANGLES {
+                continue;
+            }
+            spent += tris;
+            drawn.insert(i);
+        }
+        let meshed = |b: &layers::Building| b.has_mesh && drawn.contains(&b.inst);
         for &i in &ids {
             let b = &self.layers.buildings[i as usize];
             let o: Vec<Vec2> = b.outline.iter().map(|q| *q + k).collect();
@@ -286,7 +312,7 @@ impl MapData {
                 for t in &b.roof {
                     let (a, bb, cc) = (o[t[0] as usize], o[t[1] as usize], o[t[2] as usize]);
                     shadows.shadow_tri([(a, d), (bb, d), (cc, d)], pal.shadow);
-                    if !b.has_mesh {
+                    if !meshed(b) {
                         let q = |m: u16| o[m as usize].extend(h);
                         solid.solid_tri(q(t[0]), q(t[1]), q(t[2]), pal.roof, pal.roof, pal.roof);
                     }
@@ -305,7 +331,7 @@ impl MapData {
                 shadows.shadow_tri([(a, z), (bb, z), (bb, d)], pal.shadow);
                 shadows.shadow_tri([(a, z), (bb, d), (a, d)], pal.shadow);
             }
-            if b.has_mesh {
+            if meshed(b) {
                 // (the model itself is drawn below)
                 // flat: an edge, then the roof
                 for t in &b.roof {
@@ -340,11 +366,11 @@ impl MapData {
             }
         }
         // the models of the houses as they are, untextured
-        let inst: Vec<u32> = self.cells_near(c, radius as f32).flat_map(|cell| cell.instances.iter().copied()).collect();
-        for &i in &inst {
+        for &i in &drawn {
             let it = self.layers.instances[i as usize];
             self.model(solid, it, k, light, pal);
         }
+        log::debug!("city map houses: {} models drawn of {} in range ({} triangles), {} buildings, {:.0} ms", drawn.len(), inst.len(), spent, ids.len(), t0.elapsed().as_secs_f64() * 1000.0);
         for &i in &ids {
             let b = &self.layers.buildings[i as usize];
             if b.open {

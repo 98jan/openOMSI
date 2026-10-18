@@ -77,12 +77,14 @@ impl TexturePaint {
                 }
                 let c = px(x, y);
                 let l = luma(c);
-                if l < asphalt + 0.26 || l < 0.5 {
+                // (a decal has no asphalt to be told from: it must be bright, or a light-grey
+                // manhole or patch would be white paint)
+                if l < asphalt + 0.26 || l < if decal { 0.72 } else { 0.5 } {
                     continue;
                 }
                 let (mx, mn) = (c[0].max(c[1]).max(c[2]), c[0].min(c[1]).min(c[2]));
                 let yellow = c[0] > 0.55 && c[1] > 0.42 && c[2] < mx * 0.62 && c[0] - c[2] > 0.25;
-                let white = mn > 0.45 && (mx - mn) < 0.28;
+                let white = mn > if decal { 0.62 } else { 0.45 } && (mx - mn) < 0.28;
                 if yellow {
                     cls[y * w + x] = TEXEL_YELLOW;
                 } else if white {
@@ -93,8 +95,10 @@ impl TexturePaint {
                 bright += 1;
             }
         }
-        // (a picture that is light all over has no paint on it)
-        if bright == 0 || (!decal && bright * 100 > w * h * 55) {
+        // (a picture that is light all over has no paint on it; nor has a decal whose drawn
+        // part is nearly all light: a patch)
+        let drawn = if decal { (0..w * h).filter(|k| opaque(k % w, k / w)).count().max(1) } else { w * h };
+        if bright == 0 || bright * 100 > drawn * if decal { 90 } else { 55 } {
             return None;
         }
         let mut mask = TexturePaint { w, h, cls, bars: Vec::new(), rest: Vec::new() };
@@ -103,6 +107,11 @@ impl TexturePaint {
             return None;
         }
         (mask.bars, mask.rest) = mask.find_bars();
+        // (only the bars and the shapes that are no bars are asked for now)
+        mask.cls = Vec::new();
+        if mask.rest.iter().all(|c| *c == TEXEL_NONE) {
+            mask.rest = Vec::new();
+        }
         Some(mask)
     }
 
@@ -181,12 +190,11 @@ impl TexturePaint {
         }
     }
 
-    /// The class at texture coordinates (u, v), the texture repeating.
-    pub fn at(&self, u: f32, v: f32) -> u8 {
+    /// Whether there is paint at texture coordinates (u, v), the texture repeating.
+    pub fn painted_at(&self, u: f32, v: f32) -> bool {
         let (fu, fv) = (u - u.floor(), v - v.floor());
-        let x = ((fu * self.w as f32) as usize).min(self.w - 1);
-        let y = ((fv * self.h as f32) as usize).min(self.h - 1);
-        self.cls[y * self.w + x]
+        let in_bar = |v: f32| self.bars.iter().any(|b| fu >= b.u[0] && fu < b.u[1] && v >= b.v[0] && v < b.v[1]);
+        in_bar(fv) || in_bar(fv + 1.0) || self.free_form_at(u, v) != TEXEL_NONE
     }
 
     /// The paint that is a plain rectangle (lane lines and their dashes, stop lines, the bars
@@ -235,6 +243,9 @@ impl TexturePaint {
 
     /// The class of paint that is no plain rectangle at (u, v), the texture repeating.
     pub fn free_form_at(&self, u: f32, v: f32) -> u8 {
+        if self.rest.is_empty() {
+            return TEXEL_NONE;
+        }
         let (fu, fv) = (u - u.floor(), v - v.floor());
         let x = ((fu * self.w as f32) as usize).min(self.w - 1);
         let y = ((fv * self.h as f32) as usize).min(self.h - 1);
@@ -242,18 +253,26 @@ impl TexturePaint {
     }
 }
 
-/// The paint of a texture looked up by name in `dirs`, read once. None: no such texture, or no
-/// paint on it.
-pub fn paint_for(texture: &str, dirs: &[&Path]) -> Option<Arc<TexturePaint>> {
-    static MEMO: std::sync::OnceLock<Mutex<HashMap<std::path::PathBuf, Option<Arc<TexturePaint>>>>> = std::sync::OnceLock::new();
-    let found = omsi_texture::find_texture(texture, dirs)?;
-    let memo = MEMO.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(hit) = memo.lock().get(&found) {
-        return hit.clone();
+/// The paint of the textures one map generation asks for, each read once: the cache lives as
+/// long as the generation does (a picture's mask is up to two megabytes), not the session.
+#[derive(Default)]
+pub struct PaintCache {
+    memo: Mutex<HashMap<std::path::PathBuf, Option<Arc<TexturePaint>>>>,
+}
+
+impl PaintCache {
+    /// The paint of a texture looked up by name in `dirs`. None: no such texture, or no paint on
+    /// it. The summer picture is read whatever season the game shows: snow would be white paint,
+    /// and the layers are kept for good.
+    pub fn get(&self, texture: &str, dirs: &[&Path]) -> Option<Arc<TexturePaint>> {
+        let found = omsi_texture::find_texture_in_look(texture, dirs, None)?;
+        if let Some(hit) = self.memo.lock().get(&found) {
+            return hit.clone();
+        }
+        let mask = omsi_texture::decode_file(&found).ok().and_then(|img| TexturePaint::read_picture(&img)).map(Arc::new);
+        self.memo.lock().insert(found, mask.clone());
+        mask
     }
-    let mask = omsi_texture::decode_file(&found).ok().and_then(|img| TexturePaint::read_picture(&img)).map(Arc::new);
-    memo.lock().insert(found, mask.clone());
-    mask
 }
 
 /// The paint of one stretch of a road section as triangles, per marking class (`layers::MARK_*`):
@@ -271,6 +290,9 @@ pub fn lane_paint(paint: &TexturePaint, seg: [&SplineProfilePoint; 2], length: f
         return Vec::new();
     }
     let (ulo, uhi) = (a.u.min(b.u) as f64, a.u.max(b.u) as f64);
+    if !(ulo.is_finite() && uhi.is_finite()) || uhi - ulo > 64.0 || ulo.abs() > 1.0e6 || uhi.abs() > 1.0e6 || !tex_offset.is_finite() || !length.is_finite() {
+        return Vec::new();
+    }
     let x_of = |u: f64| a.x as f64 + (u - a.u as f64) / du * (b.x - a.x) as f64;
     let (w_lo, w_hi) = (vs * tex_offset, vs * (length + tex_offset));
     for st in &paint.bars {
@@ -349,9 +371,9 @@ fn clip_to_rect(poly: &[Vec2], rect: [Vec2; 2]) -> Vec<Vec2> {
 /// crossing's bars, stop lines, lane lines) are cut exactly out of each face by its texture
 /// coordinates; the rest (arrows, symbols) is looked at from above in cells of about 8 cm,
 /// traced into outlines and cut into triangles.
-pub fn face_paint(faces: &[([Vec2; 3], [Vec2; 3], usize)], texs: &[String], dirs: &[PathBuf]) -> Vec<(usize, [Vec2; 3])> {
+pub fn face_paint(faces: &[([Vec2; 3], [Vec2; 3], usize)], texs: &[String], dirs: &[PathBuf], cache: &PaintCache) -> Vec<(usize, [Vec2; 3])> {
     let dirs: Vec<&Path> = dirs.iter().map(|d| d.as_path()).collect();
-    let masks: Vec<Option<Arc<TexturePaint>>> = texs.iter().map(|t| if t.trim().is_empty() { None } else { paint_for(t, &dirs) }).collect();
+    let masks: Vec<Option<Arc<TexturePaint>>> = texs.iter().map(|t| if t.trim().is_empty() { None } else { cache.get(t, &dirs) }).collect();
     let painted: Vec<&([Vec2; 3], [Vec2; 3], usize)> = faces.iter().filter(|f| masks[f.2].is_some()).collect();
     if painted.is_empty() {
         return Vec::new();
@@ -365,6 +387,11 @@ pub fn face_paint(faces: &[([Vec2; 3], [Vec2; 3], usize)], texs: &[String], dirs
             continue;
         }
         let (ulo, uhi) = (uv[0].min(uv[1]).min(uv[2]), uv[0].max(uv[1]).max(uv[2]));
+        // (a texture coordinate that is not a number or runs over many pictures is no laying
+        // of paint; checked before it is cast to a count)
+        if !(ulo.is_finite() && uhi.is_finite()) || uhi.x - ulo.x > 20.0 || uhi.y - ulo.y > 20.0 || ulo.abs().max_element() > 1.0e6 || uhi.abs().max_element() > 1.0e6 {
+            continue;
+        }
         let (ku0, ku1, kv0, kv1) = (ulo.x.floor() as i64, uhi.x.floor() as i64, ulo.y.floor() as i64, uhi.y.floor() as i64);
         if (ku1 - ku0 + 1) * (kv1 - kv0 + 1) > 400 {
             continue;
@@ -496,8 +523,8 @@ mod tests {
         assert_eq!(s[0].class, TEXEL_WHITE);
         assert!((s[0].u[0] - 2.0 / 64.0).abs() < 1e-6 && (s[0].u[1] - 6.0 / 64.0).abs() < 1e-6);
         assert!((s[0].v[0] - 0.25).abs() < 1e-6 && (s[0].v[1] - 0.75).abs() < 1e-6);
-        assert_eq!(mask.at(3.0 / 64.0, 0.5), TEXEL_WHITE);
-        assert_eq!(mask.at(0.5, 0.5), TEXEL_NONE);
+        assert!(mask.painted_at(3.0 / 64.0, 0.5));
+        assert!(!mask.painted_at(0.5, 0.5));
     }
 
     #[test]
@@ -546,13 +573,11 @@ mod tests {
     #[test]
     fn a_crossing_on_a_flat_face_becomes_triangles() {
         // a square of road 2 m wide whose picture has one light bar over a quarter of it
-        let mask = TexturePaint::read_picture(&picture(&[(0, 0, 63, 15, [230, 230, 230])])).unwrap();
         let dir = std::env::temp_dir().join(format!("openomsi-lane-paint-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         let mut png = image::RgbaImage::new(64, 64);
         for (i, px) in png.pixels_mut().enumerate() {
-            let (x, y) = (i % 64, i / 64);
-            let _ = x;
+            let y = i / 64;
             *px = if y < 16 { image::Rgba([230, 230, 230, 255]) } else { image::Rgba([72, 72, 72, 255]) };
         }
         png.save(dir.join("zebra_test.png")).unwrap();
@@ -560,13 +585,59 @@ mod tests {
             ([Vec2::ZERO, Vec2::new(2.0, 0.0), Vec2::new(2.0, 2.0)], [Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0), Vec2::new(1.0, 1.0)], 0usize),
             ([Vec2::ZERO, Vec2::new(2.0, 2.0), Vec2::new(0.0, 2.0)], [Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0), Vec2::new(0.0, 1.0)], 0usize),
         ];
-        let paint = face_paint(&faces, &["zebra_test.png".to_string()], &[dir.clone()]);
+        let cache = PaintCache::default();
+        let paint = face_paint(&faces, &["zebra_test.png".to_string()], &[dir.clone()], &cache);
         let area: f32 = paint.iter().map(|(_, t)| (t[1] - t[0]).perp_dot(t[2] - t[0]).abs() * 0.5).sum();
         // (the bar is a rectangle of the picture: cut exactly out of the faces)
         assert!((area - 2.0 * 2.0 * 0.25).abs() < 1e-3, "{area}");
         assert!(paint.iter().all(|(c, _)| *c == layers::PAINT_WHITE));
+        // texture coordinates that are not numbers or run over a million pictures lay no paint
+        // (and do not run a loop from the smallest integer)
+        for far in [f32::INFINITY, f32::NAN, 3.0e9] {
+            let wild = [([Vec2::ZERO, Vec2::new(2.0, 0.0), Vec2::new(2.0, 2.0)], [Vec2::new(0.0, 0.0), Vec2::new(far, 0.0), Vec2::new(far, 1.0)], 0usize)];
+            assert!(face_paint(&wild, &["zebra_test.png".to_string()], &[dir.clone()], &cache).is_empty());
+        }
         let _ = std::fs::remove_dir_all(&dir);
-        let _ = mask;
+    }
+
+    #[test]
+    fn a_mirrored_spline_lays_its_dashes_the_other_way_round() {
+        // a bar over the first half of the picture's length: 0..0.5 along, then 1..1.5, ...
+        let mask = TexturePaint::read_picture(&picture(&[(10, 0, 13, 31, [220, 220, 220])])).unwrap();
+        let p = |x: f32, u: f32| SplineProfilePoint { x, z: 0.0, u, v_scale: 1.0 };
+        let (a, b) = (p(-4.0, 0.0), p(4.0, 1.0));
+        let along = |s: f64, x: f64| Vec2::new(x as f32, s as f32);
+        let first = |mirror: bool| {
+            let paint = lane_paint(&mask, [&a, &b], 3.0, 0.0, mirror, &along);
+            paint[0].1.iter().map(|q| q.y).fold(f32::MAX, f32::min)
+        };
+        assert!(first(false) < 0.01, "{}", first(false));
+        assert!((first(true) - 0.5).abs() < 0.01, "{}", first(true));
+    }
+
+    #[test]
+    fn a_light_grey_decal_is_no_paint_but_a_white_one_is() {
+        let decal = |grey: u8| {
+            let mut rgba = vec![0u8; 64 * 64 * 4];
+            for y in 20..36 {
+                for x in 20..36 {
+                    let i = (y * 64 + x) * 4;
+                    rgba[i..i + 4].copy_from_slice(&[grey, grey, grey, 255]);
+                }
+            }
+            omsi_texture::Image { width: 64, height: 64, rgba, has_alpha: true }
+        };
+        // (a manhole cover or a patch of lighter asphalt: nearly all of what is drawn is light)
+        assert!(TexturePaint::read_picture(&decal(170)).is_none());
+        assert!(TexturePaint::read_picture(&decal(250)).is_none(), "a decal that is light all over is a patch");
+        let mut two = decal(250);
+        for y in 20..36 {
+            for x in 20..28 {
+                let i = (y * 64 + x) * 4;
+                two.rgba[i..i + 4].copy_from_slice(&[90, 90, 90, 255]);
+            }
+        }
+        assert!(TexturePaint::read_picture(&two).is_some(), "white over dark in a decal is paint");
     }
 
     #[test]
