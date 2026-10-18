@@ -267,49 +267,118 @@ pub(super) fn files_of(root: &Path, bus: &str) -> Vec<(String, PathBuf)> {
 /// modification time, SHA-256).
 type Remembered = (String, (u64, u64, String));
 
-/// Size and SHA-256 of each file (the hashes remembered by size and time, as a join does).
-pub(in crate::mods) fn hashed(files: &[(String, PathBuf)]) -> Vec<Entry> {
-    use rayon::prelude::*;
-    let cache = crate::mods::hash_cache();
-    let done: Vec<(Entry, Option<Remembered>)> = files
-        .par_iter()
-        .filter_map(|(rel, p)| {
-            let key = p.to_string_lossy().to_string();
-            if let Ok(md) = std::fs::metadata(p) {
-                let mtime = md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
-                if let Some((sz, mt, h)) = cache.get(&key) {
-                    if *sz == md.len() && *mt == mtime {
-                        // (checked as a file read now is: the hashes are remembered for every
-                        // file a join compares, a program or one too large among them)
-                        if md.len() > crate::mods::MAX_FILE || starts_as_program(p) {
-                            return None;
-                        }
-                        return Some((Entry { path: rel.clone(), size: md.len(), sha256: h.clone() }, None));
-                    }
-                }
-            }
-            let data = omsi_cfg::vfs::read(p).ok()?;
-            if data.len() as u64 > crate::mods::MAX_FILE || crate::mods::looks_executable(&data[..data.len().min(8)]) {
-                return None;
-            }
-            let h = crate::mods::sha256_of(&data);
-            let fresh = std::fs::metadata(p).ok().map(|md| {
-                let mtime = md.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
-                (key, (md.len(), mtime, h.clone()))
-            });
-            Some((Entry { path: rel.clone(), size: data.len() as u64, sha256: h }, fresh))
-        })
-        .collect();
-    let mut cache = cache;
-    let mut entries = Vec::with_capacity(done.len());
-    for (e, fresh) in done {
-        if let Some((k, v)) = fresh {
-            cache.insert(k, v);
+fn modified_secs(md: &std::fs::Metadata) -> u64 {
+    md.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Hash without buffering the entire mod in RAM. Refuse programs by their magic
+/// bytes before processing the rest, as the old whole-file implementation did.
+fn hash_stream(mut reader: impl Read) -> std::io::Result<Option<(u64, String)>> {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    let mut size = 0u64;
+    loop {
+        let n = reader.read(&mut buffer)?;
+        if n == 0 { break; }
+        if size == 0 && crate::mods::looks_executable(&buffer[..n.min(8)]) {
+            return Ok(None);
         }
-        entries.push(e);
+        size += n as u64;
+        if size > crate::mods::MAX_FILE { return Ok(None); }
+        hasher.update(&buffer[..n]);
     }
-    crate::mods::save_hash_cache(&cache);
+    let digest = hasher.finalize();
+    Ok(Some((size, digest.iter().map(|b| format!("{b:02x}")).collect())))
+}
+
+fn hashed_one(rel: &str, p: &Path, cache: &std::collections::HashMap<String, (u64, u64, String)>) -> Option<(Entry, Option<Remembered>)> {
+    let key = p.to_string_lossy().into_owned();
+
+    // Plain disk files can be streamed. Virtual VFS paths (mounted ZIP / sealed
+    // content) have no File handle; retain the VFS read path for those.
+    if let Ok(file) = std::fs::File::open(p) {
+        let before = file.metadata().ok()?;
+        if !before.is_file() || before.len() > crate::mods::MAX_FILE {
+            return None;
+        }
+        let modified = modified_secs(&before);
+        if let Some((len, mtime, hash)) = cache.get(&key) {
+            if *len == before.len() && *mtime == modified {
+                if starts_as_program(p) { return None; }
+                return Some((Entry { path: rel.to_owned(), size: *len, sha256: hash.clone() }, None));
+            }
+        }
+        let (size, hash) = hash_stream(std::io::BufReader::with_capacity(64 * 1024, file)).ok()??;
+        // A changed file must not get a stale, supposedly validated fingerprint.
+        let after = std::fs::metadata(p).ok()?;
+        if size != before.len() || after.len() != before.len() || modified_secs(&after) != modified {
+            log::warn!("LAN mods: file changed while hashing: {}", p.display());
+            return None;
+        }
+        return Some((Entry { path: rel.to_owned(), size, sha256: hash.clone() }, Some((key, (size, modified, hash))));
+    }
+
+    // An archive entry cannot be opened through std::fs. Process just one entry
+    // at a time instead of many huge buffers in Rayon's global thread pool.
+    let data = omsi_cfg::vfs::read(p).ok()?;
+    if data.len() as u64 > crate::mods::MAX_FILE { return None; }
+    let (size, hash) = hash_stream(data.as_slice()).ok()??;
+    Some((Entry { path: rel.to_owned(), size, sha256: hash }, None))
+}
+
+/// Size and SHA-256 of each file. Sequential I/O leaves headroom for rendering
+/// while hosting a LAN session, without monopolizing Rayon's global pool.
+pub(in crate::mods) fn hashed(files: &[(String, PathBuf)]) -> Vec<Entry> {
+    let mut cache = crate::mods::hash_cache();
+    let mut entries = Vec::with_capacity(files.len());
+    let mut dirty = 0usize;
+    let mut last_save = std::time::Instant::now();
+
+    for (rel, p) in files {
+        if let Some((entry, fresh)) = hashed_one(rel, p, &cache) {
+            if let Some((key, value)) = fresh {
+                cache.insert(key, value);
+                dirty += 1;
+            }
+            entries.push(entry);
+        }
+        // Checkpoint by batch OR elapsed time, not every file (large manifests
+        // would rewrite the cache tens of thousands of times).
+        if dirty > 0 && (dirty >= 32 || last_save.elapsed() >= std::time::Duration::from_secs(5)) {
+            crate::mods::save_hash_cache(&cache);
+            dirty = 0;
+            last_save = std::time::Instant::now();
+        }
+    }
+    if dirty > 0 { crate::mods::save_hash_cache(&cache); }
     entries
+}
+
+#[cfg(test)]
+mod hash_stream_tests {
+    use super::hash_stream;
+    use sha2::{Digest, Sha256};
+    use std::io::Cursor;
+
+    #[test]
+    fn streams_files_without_changing_sha256() {
+        let data = vec![0x41u8; 256 * 1024 + 19];
+        let (size, sha) = hash_stream(Cursor::new(&data)).unwrap().unwrap();
+        let expected = Sha256::digest(&data);
+        assert_eq!(size, data.len() as u64);
+        assert_eq!(sha, expected.iter().map(|b| format!("{b:02x}")).collect::<String>());
+    }
+
+    #[test]
+    fn rejects_program_headers() {
+        assert!(hash_stream(Cursor::new(b"MZfake executable".as_slice())).unwrap().is_none());
+    }
 }
 
 /// Does the plain file `p` start as a program does (`looks_executable`)? One that cannot be
