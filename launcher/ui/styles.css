@@ -320,10 +320,14 @@ table.table { width: 100%; border-collapse: collapse; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; }
 .dot.ok { background: var(--ok); }
 .dot.danger { background: var(--danger); }
-.trip-ends .from::before, .trip-ends .to::before { content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; vertical-align: 1px; background: var(--ok); }
-.trip-ends .to::before { background: var(--danger); }
-.trip-ends.stacked { display: flex; flex-direction: column; min-width: 0; }
-.trip-ends.stacked > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-ends .from::before, .trip-ends .to::before { content: ''; display: inline-block; box-sizing: border-box; width: 8px; height: 8px; margin-right: 6px; border: 2px solid currentColor; border-radius: 50%; }
+.trip-ends .to::before { background: currentColor; }
+.trip-ends.stacked { position: relative; display: flex; flex-direction: column; min-width: 0; padding-left: 14px; }
+.trip-ends.stacked::before { content: ''; position: absolute; left: 3px; top: 14px; bottom: 14px; width: 2px; background: currentColor; opacity: 0.35; }
+.trip-ends.stacked > span { line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-ends.stacked > span::before { position: absolute; left: 0; margin: 0; }
+.trip-ends.stacked .from::before { top: 6px; }
+.trip-ends.stacked .to::before { bottom: 6px; }
 
 /* the line badge: a line number as the stops' signs show it */
 .line-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 34px; height: 24px; padding: 0 7px; border-radius: 4px; background: var(--text); color: var(--bg); font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; }
