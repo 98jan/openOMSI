@@ -285,7 +285,7 @@ mod tests {
                     if f.is_dir() {
                         continue;
                     }
-                    let name = f.name().replace('\\', "/");
+                    let Ok(name) = f.name().map(|n| n.replace('\\', "/")) else { continue };
                     // (a bus zipped without its Vehicles folder is read as one)
                     let top = name.split('/').next().unwrap_or("").to_ascii_lowercase();
                     let rel = if super::super::FOLDERS.contains(&top.as_str()) { name.clone() } else { format!("Vehicles/{name}") };

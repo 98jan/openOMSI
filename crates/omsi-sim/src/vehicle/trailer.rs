@@ -36,8 +36,9 @@ impl VehicleInstance {
 }
 
 /// A vehicle coupled behind another (articulated bus rear section, trailer, train car).
-/// It has no script state of its own: meshes animate from the leading vehicle's
-/// variables, and it is towed at the coupling point with trailer kinematics.
+/// Its meshes animate from the leading vehicle's variables - or, for a train car whose
+/// scripts read its place in the train, from its own [`CarRun`](super::CarRun) - and it is
+/// towed at the coupling point with trailer kinematics.
 /// Sign of `articulation_<n>_alpha` relative to (heading in front − own heading), clockwise
 /// degrees: settled with the GN92's joint dummies (see the vehicle tests).
 pub(super) const ARTICULATION_SIGN: f64 = 1.0;
@@ -112,6 +113,14 @@ pub struct TrailerPart {
     /// The leading vehicle's per-axle variables this part writes every frame (see
     /// [`AxleVarIds`]).
     pub(super) axle_ids: AxleVarIds,
+    /// Coupled to something ahead and behind, in the train's order (`set_couplings`).
+    pub(super) coupled_at: [bool; 2],
+    /// Its program or model reads its place in the train, so it gets a [`CarRun`] on its
+    /// first frame.
+    ///
+    /// [`CarRun`]: super::CarRun
+    pub(super) runs_itself: bool,
+    pub run: Option<Box<super::CarRun>>,
 }
 
 /// The leading vehicle's variables a coupled part reads and writes every frame for each of
@@ -186,6 +195,23 @@ pub(super) fn joint_load(def: &omsi_vehicle::Vehicle, coupling_y: f32) -> f32 {
     (weight * (cog_y - axle.long) / (coupling_y - axle.long)).clamp(0.0, weight * 0.5)
 }
 
+/// The mesh animators of a part, their variables found by `var`.
+fn part_animators(ty: &VehicleType, var: &dyn Fn(&str) -> Option<omsi_script::VarId>) -> Vec<MeshAnimator> {
+    let mut animators: Vec<MeshAnimator> = ty
+        .meshes
+        .iter()
+        .map(|m| MeshAnimator::new(&ty.model.meshes[m.def_index], m.pivot, var))
+        .collect();
+    crate::anim::link_parents(
+        &mut animators,
+        &ty.meshes
+            .iter()
+            .map(|m| &ty.model.meshes[m.def_index])
+            .collect::<Vec<_>>(),
+    );
+    animators
+}
+
 impl TrailerPart {
     /// Pitch (degrees, nose up), eased axle height and the track point it stands on (for
     /// the `OMSI_DEBUG_TRAILERS` trace).
@@ -218,18 +244,7 @@ impl TrailerPart {
         first_axle: usize,
         joint: usize,
     ) -> TrailerPart {
-        let mut animators: Vec<MeshAnimator> = ty
-            .meshes
-            .iter()
-            .map(|m| MeshAnimator::new(&ty.model.meshes[m.def_index], m.pivot, |n| program.var(n)))
-            .collect();
-        crate::anim::link_parents(
-            &mut animators,
-            &ty.meshes
-                .iter()
-                .map(|m| &ty.model.meshes[m.def_index])
-                .collect::<Vec<_>>(),
-        );
+        let animators = part_animators(&ty, &|n| program.var(n));
         let (coupling_back, coupling_front) = coupling_points(main, main_reversed, &ty, reversed);
         // the line the part turns about: its own `[rot_pnt_long]` where a road part names
         // one (Omsi.exe runs every section as a body of its own on the same wheel physics,
@@ -351,8 +366,26 @@ impl TrailerPart {
             text_textures: Vec::new(),
             axle_ids: AxleVarIds::default(),
             skin_rest: Vec::new(),
+            coupled_at: [true, false],
+            runs_itself: super::car_run::uses_place_in_train(&ty),
+            run: None,
             ty,
         }
+    }
+
+    /// `train_frontcoupling`, `train_backcoupling`, `train_me_reverse` of this part: a
+    /// part turned round has the train's rear at its own front.
+    pub fn place_in_train(&self) -> [f32; 3] {
+        let [ahead, behind] = self.coupled_at;
+        let own_front = if self.reversed { behind } else { ahead };
+        let own_back = if self.reversed { ahead } else { behind };
+        [own_front, own_back, self.reversed].map(|b| if b { 1.0 } else { 0.0 })
+    }
+
+    /// Variable `name` of the part's own [`CarRun`](super::CarRun); None when it has none
+    /// (it shows the leading vehicle's).
+    pub fn run_var(&self, name: &str) -> Option<f32> {
+        self.run.as_deref()?.get(name)
     }
 
     /// The `[smoothskin]` meshes of this part.
@@ -370,6 +403,7 @@ impl TrailerPart {
     /// Skinned mesh `i` as its bones hold it now; `n_vars`: the leading vehicle's variable
     /// count (this part animates from its variables).
     pub fn skinned(&mut self, i: usize, n_vars: usize) -> Option<(Vec<Vec3>, Vec<Vec3>)> {
+        let n_vars = self.run.as_ref().map_or(n_vars, |r| r.state.vars.len());
         if self.skin_rest.len() != self.animators.len() {
             self.skin_rest = rest_transforms(&self.animators, n_vars);
         }
@@ -817,13 +851,28 @@ impl TrailerPart {
                 }
             }
         }
-        for (i, a) in self.animators.iter_mut().enumerate() {
-            self.mesh_transforms[i] = a.update(dt, &main.state.vars);
+        // a car that reads its place in the train runs its own scripts first, and its
+        // meshes show its values (see `car_run`)
+        let place = self.place_in_train();
+        match self.run.as_deref_mut() {
+            Some(run) => run.frame(main, place),
+            None if self.runs_itself => {
+                let run = super::CarRun::start(&self.ty, main, place);
+                let slot_of = |n: &str| omsi_script::compile::with_lower(n, |k| run.names.get(k).copied());
+                self.animators = part_animators(&self.ty, &slot_of);
+                self.skin_rest = Vec::new();
+                self.props_plan = PropsPlan::default();
+                self.run = Some(Box::new(run));
+            }
+            None => {}
+        }
+        let (vars, index) = self.run.as_deref().map_or((&main.state.vars, &main.var_index), |r| (&r.state.vars, &r.names));
+        for (transform, animator) in self.mesh_transforms.iter_mut().zip(self.animators.iter_mut()) {
+            *transform = animator.update(dt, vars);
         }
         crate::anim::apply_parents(&self.animators, &mut self.mesh_transforms);
-        self.props_plan.refresh(&self.ty, &main.var_index);
-        self.props_plan
-            .apply(&main.state.vars, &mut self.mesh_props);
+        self.props_plan.refresh(&self.ty, index);
+        self.props_plan.apply(vars, &mut self.mesh_props);
     }
 }
 

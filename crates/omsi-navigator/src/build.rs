@@ -23,16 +23,23 @@ pub(super) struct GroundParts {
 
 /// What a build makes, relative to `anchor`: the ground, and the houses' shadows, standing
 /// walls and roofs, and flat roofs.
-pub(super) struct Built {
+pub struct Built {
     pub anchor: DVec2,
     pub counts: [usize; 4],
+    pub(crate) runs: [super::cull::Runs; 4],
     verts: [Vec<Vertex>; 4],
     made: Option<[omsi_ui::Vertices; 4]>,
 }
 
 impl Built {
     fn new(anchor: DVec2, verts: [Vec<Vertex>; 4]) -> Built {
-        Built { anchor, counts: verts.each_ref().map(Vec::len), verts, made: None }
+        Built { anchor, counts: verts.each_ref().map(Vec::len), runs: verts.each_ref().map(|v| super::cull::runs(v)), verts, made: None }
+    }
+
+    /// The vertices as built (empty once `made_on` put them on the GPU): the ground, then the
+    /// houses' shadows, their standing walls and roofs, and their flat roofs.
+    pub fn vertices(&self) -> &[Vec<Vertex>; 4] {
+        &self.verts
     }
 
     pub fn made_on(mut self, device: &wgpu::Device) -> Built {
@@ -93,6 +100,34 @@ pub(super) fn build(parts: &GroundParts, anchor: DVec2, reach: f64, pal: &Palett
         md.build_houses(&mut sh, &mut so, &mut fl, anchor, anchor, reach, pal);
     }
     Built::new(anchor, [p.verts, sh.verts, so.verts, fl.verts])
+}
+
+/// A map's ground read outside a session - the launcher's map - built by the very code the
+/// city map builds its ground with, so the two look the same: the carriageways of the map's
+/// network (with whether its paving covers them), its layers and its package.
+pub struct MapGround {
+    parts: GroundParts,
+}
+
+impl MapGround {
+    pub fn new(net: Arc<Network>, layers: Option<Arc<omsi_map::layers::Layers>>, package: Option<omsi_map::package::Package>) -> MapGround {
+        let md = layers.map(|l| Arc::new(MapData::new(l)));
+        let roads: Vec<(MapRoad, bool)> = road_geometry(&net)
+            .into_iter()
+            .map(|l| {
+                let c = md.as_ref().is_some_and(|m| m.covers(&l.points));
+                (l, c)
+            })
+            .collect();
+        MapGround { parts: GroundParts { roads: Arc::new(roads), net: Some(net), md, surface: package.map(Arc::new) } }
+    }
+
+    /// Everything within `reach` of `anchor` as the city map shows it at `mpp` metres a pixel
+    /// (its details, paving and houses come and go at the same scales: see `city_ground`).
+    pub fn build(&self, anchor: DVec2, reach: f64, mpp: f64, light: bool) -> Built {
+        let look = GroundLook { surfaces: mpp < 0.7, trees: mpp < 0.7, dashes: mpp < 3.5 };
+        build(&self.parts, anchor, reach, style::palette(light), look, mpp < 2.2, mpp < 6.0)
+    }
 }
 
 /// A build running on a worker: what it was asked for and where its result comes.

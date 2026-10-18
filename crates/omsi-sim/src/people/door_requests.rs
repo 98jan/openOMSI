@@ -190,6 +190,7 @@ mod tests {
             next_stop: None,
             places_off: Vec::new(),
             served: None,
+            route: None,
         };
         people.last_buses = Arc::new(vec![bus.clone()]);
         std::fs::remove_dir_all(dir).ok();

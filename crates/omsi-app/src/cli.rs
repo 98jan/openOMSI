@@ -71,10 +71,20 @@ pub(crate) struct Args {
     /// LAN play: join the host at ip[:port], or `auto` to find one on the local network.
     #[arg(long)]
     pub(crate) lan_join: Option<String>,
+    /// Discovered gateway to try if a direct UDP join gets no answer.
+    #[arg(long)]
+    pub(crate) lan_ws_fallback: Option<String>,
     /// Dedicated server: host a session from this server.cfg (written with the defaults when
     /// missing), with no window, no sound and no graphics card.
     #[arg(long)]
     pub(crate) server: Option<PathBuf>,
+    /// Dedicated server: this map instead of server.cfg's `map` (maps/<folder>/global.cfg).
+    #[arg(long)]
+    pub(crate) server_map: Option<String>,
+    /// Print the installed maps (as server.cfg names them), one a line, and end: for a
+    /// server's start script. With --server, a missing server.cfg is written first.
+    #[arg(long)]
+    pub(crate) list_maps: bool,
     /// Your name as the other players see it.
     #[arg(long, default_value = "Driver")]
     pub(crate) lan_name: String,

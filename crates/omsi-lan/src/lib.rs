@@ -16,6 +16,7 @@ pub mod config;
 pub mod game;
 pub mod gateway;
 pub mod host;
+mod join;
 pub mod mirror;
 pub mod mods;
 pub mod passenger;

@@ -323,6 +323,15 @@ pub struct WaitSpot {
     pub height: f32,
 }
 
+/// The floor under waiting place `sp` of a stop at height `stop_z`: a standing place's
+/// own height; for a seat its hip less the seat's height, kept above the stop (0x62e5d1).
+pub fn place_floor(sp: &WaitSpot, stop_z: f64) -> f64 {
+    match sp.height {
+        h if h == 0.0 => sp.pos.z,
+        h => (sp.pos.z - f64::from(h)).max(stop_z).min(sp.pos.z),
+    }
+}
+
 /// What Omsi.exe keeps of a bus stop for the people (the station record, sub_620058).
 pub struct PaxStop {
     pub name: String,
@@ -534,6 +543,73 @@ pub enum Takes {
     /// Nobody waiting: another player's bus (their game boards it), a bus the player left
     /// standing (its riders get off as ever).
     Nobody,
+}
+
+/// The IBIS route a bus is set to (`IBIS_RouteIndex`, a trip of its depot file), as the
+/// people at the stops see it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SetRoute {
+    /// Where everybody gets off whatever the destination shown: the last stop of the route's
+    /// `[infosystem_busstop_list]` (Caxias City's route to `016HOSPITALDUQUE`, which is no
+    /// stop's name, ends at `016 hospital duque final`). None on a loop while the bus is at
+    /// its first stop, which is the last one too.
+    pub last_stop: Option<String>,
+    /// Destinations of the depot file's routes of the same line and line code that end at
+    /// the same stop: whoever waits for one of them gets on. (Bowdenham's circular shows
+    /// `B2 Apsley Circular` while its people wait for `B2 Apsley Bus Station`, where it ends
+    /// all the same.)
+    pub same_service: Vec<String>,
+}
+
+/// A stop of an `[infosystem_busstop_list]` by its ident (some depot files add `#` and a
+/// note).
+fn list_ident(entry: &str) -> &str {
+    entry.split('#').next().unwrap_or("").trim()
+}
+
+impl SetRoute {
+    /// Route `route` of depot file `hof`, its IBIS at stop `at` of the list (`IBIS_busstop`,
+    /// None when not known). None for a route that is not there or has no stops.
+    pub fn from_depot(hof: &omsi_vehicle::Hof, route: usize, at: Option<usize>) -> Option<SetRoute> {
+        let final_ident = |r: usize| -> Option<&str> {
+            let ident = list_ident(hof.info_busstop_lists.get(r)?.last()?);
+            (!ident.is_empty()).then_some(ident)
+        };
+        let stops = hof.info_busstop_lists.get(route)?;
+        let last = final_ident(route)?;
+        let own = hof.info_trips.get(route)?;
+        let line_of = |t: &omsi_vehicle::hof::InfoTrip| (t.line.trim().to_string(), omsi_cfg::parse_i32(&t.code) / 100);
+        let mut same_service = Vec::new();
+        for (r, trip) in hof.info_trips.iter().enumerate() {
+            if line_of(trip) != line_of(own) || !final_ident(r).is_some_and(|e| e.eq_ignore_ascii_case(last)) {
+                continue;
+            }
+            let Some(dest) = hof.terminus_by_code(omsi_cfg::parse_i32(&trip.route)) else { continue };
+            let shown = dest.texture_id.trim();
+            if !dest.all_exit && !shown.is_empty() {
+                same_service.push(shown.to_string());
+            }
+        }
+        let is_loop = stops.len() > 1 && stops.first().is_some_and(|s| list_ident(s).eq_ignore_ascii_case(last));
+        let past_start = at.is_some_and(|k| k > 0);
+        let last_stop = if is_loop && !past_start { None } else { Some(last.to_string()) };
+        Some(SetRoute { last_stop, same_service })
+    }
+
+    /// Whether somebody waiting for one of `termini` (their line record's) gets on for
+    /// another route of this one's service.
+    pub fn takes_waiting_for(&self, termini: &HashSet<String>) -> Option<Fit> {
+        let waited_for = |t: &String| termini.contains(t) || without_route(t).is_some_and(|bare| termini.contains(bare));
+        self.same_service.iter().any(waited_for).then_some(Fit::Terminus)
+    }
+
+    /// Whether the route ends at `stop` (everybody gets off).
+    pub fn is_last_stop(&self, stop: &PaxStop) -> bool {
+        match &self.last_stop {
+            Some(name) => stop.is_named(name),
+            None => false,
+        }
+    }
 }
 
 /// What a bus near a stop does there (sub_61f238 from 0x61f3e3).

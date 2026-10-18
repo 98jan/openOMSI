@@ -96,6 +96,10 @@ pub struct VehicleHost {
     /// `(T.F.name)` triggers of this frame: (trigger, sound file relative to the sound folder).
     pub fired_file_triggers: Vec<(String, String)>,
     pub messages: Vec<String>,
+    /// The latest `$msg` and the play time (`SimClock::run_time`) it was last said at: OMSI
+    /// writes the latest on the screen, and the game shows the player's bus's as a note
+    /// while it is fresh ([`VehicleHost::fresh_message`]).
+    pub last_message: Option<(String, f64)>,
     /// Fonts registered by `GetFontIndex` (index = position), loaded through `font_lib`.
     pub fonts: FontTable,
     pub font_lib: Option<Arc<Mutex<FontLibrary>>>,
@@ -254,6 +258,13 @@ pub fn ambient_weather() -> Option<(f32, f32)> {
 }
 
 impl VehicleHost {
+    /// The latest `$msg` of the scripts when it was said no more than `secs` seconds of play
+    /// ago: a script repeating it keeps it fresh.
+    pub fn fresh_message(&self, secs: f64) -> Option<&str> {
+        let (text, at) = self.last_message.as_ref()?;
+        (self.clock.run_time - at <= secs && !text.trim().is_empty()).then_some(text.as_str())
+    }
+
     fn record_network_sound(&mut self, name: &str, file: Option<&str>) {
         if self.capture_sound_triggers {
             if self.network_sound_triggers.len() < 512 {
@@ -562,6 +573,12 @@ impl Host for VehicleHost {
             self.messages.remove(0);
         }
         self.messages.push(text.to_string());
+        let now = self.clock.run_time;
+        match self.last_message.as_mut() {
+            // (a script saying the same every frame keeps one message, only its time moves)
+            Some((said, at)) if said == text => *at = now,
+            _ => self.last_message = Some((text.to_string(), now)),
+        }
     }
 }
 
@@ -595,6 +612,25 @@ mod tests {
         }
         assert_eq!(host.unknown_callbacks(), ["no_such_callback".to_string()]);
         assert_eq!(stacks.st[..3], [0.0; 3]);
+    }
+
+    /// The latest `$msg` stays fresh for a while after the script last said it, also when
+    /// it says the same every frame; another text takes its place at once.
+    #[test]
+    fn the_latest_message_is_fresh_for_a_while_after_it_was_said() {
+        let mut host = VehicleHost::new(SimClock::default());
+        assert_eq!(host.fresh_message(3.0), None);
+        for _ in 0..100 {
+            host.message("Retarder off");
+            host.clock.advance(0.02);
+        }
+        assert_eq!(host.fresh_message(3.0), Some("Retarder off"));
+        host.clock.advance(2.5);
+        assert_eq!(host.fresh_message(3.0), Some("Retarder off"));
+        host.clock.advance(1.0);
+        assert_eq!(host.fresh_message(3.0), None);
+        host.message("Kneeling");
+        assert_eq!(host.fresh_message(3.0), Some("Kneeling"));
     }
 
     /// A trigger whose sounds read variables keeps them as they stand (by its lower-case

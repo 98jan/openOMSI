@@ -24,6 +24,7 @@ pub use crate::clock::host_time_now;
 use crate::clock::{host_clock_now, clock_gap};
 use crate::script_texture::{script_texture_table, script_texture_subscription_table};
 mod sound_sync;
+mod buses;
 use crate::animation_sync;
 use crate::config::LanConfig;
 use crate::host::LanHost;
@@ -394,6 +395,11 @@ pub fn start(args: &LanConfig, host: &dyn LanHost) -> Option<LanSession> {
     // (every bus offered until the server joined now says otherwise, see `ServerOffers`)
     let offers_session = crate::gateway::new_offers_session();
     let world = world_info(args);
+    let started = Instant::now();
+    let planned = Pose {
+        bus: args.bus.clone().unwrap_or_default().replace('\\', "/"),
+        ..Default::default()
+    };
     let session = match (&args.lan_host, &args.lan_join) {
         (Some(port), _) => {
             // 0 = the default port, or the next free one when another session runs here
@@ -437,7 +443,7 @@ pub fn start(args: &LanConfig, host: &dyn LanHost) -> Option<LanSession> {
                     target.clone()
                 }
             };
-            match LanSession::join(&direct, &player_name(args), world, Duration::from_secs(3)) {
+            match crate::join::connect(target, &direct, args.lan_ws_fallback.as_deref(), &player_name(args), world, &planned, HOST_ANSWER_WAIT) {
                 Ok(s) => Some(s),
                 Err(e) => {
                     log::warn!("LAN: cannot join '{target}': {e}");
@@ -470,16 +476,7 @@ pub fn start(args: &LanConfig, host: &dyn LanHost) -> Option<LanSession> {
         }
     }
     if session.role == Role::Client {
-        // the hello names the bus we are about to drive (the state says when it stands)
-        let planned = Pose {
-            bus: args.bus.clone().unwrap_or_default().replace('\\', "/"),
-            ..Default::default()
-        };
-        let t0 = Instant::now();
-        while t0.elapsed() < HOST_ANSWER_WAIT && !session.connected && session.rejected.is_none() {
-            session.tick(0.02, &planned);
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        let t0 = started;
         // nobody answered at the addresses of the code: the host's tunnel, if it posted one
         if session.welcome.is_none() && session.rejected.is_none() && args.lan_join.as_deref().map(|t| omsi_net::ws::ws_url(t).is_none()).unwrap_or(false) {
             if let Some(url) = omsi_net::SessionCode::decode(args.lan_join.as_deref().unwrap_or("")).ok().and_then(|c| omsi_net::bridge::lookup_tunnel(c.session)) {
@@ -543,11 +540,21 @@ fn mod_source(args: &LanConfig) -> crate::mods::ModSource {
 pub fn share_mods(args: &mut LanConfig, lan: &mut LanSession) {
     match lan.role {
         Role::Host => {
+            // (a player's game hosting a session takes the joining players' buses as a server
+            // does, and keeps its own for them: `mods::upload::keep_own`; a server takes them
+            // as its server.cfg says)
+            // (OMSI_NO_LAN_UPLOADS: a player who hosts for strangers keeps their disk to
+            // themselves; their own bus is still sent to the others)
+            if !args.server {
+                crate::mods::upload::accept(!omsi_cfg::flags::OMSI_NO_LAN_UPLOADS.is_set());
+            }
             if let (Some(port), Some(key)) = (lan.local_addr().map(|a| a.port()), lan.host_key()) {
                 crate::mods::serve(port, key, &mod_source(args));
             }
         }
         Role::Client => {
+            // (a joining player notes what it reads: what its bus uses, `mods::upload`)
+            omsi_cfg::vfs::record_reads(true);
             let Some(mut host) = lan.host.filter(|_| lan.welcome.is_some()) else {
                 log::info!("LAN mods: no host to ask yet (its mods are not fetched)");
                 return;
@@ -583,9 +590,10 @@ pub fn share_mods(args: &mut LanConfig, lan: &mut LanSession) {
             // minutes was dropped by the host and came in later without the mods)
             let (tx, rx) = std::sync::mpsc::channel::<String>();
             let mut fmap = args.map.clone();
+            let froot = args.root.clone();
             let worker = std::thread::spawn(move || {
                 let mut last = Instant::now() - Duration::from_secs(1);
-                let r = crate::mods::fetch(&mut fmap, host, session, &mut |done, total, file| {
+                let r = crate::mods::fetch(&froot, &mut fmap, host, session, &mut |done, total, file| {
                     if last.elapsed() > Duration::from_millis(500) {
                         last = Instant::now();
                         let pct = if total > 0 { done * 100 / total } else { 100 };
@@ -1009,10 +1017,41 @@ fn nav_player(pose: &Pose, name: &str, bus: (DVec3, f64), my_id: u32, bus_of: im
 
 /// A vehicle file as the other players' games find it: relative to whichever content root
 /// holds it (the original installation or the mods folder).
-fn content_relative(path: &Path, root: &Path) -> String {
+pub fn content_relative(path: &Path, root: &Path) -> String {
     let mut roots = omsi_cfg::content_roots();
     roots.push(root.to_path_buf());
     crate::mirror::relative_to_roots(path, &roots).unwrap_or_default()
+}
+
+/// The drive starts, the map there and our player's bus `v` (None: no bus to drive) ready:
+/// a joining player offers it to the session's host under the loading screen
+/// (`mods::upload`), which `start_held` then shows.
+pub fn drive_started(args: &LanConfig, root: &Path, v: Option<&omsi_sim::VehicleInstance>) {
+    // (no bus: nothing of ours to work out, so the reads a joining player notes for it stop
+    // being noted - they were, into a growing set, for the whole session)
+    let Some(v) = v else {
+        omsi_cfg::vfs::record_reads(false);
+        return;
+    };
+    let bus = content_relative(&v.ty.def.path, root);
+    let paint = current_paint(args, v);
+    crate::mods::upload::begin(root, &bus, &paint, crate::mods::upload::own_files(root, Some(v)));
+}
+
+/// What of the session still holds the start once the map is there - our bus on its way to
+/// the server - as the loading screen shows it (its caption, and how far it got, 0..1), or
+/// None. The app asks only this, not what it is: whatever else must come first is added here.
+pub fn start_held() -> Option<(String, f32)> {
+    crate::mods::upload::loading()
+}
+
+/// The paint scheme the bus wears now (one picked in the game's menu after the start too).
+pub fn current_paint(args: &LanConfig, v: &omsi_sim::VehicleInstance) -> String {
+    match v.host.paint_scheme {
+        Some(Some(i)) => v.ty.paint_schemes.get(i).map(|s| s.name.clone()).unwrap_or_default(),
+        Some(None) => String::new(),
+        None => paint_name(args, &v.ty),
+    }
 }
 
 /// The paint scheme `--paint` picked, by name.
@@ -1148,21 +1187,17 @@ pub fn my_pose(
     let (line, destination) = line_and_destination(v, duty);
     let texts = display_texts(v);
     let freetex = freetex_values(v);
+    let bus = content_relative(&v.ty.def.path, &args.root);
+    let paint = current_paint(args, v);
+    // what the bus is, by its content (worked out in the background: empty until then)
+    let content = crate::mods::upload::own_fingerprint(&bus, &paint);
     Pose {
         id: 0,
         name: String::new(),
-        bus: content_relative(&v.ty.def.path, &args.root),
-        // (the scheme the bus wears now: one picked in the game's menu after the start too)
-        paint: match v.host.paint_scheme {
-            Some(Some(i)) => {
-                v.ty.paint_schemes
-                    .get(i)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_default()
-            }
-            Some(None) => String::new(),
-            None => paint_name(args, &v.ty),
-        },
+        bus,
+        paint,
+        content,
+        height: bb[2],
         line,
         destination,
         tour: String::new(),
@@ -2114,6 +2149,7 @@ pub fn tick_send(
     let gone = lan.tick(dt, &mine);
     sound_sync::receive(lan, game, dt);
     publish_script_textures(lan, game, player.as_deref_mut(), &mine.bus);
+    buses::tick(lan, args, &mine, player.as_deref());
     sync_vars(lan, game, player.as_deref(), dt);
     Sent { updates, gone }
 }
@@ -2347,7 +2383,7 @@ pub fn tick_receive(
     // OMSI_TRACE_REMOTE=<file.csv>: where each other player's bus is drawn, every frame
     if let Some(path) = omsi_cfg::flags::OMSI_TRACE_REMOTE.var() {
         use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
             for (id, rv) in game.remotes.iter() {
                 let _ = writeln!(f, "{:.4},{id},{:.3},{:.3},{:.3},{:.2},{}", lan_now(), rv.vehicle.position.x, rv.vehicle.position.y, rv.vehicle.position.z, rv.vehicle.heading, rv.track.has_offset());
             }
