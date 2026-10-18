@@ -266,18 +266,20 @@ fn data_queries_validate_types_and_reject_mutations_without_a_vehicle() {
     let mut g = Game::default();
     run("data-queries", r#"
         function on_frame()
-        assert(#omsi.data.queries() >= 30)
-        local value, reason = omsi.data.query("GetTTBusstopArr", {0})
+        omsi.data.sentinel = "preserved"
+        assert(#omsi.game.queries() >= 30)
+        local value, reason = omsi.game.query("GetTTBusstopArr", {0})
         assert(value == nil and type(reason) == "string")
-        assert(not pcall(omsi.data.query, "GiveChangeCoin", {0}))
-        assert(not pcall(omsi.data.query, "STDrawPixel", {0,1,2}))
-        assert(not pcall(omsi.data.query, "GetTTDelay", {1}))
-        assert(not pcall(omsi.data.query, "GetTTBusstopArr", {"0"}))
-        assert(not pcall(omsi.data.query, "GetTTBusstopArr", {0/0}))
-        assert(not pcall(omsi.data.query, "GetTTBusstopArr", {math.huge}))
+        assert(not pcall(omsi.game.query, "GiveChangeCoin", {0}))
+        assert(not pcall(omsi.game.query, "STDrawPixel", {0,1,2}))
+        assert(not pcall(omsi.game.query, "GetTTDelay", {1}))
+        assert(not pcall(omsi.game.query, "GetTTBusstopArr", {"0"}))
+        assert(not pcall(omsi.game.query, "GetTTBusstopArr", {0/0}))
+        assert(not pcall(omsi.game.query, "GetTTBusstopArr", {math.huge}))
         assert(omsi.duty.tour() == nil)
         local tour, err = omsi.timetable.tour("none", "none")
         assert(tour == nil and type(err) == "string")
+        assert(omsi.data.sentinel == "preserved")
         omsi.message("validated")
         end
     "#, &mut g, 1);

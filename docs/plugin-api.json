@@ -978,42 +978,6 @@
       "permission": "world_write"
     },
     {
-      "name": "data.queries",
-      "group": "data",
-      "since": "0.3.38",
-      "doc": "Read-only game data getters: `{name, args = {{name, type}, ...}, result}`. Names and zero-based indices follow the M.V. getter names, but plugins read the game data directly without executing scripts. `rgba` means four results in the range 0–255.",
-      "params": [],
-      "returns": "list of tables",
-      "multi": false,
-      "permission": null
-    },
-    {
-      "name": "data.query",
-      "group": "data",
-      "since": "0.3.38",
-      "doc": "Read a getter listed by `data.queries` from the player's vehicle's HOF, timetable, passengers, tickets, radio, fonts or textures. Arguments are an ordered list (empty by default). No script callback is invoked. `STReadPixel` returns RGBA without changing the bus's drawing colour. Supply a loaded scripted map object's id as `object` to read its data, including `GetArrBus*` on departure boards, without needing a player vehicle. Object ids can be found through `map.objects_near`. Without `object`, reads use the player's vehicle. Unknown names, mutating operations and invalid arguments raise an error; no vehicle returns nil and a reason.",
-      "params": [
-        {
-          "name": "name",
-          "type": "string",
-          "optional": false
-        },
-        {
-          "name": "args",
-          "type": "table",
-          "optional": true
-        },
-        {
-          "name": "object",
-          "type": "integer",
-          "optional": true
-        }
-      ],
-      "returns": "value(s), or nil and reason",
-      "multi": true,
-      "permission": null
-    },
-    {
       "name": "debug",
       "group": "game",
       "since": "0.2.22",
@@ -1699,6 +1663,42 @@
       "params": [],
       "returns": "string",
       "multi": false,
+      "permission": null
+    },
+    {
+      "name": "game.queries",
+      "group": "data",
+      "since": "0.3.38",
+      "doc": "Read-only game data getters: `{name, args = {{name, type}, ...}, result}`. Names and zero-based indices follow the M.V. getter names, but plugins read the game data directly without executing scripts. `rgba` means four results in the range 0–255.",
+      "params": [],
+      "returns": "list of tables",
+      "multi": false,
+      "permission": null
+    },
+    {
+      "name": "game.query",
+      "group": "data",
+      "since": "0.3.38",
+      "doc": "Read a getter listed by `game.queries` from the player's vehicle's HOF, timetable, passengers, tickets, radio, fonts or textures. Arguments are an ordered list (empty by default). No script callback is invoked. `STReadPixel` returns RGBA without changing the bus's drawing colour. Supply a loaded scripted map object's id as `object` to read its data, including `GetArrBus*` on departure boards, without needing a player vehicle. Object ids can be found through `map.objects_near`. Without `object`, reads use the player's vehicle. Unknown names, mutating operations and invalid arguments raise an error; no vehicle returns nil and a reason.",
+      "params": [
+        {
+          "name": "name",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "args",
+          "type": "table",
+          "optional": true
+        },
+        {
+          "name": "object",
+          "type": "integer",
+          "optional": true
+        }
+      ],
+      "returns": "value(s), or nil and reason",
+      "multi": true,
       "permission": null
     },
     {
@@ -2777,7 +2777,7 @@
       "name": "process.start",
       "group": "process",
       "since": "0.3.38",
-      "doc": "Start a native program without waiting for it. `args` is a list of separate strings, passed literally without shell expansion. Options: `cwd` (working directory) and `env` (string-to-string environment overrides; other variables inherited). Relative paths use the game's working directory unless `cwd` is given. Standard streams are disconnected. At most 32 handles per plugin; use `process.forget` after completion. Direct children are terminated on plugin stop, disable or reload. This permission runs programs outside the plugin file sandbox; only grant it to trusted plugins.",
+      "doc": "Start a native program without waiting for it. `args` is a list of separate strings, passed literally without shell expansion. Options: `cwd` (working directory) and `env` (string-to-string environment overrides; other variables inherited). Use an absolute executable path when setting `cwd`; relative executable lookup follows the platform's rules. Standard streams are disconnected. At most 32 handles per plugin; use `process.forget` after completion. Direct children are terminated on plugin stop, disable or reload. This permission runs programs outside the plugin file sandbox; only grant it to trusted plugins.",
       "params": [
         {
           "name": "file",

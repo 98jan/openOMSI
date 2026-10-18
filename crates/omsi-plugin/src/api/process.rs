@@ -143,7 +143,7 @@ mod tests {
         #[cfg(unix)]
         let id = shell(&mut p, "exec sleep 60");
         #[cfg(windows)]
-        let id = shell(&mut p, "ping -n 60 127.0.0.1 >NUL");
+        let id = shell(&mut p, "for /L %i in (1,1,2147483647) do @rem");
         assert!(p.status(id).unwrap().exit.is_none());
         assert!(p.forget(id).is_err());
         p.kill(id).unwrap();

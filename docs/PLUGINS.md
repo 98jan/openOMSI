@@ -424,8 +424,8 @@ Complete plugins to start from (each runs in the tests against a stand-in game):
 
 ### Reading game data and the complete selected tour
 
-`omsi.data.query` reads the same game-owned sources as the M.V. getters, without running
-the vehicle script or dispatching its callbacks. Use `omsi.data.queries()` to discover
+`omsi.game.query` reads the same game-owned sources as the M.V. getters, without running
+the vehicle script or dispatching its callbacks. Use `omsi.game.queries()` to discover
 names, argument names/types and return types. Getter arguments retain OMSI's zero-based
 indices; other plugin lists use one-based Lua indices. Reads refer to the player's bus
 and its current HOF and timetable. No bus returns `nil, reason`. An optional third
@@ -435,8 +435,8 @@ with `omsi.map.objects_near(x, y)`; an unloaded or nonscripted object returns `n
 are deliberately not data getters.
 
 ```lua
-local text = omsi.data.query("GetTerminusString", {0, 0})
-local arrival = omsi.data.query("GetTTBusstopArr", {0})
+local text = omsi.game.query("GetTerminusString", {0, 0})
+local arrival = omsi.game.query("GetTTBusstopArr", {0})
 local tour = omsi.duty.tour() -- entire source tour, even with just one trip selected
 if tour then
     for _, trip in ipairs(tour.trips) do
@@ -458,7 +458,7 @@ the plugin: unloading, disabling or reloading it kills and reaps those children,
 waiting on the game thread; programs they launch themselves are not tracked.
 
 ```lua
-local handle, reason = omsi.process.start("helper.exe", {"--mode", "bus"}, {
+local handle, reason = omsi.process.start("D:/Tools/MyHelper/helper.exe", {"--mode", "bus"}, {
     cwd = "D:/Tools/MyHelper",
     env = {OPENOMSI_COMPANION = "1"},
 })
@@ -604,8 +604,8 @@ declared to call the function (a plain `.lua` file has them all).
 
 | Function | Returns | What it does | Since |
 | --- | --- | --- | --- |
-| `omsi.data.queries()` | list of tables | Read-only game data getters: `{name, args = {{name, type}, ...}, result}`. Names and zero-based indices follow the M.V. getter names, but plugins read the game data directly without executing scripts. `rgba` means four results in the range 0–255. | 0.3.38 |
-| `omsi.data.query(name, [args], [object])` | value(s), or nil and reason | Read a getter listed by `data.queries` from the player's vehicle's HOF, timetable, passengers, tickets, radio, fonts or textures. Arguments are an ordered list (empty by default). No script callback is invoked. `STReadPixel` returns RGBA without changing the bus's drawing colour. Supply a loaded scripted map object's id as `object` to read its data, including `GetArrBus*` on departure boards, without needing a player vehicle. Object ids can be found through `map.objects_near`. Without `object`, reads use the player's vehicle. Unknown names, mutating operations and invalid arguments raise an error; no vehicle returns nil and a reason. | 0.3.38 |
+| `omsi.game.queries()` | list of tables | Read-only game data getters: `{name, args = {{name, type}, ...}, result}`. Names and zero-based indices follow the M.V. getter names, but plugins read the game data directly without executing scripts. `rgba` means four results in the range 0–255. | 0.3.38 |
+| `omsi.game.query(name, [args], [object])` | value(s), or nil and reason | Read a getter listed by `game.queries` from the player's vehicle's HOF, timetable, passengers, tickets, radio, fonts or textures. Arguments are an ordered list (empty by default). No script callback is invoked. `STReadPixel` returns RGBA without changing the bus's drawing colour. Supply a loaded scripted map object's id as `object` to read its data, including `GetArrBus*` on departure boards, without needing a player vehicle. Object ids can be found through `map.objects_near`. Without `object`, reads use the player's vehicle. Unknown names, mutating operations and invalid arguments raise an error; no vehicle returns nil and a reason. | 0.3.38 |
 
 #### Duty and timetable
 
@@ -831,7 +831,7 @@ declared to call the function (a plain `.lua` file has them all).
 | `omsi.process.exit_code(handle)` | code or nil, state or reason | Nonblocking exit code lookup: `nil, "running"` while running; `code, "exited"` after normal exit. A nonzero code is retained. Signal termination returns `nil, "exited"`; inspect `process.status` for details. An unknown handle returns `nil` and a reason. *Permission: `process`.* | 0.3.38 |
 | `omsi.process.forget(handle)` | true, or nil and reason | Release a completed process handle and its retained exit code. A running process cannot be forgotten. *Permission: `process`.* | 0.3.38 |
 | `omsi.process.kill(handle)` | true, or nil and reason | Request termination of a plugin-owned direct child without waiting. Poll `process.status` for completion; descendants are not tracked. *Permission: `process`.* | 0.3.38 |
-| `omsi.process.start(file, [args], [options])` | handle, or nil and reason | Start a native program without waiting for it. `args` is a list of separate strings, passed literally without shell expansion. Options: `cwd` (working directory) and `env` (string-to-string environment overrides; other variables inherited). Relative paths use the game's working directory unless `cwd` is given. Standard streams are disconnected. At most 32 handles per plugin; use `process.forget` after completion. Direct children are terminated on plugin stop, disable or reload. This permission runs programs outside the plugin file sandbox; only grant it to trusted plugins. *Permission: `process`.* | 0.3.38 |
+| `omsi.process.start(file, [args], [options])` | handle, or nil and reason | Start a native program without waiting for it. `args` is a list of separate strings, passed literally without shell expansion. Options: `cwd` (working directory) and `env` (string-to-string environment overrides; other variables inherited). Use an absolute executable path when setting `cwd`; relative executable lookup follows the platform's rules. Standard streams are disconnected. At most 32 handles per plugin; use `process.forget` after completion. Direct children are terminated on plugin stop, disable or reload. This permission runs programs outside the plugin file sandbox; only grant it to trusted plugins. *Permission: `process`.* | 0.3.38 |
 | `omsi.process.status(handle)` | table, or nil and reason | Nonblocking status: `{pid, running, exited, code, success, signal}`. While running `code`, `success` and `signal` are nil. After exit `code` is the exit code (including nonzero); termination by a signal has no code, and `signal` is available on Unix. Results remain readable until forgotten. *Permission: `process`.* | 0.3.38 |
 
 #### Programs on this computer
