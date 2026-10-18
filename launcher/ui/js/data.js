@@ -269,16 +269,20 @@ async function updateHof() {
 export const dutyHof = () => (S.choice.hof_manual ? S.choice.hof : S.hof) || '';
 
 let ibisAsked = '';
-export async function loadIbis() {
+let ibisTrip = null;
+export async function loadIbis(trip = ibisTrip) {
   if (onPhone) return;
+  ibisTrip = trip;
   const c = S.choice;
   const hof = /\.(bus|ovh)/i.test(dutyHof()) ? '' : dutyHof();
-  const key = c.free || !c.line || !c.bus ? '' : `${c.bus}|${hof}|${c.line}`;
+  const base = c.free || !c.line || !c.bus ? '' : `${c.bus}|${hof}|${c.line}`;
+  const stops = trip?.stops.map((x) => x.name) || [];
+  const key = base && `${base}|${trip?.terminus || ''}|${stops.join('|')}`;
   if (key === ibisAsked) return;
+  if (!key || !ibisAsked.startsWith(`${base}|`)) set({ ibis: null });
   ibisAsked = key;
-  set({ ibis: null });
   if (!key) return;
-  const ibis = await call('ibis', { bus: c.bus, hof, line: c.line }).then((info) => ({ info }), (e) => ({ error: e.message || String(e) }));
+  const ibis = await call('ibis', { bus: c.bus, hof, line: c.line, terminus: trip?.terminus || '', stops }).then((info) => ({ info }), (e) => ({ error: e.message || String(e) }));
   if (ibisAsked !== key) return;
   if ('error' in ibis) ibisAsked = '';
   set({ ibis });
