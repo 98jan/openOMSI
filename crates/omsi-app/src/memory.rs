@@ -1,60 +1,15 @@
 //! What the machine has and gives back: physical memory, the texture budget, and returning freed memory to the system.
 
 use super::*;
+pub(crate) use omsi_platform::memory::physical_memory;
+pub use omsi_platform::memory::release_free_memory;
 
-/// Bytes of memory the machine has.
-pub(crate) fn physical_memory() -> Option<u64> {
-    #[cfg(any(target_os = "macos", target_os = "ios"))]
-    {
-        extern "C" {
-            fn sysctlbyname(
-                name: *const std::ffi::c_char,
-                oldp: *mut std::ffi::c_void,
-                oldlenp: *mut usize,
-                newp: *mut std::ffi::c_void,
-                newlen: usize,
-            ) -> i32;
-        }
-        let mut v: u64 = 0;
-        let mut len = std::mem::size_of::<u64>();
-        // SAFETY: a u64 buffer of the size given, a nul-terminated name
-        let r = unsafe {
-            sysctlbyname(
-                c"hw.memsize".as_ptr(),
-                &mut v as *mut u64 as *mut std::ffi::c_void,
-                &mut len,
-                std::ptr::null_mut(),
-                0,
-            )
-        };
-        (r == 0 && v > 0).then_some(v)
-    }
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    {
-        // MemTotal in kB
-        let text = std::fs::read_to_string("/proc/meminfo").ok()?;
-        let line = text.lines().find(|l| l.starts_with("MemTotal:"))?;
-        let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
-        Some(kb * 1024)
-    }
-    #[cfg(windows)]
-    {
-        use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
-        let mut m = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
-        // SAFETY: a MEMORYSTATUSEX with its length set, as the call wants it
-        unsafe { GlobalMemoryStatusEx(&mut m) }.ok()?;
-        (m.ullTotalPhys > 0).then_some(m.ullTotalPhys)
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", target_os = "android", windows)))]
-    {
-        None
-    }
-}
 
 /// The textures' own budget in bytes: `OMSI_TEXTURE_MEMORY` (MB), else an eighth of the
 /// machine's memory (2 GB on a 16 GB Mac - Ahlheim's main station needs about 1.5). The
-/// setting is the video memory now, everything on the card (see [`video_memory_limit`]).
-pub(crate) fn texture_budget() -> u64 {
+/// setting is the video memory now, everything on the card (see [`video_memory_limit`]):
+/// half of it, on a card of its own, when that is more.
+pub(crate) fn texture_budget(video: u64) -> u64 {
     let mb = omsi_cfg::flags::OMSI_TEXTURE_MEMORY.parse::<u64>().unwrap_or(0);
     if mb > 0 {
         // (a budget the graphics card cannot hold is taken down to what it can: the
@@ -77,10 +32,15 @@ pub(crate) fn texture_budget() -> u64 {
     // with 32 or 64 GB let the textures grow to 4-8 GB, the game took 9 GB at the start and
     // ran at single-digit frame rates, #277; OMSI_TEXTURE_MEMORY still gives more)
     let ram = physical_memory().map(|m| m / 8).unwrap_or(2_000_000_000).min(2_500_000_000);
-    match omsi_render::ADAPTER_TEXTURE_MB.load(std::sync::atomic::Ordering::Relaxed) {
+    let automatic = match omsi_render::ADAPTER_TEXTURE_MB.load(std::sync::atomic::Ordering::Relaxed) {
         0 => ram.min(1_600_000_000),
         g => ram.min(g * 1_000_000),
+    };
+    let card = omsi_render::ADAPTER_VRAM_MB.load(std::sync::atomic::Ordering::Relaxed);
+    if card == 0 || omsi_cfg::flags::OMSI_SAFE_GPU.parse::<u32>().is_some_and(|n| n > 0) {
+        return automatic;
     }
+    automatic.max(video / 2)
 }
 
 /// What the game may hold on the graphics card all together, in bytes (0 = only the driver's
@@ -119,33 +79,21 @@ pub(crate) fn safe_video_memory(limit: u64, n: u32) -> u64 {
     safe.max(400_000_000)
 }
 
-/// Give the heap's free pages back to the system, on a thread of its own (the allocator
-/// keeps what was freed for later, and it counts as the game's memory until then).
-pub fn release_free_memory() {
-    #[cfg(target_os = "macos")]
-    {
-        extern "C" {
-            fn malloc_zone_pressure_relief(zone: *mut std::ffi::c_void, goal: usize) -> usize;
-        }
-        let _ = std::thread::Builder::new()
-            .name("heap relief".into())
-            .spawn(|| {
-                let t = Instant::now();
-                // SAFETY: a null zone asks every malloc zone; the call only returns free pages
-                let freed = unsafe { malloc_zone_pressure_relief(std::ptr::null_mut(), 0) };
-                if omsi_cfg::flags::OMSI_PROFILE.is_set() {
-                    log::info!(
-                        "heap: {:.0} MB of free pages given back in {:.0} ms",
-                        freed as f64 / 1e6,
-                        t.elapsed().as_secs_f64() * 1000.0
-                    );
-                }
-            });
-    }
-}
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_textures_take_half_the_video_memory_of_a_card_of_its_own() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let own = super::texture_budget(0);
+        assert!(own > 0 && own <= 2_500_000_000);
+        assert_eq!(super::texture_budget(10_000_000_000), own);
+        omsi_render::ADAPTER_VRAM_MB.store(12_288, Relaxed);
+        let (big, small) = (super::texture_budget(10_000_000_000), super::texture_budget(own));
+        omsi_render::ADAPTER_VRAM_MB.store(0, Relaxed);
+        assert_eq!((big, small), (5_000_000_000, own));
+    }
+
     #[test]
     fn video_memory_after_a_lost_device_is_taken_from_the_card() {
         let card = (8192u64 << 20) / 10 * 9;

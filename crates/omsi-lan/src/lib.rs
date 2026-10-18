@@ -16,10 +16,13 @@ pub mod config;
 pub mod game;
 pub mod gateway;
 pub mod host;
+mod join;
 pub mod mirror;
+pub mod map_pack;
 pub mod mods;
 pub mod passenger;
 pub mod remote;
+pub mod remote_load;
 pub mod server_cfg;
 pub mod spawn;
 pub mod sync;
@@ -60,3 +63,9 @@ impl Drop for StatusFileGuard {
         }
     }
 }
+
+pub mod animation_sync;
+pub mod variable_schema;
+
+pub mod clock;
+pub mod script_texture;

@@ -24,11 +24,14 @@ struct MainTargets<'t> {
 }
 
 impl Renderer {
+    pub(crate) fn shares_prepass_depth(&self, f: &FrameCtx, plan: &DrawPlan) -> bool {
+        f.prepass_on && self.options.msaa <= 1 && self.targets.ao.is_some() && !plan.has_presurface && !f.puddles_wanted
+    }
+
     /// The main pass into `encoder`, the parts before its last one (when it is split) into
     /// encoders of their own, which are returned.
     pub(crate) fn encode_main_pass(&mut self, encoder: &mut wgpu::CommandEncoder, scene: &Scene, f: &FrameCtx, plan: &DrawPlan, main_bundles: &[wgpu::RenderBundle], timers: &mut PassTimers) -> Vec<wgpu::CommandEncoder> {
         let (width, height, enhanced, with_overlays, lighting) = (f.width, f.height, f.enhanced, f.with_overlays, f.lighting);
-        let (prepass_on, has_presurface) = (f.prepass_on, plan.has_presurface);
         // Without multisampling the main pass tests against the depth the prepass left
         // (when there was one): the costly shading - lighting, the shadow filter - is then
         // done once per pixel for the surface that is seen, not for every tree and wall
@@ -38,7 +41,7 @@ impl Renderer {
         // seals them. Reusing prepass depth would reject those faces (or let terrain
         // reject them first). The prepass still supplies AO; colour rebuilds its depth.
         // A depth-writing window in the colour pass must not replace the road receiver.
-        let share_depth = prepass_on && single && self.targets.ao.is_some() && !has_presurface && !f.puddles_wanted;
+        let share_depth = self.shares_prepass_depth(f, plan);
         // (the colour only where the picture is drawn into it: not into the HDR targets)
         let msaa_color = !single && !(f.masked_frame && self.targets.hdr_targets.contains_key(&(width, height)));
         let targets = if share_depth {
@@ -66,7 +69,7 @@ impl Renderer {
         let prefill = (msaa_prepass && !presurface_prefill && targets.is_some())
             .then_some(())
             .and(self.prepass_msaa_pipelines.as_ref())
-            .map(|pipes| (&plan.prepass_batches[..], pipes));
+            .map(|pipes| (plan.prefill_batches(), pipes));
         let mut main_parts: Vec<wgpu::CommandEncoder> = Vec::new();
         {
             // The enhanced sky dome was meant to cover everything, so this used to clear to
@@ -141,7 +144,10 @@ impl Renderer {
             for g in 0..parts.saturating_sub(1) {
                 let first = g == 0;
                 let mut part = lead.take().unwrap_or_else(|| self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("main part") }));
-                self.encode_main_part(&mut part, scene, f, &mt, &main_bundles[g * per_part..((g + 1) * per_part).min(main_bundles.len())], first);
+                // (OMSI_GPU_TIMERS: the first part timed too - the sky and the first bundles;
+                // ahead of every other timed pass, it was counted nowhere)
+                let stamp = if first { pass_timer(timers.set.as_ref(), &mut timers.timed, if f.with_overlays { "main part" } else { "mirror part" }) } else { None };
+                self.encode_main_part(&mut part, scene, f, &mt, &main_bundles[g * per_part..((g + 1) * per_part).min(main_bundles.len())], first, stamp);
                 main_parts.push(part);
             }
             self.encode_main(encoder, scene, f, plan, &mt, timers);
@@ -180,7 +186,7 @@ impl Renderer {
     }
 
     /// One part of a split main pass (the first one with the sky), its bundles executed.
-    fn encode_main_part(&self, part: &mut wgpu::CommandEncoder, scene: &Scene, f: &FrameCtx, mt: &MainTargets, bundles: &[wgpu::RenderBundle], first: bool) {
+    fn encode_main_part(&self, part: &mut wgpu::CommandEncoder, scene: &Scene, f: &FrameCtx, mt: &MainTargets, bundles: &[wgpu::RenderBundle], first: bool, stamp: Option<wgpu::RenderPassTimestampWrites<'_>>) {
         let MainTargets { draw_view, depth_view, hdr, sky_pipe, sky_clear, depth_first, prefill, .. } = *mt;
         let part_colors = [
             Some(wgpu::RenderPassColorAttachment {
@@ -216,7 +222,7 @@ impl Renderer {
                 depth_ops: Some(wgpu::Operations { load: if first { depth_first } else { wgpu::LoadOp::Load }, store: wgpu::StoreOp::Store }),
                 stencil_ops: None,
             }),
-            timestamp_writes: None,
+            timestamp_writes: stamp,
             occlusion_query_set: None,
             multiview_mask: None,
         });
@@ -363,11 +369,33 @@ impl Renderer {
             let u = SnowUniform {
                 wind: lighting.wind.extend(self.started.elapsed().as_secs_f32() % 20000.0).to_array(),
                 fall: [lighting.snowfall, mean, counts[0] as f32, counts[1] as f32],
+                roof: self.shadows.precip.uniform().0,
+                roof_on: [self.shadows.precip.uniform().1, 0.0, 0.0, 0.0],
             };
             self.queue.write_buffer(&self.lights.snow_buf, 0, bytemuck::bytes_of(&u));
             pass.set_pipeline(snow);
             pass.set_bind_group(0, scene.camera_bind_group.as_ref().unwrap(), &[]);
             pass.set_bind_group(1, &self.lights.snow_bind_group, &[]);
+            pass.draw(0..6, 0..counts.iter().sum::<u32>());
+        }
+        // the rainfall, as the snowfall (rain.wgsl)
+        let rf = scene.rainfall;
+        if let Some(rain) = pp.rain_fall_pipeline.as_ref().filter(|_| particles && rf.rate > 0.001 && lighting.snowfall <= 0.01 && !f.env.no_rain) {
+            let counts = rainfall_drops(rf.rate, rf.quality);
+            let u = RainUniform {
+                wind: rf.wind.extend(self.started.elapsed().as_secs_f32() % 20000.0).to_array(),
+                // (the eye's time: a seventieth of a second's way of the drop, a streak of
+                // some ten centimetres in a downpour)
+                eye: rf.eye_velocity.extend(1.0 / 70.0).to_array(),
+                fall: [rf.rate, rf.drop_mm * 0.001, counts[0] as f32, counts[1] as f32],
+                view: [f.width as f32, f.height as f32, 0.85, (counts[0] + counts[1] + counts[2]) as f32],
+                roof: self.shadows.precip.uniform().0,
+                roof_on: [self.shadows.precip.uniform().1, 0.0, 0.0, 0.0],
+            };
+            self.queue.write_buffer(&self.lights.rain_buf, 0, bytemuck::bytes_of(&u));
+            pass.set_pipeline(rain);
+            pass.set_bind_group(0, scene.camera_bind_group.as_ref().unwrap(), &[]);
+            pass.set_bind_group(1, &self.lights.rain_bind_group, &[]);
             pass.draw(0..6, 0..counts.iter().sum::<u32>());
         }
         // light coronas, additive: the world's, then the vehicle the camera is in -

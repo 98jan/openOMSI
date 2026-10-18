@@ -12,7 +12,7 @@ export const CHOICE_DEFAULTS = {
   time: 9 * 60, start_trip: null, date: '1989-05-30',
   season: 'auto', phase: 'mid', own_date: null,
   weather: '', traffic: 30, passengers: true, schedule: true, autostart: false, on_foot: false,
-  lan_mode: 'off', lan_addr: '', version: 2,
+  lan_mode: 'off', lan_addr: '', lan_ws_fallback: null, version: 2,
 };
 
 export async function boot() {
@@ -20,7 +20,7 @@ export async function boot() {
   await setLanguage(b.language);
   const choice = { ...CHOICE_DEFAULTS, ...(b.choice || {}) };
   // (a server joined in an earlier session is not joined again by itself)
-  if (choice.lan_mode === 'join') choice.lan_mode = 'off';
+  if (choice.lan_mode === 'join') Object.assign(choice, { lan_mode: 'off', lan_ws_fallback: null });
   if (choice.version < 2) Object.assign(choice, { entry: -1, version: 2 });
   Object.assign(choice, clockPatch(choice, b.settings));
   set({ boot: b, settings: b.settings, config: b.config, choice, favourites: b.favourites || [], ready: true, page: b.root ? 'drive' : 'setup' });
@@ -28,6 +28,7 @@ export async function boot() {
   if (b.root) {
     loadContent();
     readAhead();
+    loadDepot();
     // (the bus preview's helper and renderer get ready while the page is read)
     call('preview_warm').catch(() => {});
   }
@@ -40,9 +41,17 @@ export const LAUNCHER_SIZES = [['0.7', 'Smallest'], ['0.8', 'Very small'], ['0.9
 
 export const launcherSize = () => remembered('launcher_size', '1');
 
-export const LAUNCHER_LAYOUTS = [['cards', 'Modern: everything on one page'], ['classic', 'Classic: in steps, as before']];
+export const LAUNCHER_LAYOUTS = [
+  ['bigmap', 'Big Map: the map fills the page'],
+  ['control', 'Control Room: everything side by side'],
+  ['classicplus', 'Classic+: two tabs, time and weather on top'],
+  ['classic', 'Classic: in steps, as before'],
+];
 
-export const launcherLayout = () => (remembered('launcher_layout', 'cards') === 'classic' ? 'classic' : 'cards');
+export const launcherLayout = () => {
+  const l = remembered('launcher_layout', 'bigmap');
+  return LAUNCHER_LAYOUTS.some(([id]) => id === l) ? l : 'bigmap';
+};
 
 export function fitWindow() {
   if (inTauri) call('fit_zoom', { size: Number(launcherSize()) || 1 }).catch(() => {});
@@ -77,10 +86,11 @@ export async function loadContent() {
   loadProfiles();
 }
 
-export const weatherOfItsOwn = (w) => /^(cycle$|metar:|custom:)/i.test(w || '');
+export const weatherOfItsOwn = (w) => /^(cycle$|tomorrow$|metar:|custom:)/i.test(w || '');
 
 export const weatherName = (w, list) =>
   /^metar:/i.test(w || '') ? `${t('Current weather')}${w.length > 6 ? ` (${w.slice(6)})` : ''}`
+  : /^tomorrow$/i.test(w || '') ? 'Tomorrow.io'
   : /^cycle$/i.test(w || '') ? t('Weather cycle')
   : /^custom:/i.test(w || '') ? t('Custom weather')
   : list?.find((x) => x.file === w)?.name || t('Natural weather');
@@ -95,9 +105,10 @@ function fixChoice() {
   if (S.vehicles?.length && !S.vehicles.some((v) => v.file === c.bus)) {
     c.bus = S.vehicles[0].file;
     c.paint = '';
-    c.number = '';
+    c.number = randomFleetNumber(S.vehicles[0]);
   }
   if (S.weather && c.weather && !weatherOfItsOwn(c.weather) && !S.weather.some((w) => w.file === c.weather)) c.weather = '';
+  c.date = fitDateToMap(c.date, c.map);
   Object.assign(c, allowedBus(c));
   set({ choice: c });
 }
@@ -160,6 +171,23 @@ export const curTour = () => curLine()?.tours.find((x) => x.number === S.choice?
 export const realTime = () => !!S.settings?.use_real_time;
 export const realDate = () => !!S.settings?.use_real_date;
 
+/** `date` (YYYY-MM-DD) fitted to the year span of the map `file` (its `[years]`), as OMSI 2
+ * starts a map on a day it allows: the same day in the nearest allowed year, 29 February the
+ * 28th where that year has none. Inside the span, or not a date: kept. The launcher core
+ * fits the game's date the same way (`fit_date_to_years`). */
+export function fitDateToMap(date, file) {
+  const span = S.maps?.find((m) => m.file === file)?.year_span;
+  const parts = /^(\d+)-(\d+)-(\d+)$/.exec((date || '').trim());
+  if (!span || !parts) return date;
+  const [, y, mm, dd] = parts;
+  const was = Number(y);
+  const year = was < span[0] ? span[0] : was > span[1] ? span[1] : was;
+  if (year === was) return date;
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const day = mm === '02' && dd === '29' && !leap ? '28' : dd;
+  return `${String(year).padStart(4, '0')}-${mm}-${day}`;
+}
+
 /** The time and date the duty takes from the computer's clock, as `duty_args` gives them to
  * the game (the year stays the duty's unless the real year is on). */
 function clockPatch(c, st) {
@@ -171,7 +199,7 @@ function clockPatch(c, st) {
   }
   if (st?.use_real_date) {
     const year = st.use_real_year ? now.getFullYear() : parseInt(c.date, 10) || now.getFullYear();
-    const d = `${String(year).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const d = fitDateToMap(`${String(year).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`, c.map);
     if (c.date !== d) patch.date = d;
   }
   return patch;
@@ -185,10 +213,22 @@ export function followClock() {
 }
 
 let saveTimer = 0;
+function randomFleetNumber(vehicle) {
+  const numbers = vehicle?.numbers || [];
+  return numbers.length ? numbers[Math.floor(Math.random() * numbers.length)][0] : '';
+}
+
 /** Change the duty (and keep it on disk a moment later). */
 export function choose(patch) {
   const before = S.choice;
   const c = { ...before, ...patch };
+  // (a date outside the map's [years] starts on a day inside them; a date inside stays)
+  c.date = fitDateToMap(c.date, c.map);
+  if (c.bus !== before.bus && !patch.number) {
+    c.number = randomFleetNumber(S.vehicles?.find((v) => v.file === c.bus));
+  }
+  // (another bus does not carry on with the depot bus's plate)
+  if (c.bus !== before.bus && !('plate' in patch) && depotBusOf(before)) c.plate = '';
   set({ choice: c });
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => call('choice_save', { choice: S.choice }).catch(() => {}), 400);
@@ -242,6 +282,31 @@ export async function loadIbis() {
   if (ibisAsked !== key) return;
   if ('error' in ibis) ibisAsked = '';
   set({ ibis });
+}
+
+export async function loadDepot() {
+  try {
+    const d = await call('depot_get');
+    set({ depot: d.buses, depotGroups: d.groups, errors: { ...S.errors, depot: null } });
+  } catch (e) {
+    set({ depot: [], errors: { ...S.errors, depot: e.message } });
+  }
+}
+
+/** The depot bus the duty drives: its bus, livery, plate and fleet number all as they are. */
+export function depotBusOf(c = S.choice) {
+  const plate = (c?.plate || '').trim().toUpperCase();
+  return c && plate ? S.depot?.find((b) => busFile(b.bus) === busFile(c.bus) && (b.paint || '') === (c.paint || '') && b.plate === plate && (b.number || '') === (c.number || '').trim()) : null;
+}
+
+/** Take a depot bus for the next duty. */
+export function driveDepotBus(b) {
+  const v = S.vehicles?.find((x) => busFile(x.file) === busFile(b.bus));
+  if (!v) return;
+  choose({ bus: v.file, paint: b.paint, plate: b.plate, number: b.number, hof_manual: false });
+  if (S.choice.number !== b.number) choose({ number: b.number });
+  set({ page: 'drive' });
+  toast(t('{name} is ready under Drive: choose the time and the duty.', { name: b.name }), 'ok');
 }
 
 export async function loadSituations() {
@@ -357,9 +422,11 @@ export async function duty(extra = {}) {
     profile: S.config?.profile || null,
     lan: c.lan_mode === 'host' ? 'host' : c.lan_mode === 'join' ? `join:${c.lan_addr.trim()}` : 'off',
     lan_name: null,
+    lan_ws_fallback: c.lan_mode === 'join' ? c.lan_ws_fallback || null : null,
     season: seasonWord || null,
     tutorial: null,
     situation: null,
+    depot: depotBusOf(c)?.id || null,
     ...extra,
   };
 }
@@ -442,6 +509,7 @@ function startPolling() {
     pollNow();
     loadProfiles();
     loadSituations();
+    loadDepot();
     reloadSettings();
   });
   window.addEventListener('focus', () => {

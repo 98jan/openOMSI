@@ -73,6 +73,7 @@ fn arriving_ai_uses_the_timetable_stop_not_a_neighbour() {
         takes: Takes::Terminus,
         places_off: Vec::new(),
         served: None,
+        route: None,
     };
     let register = |humans: &mut PeopleSim, bus: &BusNow| {
         humans
@@ -536,4 +537,121 @@ fn the_other_platform_of_the_stop_keeps_the_request_point() {
     assert!(!rider.wants_stop_at(&other, DVec3::Y * (point + 10.0), true));
     assert_eq!(rider.stop_request_at, Some((43, point)));
     assert!(rider.wants_stop_at(&other, DVec3::Y * (point - 10.0), true));
+}
+
+/// A depot file of one line, 7, with three routes: out to the hospital (its sign
+/// `07HOSPITAL`, no stop's name), back to the station, and a loop from the station round
+/// to the station.
+fn route_test_hof() -> omsi_vehicle::Hof {
+    use omsi_vehicle::hof::{InfoTrip, Terminus};
+    let mut hof = omsi_vehicle::Hof::default();
+    let terminus = |code: i32, id: &str| Terminus { code, texture_id: id.into(), terminus_stop: Some(id.into()), ..Default::default() };
+    hof.termini = vec![terminus(10, "07HOSPITAL"), terminus(11, "7 Station"), terminus(12, "7 Town Loop")];
+    let mut route = |code: &str, terminus: &str, stops: &[&str]| {
+        hof.info_trips.push(InfoTrip { code: code.into(), route: terminus.into(), line: "7".into(), ..Default::default() });
+        hof.info_busstop_lists.push(stops.iter().map(|s| s.to_string()).collect());
+    };
+    route("701", "10", &["Station", "Mill Lane", "Hospital Gate#north side"]);
+    route("702", "11", &["Hospital Gate", "Mill Lane", "Station"]);
+    route("703", "12", &["Station", "Mill Lane", "Old Bridge", "Station"]);
+    hof
+}
+
+/// The bus empties at the last stop of the IBIS route it is set to, whatever its sign says
+/// (`07HOSPITAL` names no stop); on a loop, not at the first stop, only coming back to it.
+#[test]
+fn everybody_leaves_at_the_last_stop_of_the_ibis_route() {
+    let hof = route_test_hof();
+    let out = SetRoute::from_depot(&hof, 0, Some(1)).unwrap();
+    assert!(out.is_last_stop(&test_stop("Hospital Gate", "")));
+    assert!(!out.is_last_stop(&test_stop("Mill Lane", "")));
+    assert!(!out.is_last_stop(&test_stop("Station", "")));
+    let back = SetRoute::from_depot(&hof, 1, None).unwrap();
+    assert!(back.is_last_stop(&test_stop("Station", "")));
+    let at_start = SetRoute::from_depot(&hof, 2, Some(0)).unwrap();
+    assert!(!at_start.is_last_stop(&test_stop("Station", "")), "a loop does not empty where it sets off");
+    assert!(SetRoute::from_depot(&hof, 2, Some(3)).unwrap().is_last_stop(&test_stop("Station", "")));
+    assert_eq!(SetRoute::from_depot(&hof, 3, None), None, "no such route");
+}
+
+/// A bus on the loop takes the people waiting for the station: the depot file's route of
+/// the same line and line code ending at the same stop goes there. Not those waiting for
+/// the hospital, nor for a route of another line ending at the station.
+#[test]
+fn a_circular_takes_the_people_waiting_for_where_it_ends() {
+    let mut hof = route_test_hof();
+    hof.termini.push(omsi_vehicle::hof::Terminus { code: 20, texture_id: "9 Station".into(), ..Default::default() });
+    hof.info_trips.push(omsi_vehicle::hof::InfoTrip { code: "901".into(), route: "20".into(), line: "9".into(), ..Default::default() });
+    hof.info_busstop_lists.push(vec!["Hospital Gate".into(), "Station".into()]);
+    let set = |names: &[&str]| -> HashSet<String> { names.iter().map(|s| s.to_string()).collect() };
+    let loop_ = SetRoute::from_depot(&hof, 2, Some(1)).unwrap();
+    assert_eq!(loop_.takes_waiting_for(&set(&["7 Station"])), Some(Fit::Terminus));
+    assert_eq!(loop_.takes_waiting_for(&set(&["Station"])), Some(Fit::Terminus), "the route's number in front");
+    assert_eq!(loop_.takes_waiting_for(&set(&["07HOSPITAL"])), None);
+    assert_eq!(loop_.takes_waiting_for(&set(&["9 Station"])), None, "another line");
+    assert_eq!(SetRoute::from_depot(&hof, 0, None).unwrap().takes_waiting_for(&set(&["7 Station"])), None);
+}
+
+/// The people waiting at a stop, and walking back to their place, keep the floor of that
+/// place: a standing place's point, a seat's hip less its height; without a place the
+/// stop's own height. Anybody else goes by the ground.
+#[test]
+fn the_people_waiting_keep_the_floor_of_their_place() {
+    let dir = std::env::temp_dir().join(format!("omsi-pax-place-height-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("person.hum"), "[model]\nmodel.cfg\n").unwrap();
+    std::fs::write(dir.join("model.cfg"), "").unwrap();
+    let ty = Arc::new(HumanType::load(&dir.join("person.hum")).unwrap());
+    std::fs::remove_dir_all(&dir).ok();
+    let mut stop = test_stop("Kerbside", "");
+    stop.pos.z = 10.0;
+    stop.spots = vec![
+        WaitSpot { pos: DVec3::new(1.0, 0.0, 10.2), face: 0.0, height: 0.0 },
+        WaitSpot { pos: DVec3::new(2.0, 0.0, 10.6), face: 0.0, height: 0.45 },
+    ];
+    stop.taken = vec![false; 2];
+    let mut h = PeopleSim::new(Path::new("/nonexistent"), 200);
+    h.stops.insert(4, stop);
+    let person = |task: Task, spot: Option<usize>| {
+        let mut pax = Pax::new(1.1, 0.5);
+        pax.stop = Some(4);
+        pax.spot = spot;
+        pax.task = task;
+        Person {
+            id: 1,
+            ty: ty.clone(),
+            variant: 0,
+            position: DVec3::ZERO,
+            heading: 0.0,
+            lheading: 0.0,
+            place: Place::Ground,
+            vel: DVec2::ZERO,
+            pace: 1.1,
+            activity: Activity::Stand,
+            anim: OmsiAnim::default(),
+            state: State::Pax(Box::new(pax)),
+            t_state: 0.0,
+            interior: 0.0,
+            tilt: Mat4::IDENTITY,
+            age: 40.0,
+            stuck: 0.0,
+            ghost: 0.0,
+            car_wait: 0.0,
+            detour: 0.0,
+            detour_side: 0.0,
+            why: "",
+            puppet: None,
+            remote: false,
+        }
+    };
+    let floor = |h: &mut PeopleSim, task, spot| {
+        h.people = vec![person(task, spot)];
+        h.waiting_height(0)
+    };
+    let near = |a: Option<f64>, b: f64| a.is_some_and(|a| (a - b).abs() < 1e-6);
+    assert!(near(floor(&mut h, Task::WaitingForBus, Some(0)), 10.2));
+    assert!(near(floor(&mut h, Task::WaitingForBus, Some(1)), 10.15), "the seat's floor");
+    assert!(near(floor(&mut h, Task::WalkingToBusstop, Some(1)), 10.15), "walking back to it");
+    assert!(near(floor(&mut h, Task::WaitingForBus, None), 10.0), "the stop's own height");
+    assert_eq!(floor(&mut h, Task::ToBus, None), None, "off to a bus: the ground");
 }

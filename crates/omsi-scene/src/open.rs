@@ -586,7 +586,7 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
         .clone()
     };
     #[allow(clippy::type_complexity)]
-    let parts: Vec<(Vec<Lane>, Vec<(i64, DVec3)>, Vec<(DVec3, f64, String)>, Vec<(Vec<DVec3>, f32)>)> = tiles
+    let parts: Vec<(Vec<Lane>, Vec<(i64, DVec3)>, Vec<(DVec3, f64, String)>, Vec<(Vec<DVec3>, f32)>, Vec<(DVec3, String)>)> = tiles
         .par_iter()
         .map(|(tx, ty, path)| {
             let (tx, ty) = (*tx, *ty);
@@ -594,8 +594,9 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
             let mut positions = Vec::new();
             let mut signs = Vec::new();
             let mut roads = Vec::new();
+            let mut names = Vec::new();
             let Some(tile) = omsi_world::map_index::read_tile(path, chrono_dirs) else {
-                return (lanes, positions, signs, roads);
+                return (lanes, positions, signs, roads, names);
             };
             let origin2 = DVec2::new(tx as f64 * tile_size(), ty as f64 * tile_size());
             let terrain = Terrain::load(&tile_companion(&path, ".terrain")).unwrap_or_else(|_| Terrain::flat());
@@ -636,14 +637,35 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
                 };
                 // street name signs carry the street's name as their text
                 if is_street_sign(&o.file) {
-                    if let Some(name) = o.extra.first().map(|t| t.trim()).filter(|t| t.chars().filter(|c| c.is_alphabetic()).count() >= 3) {
-                        signs.push((DVec3::new(x, y, o.pos[2] + ground()), o.rot[0], name.to_string()));
+                    if let Some(name) = o.extra.first().map(|t| clean_sign_text(t)).filter(|t| t.chars().filter(|c| c.is_alphabetic()).count() >= 3) {
+                        signs.push((DVec3::new(x, y, o.pos[2] + ground()), o.rot[0], name));
                     }
                 }
                 let Some(sco) = sco_of(&o.file) else {
                     positions.push((o.id, DVec3::new(x, y, o.pos[2] + ground())));
                     continue;
                 };
+                // a name plate of another kind than the stock street sign (an add-on's own
+                // sign, a sign with the name on its own object), or a bus stop named after its
+                // street: a weaker hint of the street's name (see `street_name_of`)
+                if !is_street_sign(&o.file) {
+                    let plate = {
+                        let f = o.file.to_ascii_lowercase();
+                        ["schild", "sign", "name", "plate", "tafel"].iter().any(|k| f.contains(k))
+                    };
+                    if plate || sco.is_bus_stop {
+                        for t in o.extra.iter().take(3) {
+                            if let Some(n) = street_name_of(t) {
+                                if plate {
+                                    signs.push((DVec3::new(x, y, o.pos[2] + ground()), o.rot[0], n));
+                                } else {
+                                    names.push((DVec3::new(x, y, o.pos[2] + ground()), n));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
                 let absolute = sco.absolute_height();
                 let pos = DVec3::new(x, y, if absolute { o.pos[2] } else { o.pos[2] + ground() });
                 positions.push((o.id, pos));
@@ -651,18 +673,20 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
                     lanes.extend(object_lanes(&sco, pos, [o.rot[0], 0.0, 0.0], None, (tx, ty), o.id, &o.rules));
                 }
             }
-            (lanes, positions, signs, roads)
+            (lanes, positions, signs, roads, names)
         })
         .collect();
     let mut lanes = Vec::new();
     let mut positions = HashMap::new();
     let mut signs = Vec::new();
     let mut roads = Vec::new();
-    for (l, p, s, r) in parts {
+    let mut names = Vec::new();
+    for (l, p, s, r, n) in parts {
         lanes.extend(l);
         positions.extend(p);
         signs.extend(s);
         roads.extend(r);
+        names.extend(n);
     }
     log::info!("navigation map: {} roads without a path for cars", roads.len());
     log::info!(
@@ -675,7 +699,7 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
         slis.lock().len(),
         t0.elapsed().as_secs_f64()
     );
-    NavigationMap { lanes, road_surfaces: roads, places: positions, signs }
+    NavigationMap { lanes, road_surfaces: roads, places: positions, signs, names }
 }
 
 /// The whole map for the navigator (see [`World::navigation_map`]).
@@ -688,6 +712,51 @@ pub struct NavigationMap {
     pub places: HashMap<i64, DVec3>,
     /// Street name signs: where, the object's heading and the name on it.
     pub signs: Vec<(DVec3, f64, String)>,
+    /// Weaker hints of a street's name: bus stops named after the street they stand in.
+    pub names: Vec<(DVec3, String)>,
+}
+
+/// A sign's text without the codes the sign's script reads off it: Berlin's plates write
+/// "F_Hamburger Str" (the `F_` picks the plate's face), others an underscore for a space.
+pub fn clean_sign_text(text: &str) -> String {
+    let t = text.trim();
+    let mut c = t.chars();
+    let t = match (c.next(), c.next()) {
+        (Some(a), Some('_')) if a.is_ascii_alphabetic() => &t[2..],
+        _ => t,
+    };
+    t.replace('_', " ").split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A text that reads as a street's name, cleaned (a stop's "U Rathaus Spandau" is no street,
+/// "Heerstr/Wilhelmstr" names a crossing, "S+U Bf. Zoo" a station): the words maps write
+/// streets with, in the languages OMSI maps are made in.
+pub fn street_name_of(text: &str) -> Option<String> {
+    let cleaned = clean_sign_text(text);
+    let t = cleaned.trim_matches(|c: char| c == '"' || c == '\'');
+    if t.contains('/') || t.contains('|') || t.chars().filter(|c| c.is_alphabetic()).count() < 4 || t.chars().count() > 48 {
+        return None;
+    }
+    let lower = t.to_lowercase();
+    let words: Vec<&str> = lower.split(|c: char| c.is_whitespace() || c == '-' || c == ',').filter(|w| !w.is_empty()).collect();
+    let first = *words.first()?;
+    let ends = [
+        // German, Dutch, Scandinavian
+        "straße", "strasse", "str.", "str", "weg", "allee", "platz", "damm", "ring", "chaussee", "gasse", "ufer", "steig", "pfad", "zeile", "promenade", "markt", "brücke", "bruecke", "steinweg", "straat", "laan", "plein", "gracht", "gatan", "gata", "vägen", "vej", "gade", "veien",
+        // English
+        "road", "rd", "rd.", "street", "st", "st.", "lane", "avenue", "ave", "drive", "way", "close", "crescent", "hill", "place", "square", "terrace", "grove", "gardens", "row", "walk", "parade", "broadway", "boulevard", "highway", "bypass", "mews", "court",
+        // Romance
+        "rue", "via", "viale", "piazza", "calle", "avenida", "rua", "strada", "bulevar",
+    ];
+    let starts = ["rue", "avenue", "boulevard", "chemin", "via", "viale", "piazza", "calle", "avenida", "rua", "ul.", "ul", "ulica", "aleja", "al.", "plac", "ulice", "náměstí", "třída", "улица", "ул.", "проспект", "пр.", "шоссе", "переулок", "бульвар", "площадь", "вулиця", "вул."];
+    let last = *words.last()?;
+    let ok = words.len() >= 2 && (ends.contains(&last) || starts.contains(&first))
+        || ends.iter().any(|e| e.len() >= 4 && last.len() > e.len() + 2 && last.ends_with(e))
+        || (last.len() > 5 && (last.ends_with("str") || last.ends_with("str.")))
+        || words.iter().any(|w| ["utca", "út", "útja", "ulica", "улица", "проспект", "шоссе", "переулок"].contains(w));
+    // (a station named after its street is still a station: "U Rathaus", "S Spandau")
+    let station = ["u", "s", "s+u", "u+s", "bf", "bf.", "bhf", "bhf.", "hbf"].contains(&first);
+    (ok && !station).then(|| t.to_string())
 }
 
 /// Whether an asset name describes a road surface. Match whole filename tokens so objects
@@ -756,7 +825,7 @@ fn object_program(
     has_mouse_events: bool,
 ) -> Option<Arc<omsi_script::Program>> {
     let animated = mesh_def_index.iter().any(|d| {
-        !model.meshes[*d].animations.is_empty() || model.meshes[*d].visible.is_some()
+        !model.meshes[*d].animations.is_empty() || model.meshes[*d].visible_groups().next().is_some()
     });
     let has_freetex = mesh_def_index.iter().any(|d| {
         model.meshes[*d].materials.iter().any(|o| !o.item && o.freetex.is_some())

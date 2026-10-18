@@ -191,6 +191,11 @@ fn saved_situations(map: String) -> Answer {
     to_json(core::saved_situations(&map))
 }
 
+/// Delete one of the situations `saved_situations` lists for `map` (#2556).
+fn delete_situation(map: String, file: String) -> Answer {
+    Ok(json!(core::delete_situation(&map, Path::new(&file)).map_err(err)?))
+}
+
 /// A season and its phase chosen: the date the game will have (none: by date), and the word
 /// the game's `--season` takes.
 fn season_date(season: String, phase: String, date: String, map: String, keep: bool) -> Answer {
@@ -287,6 +292,16 @@ fn graphics_presets(mode: String) -> Answer {
     Ok(json!(core::graphics_presets_for(mode).into_iter().map(|(name, v)| json!({ "name": name, "settings": v })).collect::<Vec<_>>()))
 }
 
+fn optimise_arm(target: u32) -> Answer {
+    core::optimise::arm(target).map_err(err)?;
+    Ok(core::optimise::status())
+}
+
+fn optimise_restore() -> Answer {
+    let _one = SETTINGS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
+    core::optimise::restore().map_err(err)
+}
+
 fn graphics_profiles() -> Answer {
     to_json(core::graphics_profiles())
 }
@@ -332,6 +347,11 @@ static RADIO_WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn mods_status() -> Answer {
     to_json(core::mods_status().map_err(err)?)
+}
+
+fn add_hofs(files: Vec<String>) -> Answer {
+    let files: Vec<PathBuf> = files.into_iter().map(PathBuf::from).collect();
+    Ok(json!(core::add_shared_hofs(&files).map_err(err)?))
 }
 
 fn mod_set_enabled(id: String, on: bool) -> Answer {
@@ -441,18 +461,9 @@ fn server_query(address: String) -> Answer {
     }))
 }
 
-/// A code host's status page (its gateway is the session's port + 10), else its tunnel.
+/// A code host's first responsive status endpoint, including its tunnel.
 fn host_status(code: &str) -> Result<omsi_net::ws::ServerInfo, String> {
-    let c = omsi_net::SessionCode::decode(code)?;
-    for a in c.addrs().into_iter().take(3) {
-        if let Ok(i) = omsi_net::ws::query(&format!("http://{}:{}", a.ip(), a.port().saturating_add(10)), false) {
-            return Ok(i);
-        }
-    }
-    match omsi_net::bridge::lookup_tunnel(c.session) {
-        Some(url) => omsi_net::ws::query(&url, false),
-        None => Err("the host did not answer".into()),
-    }
+    omsi_net::ws::query_session(code)
 }
 
 fn base64(bytes: &[u8]) -> String {
@@ -508,6 +519,119 @@ fn notes_save(key: String, text: String) -> Answer {
     Ok(json!(true))
 }
 
+// --- the player's depot (`depot.json`): buses of their own that keep their wear ---------
+
+/// The depots and their buses, each bus with what its last session left: odometer, fuel,
+/// dirt, broken parts.
+fn depot_get() -> Answer {
+    let d = core::depot::load().map_err(err)?;
+    let buses: Vec<Value> = d
+        .buses
+        .iter()
+        .map(|b| {
+            let mut v = serde_json::to_value(b).unwrap_or_default();
+            if let Some(o) = v.as_object_mut() {
+                o.remove("wear");
+                o.insert("odometer".into(), json!(b.odometer()));
+                o.insert("fuel".into(), json!(b.fuel()));
+                o.insert("dirt".into(), json!(b.dirt()));
+                o.insert("faults".into(), json!(b.faults()));
+            }
+            v
+        })
+        .collect();
+    Ok(json!({ "buses": buses, "groups": d.group_names() }))
+}
+
+/// A new bus in the depot, with a plate none of the others has; its id.
+fn depot_add(bus: String, paint: Option<String>, number: Option<String>, name: String, group: Option<String>) -> Answer {
+    let id = core::depot::update(|d| {
+        let plate = d.new_plate(plate_seed());
+        Ok(d.add(core::depot::DepotBus { name, bus, paint: paint.unwrap_or_default(), plate, number: number.unwrap_or_default(), group: group.unwrap_or_default(), ..Default::default() }))
+    })
+    .map_err(err)?;
+    Ok(json!(id))
+}
+
+/// A depot bus's name, paint, plate or fleet number changed (its wear stays).
+fn depot_update(id: String, patch: Value) -> Answer {
+    core::depot::update(|d| {
+        let b = d.get_mut(&id).ok_or_else(|| anyhow::anyhow!("no depot bus {id}"))?;
+        let text = |k: &str| patch.get(k).and_then(Value::as_str).map(str::to_string);
+        if let Some(v) = text("name") {
+            b.name = v;
+        }
+        if let Some(v) = text("paint") {
+            b.paint = v;
+        }
+        if let Some(v) = text("plate") {
+            b.plate = v.trim().to_uppercase();
+        }
+        if let Some(v) = text("number") {
+            b.number = v;
+        }
+        if let Some(v) = text("group") {
+            b.group = v;
+        }
+        Ok(())
+    })
+    .map_err(err)?;
+    Ok(json!(true))
+}
+
+/// Refuel, wash or repair a depot bus (all of it, or one part): its next drive starts so.
+fn depot_service(id: String, kind: String) -> Answer {
+    core::depot::update(|d| {
+        let b = d.get_mut(&id).ok_or_else(|| anyhow::anyhow!("no depot bus {id}"))?;
+        if !b.service(&kind) {
+            anyhow::bail!("no depot service {kind}");
+        }
+        Ok(())
+    })
+    .map_err(err)?;
+    Ok(json!(true))
+}
+
+fn depot_remove(id: String) -> Answer {
+    core::depot::update(|d| {
+        d.remove(&id);
+        Ok(())
+    })
+    .map_err(err)?;
+    Ok(json!(true))
+}
+
+/// The player's depots: a new one, one renamed (with its buses) or one removed (its buses
+/// stay, in no depot).
+fn depot_group(op: &str, name: String, to: Option<String>) -> Answer {
+    let names = core::depot::update(|d| {
+        let done = match op {
+            "add" => d.add_group(&name),
+            "rename" => d.rename_group(&name, to.as_deref().unwrap_or_default()),
+            _ => {
+                d.remove_group(&name);
+                true
+            }
+        };
+        if !done {
+            anyhow::bail!("there is already a depot called {}", to.as_deref().unwrap_or(&name).trim());
+        }
+        Ok(d.group_names())
+    })
+    .map_err(err)?;
+    Ok(json!(names))
+}
+
+/// Another plate none of the depot's buses has.
+fn depot_plate() -> Answer {
+    let d = core::depot::load().map_err(err)?;
+    Ok(json!(d.new_plate(plate_seed())))
+}
+
+fn plate_seed() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|t| t.as_nanos() as u64).unwrap_or(0)
+}
+
 // --- the game's renderer: the bus preview and the city map (see `service`) -----------
 
 /// What the bus preview shows: the bus, its paint, and the map, weather, time and date that
@@ -540,9 +664,13 @@ fn preview_frame(p: &dyn Platform, w: u32, h: u32, force: bool, dx: Option<f32>,
 }
 
 /// The map with the trip's route over it (see `mapview::export` in the launcher crate).
-fn route_map(p: &dyn Platform, map: String, date: String, trip: String) -> Answer {
-    let (_, body) = p.renderer(json!({ "cmd": "map", "map": map, "date": date, "trip": trip }), Duration::from_secs(120))?;
-    serde_json::from_slice(&body).map_err(err)
+fn route_map(p: &dyn Platform, map: String, date: String, trip: String, surface: Option<bool>) -> Answer {
+    serde_json::from_slice(&route_map_bytes(p, map, date, trip, surface)?).map_err(err)
+}
+
+fn route_map_bytes(p: &dyn Platform, map: String, date: String, trip: String, surface: Option<bool>) -> Result<Vec<u8>, String> {
+    let (_, body) = p.renderer(json!({ "cmd": "map", "map": map, "date": date, "trip": trip, "surface": surface.unwrap_or(true) }), Duration::from_secs(120))?;
+    Ok(body)
 }
 
 fn keyboard_actions(p: &dyn Platform, mut req: Value) -> Answer {
@@ -654,6 +782,7 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "ibis" => ibis(arg::<String>(args, "bus")?, arg::<String>(args, "hof")?, arg::<String>(args, "line")?),
         "default_hof" => default_hof(arg::<Value>(args, "map")?, arg::<Value>(args, "bus")?, arg::<String>(args, "date")?, arg::<Option<String>>(args, "line")?),
         "saved_situations" => saved_situations(arg::<String>(args, "map")?),
+        "delete_situation" => delete_situation(arg::<String>(args, "map")?, arg::<String>(args, "file")?),
         "season_date" => season_date(arg::<String>(args, "season")?, arg::<String>(args, "phase")?, arg::<String>(args, "date")?, arg::<String>(args, "map")?, arg::<bool>(args, "keep")?),
         "tutorials" => tutorials(),
         "timetable" => timetable::load(arg::<String>(args, "map")?),
@@ -677,11 +806,19 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "graphics_profiles" => graphics_profiles(),
         "graphics_profile_save" => graphics_profile_save(arg::<String>(args, "name")?, arg::<Value>(args, "settings")?),
         "graphics_profile_delete" => graphics_profile_delete(arg::<String>(args, "name")?),
+        "optimise_status" => Ok(core::optimise::status()),
+        "optimise_arm" => optimise_arm(arg::<u32>(args, "target")?),
+        "optimise_cancel" => {
+            core::optimise::disarm();
+            Ok(core::optimise::status())
+        }
+        "optimise_restore" => optimise_restore(),
         "keybindings_get" => keybindings_get(),
         "keybindings_save" => keybindings_save(arg::<Value>(args, "bindings")?),
         "radio_stations" => radio_stations(),
         "radio_stations_save" => radio_stations_save(arg::<Vec<Value>>(args, "list")?),
         "mods_status" => mods_status(),
+        "add_hofs" => add_hofs(arg::<Vec<String>>(args, "files")?),
         "mod_set_enabled" => mod_set_enabled(arg::<String>(args, "id")?, arg::<bool>(args, "on")?),
         "mod_remove" => mod_remove(arg::<String>(args, "id")?),
         "mod_inspect" => mod_inspect(arg::<String>(args, "path")?),
@@ -694,7 +831,8 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "poll" => poll(),
         "stop_game" => stop_game(arg::<u32>(args, "pid")?),
         "game_log" => game_log(arg::<u32>(args, "pid")?, arg::<Option<usize>>(args, "lines")?),
-        "model_check" => model_check(arg::<String>(args, "bus")?),
+        "model_check" => content_check(arg::<String>(args, "bus")?, false),
+        "content_check" => content_check(arg::<String>(args, "path")?, arg::<Option<bool>>(args, "deep")?.unwrap_or(false)),
         "launch" => launch(p, arg::<Value>(args, "duty")?),
         "duty_args" => duty_args(arg::<Value>(args, "duty")?),
         "check_join" => check_join(arg::<String>(args, "text")?),
@@ -703,11 +841,20 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "server_query" => server_query(arg::<String>(args, "address")?),
         "choice_save" => choice_save(arg::<Value>(args, "choice")?),
         "favourites_save" => favourites_save(arg::<Vec<String>>(args, "list")?),
+        "depot_get" => depot_get(),
+        "depot_add" => depot_add(arg::<String>(args, "bus")?, arg::<Option<String>>(args, "paint")?, arg::<Option<String>>(args, "number")?, arg::<String>(args, "name")?, arg::<Option<String>>(args, "group")?),
+        "depot_group_add" => depot_group("add", arg::<String>(args, "name")?, None),
+        "depot_group_rename" => depot_group("rename", arg::<String>(args, "name")?, arg::<Option<String>>(args, "to")?),
+        "depot_group_remove" => depot_group("remove", arg::<String>(args, "name")?, None),
+        "depot_update" => depot_update(arg::<String>(args, "id")?, arg::<Value>(args, "patch")?),
+        "depot_remove" => depot_remove(arg::<String>(args, "id")?),
+        "depot_service" => depot_service(arg::<String>(args, "id")?, arg::<String>(args, "kind")?),
+        "depot_plate" => depot_plate(),
         "notes_get" => notes_get(),
         "notes_save" => notes_save(arg::<String>(args, "key")?, arg::<String>(args, "text")?),
         "preview_look" => preview_look(p, arg::<String>(args, "bus")?, arg::<String>(args, "paint")?, arg::<String>(args, "map")?, arg::<String>(args, "weather")?, arg::<i32>(args, "time")?, arg::<String>(args, "date")?),
         "preview_warm" => preview_warm(p),
-        "route_map" => route_map(p, arg::<String>(args, "map")?, arg::<String>(args, "date")?, arg::<String>(args, "trip")?),
+        "route_map" => route_map(p, arg::<String>(args, "map")?, arg::<String>(args, "date")?, arg::<String>(args, "trip")?, arg(args, "surface")?),
         "keyboard_actions" => keyboard_actions(p, json!({ "lang": arg::<Option<String>>(args, "lang")?, "actions": arg::<Option<Vec<String>>>(args, "actions")?, "vehicles": arg::<Option<Vec<String>>>(args, "vehicles")?, "catalog": arg::<Option<bool>>(args, "catalog")?, "scan": arg::<Option<bool>>(args, "scan")?, "have": arg::<Option<String>>(args, "have")? })),
         "controllers_load" => controllers(p, "load", json!({}), 20),
         "controllers_state" => controllers(p, "state", json!({ "off": arg::<Option<Vec<String>>>(args, "off")?.unwrap_or_default() }), 5),
@@ -732,6 +879,13 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
 pub fn call_bytes(cmd: &str, args: &Value, p: &dyn Platform) -> Result<Vec<u8>, String> {
     match cmd {
         "content_picture" => content_picture(&arg::<String>(args, "path")?).ok_or_else(|| "not found".to_string()),
+        "route_map" => route_map_bytes(p, arg::<String>(args, "map")?, arg::<String>(args, "date")?, arg::<String>(args, "trip")?, arg(args, "surface")?),
+        "map_ground" => {
+            let mut req = args.clone();
+            req["cmd"] = json!("map_ground");
+            let (_, body) = p.renderer(req, Duration::from_secs(120))?;
+            Ok(body)
+        }
         "preview_frame" => preview_frame(p, arg(args, "w")?, arg(args, "h")?, arg::<Option<bool>>(args, "force")?.unwrap_or(false), arg(args, "dx")?, arg(args, "dy")?, arg(args, "zoom")?, arg(args, "quality")?, arg(args, "view")?),
         _ => Err(format!("unknown command {cmd}")),
     }
@@ -825,15 +979,21 @@ mod custom_weather_tests {
     }
 }
 
-// --- the model test ----------------------------------------------------------------
+// --- the content test (Settings) -----------------------------------------------------
 
-/// The game program loads `bus` as it would for a drive (`openomsi --check-vehicle`) and
-/// answers its loaders' warnings and errors and the model's missing textures as JSON.
-fn model_check(bus: String) -> Answer {
+/// The game program loads `path` - a vehicle, a scenery object, a spline, a human, a map, a
+/// mod's folder or zip - as it would for a drive (`openomsi --check`) and answers its
+/// loaders' warnings and errors and whatever it names that is not there as JSON. `deep`: a
+/// map's objects and splines are loaded whole (models, meshes, textures), not only read.
+fn content_check(path: String, deep: bool) -> Answer {
     let game = core::game_binary().ok_or_else(|| "the game program was not found: set it under Setup".to_string())?;
     let root = core::root_dir().map_err(err)?;
     let mut cmd = std::process::Command::new(&game);
-    cmd.arg("--check-vehicle").arg(&bus).arg("--root").arg(&root).env("OMSI_NO_GUARD", "1");
+    // (a mod's folders come one to a line)
+    cmd.arg("--check").args(path.lines().map(str::trim).filter(|l| !l.is_empty())).arg("--root").arg(&root).env("OMSI_NO_GUARD", "1");
+    if deep {
+        cmd.arg("--deep");
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

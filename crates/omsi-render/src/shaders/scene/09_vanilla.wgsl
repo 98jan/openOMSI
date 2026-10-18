@@ -99,6 +99,9 @@ fn shade_vanilla(in: FsIn, puddle_weight: ptr<function, f32>, eye: vec3<f32>) ->
             discard;
         }
     }
+    // (a blended slot that keeps Omsi.exe's alpha test, `MaterialExtra::alpha_cut`: a
+    // livery's clear glass is cut away, its tinted glass blended)
+    tex.a = select(tex.a, 0.0, mode > 2.5 && tex.a < ALPHA_REF);
     let n = safe_normal(in.normal);
     let ndl = max(dot(n, camera.sun_dir.xyz), 0.0);
     // three lights like the original: direct sun (A), light from above (B), ambient (C)

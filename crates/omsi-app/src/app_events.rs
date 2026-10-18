@@ -133,7 +133,7 @@ impl ApplicationHandler for App {
                 self.finish_vr_nav_edit();
                 self.input.window_focused = false;
                 if let Some(ctl) = self.input.controllers.as_mut() {
-                    ctl.set_focus(false);
+                    ctl.set_focus(self.settings.ctrl_background);
                 }
                 #[cfg(windows)]
                 {
@@ -349,6 +349,12 @@ impl ApplicationHandler for App {
                 if self.game_panel_click(state == ElementState::Pressed) {
                     return;
                 }
+                // ... and those on a plugin's panel that takes them without the mouse (`grab`:
+                // a card clicked away or kept), with the release - under the game's own
+                // panels, as the plugins' panels are drawn
+                if self.plugin_grab(state == ElementState::Pressed) {
+                    return;
+                }
                 if self.input.touch.enabled {
                     let p = glam::Vec2::new(self.input.cursor.0, self.input.cursor.1);
                     if state == ElementState::Pressed {
@@ -471,6 +477,7 @@ impl ApplicationHandler for App {
     /// anything else is torn down (Cmd+Q ends the process without returning from the loop).
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         crate::game_lists::flush_settings(true);
+        self.abort_optimiser();
         self.finish_session();
         // (with the pipelines made since the start: puddles, Enhanced+)
         omsi_render::pipeline_cache::save();
@@ -857,6 +864,7 @@ fn timetable_rows(duty: Option<&crate::schedule::PlayerDuty>, delay: Option<f64>
             name: s.name.trim().to_string(),
             arr: if Some(k) == first { String::new() } else { hm(s.arr) },
             dep: if Some(k) == last { String::new() } else { hm(s.dep) },
+            expected: if k < d.next_stop { String::new() } else { hm((if Some(k) == first { s.dep } else { s.arr } + delay.unwrap_or(0.0)).rem_euclid(86400.0)) },
             state: if k < d.next_stop { 0 } else if k == d.next_stop { 1 } else { 2 },
         })
         .collect();

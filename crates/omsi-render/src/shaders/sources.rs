@@ -183,8 +183,25 @@ pub(crate) fn sky_shader_source() -> String {
 /// The snowfall (snow.wgsl), with the lamps the enhanced picture lights it by (none
 /// without storage buffers).
 pub(crate) fn snow_shader_source() -> String {
+    precip_shader_source(include_str!("../snow.wgsl"))
+}
+
+/// The rainfall (rain.wgsl), as the snowfall.
+pub(crate) fn rain_shader_source() -> String {
+    let src = precip_shader_source(include_str!("../rain.wgsl"));
+    if basic_pipelines() { lean_rain(src) } else { src }
+}
+
+pub(crate) fn lean_rain(src: String) -> String {
+    const LAMPS: &str = "precip_light(in.pos, to_eye, false) * 0.3 + ";
+    debug_assert_eq!(src.matches(LAMPS).count(), 1);
+    src.replace(LAMPS, "")
+}
+
+pub(crate) fn precip_shader_source(own: &str) -> String {
     let src = [
-        include_str!("../snow.wgsl"),
+        include_str!("../precip_common.wgsl"),
+        own,
         include_str!("../enhanced_common.wgsl"),
         FOG_LAMP_LIGHTS,
         include_str!("../lamp_air.wgsl"),
@@ -204,6 +221,9 @@ pub(crate) fn snow_shader_source() -> String {
 pub(crate) struct SnowUniform {
     pub(crate) wind: [f32; 4],
     pub(crate) fall: [f32; 4],
+    /// The roof map's matrix, and x 1 when there is one (`passes::PrecipMap::uniform`).
+    pub(crate) roof: [[f32; 4]; 4],
+    pub(crate) roof_on: [f32; 4],
 }
 
 /// The snowfall's flakes for a snowfall of strength `s` (0..1): how many each layer of
@@ -213,6 +233,28 @@ pub(crate) struct SnowUniform {
 pub(crate) fn snowfall_flakes(s: f32) -> ([u32; 3], f32) {
     let k = 0.08 + 0.92 * s.clamp(0.0, 1.0);
     ([(70000.0 * k) as u32, (55000.0 * k) as u32, (25000.0 * k) as u32], 0.0006 + 0.0034 * s * s)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct RainUniform {
+    pub(crate) wind: [f32; 4],
+    pub(crate) eye: [f32; 4],
+    pub(crate) fall: [f32; 4],
+    pub(crate) view: [f32; 4],
+    pub(crate) roof: [[f32; 4]; 4],
+    pub(crate) roof_on: [f32; 4],
+}
+
+/// How many drops each layer of rain.wgsl holds in a rain of strength `r` (0..1) at the
+/// rain's quality (0 low, 1 medium, 2 high): the near one some 90 a cubic metre in a
+/// downpour - of the drops big enough to see, a few hundred a cubic metre in heavy rain -
+/// and a tenth of that in a drizzle.
+/// The fourth figure is the splashes where they land (see rain.wgsl `splash`): some forty
+/// on each square metre at a time in a downpour, close by.
+pub(crate) fn rainfall_drops(r: f32, quality: u8) -> [u32; 4] {
+    let k = (0.12 + 0.88 * r.clamp(0.0, 1.0)) * [0.3, 0.6, 1.0][quality.min(2) as usize];
+    [(90000.0 * k) as u32, (110000.0 * k) as u32, (60000.0 * k) as u32, (25000.0 * k) as u32]
 }
 
 /// Enhanced: the lamps' light in the fog over the drawn picture (`fog_lamps.wgsl`; not

@@ -32,6 +32,8 @@ struct RemoteView {
 #[derive(Default)]
 pub(crate) struct LanView {
     remotes: hashbrown::HashMap<u32, RemoteView>,
+    /// The world's reader of vehicle sets, lent to `omsi_lan::remote_load` while this lives.
+    prefetching: Option<omsi_lan::remote_load::Lent>,
 }
 
 impl LanView {
@@ -54,6 +56,11 @@ pub(crate) fn apply_lan(
     frame: &crate::lan::LanInput,
     dt: f32,
 ) {
+    // (other players' buses are read off the frame, their paint put on the GPU there too)
+    if view.prefetching.is_none() {
+        let p = w.vehicle_prefetch(r);
+        view.prefetching = Some(omsi_lan::remote_load::lend_prefetcher(Arc::new(move |ty: &omsi_sim::VehicleType, scheme: Option<usize>| p.prefetch(ty, scheme))));
+    }
     let changes = std::mem::take(&mut game.drawn);
     for e in changes.events {
         match e {
@@ -70,6 +77,9 @@ pub(crate) fn apply_lan(
         }
     }
     for (id, inside) in changes.heard {
+        if view.remotes.get(&id).is_some_and(|v| !v.sounds.is_empty() || v.inside_sounds.is_some()) {
+            game.apply_player_sounds(id);
+        }
         if let (Some(rv), Some(v)) = (game.remotes.get_mut(&id), view.remotes.get_mut(&id)) {
             sound_remote(rv, v, audio, frame.listener, frame.muffled, inside);
         }
@@ -152,7 +162,12 @@ fn sound_remote(
     inside: bool,
 ) {
     let fired: Vec<String> = std::mem::take(&mut rv.vehicle_mut().host.fired_triggers);
+    let fired_vars = std::mem::take(&mut rv.vehicle_mut().host.fired_trigger_vars);
     let fired_files: Vec<(String, String)> = std::mem::take(&mut rv.vehicle_mut().host.fired_file_triggers);
+    let at_fire = |t: &str, n: &str| -> Option<f32> {
+        let vals = &fired_vars.iter().rev().find(|(k, _)| k.eq_ignore_ascii_case(t))?.1;
+        rv.vehicle().var_slot(n).and_then(|i| vals.get(i).copied())
+    };
     let (Some(audio), Some(at)) = (audio, listener) else {
         return;
     };
@@ -179,7 +194,7 @@ fn sound_remote(
             // `Snd_OutsideVol`, not the walker's own bus's (or 1 without one): riding along
             // the exterior engine drowned the cab (#1759)
             omsi_audio::soundset::set_outside_open(Some(v.var("Snd_OutsideVol").unwrap_or(0.0)));
-            ss.update(audio, &|n| v.var(n), &xf, &fired);
+            ss.update_fired(audio, &|n| v.var(n), &xf, &fired, &at_fire);
             for (t, f) in &fired_files {
                 ss.play_file_trigger(audio, t, f, &|n| v.var(n), &xf);
             }
@@ -223,8 +238,8 @@ fn sound_remote(
     let xf = v.world_transform();
     for ss in view.sounds.iter_mut() {
         ss.set_muffled(muffled);
-        ss.update(audio, &|n| v.var(n), &xf, &fired);
-        ss.update_parts(audio, &|n| v.var(n), &|i| v.trailers.get(i).map(|t| t.world_transform()), &fired);
+        ss.update_fired(audio, &|n| v.var(n), &xf, &fired, &at_fire);
+        ss.update_parts(audio, &|n| v.var(n), &|i| v.trailers.get(i).map(|t| t.world_transform()), &fired, &at_fire);
         for (t, f) in &fired_files {
             ss.play_file_trigger(audio, t, f, &|n| v.var(n), &xf);
         }

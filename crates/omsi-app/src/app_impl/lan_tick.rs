@@ -11,6 +11,13 @@ impl App {
         let Some(lan) = self.net.lan.as_mut() else {
             // (the session is over: the plugin is told so)
             self.sound.voice = None;
+            if let Some(p) = self.player.as_mut() {
+                for texture in &mut p.vehicle.host.script_textures {
+                    texture.disable_network_snapshot();
+                }
+                p.vehicle.host.capture_sound_triggers = false;
+                p.vehicle.host.network_sound_triggers.clear();
+            }
             return;
         };
         let duty = self
@@ -32,10 +39,17 @@ impl App {
         };
         let config = self.args.lan_config();
         let host = AppLanHost { args: &self.args, world: self.world.as_deref() };
+        if lan.role == omsi_net::Role::Host {
+            if let Some(t) = self.session.traffic.as_mut() {
+                for c in &mut t.sim.cars {
+                    self.net.remotes.publish_vehicle_sounds(lan, &mut c.vehicle, c.id, &config);
+                }
+            }
+        }
         let sent = {
             let traffic = self.session.traffic.as_ref();
             let cars = || traffic.map(|t| t.cars.iter().map(|c| lan::car_footprint(&c.vehicle)).collect()).unwrap_or_default();
-            lan::tick_send(lan, &mut self.net.remotes, dt, &config, self.player.as_ref().map(|p| &p.vehicle), &cars, duty, &frame)
+            lan::tick_send(lan, &mut self.net.remotes, dt, &config, self.player.as_mut().map(|p| &mut p.vehicle), &cars, duty, &frame)
         };
         self.net.lan_world.tick(
             lan,
@@ -49,6 +63,12 @@ impl App {
             &mut self.gfx.sim_view,
             self.player.as_ref().map(|p| p.vehicle.position),
         );
+        if let Some(t) = self.session.traffic.as_mut().filter(|t| t.sim.mirror) {
+            let ready: Vec<_> = t.sim.cars.iter().filter(|c| t.has_sound_set(c.id)).map(|c| c.id).collect();
+            for c in &mut t.sim.cars {
+                if ready.contains(&c.id) { self.net.remotes.apply_ai_sounds(&mut c.vehicle, c.id, &config.root); }
+            }
+        }
         let updates = lan::tick_receive(
             lan,
             &mut self.net.remotes,
@@ -70,6 +90,7 @@ impl App {
         for (from, text) in cmds {
             self.lan_command(from, &text);
         }
+        crate::admin_panel::tick(self);
         self.tick_voice(dt);
     }
 
@@ -77,6 +98,10 @@ impl App {
     /// (`omsi_lan::commands::Command`), carried out here.
     pub(crate) fn lan_command(&mut self, from: u32, text: &str) {
         use omsi_lan::commands::Command;
+        if let Some(request) = text.strip_prefix("pax_request ") {
+            self.receive_passenger_door_request(from, request);
+            return;
+        }
         // a plugin's message to the same plugin here (`lan.send`)
         if self.plugin_lan_message(from, text) {
             return;
@@ -187,6 +212,7 @@ impl crate::Args {
             lan_name: self.lan_name.clone(),
             lan_host: self.lan_host,
             lan_join: self.lan_join.clone(),
+            lan_ws_fallback: self.lan_ws_fallback.clone(),
             server: self.server.is_some(),
             entry: self.entry,
             spawn: self.spawn.clone(),
@@ -237,17 +263,21 @@ impl omsi_lan::host::LanHost for AppLanHost<'_> {
         ty: std::sync::Arc<omsi_sim::VehicleType>,
         scheme: Option<usize>,
         clock: omsi_sim::SimClock,
+        fonts: Option<omsi_lan::mods::vehicles::SharedFonts>,
     ) -> (omsi_sim::VehicleInstance, Option<std::sync::Arc<omsi_vehicle::Hof>>) {
         let world = self.world.expect("another player's vehicle is made with a world loaded");
         let mut host = omsi_sim::VehicleHost::new(clock);
-        host.font_lib = Some(world.fonts.clone());
+        let fonts = fonts.unwrap_or_else(|| world.fonts.clone());
+        host.font_lib = Some(fonts.clone());
         let hof = self.depot_of(args, &ty);
         host.hof = hof.clone();
         host.paint_scheme = Some(scheme);
+        host.remote_script_textures = true;
+        host.remote_sound_triggers = true;
         let mut vehicle = omsi_sim::VehicleInstance::new(ty.clone(), host);
         vehicle.ground = None;
         if !ty.model.text_textures.is_empty() {
-            vehicle.init_text_textures(&mut world.fonts.lock(), &|p| {
+            vehicle.init_text_textures(&mut fonts.lock(), &|p| {
                 omsi_texture::decode_file(p)
                     .ok()
                     .map(|i| (i.width, i.height, i.rgba))

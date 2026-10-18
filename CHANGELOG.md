@@ -6,7 +6,144 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 ## Unreleased
 
+### New
+
+**Navigator and city map**
+
+- The navigator and the city map draw every map in the style of Apple Maps, from the map
+  itself: no map package is needed. On a map's first visit its layers are read off its tiles
+  (some seconds on a big map, then from `~/.openomsi/cache/mapgen`): green land, painted
+  fields, sand and paved yards, water where a tile's water stands over its ground, woods
+  where trees stand close and the single trees, rail lines drawn as Google Maps draws them,
+  tram tracks, and every paved surface as it lies, from the splines' road profiles and the
+  junctions' and car parks' own flat faces, so a car park is one grey yard with a fine
+  edge instead of ten road ribbons. Outside the map's tiles the land is green.
+- The houses stand in 3D with lit walls and soft shadows, taken from the roofs of the map's
+  own models: on the navigator always, on the city map when zoomed in, where it tilts into 3D,
+  and flat from above when zoomed out (the `3D buildings on the map` setting, and the city
+  map's 2D/3D button). The route shows faintly through a house that hides it.
+- The navigator is a rounded map with floating cards: the next turn and its street top left,
+  the time, day and temperatures top right, the speed with the limit sign bottom left (red
+  when too fast), the next stop with its line, distance, time and delay at the bottom.
+- The navigator is a widget: drag it anywhere and size it at its bottom right corner (the
+  `Navigator as a widget` setting; the size is kept, and in the launcher's settings).
+- Every bus, tram and train of the timetable is on the maps where the timetable has it now,
+  anywhere on the map, gliding along its route; from far the city map shows them as their
+  lines' badges. The other players of a LAN session or server show as markers with names.
+- Street names on maps without the stock street name signs: an add-on's own name plates and
+  the stops named after their street name the street.
+- The launcher's route preview draws the same picture: ground, water, rail, paved surfaces
+  and houses, the route in blue, the stops on white cards.
+
+- **Content test** in Settings, in place of the launcher's Model test page: any content is
+  loaded the way the game loads it and every warning of its files is listed - a bus with the
+  parts coupled behind it, a whole map (every tile, object and spline it places, what of it
+  is not installed, its ground textures and AI lists; optionally every model, mesh and
+  texture of it), an installed mod, or any file or folder: a scenery object, a spline, a
+  human, a weather, a mesh, a mod not installed yet (folder or zip). From the command line:
+  `openomsi --check <file or folder> [--deep]`.
+- Save slots: the pause menu's "Save to a slot..." saves to a new slot or over one of the
+  map's slots, and the launcher's Continue card deletes saves [#2556](https://github.com/openOMSI-org/openOMSI/issues/2556).
+- `[visible]` conditions combine: several `[visible]` of a mesh must all hold,
+  `[visible_range] var min max`, a `!` after the variable turns a condition round, and a
+  `||` line between blocks gives either-or (docs/MODDING.md) [#729](https://github.com/openOMSI-org/openOMSI/issues/729).
+- Touch pedals: a rest zone at the foot of the pedals (a finger laid there presses nothing),
+  a softer start of their travel, and their length in the settings [#1458](https://github.com/openOMSI-org/openOMSI/issues/1458).
+- Rain, made anew: a quarter of a million drops worked out on the GPU each frame instead of
+  a few thousand sprites - a downpour is a veil of many short, fine, faint lines, not a few
+  long thick ones. Each streak is the drop's way against the eye in a seventieth of a
+  second, as wide as the drop (fainter where that is less than a pixel) and as faint as it
+  is long; the drops are as big and fall as fast as the rain is heavy (Marshall-Palmer drop
+  sizes, their measured fall speeds), upright standing, slanting at the windscreen while
+  driving; where they land, small splashes on the road, the kerb, a roof. The rain stays
+  put in the world: turning or moving the camera round the bus no longer swings it [#1412](https://github.com/openOMSI-org/openOMSI/issues/1412).
+- Rain and snow stop at roofs: a map of what stands over the ground round the camera, seen
+  from above, keeps them out of every bus and car, under bridges, shelters and eaves - from
+  the outside view as well, where it rained and snowed in the saloon.
+- Snow builds up while it falls - a white cover in a quarter of an hour of a heavy snowfall,
+  an hour or two of a light one - on the roofs of the buses, the cars and the houses, the
+  verges and the ground, and thaws above zero and in the rain; the roads stay clear unless
+  the weather lays snow on them.
+- Enhanced: a wet bus mirrors the street - the water on its paint is as smooth as glass.
+- Driving off the road soils the bus: the wheels on earth, grass or gravel throw it up onto
+  the body (the dirt overlay), mud in the wet in a few minutes, dust in the dry more slowly.
+
+**Launcher**
+
+- The Drive page puts the map, the line and tour, the roadbook, the bus and the start on one
+  screen, in the layout the community chose: **Big Map** (the default) lays the route map over
+  the whole page with the rest floating on it, framed in the part the panels leave free;
+  **Control Room**, **Classic+** and **Classic** (in steps) are in **Settings > Launcher
+  layout**. The page with cards, where the map came far down, is gone; its tour buses, next
+  departures, map note, date calendar and save deletion are on every layout.
+- The route map has a light and a dark look after Apple Maps, as the launcher's theme.
+- A big map's route preview shows in about a second where it took over a minute (Berlin-Spandau
+  with its paved surfaces: 88 s before), and only the part in view is drawn when zoomed in.
+- Each tour says how long its trips take.
+- The menu on the left is in parts - Play (Drive, Multiplayer, Running games), Content (Mods,
+  Timetable), Options (Settings, Controls, Setup) and Help (Tutorials); the driver at its
+  bottom opens the profile. It folds to its icons with the arrow at its bottom, and stays so;
+  the numbers on Mods and Running games stay on their icons.
+
+- The launcher's route map opens fast and follows the mouse smoothly on a big map: the
+  roads and the route show at once and the surfaces (paved roads, land, houses) a moment
+  later, read once per map and date, not again with each trip, and only the part in view is
+  prepared; they come from the game as they are instead of being read and written again on the
+  way; dragging and zooming move a picture of the map and draw it anew when the mouse lets
+  go; the roads are drawn in a few strokes instead of one per road. Around the map's tiles
+  the land has the map's own green, no more grey that looked as if it were still loading.
+
 ### Fixes
+
+- Tyre spray comes only from puddles: the stock cars' and buses' wheel spray no longer sprays
+  on every wet road from the first drops, and it stops as the puddles dry out after the rain
+  instead of lingering until the road is quite dry. In snow the scripts' own slush is kept.
+
+**Navigator**
+
+- Traffic on the navigator follows how fast the traffic flows: busy streets that move are no
+  longer amber, and two cars waiting at a red light or a bus at its stop are no jam; slow,
+  heavy and standing traffic show amber, red and dark red. Junction paths take the colour of
+  their traffic too (they were always blue).
+- A way back to the route is the quickest to the end of the route, counted in time with turns
+  and turning round, and may change lanes on the way: it no longer leads back to a part of
+  the route already driven, nor round a block to reach a lane beside the bus. The way to a
+  stop before the route is there comes to the stop on its own side of the road.
+
+**Graphics**
+
+- Grass and earth no longer shine like wet asphalt in the rain: a ground texture with
+  `[moisture]` on grass, earth or gravel soaks the rain up instead of carrying a film of
+  water, and a `[moisture]` road without `[puddles]` gets a lighter film with fewer pools
+  (the stock grass strips glowed in every lamp at night).
+- Tinted bus windows on an alpha-tested layer that shares its texture with the body are
+  blended above OMSI's cut instead of drawn black (Ychebniy LiAZ 5292.65, NefAZ 5299 2024)
+  [#2609](https://github.com/openOMSI-org/openOMSI/issues/2609).
+- A road's painted lines (also cut-out dashes) are drawn over the crossings and junction
+  plates laid over the road, as in OMSI 2, instead of vanishing under them with the camera's
+  height and distance [#1694](https://github.com/openOMSI-org/openOMSI/issues/1694).
+- Night in the city costs less: the classic picture lights a place with its eight strongest
+  lamps, as Direct3D lit OMSI 2's, and every light grid cell keeps its strongest lamps
+  rather than the first ones listed [#1467](https://github.com/openOMSI-org/openOMSI/issues/1467).
+- It rains again on computers that draw with the reduced set of pipelines after a graphics
+  failure (`~/.openomsi/gpu-fallback.cfg`): since 0.3.34 the new rain was left out there, and
+  an Apple M1 that fell back once had no streaks for the rest of the version. Buses and
+  shelters keep the rain out there as well.
+
+**Controls**
+
+- The steering wheel comes back after a turn the way a bus's does: gently at town speed and
+  damped on its way back, without swinging past the centre [#2103](https://github.com/openOMSI-org/openOMSI/issues/2103).
+
+**Launcher**
+
+- The bus picker's preview and details fill their side of the window for every bus: a bus
+  with a short description no longer leaves an empty strip left of its preview.
+
+**Traffic and timetable**
+
+- A test covers buses behind a bus standing long at a shared stop: each serves the stop from
+  behind and goes round it [#1954](https://github.com/openOMSI-org/openOMSI/issues/1954).
 
 **Traffic and timetable**
 
@@ -70,6 +207,16 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   an RTX 4050) and their multisampled targets' memory for little to see; `OMSI_FULL_GPU=1`
   keeps 8x ([#2228](https://github.com/openOMSI-org/openOMSI/issues/2228)).
 - A video memory of 16 GB can be chosen, for cards with more than 16 GB of their own.
+- Textures stay sharp on a graphics card of its own: their share grows to half of the video
+  memory (about 3.7 GB on an 8 GB card on Automatic), where it stayed at an eighth of the
+  computer's memory (2 GB with 16 GB) whatever the setting, and the far textures lost their
+  finest levels even at the highest settings. The video memory still bounds everything on
+  the card; integrated graphics and the safer settings after a lost device keep the old share.
+- A bus's invisible cover hides its sun blind again instead of showing a light blue patch over
+  the windscreen and the street behind it, in Enhanced, and in Vanilla+ with ambient
+  occlusion and MSAA off: since 0.3.0 the parts listed after the cover still went into the
+  depth the picture is drawn against, also when the cover is a mesh of its own. The ambient
+  occlusion still sees them ([#2678](https://github.com/openOMSI-org/openOMSI/issues/2678), [#2178](https://github.com/openOMSI-org/openOMSI/issues/2178)).
 - Render targets of a size not drawn for 5 s are let go: those of a photo taken at a large size
   stayed on the graphics card until the window changed size.
 - A remembered MSAA fallback is tried at the chosen MSAA again once with each new version
@@ -87,6 +234,22 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   player fetches must be what its name says (a picture of a size a texture can have, a sound,
   a mesh the reader takes, a text), or it is left out and reported; a vehicle script that
   would never end is cut short instead of stopping the game.
+- **The dedicated server's administration** — an admin and a moderator role, a menu in the
+  game and a web panel (`/admin/`) that use the same operations, an audit log, and a passenger
+  density (`passenger_density`) besides `passengers` (see [docs/SERVER.md](docs/SERVER.md)).
+  For a server set up before: an `admin_password` or `moderator_password` shorter than 12
+  characters now lets nobody in (the log says so; the start scripts ask for a new one), and a
+  `server.cfg` without `admin_web` has the web panel off until it says `admin_web = local`.
+- **Every player sees another player's bus exactly as its driver has it** — the same files,
+  the same paint — fetched from the server by its content when they lack it; a dedicated
+  server keeps every version its players send (`accept_uploads`, `uploads_keep_days`) and may
+  leave the map for the players to install (`share_maps`: a new `server.cfg` says 0; one
+  without the key goes on passing the map on, as before).
+- **Behaviour change:** a bus that cannot be had as its driver has it (the server takes no
+  uploads, the upload failed, it is too large to fetch) is drawn with another bus — the
+  viewer's copy of that path, else their own — and **labelled** under the player's name.
+  Before, the viewer saw their own copy of that path without being told it was not the
+  driver's. While a bus is still arriving, a neutral box of its size stands in.
 
 ## 0.3.0 - 2026-10-14
 

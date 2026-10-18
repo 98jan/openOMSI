@@ -21,7 +21,7 @@ pub mod clouds;
 mod cookies;
 pub use cookies::{Cookie, COOKIE_LAYERS};
 mod gpu_memory;
-pub use gpu_memory::GpuMemory;
+pub use gpu_memory::{Ceiling, GpuMemory};
 mod passes;
 mod device_selection;
 use passes::{Encoders, FrameArgs, FrameEnv, PassTimers, StageClock};
@@ -95,6 +95,8 @@ struct PassPipelines {
     /// The snowfall (snow.wgsl), opaque over the scene (premultiplied); none with
     /// `basic_pipelines`.
     snow_pipeline: Option<wgpu::RenderPipeline>,
+    /// The rainfall (rain.wgsl), as the snowfall; with `basic_pipelines` on computers too.
+    rain_fall_pipeline: Option<wgpu::RenderPipeline>,
     sky_pipeline: wgpu::RenderPipeline,
 }
 
@@ -164,6 +166,8 @@ pub struct Renderer {
     pub light_map_next: std::cell::Cell<bool>,
     /// Mipmap generation on the GPU (a blit per level).
     mip_pipeline: wgpu::RenderPipeline,
+    /// The same for text and script textures (`MipAverage::Independent`).
+    mip_text_pipeline: wgpu::RenderPipeline,
     mip_layout: wgpu::BindGroupLayout,
     mip_sampler: wgpu::Sampler,
     /// The headset's pictures: the heading (degrees) the `[matl_envmap]` sphere maps are
@@ -178,6 +182,9 @@ pub struct Renderer {
     /// GPU time per pass (OMSI_GPU_TIMERS, when the device has timestamp queries): the
     /// mirrors and the window's picture apart, each timed on its own.
     gpu_timers: [Option<GpuTimers>; 2],
+    /// Pictures drawn since start, the mirrors' and the window's (as `gpu_timers`): a mirror's
+    /// GPU time is measured one picture at a time, and a frame may draw two.
+    pictures: std::cell::Cell<[u64; 2]>,
     /// Seconds spent per stage of `render_inner` since start (OMSI_PROFILE).
     pub stats: std::cell::RefCell<std::collections::BTreeMap<&'static str, f64>>,
     /// What the window's pictures drew since start, summed (OMSI_PROFILE): instances that
@@ -228,7 +235,7 @@ pub const MSAA: u32 = 4;
 pub const SHADOW_SIZE: u32 = 2048;
 
 /// What the renderer is built with: the user's graphics settings.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderOptions {
     /// Samples per pixel: 1 (off), 2, 4 or 8.
     pub msaa: u32,
@@ -278,14 +285,14 @@ pub struct RenderOptions {
     /// they are built where the texture layout supports them. Native desktop backends
     /// keep them available for switching modes in-game.
     pub no_enhanced: bool,
-    /// The launcher's preview (the showroom), which always draws Vanilla+ (see
-    /// `showroom::lighting_for`): no enhanced pipelines, reflection probe or cloud noise
-    /// are made for it, on any device.
+    /// The launcher's preview (the showroom) in plain graphics: no enhanced pipelines,
+    /// reflection probe or cloud noise are made for it, on any device.
     pub preview_only: bool,
     /// Enhanced+: the enhanced path with ray-traced sun shadows, ambient occlusion and
     /// reflections, where the device can trace rays (hardware ray queries); elsewhere the
     /// enhanced picture as it is.
     pub ray_tracing: bool,
+    pub max_scene: Option<(u32, u32)>,
 }
 
 impl Default for RenderOptions {
@@ -308,6 +315,7 @@ impl Default for RenderOptions {
             no_enhanced: false,
             preview_only: false,
             ray_tracing: false,
+            max_scene: None,
         }
     }
 }
@@ -404,6 +412,7 @@ impl Renderer {
     /// The fraction of a window of this size the 3D picture is drawn at (`render_scale`).
     pub fn scene_scale(&self, width: u32, height: u32) -> f32 {
         let s = scene_scale_for(self.options.render_scale, width, height);
+        let s = scene_scale_within(s, self.options.max_scene, width, height);
         // (a fixed render scale is the player's choice: the governor works on automatic)
         if self.options.render_scale > 0.0 {
             s
@@ -460,6 +469,10 @@ fn scene_scale_for(requested: f32, width: u32, height: u32) -> f32 {
     } else {
         (AUTO_SCALE_PIXELS / pixels).sqrt().clamp(0.5, 1.0)
     }
+}
+
+fn scene_scale_within(s: f32, max_scene: Option<(u32, u32)>, width: u32, height: u32) -> f32 {
+    max_scene.map_or(s, |(w, h)| s.min(w as f32 / width as f32).min(h as f32 / height as f32).max(0.5))
 }
 
 /// Is `p` inside a vehicle's `[boundingbox]` (origin, heading in degrees, w l h cx cy cz)?

@@ -457,10 +457,13 @@ fn omsi_render_phases_are_monotonic_and_complete() {
 
 #[test]
 fn metric_lifted_surfaces_keep_shading_class_without_view_space_pull() {
-    assert_eq!(surface_instance_code(false, false, false, true, false), 0.9);
-    assert_eq!(surface_instance_code(false, false, false, true, true), 1.0);
-    assert_eq!(surface_instance_code(false, false, true, false, false), 0.9);
-    assert_eq!(surface_instance_code(false, true, false, true, false), 0.75);
+    assert_eq!(surface_instance_code(false, false, false, true, false, false), 0.9);
+    assert_eq!(surface_instance_code(false, false, false, true, true, false), 1.0);
+    assert_eq!(surface_instance_code(false, false, true, false, false, false), 0.9);
+    assert_eq!(surface_instance_code(false, true, false, true, false, false), 0.75);
+    // a road's painted lines go over the crossings laid on the road (#1694)
+    assert_eq!(surface_instance_code(false, false, false, true, true, true), 1.4);
+    assert_eq!(surface_instance_code(false, false, true, true, true, true), 1.25);
 }
 
 #[test]
@@ -502,6 +505,15 @@ fn render_scale_auto_keeps_ordinary_windows_sharp() {
     // a small window under the budget keeps what it asked for
     assert_eq!(scene_scale_for(0.3, 1600, 900), 0.5);
     assert_eq!(scene_scale_for(1.4, 1600, 900), 1.0);
+}
+
+#[test]
+fn a_set_resolution_caps_the_scene_of_a_larger_window() {
+    assert_eq!(scene_scale_within(1.0, Some((1920, 1080)), 2560, 1440), 0.75);
+    assert_eq!(scene_scale_within(0.6, Some((1920, 1080)), 2560, 1440), 0.6);
+    assert_eq!(scene_scale_within(1.0, Some((1280, 720)), 1280, 720), 1.0);
+    assert_eq!(scene_scale_within(1.0, Some((1280, 720)), 3840, 2160), 0.5);
+    assert_eq!(scene_scale_within(0.8, None, 2560, 1440), 0.8);
 }
 
 #[test]
@@ -598,6 +610,8 @@ fn shaders_validate_and_match_the_uniforms() {
         ("corona", corona_shader_source()),
         ("fog lamps", fog_lamps_shader_source()),
         ("snow", snow_shader_source()),
+        ("rain", rain_shader_source()),
+        ("rain basic", lean_rain(precip_shader_source(include_str!("../rain.wgsl")))),
         ("post", include_str!("../post.wgsl").to_string()),
         ("ssao", include_str!("../ssao.wgsl").to_string()),
         ("puddles", puddles::shader_source()),
@@ -617,6 +631,7 @@ fn shaders_validate_and_match_the_uniforms() {
         ("PostParams", std::mem::size_of::<PostUniform>()),
         ("FogLampParams", std::mem::size_of::<FogLampUniform>()),
         ("SnowParams", std::mem::size_of::<SnowUniform>()),
+        ("RainParams", std::mem::size_of::<RainUniform>()),
         ("PuddleParams", std::mem::size_of::<puddles::Uniform>()),
         ("Sight", std::mem::size_of::<SightUniform>()),
         ("VehicleReflection", std::mem::size_of::<puddles::VehicleUniform>()),
@@ -1396,4 +1411,41 @@ fn the_reflection_strength_scales_what_an_envmapped_surface_mirrors() {
             assert!((off[0] - off[1]).abs() <= 2, "{mode}: nothing mirrored at 0 %: {off:?}");
         }
     }
+}
+
+#[test]
+#[ignore = "requires a graphics adapter; run with --ignored on a GPU host"]
+fn envmapped_paint_with_normals_off_its_faces_mirrors_no_more_than_with_sound_ones() {
+    let camera = Camera { position: DVec3::ZERO, yaw: 0.0, pitch: 0.0, roll: 0.0, fov_deg: 60.0, near: 0.1, far: 100.0 };
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut renderer = pollster::block_on(Renderer::new_with(
+        &instance, None, Some(wgpu::TextureFormat::Rgba8UnormSrgb),
+        RenderOptions { msaa: 1, ssao: false, shadow_size: 1024, fxaa: false, render_scale: 1.0, ..Default::default() },
+    )).expect("test renderer");
+    let mut scene = renderer.new_scene();
+    let blue = renderer.add_texture(&mut scene, &omsi_texture::Image { width: 4, height: 4, rgba: [20, 40, 160, 255].repeat(16), has_alpha: false }, false);
+    let photo = renderer.add_texture(&mut scene, &omsi_texture::Image { width: 4, height: 4, rgba: [200, 200, 200, 255].repeat(16), has_alpha: false }, false);
+    let paint = renderer.add_material_env(&mut scene, Some(blue), AlphaMode::Opaque, [1.0; 4], false, None, None, None, Some((photo, 0.1)));
+    let mut mirrored = |normal: Vec3| {
+        let mesh = renderer.add_mesh(&mut scene, &MeshData {
+            positions: vec![Vec3::new(-3.0, 5.0, -3.0), Vec3::new(3.0, 5.0, -3.0), Vec3::new(3.0, 5.0, 3.0), Vec3::new(-3.0, 5.0, 3.0)],
+            normals: vec![normal.normalize(); 4],
+            uvs: vec![glam::Vec2::splat(0.5); 4],
+            ranges: vec![(0, 6, 0)],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            one_sided: false,
+        });
+        let i = renderer.add_instance(&mut scene, mesh, DVec3::ZERO, Mat4::IDENTITY, vec![paint]);
+        let [none, full] = [0.0, 1.0].map(|strength| {
+            let lighting = Lighting { shadows: false, fog_density: 0.0, enhanced: true, reflection_strength: strength, ..Default::default() };
+            let rgba = renderer.render_to_image(&mut scene, 64, 64, &camera, &lighting).unwrap();
+            [0, 1, 2].map(|c| rgba[(32 * 64 + 32) * 4 + c] as i32)
+        });
+        renderer.remove_instance(&mut scene, i);
+        (0..3).map(|c| (full[c] - none[c]).abs()).sum::<i32>()
+    };
+    let sound = mirrored(-Vec3::Y);
+    let off = mirrored(Vec3::new(1.0, -0.15, 0.0));
+    assert!(sound >= 4, "the paint mirrors nothing to compare with: {sound}");
+    assert!(off <= 2 * sound + 6, "normals along the face mirrored {off} where sound ones mirror {sound}");
 }

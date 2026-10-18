@@ -365,6 +365,8 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "nav_ai" => app.menus.navigator.as_ref().map_or(s.nav_ai, |n| n.show_ai),
         "nav_surface" => app.menus.navigator.as_ref().map_or(s.nav_surface, |n| n.show_surface),
         "nav_light" => app.menus.navigator.as_ref().map_or(s.nav_light, |n| n.light),
+        "nav_3d" => app.menus.navigator.as_ref().map_or(s.nav_3d, |n| n.show_3d),
+        "nav_widget" => app.menus.navigator.as_ref().map_or(s.nav_widget, |n| n.widget),
         "shadows" => s.shadows,
         "head" => s.head_movement,
         "cam_smooth" => s.driverview_smooth,
@@ -379,6 +381,8 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "fps" => s.show_fps,
         "get_up" => s.get_up,
         "trip_summary" => s.trip_summary,
+        "sim_thread" => s.sim_thread,
+        "full_tank" => s.full_tank,
         "time_sync" => s.time_sync,
         "metar_sync" => s.metar_sync,
         "snow_cover" => app.session.weather.as_ref().is_some_and(|w|w.snow),
@@ -400,6 +404,7 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "info_bar" => app.menus.info_bar,
         "nav_arrows" => app.menus.navigator.as_ref().map_or(s.nav_arrows, |n| n.arrows),
         "exact_fare" => s.exact_fare,
+        "pax_bad_driving" => s.pax_bad_driving,
         "collision_pedestrians" => s.collision_pedestrians,
         "ssao" => s.ssao,
         "detail_textures" => s.detail_textures,
@@ -423,6 +428,7 @@ pub(super) fn toggle_now(app: &App, id: &str) -> Option<bool> {
         "pad_steer_linear" => s.pad_steer_linear,
         "pad_buttons" => s.pad_buttons,
         "right_stick_look" => s.right_stick_look,
+        "ctrl_background" => s.ctrl_background,
         "arrows_switch_cams" => s.arrows_switch_cams,
         "old_steering" => s.old_steering,
         "red_steer_spd" => s.red_steer_spd,
@@ -474,6 +480,20 @@ pub(super) fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static 
             }
             app.settings.nav_light = on;
             Some(("nav_light", bit))
+        }
+        "nav_3d" => {
+            if let Some(n) = app.menus.navigator.as_mut() {
+                n.show_3d = on;
+            }
+            app.settings.nav_3d = on;
+            Some(("nav_3d", bit))
+        }
+        "nav_widget" => {
+            if let Some(n) = app.menus.navigator.as_mut() {
+                n.widget = on;
+            }
+            app.settings.nav_widget = on;
+            Some(("nav_widget", bit))
         }
         "shadows" => {
             app.settings.shadows = on;
@@ -535,6 +555,9 @@ pub(super) fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static 
             Some(("get_up", bit))
         }
         "trip_summary" => { app.settings.trip_summary = on; Some(("trip_summary", bit)) }
+        // (taken at the next start: never in the middle of a session)
+        "sim_thread" => { app.settings.sim_thread = on; Some(("sim_thread", bit)) }
+        "full_tank" => { app.settings.full_tank = on; Some(("full_tank", bit)) }
         // the real-time sync: the clock takes the device's date and time at once (a host's
         // clock runs at real time while it is on, at its time speed again after)
         "time_sync" => {
@@ -635,6 +658,10 @@ pub(super) fn toggle_set(app: &mut App, id: &str, on: bool) -> Option<(&'static 
             app.settings.exact_fare = on;
             Some(("exact_fare", bit))
         }
+        "pax_bad_driving" => {
+            app.settings.pax_bad_driving = on;
+            Some(("pax_bad_driving", bit))
+        }
         "collision_pedestrians" => {
             app.settings.collision_pedestrians = on;
             Some(("collision_pedestrians", bit))
@@ -671,6 +698,10 @@ fn toggle_set_graphics_and_controls(app: &mut App, id: &str, on: bool, bit: Stri
                 log::info!("triple screen: the window spans three monitors, fullscreen is left alone");
             } else if let Some(w) = app.window.as_ref() {
                 w.set_fullscreen(on.then_some(winit::window::Fullscreen::Borderless(None)));
+            }
+            let cap = crate::settings::fullscreen_scene_cap(on, app.gfx.spanned, crate::settings::Settings::resolution().filter(|_| app.args.size == crate::cli::DEFAULT_SIZE));
+            if let Some(r) = app.renderer.as_mut() {
+                r.options.max_scene = cap;
             }
             Some(("fullscreen", bit))
         }
@@ -733,6 +764,10 @@ fn toggle_set_graphics_and_controls(app: &mut App, id: &str, on: bool, bit: Stri
         "right_stick_look" => {
             app.settings.right_stick_look = on;
             Some(("right_stick_look", bit))
+        }
+        "ctrl_background" => {
+            app.settings.ctrl_background = on;
+            Some(("ctrl_background", bit))
         }
         "arrows_switch_cams" => {
             app.settings.arrows_switch_cams = on;

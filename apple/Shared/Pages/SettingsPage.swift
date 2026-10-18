@@ -231,6 +231,7 @@ struct SettingsPage: View {
             SettingSelect(label: "Standing passengers", key: "standing_chance", options: [("0", "Never"), ("5", "5%"), ("10", "10%"), ("25", "25%"), ("50", "50%"), ("100", "Always")])
             SettingSelect(label: "Passenger animations", key: "passenger_animation", options: [("original", "Original OMSI"), ("enhanced", "Procedural (experimental)")])
             SettingToggle(label: "Passengers pay the exact fare", key: "exact_fare", fallback: true)
+            SettingToggle(label: "Passengers react to bad driving", key: "pax_bad_driving", fallback: true)
             SettingSlider(label: "How many passengers", key: "pax_density", range: 0 ... 2, step: 0.1, fallback: 1) { "\(Int($0 * 100))%" }
             SettingToggle(label: "Ability to get up (Ctrl+Shift+G)", key: "get_up")
             SectionTitle("Traffic").padding(.top, 8)

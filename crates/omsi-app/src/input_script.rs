@@ -13,6 +13,12 @@ pub(crate) use omsi_input::actions::is_game_action;
 pub(crate) const SCENERY_OBJECT_REACH: f32 = 50.0;
 
 impl App {
+    pub(crate) fn passenger_request_key(&self, code: KeyCode, shift: bool, ctrl: bool, alt: bool) -> bool {
+        let modifier = omsi_content::input::chord(shift, ctrl, alt) & !keys::own_modifier_bit(code);
+        keys::dik_code(code).is_some_and(|scan| self.input.game_keys.iter().any(|binding|
+            binding.action == "pax_door_request" && binding_is_key(binding, code, scan, modifier)))
+    }
+
     /// A key of the window, or of an `OMSI_INPUT` script.
     pub(crate) fn on_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, pressed: bool, repeat: bool) {
         // (Alt tapped alone opens OMSI 2's quick menu: `game_panels`)
@@ -116,6 +122,12 @@ impl App {
             let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
             let alt = self.input.keys.contains(&KeyCode::AltLeft) || self.input.keys.contains(&KeyCode::AltRight);
             let shift_now = self.input.keys.contains(&KeyCode::ShiftLeft) || self.input.keys.contains(&KeyCode::ShiftRight);
+            // This editable action must reach the walker before its keys consume
+            // S (or any key the player assigned), including bindings without modifiers.
+            if pressed && !repeat && self.passenger_request_key(code, shift_now, ctrl, alt) {
+                self.request_passenger_door();
+                return;
+            }
             // getting up (Ctrl+Shift+G) and, on foot, the walker's keys
             if self.foot_key(code, pressed, repeat, ctrl, shift_now) {
                 return;

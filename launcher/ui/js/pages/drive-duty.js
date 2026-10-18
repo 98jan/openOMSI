@@ -1,15 +1,15 @@
 import { html, useState, useEffect, useRef, useMemo } from '../../vendor/preact-htm.js';
 import { useStore } from '../store.js';
-import { t, longDate } from '../i18n.js';
+import { t, hhmm, longDate } from '../i18n.js';
 import { Icon } from '../icons.js';
 import { Button, Field, Select, Toggle, Segmented, Picture, Notice, Spinner, Search } from '../ui.js';
-import { choose, curMap, curLine, curTour, pickedTrip, mapName, duty } from '../data.js';
+import { choose, curMap, curLine, curTour, pickedTrip, mapName, duty, busFile, realDate } from '../data.js';
 import { call } from '../api.js';
 import { RouteMap } from '../routemap.js';
 import { MapPicker } from './map-picker.js';
-import { hms, mapPicture, depotRun, tripAt, lineMatches, findTours, tourRoute, chooseLine, chooseTour, pickTrip } from './drive.js';
+import { hms, mapPicture, depotRun, tripAt, lineMatches, findTours, tourRoute, chooseLine, chooseTour, pickTrip, Notes, tripLength } from './drive.js';
 
-function MapRow() {
+export function MapRow() {
   const s = useStore();
   const c = s.choice;
   const m = curMap();
@@ -47,7 +47,7 @@ function useScrollToChosen(ref, q, deps) {
   }, deps);
 }
 
-function Lines({ lines }) {
+export function Lines({ lines }) {
   const s = useStore();
   const c = s.choice;
   const lineKey = `${s.lines.key}|${!!s.lines.list}`;
@@ -71,7 +71,7 @@ function Lines({ lines }) {
   </div>`;
 }
 
-function Tours({ line }) {
+export function Tours({ line }) {
   const s = useStore();
   const c = s.choice;
   const lineKey = `${s.lines.key}|${!!s.lines.list}`;
@@ -96,11 +96,68 @@ function Tours({ line }) {
         return html`<button type="button" role="option" aria-selected=${x.number === c.tour} class=${'tour-row' + (x.number === c.tour ? ' on' : '') + (live ? '' : ' dim')} onClick=${() => chooseTour(x, hit ? trip : null)}>
           <span class="row"><b class="grow ellipsis">${x.number}</b>${trip && html`<span class=${'num small' + (live ? ' accent-fg' : ' muted')}>${hms(trip.departure)} - ${hms(trip.arrival)}</span>`}</span>
           <span class="sub ellipsis">${hit ? `${trip.line ? `${trip.line} | ` : ''}${trip.from} → ${trip.terminus}${via ? ` | ${t('via {stop}', { stop: via })}` : ''}` : tourRoute(x)}</span>
-          <span class="sub ellipsis">${t('{n} trips', { n: x.trips.length })} - ${days}</span>
+          <span class="sub ellipsis">${t('{n} trips', { n: x.trips.length })} - ${days}${tripLength(x) ? ` - ${t('{time} per trip', { time: tripLength(x) })}` : ''}</span>
         </button>`;
       })}
     </div>
   </div>`;
+}
+
+function TourBus({ tour }) {
+  const s = useStore();
+  const c = s.choice;
+  const [found, setFound] = useState([]);
+  useEffect(() => {
+    setFound([]);
+    if (!tour.ai_group || !c.map) return;
+    let alive = true;
+    call('tour_buses', { map: c.map, group: tour.ai_group, date: c.date }).then((r) => alive && setFound(r || []), () => {});
+    return () => (alive = false);
+  }, [c.map, c.date, tour.ai_group]);
+  const buses = found
+    .map((f) => {
+      const v = (s.vehicles || []).find((x) => busFile(x.file) === busFile(f.file));
+      if (!v) return null;
+      const paint = v.paints.includes(f.paint) ? f.paint : '';
+      const number = (v.numbers || []).some(([n]) => n === f.number) ? f.number : '';
+      return { v, paint, number };
+    })
+    .filter(Boolean)
+    .slice(0, 10);
+  if (!buses.length) return null;
+  return html`<div class="row muted small tour-buses" style="gap:6px;flex-wrap:wrap;align-items:center">
+    <span>${t('Buses the timetable gives this tour:')}</span>
+    ${buses.map(({ v, paint, number }) => {
+      const on = v.file === c.bus && (c.paint || '') === paint;
+      const name = [v.name, paint].filter(Boolean).join(' - ');
+      return html`<${Button} small kind=${on ? 'primary' : ''} icon=${on ? 'check' : 'bus'} title=${name} onClick=${() => choose({ bus: v.file, paint, number, hof_manual: false })}><span class="ellipsis">${name}</span></${Button}>`;
+    })}
+  </div>`;
+}
+
+function NextDepartures({ lines }) {
+  const c = useStore().choice;
+  const now = c.time * 60;
+  const upcoming = useMemo(() => {
+    const out = [];
+    for (const l of lines) for (const x of l.tours) {
+      if (!x.runs) continue;
+      const trip = x.trips[tripAt(x, now)];
+      if (trip && trip.departure >= now - 120 && !depotRun(trip)) out.push({ l, x, trip });
+    }
+    return out.sort((a, b) => a.trip.departure - b.trip.departure).slice(0, 15);
+  }, [lines, now]);
+  if (!upcoming.length) return null;
+  return html`<details class="next-tours">
+    <summary class="section-title">${t('Next departures from {time}', { time: hhmm(c.time) })}</summary>
+    <div class="next-list">
+      ${upcoming.map(({ l, x, trip }) => html`<button type="button" class=${'trip-row' + (l.name === c.line && x.number === c.tour ? ' on' : '')} onClick=${() => (choose({ line: l.name, tour: x.number, start_trip: null }), pickTrip(trip))}>
+        <span class="num time">${hms(trip.departure)}</span>
+        <span class="line-badge">${trip.line || l.name}</span>
+        <span class="grow"><span class="ellipsis">${trip.from} → ${trip.terminus}</span><span class="muted small ellipsis">${t('Tour')} ${x.number}</span></span>
+      </button>`)}
+    </div>
+  </details>`;
 }
 
 export function DutyStep() {
@@ -119,9 +176,13 @@ export function DutyStep() {
   else {
     body = html`<${Lines} lines=${lines} />
       <${Tours} line=${line} />
-      ${tour && !tour.runs && html`<${Notice} kind="warn">${tour.next_run ? t('This tour does not run on the chosen date; it runs next on {date}.', { date: longDate(tour.next_run) }) : t('This tour does not run within a year of the chosen date.')}</${Notice}>`}`;
+      ${tour && html`<${TourBus} tour=${tour} />`}
+      <${NextDepartures} lines=${lines} />
+      ${tour && !tour.runs && html`<${Notice} kind="warn">${tour.next_run ? t('This tour does not run on the chosen date; it runs next on {date}.', { date: longDate(tour.next_run) }) : t('This tour does not run within a year of the chosen date.')}
+        ${tour.next_run && !realDate() && html`<div style="margin-top:8px"><${Button} small icon="calendar" label="Drive it on that day" onClick=${() => choose({ date: tour.next_run, season: 'auto', own_date: null })} /></div>`}</${Notice}>`}`;
   }
   return html`<${MapRow} />
+    ${m && c.lan_mode !== 'join' && html`<${Notes} kind="map" file=${m.file} />`}
     <${Segmented} full value=${c.free ? 'free' : 'line'} options=${[['line', 'Timetable'], ['free', 'Free drive']]} onChange=${(v) => choose({ free: v === 'free' })} />
     ${body}
     ${m && html`<${Field} label="Start at"><${Select} value=${c.entry} options=${entries} onChange=${(v) => choose({ entry: Number(v) })} /></${Field}>`}
@@ -158,7 +219,7 @@ function Ibis() {
           ${i.routes.slice(0, 3).map((r) => {
             const [line, route] = ibisCodes(i, r.code, s.choice.line);
             return html`<tr>
-              <td class="ellipsis">${(r.name || r.terminus).trim()}</td>
+              <td class="ellipsis" title=${(r.name || r.terminus).trim()}>${(r.name || r.terminus).trim()}</td>
               <td><span class="line-badge">${line}</span></td>
               <td><span class="line-badge">${route}</span></td>
             </tr>`;
@@ -170,7 +231,7 @@ function Ibis() {
   return html`<div class="ibis-box"><div class="section-title">IBIS</div>${body}</div>`;
 }
 
-function Roadbook({ tour, trips, current, now }) {
+export function Roadbook({ tour, trips, current, now }) {
   const ref = useRef();
   const c = useStore().choice;
   useEffect(() => {
@@ -187,7 +248,7 @@ function Roadbook({ tour, trips, current, now }) {
     <div class="roadbook-trips" ref=${ref}>
       ${trips.map((x, i) => html`<button type="button" class=${'trip-row' + (i === current ? ' on' : '') + (x.arrival < now - 60 && i !== current ? ' past' : '')} onClick=${() => pickTrip(x)}>
         <span class="num time">${hms(x.departure)}</span>
-        ${depotRun(x) ? html`<span class="muted small">${t('Depot run')}</span>` : html`<span class="line-badge">${x.line}</span>`}
+        <span class="kind">${depotRun(x) ? html`<span class="depot">${t('Depot run')}</span>` : html`<span class="line-badge">${x.line}</span>`}</span>
         <span class="grow" title=${`${x.from} → ${x.terminus}`}><span class="ellipsis">${x.terminus}</span><span class="muted small ellipsis">${x.from} | ${hms(x.arrival)}</span></span>
       </button>`)}
     </div>

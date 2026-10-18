@@ -24,6 +24,8 @@ winresource.workspace = true
 [dependencies]
 omsi-cfg = { path = "../omsi-cfg" }
 omsi-map = { path = "../omsi-map" }
+omsi-mapdraw = { path = "../omsi-mapdraw" }
+omsi-navigator = { path = "../omsi-navigator" }
 omsi-scenery = { path = "../omsi-scenery" }
 omsi-model = { path = "../omsi-model" }
 omsi-o3d = { path = "../omsi-o3d" }
@@ -31,6 +33,7 @@ omsi-texture = { path = "../omsi-texture" }
 omsi-geometry = { path = "../omsi-geometry" }
 omsi-render = { path = "../omsi-render" }
 omsi-photo = { path = "../omsi-photo" }
+omsi-mt = { path = "../omsi-mt" }
 omsi-sim = { path = "../omsi-sim" }
 omsi-htmlengine = { path = "../omsi-htmlengine" }
 omsi-plugin = { path = "../omsi-plugin" }
@@ -51,6 +54,7 @@ rayon.workspace = true
 omsi-net = { path = "../omsi-net" }
 omsi-platform = { path = "../omsi-platform" }
 omsi-guard = { path = "../omsi-guard" }
+omsi-admin = { path = "../omsi-admin" }
 omsi-lan = { path = "../omsi-lan" }
 omsi-input = { path = "../omsi-input" }
 omsi-xr = { path = "../omsi-xr" }
@@ -74,11 +78,12 @@ ab_glyph.workspace = true
 rustrict = "0.7"
 gilrs = "0.11"
 ureq.workspace = true
-sha2.workspace = true
 ring.workspace = true
 rust-i18n = "4"
 # updates: the release archives from GitHub
 zip.workspace = true
+# the launcher preview's pictures: a JPEG encoder a few times faster than image's
+jpeg-encoder = { version = "0.7.1", features = ["simd"] }
 
 # the desktop's clipboard and file dialogs (a phone has neither in this form; an iPhone's
 # come from the Swift side, see `apple`)
@@ -112,9 +117,6 @@ features = ["angle"]
 
 # the interface's machine translation (`mt`): CTranslate2 with Meta's NLLB model, as the
 # `trad` crate does it (Apple's Accelerate for the maths; Apple silicon only)
-[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
-ct2rs = { version = "0.10.1", default-features = false, features = ["tokenizers", "accelerate", "ruy"] }
-
 # Android: winit's NativeActivity backend, the system log, and JNI for the few things only
 # Java offers (storage permission, the screen's cut-outs, vibration)
 [target.'cfg(target_os = "android")'.dependencies]

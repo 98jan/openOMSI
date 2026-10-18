@@ -38,6 +38,21 @@ impl App {
         ) {
             log::warn!("writing the session summary: {e}");
         }
+        if let (Some(id), Some(p)) = (self.args.depot.as_deref(), self.player.as_ref()) {
+            let c = &self.session.career;
+            let outing = omsi_launcher_lib::depot::Outing {
+                map: self.args.map.clone(),
+                line: self.args.line.clone().unwrap_or_default(),
+                tour: self.args.tour.clone().unwrap_or_default(),
+                metres: c.metres,
+                seconds: c.seconds,
+                stops: c.stops[0],
+                tickets: c.tickets.0,
+                takings: c.tickets.1,
+                crashes: c.crashes[0],
+            };
+            crate::depot_bus::record(&p.vehicle, id, &outing);
+        }
         self.session.career.seconds = 0.0;
     }
 
@@ -125,8 +140,9 @@ impl App {
         let sit = build_situation(&self.args, w, &self.clock, self.args.weather.as_deref(), self.player.as_ref(), &self.session.placed, cam, self.session.duty.as_ref(), "Last situation");
         match sit.save(&out) {
             Ok(()) => {
-                if let Some(p) = self.player.as_ref() {
-                    crate::situation::save_script_textures(&out, &p.vehicle);
+                match self.player.as_ref() {
+                    Some(p) => crate::situation::save_script_textures(&out, &p.vehicle),
+                    None => crate::situation::write_script_textures(&out, &[] as &[(&[u8], u32, u32)]),
                 }
                 log::info!("saved the last situation {}", out.display());
                 Some(out)
@@ -189,8 +205,9 @@ impl App {
         let sit = build_situation(&self.args, w, &self.clock, self.args.weather.as_deref(), self.player.as_ref(), &self.session.placed, cam, self.session.duty.as_ref(), "Quicksave");
         match save_or_fallback(&sit, &out, Path::new("Situations").join("quicksave.osn").as_path()) {
             Ok(out) => {
-                if let Some(p) = self.player.as_ref() {
-                    crate::situation::save_script_textures(&out, &p.vehicle);
+                match self.player.as_ref() {
+                    Some(p) => crate::situation::save_script_textures(&out, &p.vehicle),
+                    None => crate::situation::write_script_textures(&out, &[] as &[(&[u8], u32, u32)]),
                 }
                 log::info!("saved situation {} ({} vehicles)", out.display(), sit.vehicles.len());
                 self.service_msg = Some(("Situation saved (quicksave): the launcher continues from it".into(), 4.0));
@@ -202,10 +219,19 @@ impl App {
         }
     }
 
+    /// The map's save slots, the newest first (as the launcher lists them to continue from).
+    pub(crate) fn save_slots(&self) -> Vec<omsi_launcher_lib::SavedSituation> {
+        omsi_launcher_lib::saved_situations(&self.args.map)
+            .into_iter()
+            .filter(|s| s.file.parent().and_then(|d| d.file_name()).is_some_and(|d| d.eq_ignore_ascii_case(SAVES)))
+            .collect()
+    }
+
     /// A save of its own (#341): the situation into the next free `Saves/Slot <n>.osn` of
-    /// the map's folder in the content folder - none is ever overwritten. The launcher
-    /// offers them, with the last situation, to continue from.
-    pub(crate) fn save_slot(&mut self) {
+    /// the map's folder in the content folder, or with `over` into that slot of the map,
+    /// which it replaces (#2556). The launcher offers them, with the last situation, to
+    /// continue from.
+    pub(crate) fn save_slot_to(&mut self, over: Option<std::path::PathBuf>) {
         let (Some(w), Some(cam)) = (self.world.as_ref(), self.camera.as_ref()) else { return };
         let Some(dir) = crate::startup::content_dir().and_then(|base| {
             std::path::Path::new(&self.args.map.replace('\\', "/")).parent().map(|d| base.join(d).join(SAVES))
@@ -217,8 +243,20 @@ impl App {
         let rel_dir = std::path::Path::new(&self.args.map.replace('\\', "/")).parent().map(|d| d.join(SAVES)).unwrap_or_default();
         let fallback = crate::startup::save_fallback_dir().map(|f| f.join(&rel_dir));
         let taken = |n: usize| dir.join(format!("Slot {n}.osn")).exists() || fallback.as_ref().is_some_and(|f| f.join(format!("Slot {n}.osn")).exists());
-        let Some(n) = (1..10_000).find(|n| !taken(*n)) else { return };
-        let out = dir.join(format!("Slot {n}.osn"));
+        // (a slot saved over keeps its number: "Slot 3" stays the third; only one of this
+        // map's own slots is ever written over)
+        let over = over.filter(|f| self.save_slots().iter().any(|s| s.file == *f));
+        let number_of = |f: &std::path::Path| f.file_stem().and_then(|s| s.to_string_lossy().strip_prefix("Slot ").and_then(|n| n.trim().parse::<usize>().ok()));
+        let (n, out) = match over {
+            Some(f) => match number_of(&f) {
+                Some(n) => (n.to_string(), f),
+                None => (f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default(), f),
+            },
+            None => {
+                let Some(n) = (1..10_000).find(|n| !taken(*n)) else { return };
+                (n.to_string(), dir.join(format!("Slot {n}.osn")))
+            }
+        };
         let bus = self.player.as_ref().map(|p| {
             let d = &p.vehicle.ty.def;
             if d.type_name.trim().is_empty() { d.path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default() } else { d.type_name.trim().to_string() }
@@ -229,12 +267,15 @@ impl App {
             (Some(b), None) => b,
             (None, _) => "on foot".to_string(),
         };
-        let name = format!("Slot {n}: {what}, {:02}:{:02}", (t / 3600.0) as i32 % 24, ((t % 3600.0) / 60.0) as i32);
+        let head = if out.file_stem().is_some_and(|s| s.to_string_lossy() == n) { n.clone() } else { format!("Slot {n}") };
+        let name = format!("{head}: {what}, {:02}:{:02}", (t / 3600.0) as i32 % 24, ((t % 3600.0) / 60.0) as i32);
         let sit = build_situation(&self.args, w, &self.clock, self.args.weather.as_deref(), self.player.as_ref(), &self.session.placed, cam, self.session.duty.as_ref(), &name);
-        match save_or_fallback(&sit, &out, rel_dir.join(format!("Slot {n}.osn")).as_path()) {
+        let rel = rel_dir.join(out.file_name().map(|f| f.to_os_string()).unwrap_or_else(|| format!("Slot {n}.osn").into()));
+        match save_or_fallback(&sit, &out, rel.as_path()) {
             Ok(out) => {
-                if let Some(p) = self.player.as_ref() {
-                    crate::situation::save_script_textures(&out, &p.vehicle);
+                match self.player.as_ref() {
+                    Some(p) => crate::situation::save_script_textures(&out, &p.vehicle),
+                    None => crate::situation::write_script_textures(&out, &[] as &[(&[u8], u32, u32)]),
                 }
                 log::info!("saved situation {} ({} vehicles)", out.display(), sit.vehicles.len());
                 self.service_msg = Some((format!("Saved as slot {n}: the launcher continues from it"), 4.0));

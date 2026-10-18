@@ -127,6 +127,11 @@ impl PeopleSim {
                 _ => {}
             }
         }
+        for (request, remaining) in self.manual_door_requests.values() {
+            if request.exit && *remaining > 0.0 {
+                if let BusId::Ai(id) = request.bus { alighting.insert(id); }
+            }
+        }
         (alighting, waiting)
     }
 

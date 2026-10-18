@@ -42,12 +42,20 @@ impl Traffic {
         id: u64,
         ty: Arc<VehicleType>,
         scheme: Option<usize>,
-        scheduled: bool,
+        context: &omsi_net::ai_context::Context,
+        hof: Option<Arc<omsi_vehicle::Hof>>,
         pos: DVec3,
         heading: f64,
     ) -> usize {
         let mut host = omsi_sim::VehicleHost::new(omsi_sim::SimClock::default());
+        host.remote_sound_triggers = true;
         host.font_lib = Some(world.fonts.clone());
+        host.hof = hof;
+        if let Some((_, wind, street)) = &self.script_environment {
+            host.wind = *wind;
+            host.street_cond = *street;
+        }
+        crate::lan_world::apply_ai_context(&mut host, context);
         let scheme = scheme.filter(|i| *i < ty.paint_schemes.len());
         host.paint_scheme = Some(scheme);
         let mut vehicle = VehicleInstance::new(ty.clone(), host);
@@ -80,7 +88,7 @@ impl Traffic {
             ignore_lead: None,
             crawl: 0.0,
             progress: (0.0, 0.0),
-            bus: scheduled.then(|| Box::new(BusService::new(Vec::new()))),
+            bus: (context.active > 0.5).then(|| Box::new(BusService::new(Vec::new()))),
             half_width,
             yielding: false,
             exit_wait: false,

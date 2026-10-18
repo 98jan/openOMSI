@@ -4,8 +4,9 @@
 
 import { call, contentUrl } from './api.js';
 import { S, set, remembered, remember } from './store.js';
-import { applyTheme } from './data.js';
+import { applyTheme, LAUNCHER_LAYOUTS } from './data.js';
 import { t } from './i18n.js';
+import { readRouteMap } from './routemap.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -65,13 +66,13 @@ export async function selftest() {
     const tour = S.lines.list?.flatMap((l) => l.tours)[0];
     const trip = tour?.trips[0]?.name || '';
     try {
-      const m = await call('route_map', { map: c.map, date: c.date, trip });
+      const m = await readRouteMap(c.map, c.date, trip);
       check('route map', m.roads?.length > 0 && (!trip || m.route.length > 0), `${m.roads?.length} roads, ${m.route?.length} route lanes, ${m.stops?.length} stops, ${m.entries?.length} entry points`);
     } catch (e) {
       check('route map', false, e.message || String(e));
     }
   }
-  for (const page of ['drive', 'multiplayer', 'profile', 'mods', 'settings', 'controls', 'games', 'tutorials', 'timetable', 'setup']) {
+  for (const page of ['drive', 'depot', 'multiplayer', 'profile', 'mods', 'settings', 'controls', 'games', 'tutorials', 'timetable', 'setup']) {
     const before = errors.length;
     set({ page });
     await sleep(500);
@@ -82,8 +83,8 @@ export async function selftest() {
     const dash = document.body.textContent.match(/.{0,20}[\u2010-\u2015\u2212\u2E3A\u2E3B\uFE58\uFF0D\u00B7].{0,20}/);
     if (dash) check(`no dashes on ${page}`, false, dash[0]);
   }
-  const layout = remembered('launcher_layout', 'cards');
-  for (const other of ['classic', 'cards']) {
+  const layout = remembered('launcher_layout', 'bigmap');
+  for (const [other] of LAUNCHER_LAYOUTS) {
     const before = errors.length;
     remember('launcher_layout', other);
     applyTheme();
@@ -92,7 +93,7 @@ export async function selftest() {
     set({ page: 'drive' });
     await sleep(500);
     const shown = document.querySelector('.page h1')?.textContent;
-    check(`page drive (${other})`, !!shown && errors.length === before && !!document.querySelector(other === 'classic' ? '.classic-drive' : '.drive'), shown || errors.slice(before).join('; '));
+    check(`page drive (${other})`, !!shown && errors.length === before && !!document.querySelector(other === 'classic' ? '.classic-drive' : `.lay-${other}`), shown || errors.slice(before).join('; '));
   }
   remember('launcher_layout', layout);
   applyTheme();

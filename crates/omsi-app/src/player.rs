@@ -1,6 +1,7 @@
 //! The player: their bus, its controls and cameras.
 
 use super::*;
+use omsi_input::auto_shift::GateMemory;
 
 mod cameras;
 mod doors;
@@ -13,7 +14,6 @@ pub(crate) use cameras::*;
 pub(crate) use doors::*;
 pub(crate) use picking::*;
 pub(crate) use mouse::AutoDrag;
-pub(crate) use gears::GateMemory;
 
 fn indicator_toggle_action(state: &mut u8, lever: Option<u8>, want: u8) -> &'static str {
     // Scripts can cancel the lever themselves after a turn; prefer their current state.
@@ -558,7 +558,7 @@ impl Player {
         if self.vehicle.ty.model.interior_lights.is_empty() {
             "This bus has no saloon lights".into()
         } else if !done.is_empty() {
-            format!("Saloon lights {}", if on { "on" } else { "off" })
+            (if on { "Saloon lights on" } else { "Saloon lights off" }).to_string()
         } else if on {
             // the switches are thrown, but the lamps stay dark: no current
             "Saloon light switches on - no power (battery off?)".into()
@@ -1090,6 +1090,7 @@ impl Player {
                 &|n| v.var(n),
                 &|i| v.trailers.get(i).map(|t| t.world_transform()),
                 &fired,
+                &at_fire,
             );
             for (t, f) in &fired_files {
                 ss.play_file_trigger(a, t, f, &|n| v.var(n), &xf);

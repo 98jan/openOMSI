@@ -12,6 +12,7 @@ pub(super) fn weather_files() -> Vec<String> {
         .collect();
     files.sort_by(|a, b| bus_cmp(a.trim_start_matches("Weather/").trim_start_matches('#'), b.trim_start_matches("Weather/").trim_start_matches('#')));
     files.dedup();
+    files.insert(0, "tomorrow".into());
     files
 }
 
@@ -47,7 +48,8 @@ pub(crate) fn dropdown_for(app: &App, row: usize, id: &str) -> Option<Dropdown> 
                         current = Some(i);
                     }
                     // (shown by its name in the interface's language, not its German file name)
-                    let name = omsi_launcher_lib::content_path(&f).map(|p| omsi_launcher_lib::weather_name(&p)).unwrap_or(stem);
+                    let name = if f == "tomorrow" { "Tomorrow.io".into() }
+                        else { omsi_launcher_lib::content_path(&f).map(|p| omsi_launcher_lib::weather_name(&p)).unwrap_or(stem) };
                     (omsi_ui::tr(&name).into_owned(), format!("wx {f}"))
                 })
                 .collect()
@@ -181,6 +183,7 @@ pub(crate) fn dropdown_apply(app: &mut App, action: &str) {
 
 /// The session's weather as the player reads it (its name in the interface's language).
 pub(super) fn weather_shown(app: &App) -> String {
+    if crate::weather_tomorrow::selected(app.args.weather.as_deref()) { return "Tomorrow.io".into(); }
     match app.args.weather.as_deref() {
         Some(p) => {
             let p = p.replace('\\', "/");
@@ -247,6 +250,7 @@ pub(super) fn select_options(key: &str) -> Vec<(&'static str, &'static str)> {
     match key {
         "cloud_quality" => vec![("high", "High"), ("low", "Low")],
         "rain_quality" => vec![("high", "High"), ("medium", "Medium"), ("low", "Low")],
+        "puddles" => vec![("high", "High"), ("low", "Low"), ("off", "Off")],
         "graphics" => vec![("vanilla", "Vanilla (as OMSI 2)"), ("vanilla_plus", "Vanilla+"), ("enhanced", "Enhanced"), ("enhanced_plus", "Enhanced+")],
         "msaa" => vec![("1", "Off"), ("2", "2x MSAA"), ("4", "4x MSAA"), ("8", "8x MSAA")],
         "render_scale" => vec![("auto", "Auto"), ("1", "100%"), ("0.85", "85%"), ("0.75", "75%"), ("0.67", "67%"), ("0.5", "50%")],
@@ -316,7 +320,12 @@ pub(super) fn preset_row(file: &serde_json::Value, name: &str, desc: &str) -> Op
     Some((row(name, 'o', &label, desc, None), "preset".to_string()))
 }
 
-pub(super) fn store_with(app: &mut App, change: impl FnOnce(&mut serde_json::Value)) {
+pub(crate) fn saved_settings() -> Option<serde_json::Value> {
+    flush_settings(true);
+    omsi_launcher_lib::get_settings().ok()
+}
+
+pub(crate) fn store_with(app: &mut App, change: impl FnOnce(&mut serde_json::Value)) {
     flush_settings(true);
     let Ok(mut v) = omsi_launcher_lib::get_settings() else { return };
     change(&mut v);
@@ -337,7 +346,7 @@ pub(super) fn reload_settings(app: &mut App) {
     sync_live(app);
 }
 
-pub(super) fn session_mode(app: &App) -> &'static str {
+pub(crate) fn session_mode(app: &App) -> &'static str {
     mode_of_session(&app.args.session_settings, &app.settings.graphics)
 }
 
@@ -384,6 +393,7 @@ pub(super) fn sync_live(app: &mut App) {
     }
     if let Some(h) = app.session.humans.as_mut() {
         h.exact_fare = s.exact_fare;
+        h.bad_driving = s.pax_bad_driving;
         h.boarding = s.boarding.clone();
         h.stand_chance = s.standing_chance;
         h.voices = match s.pax_voices.as_str() {

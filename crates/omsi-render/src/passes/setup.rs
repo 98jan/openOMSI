@@ -3,6 +3,8 @@
 
 use super::*;
 
+const AO_PREPASS_REACH: f32 = 250.0;
+
 impl Renderer {
     /// The test hooks and the fallbacks after a GPU error. False: the device is gone and
     /// nothing is drawn.
@@ -118,6 +120,7 @@ impl Renderer {
         let puddles_wanted = with_overlays
             && self.puddles.is_some()
             && self.options.reflections
+            && lighting.puddles > 0
             && lighting.wetness * (1.0 - lighting.snow.clamp(0.0, 1.0)) > 0.05
             && scene.materials.iter().any(|m| m.uniform.params2[2] > 0.0)
             && debug_view() == 0.0
@@ -137,7 +140,9 @@ impl Renderer {
         let ao_on = with_overlays && self.rt.is_none() && self.options.ssao && self.ssao_pipeline.is_some() && !env.no_ao;
         // the enhanced path's shading is costly: the depth prepass keeps it to the visible
         // surface (without multisampling, see `share_depth`)
-        let prepass_on = ao_on || puddles_wanted || glass_on || (enhanced && (with_overlays || xr_view)) || (self.depth_readback && projection.is_none());
+        let depth_wanted = puddles_wanted || glass_on || (enhanced && (with_overlays || xr_view)) || (self.depth_readback && projection.is_none());
+        let prepass_on = ao_on || depth_wanted;
+        let prepass_reach = if depth_wanted || env.no_ao_reach { f32::MAX } else { AO_PREPASS_REACH };
         // (only the bind group is made again, by `upload_draw_list`: dropping the instance
         // buffers for it wrote every instance's entries again at each render-scale step)
         if prepass_on && self.ensure_ao(width, height) {
@@ -209,6 +214,7 @@ impl Renderer {
             rt_frame,
             ao_on,
             prepass_on,
+            prepass_reach,
             dt,
             overlays,
         }
@@ -325,7 +331,10 @@ impl Renderer {
                 None => [1.0, 0.0, 0.0, 0.0],
             },
             inside_c: match lighting.inside {
-                Some((_, _, bb)) => [bb[3], bb[4], bb[5], 1.0],
+                Some(v @ (_, _, bb)) => {
+                    let block = !f.env.no_own_vehicle_lamp_block && point_in_vehicle_box(camera.position, &v);
+                    [bb[3], bb[4], bb[5], if block { 2.0 } else { 1.0 }]
+                }
                 None => [0.0; 4],
             },
             flags: [
@@ -369,6 +378,9 @@ impl Renderer {
         };
         self.queue
             .write_buffer(&self.camera_buf, 0, bytemuck::bytes_of(&cu));
+        if let Some(m) = sh.precip {
+            self.write_precip_camera(&cu, m);
+        }
         if rt_frame {
             let proj = Mat4::perspective_rh(camera.fov_deg.to_radians(), aspect, camera.far, camera.near);
             self.prepare_ray_tracing(scene, camera, lighting, vp_mat, proj, f.width, f.height, f.dt);

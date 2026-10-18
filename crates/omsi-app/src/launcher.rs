@@ -33,12 +33,17 @@ pub(crate) fn install() {
     omsi_launcher_model::host::set(Box::new(AppHost));
 }
 
-/// The showroom's renderer: a bus on a floor needs none of the game's costly passes - no
-/// ambient occlusion, a small shadow map, 4x MSAA for the edges whatever the game uses -
-/// and it draws Vanilla+ whatever the game does (`showroom::lighting_for`): no enhanced
-/// pipelines, reflection probe or cloud noise either (`RenderOptions::preview_only`).
+/// Keep the player's shading, anti-aliasing, render scale and texture options. A bus on
+/// a floor needs only a small shadow map, with no ambient occlusion or ray tracing.
+/// Plain graphics still omit the enhanced resources on every backend.
 pub(crate) fn showroom_options(settings: &crate::settings::Settings) -> omsi_render::RenderOptions {
-    omsi_render::RenderOptions { msaa: 4, ssao: false, shadow_size: 1024, render_scale: 1.0, preview_only: true, no_enhanced: true, ray_tracing: false, ..settings.render_options() }
+    let enhanced = showroom_enhanced(settings);
+    let render_scale = if settings.render_scale > 0.0 { settings.render_scale } else { 1.0 };
+    omsi_render::RenderOptions { msaa: settings.msaa.clamp(1, 4), ssao: false, shadow_size: settings.shadow_size.min(1024), render_scale, preview_only: !enhanced, no_enhanced: !enhanced, ray_tracing: false, ..settings.render_options() }
+}
+
+pub(crate) fn showroom_enhanced(settings: &crate::settings::Settings) -> bool {
+    crate::startup::SessionSettings::for_showroom(settings).enhanced && !cfg!(any(target_os = "android", target_os = "ios"))
 }
 
 struct AppHost;
@@ -62,9 +67,13 @@ impl Host for AppHost {
         crate::ios::previous_run_crash()
     }
     fn city_map(&self, root: &Path, tiles: &[(i32, i32, PathBuf)], chrono: &[PathBuf]) -> CityMap {
-        let crate::scene::NavigationMap { lanes, road_surfaces, places, signs: _ } = crate::scene::navigation_map_of(root, tiles, chrono);
+        let crate::scene::NavigationMap { lanes, road_surfaces, places, signs: _, names: _ } = crate::scene::navigation_map_of(root, tiles, chrono);
         let (roads, net) = crate::navigator::city_roads(lanes, &road_surfaces);
         CityMap { roads: roads.into_iter().map(|r| MapRoad { points: r.points, width: r.width, main: r.main }).collect(), net, places: places.into_iter().collect() }
+    }
+    fn map_layers(&self, root: &Path, map_dir: &Path, tiles: &[(i32, i32, PathBuf)], chrono: &[PathBuf]) -> Option<omsi_map::layers::Layers> {
+        let global = omsi_map::GlobalCfg::load(&map_dir.join("global.cfg")).ok()?;
+        Some(crate::scene::mapgen::cached(root, map_dir, &global.ground_textures, tiles, chrono))
     }
     fn city_map_colors(&self) -> [[f32; 4]; 4] {
         use crate::navigator::{ROAD, ROAD_CASING, ROAD_MAIN, ROUTE};
@@ -78,6 +87,54 @@ impl Host for AppHost {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
+    #[test]
+    fn showroom_keeps_player_quality_without_the_expensive_passes() {
+        for graphics in ["vanilla", "vanilla_plus", "enhanced", "enhanced_plus"] {
+            let settings = crate::settings::Settings::from_text(&format!("graphics={graphics}\nmsaa=1\nrender_scale=0.75\nshadow_size=2048\nanisotropy=2\nreflections=0\n"));
+            let options = super::showroom_options(&settings);
+            assert_eq!(options.msaa, 1);
+            assert_eq!(options.render_scale, 0.75);
+            assert_eq!(options.anisotropy, 2);
+            assert_eq!(options.reflections, settings.reflections > 0.0);
+            assert_eq!(options.shadow_size, 1024);
+            assert_eq!(options.preview_only, !super::showroom_enhanced(&settings));
+            assert_eq!(options.no_enhanced, !super::showroom_enhanced(&settings));
+            assert!(!options.ssao && !options.ray_tracing);
+        }
+    }
+
+    #[test]
+    fn the_preview_follows_the_quality_preset() {
+        let options = |preset: &str| {
+            let (_, p) = omsi_launcher_lib::graphics_presets_for("vanilla_plus").into_iter().find(|(name, _)| *name == preset).unwrap();
+            let mut s = omsi_launcher_lib::settings_from_text(None);
+            for (k, v) in p.as_object().unwrap() {
+                s[k] = v.clone();
+            }
+            super::showroom_options(&crate::settings::Settings::from_text(&omsi_launcher_lib::settings_to_text(&s, None)))
+        };
+        let low = options("Low");
+        assert_eq!((low.msaa, low.render_scale, low.anisotropy), (1, 0.75, 2));
+        let medium = options("Medium");
+        assert_eq!((medium.msaa, medium.render_scale), (2, 1.0));
+        let ultra = options("Ultra");
+        assert_eq!((ultra.msaa, ultra.render_scale, ultra.shadow_size, ultra.ssao), (4, 1.0, 1024, false));
+    }
+
+    #[test]
+    fn only_drawing_settings_make_the_preview_anew() {
+        let quality = |text: &str| super::showroom::Quality::of(&crate::settings::Settings::from_text(text));
+        let base = quality("graphics=vanilla_plus\nmsaa=2\nvolume=0.5\ndetail_textures=1\n");
+        let louder = quality("graphics=vanilla_plus\nmsaa=2\nvolume=NaN\ndetail_textures=1\n");
+        assert!(base.options == louder.options && base.light == louder.light);
+        let plain = quality("graphics=vanilla_plus\nmsaa=2\nvolume=0.5\ndetail_textures=0\n");
+        assert!(base.options == plain.options && base.light != plain.light);
+        let classic = quality("graphics=vanilla\nmsaa=2\nvolume=0.5\ndetail_textures=1\n");
+        assert!(base.options == classic.options && base.light != classic.light);
+        let sharper = quality("graphics=vanilla_plus\nmsaa=4\nvolume=0.5\ndetail_textures=1\n");
+        assert!(base.options != sharper.options);
+    }
 
     /// What the launcher's settings page saves is what the game reads (the launcher's own
     /// checks are its page's; the game's reading of the file is here).

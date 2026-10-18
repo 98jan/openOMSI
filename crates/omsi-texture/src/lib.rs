@@ -73,6 +73,25 @@ pub struct TextureCfg {
 }
 
 impl TextureCfg {
+    /// How the rain wets the surface, as the materials carry it (`MaterialExtra::moisture`,
+    /// the share of the wet road's film and pools the shaders give it): 1 a sealed surface
+    /// water stands on in pools (`[puddles]`), 0.5 one a film of water runs over with a pool
+    /// here and there (`[moisture]` on asphalt, concrete, cobbles), 0 one that only soaks it
+    /// up as everything outside does - `[moisture]` on grass, earth or gravel (`[surface]` 3
+    /// to 5): a lawn holds no film to mirror the lamps in, and the stock grass strips glowed
+    /// like mirrors at night in the rain.
+    pub fn wetness_kind(&self) -> f32 {
+        if self.puddles {
+            1.0
+        } else if self.moisture && self.surface_given && (3..=5).contains(&self.surface) {
+            0.0
+        } else if self.moisture {
+            0.5
+        } else {
+            0.0
+        }
+    }
+
     pub fn load(path: &Path) -> TextureCfg {
         let mut c = TextureCfg::default();
         if let Ok(f) = omsi_cfg::CfgFile::read(path) {
@@ -454,8 +473,12 @@ pub fn trust_generated_dir(dir: &Path) {
 }
 
 fn under_content_root(path: &Path) -> bool {
+    // (or in a sealed mount: another player's bus fetched by its content, whose files the
+    // game put there itself, each checked - its paint's pictures are named in full there,
+    // and taken from this machine's own copy instead they were another bus's)
     !path.components().any(|c| matches!(c, std::path::Component::ParentDir))
         && (omsi_cfg::content_roots().iter().any(|r| path.starts_with(r))
+            || omsi_cfg::vfs::is_sealed(path)
             || GENERATED_DIRS.lock().iter().any(|d| path.starts_with(d)))
 }
 

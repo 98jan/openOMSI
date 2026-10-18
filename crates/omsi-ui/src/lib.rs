@@ -23,7 +23,12 @@ pub mod text;
 pub mod theme;
 
 pub use atlas::{Atlas, Sprite};
-pub use gpu::{Draw, Gpu, Layer};
+pub use gpu::{Draw, Gpu, Layer, Vertices};
 pub use i18n::tr;
 pub use paint::{Color, Painter, Rect, Vertex};
 pub use text::{Fonts, Weight};
+
+pub mod performance;
+
+pub mod profile_times;
+pub mod units;

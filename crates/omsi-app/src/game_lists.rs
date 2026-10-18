@@ -13,6 +13,12 @@ use crate::weather_setup::CLOUD_KINDS;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ListKind {
     Admin,
+    /// A dedicated server administered from afar (`admin_panel`): its players, one of them,
+    /// the question before sending them away, and the older menu's full list.
+    AdminPlayers,
+    AdminPlayer(omsi_admin::Target),
+    AdminConfirm(String, omsi_admin::Target),
+    AdminClassic,
     /// The options of the game, on this page of the settings window.
     Options(usize),
     /// What can be done with the vehicle, on this page.
@@ -55,12 +61,14 @@ pub(crate) enum ListKind {
     PlaceType(String),
     PlaceLivery(String),
     PlaceHof(String, String),
+    /// Where to save the situation: a new slot, or one of the map's slots to save over (#2556).
+    SaveSlots,
 }
 
 /// The lists with a search line on top: the vehicles to place, the depot files and the
 /// destinations.
 pub(crate) fn searchable(kind: &ListKind) -> bool {
-    matches!(kind, ListKind::Hofs | ListKind::Destinations | ListKind::PlaceMaker | ListKind::PlaceType(_) | ListKind::PlaceHof(..))
+    matches!(kind, ListKind::Hofs | ListKind::Destinations | ListKind::PlaceMaker | ListKind::PlaceType(_) | ListKind::PlaceHof(..) | ListKind::AdminPlayers)
 }
 
 /// The search typed (while it is) or set for the open list.
@@ -482,7 +490,9 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
     let tr = |t: &str| omsi_ui::tr(t).into_owned();
     let mut out: Vec<(String, String)> = Vec::new();
     match kind {
-        ListKind::Admin => return crate::admin::items(app),
+        ListKind::Admin if crate::admin_panel::remote(app) => out = crate::admin_panel::items(app, kind),
+        ListKind::Admin | ListKind::AdminClassic => return crate::admin::items(app),
+        ListKind::AdminPlayers | ListKind::AdminPlayer(_) | ListKind::AdminConfirm(..) => out = crate::admin_panel::items(app, kind),
         ListKind::Options(_) | ListKind::Vehicle(_) | ListKind::World(_) => {
             let Some((mut pages, tab)) = pages_of(app, kind) else { return out };
             if pages.is_empty() {
@@ -551,16 +561,10 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
                 out.push((format!("{}: {now}...", tr("Route number")), "routes".into()));
             }
             if let Some(hof) = app.player.as_ref().and_then(|p| p.vehicle.host.hof.clone()) {
-                let mut termini: Vec<(String, i32, usize)> = hof
-                    .termini
-                    .iter()
-                    .enumerate()
-                    .map(|(i, t)| (t.menu_name(), t.code, i))
-                    .collect();
-                // (alphabetical, by name; picked by its row: several may share a name or a code)
-                termini.sort_by_key(|(name, ..)| name.trim().to_lowercase());
-                for (name, code, i) in termini {
-                    out.push((format!("{:>3}  {}", code, name.trim()), format!("dest {i}")));
+                // (in the depot file's order, as OMSI lists them, not alphabetical; picked by
+                // its row, since several may share a name or a code)
+                for (i, t) in hof.termini.iter().enumerate() {
+                    out.push((format!("{:>3}  {}", t.code, t.menu_name().trim()), format!("dest {i}")));
                 }
             }
             if out.is_empty() {
@@ -579,6 +583,12 @@ pub(crate) fn items(app: &App, kind: &ListKind) -> Vec<(String, String)> {
             }
             if out.len() == 1 {
                 out.push((tr("No route numbers in the depot file or the timetable"), "back".into()));
+            }
+        }
+        ListKind::SaveSlots => {
+            out.push((tr("A new slot"), "new".into()));
+            for slot in app.save_slots() {
+                out.push((format!("{} {}", tr("Save over:"), slot.name), format!("over {}", slot.file.to_string_lossy())));
             }
         }
         ListKind::Hofs => {
@@ -844,9 +854,11 @@ pub(crate) fn menu_extras(
         ListKind::Destinations => (MenuKind::List, head("Destination display..."), None),
         ListKind::RouteNumbers => (MenuKind::List, Some((tr("Route number"), String::new())), None),
         ListKind::Hofs => (MenuKind::List, head("Depot file (HOF)..."), None),
+        ListKind::SaveSlots => (MenuKind::List, head("Save to a slot..."), None),
         ListKind::Spots => (MenuKind::List, head("Teleport to a start point..."), None),
         ListKind::PlaceMaker | ListKind::PlaceType(_) | ListKind::PlaceLivery(_) | ListKind::PlaceHof(..) => (MenuKind::List, head("Place a vehicle..."), None),
-        ListKind::Admin => (MenuKind::List, Some((tr("Administration"), String::new())), None),
+        ListKind::Admin | ListKind::AdminPlayer(_) | ListKind::AdminConfirm(..) | ListKind::AdminClassic => (MenuKind::List, Some((tr("Administration"), String::new())), None),
+        ListKind::AdminPlayers => (MenuKind::List, Some((tr("Players"), String::new())), None),
     }
 }
 
@@ -872,16 +884,22 @@ pub(crate) fn run_move(app: &mut App, kind: &ListKind, action: &str, mv: Move) -
             ListKind::Events => Some(ListKind::Keyboard(0)),
             ListKind::Keyboard(_) => Some(ListKind::Controls),
             ListKind::PlaceType(_) | ListKind::PlaceLivery(_) | ListKind::PlaceHof(..) => Some(ListKind::PlaceMaker),
+            ListKind::AdminPlayers | ListKind::AdminClassic => Some(ListKind::Admin),
+            ListKind::AdminPlayer(_) => Some(ListKind::AdminPlayers),
+            ListKind::AdminConfirm(_, t) => Some(ListKind::AdminPlayer(*t)),
             _ => None,
         };
     }
     let (verb, arg) = action.split_once(' ').unwrap_or((action, ""));
     match kind {
         ListKind::ControllerDevices(_) | ListKind::Controller(..) | ListKind::ControllerAxis(..) | ListKind::ControllerButtons(_) | ListKind::ControllerButtonSettings(..) | ListKind::ControllerButton(..) | ListKind::ControllerCapture(_) => unreachable!("controller lists handled above"),
-        ListKind::Admin => {
+        ListKind::Admin | ListKind::AdminPlayers | ListKind::AdminPlayer(_) | ListKind::AdminConfirm(..) if crate::admin_panel::remote(app) => crate::admin_panel::run(app, kind, action),
+        ListKind::Admin | ListKind::AdminClassic => {
             crate::admin::run(app, action);
-            Some(ListKind::Admin)
+            Some(kind.clone())
         }
+        // (the server's pages when it no longer lets us administer: back to the game menu)
+        ListKind::AdminPlayers | ListKind::AdminPlayer(_) | ListKind::AdminConfirm(..) => None,
         ListKind::Options(_) | ListKind::World(_) => {
             if verb == "noop" || option_do(app, verb, arg, mv) {
                 return Some(kind.clone());
@@ -943,6 +961,14 @@ pub(crate) fn run_move(app: &mut App, kind: &ListKind, action: &str, mv: Move) -
                 }
                 "traffic_clear" if step => {
                     crate::admin::clear_ai_traffic(app);
+                }
+                "optimise" if step => {
+                    app.start_optimiser(omsi_launcher_lib::optimise::chosen_target());
+                    return None;
+                }
+                "optimise_restore" if step => {
+                    app.restore_before_optimising();
+                    app.menus.list_dirty = true;
                 }
                 other if step => {
                     app.page_action(other);
@@ -1011,6 +1037,15 @@ pub(crate) fn run_move(app: &mut App, kind: &ListKind, action: &str, mv: Move) -
         ListKind::Drivers => {
             switch_driver(app, arg);
             Some(ListKind::Drivers)
+        }
+        ListKind::SaveSlots => {
+            match verb {
+                "new" => app.save_slot_to(None),
+                "over" => app.save_slot_to(Some(std::path::PathBuf::from(arg))),
+                _ => return Some(ListKind::SaveSlots),
+            }
+            app.close_game_menu();
+            None
         }
         ListKind::Hofs => {
             if let Some(p) = app.player.as_mut() {

@@ -112,6 +112,7 @@ impl App {
         if self.vr_action(name) { return true; }
         match name {
             "sim_pause" => self.toggle_pause(),
+            "pax_door_request" => self.request_passenger_door(),
             // the menu Esc opens (a controller has no Esc): pressed again, it closes the menu
             // and whatever list it had open, as leaving them with Esc does
             "open_menu" => {
@@ -296,6 +297,10 @@ impl App {
             // those is `alt_tap`'s, #2392)
             "open_menue" => self.quick_menu_key(),
             // the radio's own keys, for a keyboard, a wheel's or a pad's buttons (#1293, #1462)
+            "radio_power" => {
+                let msg = self.sound.radio.toggle_power(self.player.as_ref().map(|p| &p.vehicle));
+                self.service_msg = Some((msg, 3.0));
+            }
             "radio_next" | "radio_previous" | "radio_volume_up" | "radio_volume_down" => {
                 let msg = match name {
                     "radio_next" => self.sound.radio.next_station(),
@@ -418,7 +423,9 @@ impl App {
         let _ = std::fs::create_dir_all(&dir);
         let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let path = dir.join(format!("omsi_{secs}.png"));
-        self.service_msg = Some((format!("Screenshot: {}", path.display()), 4.0));
+        if !cfg!(target_os = "android") {
+            self.service_msg = Some((format!("Screenshot: {}", path.display()), 4.0));
+        }
         self.perf.shot = Some((path, false));
     }
 }

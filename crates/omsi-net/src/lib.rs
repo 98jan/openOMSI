@@ -27,7 +27,7 @@
 //! ```text
 //! HELLO|<proto>|<session or ->|<name>|<bus>|<map>|<date>|<time>|<weather>|<season>|<nonce>|<challenge>|<proof>
 //!                                                client → host (every second until answered)
-//! WELCOME|<proto>|<id>|<session>|<host name>|<map>|<date>|<time>|<weather>|<season>|<players>|<secret>
+//! WELCOME|<proto>|<id>|<session>|<host name>|<map>|<date>|<time>|<weather>|<season>|<players>|<secret>|<nonce>
 //!                                                host → client
 //! CHALLENGE|<challenge>                          host → client (a known nonce from a new address)
 //! REJECT|<proto>|<reason>                        host → client
@@ -81,16 +81,26 @@
 pub const LEFT_SERVER: &str = "LAN: disconnected from the server: ";
 
 mod admission;
+pub use admission::source_ip;
+mod paths;
+pub use paths::{human_path, vehicle_path};
 pub mod addrs;
 pub mod bridge;
 pub mod wire;
 pub mod world;
 pub mod vars;
+pub mod var_schema;
+pub mod scripttex;
+pub mod ai_context;
+pub mod sounds;
 pub mod ws;
+pub mod ws_api;
+mod ws_http;
 pub mod tunnel;
 pub mod official;
 pub mod hostkey;
 pub mod remote_text;
+pub use remote_text::is_fingerprint;
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -111,7 +121,16 @@ pub use wire::{
 /// passed on to the other players.
 /// 6: up to 63 sound and moving-part values in a state (a 6-bit count: the AA-FR Agora's
 /// sound variables alone filled the 31 there was room for).
-pub const PROTOCOL: u32 = 7;
+/// 7: owner-authoritative RGBA script textures with acknowledged initialization and deltas.
+/// Older peers cannot render remote script textures after local drawing is disabled.
+/// 8: canonical full variable tables and versioned, fragmented strings.
+/// 9: paged authoritative AI timetables and system script context.
+/// 10: recoverable variable-name manifests and model/sound compatibility fallback.
+/// 11: reliable, ordered owner-authored T.L and T.F sound events.
+/// 12: timestamped complete model animation samples on the owner's pose clock.
+/// 13: upstream 0.2.47 admission proofs and signed host identity for shared mods.
+/// 14: session-bound variable/schema/sound packets and acknowledged long strings.
+pub const PROTOCOL: u32 = 14;
 /// (omsi-plugin's `MULTIPLAYER_PORTS` keeps `omsi.send` off this one and the `PORT_RANGE` after it.)
 pub const DEFAULT_PORT: u16 = 27015;
 /// Ports a host tries after the default one when that is taken (a second session on the
@@ -157,6 +176,14 @@ const MAX_FIELD: usize = 64;
 /// A host takes at most this many states and this many other messages a second from one
 /// player (with bursts of as many); chat lines one a second (bursts of three).
 const STATE_RATE: (f32, f32) = (40.0, 40.0);
+// Variable deltas, key frames and long-string fragments use at most 32 datagrams/s. They must not
+// consume the pose/world budget (otherwise normal driving drops recovery slices).
+const VAR_RATE: (f32, f32) = (60.0, 60.0);
+// Animation snapshots must not consume recovery/string or movement budgets. The
+// burst fits every possible u16-indexed animation input, split across datagrams.
+const ANIMATION_RATE: (f32, f32) = (25.0, 320.0);
+const TEXTURE_RATE: (f32, f32) = (2048.0, 2048.0);
+const SOUND_RATE: (f32, f32) = (512.0, 2048.0);
 const MESSAGE_RATE: (f32, f32) = (10.0, 20.0);
 const CHAT_RATE: (f32, f32) = (1.0, 3.0);
 // ---------------------------------------------------------------------------------------
@@ -870,6 +897,11 @@ pub struct Pose {
     pub box_offset: f32,
     /// Hash of the vehicle's sync table (see `lamps`, `switches`, `values`), 0 for none.
     pub table: u32,
+    /// What the vehicle is, by its content (`v2-` and 64 hex digits, the fingerprint of every
+    /// file it uses: `lan_mods::identity`); empty when not known (an older game, or not yet).
+    pub content: String,
+    /// Height (m) of the box around the vehicle, for a stand-in of its size; 0: not known.
+    pub height: f32,
     pub x: f64,
     pub y: f64,
     pub z: f64,
@@ -963,15 +995,19 @@ impl Pose {
             clean_text(&self.tour, MAX_FIELD),
         );
         let figure = human_path(&self.figure).unwrap_or_default();
+        // the vehicle's fingerprint and height go last (an older game reads the fields it
+        // knows and passes these by); their room is kept first, so long texts or pictures
+        // never make an INFO too long to be taken in, nor cut what the bus is
+        let content = if is_fingerprint(&self.content) { self.content.as_str() } else { "" };
+        let tail = format!("|{content}|{:.2}", finite_or(self.height, 0.0).clamp(0.0, 10.0));
         // the display texts get what room is left in one datagram (long vehicle and figure
         // paths and a destination in another alphabet made an INFO too long to be taken in:
         // the others never learnt which bus the player drove)
-        let room = MAX_DATAGRAM.saturating_sub(head.len() + figure.len() + 1);
+        let room = MAX_DATAGRAM.saturating_sub(head.len() + figure.len() + 2 + tail.len());
         let info = format!("{head}{}|{figure}", encode_texts(&self.texts, MAX_TEXTS, MAX_TEXT_LEN, room));
-        // the `[matl_freetex]` pictures last, in what room is left (an older game reads the
-        // fields it knows and passes this one by)
-        let room = MAX_DATAGRAM.saturating_sub(info.len() + 1);
-        format!("{info}|{}", encode_texts(&self.freetex, MAX_FREETEX, MAX_FREETEX_LEN, room))
+        // the `[matl_freetex]` pictures in what room is left
+        let room = MAX_DATAGRAM.saturating_sub(info.len() + 1 + tail.len());
+        format!("{info}|{}{tail}", encode_texts(&self.freetex, MAX_FREETEX, MAX_FREETEX_LEN, room))
     }
 
     /// The info fields of an `INFO` message (checked and cleaned), or None.
@@ -1001,6 +1037,8 @@ impl Pose {
             texts: parts.get(12).map(|t| decode_texts(t, MAX_TEXTS, MAX_TEXT_LEN)).unwrap_or_default(),
             figure: parts.get(13).and_then(|f| human_path(f)).unwrap_or_default(),
             freetex: parts.get(14).map(|t| remote_text::only_relative(decode_texts(t, MAX_FREETEX, MAX_FREETEX_LEN))).unwrap_or_default(),
+            content: parts.get(15).map(|c| c.trim()).filter(|c| is_fingerprint(c)).map(str::to_string).unwrap_or_default(),
+            height: parts.get(16).and_then(|h| h.trim().parse::<f32>().ok()).filter(|h| h.is_finite() && (0.0..=10.0).contains(h)).unwrap_or(0.0),
             ..Default::default()
         })
     }
@@ -1020,6 +1058,8 @@ impl Pose {
         self.width = info.width;
         self.box_offset = info.box_offset;
         self.table = info.table;
+        self.content = info.content.clone();
+        self.height = info.height;
     }
 
     /// Take the state of `s`, keeping the who-and-what.
@@ -1040,6 +1080,8 @@ impl Pose {
             width: keep.width,
             box_offset: keep.box_offset,
             table: keep.table,
+            content: keep.content,
+            height: keep.height,
             ..s
         };
     }
@@ -1133,42 +1175,6 @@ pub fn clean_text(s: &str, max: usize) -> String {
         .to_string()
 }
 
-/// The longest vehicle path taken from the network.
-const MAX_VEHICLE_PATH: usize = 260;
-
-/// `Pose::bus` as a path relative to a content root that may be looked up on this machine,
-/// or None. A pose comes from another machine, so the path is not trusted: it must be
-/// relative (no leading `/`, no drive, no `:`), without empty, `.` or `..` parts (or parts
-/// of dots only, which Windows reads as those), and name a `.bus` or `.ovh` file.
-pub fn vehicle_path(bus: &str) -> Option<String> {
-    relative_path(bus, &["bus", "ovh"])
-}
-
-/// A person's figure file (`.hum`) as another game names it: the same rules as
-/// [`vehicle_path`] (relative, no `..`, no drive letters), for the driver and walker figure.
-pub fn human_path(hum: &str) -> Option<String> {
-    relative_path(hum, &["hum"])
-}
-
-fn relative_path(path: &str, exts: &[&str]) -> Option<String> {
-    let p = path.trim().replace('\\', "/");
-    if p.is_empty()
-        || p.len() > MAX_VEHICLE_PATH
-        || p.starts_with('/')
-        || p.chars().any(|c| c == ':' || c == '|' || c.is_control())
-    {
-        return None;
-    }
-    if p.split('/')
-        .any(|part| part.trim_matches(|c| c == '.' || c == ' ').is_empty())
-    {
-        return None;
-    }
-    let file = p.rsplit('/').next()?;
-    let ext = file.rsplit_once('.')?.1.to_ascii_lowercase();
-    exts.contains(&ext.as_str()).then_some(p)
-}
-
 fn field<'a>(parts: &[&'a str], i: usize) -> &'a str {
     parts.get(i).copied().unwrap_or("")
 }
@@ -1234,6 +1240,16 @@ pub enum LanEvent {
     Notice(String),
 }
 
+#[derive(Debug, Clone, Copy)]
+enum PeerTraffic {
+    State,
+    Variables,
+    Animations,
+    Textures,
+    Sounds,
+    Message,
+}
+
 /// A token bucket: `rate` a second, at most `burst` at once.
 #[derive(Debug, Clone)]
 struct Bucket {
@@ -1276,6 +1292,10 @@ pub struct Peer {
     last_seq: u16,
     state_at: Instant,
     states: Bucket,
+    variables: Bucket,
+    animations: Bucket,
+    textures: Bucket,
+    sounds: Bucket,
     messages: Bucket,
     chat: Bucket,
     /// Datagrams of this player the host threw away (too many at once).
@@ -1288,7 +1308,16 @@ pub struct Peer {
     /// The latest states as they came (arrival, state), oldest first: the game draws the
     /// player's bus between two of them (`Pose::sent_ms`), not only the newest.
     pub history: std::collections::VecDeque<(Instant, Pose)>,
+    /// This connection's own number, never given to another in this process (a player who
+    /// leaves and comes back gets a new one, even with the same player number): what an
+    /// administration's choice of a player holds on to.
+    pub conn: u64,
+    /// When the player joined.
+    pub joined: Instant,
 }
+
+/// The connections counted (`Peer::conn`, from 1).
+static CONNECTIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl Peer {
     fn new(addr: Option<SocketAddr>, pose: Pose) -> Peer {
@@ -1302,6 +1331,10 @@ impl Peer {
             last_seq: 0,
             state_at: now,
             states: Bucket::new(STATE_RATE.1),
+            variables: Bucket::new(VAR_RATE.1),
+            animations: Bucket::new(ANIMATION_RATE.1),
+            textures: Bucket::new(TEXTURE_RATE.1),
+            sounds: Bucket::new(SOUND_RATE.1),
             messages: Bucket::new(MESSAGE_RATE.1),
             chat: Bucket::new(CHAT_RATE.1),
             dropped: 0,
@@ -1310,6 +1343,8 @@ impl Peer {
             secret: admission::random_bytes(),
             home: addr,
             settled: false,
+            conn: CONNECTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+            joined: now,
         }
     }
 
@@ -1359,6 +1394,8 @@ pub struct LanSession {
     confirm: bool,
     rebind: admission::Rebind,
     rebind_secret: Option<[u8; 16]>,
+    retired_secrets: Vec<[u8; 16]>,
+    retired_nonces: std::collections::HashSet<u64>,
     answer: Option<u64>,
     pub my_id: u32,
     pub my_name: String,
@@ -1424,7 +1461,15 @@ pub struct LanSession {
     world_in: Vec<(Instant, world::WorldFrame)>,
     /// Every script variable of our vehicle going out (`vars.rs`), and the others' coming in.
     var_sender: vars::VarSender,
+    animation_sender: vars::AnimationSender,
+    schema_sender: vars::VarSender,
+    schema_receiver: vars::VarReceiver,
+    schemas_in: Vec<vars::VarsIn>,
     vars_in: Vec<vars::VarsIn>,
+    var_receiver: vars::VarReceiver,
+    ai_context_in: Vec<Vec<u8>>,
+    script_textures: scripttex::Sync,
+    sounds: sounds::Sync,
     descs: Vec<world::Desc>,
     wants: Vec<(u32, Vec<world::EntityRef>)>,
     claims: Vec<(u32, Vec<u32>)>,
@@ -1492,6 +1537,8 @@ impl LanSession {
             confirm: false,
             rebind: admission::Rebind::new(),
             rebind_secret: None,
+            retired_secrets: Vec::new(),
+            retired_nonces: Default::default(),
             answer: None,
             my_id: if role == Role::Host { 1 } else { 0 },
             my_name: clean_text(name, MAX_NAME),
@@ -1533,7 +1580,15 @@ impl LanSession {
             received: 0,
             world_in: Vec::new(),
             var_sender: vars::VarSender::default(),
+            animation_sender: vars::AnimationSender::default(),
+            schema_sender: vars::VarSender::default(),
+            schema_receiver: vars::VarReceiver::default(),
+            schemas_in: Vec::new(),
+            script_textures: scripttex::Sync::default(),
+            sounds: sounds::Sync::default(),
             vars_in: Vec::new(),
+            var_receiver: vars::VarReceiver::default(),
+            ai_context_in: Vec::new(),
             descs: Vec::new(),
             wants: Vec::new(),
             claims: Vec::new(),
@@ -1887,7 +1942,7 @@ impl LanSession {
         match self.role {
             Role::Host => {
                 // only from the player it says, at their address
-                if self.checked_peer(sender, from, MESSAGE_RATE, false).is_none() {
+                if self.checked_peer(sender, from, MESSAGE_RATE, PeerTraffic::Message).is_none() {
                     return;
                 }
                 if to == self.my_id {
@@ -1971,12 +2026,6 @@ impl LanSession {
             mine: true,
         });
         Ok(())
-    }
-
-    fn send(&self, data: &[u8], to: SocketAddr) {
-        if self.socket.send_to(data, to).is_ok() {
-            self.sent.set(self.sent.get() + data.len() as u64);
-        }
     }
 
     /// To every player (host), but `except`.
@@ -2187,30 +2236,6 @@ impl LanSession {
         }
     }
 
-    fn welcome_session(&self, to: SocketAddr, named: bool) -> String {
-        if named || self.strangers_told || addrs::is_local_peer(to) {
-            session_hex(self.session)
-        } else {
-            "-".to_string()
-        }
-    }
-
-    fn send_welcome(&self, id: u32, to: SocketAddr, named: bool) {
-        let session = self.welcome_session(to, named);
-        let msg = format!(
-            "WELCOME|{PROTOCOL}|{id}|{}|{}|{}|{}",
-            session,
-            self.my_name,
-            self.world.fields(),
-            self.peers.len() + 1
-        );
-        let msg = match self.peers.get(&id) {
-            Some(p) if p.home == Some(to) => format!("{msg}|{}", admission::secret_hex(&p.secret)),
-            _ => msg,
-        };
-        self.send(msg.as_bytes(), to);
-    }
-
     fn on_challenge(&mut self, parts: &[&str]) {
         if let (Some(_), Ok(c)) = (self.rebind_secret, u64::from_str_radix(field(parts, 1).trim(), 16)) {
             self.answer = Some(c);
@@ -2321,6 +2346,19 @@ impl LanSession {
             self.send_own(dt, mine);
         }
         self.receive(&mut gone);
+        let peers: Vec<u32> = self.peers.keys().copied().collect();
+        self.script_textures.retain_peers(&peers);
+        self.sounds.retain_peers(&peers);
+        self.var_receiver.retain_peers(&peers);
+        self.schema_receiver.retain_peers(&peers);
+        if self.connected {
+            for packet in self.sounds.tick(PROTOCOL as u8, self.my_id, dt) {
+                self.route_sound(&packet);
+            }
+            for packet in self.script_textures.tick(PROTOCOL as u8, self.my_id, dt) {
+                self.route_script_texture(&packet);
+            }
+        }
         // time out the silent: a player who has sent no state yet is still loading
         let now = Instant::now();
         let silent: Vec<u32> = self
@@ -2563,7 +2601,26 @@ impl LanSession {
             if n == 0 || n > MAX_DATAGRAM {
                 continue;
             }
-            let data = self.buf[..n].to_vec();
+            let mut data = self.buf[..n].to_vec();
+            if data[0] == 0xEA {
+                let expected = match self.role {
+                    Role::Client => self.rebind_secret,
+                    Role::Host => self.peers.values().find(|p| p.addr == Some(from)).map(|p| p.secret),
+                };
+                if expected.is_none() || data.get(1..17) != expected.as_ref().map(|s| s.as_slice()) { continue; }
+                data.drain(..17);
+                if !session_sync::session_bound(&data) { continue; }
+            } else if session_sync::session_bound(&data) { continue; }
+            if data[0] == 0xEB {
+                self.on_string_ack(&data, from);
+                continue;
+            }
+            if data[0] == ai_context::MAGIC {
+                if self.role == Role::Client && self.connected && self.ai_context_in.len() < 1024 {
+                    self.ai_context_in.push(data);
+                }
+                continue;
+            }
             if data[0] == world::WORLD_MAGIC {
                 // a client takes the world from its host (above); a host takes the people of
                 // a client's own from that client (within its rate)
@@ -2576,7 +2633,7 @@ impl LanSession {
                     else {
                         continue;
                     };
-                    if self.checked_peer(id, from, STATE_RATE, true).is_none() {
+                    if self.checked_peer(id, from, STATE_RATE, PeerTraffic::State).is_none() {
                         continue;
                     }
                     if let Some(mut f) = world::decode(&data, PROTOCOL as u8) {
@@ -2600,6 +2657,20 @@ impl LanSession {
             }
             if data[0] == wire::STATE_MAGIC {
                 self.on_state(&data, from);
+                continue;
+            }
+            if data[0] == sounds::MAGIC {
+                self.on_sound(&data, from);
+                continue;
+            }
+            if data[0] == scripttex::MAGIC {
+                self.on_script_texture(&data, from);
+                continue;
+            }
+            if data[0] == var_schema::MAGIC {
+                let mut packet = data.to_vec();
+                packet[0] = vars::VARS_MAGIC;
+                self.on_variable_packet(&packet, from, true);
                 continue;
             }
             if data[0] == vars::VARS_MAGIC {
@@ -2693,7 +2764,7 @@ impl LanSession {
                     let Some(id) = field(&parts, 1).parse::<u32>().ok() else {
                         continue;
                     };
-                    if self.checked_peer(id, from, MESSAGE_RATE, false).is_none() {
+                    if self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message).is_none() {
                         continue;
                     }
                     if parts[0] == "WANT" {
@@ -2721,7 +2792,7 @@ impl LanSession {
                     else {
                         continue;
                     };
-                    if self.checked_peer(id, from, MESSAGE_RATE, false).is_none() {
+                    if self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message).is_none() {
                         continue;
                     }
                     if let Some(d @ world::Desc::Person { .. }) = world::Desc::decode(&parts) {
@@ -2790,16 +2861,19 @@ impl LanSession {
         id: u32,
         from: SocketAddr,
         rate: (f32, f32),
-        state: bool,
+        traffic: PeerTraffic,
     ) -> Option<&mut Peer> {
         let peer = self.peers.get_mut(&id)?;
         if peer.addr != Some(from) {
             return None;
         }
-        let ok = if state {
-            peer.states.take(rate)
-        } else {
-            peer.messages.take(rate)
+        let ok = match traffic {
+            PeerTraffic::State => peer.states.take(rate),
+            PeerTraffic::Variables => peer.variables.take(rate),
+            PeerTraffic::Animations => peer.animations.take(rate),
+            PeerTraffic::Textures => peer.textures.take(rate),
+            PeerTraffic::Sounds => peer.sounds.take(rate),
+            PeerTraffic::Message => peer.messages.take(rate),
         };
         if !ok {
             peer.dropped += 1;
@@ -2816,54 +2890,6 @@ impl LanSession {
         Some(peer)
     }
 
-    /// Every script variable of our vehicle (see `vars.rs`): `float_ids[k]` holds
-    /// `floats[k]`, the same for the strings, `table` names them (a hash of their names). Called
-    /// every frame; it sends what is due.
-    #[allow(clippy::too_many_arguments)]
-    pub fn send_vars(&mut self, table: u32, float_ids: &[u16], floats: &[f32], string_ids: &[u16], strings: &[String], dt: f32) {
-        let msgs = self.var_sender.tick(PROTOCOL as u8, self.my_id, table, float_ids, floats, string_ids, strings, dt);
-        for m in msgs {
-            match self.role {
-                Role::Host => self.broadcast(&m, None),
-                Role::Client => {
-                    if let Some(h) = self.host {
-                        self.send(&m, h);
-                    }
-                }
-            }
-        }
-    }
-
-    /// The others' vehicle variables that came since the last call, oldest first.
-    pub fn take_vars(&mut self) -> Vec<vars::VarsIn> {
-        std::mem::take(&mut self.vars_in)
-    }
-
-    fn on_vars(&mut self, data: &[u8], from: SocketAddr) {
-        let Some(v) = vars::decode(data, PROTOCOL as u8) else { return };
-        if v.id == self.my_id || v.id == 0 {
-            return;
-        }
-        match self.role {
-            // (as a state: only a player we welcomed, from its address, within its rate)
-            Role::Host => {
-                if self.checked_peer(v.id, from, STATE_RATE, true).is_none() {
-                    return;
-                }
-                self.broadcast(data, Some(v.id));
-            }
-            Role::Client => {
-                if !self.peers.contains_key(&v.id) {
-                    return;
-                }
-            }
-        }
-        // (a game that stopped reading does not pile them up without end)
-        if self.vars_in.len() < 1024 {
-            self.vars_in.push(v);
-        }
-    }
-
     fn on_state(&mut self, data: &[u8], from: SocketAddr) {
         let Some((id, seq, state)) = wire::decode_state(data, PROTOCOL as u8) else {
             return;
@@ -2873,7 +2899,7 @@ impl LanSession {
         }
         let peer = match self.role {
             // only players we welcomed, from the address we welcomed, are taken and relayed
-            Role::Host => match self.checked_peer(id, from, STATE_RATE, true) {
+            Role::Host => match self.checked_peer(id, from, STATE_RATE, PeerTraffic::State) {
                 Some(p) => p,
                 None => return,
             },
@@ -2924,7 +2950,7 @@ impl LanSession {
         let relay;
         {
             let peer = match self.role {
-                Role::Host => match self.checked_peer(id, from, MESSAGE_RATE, false) {
+                Role::Host => match self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message) {
                     Some(p) => p,
                     None => return,
                 },
@@ -2976,7 +3002,7 @@ impl LanSession {
         let Some(spawn) = Footprint::from_numbers(&v) else {
             return;
         };
-        let Some(peer) = self.checked_peer(id, from, MESSAGE_RATE, false) else {
+        let Some(peer) = self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message) else {
             return;
         };
         let (name, bus) = (peer.pose.name.clone(), peer.pose.bus.clone());
@@ -2996,7 +3022,7 @@ impl LanSession {
             return;
         };
         let text = clean_text(field(parts, 2), MAX_CHAT);
-        let Some(peer) = self.checked_peer(id, from, MESSAGE_RATE, false) else {
+        let Some(peer) = self.checked_peer(id, from, MESSAGE_RATE, PeerTraffic::Message) else {
             return;
         };
         if text.is_empty() {
@@ -3072,6 +3098,7 @@ impl LanSession {
         let bus = vehicle_path(field(parts, 4)).unwrap_or_default();
         let world = WorldInfo::from_fields(parts, 5);
         let nonce = u64::from_str_radix(field(parts, 10), 16).ok();
+        if nonce.is_some_and(|n| self.retired_nonces.contains(&n)) { return; }
         // a returning client keeps its id; so does one that tried several of our addresses
         // at once, and the address its latest hello came from is the one it has chosen
         let same = |p: &Peer| p.addr == Some(from) || (nonce.is_some() && p.nonce == nonce);
@@ -3188,6 +3215,13 @@ impl LanSession {
                 (id, Some(here.join(", ")))
             }
         };
+        if self.peers.get(&id).is_some_and(|p| p.nonce != nonce) {
+            if let Some(old) = self.peers.get(&id).and_then(|p| p.nonce) { self.retired_nonces.insert(old); }
+            self.reset_peer_sync(id);
+            let mut peer = Peer::new(Some(from), Pose::placeholder(id, &name, &bus));
+            peer.nonce = nonce;
+            self.peers.insert(id, peer);
+        }
         if let Some(p) = self.peers.get_mut(&id) {
             p.last_seen = Instant::now();
         }
@@ -3239,6 +3273,21 @@ impl LanSession {
                 session_hex(self.session)
             ));
             return;
+        }
+        if let Some(secret) = admission::parse_secret(field(parts, 11)) {
+            if u64::from_str_radix(field(parts, 12), 16).ok() != Some(self.nonce)
+                || self.retired_secrets.contains(&secret) { return; }
+            if self.rebind_secret.is_some_and(|old| old != secret) {
+                self.retired_secrets.push(self.rebind_secret.unwrap());
+                self.peers.clear();
+                self.vars_in.clear();
+                self.schemas_in.clear();
+                self.sounds = sounds::Sync::default();
+                self.var_receiver = vars::VarReceiver::default();
+                self.schema_receiver = vars::VarReceiver::default();
+                self.reset_peer_sync(1);
+                self.connected = false;
+            }
         }
         let host_name = clean_text(field(parts, 4), MAX_NAME);
         let world = WorldInfo::from_fields(parts, 5);
@@ -3322,3 +3371,5 @@ impl Drop for LanSession {
 
 #[cfg(test)]
 mod tests;
+
+mod session_sync;
