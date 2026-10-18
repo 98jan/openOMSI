@@ -119,7 +119,7 @@ impl MapGround {
                 (l, c)
             })
             .collect();
-        MapGround { parts: GroundParts { roads: Arc::new(roads), net: Some(net), md, surface: package.map(Arc::new) } }
+        MapGround { parts: GroundParts { roads: Arc::new(roads), net: Some(net), md, surface: package.map(Arc::new), contours: None } }
     }
 
     /// Everything within `reach` of `anchor` as the city map shows it at `mpp` metres a pixel
