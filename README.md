@@ -40,8 +40,8 @@ the tested ones become stable releases, and the newest stable release is always 
 
 | Platform | File |
 | --- | --- |
-| Windows x64 / ARM64 | `openOMSI-<version>-windows-x64.zip` / `-windows-arm64.zip` - run `openomsi.exe` |
-| macOS (Apple silicon / Intel) | `openOMSI-<version>-macos-arm64.zip` / `-macos-x64.zip` - open `openOMSI.app` |
+| Windows x64 / ARM64 | `openOMSI-<version>-windows-x64-setup.exe` / `-windows-arm64-setup.exe` - installs openOMSI for you, no administrator rights (or the `.zip`: run `openomsi.exe`) |
+| macOS (Apple silicon / Intel) | `openOMSI-<version>-macos-arm64.dmg` / `-macos-x64.dmg` - drag `openOMSI.app` onto Applications (or the `.zip`) |
 | Linux x64 / ARM64 | `openOMSI-<version>-linux-x64.zip` / `-linux-arm64.zip` - run `openomsi` |
 | Android (arm64, 8.0+) | `openOMSI-<version>-android-arm64.apk` - see [docs/ANDROID.md](docs/ANDROID.md) |
 | Dedicated server | `openOMSI-<version>-server-linux-x64.zip` (also `-linux-arm64`, `-windows-x64`, `-windows-arm64`) - see [docs/SERVER.md](docs/SERVER.md) |
@@ -194,6 +194,12 @@ coffee or support it on Ko-fi - thank you!
   <a href="https://buymeacoffee.com/usonskyyy"><img alt="Buy me a coffee" src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="48"></a>
   <a href="https://ko-fi.com/usonance"><img alt="Support me on Ko-fi" src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" height="48"></a>
 </p>
+
+## Acknowledgements
+
+Some ideas and fixes in openOMSI date back to the public work of
+[neoOMSI](https://github.com/neoOMSI/neoOMSI): their reports and pull requests pointed at
+bugs and features that we then implemented in our own code. Thank you.
 
 ## License
 
