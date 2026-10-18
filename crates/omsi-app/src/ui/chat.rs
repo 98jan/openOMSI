@@ -170,7 +170,8 @@ mod tests {
         let lookup_language = Cell::new("zh-tw");
         let lookup = |key: &str| {
             lookups.set(lookups.get() + 1);
-            crate::_rust_i18n_try_translate(lookup_language.get(), key).map(|text| text.into_owned())
+            crate::_rust_i18n_try_translate(lookup_language.get(), key)
+                .map(|text| text.into_owned())
         };
         let line = "* Alice left";
         assert_eq!(cache.line(line, "zh-tw", lookup), "* Alice 已離開");

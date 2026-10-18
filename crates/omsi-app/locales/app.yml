@@ -60324,6 +60324,7 @@ _version: 2
 "Weather cycle {}":
   fr: "Cycle météo {}"
   sr: "Ciklus vremenskih prilika {}"
+  ru: "Цикл погоды {}"
 "Online: {n} other players":
   zh-tw: "線上：另有 {n} 位玩家"
 "Online: connecting ...":
@@ -60375,7 +60376,6 @@ _version: 2
   zh-tw: "房主已結束遊戲"
 "the host has gone quiet; trying to reach it again":
   zh-tw: "房主暫無回應；正在嘗試重新連線"
-  ru: "Цикл погоды {}"
 "Add a bus":
   ca: "Afegeix un autobús"
   ru: "Добавить автобус"
