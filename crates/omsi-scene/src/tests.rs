@@ -53,6 +53,32 @@ fn far_offset_forest_backdrops_keep_their_owner_tiles_visibility() {
     assert!(stand_in_mesh(&rectangle(0.0, 2000.0), &[], &Mat4::IDENTITY, DVec3::ZERO, loaded));
 }
 
+/// A block of buildings a few streets across modelled 1.2 km north of its object's origin
+/// (as London's Walworth Road junction carries a copy of the Elephant & Castle) is drawn
+/// only from the tiles around its object; a kiosk as far off, or the same block beside its
+/// origin, keeps the far view.
+#[test]
+fn a_big_mesh_wholly_far_off_is_a_backdrop_a_small_one_is_not() {
+    let block = |y0: f32, w: f32| MeshData {
+        positions: vec![
+            glam::Vec3::new(-w / 2.0, y0, 0.0),
+            glam::Vec3::new(w / 2.0, y0, 0.0),
+            glam::Vec3::new(w / 2.0, y0 + w * 0.8, 25.0),
+            glam::Vec3::new(-w / 2.0, y0 + w * 0.8, 25.0),
+        ],
+        ..Default::default()
+    };
+    let loaded = 900.0;
+    let origin = DVec3::new(1500.0, 600.0, 10.0);
+    for heading in [0.0, 30.0, 180.0] {
+        let xf = object_rotation([heading, 0.0, 0.0]);
+        assert!(stand_in_mesh(&block(1200.0, 400.0), &[], &xf, origin, loaded), "the far block at heading {heading} is a backdrop");
+        assert!(!stand_in_mesh(&block(1200.0, 20.0), &[], &xf, origin, loaded), "a kiosk far off at heading {heading} is not");
+    }
+    assert!(!stand_in_mesh(&block(-50.0, 400.0), &[], &Mat4::IDENTITY, origin, loaded), "the block beside its origin is not");
+    assert!(!stand_in_mesh(&block(600.0, 400.0), &[], &Mat4::IDENTITY, origin, loaded), "nor one reaching into the loaded tiles");
+}
+
 #[test]
 fn a_mirror_keeps_the_glass_that_uses_most_of_the_picture() {
     let glass = |uv_area: f32, x: f32| MirrorGlass { centre: glam::Vec3::new(x, 0.0, 0.0), du: glam::Vec3::X, dv: glam::Vec3::Z, uv_area };
@@ -1089,6 +1115,7 @@ fn scenery_mouseevent_hit_and_trigger() {
         htmls: Vec::new(),
         alpha_slots: Vec::new(),
         alpha_last: Vec::new(),
+        script_lamps: Vec::new(),
     });
 
     // 1. Raycast towards (0, 1, 0) should hit the quad at (0, 5, 0)
@@ -1185,6 +1212,7 @@ fn every_object_a_scenery_step_shows_finds_its_view_behind_a_silenced_one() {
             htmls: Vec::new(),
             alpha_slots: Vec::new(),
             alpha_last: Vec::new(),
+            script_lamps: Vec::new(),
         });
     }
     let mut scenery = omsi_sim::scenery::SceneryState::default();

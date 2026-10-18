@@ -209,18 +209,7 @@ pub(super) fn place_water(renderer: &Renderer, scene: &mut Scene, gpu: &mut GpuC
     // the tile's water surface: one quad at the four corner heights, drawn over the
     // riverbed. OMSI keeps it in `tile.map.water`, one height per corner.
     if let Some(h) = p.water {
-        let t = tile_size() as f32;
-        let mut wm = MeshData::default();
-        for (i, (x, y)) in [(0.0, 0.0), (t, 0.0), (0.0, t), (t, t)]
-            .into_iter()
-            .enumerate()
-        {
-            wm.positions.push(glam::Vec3::new(x, y, h[i]));
-            wm.normals.push(glam::Vec3::Z);
-            wm.uvs.push(glam::Vec2::new(x / 40.0, y / 40.0));
-        }
-        wm.indices.extend_from_slice(&[0, 1, 2, 2, 1, 3]);
-        wm.ranges.push((0, 6, 0));
+        let wm = water_quad(h, tile_size() as f32);
         let wid = gpu.add_mesh(renderer, scene, &wm);
         tg.meshes.push(wid);
         if omsi_cfg::flags::OMSI_DEBUG_SURFACES.is_set() {
@@ -237,6 +226,26 @@ pub(super) fn place_water(renderer: &Renderer, scene: &mut Scene, gpu: &mut GpuC
             vec![water_mat]
         ));
     }
+}
+
+/// A tile's water quad at its four corner heights (corners 0 (0, 0), 1 (t, 0), 2 (0, t),
+/// 3 (t, t)). It is split along the diagonal from corner 0 to corner 3, as Omsi.exe's
+/// index buffer (0x7abf2c: 0 3 1, 0 2 3; here wound the other way round for our
+/// counter-clockwise front faces). On a sloping water surface the other diagonal gives
+/// the middle another height: Tettau's water rose into the road.
+fn water_quad(h: [f32; 4], t: f32) -> MeshData {
+    let mut wm = MeshData::default();
+    for (i, (x, y)) in [(0.0, 0.0), (t, 0.0), (0.0, t), (t, t)]
+        .into_iter()
+        .enumerate()
+    {
+        wm.positions.push(glam::Vec3::new(x, y, h[i]));
+        wm.normals.push(glam::Vec3::Z);
+        wm.uvs.push(glam::Vec2::new(x / 40.0, y / 40.0));
+    }
+    wm.indices.extend_from_slice(&[0, 1, 3, 0, 3, 2]);
+    wm.ranges.push((0, 6, 0));
+    wm
 }
 
 /// OMSI_PROFILE: what one [`World::place_step`] took.
@@ -273,6 +282,32 @@ pub(super) fn log_place_step(
                 pl.secs[3] * 1000.0,
                 if done { ", done" } else { "" }
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::water_quad;
+
+    #[test]
+    fn water_quad_splits_from_corner_0_to_corner_3() {
+        // a water surface sloping on one diagonal only: corners 1 and 2 low, 0 and 3 high
+        let q = water_quad([2.0, 0.0, 0.0, 2.0], 300.0);
+        let tris: Vec<[u32; 3]> = q.indices.chunks(3).map(|c| [c[0], c[1], c[2]]).collect();
+        assert_eq!(tris.len(), 2);
+        // both triangles share the edge 0-3, neither uses the edge 1-2
+        for t in &tris {
+            assert!(t.contains(&0) && t.contains(&3), "{t:?}");
+        }
+        // the quad's middle lies on the 0-3 edge: at the high corners' height (2 m), not
+        // at the low corners' 0 m the other diagonal gave
+        let mid = (q.positions[0] + q.positions[3]) / 2.0;
+        assert_eq!(mid.z, 2.0);
+        // and both face up (counter-clockwise seen from above)
+        for t in &tris {
+            let [a, b, c] = t.map(|i| q.positions[i as usize]);
+            assert!((b - a).cross(c - a).z > 0.0, "{t:?} faces down");
         }
     }
 }

@@ -82,7 +82,7 @@ trunc ! /-/` (negate); `d` duplicates. `pi` pushes π, `random` replaces `st[0]`
 whole number in `[0, n)` with `n = |round(st[0])|` (the exe calls `Random(Abs(Round(x)))`). A reached `{else}` jumps to the next `{endif}` even when a stray `{endif}` has already closed its
 `{if}` (the Procity's dashboard script has one; ignoring that `{else}` blanked its odometer every
 frame). `$SetLengthL n` keeps the left n characters or pads on the right, `$SetLengthR n` keeps the
-right n or pads on the left (read off the exe's `str_SetLengthL/R`); re-checked Sept 24 2026 in `TXPC_calcblock_func` op 0x25 at 0x5d584a: `Copy(s, len-n+1, n)`). Mod scripts that cannot show what they were written for under these semantics are patched before compiling by `omsi_script::compat` (recognised by their text: the LiAZ 5292's 4-character line matrix pads the line to `4 $SetLengthL` and then keeps `3 $SetLengthR`, which left lines 1-9 blank and 5E as `   E`; its number is now written `"03" $IntToStrEnh` → `005E`. Aachen's ibox keeps route digits in float `ibox_eingabe` and blanks the display at 0, so leading zeros never appeared; mode-10 route entry uses a string digit buffer on `ibox_Zahleingabe` (empty until typed — no `"00"` / `"02" $IntToStrEnh` auto-pad): typed `0` then `1` shows `01`, typed `1` alone shows `1`; mode-7 line entry stays empty for free typing with no auto leading zeros). `{if}` does **not** pop its condition (28 spots in the stock scripts
+right n or pads on the left (read off the exe's `str_SetLengthL/R`); re-checked Sept 24 2026 in `TXPC_calcblock_func` op 0x25 at 0x5d584a: `Copy(s, len-n+1, n)`). Unlike `$cutBegin`/`$cutEnd`, the three `$SetLength*` ops leave n on the number stack (the executor at 0x5d4a50 pops first only for the ops in its bit set at 0x5d5bac; the Kruger++ matrix display uses n again). Mod scripts that cannot show what they were written for under these semantics are patched before compiling by `omsi_script::compat` (recognised by their text: the LiAZ 5292's 4-character line matrix pads the line to `4 $SetLengthL` and then keeps `3 $SetLengthR`, which left lines 1-9 blank and 5E as `   E`; its number is now written `"03" $IntToStrEnh` → `005E`. Aachen's ibox keeps route digits in float `ibox_eingabe` and blanks the display at 0, so leading zeros never appeared; mode-10 route entry uses a string digit buffer on `ibox_Zahleingabe` (empty until typed — no `"00"` / `"02" $IntToStrEnh` auto-pad): typed `0` then `1` shows `01`, typed `1` alone shows `1`; mode-7 line entry stays empty for free typing with no auto leading zeros). `{if}` does **not** pop its condition (28 spots in the stock scripts
 work on it: `(L.L.bremse_feststell) {if} ! (S.L.bremse_feststell)` releases the parking brake,
 `cond {if} (L.L.IBIS_busstop) 0 > &&` in the IBIS; the chura matrix writes `x d -1 = ! {if} *`).
 Tokens found in the executable's operator table: `/-/ <= >= && || sin arcsin arctan min max exp
@@ -173,6 +173,22 @@ frame and each object's placement in its own frame. Normals go by the inverse tr
 Ruede Trafohaus scales its frame unevenly). 27 stock scenery `.x` files have translated frames
 (the Verkehrszeichen_MC street name signs, Ruede's chestnut trees, bus stop poles and old
 shelter, Trafohaus, Buildings_MC's wohn_03/04 and hoch_01).
+
+**Binary `.x`** (`xof 0303bin 0032`, or `0064` for double floats) holds the same objects as
+little-endian tokens, each a WORD: 1 name and 2 string (DWORD length, then the bytes; a string
+is followed by its `,`/`;` token as a DWORD), 3 integer, 5 GUID (16 bytes), 6 integer list and
+7 float list (DWORD count, then the values), 10-20 the marks `{ } ( ) [ ] < > . , ;`,
+31 `template`, 40-52 the template member types. `omsi-o3d` reads both encodings through one
+token stream; the compressed `tzip`/`bzip` variants are refused. Mod scenery exported this way
+(the PAD-Labs houses) loads like the text files.
+
+**DeclData** inside a `Mesh` carries per-vertex data as a Direct3D 9 vertex declaration: a
+count and that many D3DVERTEXELEMENT9 entries (type, method, usage, usage index), then a
+count of DWORDs holding the vertex buffer, the elements packed one after another in each
+vertex (floats as their bit patterns). The first NORMAL and the first TEXCOORD set replace
+`MeshNormals` / `MeshTextureCoords`; packed types (DEC3N, SHORT2N, FLOAT16_2, ...) widen to
+floats as Direct3D 9 does. Without it such meshes (the PAD-Labs houses, the Köln trees) come
+out in one flat colour.
 
 **Scrambled vertices (version ≥ 4).** The `key` field (`0xFFFFFFFF` = none) selects a vertex
 scrambling reproduced from the original loader (`omsi-o3d`):

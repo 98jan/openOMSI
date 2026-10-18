@@ -59,10 +59,9 @@ impl TrafficSim {
         let light_log = omsi_cfg::flags::OMSI_DEBUG_LIGHTS.var().map(String::from);
         let light_prev = lights.iter().map(|c| vec![-100; c.lights.len()]).collect();
         let lanes = 0..net.lanes.len();
-        let street_weight = net.lanes.iter().filter_map(street_lane_weight).sum();
         let mut t = TrafficSim {
             net,
-            street_weight,
+            street_weight: 0.0,
             parked,
             parked_waiting: Vec::new(),
             lane_tiles: lane_tiles.into_iter().collect(),
@@ -133,6 +132,7 @@ impl TrafficSim {
             emergency: Default::default(),
             player_turn: 0.0,
             player_blinker: 0,
+            player_rail: None,
             player_signal_age: f32::MAX,
             player_signalling: 0.0,
             way_users: Vec::new(),
@@ -169,6 +169,10 @@ impl TrafficSim {
             removals: [0; Removal::COUNT],
             admission: Default::default(),
         };
+        // (the lanes' spawn density from what the map makes of each group, and the weight of
+        // the street lanes with it)
+        t.set_spawn_densities(lanes.clone());
+        t.street_weight = t.net.lanes.iter().filter_map(street_lane_weight).sum();
         t.sort_parked(parked_cars, lanes);
         t
     }

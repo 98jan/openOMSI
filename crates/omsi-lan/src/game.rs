@@ -412,6 +412,11 @@ pub fn start(args: &LanConfig, host: &dyn LanHost) -> Option<LanSession> {
     // (every bus offered until the server joined now says otherwise, see `ServerOffers`)
     let offers_session = crate::gateway::new_offers_session();
     let world = world_info(args);
+    let started = Instant::now();
+    let planned = Pose {
+        bus: args.bus.clone().unwrap_or_default().replace('\\', "/"),
+        ..Default::default()
+    };
     let session = match (&args.lan_host, &args.lan_join) {
         (Some(port), _) => {
             // 0 = the default port, or the next free one when another session runs here
@@ -455,7 +460,7 @@ pub fn start(args: &LanConfig, host: &dyn LanHost) -> Option<LanSession> {
                     target.clone()
                 }
             };
-            match LanSession::join(&direct, &player_name(args), world, Duration::from_secs(3)) {
+            match crate::join::connect(target, &direct, args.lan_ws_fallback.as_deref(), &player_name(args), world, &planned, HOST_ANSWER_WAIT) {
                 Ok(s) => Some(s),
                 Err(e) => {
                     log::warn!("LAN: cannot join '{target}': {e}");
@@ -488,16 +493,7 @@ pub fn start(args: &LanConfig, host: &dyn LanHost) -> Option<LanSession> {
         }
     }
     if session.role == Role::Client {
-        // the hello names the bus we are about to drive (the state says when it stands)
-        let planned = Pose {
-            bus: args.bus.clone().unwrap_or_default().replace('\\', "/"),
-            ..Default::default()
-        };
-        let t0 = Instant::now();
-        while t0.elapsed() < HOST_ANSWER_WAIT && !session.connected && session.rejected.is_none() {
-            session.tick(0.02, &planned);
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        let t0 = started;
         // nobody answered at the addresses of the code: the host's tunnel, if it posted one
         if session.welcome.is_none() && session.rejected.is_none() && args.lan_join.as_deref().map(|t| omsi_net::ws::ws_url(t).is_none()).unwrap_or(false) {
             if let Some(url) = omsi_net::SessionCode::decode(args.lan_join.as_deref().unwrap_or("")).ok().and_then(|c| omsi_net::bridge::lookup_tunnel(c.session)) {
@@ -564,10 +560,8 @@ pub fn share_mods(args: &mut LanConfig, lan: &mut LanSession) {
             // (a player's game hosting a session takes the joining players' buses as a server
             // does, and keeps its own for them: `mods::upload::keep_own`; a server takes them
             // as its server.cfg says)
-            // (OMSI_NO_LAN_UPLOADS: a player who hosts for strangers keeps their disk to
-            // themselves; their own bus is still sent to the others)
             if !args.server {
-                crate::mods::upload::accept(!omsi_cfg::flags::OMSI_NO_LAN_UPLOADS.is_set());
+                crate::mods::upload::accept(crate::mods::upload::a_hosting_game_takes_uploads());
             }
             if let (Some(port), Some(key)) = (lan.local_addr().map(|a| a.port()), lan.host_key()) {
                 crate::mods::serve(port, key, &mod_source(args));

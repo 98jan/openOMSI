@@ -545,6 +545,11 @@ impl<'a> Compiler<'a> {
 
     fn compile_file(&mut self, f: &CfgFile) {
         let mut cur: Option<(Vec<BlockKind>, Block, Vec<(usize, bool)>)> = None; // kinds (aliases), block, if-stack: (jump op index, has_else)
+        // the jumps of `{else}`s after an `{if}`'s first, with the depth of their `{if}` in
+        // the if-stack: in OMSI every `{else}` reached goes on at the `{endif}`, so
+        // `{if} X {else} Y {else} Z {endif}` never runs Z (DBC Chicago Citybus
+        // `cashdesk.osc` blanks its farebox after such an `{else}`)
+        let mut extra_elses: Vec<(usize, usize)> = Vec::new();
         // `{else}` without an open `{if}` (a stray `{endif}` closed it early): in OMSI a
         // reached `{else}` skips to the next `{endif}`, so it jumps there here too - the
         // Procity's dashboard blanked its odometer every frame through such an `{else}`
@@ -576,7 +581,7 @@ impl<'a> Compiler<'a> {
                                     Some(_) => {
                                         let (kinds, mut block, _) = cur.take().unwrap();
                                         let end = block.ops.len() as u32;
-                                        for idx in orphan_elses.drain(..) {
+                                        for idx in orphan_elses.drain(..).chain(extra_elses.drain(..).map(|(_, op)| op)) {
                                             patch(&mut block.ops[idx], end);
                                         }
                                         log::debug!("{}:{}: {{{b}}} starts while block {} is open (implicit end)", f.path.display(), line_no, block.name);
@@ -594,8 +599,10 @@ impl<'a> Compiler<'a> {
                                     }
                                     for (idx, _) in ifs {
                                         log::debug!("{}:{}: {{end}} with open {{if}}", f.path.display(), line_no);
-                                        let end = block.ops.len() as u32;
                                         patch(&mut block.ops[idx], end);
+                                    }
+                                    for (_, op) in extra_elses.drain(..) {
+                                        patch(&mut block.ops[op], end);
                                     }
                                     self.finish_block(kinds, block);
                                 } else {
@@ -616,9 +623,13 @@ impl<'a> Compiler<'a> {
                             }
                             "else" => {
                                 if let Some((_, block, ifs)) = cur.as_mut() {
+                                    let depth = ifs.len();
                                     if let Some((idx, has_else)) = ifs.last_mut() {
                                         if *has_else {
                                             log::debug!("{}:{}: double {{else}}", f.path.display(), line_no);
+                                            extra_elses.push((depth, block.ops.len()));
+                                            block.ops.push(Op::Jump(u32::MAX));
+                                            continue;
                                         }
                                         // jump over the else branch from the end of the if branch
                                         let jmp = block.ops.len();
@@ -638,9 +649,16 @@ impl<'a> Compiler<'a> {
                             }
                             "endif" => {
                                 if let Some((_, block, ifs)) = cur.as_mut() {
+                                    let depth = ifs.len();
                                     if let Some((idx, _)) = ifs.pop() {
                                         let target = block.ops.len() as u32;
                                         patch(&mut block.ops[idx], target);
+                                        // (this `{if}`'s later `{else}`s land here too)
+                                        while extra_elses.last().is_some_and(|&(d, _)| d == depth) {
+                                            if let Some((_, op)) = extra_elses.pop() {
+                                                patch(&mut block.ops[op], target);
+                                            }
+                                        }
                                     } else {
                                         log::debug!("{}:{}: {{endif}} without {{if}}", f.path.display(), line_no);
                                         let target = block.ops.len() as u32;
@@ -692,7 +710,7 @@ impl<'a> Compiler<'a> {
         }
         if let Some((kinds, mut block, _)) = cur.take() {
             let end = block.ops.len() as u32;
-            for idx in orphan_elses.drain(..) {
+            for idx in orphan_elses.drain(..).chain(extra_elses.drain(..).map(|(_, op)| op)) {
                 patch(&mut block.ops[idx], end);
             }
             log::debug!("{}: missing {{end}} at end of file", f.path.display());

@@ -94,6 +94,11 @@ img { -webkit-user-drag: none; }
 ::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--line-strong); }
 ::-webkit-scrollbar-track { background: transparent; }
+/* (room for the scroll bar kept whether it shows or not: a panel whose content grew past its
+   height - the timetable's lists against free drive - no longer changes its width) */
+.sidebar, .page, .drive-panel-body, .bm-left, .roadbook-trips, .bus-list, .dialog-body, .pick-list, .trips, .picker .left .list, .picker .right, .tt-list, .m-main, .m-split-list { scrollbar-gutter: stable; }
+/* (not where nothing scrolls: the drive page itself does not, and kept a 12 px strip) */
+.page.page-drive { scrollbar-gutter: auto; }
 
 /* --- the frame ------------------------------------------------------------------------ */
 
@@ -258,7 +263,7 @@ textarea.input { height: auto; padding: 9px 11px; resize: vertical; }
 .toggle { display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 6px 0; }
 .toggle input { display: none; }
 .toggle .track { width: 36px; height: 20px; border-radius: 10px; background: var(--control-bg); position: relative; flex: none; transition: background 0.12s; }
-.toggle .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-2); transition: transform 0.12s, background 0.12s; }
+.toggle .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-2); transition: transform 0.12s, background 0.12s; }
 .toggle input:checked + .track { background: var(--accent);  }
 .toggle input:checked + .track::after { transform: translateX(16px); background: var(--accent-text); }
 .toggle .text { min-width: 0; }
@@ -304,7 +309,6 @@ table.table { width: 100%; border-collapse: collapse; }
 .table tr.click { cursor: pointer; }
 .table tr.click:hover td { background: var(--surface-2); }
 .table tr.on td { background: var(--accent-soft); }
-.table tr.on td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .table tr.past td { color: var(--muted); }
 
 /* tags and states */
@@ -383,6 +387,8 @@ table.table { width: 100%; border-collapse: collapse; }
 .trips { max-height: 300px; overflow: auto; border-radius: var(--radius-sm); background: var(--surface-2); }
 .trips .table th { position: sticky; top: 0; background: var(--surface-2); z-index: 1; }
 .table.ibis td:first-child { width: 100%; max-width: 0; }
+.table.ibis td, .table.ibis th { padding: 6px 6px; }
+.table.ibis td:first-child, .table.ibis th:first-child { padding-left: 0; }
 
 .page-drive { padding: 20px 24px; overflow: hidden; container: drive / inline-size; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -395,7 +401,7 @@ table.table { width: 100%; border-collapse: collapse; }
 .drive-step.on { color: var(--text); border-bottom-color: var(--accent); }
 .drive-step.on .n { background: var(--accent); color: var(--accent-text); }
 .drive-note { padding: 12px 16px 0; }
-.drive-panel-body { flex: 1; min-height: 0; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.drive-panel-body { flex: 1; min-height: 0; overflow: hidden auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 .drive-panel-body > .stack { flex: none; }
 .drive-panel-body .section-title { margin: 0; }
 
@@ -413,7 +419,6 @@ table.table { width: 100%; border-collapse: collapse; }
 .bus-row.maker.open { position: sticky; top: -4px; z-index: 1; background: var(--surface-2); }
 .bus-row.maker.open:hover { background: var(--surface-3); }
 .bus-row.on { background: var(--accent-soft); }
-.bus-row.on::before { content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 2px; background: var(--accent); }
 .bus-row.maker.has > .icon:first-child { color: var(--accent); }
 .bus-row.has > .grow .title { color: var(--accent); }
 .bus-row .star { opacity: 0; transition: opacity 0.12s; }
@@ -447,10 +452,10 @@ table.table { width: 100%; border-collapse: collapse; }
 .map-row .grow { display: flex; flex-direction: column; min-width: 0; }
 .map-row b { font-weight: 600; }
 .map-row .btn { pointer-events: none; flex: none; }
-.duty-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-.duty-col.lines { flex: 2 1 170px; min-height: 170px; }
-.duty-col.tours { flex: 3 1 230px; min-height: 230px; }
-.duty-col .pick-list { flex: 1; height: auto; min-height: 110px; padding: 4px; gap: 2px; display: flex; flex-direction: column; }
+.duty-col { display: flex; flex-direction: column; gap: 8px; }
+.duty-col.lines { flex: 2 1 170px; }
+.duty-col.tours { flex: 3 1 230px; }
+.duty-col .pick-list { flex: 1; height: auto; min-height: 134px; contain: size; padding: 4px; gap: 2px; display: flex; flex-direction: column; }
 .duty-head { min-height: 28px; }
 .duty-head .toggle { padding: 0; min-width: 0; }
 .duty-head .toggle .text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -480,10 +485,14 @@ table.table { width: 100%; border-collapse: collapse; }
 .roadbook-trips { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 8px; }
 .trip-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border-radius: var(--radius-sm); background: none; color: inherit; text-align: left; cursor: pointer; }
 .trip-row .time { width: 44px; flex: none; font-weight: 700; }
-.trip-row .line-badge { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; line-height: 24px; }
+/* (wide enough for the longest depot run label, "Garázsmenet" in Hungarian, about 72 px; a
+   longer one ends in an ellipsis rather than running into the terminus) */
+.trip-row .kind { flex: none; width: 76px; display: flex; align-items: center; min-width: 0; }
+.trip-row .line-badge { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; line-height: 24px; }
+.trip-row .depot { font-size: 11.5px; line-height: 1.2; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trip-row .grow { display: flex; flex-direction: column; min-width: 0; }
 .trip-row:hover { background: var(--surface-2); }
-.trip-row.on { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.trip-row.on { background: var(--accent-soft); }
 .trip-row.past { color: var(--muted); }
 .ibis-box { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 14px; border-top: 1px solid var(--line-strong); }
 @container (max-width: 700px) {
@@ -562,7 +571,12 @@ table.table { width: 100%; border-collapse: collapse; }
 .bus-thumb { display: flex; gap: 14px; min-width: 0; height: 100%; }
 .bt-view { position: relative; flex: none; width: clamp(160px, 38%, 260px); aspect-ratio: 16 / 9; align-self: center; border-radius: var(--radius-sm); overflow: hidden; background: #1a1a1a; }
 .bt-view .preview-views, .bt-view .hint, .cp-pip .preview-views, .cp-pip .hint { display: none; }
-.bt-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+.bt-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; container-type: inline-size; }
+/* (a narrow card puts its buttons under the bus's name instead of squeezing it to "NL...") */
+@container (max-width: 300px) {
+  .bt-head { flex-wrap: wrap; }
+  .bt-head .grow { flex-basis: 100%; }
+}
 .bt-head { gap: 8px; }
 .bt-head .grow { min-width: 0; }
 .bt-name { display: block; font-size: 15px; font-weight: 650; }
@@ -586,8 +600,15 @@ table.table { width: 100%; border-collapse: collapse; }
   grid-template-columns: clamp(260px, 25%, 380px) minmax(0, 1fr) clamp(220px, 20%, 320px); grid-template-rows: auto minmax(0, 1fr) auto; }
 .bm-map { position: absolute; inset: 0; }
 .bm-map .routemap .legend { display: none; }
+/* (the bus's picture stands over the map's bottom left corner there: the legend goes right) */
+.lay-classicplus .routemap .legend { left: auto; right: 10px; }
+/* (and above the map's credit, which stands in that corner) */
+.lay-classicplus .routemap .credit ~ .legend { bottom: 34px; }
 .bm-float { position: relative; min-width: 0; min-height: 0; background: var(--surface); border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); }
-.bm-left { grid-column: 1; grid-row: 1 / 3; overflow: auto; }
+.bm-left { grid-column: 1; grid-row: 1 / 3; overflow: hidden auto; }
+/* (a long bus name, "SD200 - SD77 - Lotto Toto Spiel 77", kept its button wider than the panel) */
+.tour-buses .btn { max-width: 100%; min-width: 0; }
+.tour-buses .btn .ellipsis { min-width: 0; }
 .bm-right { grid-column: 3; grid-row: 1 / 3; overflow: hidden; }
 .bm-right:empty { visibility: hidden; }
 .bm-top { grid-column: 2; grid-row: 1; justify-self: center; align-self: start; padding: 10px 12px; width: min(100%, 560px); }
@@ -595,6 +616,8 @@ table.table { width: 100%; border-collapse: collapse; }
 .bm-bus .bt-view { width: 132px; }
 .bm-bus .bt-info .livery > .btn:nth-child(2), .bm-bus .bt-info .livery > .btn:nth-child(3) { display: none; }
 .bt-tools { position: absolute; right: 4px; bottom: 4px; display: flex; gap: 4px; }
+/* (the preview's own message keeps clear of the buttons over its corner) */
+.bt-view .state { flex-direction: column; gap: 4px; padding: 6px 8px 36px; font-size: 11.5px; line-height: 1.25; text-align: center; }
 .bt-tools .btn { background: rgba(14, 14, 14, 0.72); color: #fff; border-color: transparent; }
 .bt-tools .btn:hover:not(:disabled) { background: rgba(14, 14, 14, 0.9); }
 .bm-bar { grid-column: 2 / 4; grid-row: 3; position: relative; align-self: end; min-width: 0; }
@@ -620,7 +643,8 @@ table.table { width: 100%; border-collapse: collapse; }
 
 @container drive (max-width: 1000px) {
   .lay-bigmap { grid-template-columns: clamp(260px, 36%, 340px) minmax(0, 1fr); }
-  .bm-right { grid-column: 2; grid-row: 2; align-self: end; height: 50%; justify-self: end; width: min(100%, 300px); }
+  /* (the whole height beside the map: at half of it the IBIS box took all and no trip showed) */
+  .bm-right { grid-column: 2; grid-row: 2; align-self: stretch; justify-self: end; width: min(100%, 300px); }
   .bm-bar { grid-column: 2; }
 }
 
@@ -652,9 +676,10 @@ table.table { width: 100%; border-collapse: collapse; }
 
 /* the map and bus pickers */
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
-.tile { border-radius: var(--radius);  background: var(--surface-2); overflow: hidden; cursor: pointer; text-align: left; padding: 0; }
-.tile:hover {  }
-.tile.on { box-shadow: inset 0 0 0 2px var(--accent); }
+.tile { position: relative; border-radius: var(--radius); background: var(--surface-2); overflow: hidden; cursor: pointer; text-align: left; padding: 0; }
+.tile:hover { background: var(--surface-3); }
+/* (the ring over the picture: an inset shadow lay under it, round the caption only) */
+.tile.on::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 2px var(--accent); pointer-events: none; }
 .tile .pic { height: 124px; border-radius: 0; }
 .tile .cap { padding: 10px 12px 12px; }
 .tile .cap b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -669,7 +694,7 @@ table.table { width: 100%; border-collapse: collapse; }
 .viewer.in-card { width: 100%; height: auto; aspect-ratio: 2 / 1; min-height: 250px; max-height: 40vh; border-radius: var(--radius-sm); }
 .viewer .state.corner { inset: auto 12px 12px auto; }
 .routemap { position: relative; border-radius: var(--radius-sm); background: #d8ecc8; overflow: hidden; touch-action: none; cursor: grab; }
-.routemap canvas { width: 100%; height: 100%; display: block; }
+.routemap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .routemap .state { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; color: #4a4a4f; pointer-events: none; }
 .routemap .legend { position: absolute; left: 10px; bottom: 8px; font-size: 11.5px; color: #1c1c1e; background: rgba(255, 255, 255, 0.92); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14); padding: 3px 10px; border-radius: 10px; pointer-events: none; }
 .routemap .credit { position: absolute; right: 10px; bottom: 8px; max-width: 55%; font-size: 10.5px; color: #6e6e73; background: rgba(255, 255, 255, 0.85); padding: 2px 8px; border-radius: 8px; pointer-events: none; text-align: right; }
@@ -696,6 +721,7 @@ table.table { width: 100%; border-collapse: collapse; }
 .setting-row:last-child { border-bottom: 0; }
 .setting-row .name { min-width: 0; }
 .setting-row .name span { display: block; font-size: 12px; color: var(--muted); }
+.setting-row .name span.warn-fg { color: var(--warn); }
 .setting-row.full { grid-template-columns: 1fr; }
 .optimise-block { margin: 8px 0 12px; padding: 4px 0 12px; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
 .optimise-block .section-title { margin-top: 14px; }
@@ -715,6 +741,22 @@ table.table { width: 100%; border-collapse: collapse; }
 .stat { padding: 14px 16px; border-radius: var(--radius); background: var(--surface);  }
 .stat b { display: block; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .stat span { color: var(--muted); font-size: 12.5px; }
+
+/* --- the depot: the player's own buses ----------------------------------------------------- */
+.depot { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
+.depot-side { position: sticky; top: 0; gap: 10px; }
+.depot-groups { gap: 6px; }
+.depot-list { padding: 8px; max-height: calc(100vh - 210px); overflow: auto; }
+.depot-stage { position: relative; height: clamp(300px, 48vh, 600px); border-radius: var(--radius) var(--radius) 0 0; overflow: hidden; }
+.depot-state { gap: 18px; color: var(--muted); }
+.depot-state > span { display: inline-flex; align-items: center; gap: 6px; }
+.depot-detail .stat b { font-size: 19px; white-space: nowrap; }
+.depot-fault { color: var(--danger); vertical-align: -2px; display: inline-flex; }
+.depot-faults { display: flex; flex-direction: column; gap: 6px; }
+.depot-fault-row { gap: 10px; padding: 6px 10px; border-radius: var(--radius-sm); background: var(--danger-soft); }
+.depot-tag { gap: 6px; color: var(--accent); margin-top: 4px; min-width: 0; }
+@media (max-width: 900px) { .depot { grid-template-columns: minmax(0, 1fr); } .depot-side { position: static; } .depot-list { max-height: 260px; } }
+@media (max-width: 560px) { .depot-detail .grid-2 { grid-template-columns: minmax(0, 1fr); } }
 
 .log { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; background: var(--surface-2);  border-radius: var(--radius-sm); padding: 10px 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-all; user-select: text; -webkit-user-select: text; }
 
@@ -804,7 +846,7 @@ table.table { width: 100%; border-collapse: collapse; }
 .bind-row:hover .assign, .bind-row:focus-visible .assign { opacity: 1; background: var(--accent-soft); }
 .bind-row:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .bind-row.lit { background: var(--accent-soft); }
-.bind-row.waiting { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.bind-row.waiting { background: var(--accent-soft); }
 .bind-row .chips { gap: 6px; justify-content: flex-end; }
 .kbd.chip { gap: 6px; height: 26px; padding: 0 4px 0 9px; font-variant-numeric: tabular-nums; }
 .kbd.chip small { font-size: 10.5px; color: var(--muted); }

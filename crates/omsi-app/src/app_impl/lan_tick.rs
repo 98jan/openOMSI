@@ -90,6 +90,7 @@ impl App {
         for (from, text) in cmds {
             self.lan_command(from, &text);
         }
+        crate::admin_panel::tick(self);
         self.tick_voice(dt);
     }
 
@@ -211,6 +212,7 @@ impl crate::Args {
             lan_name: self.lan_name.clone(),
             lan_host: self.lan_host,
             lan_join: self.lan_join.clone(),
+            lan_ws_fallback: self.lan_ws_fallback.clone(),
             server: self.server.is_some(),
             entry: self.entry,
             spawn: self.spawn.clone(),

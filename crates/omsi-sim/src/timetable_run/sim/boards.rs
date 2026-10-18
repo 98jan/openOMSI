@@ -627,4 +627,20 @@ mod tests {
         assert!(!sim.departures[1].spawned, "made ready to run again");
     }
 
+    /// A trip that runs in from the map's edge to its first stop is not put out early on a
+    /// layover at the start of its track: it comes at its departure time.
+    #[test]
+    fn a_trip_from_the_edge_is_not_put_out_early() {
+        let mut sim = schedule();
+        let (world, mut traffic) = (no_world(), no_traffic());
+        // a tour at 14:00 and 14:20: its second trip reaches its first stop 4 minutes in
+        tours(&mut sim, &[(50_400.0, "7", None), (51_600.0, "7", Some(0))]);
+        sim.times[0][0].stations[0] = (240.0, 270.0);
+        sim.departures[0].spawned = true;
+        sim.queue_due(&world, &mut traffic, 51_600.0 - 420.0, 1.0);
+        assert!(sim.pending.is_empty(), "put out early: {:?}", sim.pending);
+        sim.queue_due(&world, &mut traffic, 51_600.0 + 0.5, 1.0);
+        assert_eq!(sim.pending.iter().copied().collect::<Vec<_>>(), [1]);
+    }
+
 }
