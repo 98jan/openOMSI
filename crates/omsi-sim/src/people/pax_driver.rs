@@ -217,7 +217,7 @@ impl PeopleSim {
             // the money on the desk (sub_7e8254)
             let point = bn.cabin.money_var.clone();
             let mut paid = value;
-            // Importe objetivo indicado por el plugin, si existe.
+            // Target amount indicated by the plugin, if any.
             let payment = p.plugin().payment.filter(|amount| amount.is_finite()).map(|amount| amount.max(value));
             if let Some(m) = self.money.as_mut() {
                 let coins = if auto {

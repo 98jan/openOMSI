@@ -100,10 +100,10 @@ impl Money {
 
         let coin_count = self.currency.as_ref().map_or(0, |c| c.coins.len());
 
-        // Preferir billetes para importes altos.
-        // Menos de 5 €: solo monedas.
-        // De 5 € a menos de 10 €: billetes con peso 3.
-        // 10 € o más: billetes con peso 6.
+        // Prefer banknotes for higher amounts. 
+        // Less than €5: coins only. 
+        // From €5 to less than €10: banknotes with a weight of 3.
+        // €10 or more: banknotes with a weight of 6.
         let bill_weight: usize = if price >= 10.0 {
             6
         } else if price >= 5.0 {
@@ -112,8 +112,8 @@ impl Money {
             0
         };
 
-        // Repetir las opciones de billete aumenta su probabilidad de selección.
-        // Cada elemento conserva el índice real de la denominación.
+        // Repeating the banknote options increases their probability of being selected. 
+        // Each element retains the actual index of the denomination.
         let mut choices: Vec<(usize, f32)> = Vec::new();
 
         for &(id, value) in &all {
@@ -140,7 +140,7 @@ impl Money {
         let mut out: Vec<(usize, f32)> = Vec::new();
         let mut sum = 0.0f32;
 
-        // Elegir piezas aleatorias hasta alcanzar el importe solicitado.
+        // Select random items until the requested amount is reached.
         while sum < price && out.len() < 200 {
             let k = ((self.rand_f() * choices.len() as f32) as usize)
                 .min(choices.len() - 1);
@@ -150,7 +150,7 @@ impl Money {
             out.push((id, value));
         }
 
-        // Retirar piezas innecesarias si el resto sigue cubriendo el importe.
+        // Remove unnecessary pieces if the remainder still covers the total amount.
         let mut again = true;
 
         while again {
