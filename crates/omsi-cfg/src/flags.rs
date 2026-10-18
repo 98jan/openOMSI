@@ -266,6 +266,7 @@ flags! {
     OMSI_DRIVER_SHIFTER: Text, Test, Use, "-", "Part of a variable or file name: force the shifter the driver's hand uses; off: both hands on the wheel.";
     OMSI_DRIVE_PROFILE: Text, Test, Use, "-", "Offscreen: \"t throttle brake [steer]/...\" piecewise constant pedals (crash/kerb tests).";
     OMSI_DRIVE_V0: Num, Test, Use, "-", "Offscreen: the bus's speed in km/h on the first frame.";
+    OMSI_DUMP_CLASSES: Bool, Debug, Use, "off", "mapgen_dump example: paint the paving by class (road, footway, yard) in telling colours.";
     OMSI_DUMP_CUT: Text, Debug, Use, "-", "Directory: write each tile's road-cut alpha masks as images.";
     OMSI_DUMP_GROUND: Text, Debug, Use, "-", "File: every loaded tile's final terrain and road cut as text.";
     OMSI_DUMP_SCENERY_TEXT: Text, Debug, Use, "-", "Directory: write the scenery objects' text textures as drawn.";

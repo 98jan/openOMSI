@@ -10,6 +10,9 @@ use omsi_ui::Vertex;
 
 const PANEL_REACH: f64 = 640.0;
 const PANEL_REBUILD: f64 = 150.0;
+/// The triangles of house models the panel's ground may hold: it is drawn every frame, and rebuilt
+/// as the bus drives.
+const PANEL_MODELS: usize = 30_000;
 
 /// The card behind the next turn (dark in both looks, as a car's guidance banner is).
 const BANNER: Color = Color::rgba(28, 30, 33, 0.95);
@@ -73,9 +76,9 @@ impl Navigator {
             if self.global.is_some() {
                 let pal2 = pal;
                 let device = renderer.device.clone();
-                self.panel_job = Some(super::build::Job::start((look_key, lanes_now), move || super::build::build(&parts, anchor, reach, &pal2, look, true, true).made_on(&device)));
+                self.panel_job = Some(super::build::Job::start((look_key, lanes_now), move || super::build::build(&parts, anchor, reach, &pal2, look, true, Some(PANEL_MODELS)).made_on(&device)));
             } else {
-                let mut b = super::build::build(&parts, anchor, reach, &pal, look, true, true);
+                let mut b = super::build::build(&parts, anchor, reach, &pal, look, true, Some(PANEL_MODELS));
                 let [_, houses @ ..] = b.counts;
                 self.roads = Some(Roads { look: look_key, anchor, lanes_seen: lanes_now, houses, runs: std::mem::take(&mut b.runs), built_at: self.time });
                 built = Some(b);
