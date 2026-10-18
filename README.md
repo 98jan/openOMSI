@@ -195,6 +195,12 @@ coffee or support it on Ko-fi - thank you!
   <a href="https://ko-fi.com/usonance"><img alt="Support me on Ko-fi" src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" height="48"></a>
 </p>
 
+## Acknowledgements
+
+Some ideas and fixes in openOMSI date back to the public work of
+[neoOMSI](https://github.com/neoOMSI/neoOMSI): their reports and pull requests pointed at
+bugs and features that we then implemented in our own code. Thank you.
+
 ## License
 
 openOMSI is released under the [GNU Affero General Public License, version 3 only](LICENSE)
