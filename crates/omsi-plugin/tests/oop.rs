@@ -173,7 +173,7 @@ fn process_api_requires_its_explicit_oop_permission() {
     let oop = OopBuilder::new(header("org.test.no-process", Kind::Lua, "main.lua", &["ui"]))
         .file("main.lua", r#"
             function on_frame()
-                for _, name in ipairs({"start", "status", "exit_code", "kill", "forget"}) do
+                for _, name in ipairs({"start", "status", "exit_code", "wait", "kill", "forget"}) do
                     local ok, err = pcall(omsi.process[name], "nonexistent-program")
                     assert(not ok and tostring(err):find('no "process" permission', 1, true))
                 end

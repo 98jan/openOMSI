@@ -479,6 +479,40 @@ else
 end
 ```
 
+For sequential Lua code, `omsi.process.wait(handle)` provides the `WaitForExit` pattern.
+It suspends only this plugin's Lua continuation: the game and other plugins keep running.
+The statements after `wait` run only after the child exits; local variables are preserved.
+The wait itself consumes no Lua execution budget. Each executed/resumed slice still has
+its usual time limit. Normal frame/timer callbacks pause; callbacks already dispatched in
+the same frame are deferred until the continuation completes (up to 256). Reload or stop
+cancels the continuation and terminates the child. Main chunks, start/frame/event handlers
+and timers support waiting; nested `emit` callbacks and manually resumed coroutines cannot
+suspend. WASM plugins can use `process.exit_code` polling instead.
+
+For example, this follows the ConnectionMaker sequence. Each argument is already a
+separate string, so do not add shell quotes around `connections` or the output path.
+The exit code is returned unchanged; ConnectionMaker can use it as a texture count.
+
+```lua
+local function generate_connections(id, connections, width, height, path, filename)
+    omsi.log("Generating connection images for BS170_" .. id .. "...")
+    local handle, reason = omsi.process.start("plugins/ConnectionMaker.exe", {
+        "-text", connections,
+        "-width", tostring(width), "-height", tostring(height),
+        "-outpath", path .. "/" .. filename,
+    })
+    if not handle then error(reason) end
+
+    local count, state = omsi.process.wait(handle)
+    omsi.process.forget(handle)
+    if state ~= "exited" or count == nil then error("ConnectionMaker: " .. state) end
+    omsi.log(string.format("%d textures generated for BS170_%s!", count, id))
+end
+
+-- Call generate_connections(...) from your normal plugin code.
+-- Execution after process.wait resumes when ConnectionMaker has finished.
+```
+
 ### Safety and errors
 
 A Lua plugin gets Lua 5.4 with the safe libraries only: `string`, `table`, `math`, `utf8`,
@@ -833,6 +867,7 @@ declared to call the function (a plain `.lua` file has them all).
 | `omsi.process.kill(handle)` | true, or nil and reason | Request termination of a plugin-owned direct child without waiting. Poll `process.status` for completion; descendants are not tracked. *Permission: `process`.* | 0.3.38 |
 | `omsi.process.start(file, [args], [options])` | handle, or nil and reason | Start a native program without waiting for it. `args` is a list of separate strings, passed literally without shell expansion. Options: `cwd` (working directory) and `env` (string-to-string environment overrides; other variables inherited). Use an absolute executable path when setting `cwd`; relative executable lookup follows the platform's rules. Standard streams are disconnected. At most 32 handles per plugin; use `process.forget` after completion. Direct children are terminated on plugin stop, disable or reload. This permission runs programs outside the plugin file sandbox; only grant it to trusted plugins. *Permission: `process`.* | 0.3.38 |
 | `omsi.process.status(handle)` | table, or nil and reason | Nonblocking status: `{pid, running, exited, code, success, signal}`. While running `code`, `success` and `signal` are nil. After exit `code` is the exit code (including nonzero); termination by a signal has no code, and `signal` is available on Unix. Results remain readable until forgotten. *Permission: `process`.* | 0.3.38 |
+| `omsi.process.wait(handle)` | exit code or nil, state or reason | Lua: suspend this plugin until its direct child exits, then return `code, "exited"` (nonzero codes retained; nil code on signal exit). The game and other plugins keep running; no game-thread wait occurs. Works in the main chunk, start/frame/event handlers and timers. Queued callbacks resume afterwards (limit 256), and normal frames/timers pause during the wait. Stop/reload cancels the continuation and terminates the child. A nested `emit` callback or manually resumed coroutine cannot suspend. Other language bindings should poll `process.exit_code` instead. *Permission: `process`.* | 0.3.38 |
 
 #### Programs on this computer
 

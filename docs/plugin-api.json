@@ -2816,6 +2816,22 @@
       "permission": "process"
     },
     {
+      "name": "process.wait",
+      "group": "process",
+      "since": "0.3.38",
+      "doc": "Lua: suspend this plugin until its direct child exits, then return `code, \"exited\"` (nonzero codes retained; nil code on signal exit). The game and other plugins keep running; no game-thread wait occurs. Works in the main chunk, start/frame/event handlers and timers. Queued callbacks resume afterwards (limit 256), and normal frames/timers pause during the wait. Stop/reload cancels the continuation and terminates the child. A nested `emit` callback or manually resumed coroutine cannot suspend. Other language bindings should poll `process.exit_code` instead.",
+      "params": [
+        {
+          "name": "handle",
+          "type": "integer",
+          "optional": false
+        }
+      ],
+      "returns": "exit code or nil, state or reason",
+      "multi": true,
+      "permission": "process"
+    },
+    {
       "name": "release",
       "group": "vehicle",
       "since": "0.1.5",
