@@ -312,8 +312,8 @@ end)
 F10 gives the panels the mouse; a click on the button sounds the horn. The whole example is
 [`docs/examples/plugins/trip_panel.lua`](examples/plugins/trip_panel.lua).
 
-`omsi.ui.version` is `4` (`3` before boxes, stop lists and the other elements and keys marked
-4 below, `2` before the navigator's board, `1` before the controls):
+`omsi.ui.version` is `5` (`4` before `grab`, `3` before boxes, stop lists and the other
+elements and keys marked 4 below, `2` before the navigator's board, `1` before the controls):
 test `if omsi.ui and omsi.ui.version >= 2` in a plugin that should also run in an older openOMSI.
 The panels are the plugin's own: one plugin cannot change or remove another's, and when the
 plugin stops, or is loaded again after a change of its file, its panels go (its
@@ -336,9 +336,18 @@ omsi.ui.set("trip", {
   visible = true,             -- false hides it and keeps it
   clickable = false,          -- true: a click anywhere on it is ui_click(id, nil)
   draggable = false,          -- true: while the panels have the mouse it can be moved by its free parts
+  grab = false,               -- true: it takes its clicks even while the panels do not have the mouse (ui.version 5)
   children = { ... },         -- elements, top to bottom
 })
 ```
+
+A panel with `grab = true` takes a left click on it even while the panels do not have the
+mouse (no F10 or `ui.focus` first): its buttons, boxes, sliders and tabs answer as with the
+mouse, and the cab behind it gets none of the click. Such a click starts no typing into a text
+field and does not drag the panel. Elsewhere the click is the cab's as before; while the mouse
+turns the head (no cursor) it is the head's, and the game's own panels over it come first. It is
+for small cards the driver clicks away or keeps: a card that covers more than a quarter of the
+screen, or whose background is less than half opaque, takes no click this way.
 
 Sizes are pixels of a 1080p screen at the normal interface size. A panel stays on the screen
 whatever its offset; one the player dragged keeps its new place when it is set again
