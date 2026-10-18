@@ -597,8 +597,9 @@ impl PlayerDuty {
         let day_time = self.duty_time(day_time);
         self.heading = bus.heading;
         self.position = Some(bus.position);
-        let served = self.advance(bus.position, day_time);
         let standing = bus.physics.velocity_kmh().abs() < 0.36;
+        let doors_open_here = Self::doors_open(bus) && standing;
+        let served = self.progress_at(bus.position, day_time, doors_open_here);
         if self.at_stop && Self::doors_open(bus) {
             self.passed.doors = true;
         } else if !self.at_stop && standing && Self::doors_open(bus) {
@@ -619,7 +620,7 @@ impl PlayerDuty {
         if self.trip_index + 1 < self.trips.len() && self.served_terminus.is_some() {
             self.set_trip(self.trip_index + 1);
             log::info!("duty: terminus served, on to trip {} {} to {}", self.trip_index + 1, self.trip().name, self.trip().terminus);
-            self.advance(bus.position, day_time);
+            self.progress_at(bus.position, day_time, doors_open_here);
         }
         self.feed_host(bus, day_time);
         served
@@ -756,8 +757,15 @@ impl PlayerDuty {
         self.next_stop = k;
     }
 
-    /// The duty's progress with the bus at `pos` (see [`PlayerDuty::update`]).
+    /// [`Self::progress_at`] for a bus standing at `pos` with a door open (tests).
+    #[cfg(test)]
     pub(crate) fn advance(&mut self, pos: glam::DVec3, day_time: f64) -> Option<(f64, f64)> {
+        self.progress_at(pos, day_time, true)
+    }
+
+    /// The duty's progress with the bus at `pos` (see [`PlayerDuty::update`]);
+    /// `doors_open_here`: it stands with a door open.
+    pub(crate) fn progress_at(&mut self, pos: glam::DVec3, day_time: f64, doors_open_here: bool) -> Option<(f64, f64)> {
         if !self.placed {
             // (stops beyond the loaded tiles have no place yet: a few seconds for the
             // navigator's map, unless the bus stands at a stop of its trip)
@@ -814,8 +822,11 @@ impl PlayerDuty {
         let trip = &self.trips[self.trip_index];
         let last = trip.stops.len().saturating_sub(1);
         // the bus reached a later stop of the trip (skipped stops); before it has left a
-        // stop of the trip, not its last one (where the tour's previous trip may end)
-        if !self.at_stop {
+        // stop of the trip, not its last one (where the tour's previous trip may end).
+        // Reached means standing there with a door open: driving out of a terminal stand
+        // through the circle of a later stop of the same loop fast-forwarded the duty past
+        // every stop in between
+        if doors_open_here && !self.at_stop {
             self.catch_up(pos, forward_of(self.heading));
         }
         let trip = &self.trips[self.trip_index];

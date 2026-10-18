@@ -17,12 +17,54 @@ use ring::hmac;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Free bytes for this user on the volume of `path` (the nearest existing ancestor).
+pub(crate) fn free_space(path: &Path) -> Option<u64> {
+    let mut p = path.to_path_buf();
+    while !p.exists() {
+        if !p.pop() {
+            return None;
+        }
+    }
+    free_space_impl(&p)
+}
+
+#[cfg(unix)]
+fn free_space_impl(p: &Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(p.as_os_str().as_bytes()).ok()?;
+    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
+        return None;
+    }
+    Some(s.f_bavail as u64 * s.f_frsize as u64)
+}
+
+#[cfg(windows)]
+fn free_space_impl(p: &Path) -> Option<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetDiskFreeSpaceExW(dir: *const u16, avail: *mut u64, total: *mut u64, free: *mut u64) -> i32;
+    }
+    let wide: Vec<u16> = p.as_os_str().encode_wide().chain(Some(0)).collect();
+    let (mut a, mut t, mut f) = (0u64, 0u64, 0u64);
+    (unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut a, &mut t, &mut f) } != 0).then_some(a)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn free_space_impl(_p: &Path) -> Option<u64> {
+    None
+}
+
 #[cfg(windows)]
 const KEY_FILE: &str = "store.key.dpapi";
 #[cfg(not(windows))]
 const KEY_FILE: &str = "store.key";
 const BLOB: &str = "blob";
+const PIECE: &str = "piece";
+const PACKED: &str = "zpiece";
 
+#[derive(Clone)]
 pub(crate) struct Store {
     dir: PathBuf,
     key: Arc<SealKey>,
@@ -86,14 +128,148 @@ impl Store {
         std::fs::metadata(&f.blob).ok().filter(|m| m.len() == omsi_cfg::vfs::sealed_len(e.size)).map(|_| f)
     }
 
+    /// `e`'s file read back (unsealed and checked: the seal is bound to its SHA-256).
+    pub(crate) fn read(&self, e: &Entry) -> std::io::Result<Vec<u8>> {
+        let f = self.has(e).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "not in the store"))?;
+        let plain = omsi_cfg::vfs::unseal(&self.key, &f.aad, std::fs::read(&f.blob)?)?;
+        if plain.len() as u64 != e.size {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "another size than its list's"));
+        }
+        Ok(plain)
+    }
+
     /// Keep `data` (checked against `e` already) sealed.
     pub(crate) fn put(&self, e: &Entry, data: &[u8]) -> std::io::Result<SealedFile> {
         let f = self.file(e);
         let sealed = omsi_cfg::vfs::seal(&self.key, &f.aad, data)?;
-        let tmp = f.blob.with_extension("part");
+        let tmp = temp_of(&f.blob, "part");
         std::fs::write(&tmp, sealed).and_then(|_| std::fs::rename(&tmp, &f.blob))?;
         Ok(f)
     }
+
+    /// Piece `i` of the file `sha` (see `pieces`): where it is kept, and what its seal is
+    /// bound to - that file and that place in it, so no piece passes for another.
+    fn piece_file(&self, sha: &str, i: u64) -> (PathBuf, Vec<u8>) {
+        let aad = format!("{}:{i}", sha.to_ascii_lowercase()).into_bytes();
+        let name: String = hmac::sign(&self.names, &aad).as_ref().iter().map(|b| format!("{b:02x}")).collect();
+        (self.dir.join(format!("{name}.{PIECE}")), aad)
+    }
+
+    /// Is piece `i` (`len` bytes) of `sha` here?
+    pub(crate) fn has_piece(&self, sha: &str, i: u64, len: u64) -> bool {
+        std::fs::metadata(self.piece_file(sha, i).0).is_ok_and(|m| m.len() == omsi_cfg::vfs::sealed_len(len))
+    }
+
+    /// Keep piece `i` of `sha` sealed, as it came (its file is checked once it is whole).
+    pub(crate) fn put_piece(&self, sha: &str, i: u64, data: &[u8]) -> std::io::Result<()> {
+        let (path, aad) = self.piece_file(sha, i);
+        let sealed = omsi_cfg::vfs::seal(&self.key, &aad, data)?;
+        let tmp = temp_of(&path, "partpiece");
+        std::fs::write(&tmp, sealed).and_then(|_| std::fs::rename(&tmp, &path))
+    }
+
+    /// Piece `i` of `sha` read back (unsealed: it is the piece kept for that place).
+    pub(crate) fn piece(&self, sha: &str, i: u64, len: u64) -> std::io::Result<Vec<u8>> {
+        let (path, aad) = self.piece_file(sha, i);
+        let plain = omsi_cfg::vfs::unseal(&self.key, &aad, std::fs::read(path)?)?;
+        if plain.len() as u64 != len {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "a piece of another size"));
+        }
+        Ok(plain)
+    }
+
+    /// The pieces of `sha` (`count` of them) go: its file is kept whole, or was not that file.
+    pub(crate) fn remove_pieces(&self, sha: &str, count: u64) {
+        for i in 0..count {
+            let _ = std::fs::remove_file(self.piece_file(sha, i).0);
+        }
+    }
+
+    /// Piece `i` of the kept file `sha` packed at its smallest, as it goes over the wire (see
+    /// `vehicles::recompress`): where it is kept, and what its seal is bound to.
+    fn packed_file(&self, sha: &str, i: u64) -> (PathBuf, Vec<u8>) {
+        let aad = format!("{}:{i}:packed", sha.to_ascii_lowercase()).into_bytes();
+        let name: String = hmac::sign(&self.names, &aad).as_ref().iter().map(|b| format!("{b:02x}")).collect();
+        (self.dir.join(format!("{name}.{PACKED}")), aad)
+    }
+
+    /// Keep piece `i` of `sha` packed (`codec` `-` with no bytes: it goes as it is).
+    pub(crate) fn put_packed(&self, sha: &str, i: u64, codec: char, wire: &[u8]) -> std::io::Result<()> {
+        let (path, aad) = self.packed_file(sha, i);
+        let mut data = Vec::with_capacity(1 + wire.len());
+        data.push(codec as u8);
+        data.extend_from_slice(wire);
+        let sealed = omsi_cfg::vfs::seal(&self.key, &aad, &data)?;
+        let tmp = temp_of(&path, "partpiece");
+        std::fs::write(&tmp, sealed).and_then(|_| std::fs::rename(&tmp, &path))
+    }
+
+    /// Piece `i` of `sha` packed, if it is: (codec, bytes on the wire).
+    pub(crate) fn packed(&self, sha: &str, i: u64) -> Option<(char, Vec<u8>)> {
+        let (path, aad) = self.packed_file(sha, i);
+        let mut data = omsi_cfg::vfs::unseal(&self.key, &aad, std::fs::read(path).ok()?).ok()?;
+        let codec = *data.first()? as char;
+        data.remove(0);
+        Some((codec, data))
+    }
+
+    /// The packed pieces of `sha` (`count` of them) go with its file.
+    pub(crate) fn remove_packed(&self, sha: &str, count: u64) {
+        for i in 0..count {
+            let _ = std::fs::remove_file(self.packed_file(sha, i).0);
+        }
+    }
+
+    /// Loose pieces (of files not finished yet, so not checked yet) go, the least lately
+    /// written first, until `need` bytes are freed - but none written within `grace` (an
+    /// upload under way is still writing them; one that loses a piece sends it again, the
+    /// transfer is resumable). The bytes freed. Pieces are kept before their file can be
+    /// checked, so without this a player could fill the disk with them: `make_room` only let
+    /// whole buses go.
+    pub(crate) fn remove_pieces_for_room(&self, need: u64, grace: std::time::Duration) -> u64 {
+        let Ok(rd) = std::fs::read_dir(&self.dir) else { return 0 };
+        let mut loose: Vec<(std::time::SystemTime, u64, PathBuf)> = rd
+            .flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == PIECE || x == "partpiece"))
+            .filter_map(|e| {
+                let m = e.metadata().ok()?;
+                let t = m.modified().ok()?;
+                t.elapsed().ok().filter(|d| *d >= grace)?;
+                Some((t, m.len(), e.path()))
+            })
+            .collect();
+        loose.sort_by_key(|(t, _, _)| *t);
+        let mut freed = 0;
+        for (_, len, path) in loose {
+            if freed >= need {
+                break;
+            }
+            if std::fs::remove_file(&path).is_ok() {
+                freed += len;
+            }
+        }
+        freed
+    }
+
+    /// Pieces of files left unfinished for longer than `age` go. How many.
+    pub(crate) fn remove_stale_pieces(&self, age: std::time::Duration) -> usize {
+        let Ok(rd) = std::fs::read_dir(&self.dir) else { return 0 };
+        let old = |e: &std::fs::DirEntry| e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|d| d > age);
+        rd.flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == PIECE || x == "partpiece") && old(e) && std::fs::remove_file(e.path()).is_ok())
+            .count()
+    }
+}
+
+/// Where a file of the store is written before it takes its name: a name of its own for each
+/// write (`<name>.<pid>-<n>.<ext>`). Two connections putting the same file at once - the same
+/// texture of two buses, or one bus sent twice - wrote into one temporary file and could
+/// leave it mixed. The extension stays, so what is left of a write that broke off is still
+/// cleared as before.
+fn temp_of(path: &Path, ext: &str) -> PathBuf {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    path.with_extension(format!("{}-{n}.{ext}", std::process::id()))
 }
 
 /// What a game before the encryption kept in the store: the plain files, named by their
@@ -115,7 +291,7 @@ pub(crate) fn remove_legacy(dir: &Path) {
 
 fn remove_blobs(dir: &Path) -> usize {
     let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
-    rd.flatten().filter(|e| e.path().extension().is_some_and(|x| x == BLOB) && std::fs::remove_file(e.path()).is_ok()).count()
+    rd.flatten().filter(|e| e.path().extension().is_some_and(|x| x == BLOB || x == PIECE || x == PACKED) && std::fs::remove_file(e.path()).is_ok()).count()
 }
 
 fn load_key(path: &Path) -> Option<[u8; 32]> {
@@ -165,6 +341,40 @@ fn dpapi(data: &[u8], protect: bool) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Loose pieces - kept before their file can be checked - go when room is needed, the
+    /// least lately written first, but never one written within the grace (an upload under
+    /// way): a player could otherwise fill the disk with pieces of files never finished.
+    #[test]
+    fn loose_pieces_go_oldest_first_to_make_room_but_not_recent_ones() {
+        let dir = std::env::temp_dir().join(format!("openomsi-lan-pieces-room-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = Store::open(&dir).unwrap();
+        let piece = vec![7u8; 4096];
+        let (old, older, young) = ("a".repeat(64), "b".repeat(64), "c".repeat(64));
+        for sha in [&old, &older, &young] {
+            store.put_piece(sha, 0, &piece).unwrap();
+        }
+        let now = std::time::SystemTime::now();
+        let age = |sha: &str, secs: u64| {
+            let f = std::fs::File::options().write(true).open(store.piece_file(sha, 0).0).unwrap();
+            f.set_modified(now - std::time::Duration::from_secs(secs)).unwrap();
+        };
+        age(&older, 3 * 3600);
+        age(&old, 2 * 3600);
+        age(&young, 60);
+        let grace = std::time::Duration::from_secs(600);
+        // room for one piece: the least lately written goes, the others stay
+        assert!(store.remove_pieces_for_room(1, grace) > 0);
+        assert!(!store.has_piece(&older, 0, piece.len() as u64), "the oldest went first");
+        assert!(store.has_piece(&old, 0, piece.len() as u64) && store.has_piece(&young, 0, piece.len() as u64));
+        // asked for far more: everything past the grace goes, the piece of an upload under way stays
+        store.remove_pieces_for_room(u64::MAX, grace);
+        assert!(!store.has_piece(&old, 0, piece.len() as u64));
+        assert!(store.has_piece(&young, 0, piece.len() as u64), "a piece written a minute ago is spared");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn the_store_keeps_nothing_plain() {

@@ -470,8 +470,10 @@ pub fn windows_components(rel: &str) -> Vec<&str> {
 }
 
 /// How names compare, as on Windows: without regard to case (letters beyond ASCII too -
-/// `Bahnübergang` is `BAHNÜBERGANG`).
-fn name_key(name: &str) -> String {
+/// `Bahnübergang` is `BAHNÜBERGANG`), and in one Unicode form (NFC). Also the form a bus's
+/// file keys take in its fingerprint (the game's `lan_mods::identity`), so a name stored
+/// decomposed on a Mac is the same file there as here.
+pub fn name_key(name: &str) -> String {
     if name.is_ascii() {
         name.to_ascii_lowercase()
     } else {
