@@ -120,6 +120,9 @@ pub(crate) struct Args {
     /// variable and, unless the plate is free, gives the plate that list pairs with it.
     #[arg(long)]
     pub(crate) number: Option<String>,
+    /// Bus of the player's depot (`~/.openomsi/depot.json`): its wear is restored, and saved at the end.
+    #[arg(long)]
+    pub(crate) depot: Option<String>,
     /// Time of day at start, HH:MM (default 09:00).
     #[arg(long, default_value = "09:00")]
     pub(crate) time: String,
@@ -271,6 +274,12 @@ pub(crate) struct Args {
     /// launcher's 3D preview, and quit.
     #[arg(long)]
     pub(crate) export_glb: Option<PathBuf>,
+    /// Pack a map (name, folder or global.cfg) with everything it uses for a server, and quit.
+    #[arg(long, requires = "pack_to")]
+    pub(crate) pack_map: Option<String>,
+    /// Where --pack-map writes: the server's content folder (hard links), or a .zip.
+    #[arg(long, requires = "pack_map")]
+    pub(crate) pack_to: Option<PathBuf>,
     /// Enhanced graphics, as the settings' `enhanced=1`: the physically based renderer
     /// (high-range lighting with GGX reflections, a computed sky, soft sun shadows,
     /// automatic exposure, a glow around real highlights and the PBR Neutral tone curve).
