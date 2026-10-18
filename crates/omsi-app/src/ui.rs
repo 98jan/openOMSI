@@ -682,7 +682,7 @@ impl Ui {
             let (w, h) = (lw + pad * 2.0 + mz_room, lh * labels.len() as f32 + pad * 0.8);
             let x = (x0 + x1 - w) * 0.5;
             if mz_room > 0.0 {
-                self.mz.slot = Some([x + w - mz_room + 4.0 * s, y + 3.0 * s, x + w - 6.0 * s, y + h - 3.0 * s]);
+                self.mz.slot = Some([x + w - mz_room, y, x + w, y + h]);
             }
             self.text.rounded(r, scene, [x, y, x + w, y + h], 8.0 * s, [28, 28, 28, (255.0 * self.text.backdrop.min(1.0)) as u8]);
             for (k, l) in labels.iter().enumerate() {

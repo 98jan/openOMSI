@@ -103,7 +103,7 @@ impl Ui {
         let slot = if f.nav_rect.is_none() { self.mz.slot } else { None };
         let embedded = slot.is_some();
         let small_w = slot.map_or_else(|| f.nav_rect.map_or(280.0 * s, |a| a[2] - a[0]).max(250.0 * s), |q| q[2] - q[0]);
-        let (small_h, big_h) = (slot.map_or(52.0 * s, |q| q[3] - q[1]), 144.0 * s + if v.typing.is_some() || v.status.is_some() { 26.0 * s } else { 0.0 });
+        let (small_h, big_h) = (slot.map_or(52.0 * s, |q| q[3] - q[1]), 160.0 * s + if v.typing.is_some() || v.status.is_some() { 26.0 * s } else { 0.0 });
         let w = small_w.round();
         let h = (small_h + (big_h - small_h) * e).round();
         let (x0, y0) = match f.nav_rect {
@@ -129,19 +129,19 @@ impl Ui {
         // (inside the bar the small card has no plate of its own: the bar is its plate)
         let plate = if embedded { e } else { 1.0 };
         if plate > 0.02 {
-            self.text.shadow(r, scene, [x0, y0, x1, y1], 14.0 * s, 20.0 * s, 4.0 * s, ((if v.light { 50.0 } else { 80.0 }) * plate) as u8);
-            self.text.rounded(r, scene, [x0, y0, x1, y1], 14.0 * s, [bg[0], bg[1], bg[2], (bg[3] as f32 * plate) as u8]);
+            self.text.shadow(r, scene, [x0, y0, x1, y1], if embedded { 8.0 * s } else { 14.0 * s }, 20.0 * s, 4.0 * s, ((if v.light { 50.0 } else { 80.0 }) * plate) as u8);
+            self.text.rounded(r, scene, [x0, y0, x1, y1], if embedded { 8.0 * s } else { 14.0 * s }, [bg[0], bg[1], bg[2], (bg[3] as f32 * plate) as u8]);
         }
         let pad = 12.0 * s;
         let xr = x1 - pad;
         if embedded && e < 0.5 {
             // (a divider, as between the bar's other parts)
-            self.text.rounded(r, scene, [x0 - 6.0 * s, y0 + 5.0 * s, x0 - 5.0 * s + 1.0, y1 - 5.0 * s], 0.0, [120, 120, 120, 255]);
+            self.text.rounded(r, scene, [x0, y0 + 6.0 * s, x0 + 1.0, y1 - 6.0 * s], 0.0, [120, 120, 120, 255]);
         }
         // the cover: 36 px in the small card, 88 in the full one
         let small_art = if embedded { small_h - 8.0 * s } else { 36.0 * s };
         let art = small_art + (72.0 * s - small_art) * e;
-        let (ax, ay) = (x0 + if embedded { 4.0 * s } else { pad } + (pad - if embedded { 4.0 * s } else { pad }) * e, y0 + (small_h - small_art) * 0.5 * (1.0 - e) + 12.0 * s * e);
+        let (ax, ay) = (x0 + if embedded { 10.0 * s } else { pad } + (pad - if embedded { 10.0 * s } else { pad }) * e, y0 + (small_h - small_art) * 0.5 * (1.0 - e) + 12.0 * s * e);
         match v.art.as_deref().and_then(|p| self.mz_art(r, scene, p)) {
             Some(tex) => scene.overlays.push((tex, [ax, ay, ax + art, ay + art])),
             None => self.text.rounded(r, scene, [ax, ay, ax + art, ay + art], 0.0, key_bg),
@@ -158,26 +158,21 @@ impl Ui {
         let ratio = v.elapsed.map_or(0.0, |t| (t / v.duration.unwrap_or(BAR_SECS).max(1.0)).min(1.0));
         // small card
         let time_w = time.as_ref().map_or(0.0, |t| self.text.width_raw(t, 11.0 * s) + 8.0 * s);
-        if embedded {
-            let one = format!("{title} · {artist}");
-            self.mz_label(r, scene, xr - time_w, &one, 12.0 * s, text_c, small, tx, y0 + (small_h - 15.0 * s) * 0.5);
-            if let Some(t) = &time {
-                self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, small, xr - time_w + 8.0 * s, y0 + (small_h - 14.0 * s) * 0.5);
-            }
-        } else {
-            self.mz_label(r, scene, xr - time_w, &title, 13.0 * s, text_c, small, tx, y0 + 9.0 * s);
-            self.mz_label(r, scene, xr, &artist, 11.0 * s, grey, small, tx, y0 + 27.0 * s);
-            if let Some(t) = &time {
-                self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, small, xr - time_w + 8.0 * s, y0 + 10.0 * s);
-            }
+        // the song and the artist are one label each, growing and moving as the card opens
+        let lerp = |from: f32, to: f32| from + (to - from) * e;
+        let line = (small_h - 15.0 * s) * 0.5;
+        let title_y = y0 + lerp(if embedded { line } else { 9.0 * s }, 12.0 * s);
+        let artist_y = y0 + lerp(if embedded { line } else { 27.0 * s }, 34.0 * s);
+        self.mz_label(r, scene, xr - time_w * (1.0 - e), &title, lerp(if embedded { 12.0 } else { 13.0 }, 16.0) * s, text_c, 1.0, tx, title_y);
+        self.mz_label(r, scene, xr, &artist, lerp(11.0, 13.0) * s, grey, if embedded { e } else { 1.0 }, tx, artist_y);
+        if let Some(t) = &time {
+            let y = if embedded { y0 + (small_h - 14.0 * s) * 0.5 } else { y0 + 10.0 * s };
+            self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, small, xr - time_w + 8.0 * s, y);
         }
-        // full card
-        self.mz_label(r, scene, xr, &title, 16.0 * s, text_c, e, tx, y0 + 14.0 * s);
-        self.mz_label(r, scene, xr, &artist, 13.0 * s, grey, e, tx, y0 + 36.0 * s);
         if !v.dj.is_empty() {
-            self.mz_label(r, scene, xr, &format!("On air: {}", v.dj), 12.0 * s, accent, e, tx, y0 + 58.0 * s);
+            self.mz_label(r, scene, xr, &format!("On air: {}", v.dj), 12.0 * s, accent, e, tx, y0 + 54.0 * s);
         }
-        self.mz_label(r, scene, xr, &format!("{} · auto quality", v.quality), 11.0 * s, grey, e, tx, y0 + 76.0 * s);
+        self.mz_label(r, scene, xr, &format!("{} · auto quality", v.quality), 11.0 * s, grey, e, tx, y0 + 70.0 * s);
         // the bar along the bottom, with the times above it in the full card
         let (bx0, bx1) = (x0 + pad, xr);
         let by = y1 - 8.0 * s - 4.0 * s * e - (if e > 0.5 { 6.0 * s * e } else { 0.0 });
@@ -189,9 +184,14 @@ impl Ui {
         if ratio > 0.0 && bar > 0.3 {
             self.text.rounded(r, scene, [bx0, by, (bx0 + (bx1 - bx0) * ratio).max(bx0 + bh), by + bh], bh * 0.5, accent);
         }
-        if let Some(t) = &time {
-            let tw = self.text.width_raw(t, 11.0 * s);
-            self.mz_label(r, scene, xr + 200.0, t, 11.0 * s, grey, e, xr - tw, y0 + 76.0 * s);
+        if let Some(t) = v.elapsed {
+            let played = clock(v.duration.map_or(t, |d| t.min(d)));
+            self.mz_label(r, scene, xr + 200.0, &played, 11.0 * s, grey, e, bx0, by - 16.0 * s);
+            if let Some(d) = v.duration {
+                let total = clock(d);
+                let tw = self.text.width_raw(&total, 11.0 * s);
+                self.mz_label(r, scene, xr + 200.0, &total, 11.0 * s, grey, e, xr - tw, by - 16.0 * s);
+            }
         }
         // buttons (only once the card is nearly open, so a click on the small one does nothing)
         if e > 0.9 {
@@ -222,7 +222,7 @@ impl Ui {
                 _ => None,
             };
             if let Some((text, c, _)) = line {
-                let ly = y0 + 130.0 * s;
+                let ly = y0 + 124.0 * s;
                 let chip = [x0 + pad, ly - 3.0 * s, xr, ly + 19.0 * s];
                 self.text.rounded(r, scene, chip, 8.0 * s, key_bg);
                 let shown = if v.typing.is_some() && text.len() <= 1 { "Type a song and press Enter (Esc cancels)".to_string() } else { text };
