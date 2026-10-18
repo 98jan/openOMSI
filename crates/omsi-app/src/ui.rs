@@ -14,6 +14,8 @@ mod perf_panel;
 mod text;
 
 pub use text::TextCache;
+mod mz;
+pub use mz::{MzState, MzView};
 use menu::*;
 use text::*;
 
@@ -361,6 +363,10 @@ pub struct Frame<'a> {
     /// Where the navigator is on the screen (the notifications stand over it, or under it
     /// in a top corner); none: they go to the top middle.
     pub notice_anchor: Option<[f32; 4]>,
+    /// The MileZero card over the navigator (setting `milezero`).
+    pub milezero: Option<&'a MzView>,
+    /// The navigator's own rectangle, for the MileZero card to stand by.
+    pub nav_rect: Option<[f32; 4]>,
     /// What kind of menu the lines belong to.
     pub menu_kind: MenuKind,
     /// The open list's title and the small line above it (the line a tour list is of).
@@ -438,6 +444,8 @@ pub struct Ui {
     /// navigator to keep out of its way.
     pub info_rect: Option<[f32; 4]>,
     perf: perf_panel::PerfPanel,
+    /// The MileZero card (see `mz.rs`).
+    pub mz: MzState,
 }
 
 /// Between the information bar's parts.
@@ -508,9 +516,13 @@ impl Ui {
         }
         self.chat.rect[0] += x;
         self.chat.rect[2] += x;
+        for rect in self.mz.rect.iter_mut().chain(self.mz.play.iter_mut()).chain(self.mz.request.iter_mut()) {
+            rect[0] += x;
+            rect[2] += x;
+        }
     }
     pub fn new() -> Option<Ui> {
-        Some(Ui { origin_x: 0.0, text: TextCache::new()?, chat: ChatWidget::default(), menu_rects: Vec::new(), menu_arrows: Vec::new(), menu_scroll_thumb: None, menu_scroll_track: None, menu_ctl: Vec::new(), dd_rects: Vec::new(), dd_top: 0, dd_rows: 8, dd_scroll: None, menu_side: Vec::new(), menu_pane: Vec::new(), menu_pane_start: 0, menu_pane_go: None, menu_pane_box: None, menu_pane_scroll: None, menu_time: Vec::new(), anim: Default::default(), anim_dt: 0.0, menu_overlay_range: 0..0, vr_cursor_overlay: None, vr_tooltip_overlay: None, menu_start: 0, menu_rows: 0, menu_row_h: 1.0, images: Default::default(), info_rect: None, perf: Default::default() })
+        Some(Ui { origin_x: 0.0, text: TextCache::new()?, chat: ChatWidget::default(), menu_rects: Vec::new(), menu_arrows: Vec::new(), menu_scroll_thumb: None, menu_scroll_track: None, menu_ctl: Vec::new(), dd_rects: Vec::new(), dd_top: 0, dd_rows: 8, dd_scroll: None, menu_side: Vec::new(), menu_pane: Vec::new(), menu_pane_start: 0, menu_pane_go: None, menu_pane_box: None, menu_pane_scroll: None, menu_time: Vec::new(), anim: Default::default(), anim_dt: 0.0, menu_overlay_range: 0..0, vr_cursor_overlay: None, vr_tooltip_overlay: None, menu_start: 0, menu_rows: 0, menu_row_h: 1.0, images: Default::default(), info_rect: None, perf: Default::default(), mz: Default::default() })
     }
 
     /// Draw the frame's interface: its overlays go after the HUD's in `scene.overlays`.
@@ -641,6 +653,7 @@ impl Ui {
         }
         // --- the notifications: cards over the navigator (under it when it is in a top
         // corner; at the top middle without it)
+        self.draw_milezero(r, scene, f, s, dt);
         self.draw_notices(r, scene, f, s);
         if let Some(fps) = f.fps {
             // (on a small flat card, as the other plates: over a bright sky bare text was hard to read)

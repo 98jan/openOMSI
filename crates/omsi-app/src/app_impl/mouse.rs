@@ -412,6 +412,21 @@ impl App {
         if self.menus.game_menu.is_none() && self.editor_mouse(pressed) {
             return;
         }
+        // the MileZero card: its buttons, and a press on it goes no further
+        if pressed && self.settings.milezero {
+            let (x, y) = self.input.cursor;
+            let at = |r: Option<[f32; 4]>| r.is_some_and(|r| x >= r[0] && x < r[2] && y >= r[1] && y < r[3]);
+            let (play, request, card) = self.ui.as_ref().map_or((false, false, false), |u| (at(u.mz.play), at(u.mz.request), at(u.mz.rect)));
+            if play {
+                self.sound.milezero.want_play = !self.sound.milezero.want_play;
+                return;
+            } else if request {
+                self.sound.milezero.typing = Some(String::new());
+                return;
+            } else if card {
+                return;
+            }
+        }
         // the city map: a click on the navigator opens it; while it is open the mouse is
         // the map's (a click outside closes it)
         let (x, y) = self.input.cursor;
