@@ -1089,7 +1089,7 @@ impl World {
             &cx,
             &ov,
             &sa,
-            textured,
+            (textured, tex.is_some() && !freetex && !rain_layer && mirror_index(&tex_name).is_none()),
             (night, envmap, env_mask, bump),
             (script_slot, script_trans, rain_layer, transmap.is_some()),
             &lm_white,
@@ -1153,6 +1153,7 @@ impl World {
             it_extra.glow = if own_light_slot(ov_item) { it_extra.glow } else { extra.glow };
             // (an item without a night map of its own keeps the plain one, lit the same way)
             it_extra.night_switched = it_night.is_some();
+            it_extra.night_alpha = night_coverage(it_alpha, sa.cover, tex.is_some() && !freetex && !rain_layer && mirror_index(&tex_name).is_none() && text_item.is_none() && script_item.is_none(), it_night, it_trans.is_some() || it_script_trans.is_some() || it_extra.transmap_declared || extra.transmap_declared);
             let it_page = script_item.and_then(|s| vt.model.html_page(s));
             // (the item's `\S:n` - or a page's own dot mask - keeps it an LED panel: `MaterialExtra::led`)
             (it_extra.led, it_extra.led_sign) = ((it_script_trans.is_some() || (it_page.is_some() && it_trans.is_some())) && if ov_item.iter().any(|o| o.lightmap.is_some()) { lm_white(ov_item) } else { lm_white(&ov) }, it_page.is_some());
@@ -1251,6 +1252,13 @@ impl World {
         }
         base
     }
+}
+
+// A generated picture, mirror, rain film or freetex owns its changing coverage. Only a loaded static
+// diffuse picture (not a missing file or a generated texture's placeholder) can
+// supply a clear lamp. Explicit transparency maps retain their own coverage.
+fn night_coverage(alpha: AlphaMode, clear: bool, static_diffuse: bool, night: Option<TextureId>, mask: bool) -> bool {
+    alpha == AlphaMode::Blend && clear && static_diffuse && night.is_some() && !mask
 }
 
 /// One material slot of a vehicle mesh being uploaded (see [`World::vehicle_slot_material`]).
@@ -1418,7 +1426,7 @@ fn slot_extra(
     cx: &SlotCx,
     ov: &[&MaterialDef],
     a: &SlotAlpha,
-    textured: bool,
+    (textured, static_diffuse): (bool, bool),
     (night, envmap, env_mask, bump): (Option<TextureId>, Option<(TextureId, f32)>, Option<TextureId>, Option<(TextureId, f32)>),
     // (the last: a plain [matl_transmap] is there - a page's dot mask)
     (script_slot, script_trans, rain_layer, has_transmap): (Option<usize>, Option<usize>, bool, bool),
@@ -1435,6 +1443,7 @@ fn slot_extra(
     // by what the script draws, not by the time of day: faded in with the
     // night, a dashboard's warning lamps stayed dark in the daylight (#497).
     extra.night_switched = night.is_some();
+    extra.night_alpha = night_coverage(alpha, cover, static_diffuse, night, extra.transmap_declared);
     // a script's screen (matrix displays, the IBIS's picture, LCDs) is the glow's and
     // FXAA's business (see `MaterialExtra::screen`), and a `\S:n` mask makes it an LED
     // panel whose lit dots are its own light (`MaterialExtra::led`). A slot that is a

@@ -80,6 +80,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
             tex.a = smoothstep(0.32, 0.68, tex.a);
         }
     }
+    tex.a = night_coverage(tex.a, buv);
     let mode = material.params.x;
     // Keep the filtered fractional coverage, but tighten its transition around the cutout
     // edge before MSAA turns it into sample coverage. The MSAA depth prepass skips these

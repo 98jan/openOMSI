@@ -1459,3 +1459,4 @@ mod more;
 mod prepass_reach;
 mod transparency;
 mod vanilla_lighting;
+mod night_coverage;

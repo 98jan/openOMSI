@@ -81,6 +81,7 @@ fn shade_vanilla(in: FsIn, puddle_weight: ptr<function, f32>, eye: vec3<f32>) ->
             tex.a = smoothstep(0.32, 0.68, tex.a);
         }
     }
+    tex.a = night_coverage(tex.a, buv);
     let mode = material.params.x;
     // Mip-filtered alpha is the fraction of the pixel covered by leaves or fence wires.
     // Tighten the transition around the cutout edge before MSAA turns it into sample
