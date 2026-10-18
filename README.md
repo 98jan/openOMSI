@@ -55,8 +55,8 @@ The newest stable version is always at
 
 | Platform | File |
 | --- | --- |
-| Windows x64 / ARM64 | `openOMSI-<version>-windows-x64.zip` / `-windows-arm64.zip` - run `openomsi.exe` |
-| macOS (Apple silicon / Intel), macOS 11+ | `openOMSI-<version>-macos-arm64.zip` / `-macos-x64.zip` - open `openOMSI.app` |
+| Windows x64 / ARM64 | `openOMSI-<version>-windows-x64-setup.exe` / `-windows-arm64-setup.exe` - installs openOMSI for you, no administrator rights (or the `.zip`: run `openomsi.exe`) |
+| macOS (Apple silicon / Intel), macOS 11+ | `openOMSI-<version>-macos-arm64.dmg` / `-macos-x64.dmg` - drag `openOMSI.app` onto Applications (or the `.zip`) |
 | Linux x64 / ARM64 | `openOMSI-<version>-linux-x64.zip` / `-linux-arm64.zip` - run `openomsi` |
 | Android 8.0+ (arm64) | `openOMSI-<version>-android-arm64.apk` - see [docs/ANDROID.md](docs/ANDROID.md) |
 | Dedicated server | `openOMSI-<version>-server-<linux\|windows>-<x64\|arm64>.zip` - see [docs/SERVER.md](docs/SERVER.md) |
@@ -71,12 +71,15 @@ Beta), turns the check off or installs without asking.
 
 You need **OMSI 2** installed (Steam or retail) with its stock content.
 
-1. **Unpack** the download into a folder of its own that you can write to (your Documents,
-   a games folder, or the OMSI 2 folder itself) - not `Program Files`, where the launcher
-   cannot update itself.
+1. **Install** it. On Windows the `-setup.exe` installs openOMSI into your user folder
+   (`%LOCALAPPDATA%\Programs\openOMSI`) with a Start menu entry; on macOS open the `.dmg` and
+   drag `openOMSI.app` onto Applications. The `.zip` (Linux, or the portable Windows and macOS
+   version) goes into a folder of its own that you can write to (your Documents, a games
+   folder, or the OMSI 2 folder itself) - not `Program Files`, where the launcher cannot
+   update itself.
 2. **Start it.**
-   * **Windows:** `openomsi.exe`. SmartScreen may warn about an unknown app: *More info* →
-     *Run anyway*.
+   * **Windows:** openOMSI in the Start menu (or `openomsi.exe`). SmartScreen may warn about
+     an unknown app: *More info* → *Run anyway*.
    * **macOS:** `openOMSI.app`. If macOS refuses an app from the internet: right-click →
      *Open* → *Open*, or run `xattr -dr com.apple.quarantine /path/to/openOMSI.app` once.
    * **Linux:** `./openomsi` (`chmod +x openomsi` first if needed). It needs a Vulkan or
