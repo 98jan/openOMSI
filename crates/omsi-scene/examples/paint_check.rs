@@ -57,11 +57,6 @@ fn main() {
                     continue;
                 }
                 let Some(paint) = cache.get(&tex.file, &dirs) else { continue };
-                if std::env::var_os("DETAIL").is_some() && sp.file.contains("Heerstr2") {
-                    println!("{} mirror={} tex={} v_scale={:?} len={:.1} tex_off={:.2}", sp.file, sp.mirror, tex.file, profile.points.iter().map(|p| p.v_scale).collect::<Vec<_>>(), curve.length, curve.tex_offset);
-                    println!("  profile pts (x,u): {:?}", profile.points.iter().map(|p| (p.x, p.u)).collect::<Vec<_>>());
-                    println!("  bars: {:?}", paint.bars);
-                }
                 for pair in profile.points.windows(2) {
                     let at_s = |s: f64, x: f64| -> Vec2 { curve.offset_point(s, side * x, 0.0).truncate().as_vec2() };
                     for (_, tris) in omsi_scene::road_paint::lane_paint(&paint, [&pair[0], &pair[1]], curve.length, curve.tex_offset, sp.mirror, &at_s) {

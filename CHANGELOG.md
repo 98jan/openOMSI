@@ -47,11 +47,13 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   ten metres or more on a turn (the game's own limit on a spline type's cross-sections), now
   at least every degree. Painted patches of ground (car parks, fields, sand) are read
   at about a metre and a half instead of five, so their outlines are finer.
-- Houses on the map are the models themselves: in 3D every house is drawn from its model's
+- Houses on the map are the models themselves: zoomed in (within 1500 m of the view, the
+  nearest 200 000 triangles; the in-game panel 30 000), a house is drawn in 3D from its model's
   own faces without textures (gabled and ridged roofs, wings, stepped towers, canopies on
   posts - a canopy or a bridge over a street is a roof in the air, no longer a solid block
-  that shuts the street), each model kept once however often it stands; their flat outline
-  is traced four times finer. Hairline gaps between pieces of paving no
+  that shuts the street), each model kept once however often it stands; farther out, and
+  past the budget, a house is its footprint with walls. Their flat outline is traced four
+  times finer. Hairline gaps between pieces of paving no
   longer grow dark beads along a street's rim.
 - More houses on the map: stations, railway halls and other buildings in folders with `road`
   in their name were never taken for houses; blocks of many buildings in one object (the

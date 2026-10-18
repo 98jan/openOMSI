@@ -199,7 +199,7 @@ impl TexturePaint {
 
     /// The paint that is a plain rectangle (lane lines and their dashes, stop lines, the bars
     /// of a crossing), in texture coordinates. A dash cut by the picture's edge is joined with
-    /// its other half. Paint of other shapes (arrows) is left to [`TexturePaint::at`].
+    /// its other half. Paint of other shapes (arrows) is left to [`TexturePaint::free_form_at`] (and [`TexturePaint::painted_at`]).
     pub fn find_bars(&self) -> (Vec<Bar>, Vec<u8>) {
         let (w, h) = (self.w as f32, self.h as f32);
         let mut out: Vec<(Bar, [usize; 4])> = Vec::new();
@@ -286,7 +286,7 @@ pub fn lane_paint(paint: &TexturePaint, seg: [&SplineProfilePoint; 2], length: f
     let du = (b.u - a.u) as f64;
     let vs = ((a.v_scale + b.v_scale) * 0.5) as f64;
     let mut out: Vec<Vec<Vec2>> = vec![Vec::new(); layers::PAINT_CLASSES];
-    if du.abs() < 1e-4 || !(vs > 1e-4) || !(length > 0.0) {
+    if du.abs() < 1e-4 || !(vs > 1e-4 && vs < 1.0e4) || !(length > 0.0 && length < 1.0e6) {
         return Vec::new();
     }
     let (ulo, uhi) = (a.u.min(b.u) as f64, a.u.max(b.u) as f64);
@@ -312,7 +312,7 @@ pub fn lane_paint(paint: &TexturePaint, seg: [&SplineProfilePoint; 2], length: f
             let (xl, xr) = if xr - xl < MIN_LINE { ((xl + xr - MIN_LINE) * 0.5, (xl + xr + MIN_LINE) * 0.5) } else { (xl, xr) };
             let (v0, v1) = if mirror { (1.0 - st.v[1] as f64, 1.0 - st.v[0] as f64) } else { (st.v[0] as f64, st.v[1] as f64) };
             let (k0, k1) = ((w_lo - v1).floor() as i64, (w_hi - v0).ceil() as i64);
-            if k1 - k0 > 8000 {
+            if k1.saturating_sub(k0) > 8000 {
                 continue;
             }
             let class = (st.class as usize - 1).min(layers::PAINT_CLASSES - 1);

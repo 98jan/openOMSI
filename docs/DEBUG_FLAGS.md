@@ -99,6 +99,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DEBUG_WALLS` | bool | off | use | sim | Log the walls a walking player slides along. |
 | `OMSI_DEBUG_WARP` | bool | off | use | scene | Log crossings whose ground was moved by more than a metre. |
 | `OMSI_DEBUG_WHEELS` | bool | off | use | app | Log where the wheel meshes of every vehicle type turn. |
+| `OMSI_DUMP_CLASSES` | bool | off | use | scene | mapgen_dump example: paint the paving by class (road, footway, yard) in telling colours. |
 | `OMSI_DUMP_CUT` | text | - | use | scene | Directory: write each tile's road-cut alpha masks as images. |
 | `OMSI_DUMP_GROUND` | text | - | use | scene | File: every loaded tile's final terrain and road cut as text. |
 | `OMSI_DUMP_SCENERY_TEXT` | text | - | use | scene | Directory: write the scenery objects' text textures as drawn. |

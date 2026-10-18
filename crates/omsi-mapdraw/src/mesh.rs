@@ -22,12 +22,13 @@ pub struct MapData {
     model_centre: Vec<Vec2>,
 }
 
-/// Cell of `MapData::paved_cells` (m).
-/// The most triangles of house models one build of the map draws (nearest first); the other
-/// houses are footprints with walls.
-const MODEL_TRIANGLES: usize = 200_000;
+/// The most triangles of house models one build of the city map draws (nearest first); the other
+/// houses are footprints with walls. The in-game panel, rebuilt as the bus drives and drawn every
+/// frame, asks for fewer.
+pub const MODEL_TRIANGLES: usize = 200_000;
 /// Beyond this radius (m) of a build no model is drawn: from so high a roof is a speck.
 const MODEL_RADIUS: f64 = 1500.0;
+/// Cell of `MapData::paved_cells` (m).
 const PAVED_CELL: f32 = 2.0;
 
 #[derive(Default)]
@@ -268,12 +269,12 @@ impl MapData {
     }
 
     /// The houses within `radius` of `centre`, relative to `anchor`, three ways (the models of the
-    /// houses as they are for the nearest `MODEL_TRIANGLES` triangles within `MODEL_RADIUS`): their shadows
+    /// houses as they are for the nearest `models` triangles within `MODEL_RADIUS`): their shadows
     /// on the ground (`shadows`, for a shadow layer), their walls lit by which way they face
     /// and their roofs with a fine edge (`solid`, for a depth-tested layer), both at full height
     /// (the layer's `height` raises them), and their roofs flat from above (`flat`).
     #[allow(clippy::too_many_arguments)]
-    pub fn build_houses(&self, shadows: &mut Painter, solid: &mut Painter, flat: &mut Painter, anchor: DVec2, centre: DVec2, radius: f64, pal: &Palette) {
+    pub fn build_houses(&self, shadows: &mut Painter, solid: &mut Painter, flat: &mut Painter, anchor: DVec2, centre: DVec2, radius: f64, models: usize, pal: &Palette) {
         let k = self.shift(anchor);
         let c = (centre - self.layers.origin).as_vec2();
         let ids: Vec<u32> = self.cells_near(c, radius as f32).flat_map(|cell| cell.buildings.iter().copied()).collect();
@@ -292,7 +293,7 @@ impl MapData {
         let mut spent = 0usize;
         for &i in &inst {
             let tris = self.layers.models.get(self.layers.instances[i as usize].model as usize).map_or(0, |m| m.len());
-            if spent + tris > MODEL_TRIANGLES {
+            if spent + tris > models {
                 continue;
             }
             spent += tris;

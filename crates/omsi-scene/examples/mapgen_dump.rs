@@ -60,7 +60,7 @@ fn main() {
             tri(&mut img, t[0], t[1], t[2], land[class]);
         }
     }
-    // (with OMSI_DUMP_CLASSES the road is blue-grey, the footway beige and the yard rose)
+    // (with OMSI_DUMP_CLASSES the road is beige, the footway pink and the yard blue)
     let classes = std::env::var_os("OMSI_DUMP_CLASSES").is_some();
     let paved = if classes { [[255, 235, 205, 255], [255, 205, 215, 255], [170, 200, 240, 255]] } else { [[255, 255, 255, 255], [246, 244, 240, 255], [226, 226, 230, 255]] };
     for class in [layers::PAVE_FOOT, layers::PAVE_AREA, layers::PAVE_ROAD] {
