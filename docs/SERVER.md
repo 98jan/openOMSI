@@ -30,7 +30,7 @@ nothing is drawn. `server.cfg` is written with a comment for every key on the fi
 | `tunnel` | start a free Cloudflare quick tunnel (needs `cloudflared`) |
 | `radius` | how many tiles round the map's first entry point are kept loaded (0: the whole map) |
 | `admin_password`, `moderator_password` | administration in the game, the web panel and `POST /admin` (see [Administration](#administration)); at least 12 characters each, empty: nobody |
-| `admin_web`, `admin_web_origins`, `admin_trusted_proxies`, `admin_proxy_header` | where the web panel (`/admin/` on the web port) can be reached from: `local` (the default), `remote` through trusted proxies, or `off` |
+| `admin_web`, `admin_web_origins`, `admin_trusted_proxies`, `admin_proxy_header` | where the web panel (`/admin/` on the web port) can be reached from: `local` (what a new `server.cfg` writes), `remote` through trusted proxies (passwords of at least 16 characters, else `local`), or `off` (a file from before the panel, without the key) |
 | `vehicles` | the buses players may drive, separated by `;` (empty: every bus on the server) |
 | `share_positions` | `GET /players` on the web port (below) |
 | `accept_uploads`, `uploads_keep_days` | players' buses (below) |
@@ -420,3 +420,9 @@ commands go the same way as the others and are in the audit log, with what becam
 `local tool (POST /admin)`, `web#2 (address)` -, the role, the action, the player, the result),
 put aside as `admin-audit.log.1` past 1 MB, so it never takes more than about 2 MB. No password
 or token is ever written to it; names, reasons and chat lines are kept as cleaned text.
+
+## License
+
+openOMSI is released under the GNU Affero General Public License, version 3 only (`LICENSE`).
+Its launcher preview encodes pictures with [jpeg-encoder](https://crates.io/crates/jpeg-encoder): this
+software is based in part on the work of the Independent JPEG Group.

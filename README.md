@@ -83,14 +83,15 @@ You need **OMSI 2** installed (Steam or retail) with its stock content.
    * **macOS:** `openOMSI.app`. If macOS refuses an app from the internet: right-click →
      *Open* → *Open*, or run `xattr -dr com.apple.quarantine /path/to/openOMSI.app` once.
    * **Linux:** `./openomsi` (`chmod +x openomsi` first if needed). It needs a Vulkan or
-     OpenGL driver (Mesa: `mesa-vulkan-drivers`, or your GPU vendor's driver), and **WebKitGTK 4.1** for the launcher window (`libwebkit2gtk-4.1-0` on
-     Debian/Ubuntu, `webkit2gtk4.1` on Fedora, `webkit2gtk-4.1` on Arch; for the Steam Deck
-     see the [user guide](docs/USER_GUIDE.md#the-launcher)).
+     OpenGL driver (Mesa: `mesa-vulkan-drivers`, or your GPU vendor's driver), and
+     **WebKitGTK 4.1** for the launcher window (`libwebkit2gtk-4.1-0` on Debian/Ubuntu,
+     `webkit2gtk4.1` on Fedora, `webkit2gtk-4.1` on Arch; for the Steam Deck see the [user
+     guide](docs/USER_GUIDE.md#the-launcher)).
    * **Android:** see [docs/ANDROID.md](docs/ANDROID.md) - the OMSI 2 folder is copied onto
      the device first.
 3. **Find OMSI 2.** The launcher usually finds the installation by itself (Steam libraries and
-   the usual folders). If not, open **Setup**, press **Browse…** under *Choose the OMSI 2
-   folder*, pick the folder with `Omsi.exe`, `maps` and `Vehicles` in it (Steam:
+   the usual folders). If not, open **Setup**, press **Browse…** beside *OMSI 2 folder*, pick
+   the folder with `Omsi.exe`, `maps` and `Vehicles` in it (Steam:
    `…\Steam\steamapps\common\OMSI 2`) and press **Save**.
 4. **Drive:** choose a map, line, tour and bus on the **Drive** page and press **Start the duty**.
 
@@ -199,11 +200,20 @@ coffee or support it on Ko-fi - thank you!
   <a href="https://ko-fi.com/usonance"><img alt="Support me on Ko-fi" src="https://storage.ko-fi.com/cdn/kofi2.png?v=3" height="48"></a>
 </p>
 
+## Acknowledgements
+
+Some ideas and fixes in openOMSI date back to the public work of
+[neoOMSI](https://github.com/neoOMSI/neoOMSI): their reports and pull requests pointed at
+bugs and features that we then implemented in our own code. Thank you.
+
 ## License
 
 openOMSI is released under the [GNU Affero General Public License, version 3 only](LICENSE)
 (`AGPL-3.0-only`). The historical MIT copyright and permission notice is retained in
 `LICENSE`; earlier MIT releases keep their terms. Third-party files keep their own licenses.
+The launcher's bus preview encodes its pictures with
+[jpeg-encoder](https://crates.io/crates/jpeg-encoder): this software is based in part on the
+work of the Independent JPEG Group.
 The openOMSI name and original project logos are marks of `usonskyyyy`, who created
 the original codebase; see [TRADEMARKS.md](TRADEMARKS.md). The official organization is
 [openOMSI.org (`openOMSI-org`)](https://github.com/openOMSI-org).

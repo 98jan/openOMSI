@@ -193,7 +193,7 @@ inside the bus the view narrows, as in OMSI; **Ctrl**+wheel outside narrows the 
 (a telephoto, the camera stays where it is). F1-F4 driver / passenger / outside / map (free) camera, F5-F8 the destination
 sign and roller blind keys as in OMSI, Ctrl+S quick save (OMSI's `quicksave`; Alt+S works too), F9 write the
 run into the personnel file, WASD+QE in the free camera (**Ctrl**+click on the ground there
-moves the bus to the nearest street), left click on cockpit elements, the chat key (**/** by default, see Controls) the chat line in a
+moves the bus to the nearest street), left click on cockpit elements, the chat key (**/** by default, see Controls) opens the chat line in a
 LAN session.
 
 **Esc** opens the game menu, drawn in the launcher's style: its lines on a rail on the left,
