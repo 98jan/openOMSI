@@ -480,3 +480,19 @@ fn the_heights_of_the_contours_are_made_on_a_worker_and_only_with_the_terrain_on
     n.terrain_labels(&mut ui, &at, win, 1.0);
     assert!(ui.verts.len() > before, "the heights are written once they are there");
 }
+
+#[test]
+fn opening_a_line_does_not_read_the_timetable_but_pressing_the_button_does() {
+    let mut n = with_example_lines();
+    n.date = 19900101;
+    n.debug_lines("E1");
+    assert!(n.city.lines.open && !n.city.lines.sheet);
+    // (the button asks only whether it has been read)
+    assert!(n.line_times_read().is_none());
+    assert!(n.times_job.is_none(), "no worker for a line that is only opened");
+    // the button: the sheet opens, and asking for it starts the worker
+    n.lines_click(LinesHit::Sheet);
+    assert!(n.city.lines.sheet);
+    let first = n.line_times();
+    assert!(first.is_some() || n.times_job.is_some());
+}
