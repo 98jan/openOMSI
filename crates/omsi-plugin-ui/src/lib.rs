@@ -23,6 +23,7 @@ use omsi_ui::paint::Align as TextAlign;
 use omsi_ui::{Atlas, Color, Draw, Fonts, Gpu, Layer, Painter, Rect, Vertex, Weight};
 
 pub mod input;
+mod nav;
 #[cfg(test)]
 mod preview;
 mod widgets;
@@ -292,8 +293,8 @@ impl Layout<'_> {
                     + gap * children.len().saturating_sub(1) as f32
             }
             Kind::Bar { .. } => BAR_W,
-            Kind::Badge { text, .. } => {
-                (self.width(text, BADGE_PX, Weight::Medium) + 2.0 * BADGE_PAD).ceil()
+            Kind::Badge { text, weight: wt, .. } => {
+                (self.width(text, BADGE_PX, weight(*wt)) + 2.0 * BADGE_PAD).ceil()
             }
             Kind::Divider => 1.0,
             Kind::Space { size } => *size,
@@ -485,6 +486,7 @@ impl Layout<'_> {
                 value,
                 height,
                 background,
+                segments,
             } => {
                 let track = Rect::new(r.x, r.y + (r.h - height) * 0.5, r.w, *height);
                 self.rounded(
@@ -493,7 +495,7 @@ impl Layout<'_> {
                     background.map(color).unwrap_or(TRACK),
                     None,
                 );
-                if *value > 0.0 {
+                if !self.bar_parts(track, segments) && *value > 0.0 {
                     let fill = (r.w * value).max(*height).min(r.w);
                     self.rounded(
                         Rect::new(track.x, track.y, fill, *height),
@@ -503,22 +505,7 @@ impl Layout<'_> {
                     );
                 }
             }
-            Kind::Badge { text, text_color } => {
-                let w = self.natural(e).min(r.w);
-                let b = Rect::new(r.x, r.y + (r.h - BADGE_H) * 0.5, w, BADGE_H);
-                let fill = e.color.map(color).unwrap_or(ACCENT);
-                self.rounded(b, BADGE_H * 0.5, fill, None);
-                let t = self.fit(text, BADGE_PX, Weight::Medium, w - 2.0 * BADGE_PAD);
-                let tw = self.width(&t, BADGE_PX, Weight::Medium);
-                let y = self.baseline(b.y, b.h, BADGE_PX, Weight::Medium);
-                self.text(
-                    t,
-                    BADGE_PX,
-                    Weight::Medium,
-                    Vec2::new(b.x + (b.w - tw) * 0.5, y),
-                    text_color.map(color).unwrap_or(ink_on(fill)),
-                );
-            }
+            Kind::Badge { text, text_color, weight: wt } => self.badge(e, r, text, *text_color, weight(*wt)),
             Kind::Divider => {
                 let c = e.color.map(color).unwrap_or(DIVIDER);
                 let line = if in_row {

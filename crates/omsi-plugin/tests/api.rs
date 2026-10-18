@@ -229,7 +229,7 @@ fn settings_make_a_panel_and_tell_their_changes() {
 fn the_navigators_board_is_told_to_the_plugin() {
     let mut g = Game::new();
     let src = r##"
-        assert(omsi.ui.version == 3)
+        assert(omsi.ui.version >= 3)
         function on_frame()
           local n = select("#", omsi.ui.dock())
           if n == 0 then omsi.message("no board") return end

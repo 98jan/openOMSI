@@ -93,7 +93,7 @@ pub static FNS: &[ApiFn] = &[
         let t = a.str(0)?;
         Ok::<_, ApiError>(super::core::ok_or_reason(c.io().lan_chat(&t)))
     }),
-    def!("ui.update", "ui", [p("panel", "string"), p("element", "string"), p("values", "table")], "true, or false and the reason", "Changes one element of a panel in place, by its id: `text`, `color`, `value` (a bar, a slider), `checked`, `selected`, `name` (an icon), `values` (a chart), `rows` (a table), `src` (an image) - cheaper than setting the whole panel again.", NEW, Ui, true, |c, a| {
+    def!("ui.update", "ui", [p("panel", "string"), p("element", "string"), p("values", "table")], "true, or false and the reason", "Changes one element of a panel in place, by its id: `text`, `color`, `value` (a bar, a slider), `segments` (a bar), `checked`, `selected`, `name` (an icon), `values` (a chart), `rows` and `aligns` (a table), `stops` (a stop list), `src` (an image) - cheaper than setting the whole panel again.", NEW, Ui, true, |c, a| {
         let (id, el) = (a.str(0)?, a.str(1)?);
         let fields = a.table(2)?.clone();
         let s = c.state();
