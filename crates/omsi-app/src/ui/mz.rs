@@ -110,7 +110,10 @@ impl Ui {
             Some(a) => {
                 let left = (a[0] + a[2]) * 0.5 < f.width * 0.5;
                 let x = if left { a[0] } else { a[2] - w };
-                let y = if a[1] > f.height * 0.5 { a[1] - gap - h } else { a[3] + gap };
+                // (on the side of the navigator that has room for the full card; with none, over its top edge)
+                let (room_above, room_below) = (a[1] - gap - big_h >= 0.0, a[3] + gap + big_h <= f.height);
+                let above = if a[1] > f.height * 0.5 { room_above || !room_below } else { !room_below && room_above };
+                let y = if above && room_above { a[1] - gap - h } else if room_below { a[3] + gap } else { a[1] + gap };
                 (x, y)
             }
             None => slot.map_or(((f.width - w) * 0.5, 70.0 * s), |q| (q[0], q[1])),
