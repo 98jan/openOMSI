@@ -241,7 +241,7 @@ impl Layers {
             }
             out.models.push(m);
         }
-        for _ in 0..r.count(20)? {
+        for _ in 0..r.count(16)? {
             let model = r.u32()?;
             if model as usize >= out.models.len() {
                 return None;
@@ -491,6 +491,21 @@ mod tests {
         assert_eq!(r.paint[PAINT_AMBER].len(), 3);
         assert!(Layers::from_bytes(&b, 43).is_none());
         assert!(Layers::from_bytes(&b[..b.len() - 3], 42).is_none());
+    }
+
+    #[test]
+    fn the_last_instances_of_a_file_without_trees_or_lines_are_read_back() {
+        // (an instance is a u32 and three f32: 16 bytes, so the count check must ask for 16 each,
+        // or the layers after them - none here - are what a file would have to still hold)
+        let mut l = Layers::empty(DVec2::ZERO);
+        l.models.push(vec![[Vec3::ZERO, Vec3::X, Vec3::Z]]);
+        for i in 0..3 {
+            l.instances.push(Instance { model: 0, at: Vec2::new(i as f32, 2.0), heading: 10.0 * i as f32 });
+        }
+        let bytes = l.to_bytes(7);
+        let r = Layers::from_bytes(&bytes, 7).expect("the layers read back");
+        assert_eq!(r.instances, l.instances);
+        assert!(r.trees.is_empty() && r.lines.is_empty());
     }
 
     #[test]
