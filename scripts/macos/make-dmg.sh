@@ -48,16 +48,19 @@ cp assets/icons/app/openomsi.icns "$tmp/mnt/.VolumeIcon.icns"
 xattr -wx com.apple.FinderInfo "0000000000000000040000000000000000000000000000000000000000000000" "$tmp/mnt"
 sync
 # Finder may keep the image busy briefly, even after its mount point disappears.
-hdiutil detach "$device" >/dev/null || {
-  sleep 5
-  hdiutil detach -force "$device" >/dev/null || [ ! -d "$tmp/mnt/openOMSI.app" ]
-}
+if hdiutil detach "$device" >/dev/null || { sleep 5; hdiutil detach -force "$device" >/dev/null; }; then
+  device=
+else
+  hdiutil info > "$tmp/attached-now"
+  if awk -v device="$device" '$1 == device { found=1 } END { exit !found }' "$tmp/attached-now"; then
+    echo "Disk image is still attached after the detach retry" >&2
+    exit 1
+  fi
+  device=
+fi
 mkdir -p "$(dirname "$out")"
 for try in 1 2 3; do
   hdiutil convert "$tmp/rw.dmg" -format UDZO -imagekey zlib-level=9 -ov -o "$out" >/dev/null && break
   [ "$try" = 3 ] && exit 1
   sleep 5
 done
-
-
-
