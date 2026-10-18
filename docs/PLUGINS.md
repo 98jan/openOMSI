@@ -422,6 +422,63 @@ Complete plugins to start from (each runs in the tests against a stand-in game):
 | [`reduced_tickets.lua`](examples/plugins/reduced_tickets.lua) | every adult asks for the reduced fare instead of the full one (`passenger_ticket`, `people.set_ticket`) |
 | [`weather_controller.lua`](examples/plugins/weather_controller.lua) | the weather files as tabs, sliders for temperature, visibility and rain, snow cover, the clock moved by buttons, and a day cycle of its own |
 
+### Reading game data and the complete selected tour
+
+`omsi.data.query` reads the same game-owned sources as the M.V. getters, without running
+the vehicle script or dispatching its callbacks. Use `omsi.data.queries()` to discover
+names, argument names/types and return types. Getter arguments retain OMSI's zero-based
+indices; other plugin lists use one-based Lua indices. Reads refer to the player's bus
+and its current HOF and timetable. No bus returns `nil, reason`. An optional third
+argument selects a loaded scripted scenery object's map id instead, allowing `GetArrBus*`
+to read a departure board's actual arrivals even without a player vehicle. Find object ids
+with `omsi.map.objects_near(x, y)`; an unloaded or nonscripted object returns `nil, reason`. Mutation/drawing commands
+are deliberately not data getters.
+
+```lua
+local text = omsi.data.query("GetTerminusString", {0, 0})
+local arrival = omsi.data.query("GetTTBusstopArr", {0})
+local tour = omsi.duty.tour() -- entire source tour, even with just one trip selected
+if tour then
+    for _, trip in ipairs(tour.trips) do
+        for _, stop in ipairs(trip.stops) do
+            -- Seconds from service-day midnight, including 24:xx and passing stops.
+            print(trip.line, trip.terminus, stop.name, stop.arrival, stop.departure)
+        end
+    end
+end
+```
+
+### Starting and monitoring an external program
+
+Pass arguments separately; there is no implicit shell. On Windows this starts an `.exe`;
+for a batch file explicitly select the appropriate command interpreter. The game does not
+wait for the process to finish. `cwd` sets its working directory; `env` overrides named
+environment variables. Standard streams are disconnected. Only direct children belong to
+the plugin: unloading, disabling or reloading it kills and reaps those children, without
+waiting on the game thread; programs they launch themselves are not tracked.
+
+```lua
+local handle, reason = omsi.process.start("helper.exe", {"--mode", "bus"}, {
+    cwd = "D:/Tools/MyHelper",
+    env = {OPENOMSI_COMPANION = "1"},
+})
+if handle then
+    local timer
+    timer = omsi.every(0.25, function()
+        local code, state = omsi.process.exit_code(handle)
+        if state == "exited" then
+            -- 0 means success; nonzero codes are preserved. On signal exit code is nil.
+            local status = omsi.process.status(handle)
+            print(code, status.success, status.signal)
+            omsi.process.forget(handle)
+            omsi.cancel(timer)
+        end
+    end)
+else
+    print(reason)
+end
+```
+
 ### Safety and errors
 
 A Lua plugin gets Lua 5.4 with the safe libraries only: `string`, `table`, `math`, `utf8`,
@@ -432,6 +489,11 @@ for compiled code), and `string.dump` gives no code. A plugin reads and writes f
 its own data folder (`..` and absolute paths are refused) and reads its own folder; it
 cannot reach the network either: `omsi.send` talks only to programs on this computer, and
 only to ports from 1024 up. It holds at most 256 MB of memory.
+
+`omsi.process.*` is an explicit exception: it starts native programs with the game's OS
+permissions, outside this file/network sandbox. An `.oop` must declare `process`; plain
+`.lua` plugins have all API permissions, including this one, and must be trusted.
+The Lua `os.execute` and `io` libraries remain disabled.
 
 * An error in a handler is written to `game.log` and shown on the screen; the other
   plugins and the game carry on. After 10 errors the plugin is switched off until you
@@ -538,6 +600,13 @@ declared to call the function (a plain `.lua` file has them all).
 | `omsi.vehicle_manufacturer()` | string or nil | The manufacturer part of the vehicle's name, as its `[friendlyname]` has it (`"Solaris III Gen"`). | 0.2.21 |
 | `omsi.vehicle_model()` | string or nil | The model part of the vehicle's name (`"Urbino 10 / 2D"`). | 0.2.21 |
 
+#### Game data getters
+
+| Function | Returns | What it does | Since |
+| --- | --- | --- | --- |
+| `omsi.data.queries()` | list of tables | Read-only game data getters: `{name, args = {{name, type}, ...}, result}`. Names and zero-based indices follow the M.V. getter names, but plugins read the game data directly without executing scripts. `rgba` means four results in the range 0–255. | 0.3.38 |
+| `omsi.data.query(name, [args], [object])` | value(s), or nil and reason | Read a getter listed by `data.queries` from the player's vehicle's HOF, timetable, passengers, tickets, radio, fonts or textures. Arguments are an ordered list (empty by default). No script callback is invoked. `STReadPixel` returns RGBA without changing the bus's drawing colour. Supply a loaded scripted map object's id as `object` to read its data, including `GetArrBus*` on departure boards, without needing a player vehicle. Object ids can be found through `map.objects_near`. Without `object`, reads use the player's vehicle. Unknown names, mutating operations and invalid arguments raise an error; no vehicle returns nil and a reason. | 0.3.38 |
+
 #### Duty and timetable
 
 | Function | Returns | What it does | Since |
@@ -552,12 +621,14 @@ declared to call the function (a plain `.lua` file has them all).
 | `omsi.duty.skip_to(stop)` | boolean | Makes stop `stop` (from 1) of the trip the next one, forwards or back. *Permission: `world_write`.* | 0.2.22 |
 | `omsi.duty.start(line, tour, [trip], [stop])` | true, or false and the reason | Takes a duty, as the game menu's "Line and tour" does: a line and tour of `timetable.lines`, its trip (from 1 in the order they leave; default the first) and the stop to start at (from 1 among those the trip calls at; default the first). The bus stays where it is. *Permission: `world_write`.* | 0.2.22 |
 | `omsi.duty.stops()` | list of tables | The stops of the trip now: `{number, name, id, arrival, departure, stops, passed, x, y, z}` (`stops` false: the bus passes it; `x, y, z` where the stop's place is known; `id` the map's object id). | 0.2.22 |
+| `omsi.duty.tour()` | table or nil | The complete source tour of the selected duty, even when only one trip was selected. Same structure as `timetable.tour`; times align with the active duty's service day, with `time_offset` seconds applied to all trips and stops. | 0.3.38 |
 | `omsi.duty.trip_stops(trip)` | list of tables or nil | The stops of a trip of the duty (from 1), as `duty.stops` gives them. | 0.2.22 |
 | `omsi.duty.trips()` | list of tables | The trips of the duty: `{number, name, line, terminus, departure, arrival, stops}`. | 0.2.22 |
 | `omsi.timetable.buses()` | list of tables | The timetable buses of the AI on the road: `{id, line, tour, trip, terminus, departure, next_stop_id, at_stop, trip_done, delay, x, y, number}`. | 0.2.22 |
 | `omsi.timetable.lines()` | list of tables | The map's lines: `{name, user_allowed, tours}`, each tour `{number, today, trips}` (`today`: it runs on the game's date). | 0.2.22 |
 | `omsi.timetable.stop_names()` | list of tables | The stops the timetable knows: `{id, name}` (`id` the map's object id). | 0.2.22 |
 | `omsi.timetable.stops(line, tour, [trip])` | list of tables | The stops of a tour's trips (or of its trip `trip`, from 1 in the order they leave) that the bus calls at: `{trip, station, name, departure}`. | 0.2.22 |
+| `omsi.timetable.tour(line, tour)` | table, or nil and reason | Read a full tour without taking it: `{line, number, ai_group, extra, today, time_offset, trips}`. Each trip has `number`, `source_number` (both from 1), `name`, `line`, `terminus`, `track`, `reverse`, `profile_index` (from 0), `profile` (`name`, `factor`), `departure`, `arrival`, and all `stops` (`id`, `name`, `arrival`, `departure`, `stops`, optional `x,y,z`). Times are seconds from service-day midnight and can exceed 86400; passing stops are retained. Unknown trip references are skipped, retaining their source numbers. No AI vehicle is reserved. | 0.3.38 |
 
 #### The map
 
@@ -753,6 +824,16 @@ declared to call the function (a plain `.lua` file has them all).
 | `omsi.storage.save()` | nil | Writes the storage now (it is written by itself when the game ends). *Permission: `storage`.* | 0.2.22 |
 | `omsi.storage.set(key, value)` | nil | Stores a value under a key: a number, text, boolean or a table of them (`nil` removes it). It is written when the game ends, the plugin is loaded again, or `storage.save()` is called. *Permission: `storage`.* | 0.2.22 |
 
+#### External programs
+
+| Function | Returns | What it does | Since |
+| --- | --- | --- | --- |
+| `omsi.process.exit_code(handle)` | code or nil, state or reason | Nonblocking exit code lookup: `nil, "running"` while running; `code, "exited"` after normal exit. A nonzero code is retained. Signal termination returns `nil, "exited"`; inspect `process.status` for details. An unknown handle returns `nil` and a reason. *Permission: `process`.* | 0.3.38 |
+| `omsi.process.forget(handle)` | true, or nil and reason | Release a completed process handle and its retained exit code. A running process cannot be forgotten. *Permission: `process`.* | 0.3.38 |
+| `omsi.process.kill(handle)` | true, or nil and reason | Request termination of a plugin-owned direct child without waiting. Poll `process.status` for completion; descendants are not tracked. *Permission: `process`.* | 0.3.38 |
+| `omsi.process.start(file, [args], [options])` | handle, or nil and reason | Start a native program without waiting for it. `args` is a list of separate strings, passed literally without shell expansion. Options: `cwd` (working directory) and `env` (string-to-string environment overrides; other variables inherited). Relative paths use the game's working directory unless `cwd` is given. Standard streams are disconnected. At most 32 handles per plugin; use `process.forget` after completion. Direct children are terminated on plugin stop, disable or reload. This permission runs programs outside the plugin file sandbox; only grant it to trusted plugins. *Permission: `process`.* | 0.3.38 |
+| `omsi.process.status(handle)` | table, or nil and reason | Nonblocking status: `{pid, running, exited, code, success, signal}`. While running `code`, `success` and `signal` are nil. After exit `code` is the exit code (including nonzero); termination by a signal has no code, and `signal` is available on Unix. Results remain readable until forgotten. *Permission: `process`.* | 0.3.38 |
+
 #### Programs on this computer
 
 | Function | Returns | What it does | Since |
@@ -918,7 +999,7 @@ What the game does with an `.oop`:
 * The code stays in memory; the plugin's pictures, sounds and data files go into
   `plugins/.oop-cache/<name>/`, where its API functions read them.
 * **Permissions.** An `.oop` declares what it may do (`ui`, `storage`, `vehicle_write`,
-  `traffic_write`, `world_write`, `camera`, `audio`, `network_local`, `lan`); a function
+  `traffic_write`, `world_write`, `camera`, `audio`, `network_local`, `lan`, `process`); a function
   that needs another one fails with an error the plugin can catch. Reading the game needs
   none. (A plain `.lua` file keeps every permission, as before.)
 * **Signatures.** A signed plugin is logged with its author's key fingerprint

@@ -978,6 +978,42 @@
       "permission": "world_write"
     },
     {
+      "name": "data.queries",
+      "group": "data",
+      "since": "0.3.38",
+      "doc": "Read-only game data getters: `{name, args = {{name, type}, ...}, result}`. Names and zero-based indices follow the M.V. getter names, but plugins read the game data directly without executing scripts. `rgba` means four results in the range 0–255.",
+      "params": [],
+      "returns": "list of tables",
+      "multi": false,
+      "permission": null
+    },
+    {
+      "name": "data.query",
+      "group": "data",
+      "since": "0.3.38",
+      "doc": "Read a getter listed by `data.queries` from the player's vehicle's HOF, timetable, passengers, tickets, radio, fonts or textures. Arguments are an ordered list (empty by default). No script callback is invoked. `STReadPixel` returns RGBA without changing the bus's drawing colour. Supply a loaded scripted map object's id as `object` to read its data, including `GetArrBus*` on departure boards, without needing a player vehicle. Object ids can be found through `map.objects_near`. Without `object`, reads use the player's vehicle. Unknown names, mutating operations and invalid arguments raise an error; no vehicle returns nil and a reason.",
+      "params": [
+        {
+          "name": "name",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "args",
+          "type": "table",
+          "optional": true
+        },
+        {
+          "name": "object",
+          "type": "integer",
+          "optional": true
+        }
+      ],
+      "returns": "value(s), or nil and reason",
+      "multi": true,
+      "permission": null
+    },
+    {
       "name": "debug",
       "group": "game",
       "since": "0.2.22",
@@ -1138,6 +1174,16 @@
       "doc": "The stops of the trip now: `{number, name, id, arrival, departure, stops, passed, x, y, z}` (`stops` false: the bus passes it; `x, y, z` where the stop's place is known; `id` the map's object id).",
       "params": [],
       "returns": "list of tables",
+      "multi": false,
+      "permission": null
+    },
+    {
+      "name": "duty.tour",
+      "group": "duty",
+      "since": "0.3.38",
+      "doc": "The complete source tour of the selected duty, even when only one trip was selected. Same structure as `timetable.tour`; times align with the active duty's service day, with `time_offset` seconds applied to all trips and stops.",
+      "params": [],
+      "returns": "table or nil",
       "multi": false,
       "permission": null
     },
@@ -2680,6 +2726,96 @@
       "permission": "vehicle_write"
     },
     {
+      "name": "process.exit_code",
+      "group": "process",
+      "since": "0.3.38",
+      "doc": "Nonblocking exit code lookup: `nil, \"running\"` while running; `code, \"exited\"` after normal exit. A nonzero code is retained. Signal termination returns `nil, \"exited\"`; inspect `process.status` for details. An unknown handle returns `nil` and a reason.",
+      "params": [
+        {
+          "name": "handle",
+          "type": "integer",
+          "optional": false
+        }
+      ],
+      "returns": "code or nil, state or reason",
+      "multi": true,
+      "permission": "process"
+    },
+    {
+      "name": "process.forget",
+      "group": "process",
+      "since": "0.3.38",
+      "doc": "Release a completed process handle and its retained exit code. A running process cannot be forgotten.",
+      "params": [
+        {
+          "name": "handle",
+          "type": "integer",
+          "optional": false
+        }
+      ],
+      "returns": "true, or nil and reason",
+      "multi": true,
+      "permission": "process"
+    },
+    {
+      "name": "process.kill",
+      "group": "process",
+      "since": "0.3.38",
+      "doc": "Request termination of a plugin-owned direct child without waiting. Poll `process.status` for completion; descendants are not tracked.",
+      "params": [
+        {
+          "name": "handle",
+          "type": "integer",
+          "optional": false
+        }
+      ],
+      "returns": "true, or nil and reason",
+      "multi": true,
+      "permission": "process"
+    },
+    {
+      "name": "process.start",
+      "group": "process",
+      "since": "0.3.38",
+      "doc": "Start a native program without waiting for it. `args` is a list of separate strings, passed literally without shell expansion. Options: `cwd` (working directory) and `env` (string-to-string environment overrides; other variables inherited). Relative paths use the game's working directory unless `cwd` is given. Standard streams are disconnected. At most 32 handles per plugin; use `process.forget` after completion. Direct children are terminated on plugin stop, disable or reload. This permission runs programs outside the plugin file sandbox; only grant it to trusted plugins.",
+      "params": [
+        {
+          "name": "file",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "args",
+          "type": "table",
+          "optional": true
+        },
+        {
+          "name": "options",
+          "type": "table",
+          "optional": true
+        }
+      ],
+      "returns": "handle, or nil and reason",
+      "multi": true,
+      "permission": "process"
+    },
+    {
+      "name": "process.status",
+      "group": "process",
+      "since": "0.3.38",
+      "doc": "Nonblocking status: `{pid, running, exited, code, success, signal}`. While running `code`, `success` and `signal` are nil. After exit `code` is the exit code (including nonzero); termination by a signal has no code, and `signal` is available on Unix. Results remain readable until forgotten.",
+      "params": [
+        {
+          "name": "handle",
+          "type": "integer",
+          "optional": false
+        }
+      ],
+      "returns": "table, or nil and reason",
+      "multi": true,
+      "permission": "process"
+    },
+    {
       "name": "release",
       "group": "vehicle",
       "since": "0.1.5",
@@ -2983,6 +3119,27 @@
       ],
       "returns": "list of tables",
       "multi": false,
+      "permission": null
+    },
+    {
+      "name": "timetable.tour",
+      "group": "duty",
+      "since": "0.3.38",
+      "doc": "Read a full tour without taking it: `{line, number, ai_group, extra, today, time_offset, trips}`. Each trip has `number`, `source_number` (both from 1), `name`, `line`, `terminus`, `track`, `reverse`, `profile_index` (from 0), `profile` (`name`, `factor`), `departure`, `arrival`, and all `stops` (`id`, `name`, `arrival`, `departure`, `stops`, optional `x,y,z`). Times are seconds from service-day midnight and can exceed 86400; passing stops are retained. Unknown trip references are skipped, retaining their source numbers. No AI vehicle is reserved.",
+      "params": [
+        {
+          "name": "line",
+          "type": "string",
+          "optional": false
+        },
+        {
+          "name": "tour",
+          "type": "string",
+          "optional": false
+        }
+      ],
+      "returns": "table, or nil and reason",
+      "multi": true,
       "permission": null
     },
     {

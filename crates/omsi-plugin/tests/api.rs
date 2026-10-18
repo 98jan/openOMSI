@@ -260,3 +260,55 @@ fn errors_name_the_function_and_argument() {
     "#, &mut g, 1);
     assert_eq!(g.messages, ["yes"]);
 }
+
+#[test]
+fn data_queries_validate_types_and_reject_mutations_without_a_vehicle() {
+    let mut g = Game::default();
+    run("data-queries", r#"
+        function on_frame()
+        assert(#omsi.data.queries() >= 30)
+        local value, reason = omsi.data.query("GetTTBusstopArr", {0})
+        assert(value == nil and type(reason) == "string")
+        assert(not pcall(omsi.data.query, "GiveChangeCoin", {0}))
+        assert(not pcall(omsi.data.query, "STDrawPixel", {0,1,2}))
+        assert(not pcall(omsi.data.query, "GetTTDelay", {1}))
+        assert(not pcall(omsi.data.query, "GetTTBusstopArr", {"0"}))
+        assert(not pcall(omsi.data.query, "GetTTBusstopArr", {0/0}))
+        assert(not pcall(omsi.data.query, "GetTTBusstopArr", {math.huge}))
+        assert(omsi.duty.tour() == nil)
+        local tour, err = omsi.timetable.tour("none", "none")
+        assert(tour == nil and type(err) == "string")
+        omsi.message("validated")
+        end
+    "#, &mut g, 1);
+    assert_eq!(g.messages,["validated"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn lua_process_exit_code_is_nonblocking_and_retained() {
+    let mut g = Game::default();
+    let mut plugins = run("process-code", r#"
+        local id = assert(omsi.process.start("/bin/sh", {"-c", "exit 23"}))
+        function on_frame()
+            local code, state = omsi.process.exit_code(id)
+            if state == "running" then assert(code == nil); return end
+            assert(state == "exited" and code == 23)
+            assert(omsi.process.exit_code(id) == 23)
+            local status = assert(omsi.process.status(id))
+            assert(status.exited and not status.running and not status.success and status.code == 23)
+            assert(omsi.process.forget(id))
+            local missing, err = omsi.process.status(id)
+            assert(missing == nil and type(err) == "string")
+            omsi.message("exit 23")
+            on_frame = nil
+        end
+    "#, &mut g, 1);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while g.messages.is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        plugins.frame(&mut g);
+    }
+    assert_eq!(g.messages,["exit 23"]);
+    plugins.finalize();
+}
