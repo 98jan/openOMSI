@@ -95,6 +95,10 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 ### Fixes
 
+- Tyre spray comes only from puddles: the stock cars' and buses' wheel spray no longer sprays
+  on every wet road from the first drops, and it stops as the puddles dry out after the rain
+  instead of lingering until the road is quite dry. In snow the scripts' own slush is kept.
+
 **Navigator**
 
 - Traffic on the navigator follows how fast the traffic flows: busy streets that move are no
@@ -230,6 +234,12 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   player fetches must be what its name says (a picture of a size a texture can have, a sound,
   a mesh the reader takes, a text), or it is left out and reported; a vehicle script that
   would never end is cut short instead of stopping the game.
+- **The dedicated server's administration** — an admin and a moderator role, a menu in the
+  game and a web panel (`/admin/`) that use the same operations, an audit log, and a passenger
+  density (`passenger_density`) besides `passengers` (see [docs/SERVER.md](docs/SERVER.md)).
+  For a server set up before: an `admin_password` or `moderator_password` shorter than 12
+  characters now lets nobody in (the log says so; the start scripts ask for a new one), and a
+  `server.cfg` without `admin_web` has the web panel off until it says `admin_web = local`.
 - **Players' buses go to the server by their content** — a player's game says which bus it
   drives by the fingerprint of the files it uses, and sends a server that lacks it those files
   (the variant and paint driven, not the whole pack); a dedicated server keeps every version
