@@ -94,8 +94,6 @@ fn itunes_length(agent: &ureq::Agent, artist: &str, title: &str) -> Option<f32> 
 
 fn poll(shared: Arc<Mutex<Shared>>, stop: Arc<AtomicBool>) {
     let agent = agent();
-    let dir = std::env::temp_dir().join("openomsi-milezero");
-    let _ = std::fs::create_dir_all(&dir);
     let mut last_title = String::new();
     while !stop.load(Ordering::Relaxed) {
         if let Some(v) = get_json(&agent, &format!("{HUB}/api/public/nowplaying")) {
@@ -105,18 +103,19 @@ fn poll(shared: Arc<Mutex<Shared>>, stop: Arc<AtomicBool>) {
             if np.is_object() && key != last_title {
                 last_title = key.clone();
                 let started = get_json(&agent, &format!("{HUB}/api/public/history?limit=1")).and_then(|h| h[0]["played_at"].as_i64());
-                // (downloaded and decoded here, never on the frame; the file is not kept)
+                // (downloaded and decoded in memory here, never on the frame and with no file to share)
                 let cover = np["art"].as_str().filter(|u| u.starts_with("https://")).and_then(|u| {
-                    let path = dir.join("cover.tmp");
                     let mut bytes = Vec::new();
                     agent.get(u).call().ok()?.into_reader().take(4 << 20).read_to_end(&mut bytes).ok()?;
-                    std::fs::write(&path, bytes).ok()?;
-                    let img = omsi_texture::decode_file(&path).ok();
-                    let _ = std::fs::remove_file(&path);
+                    let img = omsi_texture::decode_bytes(&bytes, std::path::Path::new("cover.jpg")).ok();
                     img.map(|i| (u.to_string(), Arc::new(i)))
                 });
                 let duration = itunes_length(&agent, &text("artist"), &text("title"));
                 let song = Song { title: text("title"), artist: text("artist"), dj: np["dj"]["display_name"].as_str().unwrap_or("").to_string(), cover, started, duration };
+                // (a poller that was stopped while it downloaded publishes nothing)
+                if stop.load(Ordering::Relaxed) {
+                    return;
+                }
                 shared.lock().unwrap().song = Some(song);
             }
         }
