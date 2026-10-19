@@ -425,6 +425,15 @@ fn dates_are_fitted_to_the_maps_year_span() {
     assert_eq!(span((1972, 1989)), Some((1972, 1989)));
 }
 
+/// A date the player chose keeps its year; only the machine's calendar is fitted to the
+/// map's `[years]`.
+#[test]
+fn a_chosen_duty_date_keeps_its_year() {
+    let span = Some((1986, 2000));
+    assert_eq!(date_for_game("2025-06-01", false, span), "2025-06-01");
+    assert_eq!(date_for_game("2025-06-01", true, span), "2000-06-01");
+}
+
 #[test]
 fn a_depot_bus_is_handed_to_the_game() {
     let d = Duty { map: "maps/x/global.cfg".into(), bus: "Vehicles/x.bus".into(), time: "09:00".into(), depot: Some("6703c1a0".into()), ..Default::default() };

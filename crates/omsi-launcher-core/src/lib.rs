@@ -807,6 +807,17 @@ pub fn fit_date_to_years(date: &str, span: Option<(i32, i32)>) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// The `--date` of a duty: the date the player chose as it stands. Only a date taken from
+/// the machine's calendar (`use_real_date`) is fitted to the map's `[years]` - an old saved
+/// duty or a manually picked year must not be moved behind the player's back.
+fn date_for_game(date: &str, real_date: bool, span: Option<(i32, i32)>) -> String {
+    if real_date {
+        fit_date_to_years(date, span)
+    } else {
+        date.to_string()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EntryInfo {
     pub index: i32,
@@ -1622,6 +1633,7 @@ pub struct IbisInfo {
     pub hof: String,
     pub line_code: String,
     pub routes: Vec<IbisRoute>,
+    pub trip_route: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -1633,7 +1645,7 @@ pub struct IbisRoute {
     pub terminus: String,
 }
 
-pub fn ibis_info(bus: &str, hof_name: &str, line: &str) -> Result<IbisInfo> {
+pub fn ibis_info(bus: &str, hof_name: &str, line: &str, terminus: &str, stops: &[String]) -> Result<IbisInfo> {
     let bus_path = resolve_content(bus)?;
     let dir = bus_path.parent().context("bus folder")?;
     // the bus's own depot file of that name (every content root's copy of its folder), else
@@ -1654,7 +1666,9 @@ pub fn ibis_info(bus: &str, hof_name: &str, line: &str) -> Result<IbisInfo> {
         let terminus = hof.termini.iter().find(|x| x.code == code).and_then(|x| x.strings.first().cloned()).unwrap_or_default();
         routes.push(IbisRoute { code: t.code.clone(), route: t.route.clone(), name: t.name.clone(), terminus_code: code, terminus });
     }
-    Ok(IbisInfo { hof: hof.name.clone(), line_code: line_digits, routes })
+    let stops: Vec<&str> = stops.iter().map(String::as_str).collect();
+    let trip_route = (!terminus.trim().is_empty()).then(|| omsi_vehicle::hof::trip_terminus(hof, line, terminus, &stops)).flatten().and_then(|(_, r)| r).map(|r| hof.info_trips[r].code.clone());
+    Ok(IbisInfo { hof: hof.name.clone(), line_code: line_digits, routes, trip_route })
 }
 
 // ---------------------------------------------------------------------------------------
@@ -2953,12 +2967,17 @@ fn duty_args_for_root(d: &Duty, root: &Path) -> Result<Vec<String>> {
         date = Some(format!("{year:04}-{mo:02}-{dd:02}"));
     }
     if let Some(dt) = date {
-        // (a date outside the map's [years] starts on a day inside them, as OMSI 2 does: the
-        // machine's calendar or an old saved duty would load a map without its buses)
-        let file = root.join(&d.map);
-        let file = if file.is_file() { file } else { resolve_content(&d.map).unwrap_or(file) };
-        let span = omsi_map::GlobalCfg::load(&file).ok().and_then(|g| year_span_of(&g));
-        a.extend(["--date".into(), fit_date_to_years(&dt, span)]);
+        // (only the machine's calendar is fitted to the map's [years], so that its AI lists,
+        // chrono and timetables fit; the date the player chose in the launcher stays)
+        let real_date = on("use_real_date");
+        let span = if real_date {
+            let file = root.join(&d.map);
+            let file = if file.is_file() { file } else { resolve_content(&d.map).unwrap_or(file) };
+            omsi_map::GlobalCfg::load(&file).ok().and_then(|g| year_span_of(&g))
+        } else {
+            None
+        };
+        a.extend(["--date".into(), date_for_game(&dt, real_date, span)]);
     }
     if let Some(w) = d.weather.as_deref().filter(|x| !x.trim().is_empty()) {
         a.extend(["--weather".into(), w.trim().to_string()]);
@@ -3102,7 +3121,7 @@ pub fn cli(cmd: &str, arg: &str) -> Result<Value> {
         "vehicles" => serde_json::to_value(list_vehicles()?)?,
         "weather" => serde_json::to_value(list_weather()?)?,
         "lines" => serde_json::to_value(list_lines(&s("map"), &s("date"))?)?,
-        "ibis" => serde_json::to_value(ibis_info(&s("bus"), &s("hof"), &s("line"))?)?,
+        "ibis" => serde_json::to_value(ibis_info(&s("bus"), &s("hof"), &s("line"), &s("terminus"), &serde_json::from_value::<Vec<String>>(a.get("stops").cloned().unwrap_or_default()).unwrap_or_default())?)?,
         "profiles" => serde_json::to_value(list_profiles()?)?,
         "profile" => serde_json::to_value(get_profile(&s("name"))?)?,
         "mods" => {
