@@ -803,6 +803,17 @@ pub fn fit_date_to_years(date: &str, span: Option<(i32, i32)>) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// The `--date` of a duty: the date the player chose as it stands. Only a date taken from
+/// the machine's calendar (`use_real_date`) is fitted to the map's `[years]` - an old saved
+/// duty or a manually picked year must not be moved behind the player's back.
+fn date_for_game(date: &str, real_date: bool, span: Option<(i32, i32)>) -> String {
+    if real_date {
+        fit_date_to_years(date, span)
+    } else {
+        date.to_string()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EntryInfo {
     pub index: i32,
@@ -2952,12 +2963,17 @@ fn duty_args_for_root(d: &Duty, root: &Path) -> Result<Vec<String>> {
         date = Some(format!("{year:04}-{mo:02}-{dd:02}"));
     }
     if let Some(dt) = date {
-        // (a date outside the map's [years] starts on a day inside them, as OMSI 2 does: the
-        // machine's calendar or an old saved duty would load a map without its buses)
-        let file = root.join(&d.map);
-        let file = if file.is_file() { file } else { resolve_content(&d.map).unwrap_or(file) };
-        let span = omsi_map::GlobalCfg::load(&file).ok().and_then(|g| year_span_of(&g));
-        a.extend(["--date".into(), fit_date_to_years(&dt, span)]);
+        // (only the machine's calendar is fitted to the map's [years], so that its AI lists,
+        // chrono and timetables fit; the date the player chose in the launcher stays)
+        let real_date = on("use_real_date");
+        let span = if real_date {
+            let file = root.join(&d.map);
+            let file = if file.is_file() { file } else { resolve_content(&d.map).unwrap_or(file) };
+            omsi_map::GlobalCfg::load(&file).ok().and_then(|g| year_span_of(&g))
+        } else {
+            None
+        };
+        a.extend(["--date".into(), date_for_game(&dt, real_date, span)]);
     }
     if let Some(w) = d.weather.as_deref().filter(|x| !x.trim().is_empty()) {
         a.extend(["--weather".into(), w.trim().to_string()]);

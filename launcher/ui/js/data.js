@@ -98,9 +98,11 @@ export const weatherName = (w, list) =>
 /** A remembered map or bus that is not installed any more gives way to the first one. */
 function fixChoice() {
   const c = { ...S.choice };
+  let mapChanged = false;
   if (S.maps?.length && !S.maps.some((m) => m.file === c.map)) {
     c.map = (S.maps.find((m) => /grundorf/i.test(m.file)) || S.maps[0]).file;
     c.entry = -1;
+    mapChanged = true;
   }
   if (S.vehicles?.length && !S.vehicles.some((v) => v.file === c.bus)) {
     c.bus = S.vehicles[0].file;
@@ -108,7 +110,9 @@ function fixChoice() {
     c.number = randomFleetNumber(S.vehicles[0]);
   }
   if (S.weather && c.weather && !weatherOfItsOwn(c.weather) && !S.weather.some((w) => w.file === c.weather)) c.weather = '';
-  c.date = fitDateToMap(c.date, c.map);
+  // (a date the player picked stays even outside the map's [years]; only a map that had
+  // to give way to another one takes a date the new map allows)
+  if (mapChanged) c.date = fitDateToMap(c.date, c.map);
   Object.assign(c, allowedBus(c));
   set({ choice: c });
 }
@@ -199,6 +203,8 @@ function clockPatch(c, st) {
   }
   if (st?.use_real_date) {
     const year = st.use_real_year ? now.getFullYear() : parseInt(c.date, 10) || now.getFullYear();
+    // (the computer's date is fitted to the map's [years]; a date the player chose is kept,
+    // see `choose`)
     const d = fitDateToMap(`${String(year).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`, c.map);
     if (c.date !== d) patch.date = d;
   }
@@ -222,8 +228,9 @@ function randomFleetNumber(vehicle) {
 export function choose(patch) {
   const before = S.choice;
   const c = { ...before, ...patch };
-  // (a date outside the map's [years] starts on a day inside them; a date inside stays)
-  c.date = fitDateToMap(c.date, c.map);
+  // (a map's [years] only move the date when another map is chosen: a date the player
+  // picked or typed stays as it is, even outside them)
+  if (c.map !== before.map) c.date = fitDateToMap(c.date, c.map);
   if (c.bus !== before.bus && !patch.number) {
     c.number = randomFleetNumber(S.vehicles?.find((v) => v.file === c.bus));
   }
