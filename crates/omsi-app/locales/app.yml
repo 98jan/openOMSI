@@ -50273,7 +50273,7 @@ _version: 2
   es: "Borrar {}"
   zh-tw: "清除 {}"
   ca: "Esborra {}"
-  sr: "Clear {}"
+  sr: "Ukloni {}"
   ru: "Очистить {}"
 
 "Connection":
@@ -53594,192 +53594,254 @@ _version: 2
 
 "Variables":
   zh-tw: "變數"
+  sr: "Promenljive"
 
 "Overlays":
   zh-tw: "疊加項目"
+  sr: "Slojevi"
 
 "Files":
   zh-tw: "檔案"
+  sr: "Datoteke"
 
 "Watched":
   zh-tw: "監看的變數"
+  sr: "Praćene"
 
 "All variables":
   zh-tw: "所有變數"
+  sr: "Sve promenljive"
 
 "Search variables ($ for string variables)":
   zh-tw: "搜尋變數（字串變數請加上 $）"
+  sr: "Pretraži promenljive ($ za tekstualne promenljive)"
 
 "no bus of one's own":
   zh-tw: "尚未選擇巴士"
+  sr: "nema sopstvenog autobusa"
 
 "held":
   zh-tw: "固定中"
+  sr: "zadržano"
 
 "Set":
   zh-tw: "設定"
+  sr: "Postavi"
 
 "Hold":
   zh-tw: "固定"
+  sr: "Zadrži"
 
 "Let go":
   zh-tw: "解除固定"
+  sr: "Pusti"
 
 "Variable value":
   zh-tw: "變數值"
+  sr: "Vrednost promenljive"
 
 "Across":
   zh-tw: "橫向"
+  sr: "Poprečno"
 
 "Along":
   zh-tw: "縱向"
+  sr: "Uzdužno"
 
 "Turn":
   zh-tw: "水平旋轉"
 
 "Paths":
   zh-tw: "路徑"
+  sr: "Putanje"
 
 "Entry point":
   zh-tw: "入口"
+  sr: "Ulazna tačka"
 
 "Exit point":
   zh-tw: "出口"
+  sr: "Izlazna tačka"
 
 "Path points":
   zh-tw: "路徑節點"
+  sr: "Tačke putanje"
 
 "Driver position":
   zh-tw: "駕駛員位置"
+  sr: "Položaj vozača"
 
 "Standing position":
   zh-tw: "站立位置"
+  sr: "Mesto za stajanje"
 
 "Bounding box":
   zh-tw: "包圍盒"
+  sr: "Granični okvir"
 
 "Axle":
   zh-tw: "車軸"
+  sr: "Osovina"
 
 "Money point":
   zh-tw: "收款點"
+  sr: "Mesto naplate"
 
 "Change point":
   zh-tw: "找零點"
+  sr: "Mesto za vraćanje kusura"
 
 "Interior light":
   zh-tw: "燈光"
+  sr: "Unutrašnje svetlo"
 
 "stamper":
   zh-tw: "打票機"
+  sr: "Poništavač karata"
 
 "ticket sale":
   zh-tw: "售票位置"
+  sr: "Prodaja karata"
 
 "driver view":
   zh-tw: "駕駛員視角"
+  sr: "Pogled vozača"
 
 "passenger view":
   zh-tw: "乘客視角"
+  sr: "Pogled putnika"
 
 "Driver camera {n} of {count}":
   zh-tw: "駕駛員視角 {n}／{count}"
+  sr: "Kamera vozača {n} od {count}"
 
 "Passenger camera {n} of {count}":
   zh-tw: "乘客視角 {n}／{count}"
+  sr: "Kamera putnika {n} od {count}"
 
 "(path point {})":
   zh-tw: "（路徑節點 {}）"
+  sr: "(tačka putanje {})"
 
 "Log opened":
   zh-tw: "已開啟記錄檔"
+  sr: "Dnevnik je otvoren"
 
 "Model":
   zh-tw: "模型"
+  sr: "Model"
 
 "Constant files":
   zh-tw: "常數檔案"
+  sr: "Datoteke konstanti"
 
 "Scripts":
   zh-tw: "腳本"
+  sr: "Skripte"
 
 "(none)":
   zh-tw: "（無）"
+  sr: "(nijedno)"
 
 "yaw":
   zh-tw: "偏航"
+  sr: "Skretanje"
 
 "pitch":
   zh-tw: "俯仰"
+  sr: "Nagib"
 
 "fov":
   zh-tw: "視野角"
+  sr: "Ugao vidnog polja"
 
 "paths.cfg and passenger cabin":
   zh-tw: "paths.cfg 與乘客艙"
+  sr: "paths.cfg i putnički prostor"
 
 "sound.cfg":
   zh-tw: "sound.cfg"
+  sr: "sound.cfg"
 
 ".bus (physics, cameras, mirrors, box)":
   zh-tw: ".bus（物理、攝影機、後視鏡、包圍盒）"
+  sr: ".bus (fizika, kamere, retrovizori, granični okvir)"
 
 "model.cfg (animations, lights)":
   zh-tw: "model.cfg（動畫、燈光）"
+  sr: "model.cfg (animacije, svetla)"
 
 "constfiles":
   zh-tw: "常數檔案"
+  sr: "Datoteke konstanti"
 
 "driven":
   zh-tw: "驅動"
+  sr: "vožen"
 
 "mirror {}  fov {:.0}":
   zh-tw: "後視鏡 {}　視野角 {:.0}"
+  sr: "retrovizor {}  ugao vidnog polja {:.0}"
 
 "mirror {}: its [add_camera_reflexion_2] block copied":
   zh-tw: "已複製後視鏡 {} 的 [add_camera_reflexion_2] 設定區塊"
+  sr: "retrovizor {}: blok [add_camera_reflexion_2] je kopiran"
 
 "mirror {}: the clipboard is not there - the block is in the log":
   zh-tw: "無法使用剪貼簿；後視鏡 {} 的設定區塊已輸出至記錄檔"
+  sr: "retrovizor {}: sadržaj nije u ostavi - blok se nalazi u dnevniku"
 
 "Reloaded {} in {:.0} ms: {}":
   zh-tw: "已重新載入 {}，耗時 {:.0} 毫秒：{}"
+  sr: "{} je ponovo učitan za {:.0} ms: {}"
 
 "Reload failed for {}: {}":
   zh-tw: "重新載入 {} 失敗：{}"
+  sr: "Ponovno učitavanje stavke {} nije uspelo: {}"
 
 "no sound":
   zh-tw: "沒有音效設定檔"
+  sr: "nema zvuka"
 
 "animations, lights and visibility taken over":
   zh-tw: "動畫、燈光與可見度已套用"
+  sr: "Animacije, svetla i vidljivost su preuzeti"
 
 "the bus has no model":
   zh-tw: "此巴士沒有模型"
+  sr: "autobus nema model"
 
 "a script changed since: place the bus anew":
   zh-tw: "腳本已變更：請重新放置巴士"
+  sr: "skripta je promenjena: ponovo postavite autobus"
 
 "constants and curves taken over":
   zh-tw: "常數與曲線已套用"
+  sr: "Konstante i krive su preuzete"
 
 "scripts are not read again: place the bus anew":
   zh-tw: "無法重新讀取腳本：請重新放置巴士"
+  sr: "skripte se ne učitavaju ponovo: ponovo postavite autobus"
 
 "a script or a variable list changed: place the bus anew to run it":
   zh-tw: "腳本或變數清單已變更：請重新放置巴士以套用"
+  sr: "skripta ili spisak promenljivih je izmenjen: ponovo postavite autobus da bi se pokrenuo"
 
 "Cabin drawn anew (no passengers in this game)":
   zh-tw: "乘客艙已重新建立（本場遊戲沒有乘客）"
+  sr: "Putnički prostor je ponovo nacrtan (u ovoj igri nema putnika)"
 
 "Cannot reload cabin: {} people aboard and the new cabin has fewer places, doors or points - let them off first":
   zh-tw: "無法重新載入乘客艙：目前有 {} 名乘客，而新乘客艙的座位、車門或路徑點較少，請先讓乘客下車"
+  sr: "Putnički prostor ne može ponovo da se učita: u autobusu je {} putnika, a novi prostor ima manje mesta, vrata ili tačaka - prvo ih iskrcajte"
 
 "no passenger cabin now":
   zh-tw: "目前沒有乘客艙"
+  sr: "trenutno nema putničkog prostora"
 
 "Cabin reloaded: {} path points, {} places, {} entries, {} exits":
   zh-tw: "乘客艙已重新載入：{} 個路徑點、{} 個位置、{} 個入口、{} 個出口"
+  sr: "Putnički prostor je ponovo učitan: {} tačaka putanje, {} mesta, {} ulaza, {} izlaza"
 
 "Close (Ctrl+Shift+D)":
   zh-tw: "關閉（Ctrl+Shift+D）"
@@ -56341,6 +56403,7 @@ _version: 2
   hi: "बस चला रहा है"
   ca: "condueix un autobús"
   sv: "kör en buss"
+  sr: "vozi autobus"
 "on foot":
   pt: "a pé"
   pt-pt: "a pé"
@@ -56369,6 +56432,7 @@ _version: 2
   hi: "पैदल"
   ca: "a peu"
   sv: "till fots"
+  sr: "peške"
 "aboard the bus of":
   pt: "a bordo do ônibus de"
   pt-pt: "a bordo do autocarro de"
@@ -56397,6 +56461,7 @@ _version: 2
   hi: "इसकी बस में सवार:"
   ca: "a bord de l'autobús de"
   sv: "ombord på bussen hos"
+  sr: "u autobusu igrača"
 "joining":
   pt: "entrando"
   pt-pt: "a entrar"
@@ -56425,6 +56490,7 @@ _version: 2
   hi: "जुड़ रहा है"
   ca: "s'està unint"
   sv: "ansluter"
+  sr: "povezuje se"
 "admin":
   pt: "admin"
   pt-pt: "admin"
@@ -56453,6 +56519,7 @@ _version: 2
   hi: "एडमिन"
   ca: "administrador"
   sv: "admin"
+  sr: "administrator"
 "moderator":
   pt: "moderador"
   pt-pt: "moderador"
@@ -56481,6 +56548,7 @@ _version: 2
   hi: "मॉडरेटर"
   ca: "moderador"
   sv: "moderator"
+  sr: "moderator"
 "The server does not answer the new menu (it may be older than this game): the full list below still works":
   pt: "O servidor não responde ao menu novo (pode ser mais antigo que este jogo): a lista completa abaixo continua funcionando"
   pt-pt: "O servidor não responde ao menu novo (pode ser mais antigo do que este jogo): a lista completa abaixo continua a funcionar"
@@ -56509,6 +56577,7 @@ _version: 2
   hi: "सर्वर नए मेनू का जवाब नहीं देता (शायद यह इस गेम से पुराना है): नीचे की पूरी सूची अब भी काम करती है"
   ca: "El servidor no respon al menú nou (potser és més antic que aquest joc): la llista completa de sota continua funcionant"
   sv: "Servern svarar inte på den nya menyn (den kan vara äldre än det här spelet): hela listan nedan fungerar fortfarande"
+  sr: "Server ne odgovara na novi meni (možda je starija verzija od ove igre); potpuna lista ispod i dalje radi"
 "You administer this server":
   pt: "Você administra este servidor"
   pt-pt: "Administra este servidor"
@@ -56537,6 +56606,7 @@ _version: 2
   hi: "आप इस सर्वर का प्रबंधन कर रहे हैं"
   ca: "Administres aquest servidor"
   sv: "Du administrerar den här servern"
+  sr: "Upravljate ovim serverom"
 "Players":
   pt: "Jogadores"
   pt-pt: "Jogadores"
@@ -56565,6 +56635,7 @@ _version: 2
   hi: "खिलाड़ी"
   ca: "Jugadors"
   sv: "Spelare"
+  sr: "Igrači"
 "Full list of commands (older menu)...":
   pt: "Lista completa de comandos (menu antigo)..."
   pt-pt: "Lista completa de comandos (menu antigo)..."
@@ -56593,6 +56664,7 @@ _version: 2
   hi: "आदेशों की पूरी सूची (पुराना मेनू)..."
   ca: "Llista completa d'ordres (menú antic)..."
   sv: "Fullständig lista med kommandon (gammal meny)..."
+  sr: "Potpuna lista komandi (stariji meni)..."
 "Stop administering":
   pt: "Parar de administrar"
   pt-pt: "Deixar de administrar"
@@ -56621,6 +56693,7 @@ _version: 2
   hi: "प्रबंधन बंद करें"
   ca: "Deixa d'administrar"
   sv: "Sluta administrera"
+  sr: "Prekini upravljanje"
 "The clock, the weather, the traffic and the passengers are for an admin":
   pt: "Relógio, clima, tráfego e passageiros são só para admin"
   pt-pt: "O relógio, o tempo, o tráfego e os passageiros são só para um admin"
@@ -56649,6 +56722,7 @@ _version: 2
   hi: "घड़ी, मौसम, ट्रैफ़िक और यात्री केवल एडमिन के लिए हैं"
   ca: "El rellotge, el temps, el trànsit i els passatgers són per a un administrador"
   sv: "Klockan, vädret, trafiken och passagerarna är för en admin"
+  sr: "Samo administrator može da menja sat, vreme, saobraćaj i putnike"
 "Clock: follows the server's real time (it cannot be moved)":
   pt: "Relógio: segue a hora real do servidor (não dá para mudar)"
   pt-pt: "Relógio: segue a hora real do servidor (não pode ser alterado)"
@@ -56677,6 +56751,7 @@ _version: 2
   hi: "घड़ी: सर्वर के असली समय पर चलती है (इसे बदला नहीं जा सकता)"
   ca: "Rellotge: segueix l'hora real del servidor (no es pot moure)"
   sv: "Klocka: följer serverns verkliga tid (den kan inte flyttas)"
+  sr: "Sat: prati stvarno vreme servera (ne može da se pomera)"
 "Weather: follows the METAR report (it cannot be changed)":
   pt: "Clima: segue o METAR (não dá para mudar)"
   pt-pt: "Tempo: segue o boletim METAR (não pode ser alterado)"
@@ -56705,6 +56780,7 @@ _version: 2
   hi: "मौसम: METAR रिपोर्ट के अनुसार (इसे बदला नहीं जा सकता)"
   ca: "Temps: segueix l'informe METAR (no es pot canviar)"
   sv: "Väder: följer METAR-rapporten (det kan inte ändras)"
+  sr: "Vreme: prati METAR izveštaj (ne može da se menja)"
 "Passengers: off on this server (passengers = 0)":
   pt: "Passageiros: desligados neste servidor (passengers = 0)"
   pt-pt: "Passageiros: desligados neste servidor (passengers = 0)"
@@ -56733,6 +56809,7 @@ _version: 2
   hi: "यात्री: इस सर्वर पर बंद (passengers = 0)"
   ca: "Passatgers: desactivats en aquest servidor (passengers = 0)"
   sv: "Passagerare: av på den här servern (passengers = 0)"
+  sr: "Putnici: isključeni na ovom serveru (passengers = 0)"
 "waiting":
   pt: "esperando"
   pt-pt: "à espera"
@@ -56761,6 +56838,7 @@ _version: 2
   hi: "इंतज़ार कर रहा है"
   ca: "esperant"
   sv: "väntar"
+  sr: "čeka"
 "walking":
   pt: "andando"
   pt-pt: "a pé"
@@ -56789,6 +56867,7 @@ _version: 2
   hi: "चल रहा है"
   ca: "caminant"
   sv: "går"
+  sr: "hoda"
 "aboard":
   pt: "a bordo"
   pt-pt: "a bordo"
@@ -56817,6 +56896,7 @@ _version: 2
   hi: "सवार"
   ca: "a bord"
   sv: "ombord"
+  sr: "u autobusu"
 "Passenger density":
   pt: "Densidade de passageiros"
   pt-pt: "Densidade de passageiros"
@@ -56845,6 +56925,7 @@ _version: 2
   hi: "यात्रियों का घनत्व"
   ca: "Densitat de passatgers"
   sv: "Passagerartäthet"
+  sr: "Gustina putnika"
 "Nobody else is on the server":
   pt: "Não há mais ninguém no servidor"
   pt-pt: "Não está mais ninguém no servidor"
@@ -56873,6 +56954,7 @@ _version: 2
   hi: "सर्वर पर और कोई नहीं है"
   ca: "No hi ha ningú més al servidor"
   sv: "Ingen annan är på servern"
+  sr: "Nema nikog drugog na serveru"
 "more not listed":
   pt: "a mais, fora da lista"
   pt-pt: "a mais, fora da lista"
@@ -56901,6 +56983,7 @@ _version: 2
   hi: "और सूची में नहीं"
   ca: "més no llistats"
   sv: "till visas inte"
+  sr: "još igrača nije prikazano"
 "That player is no longer on the server (or came back on a new connection): pick them again":
   pt: "Esse jogador não está mais no servidor (ou voltou com outra conexão): escolha de novo"
   pt-pt: "Esse jogador já não está no servidor (ou voltou com outra ligação): escolha-o de novo"
@@ -56929,6 +57012,7 @@ _version: 2
   hi: "वह खिलाड़ी अब सर्वर पर नहीं है (या नए कनेक्शन से लौटा है): उसे फिर से चुनें"
   ca: "Aquest jugador ja no és al servidor (o ha tornat amb una connexió nova): torna'l a triar"
   sv: "Den spelaren är inte längre på servern (eller kom tillbaka med en ny anslutning): välj den igen"
+  sr: "Taj igrač više nije na serveru (ili se ponovo povezao): izaberite ga ponovo"
 "connection":
   pt: "conexão"
   pt-pt: "ligação"
@@ -56957,6 +57041,7 @@ _version: 2
   hi: "कनेक्शन"
   ca: "connexió"
   sv: "anslutning"
+  sr: "veza"
 "Send away...":
   pt: "Expulsar..."
   pt-pt: "Expulsar..."
@@ -56985,6 +57070,7 @@ _version: 2
   hi: "बाहर निकालें..."
   ca: "Expulsa..."
   sv: "Skicka bort..."
+  sr: "Udalji..."
 "Send away for this server run...":
   pt: "Expulsar até o servidor reiniciar..."
   pt-pt: "Expulsar até o servidor reiniciar..."
@@ -57013,6 +57099,7 @@ _version: 2
   hi: "सर्वर दोबारा शुरू होने तक बाहर निकालें..."
   ca: "Expulsa fins que es reiniciï el servidor..."
   sv: "Skicka bort tills servern startas om..."
+  sr: "Udalji do ponovnog pokretanja servera..."
 "Send this player away for the rest of this server run?":
   pt: "Expulsar este jogador até o servidor reiniciar?"
   pt-pt: "Expulsar este jogador até o servidor reiniciar?"
@@ -57041,6 +57128,7 @@ _version: 2
   hi: "इस खिलाड़ी को सर्वर दोबारा शुरू होने तक बाहर निकालें?"
   ca: "Vols expulsar aquest jugador fins que es reiniciï el servidor?"
   sv: "Skicka bort den här spelaren tills servern startas om?"
+  sr: "Udaljiti ovog igrača do ponovnog pokretanja servera?"
 "Send this player away?":
   pt: "Expulsar este jogador?"
   pt-pt: "Expulsar este jogador?"
@@ -57069,6 +57157,7 @@ _version: 2
   hi: "इस खिलाड़ी को बाहर निकालें?"
   ca: "Vols expulsar aquest jugador?"
   sv: "Skicka bort den här spelaren?"
+  sr: "Udaljiti ovog igrača?"
 "Yes, send them away":
   pt: "Sim, expulsar"
   pt-pt: "Sim, expulsar"
@@ -57097,6 +57186,7 @@ _version: 2
   hi: "हाँ, बाहर निकालें"
   ca: "Sí, expulsa'l"
   sv: "Ja, skicka bort"
+  sr: "Da, udalji igrača"
 "Applied":
   pt: "Aplicado"
   pt-pt: "Aplicado"
@@ -57125,6 +57215,7 @@ _version: 2
   hi: "लागू हुआ"
   ca: "Aplicat"
   sv: "Utfört"
+  sr: "Primenjeno"
 "Sent":
   pt: "Enviado"
   pt-pt: "Enviado"
@@ -57153,6 +57244,7 @@ _version: 2
   hi: "भेजा गया"
   ca: "Enviat"
   sv: "Skickat"
+  sr: "Poslato"
 "Refused":
   pt: "Recusado"
   pt-pt: "Recusado"
@@ -57181,6 +57273,7 @@ _version: 2
   hi: "अस्वीकृत"
   ca: "Rebutjat"
   sv: "Nekad"
+  sr: "Odbijeno"
 "Waiting":
   pt: "Aguardando"
   pt-pt: "À espera"
@@ -57209,6 +57302,7 @@ _version: 2
   hi: "प्रतीक्षा में"
   ca: "En espera"
   sv: "Väntar"
+  sr: "Čeka se"
 "Sent to the server":
   pt: "Enviado ao servidor"
   pt-pt: "Enviado ao servidor"
@@ -57237,6 +57331,7 @@ _version: 2
   hi: "सर्वर को भेजा गया"
   ca: "Enviat al servidor"
   sv: "Skickat till servern"
+  sr: "Poslato serveru"
 
 "Simulation on its own thread":
   pt: "Simulação em uma thread própria"
@@ -57866,6 +57961,7 @@ _version: 2
   hi: "यहाँ यात्रियों का घनत्व विकल्प में सेट होता है"
   ca: "Aquí la densitat de passatgers es configura a les Opcions"
   sv: "Passagerartätheten ställs in här under Alternativ"
+  sr: "Gustina putnika se podešava ovde, u Opcijama"
 
 "Preparing your bus for the other players...":
   ca: "Preparant el teu autobús per als altres jugadors..."
@@ -60894,6 +60990,57 @@ _version: 2
   fr: "Cycle météo {}"
   sr: "Ciklus vremenskih prilika {}"
   ru: "Цикл погоды {}"
+"Online: {n} other players":
+  zh-tw: "線上：另有 {n} 位玩家"
+"Online: connecting ...":
+  zh-tw: "線上：正在連線..."
+"Online: not connected: {reason} (chat /reconnect)":
+  zh-tw: "線上：尚未連線：{reason}（在聊天室輸入 /reconnect）"
+"Online: in {host}'s game, {others}":
+  zh-tw: "線上：已加入 {host} 的遊戲，{others}"
+"Online: {warning}":
+  zh-tw: "線上：{warning}"
+"nobody else yet":
+  zh-tw: "尚無其他玩家"
+"1 other player":
+  zh-tw: "另有 1 位玩家"
+"{n} other players":
+  zh-tw: "另有 {n} 位玩家"
+
+"connected to {host}'s session ({players} player(s))":
+  zh-tw: "已連線至 {host} 的遊戲（{players} 位玩家）"
+"In this session: {players}":
+  zh-tw: "本次連線的玩家：{players}"
+"{name} (host, {vehicle})":
+  zh-tw: "{name}（房主，{vehicle}）"
+"{name} (host)":
+  zh-tw: "{name}（房主）"
+"{name} joined with {vehicle}":
+  zh-tw: "{name} 已加入，駕駛 {vehicle}"
+"{name} joined":
+  zh-tw: "{name} 已加入"
+"{name} is back":
+  zh-tw: "{name} 已重新加入"
+"{name} left":
+  zh-tw: "{name} 已離開"
+"{name} lost the connection":
+  zh-tw: "{name} 已中斷連線"
+"{name} was sent away by the host":
+  zh-tw: "{name} 已被房主移出遊戲"
+"the host turned us away: {reason}":
+  zh-tw: "房主拒絕連線：{reason}"
+"the host sent you away: {reason}":
+  zh-tw: "房主已將你移出遊戲：{reason}"
+"reconnecting ...":
+  zh-tw: "正在重新連線..."
+"only a joined game can reconnect":
+  zh-tw: "只有加入其他房間的遊戲才能重新連線"
+"asked the server for its administration":
+  zh-tw: "已向伺服器申請管理權限"
+"the host ended the session":
+  zh-tw: "房主已結束遊戲"
+"the host has gone quiet; trying to reach it again":
+  zh-tw: "房主暫無回應；正在嘗試重新連線"
 "Add a bus":
   ca: "Afegeix un autobús"
   ru: "Добавить автобус"
@@ -61998,14 +62145,19 @@ _version: 2
   zh-tw: "{h} 小時 {m} 分鐘"
 "m":
   zh-tw: "米"
+  sr: "m"
 "km":
   zh-tw: "公里"
+  sr: "km"
 "yd":
   zh-tw: "碼"
+  sr: "yd"
 "ft":
   zh-tw: "英尺"
+  sr: "ft"
 "mi":
   zh-tw: "英里"
+  sr: "mi"
 "Terrain":
   es: "Relieve"
   ca: "Relleu"
@@ -62035,3 +62187,61 @@ _version: 2
   ms: "Rupa bumi"
   tl: "Lupain"
   sr: "Teren"
+"North":
+  es: "Norte"
+  ca: "Nord"
+  zh-tw: "北"
+  sv: "Norr"
+  pt: "Norte"
+  fr: "Nord"
+  de: "Norden"
+  nl: "Noord"
+  pt-pt: "Norte"
+  zh: "北"
+  ru: "Север"
+  pl: "Północ"
+  uk: "Північ"
+  it: "Nord"
+  cs: "Sever"
+  tr: "Kuzey"
+  hu: "Észak"
+  ja: "北"
+  be: "Поўнач"
+  kk: "Солтүстік"
+  hi: "उत्तर"
+  ko: "북"
+  th: "เหนือ"
+  vi: "Bắc"
+  id: "Utara"
+  ms: "Utara"
+  tl: "Hilaga"
+  sr: "Sever"
+"Heading":
+  es: "Rumbo"
+  ca: "Rumb"
+  zh-tw: "航向"
+  sv: "Kurs"
+  pt: "Rumo"
+  fr: "Cap"
+  de: "Kurs"
+  nl: "Koers"
+  pt-pt: "Rumo"
+  zh: "航向"
+  ru: "Курс"
+  pl: "Kurs"
+  uk: "Курс"
+  it: "Rotta"
+  cs: "Kurz"
+  tr: "Rota"
+  hu: "Irány"
+  ja: "進行方向"
+  be: "Курс"
+  kk: "Бағыт"
+  hi: "दिशा"
+  ko: "진행 방향"
+  th: "ทิศทาง"
+  vi: "Hướng đi"
+  id: "Haluan"
+  ms: "Haluan"
+  tl: "Direksyon"
+  sr: "Pravac"
