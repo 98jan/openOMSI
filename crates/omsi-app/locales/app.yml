@@ -60960,6 +60960,57 @@ _version: 2
   fr: "Cycle météo {}"
   sr: "Ciklus vremenskih prilika {}"
   ru: "Цикл погоды {}"
+"Online: {n} other players":
+  zh-tw: "線上：另有 {n} 位玩家"
+"Online: connecting ...":
+  zh-tw: "線上：正在連線..."
+"Online: not connected: {reason} (chat /reconnect)":
+  zh-tw: "線上：尚未連線：{reason}（在聊天室輸入 /reconnect）"
+"Online: in {host}'s game, {others}":
+  zh-tw: "線上：已加入 {host} 的遊戲，{others}"
+"Online: {warning}":
+  zh-tw: "線上：{warning}"
+"nobody else yet":
+  zh-tw: "尚無其他玩家"
+"1 other player":
+  zh-tw: "另有 1 位玩家"
+"{n} other players":
+  zh-tw: "另有 {n} 位玩家"
+
+"connected to {host}'s session ({players} player(s))":
+  zh-tw: "已連線至 {host} 的遊戲（{players} 位玩家）"
+"In this session: {players}":
+  zh-tw: "本次連線的玩家：{players}"
+"{name} (host, {vehicle})":
+  zh-tw: "{name}（房主，{vehicle}）"
+"{name} (host)":
+  zh-tw: "{name}（房主）"
+"{name} joined with {vehicle}":
+  zh-tw: "{name} 已加入，駕駛 {vehicle}"
+"{name} joined":
+  zh-tw: "{name} 已加入"
+"{name} is back":
+  zh-tw: "{name} 已重新加入"
+"{name} left":
+  zh-tw: "{name} 已離開"
+"{name} lost the connection":
+  zh-tw: "{name} 已中斷連線"
+"{name} was sent away by the host":
+  zh-tw: "{name} 已被房主移出遊戲"
+"the host turned us away: {reason}":
+  zh-tw: "房主拒絕連線：{reason}"
+"the host sent you away: {reason}":
+  zh-tw: "房主已將你移出遊戲：{reason}"
+"reconnecting ...":
+  zh-tw: "正在重新連線..."
+"only a joined game can reconnect":
+  zh-tw: "只有加入其他房間的遊戲才能重新連線"
+"asked the server for its administration":
+  zh-tw: "已向伺服器申請管理權限"
+"the host ended the session":
+  zh-tw: "房主已結束遊戲"
+"the host has gone quiet; trying to reach it again":
+  zh-tw: "房主暫無回應；正在嘗試重新連線"
 "Add a bus":
   ca: "Afegeix un autobús"
   ru: "Добавить автобус"
