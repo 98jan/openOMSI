@@ -394,7 +394,7 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
             }
         }
     }
-    if let Some(memo) = root_memo().filter(|_| is_omsi_root(&args.root) && server_cfg.is_none()) {
+    if let Some(memo) = root_memo().filter(|_| is_omsi_root(&args.root) && server_cfg.is_none() && args.pack_map.is_none()) {
         let _ = std::fs::write(memo, args.root.to_string_lossy().as_bytes());
     }
     // content roots: the game's own folder (mods) first, then the original installation
@@ -439,6 +439,10 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
 /// The game for `args`, ready for its window; None when there is no window to open (a
 /// picture or a model was written instead).
 pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) -> Result<Option<App>> {
+    if let (Some(map), Some(to)) = (args.pack_map.clone(), args.pack_to.clone()) {
+        omsi_lan::map_pack::run(&map, &to)?;
+        return Ok(None);
+    }
     // the window's simulation beside the picture or inline, for the whole session (an
     // offscreen run - a dedicated server, a picture - steps inline and never asks)
     if args.offscreen.is_none() {
@@ -924,6 +928,17 @@ mod tests {
         );
         assert_eq!(both, vec![DVec3::new(10.0, 20.0, 0.0), cam.position]);
     }
+}
+
+#[cfg(test)]
+pub(crate) fn with_test_language<T>(code: &str, f: impl FnOnce() -> T) -> T {
+    use std::sync::{Mutex, OnceLock};
+    static LANGUAGE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = LANGUAGE_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner());
+    ui_language(code);
+    let result = f();
+    ui_language("ENG");
+    result
 }
 
 #[cfg(test)]

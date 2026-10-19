@@ -34,6 +34,31 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   the stops named after their street name the street.
 - The launcher's route preview draws the same picture: ground, water, rail, paved surfaces
   and houses, the route in blue, the stops on white cards.
+- Road markings on the map when zoomed in: lane lines and their dashes, edge lines, stop
+  lines, crossings and arrows, white and yellow, read off the road textures themselves (a
+  spline's texture laid by its own scale, an object's flat faces by their texture
+  coordinates), so a map maker's own textures work without a list. Light all-over textures
+  (concrete, cobbles), worn blotches and flecks are not taken for paint.
+- The city map closes with its cross or Escape only: a click beside it no longer closes it.
+- The dark rim of a carriageway on the map is a kerb's breadth (it was a pavement's, and ate
+  the outer lanes of a road without pavements, so the lane lines seemed to drift towards its
+  edge); pavements stay dark all over. Paint that reaches past the paving is left out.
+- Bends of wide roads on the map are round: a road of many profiles was cut in chords of
+  ten metres or more on a turn (the game's own limit on a spline type's cross-sections), now
+  at least every degree. Painted patches of ground (car parks, fields, sand) are read
+  at about a metre and a half instead of five, so their outlines are finer.
+- Houses on the map are the models themselves: zoomed in (within 1500 m of the view, the
+  nearest 200 000 triangles; the in-game panel 30 000), a house is drawn in 3D from its model's
+  own faces without textures (gabled and ridged roofs, wings, stepped towers, canopies on
+  posts - a canopy or a bridge over a street is a roof in the air, no longer a solid block
+  that shuts the street), each model kept once however often it stands; farther out, and
+  past the budget, a house is its footprint with walls. Their flat outline is traced four
+  times finer. Hairline gaps between pieces of paving no
+  longer grow dark beads along a street's rim.
+- More houses on the map: stations, railway halls and other buildings in folders with `road`
+  in their name were never taken for houses; blocks of many buildings in one object (the
+  tower blocks, a swimming pool complex) were dropped for their yards and are now drawn, each
+  house with its own height; garages and greenhouses count too.
 
 - **Content test** in Settings, in place of the launcher's Model test page: any content is
   loaded the way the game loads it and every warning of its files is listed - a bus with the
@@ -240,12 +265,16 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   For a server set up before: an `admin_password` or `moderator_password` shorter than 12
   characters now lets nobody in (the log says so; the start scripts ask for a new one), and a
   `server.cfg` without `admin_web` has the web panel off until it says `admin_web = local`.
-- **Players' buses go to the server by their content** — a player's game says which bus it
-  drives by the fingerprint of the files it uses, and sends a server that lacks it those files
-  (the variant and paint driven, not the whole pack); a dedicated server keeps every version
-  its players send (`accept_uploads`, `uploads_keep_days`) and may leave the map for the
-  players to install (`share_maps`: a new `server.cfg` says 0; one without the key goes on
-  passing the map on, as before).
+- **Every player sees another player's bus exactly as its driver has it** — the same files,
+  the same paint — fetched from the server by its content when they lack it; a dedicated
+  server keeps every version its players send (`accept_uploads`, `uploads_keep_days`) and may
+  leave the map for the players to install (`share_maps`: a new `server.cfg` says 0; one
+  without the key goes on passing the map on, as before).
+- **Behaviour change:** a bus that cannot be had as its driver has it (the server takes no
+  uploads, the upload failed, it is too large to fetch) is drawn with another bus — the
+  viewer's copy of that path, else their own — and **labelled** under the player's name.
+  Before, the viewer saw their own copy of that path without being told it was not the
+  driver's. While a bus is still arriving, a neutral box of its size stands in.
 
 ## 0.3.0 - 2026-10-14
 
