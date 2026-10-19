@@ -11,7 +11,7 @@ import { Spinner, Toggle, Slider } from '../ui.js';
 import { BusPreview } from '../preview.js';
 import { RouteMap } from '../routemap.js';
 import { choose, curMap, curBus, curLine, curTour, pickedTrip, realTime, realDate, start, weatherName, weatherOfItsOwn, askJoined, noServerBus, mapName, serverBuses, busFile } from '../data.js';
-import { hms, mapPicture, tripAt, depotRun, pickTrip, lineMatches, findTours, chooseLine, chooseTour, setSeason, localNow, SEASONS, PHASES } from '../pages/drive.js';
+import { hms, mapPicture, tripAt, depotRun, pickTrip, entryName, lineMatches, findTours, chooseLine, chooseTour, setSeason, localNow, SEASONS, PHASES } from '../pages/drive.js';
 import { MultiplayerPage } from '../pages/multiplayer.js';
 import { ProfilePage } from '../pages/profile.js';
 import { ModsPage } from '../pages/mods.js';
@@ -137,7 +137,7 @@ function MobileDrive() {
         ${!c.free && row('line', 'route', 'Line', line ? line.name : s.lines.loading ? html`<${Spinner} />` : '-')}
         ${!c.free && row('tour', 'calendar', 'Tour', tour ? `${tour.number} - ${tour.days}` : '-')}
         ${!c.free && row('trip', 'history', 'First trip', trip ? `${hms(trip.departure)} ${trip.from}` : '-')}
-        ${row('entry', 'person', 'Start at', c.entry < 0 ? t('Automatic') : m?.entry_points[c.entry]?.name || '-')}
+        ${row('entry', 'person', 'Start at', c.entry < 0 ? t('Automatic') : (m?.entry_points[c.entry] ? entryName(m.entry_points[c.entry]) : '-'))}
       </div>
       <div class="m-group">
         ${row('time', 'clock', 'Time and date', joined ? srv.time || '-' : `${hhmm(c.time)} - ${c.date}`, joined ? t("(the server's clock)") : rt(c), joined)}
@@ -270,7 +270,7 @@ function EntrySheet({ close }) {
   return html`<div class="m-split">
     <div class="m-split-list">
       ${pick(c.entry < 0, () => (choose({ entry: -1 }), close()), html`<span class="m-pick-text"><b>${t('Automatic')}</b><small>${t(c.free ? "Automatic (the map's first)" : 'Automatic (nearest to the first stop)')}</small></span>`)}
-      ${m.entry_points.map((e, i) => pick(c.entry === i, () => (choose({ entry: i }), close()), html`<span class="m-pick-text"><b>${e.name}</b></span>`))}
+      ${m.entry_points.map((e, i) => pick(c.entry === i, () => (choose({ entry: i }), close()), html`<span class="m-pick-text"><b>${entryName(e)}</b></span>`))}
     </div>
     <div class="m-split-map"><${RouteMap} map=${c.map} date=${c.date} trip="" entry=${c.entry} height=${0} onEntry=${(entry) => choose({ entry })} /></div>
   </div>`;
