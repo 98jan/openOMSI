@@ -209,11 +209,9 @@ fn sample_nightmap(uv: vec2<f32>) -> vec4<f32> {
 // Some vehicle lamps use a clear diffuse placeholder and put the entire lit
 // picture, including its silhouette, in the switched night texture. A transmap
 // still owns coverage when the model explicitly supplies one.
-fn night_coverage(alpha: f32, uv: vec2<f32>) -> f32 {
-    if ((u32(material.params2.w + 0.5) & 16u) != 0u && material.params.z < 0.5) {
-        return sample_nightmap(uv).a;
-    }
-    return alpha;
+fn night_coverage(alpha: f32, night_alpha: f32) -> f32 {
+    return select(alpha, night_alpha,
+        (u32(material.params2.w + 0.5) & 16u) != 0u && material.params.z < 0.5);
 }
 
 // The reflection mask of a [matl_envmap] material: the alpha of its [matl_envmap_mask]

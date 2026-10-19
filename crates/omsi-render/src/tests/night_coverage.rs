@@ -4,7 +4,6 @@ use super::*;
 struct Case {
     enabled: bool,
     night_alpha: Option<u8>,
-    night_has_alpha: bool,
     night_rgb: [u8; 3],
     transmap: bool,
     declared_mask: bool,
@@ -18,7 +17,6 @@ impl Default for Case {
         Self {
             enabled: true,
             night_alpha: Some(255),
-            night_has_alpha: true,
             night_rgb: [32, 64, 255],
             transmap: false,
             declared_mask: false,
@@ -35,13 +33,26 @@ impl Default for Case {
 #[test]
 #[ignore = "requires a graphics adapter; run with --ignored on a GPU host"]
 fn a_clear_lamp_uses_its_active_night_maps_coverage() {
+    check_night_coverage(1);
+}
+
+/// Build the production scene variants and actually draw/resolve at 4x MSAA.
+/// A successful renderer with a silent 1x fallback must fail this regression.
+#[test]
+#[ignore = "requires a graphics adapter with 4x MSAA; run with --ignored on a GPU host"]
+fn a_clear_lamp_uses_its_active_night_maps_coverage_at_4x_msaa() {
+    check_night_coverage(4);
+}
+
+fn check_night_coverage(samples: u32) {
+    let _ = env_logger::try_init();
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let mut renderer = pollster::block_on(Renderer::new_with(
         &instance,
         None,
         Some(wgpu::TextureFormat::Rgba8UnormSrgb),
         RenderOptions {
-            msaa: 1,
+            msaa: samples,
             ssao: false,
             shadow_size: 1024,
             fxaa: false,
@@ -50,15 +61,24 @@ fn a_clear_lamp_uses_its_active_night_maps_coverage() {
         },
     ))
     .expect("test renderer");
+    let info = renderer
+        .adapter
+        .as_ref()
+        .expect("hardware adapter")
+        .get_info();
+    assert_ne!(info.backend, wgpu::Backend::Noop);
+    assert_eq!(renderer.options.msaa, samples, "MSAA fallback: {info:?}");
+    eprintln!(
+        "night coverage: {} {:?}, requested/actual {samples}x MSAA",
+        info.name, info.backend
+    );
     for (classic, enhanced) in [(true, false), (false, false), (false, true)] {
         for case in [
             Case::default(),
-            // The scene-side alpha guard leaves RGB maps on diffuse coverage.
-            // Their uploaded alpha is 255, despite not having an alpha channel.
+            // RGB eligibility is covered by the scene-side alpha guard tests.
+            // Here exercise fractional coverage and the background it must preserve.
             Case {
-                enabled: false,
-                night_has_alpha: false,
-                visible: false,
+                night_alpha: Some(128),
                 ..Default::default()
             },
             Case {
@@ -135,7 +155,7 @@ fn a_clear_lamp_uses_its_active_night_maps_coverage() {
                     &mut renderer,
                     &mut scene,
                     [case.night_rgb[0], case.night_rgb[1], case.night_rgb[2], a],
-                    case.night_has_alpha,
+                    true,
                 )
             });
             let lamp = renderer.add_material_extra(
@@ -212,7 +232,62 @@ fn a_clear_lamp_uses_its_active_night_maps_coverage() {
             let rgba = renderer
                 .render_to_image(&mut scene, 64, 64, &camera, &lighting)
                 .unwrap();
+            assert_eq!(
+                renderer.options.msaa, samples,
+                "MSAA changed during rendering"
+            );
+            assert!(
+                renderer.device_lost().is_none(),
+                "device lost during rendering"
+            );
+            assert!(
+                !renderer
+                    .errors
+                    .gpu_error
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                "GPU error"
+            );
+            let targets = renderer
+                .targets
+                .msaa_targets
+                .get(&(64, 64))
+                .expect("scene depth target");
+            assert_eq!(targets.1.texture().sample_count(), samples);
+            if enhanced {
+                let hdr = renderer
+                    .targets
+                    .hdr_targets
+                    .get(&(64, 64))
+                    .expect("HDR target");
+                if samples > 1 {
+                    assert_eq!(
+                        hdr.msaa_view
+                            .as_ref()
+                            .expect("multisampled HDR colour")
+                            .texture()
+                            .sample_count(),
+                        samples
+                    );
+                }
+            } else if samples > 1 {
+                assert_eq!(
+                    targets
+                        .0
+                        .as_ref()
+                        .expect("multisampled scene colour")
+                        .texture()
+                        .sample_count(),
+                    samples
+                );
+            }
             let p = &rgba[(32 * 64 + 32) * 4..][..3];
+            eprintln!("night coverage rendered: {samples}x classic={classic} enhanced={enhanced} {case:?}: {p:?}");
+            if case.night_alpha == Some(128) {
+                assert!(
+                    p[0] > 96,
+                    "fractional coverage must retain the red background: {p:?}"
+                );
+            }
             assert_eq!(
                 p[2] > 96,
                 case.visible,

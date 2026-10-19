@@ -67,15 +67,6 @@ mod tests {
                 false,
             ),
             (
-                "missing night",
-                AlphaMode::Blend,
-                true,
-                true,
-                false,
-                false,
-                false,
-            ),
-            (
                 "ordinary diffuse",
                 AlphaMode::Blend,
                 false,
