@@ -271,6 +271,7 @@ impl VehicleInstance {
             ground: None,
             trailers: Vec::new(),
             skin_rest: Vec::new(),
+            skin_plans: SkinPlans::default(),
             collision: None,
             dynamic_boxes: Vec::new(),
             dynamic_impacts: Vec::new(),

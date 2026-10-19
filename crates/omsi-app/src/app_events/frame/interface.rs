@@ -52,6 +52,11 @@ impl App {
         // (not under the open game menu: the pause menu's rail covers the left
         // edge, and the navigator's panel stood out from under it)
         let nav_hidden = !vr_active && self.menus.game_menu.is_some();
+        // (a plugin's panel for the navigator's board, as tall as it was laid out last: the
+        // navigator makes room for it and says where it goes)
+        if let Some(n) = self.menus.navigator.as_mut() {
+            n.dock = self.integrations.plugin_panels.docked;
+        }
         self.frame_navigator(dt, hud, vr_active, nav_hidden, vr_nav_display);
         // the Lua plugins' panels (`omsi.ui`): over the picture and the navigator,
         // under the game's own interface; not under its menus, nor in VR
@@ -104,7 +109,7 @@ impl App {
         // know internal, mostly German names)
         let names = describe::names(&self.args.root, &self.settings.language);
         // next to the cursor (`ui`), when the setting asks for it
-        let tooltip = self.menus.hover.as_ref().map(|h| crate::cockpit_tooltips::control(names, h, &self.settings.language));
+        let tooltip = self.menus.hover.as_ref().map(|h| names.control(h));
         // the editors' keys while one is on: help to look up, not news - they stay in the
         // corner as long as the editor does
         let mut lines: Vec<String> = mirror_help;
@@ -367,6 +372,7 @@ impl App {
                 dt,
                 backdrop: ui::backdrop(settings.ui_opacity),
                 navigator: self.menus.navigator.as_ref().and_then(|n| n.screen_rect()),
+                dock: self.menus.navigator.as_ref().and_then(|n| n.dock_slot).map(|(r, scale, placed)| crate::plugin_ui::Dock { width: r[2], room: r[3], scale, at: placed.then(|| glam::Vec2::new(r[0], r[1])) }),
             };
             let mut state = plugin_ui.borrow_mut();
             self.integrations.plugin_panels.frame(r, scene, &mut state, &frame);
@@ -401,6 +407,13 @@ impl App {
                 lines: &self.net.remotes.chat.lines,
                 typing: self.net.remotes.chat.typing.as_deref(),
                 error: self.net.remotes.chat.error(),
+                open_key: self
+                    .input
+                    .game_keys
+                    .iter()
+                    .find(|b| b.action.eq_ignore_ascii_case("chat_open"))
+                    .map(|b| (b.scan_code != 0).then(|| crate::keys::key_name(b.scan_code as i64, b.modifier as i64)))
+                    .unwrap_or_else(|| Some("/".into())),
             });
             ui.chat.hidden = self.net.remotes.chat.hidden;
             let mut tags = if self.settings.name_tags {

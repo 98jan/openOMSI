@@ -28,6 +28,7 @@ export async function boot() {
   if (b.root) {
     loadContent();
     readAhead();
+    loadDepot();
     // (the bus preview's helper and renderer get ready while the page is read)
     call('preview_warm').catch(() => {});
   }
@@ -97,9 +98,11 @@ export const weatherName = (w, list) =>
 /** A remembered map or bus that is not installed any more gives way to the first one. */
 function fixChoice() {
   const c = { ...S.choice };
+  let mapChanged = false;
   if (S.maps?.length && !S.maps.some((m) => m.file === c.map)) {
     c.map = (S.maps.find((m) => /grundorf/i.test(m.file)) || S.maps[0]).file;
     c.entry = -1;
+    mapChanged = true;
   }
   if (S.vehicles?.length && !S.vehicles.some((v) => v.file === c.bus)) {
     c.bus = S.vehicles[0].file;
@@ -107,7 +110,9 @@ function fixChoice() {
     c.number = randomFleetNumber(S.vehicles[0]);
   }
   if (S.weather && c.weather && !weatherOfItsOwn(c.weather) && !S.weather.some((w) => w.file === c.weather)) c.weather = '';
-  c.date = fitDateToMap(c.date, c.map);
+  // (a date the player picked stays even outside the map's [years]; only a map that had
+  // to give way to another one takes a date the new map allows)
+  if (mapChanged) c.date = fitDateToMap(c.date, c.map);
   Object.assign(c, allowedBus(c));
   set({ choice: c });
 }
@@ -198,6 +203,8 @@ function clockPatch(c, st) {
   }
   if (st?.use_real_date) {
     const year = st.use_real_year ? now.getFullYear() : parseInt(c.date, 10) || now.getFullYear();
+    // (the computer's date is fitted to the map's [years]; a date the player chose is kept,
+    // see `choose`)
     const d = fitDateToMap(`${String(year).padStart(4, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`, c.map);
     if (c.date !== d) patch.date = d;
   }
@@ -221,11 +228,14 @@ function randomFleetNumber(vehicle) {
 export function choose(patch) {
   const before = S.choice;
   const c = { ...before, ...patch };
-  // (a date outside the map's [years] starts on a day inside them; a date inside stays)
-  c.date = fitDateToMap(c.date, c.map);
+  // (a map's [years] only move the date when another map is chosen: a date the player
+  // picked or typed stays as it is, even outside them)
+  if (c.map !== before.map) c.date = fitDateToMap(c.date, c.map);
   if (c.bus !== before.bus && !patch.number) {
     c.number = randomFleetNumber(S.vehicles?.find((v) => v.file === c.bus));
   }
+  // (another bus does not carry on with the depot bus's plate)
+  if (c.bus !== before.bus && !('plate' in patch) && depotBusOf(before)) c.plate = '';
   set({ choice: c });
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => call('choice_save', { choice: S.choice }).catch(() => {}), 400);
@@ -266,19 +276,48 @@ async function updateHof() {
 export const dutyHof = () => (S.choice.hof_manual ? S.choice.hof : S.hof) || '';
 
 let ibisAsked = '';
-export async function loadIbis() {
+let ibisTrip = null;
+export async function loadIbis(trip = ibisTrip) {
   if (onPhone) return;
+  ibisTrip = trip;
   const c = S.choice;
   const hof = /\.(bus|ovh)/i.test(dutyHof()) ? '' : dutyHof();
-  const key = c.free || !c.line || !c.bus ? '' : `${c.bus}|${hof}|${c.line}`;
+  const base = c.free || !c.line || !c.bus ? '' : `${c.bus}|${hof}|${c.line}`;
+  const stops = trip?.stops.map((x) => x.name) || [];
+  const key = base && `${base}|${trip?.terminus || ''}|${stops.join('|')}`;
   if (key === ibisAsked) return;
+  if (!key || !ibisAsked.startsWith(`${base}|`)) set({ ibis: null });
   ibisAsked = key;
-  set({ ibis: null });
   if (!key) return;
-  const ibis = await call('ibis', { bus: c.bus, hof, line: c.line }).then((info) => ({ info }), (e) => ({ error: e.message || String(e) }));
+  const ibis = await call('ibis', { bus: c.bus, hof, line: c.line, terminus: trip?.terminus || '', stops }).then((info) => ({ info }), (e) => ({ error: e.message || String(e) }));
   if (ibisAsked !== key) return;
   if ('error' in ibis) ibisAsked = '';
   set({ ibis });
+}
+
+export async function loadDepot() {
+  try {
+    const d = await call('depot_get');
+    set({ depot: d.buses, depotGroups: d.groups, errors: { ...S.errors, depot: null } });
+  } catch (e) {
+    set({ depot: [], errors: { ...S.errors, depot: e.message } });
+  }
+}
+
+/** The depot bus the duty drives: its bus, livery, plate and fleet number all as they are. */
+export function depotBusOf(c = S.choice) {
+  const plate = (c?.plate || '').trim().toUpperCase();
+  return c && plate ? S.depot?.find((b) => busFile(b.bus) === busFile(c.bus) && (b.paint || '') === (c.paint || '') && b.plate === plate && (b.number || '') === (c.number || '').trim()) : null;
+}
+
+/** Take a depot bus for the next duty. */
+export function driveDepotBus(b) {
+  const v = S.vehicles?.find((x) => busFile(x.file) === busFile(b.bus));
+  if (!v) return;
+  choose({ bus: v.file, paint: b.paint, plate: b.plate, number: b.number, hof_manual: false });
+  if (S.choice.number !== b.number) choose({ number: b.number });
+  set({ page: 'drive' });
+  toast(t('{name} is ready under Drive: choose the time and the duty.', { name: b.name }), 'ok');
 }
 
 export async function loadSituations() {
@@ -398,6 +437,7 @@ export async function duty(extra = {}) {
     season: seasonWord || null,
     tutorial: null,
     situation: null,
+    depot: depotBusOf(c)?.id || null,
     ...extra,
   };
 }
@@ -480,6 +520,7 @@ function startPolling() {
     pollNow();
     loadProfiles();
     loadSituations();
+    loadDepot();
     reloadSettings();
   });
   window.addEventListener('focus', () => {

@@ -94,6 +94,7 @@ mod real_time;
 mod settings;
 mod shell;
 mod photo;
+mod depot_bus;
 mod devtools;
 mod telemetry;
 use omsi_scene::threads;
@@ -108,7 +109,6 @@ mod applog;
 mod app_events;
 mod bus_service;
 mod camera_util;
-mod cockpit_tooltips;
 // the game controllers, their mappings and force feedback (`omsi-input`), at their old paths
 use omsi_input::{controllers, gamepad_profile, hpattern};
 mod cli;
@@ -394,7 +394,7 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
             }
         }
     }
-    if let Some(memo) = root_memo().filter(|_| is_omsi_root(&args.root) && server_cfg.is_none()) {
+    if let Some(memo) = root_memo().filter(|_| is_omsi_root(&args.root) && server_cfg.is_none() && args.pack_map.is_none()) {
         let _ = std::fs::write(memo, args.root.to_string_lossy().as_bytes());
     }
     // content roots: the game's own folder (mods) first, then the original installation
@@ -439,6 +439,10 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
 /// The game for `args`, ready for its window; None when there is no window to open (a
 /// picture or a model was written instead).
 pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) -> Result<Option<App>> {
+    if let (Some(map), Some(to)) = (args.pack_map.clone(), args.pack_to.clone()) {
+        omsi_lan::map_pack::run(&map, &to)?;
+        return Ok(None);
+    }
     // the window's simulation beside the picture or inline, for the whole session (an
     // offscreen run - a dedicated server, a picture - steps inline and never asks)
     if args.offscreen.is_none() {
@@ -927,6 +931,17 @@ mod tests {
 }
 
 #[cfg(test)]
+pub(crate) fn with_test_language<T>(code: &str, f: impl FnOnce() -> T) -> T {
+    use std::sync::{Mutex, OnceLock};
+    static LANGUAGE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = LANGUAGE_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner());
+    ui_language(code);
+    let result = f();
+    ui_language("ENG");
+    result
+}
+
+#[cfg(test)]
 mod locale_tests {
     use omsi_ui::i18n::{templated, templates, Piece};
 
@@ -937,6 +952,34 @@ mod locale_tests {
         let used: Vec<String> = templates(super::locale_keys(super::_LOCALES)).into_iter().map(|(k, _)| k).collect();
         for k in ["Graphics profile \"{name}\" not found", "Mirror panel added ({} in all)", "Head tracking with opentrack (UDP port {})"] {
             assert!(used.iter().any(|x| x == k), "{k}");
+        }
+    }
+
+    #[test]
+    fn multiplayer_messages_are_translated_in_traditional_chinese() {
+        for key in [
+            "Host's mods could not be fetched: {e}",
+            "Host's mods: everything the host uses is installed here",
+            "LAN: other players join with the code {}  (or by an address: {})",
+            "LAN: the host's weather: {}",
+            "Sent to the server: {action}",
+            "The server does not offer {name}",
+            "Voice: joining the voice channel ...",
+            "Voice: start GreenTeaSpeak with the openOMSI plugin to talk",
+            "Voice: your microphone is muted",
+            "Online: {n} other players",
+            "Online: nobody else yet",
+            "Online: 1 other player",
+            "Online: connecting ...",
+            "Online: not connected: {reason} (chat /reconnect)",
+            "Online: in {host}'s game, {others}",
+            "Online: {warning}",
+            "nobody else yet",
+            "1 other player",
+            "{n} other players",
+        ] {
+            let translated = super::_rust_i18n_try_translate("zh-tw", key).map(|text| text.into_owned());
+            assert!(translated.as_ref().is_some_and(|text| !text.trim().is_empty() && text != key), "zh-tw: {key}");
         }
     }
 

@@ -9,6 +9,7 @@
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont, VariableFont};
 use omsi_render::{Renderer, Scene, TextureId};
 
+mod chat;
 mod menu;
 mod perf_panel;
 mod text;
@@ -186,6 +187,8 @@ pub struct ChatView<'a> {
     pub typing: Option<&'a str>,
     /// Why the last line was not sent.
     pub error: Option<&'a str>,
+    /// The key that opens the line (`chat_open`, which the player can move), as it reads.
+    pub open_key: Option<String>,
 }
 
 /// The chat's own state: shown or hidden (V), the scroll position and whether the cursor is
@@ -200,6 +203,7 @@ pub struct ChatWidget {
     pub rect: [f32; 4],
     pub hovered: bool,
     pub caret_t: f32,
+    translations: chat::TranslationCache,
 }
 
 impl ChatWidget {
@@ -582,12 +586,16 @@ impl Ui {
             {
                 let tc = &self.text;
                 let measure = |t: &str| tc.width_raw(t, px as f32);
+                let language = omsi_ui::i18n::language();
                 let mut i = end;
                 while i > 0 && rows.len() < CHAT_SHOWN {
                     i -= 1;
                     let line = &c.lines[i];
                     let color = if line.starts_with("* ") { [255, 226, 140, 230] } else { [255, 255, 255, 230] };
-                    for (k, t) in wrap_rows(line, width, indent, &measure).into_iter().enumerate().rev() {
+                    let line = self.chat.translations.line(line, &language, |key| {
+                        crate::_rust_i18n_try_translate(&language, key).map(|text| text.into_owned())
+                    });
+                    for (k, t) in wrap_rows(line.as_ref(), width, indent, &measure).into_iter().enumerate().rev() {
                         if rows.len() == CHAT_SHOWN {
                             break;
                         }
@@ -598,7 +606,7 @@ impl Ui {
             }
             let mut y = y0 + lh * (CHAT_SHOWN - rows.len()) as f32;
             for (dx, text, color) in rows {
-                let l = self.text.label(r, scene, &text, px, color);
+                let l = self.text.label_raw(r, scene, &text, px, color);
                 scene.overlays.push((l.tex, [x0 + dx, y, x0 + dx + l.w as f32, y + l.h as f32]));
                 y += lh;
             }
@@ -612,7 +620,11 @@ impl Ui {
                 let caret = if open && (self.chat.caret_t % 1.0) < 0.55 { "|" } else { "" };
                 let (text, color) = match c.typing {
                     Some(t) => (format!("{t}{caret}"), [255, 255, 255, 240]),
-                    None => ("Click here or press / to chat".to_string(), [190, 190, 190, 200]),
+                    None => match &c.open_key {
+                        Some(k) => (format!("Click here or press {} to chat", k), [190, 190, 190, 200]),
+                        // chat_open unbound: no "(unbound)" in the hint
+                        None => ("Click here to chat".to_string(), [190, 190, 190, 200]),
+                    },
                 };
                 let text = clip_left(&self.text, &text, px as f32, width - 10.0 * s);
                 let l = self.text.label(r, scene, &text, px, color);
@@ -737,7 +749,7 @@ impl Ui {
         // --- the mouse-over name, right of the cursor
         self.vr_tooltip_overlay = None;
         if let Some(t) = f.tooltip.as_ref().filter(|t| !t.is_empty()) {
-            let l = self.text.label_op(r, scene, &omsi_ui::tr(t), (13.0 * s).round() as u32, [237, 237, 237, 0], 1.0);
+            let l = self.text.label_op(r, scene, &tooltip_label(t), (13.0 * s).round() as u32, [237, 237, 237, 0], 1.0);
             let mut x = f.cursor.0.clamp(0.0, f.width) + 16.0 * s;
             let mut y = f.cursor.1 + 2.0 * s;
             if f.tooltip_above {
@@ -1412,8 +1424,84 @@ fn vr_settings_sidebar_step(available: f32, pages: usize, scale: f32) -> f32 {
     (available.max(0.0) / pages.max(1) as f32).min(42.0 * scale)
 }
 
+/// Mouse variants append suffixes to an official control label. Those cannot be
+/// catalogue templates (they have no leading text), so translate the base separately.
+fn tooltip_label(label: &str) -> std::borrow::Cow<'_, str> {
+    let translated = omsi_ui::tr(label);
+    if translated != label {
+        return translated;
+    }
+    for suffix in [" (outside)", " 2"] {
+        if let Some(base) = label.strip_suffix(suffix) {
+            return format!("{}{}", omsi_ui::tr(base), omsi_ui::tr(suffix)).into();
+        }
+    }
+    translated
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cockpit_tooltips_use_complete_catalogue_labels_and_mouse_suffixes() {
+        let names = omsi_input::describe::ControlNames::from_table(
+            "ENG",
+            &[
+                ("parking_brake_toggle", "Parking Brake On/Off"),
+                ("bus_doorfront0", "Front Door, 1st Wing Open/Close"),
+            ],
+        );
+        crate::with_test_language("pt", || {
+            for (event, expected) in [
+                (
+                    "parking_brake_mouse",
+                    "Freio de estacionamento: ligar/desligar",
+                ),
+                (
+                    "parking_brake_2",
+                    "Freio de estacionamento: ligar/desligar 2",
+                ),
+                (
+                    "bus_doorfront0_external",
+                    "Porta dianteira, primeira folha: abrir/fechar (externo)",
+                ),
+                (
+                    "cp_heizregler_temp",
+                    "Controle de temperatura do aquecimento",
+                ),
+            ] {
+                assert_eq!(tooltip_label(&names.control(event)), expected, "{event}");
+            }
+            // A numbered full label takes precedence over the mouse suffix fallback.
+            assert_eq!(
+                tooltip_label("Ticket Printer: Select Ticket 2"),
+                "Impressora de bilhetes: selecionar bilhete 2"
+            );
+            for event in ["ALMEX_Funktion", "Zahltisch_Wechsler_0_05"] {
+                let label = names.control(event);
+                assert_eq!(tooltip_label(&label), label, "untranslated mod: {event}");
+            }
+        });
+        crate::with_test_language("ENG", || {
+            for event in [
+                "parking_brake_mouse",
+                "parking_brake_2",
+                "bus_doorfront0_external",
+            ] {
+                let label = names.control(event);
+                assert_eq!(tooltip_label(&label), label);
+            }
+        });
+    }
+
+    #[test]
+    fn cockpit_mouse_suffixes_use_the_selected_catalogue_language() {
+        // An existing Spanish text also works as a mod's control label.
+        let names = omsi_input::describe::ControlNames::from_table("ENG", &[("mod_toggle", "on")]);
+        crate::with_test_language("es", || {
+            assert_eq!(tooltip_label(&names.control("mod_2")), "activado 2");
+        });
+    }
+
     /// The steering cross: white arms with a dark edge, open in the middle, nothing in the
     /// corners - the same in all four directions.
     #[test]
