@@ -231,6 +231,17 @@ function Ibis() {
   return html`<div class="ibis-box"><div class="section-title">IBIS</div>${body}</div>`;
 }
 
+/** The stops of the trip a start takes, a timeline with their times under its row (and the
+ *  first one's departure), as the game's own launcher's roadbook had them. */
+function TripStops({ stops }) {
+  const last = stops.length - 1;
+  return html`<ol class="trip-stops">
+    ${stops.map((st, k) => html`<li class=${k === 0 || k === last ? 'end' : ''}>
+      <span class="num">${hms(st.arr ?? st.dep)}</span><span class="ellipsis grow">${st.name}</span>${k === 0 && st.dep != null && hms(st.dep) !== hms(st.arr) && html`<span class="muted" style="white-space:nowrap">${t('Departs')} ${hms(st.dep)}</span>`}
+    </li>`)}
+  </ol>`;
+}
+
 export function Roadbook({ tour, trips, current, now }) {
   const ref = useRef();
   const c = useStore().choice;
@@ -249,8 +260,9 @@ export function Roadbook({ tour, trips, current, now }) {
       ${trips.map((x, i) => html`<button type="button" class=${'trip-row' + (i === current ? ' on' : '') + (x.arrival < now - 60 && i !== current ? ' past' : '')} onClick=${() => pickTrip(x)}>
         <span class="num time">${hms(x.departure)}</span>
         <span class="kind">${depotRun(x) ? html`<span class="depot">${t('Depot run')}</span>` : html`<span class="line-badge">${x.line}</span>`}</span>
-        <span class="grow" title=${`${x.from} → ${x.terminus}`}><span class="ellipsis">${x.terminus}</span><span class="muted small ellipsis">${x.from} | ${hms(x.arrival)}</span></span>
-      </button>`)}
+        <span class="grow" title=${`${x.from} → ${x.terminus}`}><span class="ellipsis">${x.terminus}</span><span class="muted small ellipsis">${x.from} | ${hms(x.arrival)}${x.km > 0 ? ` | ${x.km.toFixed(1)} km` : ''}</span></span>
+      </button>
+      ${i === current && x.stops?.length > 0 && html`<${TripStops} stops=${x.stops} />`}`)}
     </div>
     <${Ibis} />
   </aside>`;
