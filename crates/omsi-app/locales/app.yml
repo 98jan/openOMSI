@@ -40141,6 +40141,15 @@ _version: 2
   ca: "Propera parada"
   sr: "Sledeća stanica"
 
+"Delay":
+  zh-tw: "誤點"
+
+"Fuel":
+  zh-tw: "油量"
+
+"Outside / cabin":
+  zh-tw: "車外 / 車廂"
+
 "Best Weather":
   zh-tw: "晴朗"
   ru: "Лучшая погода"
