@@ -11,8 +11,9 @@ use crate::MeshData;
 
 /// The most flat surfaces kept of one material slot of a mesh (the largest).
 const FLATS_PER_SLOT: usize = 32;
-/// How far apart two planes may lie and still be one (the meshes' own rounding).
+/// How far a surface's tilt may lift its edge off another's plane and it still lie on it.
 const PLANE_GAP: f32 = 2e-4;
+const CENTRE_GAP: f32 = 2e-5;
 /// How far apart two surfaces' boxes may be and still overlap.
 const BOX_GAP: f32 = 1e-3;
 /// The highest step: a surface on a surface on a surface ... is rare beyond that.
@@ -91,8 +92,8 @@ fn normal_key(n: Vec3) -> (i32, i32, i32) {
     ((n.x * 100.0).round() as i32, (n.y * 100.0).round() as i32, (n.z * 100.0).round() as i32)
 }
 
-/// Whether `f` lies on `g`: its middle within `PLANE_GAP` of `g`'s plane, its tilt against
-/// it lifting no edge further than that, and their boxes overlapping.
+/// Whether `f` lies on `g`: its middle within `CENTRE_GAP` of `g`'s plane, its tilt against
+/// it lifting no edge further than `PLANE_GAP`, and their boxes overlapping.
 fn lies_on(f: &Flat, g: &Flat) -> bool {
     let overlap = (f.lo - Vec3::splat(BOX_GAP)).cmple(g.hi).all() && (g.lo - Vec3::splat(BOX_GAP)).cmple(f.hi).all();
     if !overlap || f.normal.dot(g.normal).abs() <= 0.9995 {
@@ -101,7 +102,7 @@ fn lies_on(f: &Flat, g: &Flat) -> bool {
     let c = (f.lo + f.hi) * 0.5;
     let c = c - f.normal * (f.normal.dot(c) - f.offset);
     let lift = f.normal.cross(g.normal).length() * (f.hi - f.lo).length() * 0.5;
-    (g.normal.dot(c) - g.offset).abs() < PLANE_GAP && lift < PLANE_GAP
+    (g.normal.dot(c) - g.offset).abs() < CENTRE_GAP && lift < PLANE_GAP
 }
 
 impl ObjectRun {
@@ -319,6 +320,12 @@ mod tests {
         let at = Vec3::new(0.0, 5.5, 1.2);
         assert_eq!(levels_of(&[tilted(at, 0.3, 45.0), tilted(at, 0.05, 45.0)]), vec![0, 1]);
         assert_eq!(levels_of(&[tilted(at, 0.3, 44.999), tilted(at, 0.05, 45.001)]), vec![0, 1]);
+    }
+
+    #[test]
+    fn a_board_drawn_after_the_text_a_tenth_of_a_millimetre_in_front_of_it_takes_no_step() {
+        assert_eq!(levels_of(&[quad(1.0001, 0.2, 0, false), quad(1.0, 0.4, 0, true)]), vec![0, 0]);
+        assert_eq!(levels_of(&[quad(1.0, 0.2, 0, false), quad(1.0001, 0.4, 0, true)]), vec![0, 0]);
     }
 
     #[test]
