@@ -60,6 +60,11 @@ impl omsi_launcher_api::Platform for Phone {
     fn renderer(&self, req: Value, wait: Duration) -> Result<(Value, Vec<u8>), String> {
         service().ask(req, wait)
     }
+    // (no game program to start with --export-diagnostics: the game is this app's library)
+    fn support_package(&self, out: &std::path::Path) -> Option<Result<(), String>> {
+        let value = crate::support_bundle::snapshot(None, &crate::settings::Settings::load(), None, None, "launcher");
+        Some(crate::support_bundle::export(out, &value).map_err(|e| format!("{e:#}")))
+    }
 }
 
 fn take(env: &mut JNIEnv, s: &JString) -> String {

@@ -33,6 +33,12 @@ pub trait Platform: Send + Sync {
         None
     }
     fn before_update(&self) {}
+    /// Writes the support package to `out` in this process, where there is no game program to
+    /// start for it (Android: the game is a library of the app). None: not here, the game
+    /// program writes it.
+    fn support_package(&self, _out: &Path) -> Option<Result<(), String>> {
+        None
+    }
     fn quit(&self) {}
 }
 
@@ -693,9 +699,13 @@ fn controllers(p: &dyn Platform, op: &str, mut req: Value, wait: u64) -> Answer 
 
 /// The support package (logs, settings, the machine), written by the game program into
 /// the data folder; answers where it went.
-fn support_package() -> Answer {
-    let game = core::game_binary().ok_or("the game program was not found")?;
+fn support_package(p: &dyn Platform) -> Answer {
     let out = core::data_dir().join(format!("support-{}.zip", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)));
+    if let Some(done) = p.support_package(&out) {
+        done?;
+        return Ok(json!(out.to_string_lossy()));
+    }
+    let game = core::game_binary().ok_or("the game program was not found")?;
     let status = std::process::Command::new(game).arg("--export-diagnostics").arg(&out).status().map_err(err)?;
     if !status.success() || !out.exists() {
         return Err("the game could not write the support package".into());
@@ -862,7 +872,7 @@ pub fn call(cmd: &str, args: &Value, p: &dyn Platform) -> Answer {
         "controllers_ffb_test" => controllers(p, "ffb_test", json!({ "name": arg::<String>(args, "name")?, "axis": arg::<usize>(args, "axis")?, "strength": arg::<Option<f32>>(args, "strength")?, "token": arg::<Option<u64>>(args, "token")? }), 20),
         "controllers_release" => controllers(p, "release", json!({}), 5),
         "controllers_ffb_stop" => controllers(p, "ffb_stop", json!({ "token": arg::<Option<u64>>(args, "token")? }), 5),
-        "support_package" => support_package(),
+        "support_package" => support_package(p),
         "versions" => versions::list(),
         "version_install" => versions::install(arg::<String>(args, "version")?),
         "version_status" => versions::status(),
