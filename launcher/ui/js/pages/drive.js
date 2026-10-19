@@ -28,6 +28,8 @@ export function tripLength(tour) {
 
 export const mapPicture = (file) => (file ? contentUrl(file.replace(/\\/g, '/').replace(/[^/]*$/, 'picture.jpg')) : '');
 
+export const TripEnds = ({ trip, stack }) => html`<span class=${'trip-ends' + (stack ? ' stacked' : '')}><span class="from">${trip.from}</span>${stack ? '' : ' → '}<span class="to">${trip.terminus}</span></span>`;
+
 /** A trip without passengers (to or from the depot): its line is empty or it says so. */
 export const depotRun = (x) => !x.line?.trim() || /betriebsfahrt|leerfahrt|dienstfahrt|not in service|out of service|hors service|zjazd do zajezdni/i.test(x.terminus || '');
 
