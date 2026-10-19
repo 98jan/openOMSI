@@ -135,6 +135,8 @@ pub struct VehicleInstance {
     pub light_fade: Vec<f32>,
     /// The meshes' transforms in the modelled pose, for `[smoothskin]` (made when needed).
     skin_rest: Vec<Mat4>,
+    /// What `[smoothskin]` needs of each skinned mesh, worked out once (see [`SkinPlan`]).
+    skin_plans: SkinPlans,
     /// Static obstacles; the vehicle's `[boundingbox]` is kept out of them.
     pub collision: Option<Arc<crate::collision::CollisionWorld>>,
     /// Moving obstacles (AI vehicles) for this frame, set by the app.
