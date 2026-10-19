@@ -735,6 +735,9 @@ pub struct Poll {
     pub stamp: String,
     pub jobs: Vec<install::Progress>,
     pub instances: Vec<instances::Instance>,
+    /// The games that ended within the last half hour (as long as the registry keeps them):
+    /// how each ended (its exit code, or killed by Stop) and its log, apart from the running ones.
+    pub ended: Vec<instances::Instance>,
     /// Inbox items whose install started with this poll.
     pub started: Vec<String>,
 }
@@ -743,9 +746,10 @@ pub fn poll() -> Result<Poll> {
     let content = content_dir();
     let started = content.as_deref().map(watch_inbox).unwrap_or_default();
     let stamp = index::content_stamp(&bases(), content.as_ref().map(|c| c.join("Mods")).as_deref());
-    // (only the games still running: an ended one stays listed a while for its log, not as running)
-    let running = instances::list().into_iter().filter(|i| i.running).collect();
-    Ok(Poll { stamp, jobs: install::jobs(), instances: running, started })
+    // (only the games still running in `instances`: an ended one stays listed a while for its
+    // log, in `ended`, not as running)
+    let (running, ended) = instances::list().into_iter().partition(|i| i.running);
+    Ok(Poll { stamp, jobs: install::jobs(), instances: running, ended, started })
 }
 
 // ---------------------------------------------------------------------------------------

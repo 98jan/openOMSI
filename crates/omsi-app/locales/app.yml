@@ -38622,6 +38622,50 @@ _version: 2
   fr: "lancé {when}"
   sr: "započeto {when}"
 
+"Ended":
+  es: "Terminadas"
+  zh-tw: "已結束"
+  de: "Beendet"
+  ru: "Завершённые"
+  sv: "Avslutade"
+  ca: "Acabades"
+  fr: "Terminés"
+  sr: "Završene"
+  pt: "Encerrados"
+
+"ended {when}":
+  es: "terminada {when}"
+  zh-tw: "於 {when} 結束"
+  de: "beendet {when}"
+  ru: "завершена {when}"
+  sv: "avslutat {when}"
+  ca: "acabada {when}"
+  fr: "terminé {when}"
+  sr: "završeno {when}"
+  pt: "encerrado {when}"
+
+"exit code {code}":
+  es: "código de salida {code}"
+  zh-tw: "結束代碼 {code}"
+  de: "Exit-Code {code}"
+  ru: "код выхода {code}"
+  sv: "slutkod {code}"
+  ca: "codi de sortida {code}"
+  fr: "code de sortie {code}"
+  sr: "izlazni kod {code}"
+  pt: "código de saída {code}"
+
+"killed - it did not end by itself, the run is not saved":
+  es: "cerrada a la fuerza: no terminó por sí sola, la sesión no se guarda"
+  zh-tw: "已強制終止：未自行結束，此次遊戲未儲存"
+  de: "erzwungen beendet - hat sich nicht selbst beendet, die Fahrt ist nicht gespeichert"
+  ru: "принудительно закрыта — не завершилась сама, запуск не сохранён"
+  sv: "tvångsavslutat – avslutades inte av sig självt, körningen sparas inte"
+  ca: "aturada forçosament: no s'ha tancat per si sola, la sessió no es desa"
+  fr: "arrêté de force - il ne s'est pas terminé tout seul, la session n'est pas enregistrée"
+  sr: "prinudno prekinuto — nije se završilo samo, vožnja nije sačuvana"
+  pt: "encerrado à força - não terminou sozinho, a sessão não foi salva"
+
 "Show the log file":
   es: "Mostrar el archivo de registro"
   zh-tw: "顯示記錄檔"

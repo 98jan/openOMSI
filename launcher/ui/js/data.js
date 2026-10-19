@@ -477,7 +477,7 @@ export async function pollNow() {
     const p = await call('poll');
     const changed = S.poll.stamp && p.stamp !== S.poll.stamp;
     const before = S.poll.jobs || [];
-    const same = (x) => JSON.stringify([x.stamp, x.jobs, x.instances]);
+    const same = (x) => JSON.stringify([x.stamp, x.jobs, x.instances, x.ended]);
     if (same(p) !== same(S.poll) || p.started?.length) set({ poll: p });
     for (const s of p.started || []) toast(t('Installing {name}…', { name: s }));
     const finished = S.poll.stamp ? (p.jobs || []).filter((j) => !jobRunning(j) && !before.some((b) => b.id === j.id && !jobRunning(b))) : [];
