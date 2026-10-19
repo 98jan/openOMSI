@@ -29,6 +29,7 @@ use omsi_render::{Renderer, Scene, TextureId};
 use omsi_sim::traffic::{LaneKind, Network};
 use omsi_ui::paint::Align;
 use omsi_ui::{Atlas, Color, Draw, Fonts, Gpu, Layer, Painter, Rect, Weight};
+use std::hash::{Hash, Hasher};
 
 use omsi_sim::ai_traffic::TrafficSim;
 
@@ -364,6 +365,8 @@ pub struct Navigator {
     time: f32,
     /// Distance along the route to the next stop (m), refreshed now and then.
     next_dist: Option<f64>,
+    /// The trip and stops for which `next_dist` was calculated.
+    next_dist_key: Option<u64>,
     dist_t: f32,
     /// The next turn on the route: direction (-1 left, 1 right, 2 back), how sharp
     /// (degrees), how far (m) and the street it turns into.
@@ -564,6 +567,7 @@ impl Navigator {
             cam_heading: 0.0,
             time: 0.0,
             next_dist: None,
+            next_dist_key: None,
             arrows: false,
             show_ai: true,
             surface: None,
@@ -705,6 +709,32 @@ impl Navigator {
     /// The route-following distance to the next stop, refreshed during navigator frames.
     pub fn next_stop_distance(&self) -> Option<f64> {
         self.next_dist
+    }
+
+    fn next_dist_key(f: &NavFrame) -> u64 {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        f.line.hash(&mut h);
+        f.terminus.hash(&mut h);
+        for s in &f.stops {
+            s.object_id.hash(&mut h);
+            s.name.hash(&mut h);
+            s.arrival.to_bits().hash(&mut h);
+        }
+        h.finish()
+    }
+
+    fn invalidate_next_stop_distance(&mut self) {
+        self.next_dist = None;
+        self.next_dist_key = None;
+    }
+
+    fn sync_next_dist_key(&mut self, f: &NavFrame) -> u64 {
+        let key = Self::next_dist_key(f);
+        if self.next_dist_key != Some(key) {
+            self.invalidate_next_stop_distance();
+            self.next_dist_key = Some(key);
+        }
+        key
     }
 
     /// The map's lanes, for a session without a traffic system (added as tiles stream in).
@@ -1152,6 +1182,7 @@ impl Navigator {
         self.board = None;
         // (with the navigator off the route is still followed for OMSI 2's arrows)
         if !self.enabled && !self.city.open && !self.arrows && self.shown < 0.01 {
+            self.invalidate_next_stop_distance();
             return;
         }
         let target = if self.enabled { 1.0 } else { 0.0 };
@@ -1198,6 +1229,7 @@ impl Navigator {
         } else {
             f
         };
+        let next_dist_key = self.sync_next_dist_key(f);
         self.follow(f);
         self.bus_at = f.bus;
         self.stop_spots = f.stops.iter().take(3).map(|st| (st.position, st.name.clone(), f.heading, st.object_id)).collect();
@@ -1227,6 +1259,7 @@ impl Navigator {
                 (Some(s), _) => Some((s.position - f.bus).truncate().length()),
                 _ => None,
             };
+            self.next_dist_key = Some(next_dist_key);
             self.next_turn = net.and_then(|n| self.turn_ahead(n));
             self.street_here = if self.route.on_route {
                 self.route.lanes.get(self.route.progress).and_then(|&l| self.street_of(l))
@@ -1368,5 +1401,4 @@ pub use city_map::*;
 use lines_panel::*;
 #[cfg(test)]
 mod tests;
-
 

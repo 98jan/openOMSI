@@ -78,6 +78,47 @@ fn next_stop_distance_is_exposed_from_the_cached_route_distance() {
     assert_eq!(n.next_stop_distance(), None);
     n.next_dist = Some(123.5);
     assert_eq!(n.next_stop_distance(), Some(123.5));
+    n.invalidate_next_stop_distance();
+    assert_eq!(n.next_stop_distance(), None);
+}
+
+#[test]
+fn next_stop_distance_cache_keys_the_current_trip_and_stops() {
+    let first = NavFrame {
+        traffic: None,
+        touch: false,
+        players: Vec::new(),
+        bus: DVec3::ZERO,
+        heading: 0.0,
+        speed_kmh: 0.0,
+        outside_temp: 0.0,
+        inside_temp: 0.0,
+        line: Some("1".into()),
+        terminus: Some("A".into()),
+        stops: vec![NavStop { object_id: 10, position: DVec3::ZERO, name: "First".into(), arrival: 0.0 }],
+        delay: None,
+        passengers: None,
+        stop_requested: false,
+        time: 0.0,
+        weekday: 0,
+        date: 0,
+        language: "ENG",
+        screen: (0.0, 0.0),
+        ui_scale: 1.0,
+        follow_window: false,
+        dt: 0.0,
+        info_rect: None,
+        touch_gap: None,
+    };
+    let mut second = first.clone_ref();
+    second.stops[0].object_id = 11;
+    assert_ne!(Navigator::next_dist_key(&first), Navigator::next_dist_key(&second));
+    assert_ne!(Navigator::next_dist_key(&first), Navigator::next_dist_key(&NavFrame { line: Some("2".into()), ..first.clone_ref() }));
+    let mut n = Navigator::new(true, 0.85, "bottom-left");
+    n.next_dist = Some(123.5);
+    n.next_dist_key = Some(Navigator::next_dist_key(&first));
+    n.sync_next_dist_key(&second);
+    assert_eq!(n.next_stop_distance(), None);
 }
 
 #[test]
