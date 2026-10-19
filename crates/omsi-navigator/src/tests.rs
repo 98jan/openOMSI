@@ -407,6 +407,36 @@ fn the_terrain_view_needs_a_button_a_package_with_relief_and_has_a_band_for_each
 }
 
 #[test]
+fn the_turned_view_has_the_chosen_direction_up_on_the_screen() {
+    let (w, h) = (1000.0f32, 600.0f32);
+    let top = |phi: f64| Navigator::unproject(&Navigator::city_cam(2.0, 0.0, phi, w, h), w, h, w * 0.5, 0.0).unwrap();
+    let centre = |phi: f64| Navigator::unproject(&Navigator::city_cam(2.0, 0.0, phi, w, h), w, h, w * 0.5, h * 0.5).unwrap();
+    // as drawn: north (+y) is up; the middle of the view is the point looked at, however the view is turned
+    assert!(top(0.0).y > 100.0 && top(0.0).x.abs() < 1e-3);
+    assert!(centre(1.234).length() < 1e-3);
+    // turned a quarter clockwise: the direction a quarter clockwise from the map's up (east, +x) is up
+    let east = top(std::f64::consts::FRAC_PI_2);
+    assert!(east.x > 100.0 && east.y.abs() < 1e-2, "{east:?}");
+    // half a turn: south is up; the same distance from the middle whichever way it is turned
+    let south = top(std::f64::consts::PI);
+    assert!(south.y < -100.0 && (south.length() - top(0.0).length()).abs() < 1e-2, "{south:?}");
+}
+
+#[test]
+fn the_compass_changes_how_the_map_is_turned_in_turn() {
+    let mut n = with_example_lines();
+    n.city.open = true;
+    n.city.rect = [0.0, 0.0, 800.0, 500.0];
+    n.city.buttons.push((Rect::new(10.0, 10.0, 40.0, 40.0), 7));
+    assert_eq!(n.orient, 0);
+    for want in [1, 2, 0] {
+        n.map_press(20.0, 20.0);
+        n.map_release();
+        assert_eq!(n.orient, want);
+    }
+}
+
+#[test]
 fn the_timetable_is_read_on_a_worker_and_the_frame_does_not_wait_for_it() {
     let mut n = with_example_lines();
     n.date = 19900101;
@@ -505,4 +535,18 @@ fn opening_a_line_does_not_read_the_timetable_but_pressing_the_button_does() {
     assert!(n.city.lines.sheet);
     let first = n.line_times();
     assert!(first.is_some() || n.times_job.is_some());
+}
+
+#[test]
+fn the_compass_keeps_clear_of_the_open_lines_panel() {
+    let (w, h, s) = (1600.0f32, 900.0f32, 1.0f32);
+    let r = 24.0 * s;
+    // no panel: bottom right
+    let free = orient::compass_centre(w, h, s, None);
+    assert!((free.x - (w - 36.0 * s - r)).abs() < 1e-3);
+    // the panel open (its left edge as the city map lays it out: the column at w - 52, 12 px of gap, 332 px wide)
+    let left = (w - 52.0 * s) - 12.0 * s - 332.0 * s;
+    let beside = orient::compass_centre(w, h, s, Some(left));
+    assert!(beside.x + r <= left, "the disc ends before the panel begins: {} vs {left}", beside.x + r);
+    assert_eq!(beside.y, free.y, "only moved sideways");
 }
