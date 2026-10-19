@@ -9,6 +9,7 @@
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont, VariableFont};
 use omsi_render::{Renderer, Scene, TextureId};
 
+mod chat;
 mod menu;
 mod perf_panel;
 mod text;
@@ -202,6 +203,7 @@ pub struct ChatWidget {
     pub rect: [f32; 4],
     pub hovered: bool,
     pub caret_t: f32,
+    translations: chat::TranslationCache,
 }
 
 impl ChatWidget {
@@ -584,12 +586,16 @@ impl Ui {
             {
                 let tc = &self.text;
                 let measure = |t: &str| tc.width_raw(t, px as f32);
+                let language = omsi_ui::i18n::language();
                 let mut i = end;
                 while i > 0 && rows.len() < CHAT_SHOWN {
                     i -= 1;
                     let line = &c.lines[i];
                     let color = if line.starts_with("* ") { [255, 226, 140, 230] } else { [255, 255, 255, 230] };
-                    for (k, t) in wrap_rows(line, width, indent, &measure).into_iter().enumerate().rev() {
+                    let line = self.chat.translations.line(line, &language, |key| {
+                        crate::_rust_i18n_try_translate(&language, key).map(|text| text.into_owned())
+                    });
+                    for (k, t) in wrap_rows(line.as_ref(), width, indent, &measure).into_iter().enumerate().rev() {
                         if rows.len() == CHAT_SHOWN {
                             break;
                         }
@@ -600,7 +606,7 @@ impl Ui {
             }
             let mut y = y0 + lh * (CHAT_SHOWN - rows.len()) as f32;
             for (dx, text, color) in rows {
-                let l = self.text.label(r, scene, &text, px, color);
+                let l = self.text.label_raw(r, scene, &text, px, color);
                 scene.overlays.push((l.tex, [x0 + dx, y, x0 + dx + l.w as f32, y + l.h as f32]));
                 y += lh;
             }
