@@ -40112,7 +40112,7 @@ _version: 2
   uk: "P ставить гру на паузу; Alt+S зберігає ситуацію"
   sv: "P pausar spelet; Alt+S sparar situationen"
   ca: "P posa el joc en pausa; Alt+S desa la situació"
-  sr: "P pauzira igru; Alt+S spasava situaciju"
+  sr: "P pauzira igru; Alt+S čuva situaciju"
 
 "Shift+Y shows the information bar: the time, the speed, the temperatures and the next stop":
   fr: "Maj+Y affiche la barre d'informations : l'heure, la vitesse, les températures et le prochain arrêt"
