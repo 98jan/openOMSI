@@ -522,7 +522,7 @@ impl State {
         if self.ibis.as_ref().map(|i| i.0 == key).unwrap_or(false) {
             return;
         }
-        self.spawn(move || Msg::Ibis { key, info: core::ibis_info(&bus, &hof, &line).map_err(|e| format!("{e:#}")) });
+        self.spawn(move || Msg::Ibis { key, info: core::ibis_info(&bus, &hof, &line, "", &[]).map_err(|e| format!("{e:#}")) });
     }
 
     pub fn load_args(&mut self) {
