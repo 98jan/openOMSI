@@ -755,9 +755,6 @@ impl Navigator {
         if self.show_surface && self.place.has_location() {
             self.place.draw_chips(&mut ui, &mut self.atlas, &self.fonts, head, w, pad, s);
         }
-        if self.show_surface && self.place.has_location() {
-            self.place.draw_chips(&mut ui, &mut self.atlas, &self.fonts, head, w, pad, s);
-        }
         self.draw_credit(&mut ui, w, h, s);
         self.draw_scale_bar(&mut ui, h, pad, s, &pal);
 
