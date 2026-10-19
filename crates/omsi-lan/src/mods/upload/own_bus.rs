@@ -305,66 +305,76 @@ fn hash_stream(mut reader: impl Read) -> std::io::Result<Option<(u64, String)>> 
     Ok(Some((size, digest.iter().map(|b| format!("{b:02x}")).collect())))
 }
 
-fn hashed_one(rel: &str, p: &Path, cache: &std::collections::HashMap<String, (u64, u64, String)>) -> Option<(Entry, Option<Remembered>)> {
-    let key = p.to_string_lossy().into_owned();
-
-    // Plain disk files can be streamed. Virtual VFS paths (mounted ZIP / sealed
-    // content) have no File handle; retain the VFS read path for those.
-    if let Ok(file) = std::fs::File::open(p) {
-        let before = file.metadata().ok()?;
-        if !before.is_file() || before.len() > crate::mods::MAX_FILE {
-            return None;
-        }
-        let modified = modified_secs(&before);
-        if let Some((len, mtime, hash)) = cache.get(&key) {
-            if *len == before.len() && *mtime == modified {
-                if starts_as_program(p) { return None; }
-                return Some((Entry { path: rel.to_owned(), size: *len, sha256: hash.clone() }, None));
-            }
-        }
-        let (size, hash) = hash_stream(std::io::BufReader::with_capacity(64 * 1024, file)).ok()??;
-        // A changed file must not get a stale, supposedly validated fingerprint.
-        let after = std::fs::metadata(p).ok()?;
-        if size != before.len() || after.len() != before.len() || modified_secs(&after) != modified {
-            log::warn!("LAN mods: file changed while hashing: {}", p.display());
-            return None;
-        }
-        return Some((Entry { path: rel.to_owned(), size, sha256: hash.clone() }, Some((key, (size, modified, hash)))));
-    }
-
-    // An archive entry cannot be opened through std::fs. Process just one entry
-    // at a time instead of many huge buffers in Rayon's global thread pool.
+fn hashed_virtual(rel: &str, p: &Path) -> Option<(Entry, Option<Remembered>)> {
+    // Unlike disk reads, VFS reads still buffer an entry. Allow only one at once.
+    static VIRTUAL_READ: Mutex<()> = Mutex::new(());
+    let _guard = VIRTUAL_READ.lock().unwrap_or_else(|e| e.into_inner());
     let data = omsi_cfg::vfs::read(p).ok()?;
     if data.len() as u64 > crate::mods::MAX_FILE { return None; }
     let (size, hash) = hash_stream(data.as_slice()).ok()??;
     Some((Entry { path: rel.to_owned(), size, sha256: hash }, None))
 }
 
-/// Size and SHA-256 of each file. Sequential I/O leaves headroom for rendering
-/// while hosting a LAN session, without monopolizing Rayon's global pool.
+fn hashed_one(rel: &str, p: &Path, cache: &std::collections::HashMap<String, (u64, u64, String)>) -> Option<(Entry, Option<Remembered>)> {
+    // Keep the same memory -> sealed -> ZIP -> disk precedence as vfs::read.
+    if omsi_cfg::vfs::is_virtual(p) { return hashed_virtual(rel, p); }
+    let key = p.to_string_lossy().into_owned();
+    for attempt in 0..2 {
+        let mut file = match std::fs::File::open(p) {
+            Ok(file) => file,
+            Err(_) => return hashed_virtual(rel, p),
+        };
+        let before = file.metadata().ok()?;
+        if !before.is_file() || before.len() > crate::mods::MAX_FILE { return None; }
+        let modified = modified_secs(&before);
+        if let Some((len, mtime, hash)) = cache.get(&key) {
+            if *len == before.len() && *mtime == modified {
+                let mut head = Vec::with_capacity(8);
+                (&mut file).take(8).read_to_end(&mut head).ok()?;
+                if crate::mods::looks_executable(&head) { return None; }
+                return Some((Entry { path: rel.to_owned(), size: *len, sha256: hash.clone() }, None));
+            }
+        }
+        let (size, hash) = hash_stream(file).ok()??;
+        let after = std::fs::metadata(p).ok()?;
+        if size != before.len() || after.len() != before.len() || after.modified().ok() != before.modified().ok() {
+            log::warn!("LAN mods: file changed while hashing (attempt {}): {}", attempt + 1, p.display());
+            continue;
+        }
+        return Some((Entry { path: rel.to_owned(), size, sha256: hash.clone() }, Some((key, (size, modified, hash)))));
+    }
+    None
+}
+
+/// Size and SHA-256 of each file. A private two-worker pool streams disk files;
+/// virtual entries are buffered one at a time and never use Rayon's global pool.
 pub(in crate::mods) fn hashed(files: &[(String, PathBuf)]) -> Vec<Entry> {
+    use rayon::prelude::*;
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(2).thread_name(|n| format!("mod-hash-{n}")).build();
     let mut cache = crate::mods::hash_cache();
     let mut entries = Vec::with_capacity(files.len());
-    let mut dirty = 0usize;
+    let mut dirty = false;
     let mut last_save = std::time::Instant::now();
-
-    for (rel, p) in files {
-        if let Some((entry, fresh)) = hashed_one(rel, p, &cache) {
+    // Bounded result batches keep memory low while preserving manifest order.
+    for batch in files.chunks(16) {
+        let done: Vec<_> = match &pool {
+            Ok(pool) => pool.install(|| batch.par_iter().map(|(rel, p)| hashed_one(rel, p, &cache)).collect()),
+            Err(_) => batch.iter().map(|(rel, p)| hashed_one(rel, p, &cache)).collect(),
+        };
+        for (entry, fresh) in done.into_iter().flatten() {
             if let Some((key, value)) = fresh {
                 cache.insert(key, value);
-                dirty += 1;
+                dirty = true;
             }
             entries.push(entry);
         }
-        // Checkpoint by batch OR elapsed time, not every file (large manifests
-        // would rewrite the cache tens of thousands of times).
-        if dirty > 0 && (dirty >= 32 || last_save.elapsed() >= std::time::Duration::from_secs(5)) {
+        if dirty && last_save.elapsed() >= std::time::Duration::from_secs(5) {
             crate::mods::save_hash_cache(&cache);
-            dirty = 0;
+            dirty = false;
             last_save = std::time::Instant::now();
         }
     }
-    if dirty > 0 { crate::mods::save_hash_cache(&cache); }
+    if dirty { crate::mods::save_hash_cache(&cache); }
     entries
 }
 
@@ -402,6 +412,10 @@ mod hash_stream_tests {
         assert!(hash_stream(OneByte(b"MZfake executable")).unwrap().is_none());
     }
 }
+
+#[cfg(test)]
+#[path = "hash_tests.rs"]
+mod hash_tests;
 
 /// Does the plain file `p` start as a program does (`looks_executable`)? One that cannot be
 /// read is taken for one.
