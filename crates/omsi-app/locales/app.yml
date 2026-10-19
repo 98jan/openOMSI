@@ -38150,7 +38150,6 @@ _version: 2
   hi: "टूर की यात्राएँ"
   ca: "Trajectes del torn"
   sv: "Omloppets turer"
-  sr: "Izleti na turneji"
 
 "Click a trip to start with it":
   de: "Klicke eine Fahrt an, um mit ihr zu beginnen"
@@ -48352,7 +48351,7 @@ _version: 2
   hi: "नया टूर"
   ca: "Torn nou"
   sv: "Nytt omlopp"
-  sr: "Nova turneja"
+  sr: "Nova tura"
 
 "Copy +min":
   de: "Kopie +min"
@@ -49433,7 +49432,7 @@ _version: 2
   pt: "Nenhuma escala tem uma viagem futura correspondente."
   ca: "Cap torn amb trajectes pendents coincideix."
   fr: "Aucun service n'a de voyage à venir qui correspond."
-  sr: "Nijedna turneja još ne predstoji putovanje koje se podudara."
+  sr: "Nijedna tura još ne predstoji putovanje koje se podudara."
   ru: "Нет подходящего рейса, который ещё предстоит выполнить."
 
 "No tour left at this time: show the ended tours, or start earlier.":
@@ -51019,7 +51018,7 @@ _version: 2
   hi: "समय-सारणी इस टूर को जो बसें देती है:"
   ca: "Autobusos que l'horari assigna a aquest servei:"
   sv: "Bussar som tidtabellen ger denna tur:"
-  sr: "Vozni red autobusa daje ovu turneju:"
+  sr: "Vozni red autobusa daje ovu turu:"
 
 "Add a note":
   de: "Notiz hinzufügen"
@@ -60962,55 +60961,80 @@ _version: 2
   ru: "Цикл погоды {}"
 "Online: {n} other players":
   zh-tw: "線上：另有 {n} 位玩家"
+  sr: "Onlajn: drugih {n} igrača"
 "Online: connecting ...":
   zh-tw: "線上：正在連線..."
+  sr: "Onlajn: povezivanje..."
 "Online: not connected: {reason} (chat /reconnect)":
   zh-tw: "線上：尚未連線：{reason}（在聊天室輸入 /reconnect）"
+  sr: "Onlajn: nije povezano: {reason} (u čet unesite /reconnect)"
 "Online: in {host}'s game, {others}":
   zh-tw: "線上：已加入 {host} 的遊戲，{others}"
+  sr: "Onlajn: u igri domaćina {host}, {others}"
 "Online: {warning}":
   zh-tw: "線上：{warning}"
+  sr: "Onlajn: {warning}"
 "nobody else yet":
   zh-tw: "尚無其他玩家"
+  sr: "Za sada nema drugih igrača"
 "1 other player":
   zh-tw: "另有 1 位玩家"
+  sr: "Još 1 igrač"
 "{n} other players":
   zh-tw: "另有 {n} 位玩家"
+  sr: "Još {n} igrača"
 
 "connected to {host}'s session ({players} player(s))":
   zh-tw: "已連線至 {host} 的遊戲（{players} 位玩家）"
+  sr: "Povezano sa sesijom domaćina {host} ({players} igrača)"
 "In this session: {players}":
   zh-tw: "本次連線的玩家：{players}"
+  sr: "U ovoj sesiji: {players}"
 "{name} (host, {vehicle})":
   zh-tw: "{name}（房主，{vehicle}）"
+  sr: "{name} (domaćin, {vehicle})"
 "{name} (host)":
   zh-tw: "{name}（房主）"
+  sr: "{name} (domaćin)"
 "{name} joined with {vehicle}":
   zh-tw: "{name} 已加入，駕駛 {vehicle}"
+  sr: "Igrač {name} se pridružio za volanom vozila {vehicle}"
 "{name} joined":
   zh-tw: "{name} 已加入"
+  sr: "Igrač {name} se pridružio"
 "{name} is back":
   zh-tw: "{name} 已重新加入"
+  sr: "Igrač {name} se vratio"
 "{name} left":
   zh-tw: "{name} 已離開"
+  sr: "Igrač {name} je napustio sesiju"
 "{name} lost the connection":
   zh-tw: "{name} 已中斷連線"
+  sr: "Igrač {name} je izgubio vezu"
 "{name} was sent away by the host":
   zh-tw: "{name} 已被房主移出遊戲"
+  sr: "Domaćin je izbacio igrača {name}"
 "the host turned us away: {reason}":
   zh-tw: "房主拒絕連線：{reason}"
+  sr: "Domaćin nas je odbio: {reason}"
 "the host sent you away: {reason}":
   zh-tw: "房主已將你移出遊戲：{reason}"
+  sr: "Domaćin vas je izbacio: {reason}"
 "reconnecting ...":
   zh-tw: "正在重新連線..."
+  sr: "Ponovno povezivanje..."
 "only a joined game can reconnect":
   zh-tw: "只有加入其他房間的遊戲才能重新連線"
+  sr: "Ponovno povezivanje je moguće samo ako ste se već pridružili igri"
 "asked the server for its administration":
   zh-tw: "已向伺服器申請管理權限"
+  sr: "Zatražen je administratorski pristup serveru"
 "the host ended the session":
   zh-tw: "房主已結束遊戲"
+  sr: "Domaćin je završio sesiju"
 "the host has gone quiet; trying to reach it again":
   zh-tw: "房主暫無回應；正在嘗試重新連線"
+  sr: "Domaćin ne odgovara; pokušaj ponovnog povezivanja"
 "Add a bus":
   ca: "Afegeix un autobús"
   ru: "Добавить автобус"
