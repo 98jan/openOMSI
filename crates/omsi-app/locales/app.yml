@@ -19260,7 +19260,7 @@ _version: 2
   hi: "इंजन बंद है  (E इलेक्ट्रिक्स, M स्टार्टर; इग्निशन की वाली मॉड बसें E से चालू होती हैं: फिर दबाकर रखें। Shift+U सब कर देता है)"
   zh-tw: "引擎已熄火（E 電源，M 啟動馬達；具點火鑰匙的模組車輛使用 E 發動：再次按下並按住。Shift+U 可一鍵完成）"
   sv: "Motorn är av (E elsystem, M startmotor; moddbussar med tändningsnyckel vrider den med E: tryck igen och håll. Shift+U gör allt)"
-  sr: "Motor je isključen (E elektrika, M starter; mod autobusi sa ključem za paljenje okreću ga sa E: pritisnite ponovo i držite. Shift+U radi sve)"
+  sr: "Motor je isključen (E elektronika, M starter; mod autobusi sa ključem za paljenje okreću ga sa E: pritisnite ponovo i držite. Shift+U radi sve)"
 "The gearbox is in N: press D (Shift+D when W A S D drive), or click it. Buses like the Citaro take D only with the brake held":
   ca: "El canvi és en N: prem D (Maj+D si condueixes amb W A S D) o clica-hi. En autobusos com el Citaro cal mantenir el fre premut per posar D"
   ru: "КПП в положении N: нажмите D (Shift+D, если едете на W A S D) или щёлкните по ней. Автобусы вроде Citaro включают D только при нажатом тормозе"
@@ -31749,7 +31749,7 @@ _version: 2
   pt: "O motor está desligado  ({e} elétrica, {m} partida; ônibus de mod com chave de ignição a giram com {e}: aperte de novo e segure. Shift+U faz tudo)"
   ca: "El motor està apagat  ({e} sistema elèctric, {m} arrencada; als autobusos de mods amb clau de contacte, gira-la amb {e}: torna a prémer i mantén la tecla. Maj+U ho fa tot)"
   de: "Der Motor ist aus ({e} Elektronik, {m} Anlasser; Mod-Busse mit einem Zündschlüssel, drehen mit {e}: nochmals drücken und halten. Umschalt+U macht alles)"
-  sr: "Motor je isključen ({e} elektrika, {m} starter; mod autobusi sa ključem za paljenje okreću ga sa {e}: pritisnite ponovo i držite. Shift+U radi sve)"
+  sr: "Motor je isključen ({e} elektronika, {m} starter; mod autobusi sa ključem za paljenje okreću ga sa {e}: pritisnite ponovo i držite. Shift+U radi sve)"
   ru: "Двигатель выключен  ({e} электрика, {m} стартер; мод-автобусы с ключом зажигания включаются через {e}: нажмите снова и удержите. Shift+U делает всё сразу)"
 
 "The gearbox is in N: press {d}, or click it. Buses like the Citaro take D only with the brake held":
@@ -40048,7 +40048,7 @@ _version: 2
   uk: "Shift+U готує автобус до роботи: електрика, двигун і світло разом"
   sv: "Shift+U gör bussen körklar: elsystem, motor och belysning på en gång"
   ca: "Maj+U posa l'autobús en servei: sistema elèctric, motor i llums alhora"
-  sr: "Shift+U stavlja autobus u funkciju: elektriku, motor i svetla u jednom potezu"
+  sr: "Shift+U stavlja autobus u funkciju: elektroniku, motor i svetla u jednom potezu"
 
 "F1 is the driver's seat, F2 the passengers' view, F3 outside the bus and F4 the free camera":
   fr: "F1 est le poste de conduite, F2 la vue passagers, F3 l'extérieur du bus et F4 la caméra libre"
