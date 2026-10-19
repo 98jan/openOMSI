@@ -49432,7 +49432,6 @@ _version: 2
   pt: "Nenhuma escala tem uma viagem futura correspondente."
   ca: "Cap torn amb trajectes pendents coincideix."
   fr: "Aucun service n'a de voyage à venir qui correspond."
-  sr: "Nijedna tura još ne predstoji putovanje koje se podudara."
   ru: "Нет подходящего рейса, который ещё предстоит выполнить."
 
 "No tour left at this time: show the ended tours, or start earlier.":
