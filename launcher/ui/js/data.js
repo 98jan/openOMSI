@@ -24,6 +24,7 @@ export async function boot() {
   if (choice.version < 2) Object.assign(choice, { entry: -1, version: 2 });
   Object.assign(choice, clockPatch(choice, b.settings));
   set({ boot: b, settings: b.settings, config: b.config, choice, favourites: b.favourites || [], ready: true, page: b.root ? 'drive' : 'setup' });
+  if (b.crash) set({ crash: b.crash });
   applyTheme();
   if (b.root) {
     loadContent();
