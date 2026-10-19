@@ -25,17 +25,23 @@ pub(super) struct TranslationCache {
 }
 
 impl TranslationCache {
-    pub(super) fn line(
-        &mut self,
-        line: &str,
+    pub(super) fn line<'a>(
+        &'a mut self,
+        line: &'a str,
         language: &str,
         lookup: impl Fn(&str) -> Option<String>,
-    ) -> Cow<'_, str> {
+    ) -> Cow<'a, str> {
+        if !line.starts_with("* ") {
+            return Cow::Borrowed(line);
+        }
         if self.language != language {
             self.language = language.to_owned();
             self.lines.clear();
         }
         if !self.lines.contains_key(line) {
+            if self.lines.len() >= omsi_lan::game::CHAT_KEEP {
+                self.lines.clear();
+            }
             self.lines
                 .insert(line.to_owned(), translated_chat_line(line, lookup));
         }
@@ -181,5 +187,41 @@ mod tests {
         lookup_language.set("en");
         assert_eq!(cache.line(line, "en", lookup), line);
         assert!(lookups.get() > first_lookup_count);
+    }
+
+    #[test]
+    fn ordinary_chat_lines_borrow_the_input_without_caching_or_lookup() {
+        use std::cell::Cell;
+
+        let mut cache = TranslationCache::default();
+        let lookups = Cell::new(0);
+        let line = "Alice: hello";
+        let borrowed_input = matches!(
+            cache.line(line, "zh-tw", |_| {
+                lookups.set(lookups.get() + 1);
+                None
+            }),
+            Cow::Borrowed(value) if std::ptr::eq(value, line)
+        );
+
+        assert!(borrowed_input);
+        assert!(cache.lines.is_empty());
+        assert_eq!(lookups.get(), 0);
+    }
+
+    #[test]
+    fn translation_cache_discards_old_entries_at_the_chat_limit() {
+        let mut cache = TranslationCache::default();
+        for index in 0..omsi_lan::game::CHAT_KEEP {
+            let line = format!("* system notice {index}");
+            assert_eq!(cache.line(&line, "en", |_| None), line);
+        }
+        assert_eq!(cache.lines.len(), omsi_lan::game::CHAT_KEEP);
+
+        let latest = "* latest system notice";
+        assert_eq!(cache.line(latest, "en", |_| None), latest);
+
+        assert_eq!(cache.lines.len(), 1);
+        assert!(cache.lines.contains_key(latest));
     }
 }
