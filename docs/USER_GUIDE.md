@@ -539,6 +539,13 @@ glass 15 times a second, keeps only your own bus's spray and draws half the stre
 shows OMSI 2's own texture rain on the glass instead of the drops (from the next bus loaded),
 throws no spray and draws a quarter of the streaks.
 
+Graphics → *Vehicle smoke* (`vehicle_smoke`) chooses **All vehicles** (`all`, the default),
+**Player only** (`player`, your bus and its articulated sections), or **Off** (`off`).
+It hides non-glowing smoke particles from the other vehicles (including AI cars and LAN
+players), or from every vehicle when Off. Scenery smoke, glowing effects and rain spray
+keep their own settings and behaviour. The choice takes effect immediately and changes
+visibility only; particle simulation continues.
+
 The wet roads' reflections - the puddles mirroring the street, in every graphics mode once
 the roads are wet and the reflection maps are on - cost a good share of a weak card's frame
 too: Graphics → *Puddles* (`puddles`) **High** (the default) traces them up to 100 m in rays

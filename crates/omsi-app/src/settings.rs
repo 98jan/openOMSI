@@ -671,11 +671,7 @@ impl Settings {
                 "clouds" => s.clouds = b(v),
                 "cloud_quality" => s.cloud_quality = cloud_quality(v).into(),
                 "rain_quality" => s.rain_quality = rain_quality(v).into(),
-                "vehicle_smoke" => s.vehicle_smoke = match v.to_ascii_lowercase().as_str() {
-                    "player" | "player_only" => "player",
-                    "off" | "none" => "off",
-                    _ => "all",
-                }.into(),
+                "vehicle_smoke" => s.vehicle_smoke = omsi_launcher_lib::vehicle_smoke(v).into(),
                 "puddles" => s.puddles = omsi_launcher_lib::puddles(v).into(),
                 "windy_trees" => s.windy_trees = b(v),
                 "pax_density" | "aipassfactor" => s.pax_density = v.trim_end_matches('%').parse::<f32>().map(|x| if x > 5.0 { x / 100.0 } else { x }).map(|x| x.clamp(0.0, 3.0)).unwrap_or(s.pax_density),

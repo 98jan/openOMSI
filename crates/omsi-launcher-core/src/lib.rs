@@ -2011,6 +2011,15 @@ pub fn graphics_presets_for(mode: &str) -> [(&'static str, Value); 4] {
     })
 }
 
+/// Normalize vehicle smoke visibility for the game, launcher and saved profiles.
+pub fn vehicle_smoke(x: &str) -> &'static str {
+    match x.trim().to_ascii_lowercase().as_str() {
+        "player" | "player_only" => "player",
+        "off" | "none" => "off",
+        _ => "all",
+    }
+}
+
 /// The wet roads' reflections: `off` or `low`, else `high` (as the game reads its `puddles`).
 pub fn puddles(x: &str) -> &'static str {
     match x.trim().to_ascii_lowercase().as_str() { "off" | "0" | "none" => "off", "low" => "low", _ => "high" }
@@ -2182,7 +2191,7 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
             "mirror_quality" => v[&k] = json!(mirror_quality(val)),
             "cloud_quality" => v[&k] = json!(cloud_quality(val)),
             "rain_quality" => v[&k] = json!(rain_quality(val)),
-            "vehicle_smoke" => v[&k] = json!(match val.to_ascii_lowercase().as_str() { "player" | "player_only" => "player", "off" | "none" => "off", _ => "all" }),
+            "vehicle_smoke" => v[&k] = json!(vehicle_smoke(val)),
             "puddles" => v[&k] = json!(puddles(val)),
             "gpu_texture_compression" => v[&k] = json!(!matches!(val.trim().to_ascii_lowercase().as_str(), "0" | "off" | "no" | "false" | "disabled")),
             "max_fps" => v[&k] = json!(val.parse::<f64>().map(|x| x as i64).unwrap_or(0)),
@@ -2608,7 +2617,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("gpu_texture_compression={}\n", b("gpu_texture_compression", true)));
     text.push_str(&format!("cloud_quality={}\n", cloud_quality(v.get("cloud_quality").and_then(|x| x.as_str()).unwrap_or("high"))));
     text.push_str(&format!("rain_quality={}\n", rain_quality(v.get("rain_quality").and_then(|x| x.as_str()).unwrap_or("high"))));
-    text.push_str(&format!("vehicle_smoke={}\n", match v.get("vehicle_smoke").and_then(|x| x.as_str()).unwrap_or("all") { "player" => "player", "off" => "off", _ => "all" }));
+    text.push_str(&format!("vehicle_smoke={}\n", vehicle_smoke(v.get("vehicle_smoke").and_then(|x| x.as_str()).unwrap_or("all"))));
     text.push_str(&format!("puddles={}\n", puddles(v.get("puddles").and_then(|x| x.as_str()).unwrap_or("high"))));
     text.push_str(&format!("mirror_refresh={}\n", mirror_refresh(v.get("mirror_refresh").and_then(|x| x.as_str()).unwrap_or("full"))));
     text.push_str(&format!("mirror_quality={}\n", mirror_quality(v.get("mirror_quality").and_then(|x| x.as_str()).unwrap_or("standard"))));
