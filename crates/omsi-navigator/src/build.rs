@@ -58,7 +58,7 @@ impl Built {
 
 /// Everything within `reach` of `anchor`. `paved`: the map's paving is the roads (else every
 /// carriageway is a band, as from far); `houses`: build them too.
-pub(super) fn build(parts: &GroundParts, anchor: DVec2, reach: f64, pal: &Palette, look: GroundLook, paved: bool, houses: bool) -> Built {
+pub(super) fn build(parts: &GroundParts, anchor: DVec2, reach: f64, pal: &Palette, look: GroundLook, paved: bool, houses: Option<usize>) -> Built {
     let mut p = Painter::new();
     let mut layers = None;
     if let Some(sf) = parts.surface.as_deref() {
@@ -97,8 +97,8 @@ pub(super) fn build(parts: &GroundParts, anchor: DVec2, reach: f64, pal: &Palett
         md.build_lines(&mut p, anchor, anchor, reach, pal, look);
     }
     let (mut sh, mut so, mut fl) = (Painter::new(), Painter::new(), Painter::new());
-    if let (true, Some(md)) = (houses, parts.md.as_deref()) {
-        md.build_houses(&mut sh, &mut so, &mut fl, anchor, anchor, reach, pal);
+    if let (Some(models), Some(md)) = (houses, parts.md.as_deref()) {
+        md.build_houses(&mut sh, &mut so, &mut fl, anchor, anchor, reach, models, pal);
     }
     Built::new(anchor, [p.verts, sh.verts, so.verts, fl.verts])
 }
@@ -127,7 +127,7 @@ impl MapGround {
     /// (its details, paving and houses come and go at the same scales: see `city_ground`).
     pub fn build(&self, anchor: DVec2, reach: f64, mpp: f64, light: bool) -> Built {
         let look = GroundLook { surfaces: mpp < 0.7, trees: mpp < 0.7, dashes: mpp < 3.5 };
-        build(&self.parts, anchor, reach, style::palette(light), look, mpp < 2.2, mpp < 6.0)
+        build(&self.parts, anchor, reach, style::palette(light), look, mpp < 2.2, (mpp < 6.0).then_some(omsi_mapdraw::MODEL_TRIANGLES))
     }
 }
 

@@ -20,6 +20,9 @@ pub struct Palette {
     pub road_edge: Color,
     pub foot: Color,
     pub area: Color,
+    /// The paint on the roads: lane lines, crossings, arrows; yellow lines.
+    pub lane_paint: Color,
+    pub lane_amber: Color,
     /// Houses: the roof, the wall facing the light and the one turned from it, the shadow.
     pub roof: Color,
     pub roof_edge: Color,
@@ -62,6 +65,8 @@ pub const LIGHT: Palette = Palette {
     road_edge: hex(0xcfccc4),
     foot: hex(0xe6e3dc),
     area: hex(0xefeef0),
+    lane_paint: hex(0xbcc1ca),
+    lane_amber: hex(0xf0cb62),
     roof: hex(0xfaf9f6),
     roof_edge: hex(0xdcd8d0),
     wall_lit: hex(0xe9e5de),
@@ -95,6 +100,8 @@ pub const DARK: Palette = Palette {
     road_edge: hex(0x2b2e33),
     foot: hex(0x45484e),
     area: hex(0x393b40),
+    lane_paint: hex(0x9a9ea7),
+    lane_amber: hex(0xc9a948),
     roof: hex(0x3b3f47),
     roof_edge: hex(0x2c2f35),
     wall_lit: hex(0x363a41),
