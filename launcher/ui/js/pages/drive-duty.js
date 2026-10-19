@@ -3,11 +3,11 @@ import { useStore } from '../store.js';
 import { t, hhmm, longDate } from '../i18n.js';
 import { Icon } from '../icons.js';
 import { Button, Field, Select, Toggle, Segmented, Picture, Notice, Spinner, Search } from '../ui.js';
-import { choose, curMap, curLine, curTour, pickedTrip, mapName, duty, busFile, realDate } from '../data.js';
+import { choose, curMap, curLine, curTour, pickedTrip, mapName, duty, busFile, realDate, loadIbis } from '../data.js';
 import { call } from '../api.js';
 import { RouteMap } from '../routemap.js';
 import { MapPicker } from './map-picker.js';
-import { hms, mapPicture, depotRun, tripAt, lineMatches, findTours, tourRoute, chooseLine, chooseTour, pickTrip, Notes, tripLength } from './drive.js';
+import { hms, mapPicture, depotRun, tripAt, lineMatches, findTours, tourRoute, chooseLine, chooseTour, pickTrip, Notes, tripLength, TripEnds } from './drive.js';
 
 export function MapRow() {
   const s = useStore();
@@ -95,7 +95,7 @@ export function Tours({ line }) {
         const days = !x.runs ? (x.next_run ? t('runs {date}', { date: longDate(x.next_run) }) : t('never within a year')) : done ? t('ended') : x.days;
         return html`<button type="button" role="option" aria-selected=${x.number === c.tour} class=${'tour-row' + (x.number === c.tour ? ' on' : '') + (live ? '' : ' dim')} onClick=${() => chooseTour(x, hit ? trip : null)}>
           <span class="row"><b class="grow ellipsis">${x.number}</b>${trip && html`<span class=${'num small' + (live ? ' accent-fg' : ' muted')}>${hms(trip.departure)} - ${hms(trip.arrival)}</span>`}</span>
-          <span class="sub ellipsis">${hit ? `${trip.line ? `${trip.line} | ` : ''}${trip.from} → ${trip.terminus}${via ? ` | ${t('via {stop}', { stop: via })}` : ''}` : tourRoute(x)}</span>
+          <span class="sub ellipsis">${hit ? html`${trip.line ? `${trip.line} | ` : ''}<${TripEnds} trip=${trip} />${via ? ` | ${t('via {stop}', { stop: via })}` : ''}` : tourRoute(x)}</span>
           <span class="sub ellipsis">${t('{n} trips', { n: x.trips.length })} - ${days}${tripLength(x) ? ` - ${t('{time} per trip', { time: tripLength(x) })}` : ''}</span>
         </button>`;
       })}
@@ -154,7 +154,7 @@ function NextDepartures({ lines }) {
       ${upcoming.map(({ l, x, trip }) => html`<button type="button" class=${'trip-row' + (l.name === c.line && x.number === c.tour ? ' on' : '')} onClick=${() => (choose({ line: l.name, tour: x.number, start_trip: null }), pickTrip(trip))}>
         <span class="num time">${hms(trip.departure)}</span>
         <span class="line-badge">${trip.line || l.name}</span>
-        <span class="grow"><span class="ellipsis">${trip.from} → ${trip.terminus}</span><span class="muted small ellipsis">${t('Tour')} ${x.number}</span></span>
+        <span class="grow"><span class="ellipsis"><${TripEnds} trip=${trip} /></span><span class="muted small ellipsis">${t('Tour')} ${x.number}</span></span>
       </button>`)}
     </div>
   </details>`;
@@ -204,9 +204,10 @@ function ibisCodes(info, code, line) {
   return code.length > 2 ? [code.slice(0, -2), code.slice(-2)] : [info.line_code || line, code];
 }
 
-function Ibis() {
+function Ibis({ trip }) {
   const s = useStore();
   const x = s.ibis;
+  useEffect(() => void loadIbis(trip || null), [trip]);
   if (!x || s.choice.free) return null;
   const i = x.info;
   let body;
@@ -216,9 +217,9 @@ function Ibis() {
     body = html`<table class="table ibis">
         <thead><tr><th></th><th>${t('Line')}</th><th>${t('Route code')}</th></tr></thead>
         <tbody>
-          ${i.routes.slice(0, 3).map((r) => {
+          ${[...i.routes].sort((a, b) => (b.code === i.trip_route) - (a.code === i.trip_route)).slice(0, 3).map((r) => {
             const [line, route] = ibisCodes(i, r.code, s.choice.line);
-            return html`<tr>
+            return html`<tr class=${r.code === i.trip_route ? 'on' : ''}>
               <td class="ellipsis" title=${(r.name || r.terminus).trim()}>${(r.name || r.terminus).trim()}</td>
               <td><span class="line-badge">${line}</span></td>
               <td><span class="line-badge">${route}</span></td>
@@ -233,12 +234,13 @@ function Ibis() {
 
 /** The stops of the trip a start takes, a timeline with their times under its row (and the
  *  first one's departure), as the game's own launcher's roadbook had them. */
-function TripStops({ stops }) {
+function TripStops({ stops, km }) {
   const last = stops.length - 1;
   return html`<ol class="trip-stops">
     ${stops.map((st, k) => html`<li class=${k === 0 || k === last ? 'end' : ''}>
       <span class="num">${hms(st.arr ?? st.dep)}</span><span class="ellipsis grow">${st.name}</span>${k === 0 && st.dep != null && hms(st.dep) !== hms(st.arr) && html`<span class="muted" style="white-space:nowrap">${t('Departs')} ${hms(st.dep)}</span>`}
     </li>`)}
+    ${km > 0 && html`<li class="km"><span class="num"></span><span class="muted">${km.toFixed(1)} km</span></li>`}
   </ol>`;
 }
 
@@ -258,13 +260,13 @@ export function Roadbook({ tour, trips, current, now }) {
     </div>
     <div class="roadbook-trips" ref=${ref}>
       ${trips.map((x, i) => html`<button type="button" class=${'trip-row' + (i === current ? ' on' : '') + (x.arrival < now - 60 && i !== current ? ' past' : '')} onClick=${() => pickTrip(x)}>
-        <span class="num time">${hms(x.departure)}</span>
+        <span class="num time">${hms(x.departure)}<small>${hms(x.arrival)}</small></span>
         <span class="kind">${depotRun(x) ? html`<span class="depot">${t('Depot run')}</span>` : html`<span class="line-badge">${x.line}</span>`}</span>
-        <span class="grow" title=${`${x.from} → ${x.terminus}`}><span class="ellipsis">${x.terminus}</span><span class="muted small ellipsis">${x.from} | ${hms(x.arrival)}${x.km > 0 ? ` | ${x.km.toFixed(1)} km` : ''}</span></span>
+        <span class="grow" title=${`${x.from} → ${x.terminus}`}><${TripEnds} trip=${x} stack /></span>
       </button>
-      ${i === current && x.stops?.length > 0 && html`<${TripStops} stops=${x.stops} />`}`)}
+      ${i === current && x.stops?.length > 0 && html`<${TripStops} stops=${x.stops} km=${x.km} />`}`)}
     </div>
-    <${Ibis} />
+    <${Ibis} trip=${trips[current]} />
   </aside>`;
 }
 
