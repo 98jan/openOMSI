@@ -1,9 +1,5 @@
 import SwiftUI
 
-func launcherText(_ key: String, _ args: [String: String] = [:]) -> String {
-    args.reduce(NSLocalizedString(key, comment: "")) { $0.replacingOccurrences(of: "{\($1.key)}", with: $1.value) }
-}
-
 struct DepotReply: Decodable {
     var buses: [DepotBus]
     var groups: [String]
@@ -74,7 +70,7 @@ struct DepotPage: View {
     @State private var name = ""
     @State private var confirmGroup = false
 
-    private static let none = "\u{1}"
+    private static let none = String(UnicodeScalar(1))
 
     enum Naming: Identifiable {
         case new, rename
@@ -150,7 +146,7 @@ struct DepotPage: View {
                 groupCall("depot_group_remove", ["name": g]) { group = "" }
             }
         } message: {
-            Text(launcherText("The buses of {name} stay in the list, in no depot.", ["name": g]))
+            Text(tr("The buses of {name} stay in the list, in no depot.", ["name": g]))
         }
     }
 
@@ -329,7 +325,7 @@ struct DepotDetail: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: compact ? 140 : 150), spacing: 12)], spacing: 12) {
                 StatTile(icon: "gauge.with.dots.needle.67percent", value: b.odometer.map { "\(Int($0.rounded()).formatted()) km" } ?? String(localized: "never"), label: "Odometer")
                 StatTile(icon: "point.topleft.down.to.point.bottomright.curvepath.fill", value: String(format: "%.1f km", b.metres / 1000), label: "distance")
-                StatTile(icon: "clock.fill", value: launcherText("{h} h {m} min", ["h": "\(Int(b.seconds) / 3600)", "m": String(format: "%02d", (Int(b.seconds) % 3600) / 60)]), label: "hours driven")
+                StatTile(icon: "clock.fill", value: tr("{h} h {m} min", ["h": "\(Int(b.seconds) / 3600)", "m": String(format: "%02d", (Int(b.seconds) % 3600) / 60)]), label: "hours driven")
                 StatTile(icon: "gamecontroller.fill", value: "\(b.sessions)", label: "runs")
                 StatTile(icon: "mappin.circle.fill", value: "\(b.stops)", label: "stops served")
                 StatTile(icon: "ticket.fill", value: "\(b.tickets)", label: "tickets sold")
@@ -363,7 +359,7 @@ struct DepotDetail: View {
         .confirmationDialog("Remove from the depot", isPresented: $confirmRemove) {
             Button("Remove", role: .destructive) { remove() }
         } message: {
-            Text(launcherText("{name} leaves the depot with its kilometres and its wear.", ["name": b.name]))
+            Text(tr("{name} leaves the depot with its kilometres and its wear.", ["name": b.name]))
         }
     }
 
@@ -421,7 +417,7 @@ struct DepotDetail: View {
         store.page = .drive
         store.phoneMore = nil
         store.phoneTab = "drive"
-        store.say(launcherText("{name} is ready under Drive: choose the time and the duty.", ["name": b.name]), error: false)
+        store.say(tr("{name} is ready under Drive: choose the time and the duty.", ["name": b.name]), error: false)
     }
 }
 

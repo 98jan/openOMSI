@@ -130,13 +130,13 @@ final class TimetableEditor {
             drafts = [:]
             if !saved.isEmpty { store.act("reload") }
             if let e = r["error"] as? String {
-                store.say(launcherText("Not saved: {e}", ["e": e]), error: true)
+                store.say(tr("Not saved: {e}", ["e": e]), error: true)
                 return false
             }
-            store.say(launcherText("{n} line(s) saved", ["n": "\(saved.count)"]), error: false)
+            store.say(tr("{n} line(s) saved", ["n": "\(saved.count)"]), error: false)
             return true
         } catch {
-            store.say(launcherText("Not saved: {e}", ["e": error.localizedDescription]), error: true)
+            store.say(tr("Not saved: {e}", ["e": error.localizedDescription]), error: true)
             return false
         }
     }
@@ -159,11 +159,11 @@ final class TimetableEditor {
             let folder = r["folder"] as? String ?? ""
             let restored = r["restored"] as? Int ?? 0
             if r["removed"] as? Bool == true {
-                store.say(launcherText("The timetable of {map_folder} is the map's own again (the edited copy was removed)", ["map_folder": folder]), error: false)
+                store.say(tr("The timetable of {map_folder} is the map's own again (the edited copy was removed)", ["map_folder": folder]), error: false)
             } else if restored > 0 {
-                store.say(launcherText("{n} line(s) of {map_folder} put back as they were", ["n": "\(restored)", "map_folder": folder]), error: false)
+                store.say(tr("{n} line(s) of {map_folder} put back as they were", ["n": "\(restored)", "map_folder": folder]), error: false)
             } else {
-                store.say(launcherText("The timetable of {map_folder} has not been changed here", ["map_folder": folder]), error: true)
+                store.say(tr("The timetable of {map_folder} has not been changed here", ["map_folder": folder]), error: true)
                 return
             }
             store.act("reload")
@@ -181,7 +181,7 @@ final class TimetableEditor {
             return
         }
         if data!.lines.contains(where: { ttSame($0.name, name) }) {
-            store.say(launcherText("Line {name} is there already", ["name": name]), error: true)
+            store.say(tr("Line {name} is there already", ["name": name]), error: true)
             return
         }
         data!.lines.append(TTLine(name: name, user_allowed: true, priority: 0, tours: []))
@@ -191,7 +191,7 @@ final class TimetableEditor {
         newLine = ""
         drafts = [:]
         touch(name)
-        store.say(launcherText("Line {name} added: give it tours, then save", ["name": name]), error: false)
+        store.say(tr("Line {name} added: give it tours, then save", ["name": name]), error: false)
     }
 
     func choices(_ l: TTLine) -> [String] {
@@ -226,7 +226,7 @@ struct TimetablePage: View {
             if tt.data != nil {
                 let n = tt.dirty.count
                 Button { tt.saveAll(store) } label: {
-                    Label(n == 0 ? String(localized: "Saved") : n == 1 ? String(localized: "Save") : launcherText("Save all ({n} lines)", ["n": "\(n)"]), systemImage: "square.and.arrow.down")
+                    Label(n == 0 ? String(localized: "Saved") : n == 1 ? String(localized: "Save") : tr("Save all ({n} lines)", ["n": "\(n)"]), systemImage: "square.and.arrow.down")
                 }
                 .buttonStyle(n > 0 ? .primary : .secondary).disabled(n == 0)
             }
@@ -311,7 +311,7 @@ private struct LinesCard: View {
                 }
                 VStack(spacing: 0) {
                     ForEach(d.lines, id: \.name) { l in
-                        ListItem(title: l.name, subtitle: launcherText("{n} tours", ["n": "\(l.tours.count)"]), selected: opened == nil && l.name == tt.line) {
+                        ListItem(title: l.name, subtitle: tr("{n} tours", ["n": "\(l.tours.count)"]), selected: opened == nil && l.name == tt.line) {
                             tt.line = l.name
                             tt.pickTour(0)
                             opened?()
@@ -352,7 +352,7 @@ private struct ToursCard: View {
             Text("\(String(localized: "Line")) \(line.name)").font(.inter(15, .semibold)).lineLimit(1)
             VStack(spacing: 0) {
                 ForEach(Array(line.tours.enumerated()), id: \.offset) { i, x in
-                    ListItem(title: "\(String(localized: "Tour")) \(x.number)", subtitle: [x.trips.first.map { ttTime($0.departure) } ?? "", launcherText("{n} trips", ["n": "\(x.trips.count)"])].filter { !$0.isEmpty }.joined(separator: " - "),
+                    ListItem(title: "\(String(localized: "Tour")) \(x.number)", subtitle: [x.trips.first.map { ttTime($0.departure) } ?? "", tr("{n} trips", ["n": "\(x.trips.count)"])].filter { !$0.isEmpty }.joined(separator: " - "),
                              selected: opened == nil && i == tour) {
                         tt.pickTour(i)
                         opened?()
@@ -411,7 +411,7 @@ private struct ToursCard: View {
             }
         }
         if made > 0, let i = tt.lineIndex { tt.pickTour(tt.data!.lines[i].tours.count - 1) }
-        store.say(launcherText("{made} tour(s) made, every {every} min up to {until}", ["made": "\(made)", "every": tt.offset.trimmingCharacters(in: .whitespaces), "until": ttTime(until)]), error: false)
+        store.say(tr("{made} tour(s) made, every {every} min up to {until}", ["made": "\(made)", "every": tt.offset.trimmingCharacters(in: .whitespaces), "until": ttTime(until)]), error: false)
     }
 
     private func remove() {

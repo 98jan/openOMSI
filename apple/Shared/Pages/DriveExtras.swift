@@ -1,9 +1,5 @@
 import SwiftUI
 
-func tr(_ key: String.LocalizationValue, _ args: [String: String] = [:]) -> String {
-    args.reduce(String(localized: key)) { $0.replacingOccurrences(of: "{\($1.key)}", with: $1.value) }
-}
-
 func favKey(_ file: String) -> String { file.replacingOccurrences(of: "\\", with: "/").lowercased() }
 
 func busFile(_ file: String) -> String {

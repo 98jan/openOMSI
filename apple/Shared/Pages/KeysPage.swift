@@ -118,7 +118,7 @@ enum Keys {
 
     static func label(_ a: String) -> String {
         if a.hasPrefix("kw_s_"), a.hasSuffix("_fest"), a.count > 10 {
-            return launcherText("Gear {gear} (H-pattern)", ["gear": String(a.dropFirst(5).dropLast(5))])
+            return tr("Gear {gear} (H-pattern)", ["gear": String(a.dropFirst(5).dropLast(5))])
         }
         if let k = known[a] { return NSLocalizedString(k, comment: "") }
         return humanize(a)
@@ -232,7 +232,7 @@ struct KeyEditor: View {
         VStack(alignment: .leading, spacing: 16) {
             if preset != "omsi" {
                 VStack(alignment: .leading, spacing: 10) {
-                    Notice(text: launcherText("Driving keys: {name} (Settings). Those keys drive the bus and win over the list below. Change any key here and your own layout (Custom controls) is used from then on.", ["name": NSLocalizedString(presetName, comment: "")]), icon: "keyboard")
+                    Notice(text: tr("Driving keys: {name} (Settings). Those keys drive the bus and win over the list below. Change any key here and your own layout (Custom controls) is used from then on.", ["name": NSLocalizedString(presetName, comment: "")]), icon: "keyboard")
                     Button {
                         store.set("drive_keys", "omsi")
                         store.say(String(localized: "Driving keys: Custom controls - the game uses the keys of this page."), error: false)
@@ -255,7 +255,7 @@ struct KeyEditor: View {
                 }
                 if canAdd {
                     Button { capture = KeyCapture(sec: sec, insert: list.count, action: newAction) } label: {
-                        Label(launcherText("Add \"{name}\" and give it a key", ["name": newAction]), systemImage: "plus")
+                        Label(tr("Add \"{name}\" and give it a key", ["name": newAction]), systemImage: "plus")
                     }
                     .buttonStyle(.secondary)
                 }
@@ -385,7 +385,7 @@ private struct CaptureSheet: View {
             if label != action { Text(action).font(.inter(12.5)).foregroundStyle(Theme.muted) }
             if let p = pending {
                 KeyCaps(scan: p.scan, modifier: p.chord)
-                Notice(text: launcherText("This key is already used by: {actions}", ["actions": p.taken.map { Keys.label($0.action) }.joined(separator: ", ")]) + "\n" + String(localized: "Both will react to it. Press another key, or use it anyway."), kind: .warn)
+                Notice(text: tr("This key is already used by: {actions}", ["actions": p.taken.map { Keys.label($0.action) }.joined(separator: ", ")]) + "\n" + String(localized: "Both will react to it. Press another key, or use it anyway."), kind: .warn)
             } else {
                 Text("press a key...").font(.inter(14, .semibold)).padding(.horizontal, 18).frame(height: 40)
                     .background(Theme.surface3, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -448,7 +448,7 @@ private struct CaptureSheet: View {
             if current != nil { onKey(0, 0) } else { dismiss() }
         default:
             guard let scan = Keys.scanOf[code] else {
-                store.say(launcherText("{code} has no DirectInput scan code the game understands.", ["code": String(format: "0x%02X", code)]), error: true)
+                store.say(tr("{code} has no DirectInput scan code the game understands.", ["code": String(format: "0x%02X", code)]), error: true)
                 return
             }
             take(scan, chord())
@@ -476,7 +476,7 @@ private struct ActionPicker: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Driving & the bus").font(.inter(12.5)).foregroundStyle(Theme.muted)
                 SearchField(prompt: "Search actions...", text: $search)
-                Text(launcherText("{n} results", ["n": "\(options.count)"])).font(.inter(12.5)).foregroundStyle(Theme.muted)
+                Text(tr("{n} results", ["n": "\(options.count)"])).font(.inter(12.5)).foregroundStyle(Theme.muted)
                 Scroll {
                     LazyVStack(spacing: 0) {
                         if options.isEmpty { Text("No matching actions.").foregroundStyle(Theme.muted).padding(8) }
@@ -487,7 +487,7 @@ private struct ActionPicker: View {
                         }
                         if options.count > rows {
                             HStack {
-                                Text(launcherText("Showing the first {shown} of {n}: search to narrow the list.", ["shown": "\(rows)", "n": "\(options.count)"])).font(.inter(12.5)).foregroundStyle(Theme.muted)
+                                Text(tr("Showing the first {shown} of {n}: search to narrow the list.", ["shown": "\(rows)", "n": "\(options.count)"])).font(.inter(12.5)).foregroundStyle(Theme.muted)
                                 Spacer()
                                 Button("Show more") { rows += 150 }.buttonStyle(.launcher(.plain, small: true))
                             }
