@@ -16,8 +16,6 @@ pub struct MzState {
     pub extent: f32,
     /// The cover on the GPU (its address and texture): one at a time, the one before is freed.
     cover: Option<(String, TextureId)>,
-    /// Where the card sits inside the information bar (navigator off), when it does.
-    pub slot: Option<[f32; 4]>,
 }
 
 pub struct MzView {
@@ -110,10 +108,9 @@ impl Ui {
         }
         let e = *k * *k * (3.0 - 2.0 * *k);
         let gap = 8.0 * s;
-        let slot = if f.nav_rect.is_none() { self.mz.slot } else { None };
-        let embedded = slot.is_some();
-        let small_w = slot.map_or_else(|| f.nav_rect.map_or(280.0 * s, |a| a[2] - a[0]).max(250.0 * s), |q| q[2] - q[0]);
-        let (small_h, big_h) = (slot.map_or(52.0 * s, |q| q[3] - q[1]), 160.0 * s + if v.typing.is_some() || v.status.is_some() { 26.0 * s } else { 0.0 });
+        let embedded = false;
+        let small_w = f.nav_rect.map_or(280.0 * s, |a| a[2] - a[0]).max(250.0 * s);
+        let (small_h, big_h) = (52.0 * s, 160.0 * s + if v.typing.is_some() || v.status.is_some() { 26.0 * s } else { 0.0 });
         let w = small_w.round();
         let h = (small_h + (big_h - small_h) * e).round();
         let (x0, y0) = match f.nav_rect {
@@ -126,7 +123,10 @@ impl Ui {
                 let y = if above && room_above { a[1] - gap - h } else if room_below { a[3] + gap } else { a[1] + gap };
                 (x, y)
             }
-            None => slot.map_or(((f.width - w) * 0.5, 70.0 * s), |q| (q[0], q[1])),
+            None => {
+                let x = (f.width - w) * 0.5;
+                (x, self.below_info(x, x + w, 8.0 * s, s))
+            }
         };
         let x0 = x0.clamp(8.0 * s, (f.width - w - 8.0 * s).max(8.0 * s)).round();
         let y0 = y0.clamp(0.0, (f.height - h).max(0.0)).round();

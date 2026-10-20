@@ -196,7 +196,7 @@ impl Milezero {
             self.start(audio, self.level, volume);
         }
         let Some(p) = self.playing.as_mut() else { return };
-        audio.set_params(p.voice, VoiceParams { gain: volume, ..Default::default() });
+        audio.set_params(p.voice, VoiceParams { gain: 1.0, ..Default::default() });
         // a connection that cannot keep the buffer filled takes the next worse stream; one that
         // keeps it full for a long time tries the next better one
         let warm = p.since.elapsed().as_secs_f32() > 6.0;
@@ -245,7 +245,7 @@ impl Milezero {
     fn start(&mut self, audio: &AudioEngine, level: usize, volume: f32) {
         log::info!("milezero: stream {}", STREAMS[level].0);
         let buf = omsi_audio::radio::open(STREAMS[level].1);
-        let voice = audio.play_stream(buf.clone(), VoiceParams { gain: volume, ..Default::default() });
+        let voice = audio.play_stream(buf.clone(), VoiceParams { gain: 1.0, ..Default::default() });
         self.playing = Some(Playing { buf, voice, level, since: Instant::now(), bad: 0.0, good: 0.0 });
     }
 }
