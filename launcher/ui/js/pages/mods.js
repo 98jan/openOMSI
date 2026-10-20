@@ -69,8 +69,8 @@ export function ModsPage() {
   };
   const shareHofs = async (map) => {
     try {
-      await call('share_map_hofs', { map });
-      toast(t('HOF files added for every bus.'), 'ok');
+      const added = await call('share_map_hofs', { map });
+      toast(added > 0 ? t('HOF files added for every bus.') : t('These HOF files were already there.'), 'ok');
     } catch (e) {
       toast(e.message, 'error');
     }

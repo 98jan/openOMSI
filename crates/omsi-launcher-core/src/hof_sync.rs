@@ -159,6 +159,9 @@ pub fn share_map_hofs(map: &str) -> Result<usize> {
     let Some((content, original)) = writable_content() else {
         bail!("the writable content folder is the original OMSI folder; HOF files were not copied");
     };
+    if install::jobs().iter().any(|j| j.finished.is_none()) {
+        bail!("a mod is being installed; share the HOF files once it is done");
+    }
     let Some(found) = scan(&content, &original, &mut Vec::new()).into_iter().find(|m| m.folder.eq_ignore_ascii_case(map)) else { return Ok(0) };
     let mut added = Vec::new();
     let mut failures = Vec::new();
