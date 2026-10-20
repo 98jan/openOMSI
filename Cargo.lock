@@ -1934,6 +1934,9 @@ name = "glam"
 version = "0.30.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19fc433e8437a212d1b6f1e68c7824af3aed907da60afa994e7f542d18d12aa9"
+dependencies = [
+ "bytemuck",
+]
 
 [[package]]
 name = "glob"
@@ -3749,9 +3752,11 @@ dependencies = [
 name = "omsi-map"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "glam",
  "hashbrown 0.17.1",
  "log",
+ "memmap2",
  "omsi-cfg",
  "thiserror 2.0.21",
 ]
