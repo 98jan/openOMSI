@@ -430,7 +430,11 @@ impl App {
                     }
                 } else if pressed {
                     n.map_press(x, y);
-                } else if n.map_release() && self.menus.teleport_pick {
+                } else if n.map_release() {
+                    if !self.menus.teleport_pick {
+                        n.map_destination(x, y);
+                        return;
+                    }
                     // after Esc → Move the bus the map is dragged to the place as ever, and
                     // the click that lets go where it was pressed puts the bus there (the
                     // press used to put it at once, so only what the map showed could be
