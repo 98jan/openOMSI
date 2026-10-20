@@ -61,9 +61,15 @@ impl omsi_launcher_api::Platform for Phone {
         service().ask(req, wait)
     }
     // (no game program to start with --export-diagnostics: the game is this app's library)
-    fn support_package(&self, out: &std::path::Path) -> Option<Result<(), String>> {
-        let value = crate::support_bundle::snapshot(None, &crate::settings::Settings::load(), None, None, "launcher");
-        Some(crate::support_bundle::export(out, &value).map_err(|e| format!("{e:#}")))
+    fn support_package(&self, out: &std::path::Path) -> Option<Result<std::path::PathBuf, String>> {
+        Some((|| {
+            // Android sets OMSI_CONTENT to shared storage or the app's external data folder.
+            let folder = std::env::var_os("OMSI_CONTENT").ok_or("the Android content folder is not available")?;
+            let out = std::path::PathBuf::from(folder).join(out.file_name().ok_or("invalid support package filename")?);
+            let value = crate::support_bundle::snapshot(None, &crate::settings::Settings::load(), None, None, "launcher");
+            crate::support_bundle::export(&out, &value).map_err(|e| format!("{e:#}"))?;
+            Ok(out)
+        })())
     }
 }
 
