@@ -653,11 +653,14 @@ priority (the launcher's depot list shows the shared ones after the bus's own).
 
 A map names the depot files its buses need in `maps/<map>/ailists.cfg`. When a mod map is
 installed in the openOMSI content folder and one of those files is missing from `HOFs/`, the
-launcher copies it there from the map's folder or from any bus that brought it, so every
-bus, the stock ones included, can use the map's depot without copying `.hof` files by hand.
-The copy belongs to the map's mod: switching the map off or removing it takes the copy with
-it. The original OMSI installation is not changed. A depot file the map needs that no
-installed content provides, or a copy that failed, is shown as a warning on the launcher's
+launcher's **Mods** page asks whether to share them with every bus. **Share with every bus**
+copies them there from the map's folder or from any bus that brought it, so every bus, the
+stock ones included, can use the map's depot without copying `.hof` files by hand. **Not for
+this map** leaves them where they are: some maps (Grand Paris Moulon, for example) have one
+depot per company or per bus, and buses with their own IBIS show wrong destinations with
+another one. The copy belongs to the map's mod: switching the map off or removing it takes
+the copy with it. The original OMSI installation is not changed. A depot file the map needs
+that no installed content provides is shown as a warning on the launcher's
 **Mods** page. The **Add HOF files to buses** button on that page (desktop launcher) copies
 `.hof` files you choose into the content folder's `HOFs/`; files already there are left
 untouched.

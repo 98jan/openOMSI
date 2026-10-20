@@ -18,7 +18,7 @@ mod hof_sync;
 mod file_dialog;
 
 pub use file_dialog::{pick_file, pick_folder, pick_hofs, pick_mod};
-pub use hof_sync::add_shared_hofs;
+pub use hof_sync::{add_shared_hofs, share_map_hofs, MapHofOffer};
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -537,6 +537,8 @@ pub struct ModsStatus {
     pub cleaned: Vec<String>,
     pub jobs: Vec<install::Progress>,
     pub hof_warnings: Vec<String>,
+    /// Maps whose depot files could be shared with every bus, on the player's word.
+    pub hof_offers: Vec<MapHofOffer>,
     /// Every mod, one by one (see `mods`).
     pub installed: Vec<mods::Mod>,
 }
@@ -686,8 +688,7 @@ pub fn install_inbox_blocking() -> Vec<install::Progress> {
 pub fn mods_status() -> Result<ModsStatus> {
     let content = content_dir().ok_or_else(|| anyhow!("no game binary configured, so no content folder"))?;
     let cleaned = install::cleanup_stale(&data_dir(), Some(&content));
-    hof_sync::sync_map_hofs();
-    let hof_warnings = hof_sync::warnings();
+    let (hof_offers, hof_warnings) = hof_sync::offers();
     let folders = omsi_cfg::CONTENT_FOLDERS
         .iter()
         .map(|f| {
@@ -712,6 +713,7 @@ pub fn mods_status() -> Result<ModsStatus> {
         cleaned,
         jobs: install::jobs(),
         hof_warnings,
+        hof_offers,
         installed: mods::list(&content),
     })
 }
@@ -822,7 +824,6 @@ pub struct EntryInfo {
 
 pub fn list_maps() -> Result<Vec<MapInfo>> {
     root()?;
-    hof_sync::sync_map_hofs();
     let lang = content_language();
     let mut out = Vec::new();
     let mut keys = Vec::new();
