@@ -73,6 +73,18 @@ use omsi_sim::traffic::LaneKey;
 use omsi_sim::traffic::Lane;
 
 #[test]
+fn next_stop_distance_is_exposed_only_for_its_stop_id() {
+    let mut n = Navigator::new(true, 0.85, "bottom-left");
+    assert_eq!(n.next_stop_distance(), None);
+    n.next_dist = Some((10, 123.5));
+    assert_eq!(n.next_stop_distance(), Some(123.5));
+    assert_eq!(n.next_stop_distance_for(10), Some(123.5));
+    assert_eq!(n.next_stop_distance_for(11), None);
+    n.invalidate_next_stop_distance();
+    assert_eq!(n.next_stop_distance(), None);
+}
+
+#[test]
 fn stop_request_icon_reserves_space_only_while_active() {
     let mut atlas = Atlas::new(256);
     for scale in [0.75, 1.0, 2.0] {
@@ -483,6 +495,19 @@ fn the_map_zooms_in_for_a_turn_and_out_on_the_straight() {
     assert_eq!(zoom_target(70.0, Some(0.0), 0.0), 150.0);
     assert!(zoom_target(50.0, None, 30.0) < zoom_target(50.0, None, 5.0));
     assert!(zoom_target(50.0, None, -30.0) >= 150.0);
+}
+
+/// A stop a plugin closed (`duty.set_closed_stops`) is still on the list, marked with the
+/// way round, so it is drawn struck through.
+#[test]
+fn closed_stops_stay_on_the_list_marked() {
+    use omsi_sim::timetable_run::{PlannedStop, PlannedTrip, PlayerDuty};
+    let stop = |name: &str, arr: f64| PlannedStop { object_id: 0, name: name.into(), arr, dep: arr, position: None, dir: Default::default(), stops: true, closed: None };
+    let trip = PlannedTrip { name: "5_1".into(), line: "5".into(), terminus: "Bahnhof".into(), departure: 0.0, end: 120.0, stops: vec![stop("Markt", 0.0), stop("Rathaus", 60.0), stop("Bahnhof", 120.0)] };
+    let mut d = PlayerDuty::new("5".into(), "1".into(), vec![trip], 0, 0, true);
+    d.set_closed_stops(&["rathaus".into()], "via Kirchweg");
+    let (_, _, stops, _) = duty_parts(Some(&d));
+    assert_eq!(stops.iter().map(|s| s.closed.as_deref()).collect::<Vec<_>>(), [None, Some("via Kirchweg"), None]);
 }
 
 #[test]

@@ -71,6 +71,10 @@ impl omsi_launcher_api::Platform for Phone {
             Ok(out)
         })())
     }
+    // (the game runs in this app: a crash took the launcher down with it)
+    fn previous_run_crash(&self) -> Option<(String, String)> {
+        crate::android::previous_run_crash()
+    }
 }
 
 fn take(env: &mut JNIEnv, s: &JString) -> String {
