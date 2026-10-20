@@ -452,6 +452,7 @@ struct PhoneSheetView: View {
         }
     }
 
+    // maps as picture tiles
     @ViewBuilder
     private var mapTiles: some View {
         if let m = store.map, store.choice.lan_mode != "join" { NotesBox(kind: "map", file: m.file).padding(.bottom, 6) }

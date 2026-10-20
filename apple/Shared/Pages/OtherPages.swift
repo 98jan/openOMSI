@@ -580,7 +580,7 @@ struct ModsPage: View {
         }
         .sorted { a, b in a.enabled != b.enabled ? a.enabled : a.name.localizedCompare(b.name) == .orderedAscending }
         let tabs: [(String, String)] = [("all", "All"), ("bus", "Buses"), ("map", "Maps"), ("archive", "Archives"), ("other", "Other"), ("off", "Off")]
-        return Card("Installed mods", hint: "\(tr("{n} mods, {on} on", ["n": "\(mods.count)", "on": "\(mods.count - (counts["off"] ?? 0))"])) - \(formatBytes(store.snapshot.mods?.free_bytes ?? 0)) free") {
+        return Card("Installed mods", hint: "\(tr("{n} mods, {on} on", ["n": "\(mods.count)", "on": "\(mods.count - (counts["off"] ?? 0))"])) - \(tr("Free space: {n}", ["n": formatBytes(store.snapshot.mods?.free_bytes ?? 0)]))") {
             SearchField(prompt: "Search mods...", text: $search)
             if !mods.isEmpty {
                 Scroll(.horizontal) {

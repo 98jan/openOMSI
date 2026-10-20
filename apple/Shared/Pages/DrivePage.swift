@@ -201,7 +201,7 @@ struct BusCard: View {
                     if b.installed == true { Tag(text: "Mod") }
                 }
                 if let m = b.missing_packs, !m.isEmpty {
-                    Notice(text: String(localized: "Parts of this bus come from packs that are not installed: \(m.joined(separator: ", "))"), kind: .warn)
+                    Notice(text: tr("Parts of this bus come from packs that are not installed: {packs}", ["packs": m.joined(separator: ", ")]), kind: .warn)
                 }
                 VehicleFields(bus: b)
             } else {
@@ -976,7 +976,7 @@ struct BusPicker: View {
                         if v.installed == true { Tag(text: "Mod") }
                     }
                     if let m = v.missing_packs, !m.isEmpty {
-                        Notice(text: String(localized: "Parts of this bus come from packs that are not installed: \(m.joined(separator: ", "))"), kind: .warn)
+                        Notice(text: tr("Parts of this bus come from packs that are not installed: {packs}", ["packs": m.joined(separator: ", ")]), kind: .warn)
                     }
                     Field("Paint") { PaintSelect(bus: v) }
                     if !v.description.isEmpty {
