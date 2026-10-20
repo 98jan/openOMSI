@@ -44,6 +44,7 @@ final class DriveData {
     var favourites: [String] = []
     var notes: [String: String] = [:]
     @ObservationIgnored private var loaded = false
+    @ObservationIgnored private var ready = false
     @ObservationIgnored private var saving: [String: Task<Void, Never>] = [:]
 
     private struct Boot: Decodable { var favourites: [String]? }
@@ -52,14 +53,18 @@ final class DriveData {
         guard !loaded else { return }
         loaded = true
         Task { @MainActor in
-            if let b = try? await offMain({ try Bridge.api(Boot.self, "bootstrap") }) { favourites = b.favourites ?? [] }
-            if let n = try? await offMain({ try Bridge.api([String: String].self, "notes_get") }) { notes = n }
+            if let b = try? await offMain({ try Bridge.api(Boot.self, "bootstrap") }) {
+                favourites = b.favourites ?? []
+                ready = true
+            }
+            if let n = try? await offMain({ try Bridge.api([String: String].self, "notes_get") }) { notes = n.merging(notes) { _, mine in mine } }
         }
     }
 
     func starred(_ file: String) -> Bool { favourites.contains(favKey(file)) }
 
     func toggle(_ file: String) {
+        guard ready else { return }
         let k = favKey(file)
         favourites = starred(file) ? favourites.filter { $0 != k } : favourites + [k]
         _ = try? Bridge.api("favourites_save", ["list": favourites])

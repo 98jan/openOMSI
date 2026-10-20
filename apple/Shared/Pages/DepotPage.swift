@@ -409,6 +409,10 @@ struct DepotDetail: View {
 
     private func drive(_ v: VehicleInfo?) {
         guard let v else { return }
+        if let s = store.serverBuses, !s.contains(busFile(v.file)) {
+            store.say(tr("The server does not offer {name}", ["name": b.name]), error: true)
+            return
+        }
         store.act("select_bus", ["file": v.file])
         store.act("paint", ["paint": b.paint])
         store.act("hof", ["hof": ""])

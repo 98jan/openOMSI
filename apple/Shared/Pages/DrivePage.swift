@@ -240,10 +240,9 @@ struct VehicleFields: View {
                         InputField(prompt: "Custom", text: $number) { store.act("number", ["number": number.trimmingCharacters(in: .whitespaces)]) }
                             .onAppear { number = custom(c.number, numbers) }
                             .onChange(of: c.number) { _, v in number = custom(v, numbers) }
-                            .task(id: number) {
-                                try? await Task.sleep(nanoseconds: 500_000_000)
-                                let n = number.trimmingCharacters(in: .whitespaces)
-                                if !Task.isCancelled && n != custom(store.choice.number, numbers) { store.act("number", ["number": n]) }
+                            .onChange(of: number) { _, v in
+                                let n = v.trimmingCharacters(in: .whitespaces)
+                                if n != custom(store.choice.number, numbers) { store.act("number", ["number": n]) }
                             }
                     }
                 }

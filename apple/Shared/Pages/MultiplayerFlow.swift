@@ -213,7 +213,7 @@ struct JoinByCode: View {
         result = nil
         if let map { store.act("select_map", ["file": map]) }
         store.act("lan", ["mode": "join", "addr": c.code])
-        if c.code.range(of: "^OMSI-", options: [.regularExpression, .caseInsensitive]) == nil { store.act("server_ask", ["address": c.code, "every": 10]) }
+        if c.code.contains(".") || c.code.contains(":") { store.act("server_ask", ["address": c.code, "every": 10]) }
         store.page = .drive
         store.phoneTab = "drive"
     }
