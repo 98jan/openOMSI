@@ -528,6 +528,7 @@ impl Ui {
         // the top of the windows in the corners: the notes on the left start on the line of
         // the timetable and a tutorial page on the right (14 px down, they stood higher)
         let corner_top = 60.0 * s;
+        self.draw_info_bar(r, scene, f, s);
         // --- the notes, top left: only the editors' keys while one is on (what the driver
         // has to do comes as a notification): one flat card, the lines in it
         let notes_bottom = {
@@ -543,6 +544,7 @@ impl Ui {
                 let lh = (px as f32 * 1.5).round();
                 let (pad_x, pad_y) = (12.0 * s, 8.0 * s);
                 let w = lines.iter().map(|t| self.text.width_raw(t, px as f32)).fold(0.0f32, f32::max) + pad_x * 2.0;
+                let y0 = self.below_info(x0, x0 + w, y0, s);
                 let h = pad_y * 2.0 + lh * lines.len() as f32;
                 self.hud_card(r, scene, [x0, y0, x0 + w, y0 + h], hud::RADIUS * s, self.text.backdrop, s);
                 for (i, t) in lines.iter().enumerate() {
@@ -646,7 +648,6 @@ impl Ui {
             self.hud_card(r, scene, [x - 8.0 * s, y, x + l.w as f32 + 8.0 * s, y + l.h as f32], hud::RADIUS * s, self.text.backdrop, s);
             scene.overlays.push((l.tex, [x, y, x + l.w as f32, y + l.h as f32]));
         }
-        self.draw_info_bar(r, scene, f, s);
         self.draw_perf(r, scene, f, s, dt);
         let tutorial_w = (420.0 * s).min(f.width * 0.42);
         // --- the timetable window, on the right (left of a tutorial page, which has the
@@ -681,7 +682,7 @@ impl Ui {
             let tp = (18.0 * s) as u32;
             if !title.is_empty() {
                 for line in wrap(&self.text, title, tp as f32, w - pad * 2.0) {
-                    let l = self.text.label(r, scene, &line, tp, hud::text(self.hud.ink));
+                    let l = self.text.label_op(r, scene, &omsi_ui::tr(&line), tp, hud::text(self.hud.ink), 1.0);
                     items.push((l.tex, [x + pad, y, x + pad + l.w as f32, y + l.h as f32]));
                     y += l.h as f32;
                 }
@@ -694,7 +695,7 @@ impl Ui {
                     if y > max_y {
                         break 'text;
                     }
-                    let l = self.text.label(r, scene, &line, bp, hud::text(self.hud.dim));
+                    let l = self.text.label_op(r, scene, &omsi_ui::tr(&line), bp, hud::text(self.hud.dim), 1.0);
                     items.push((l.tex, [x + pad, y, x + pad + l.w as f32, y + l.h as f32]));
                     y += l.h as f32 * 0.95;
                 }
@@ -702,7 +703,7 @@ impl Ui {
             }
             let tr = |t: &str| omsi_ui::tr(t).into_owned();
             let foot = format!("{} {}/{}   |   {}   |   {}   |   {}", tr("Page"), at + 1, count, tr("Enter next"), tr("Page Up back"), tr("Ctrl+T hide"));
-            let l = self.text.label(r, scene, &foot, (12.0 * s) as u32, hud::text(self.hud.muted));
+            let l = self.text.label_op(r, scene, &foot, (12.0 * s) as u32, hud::text(self.hud.muted), 1.0);
             y += 4.0 * s;
             items.push((l.tex, [x + pad, y, x + pad + l.w as f32, y + l.h as f32]));
             y += l.h as f32 + pad;
@@ -782,10 +783,10 @@ fn steer_cross_pixels(n: usize) -> Vec<u8> {
 }
 
 impl Ui {
-    /// The timetable window as the launcher's card: a header with the line on an amber sign,
+    /// The timetable window as the navigator's card: a header with the line on its red tag,
     /// the terminus and how late, the tour and trip under it; then the stops as the
     /// launcher's trips table (arrives, stop, departs), the stops passed muted, the next one
-    /// on a soft amber band with an amber bar at its left; the next trip at the end.
+    /// on a soft band of the route's colour with a bar at its left; the next trip at the end.
     #[allow(clippy::too_many_arguments)]
     fn draw_timetable(&mut self, r: &Renderer, scene: &mut Scene, f: &Frame, t: &TimetableView, top: f32, beside: f32, s: f32) {
         let s = s * f.sizes[1];
@@ -899,7 +900,7 @@ impl Ui {
         self.hud_grip(r, scene, 1, [x, top, x + w, top + h], f.vr, s);
     }
 
-    /// The notifications as the launcher's cards: flat graphite, no edge, the kind's icon in
+    /// The notifications as the navigator's cards: no edge, a soft shadow, the kind's icon in
     /// its colour, the text wrapped to as many rows as it needs. A card comes in rising a
     /// little and fading, and goes fading while the room it took closes; the newest stands
     /// on top of the stack.
@@ -924,7 +925,7 @@ impl Ui {
                 let place = if left { (a[0].max(8.0 * s), 0) } else { (a[2].min(f.width - 8.0 * s), 2) };
                 if a[1] > f.height * 0.5 { (true, a[1] - gap, place) } else { (false, a[3] + gap, place) }
             }
-            None => (false, 70.0 * s, (f.width * 0.5, 1)),
+            None => (false, self.below_info(f.width * 0.5 - 200.0 * s, f.width * 0.5 + 200.0 * s, 70.0 * s, s), (f.width * 0.5, 1)),
         };
         // (growing up, the oldest stands by the navigator and the newest on top; growing
         // down, the newest first)

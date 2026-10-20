@@ -266,9 +266,12 @@ impl App {
             return false;
         }
         self.input.cursor = (x, y);
+        if !self.input.buttons_held.0 {
+            self.menus.hud_resize = None;
+        }
         if let Some((k, size0, at, w0)) = self.menus.hud_resize {
             let grow = ((x - at[0]) + (y - at[1])) * 0.5;
-            self.settings.hud_sizes[k] = crate::ui::window_size(size0 * (w0 + grow) / w0);
+            self.settings.hud_sizes[k] = crate::ui::window_size((size0 * (w0 + grow) / w0 * 20.0).round() / 20.0);
             return true;
         }
         // the navigator held by the mouse follows it

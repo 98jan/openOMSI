@@ -195,6 +195,7 @@ impl Ui {
             return;
         }
         let graph = self.perf_graph(r, scene, o, dt);
+        let s0 = s;
         let s = s * f.sizes[2];
         let detailed = f.perf_detailed;
         if self.perf.detailed != detailed || self.perf.size != f.sizes[2] {
@@ -252,13 +253,13 @@ impl Ui {
         let w = self.perf.width;
         let (x0, y0) = if let Some(top) = f.perf_touch {
             let y = top.map_or(80.0 * f.scale.max(0.5) * f.ui_scale.max(1.0), |b| {
-                b + 8.0 * s
+                b + 8.0 * s0
             });
-            ((16.0 * s).round(), y.round())
+            ((16.0 * s0).round(), y.round())
         } else if f.fps.is_some() {
-            ((f.width - w - 14.0 * s).round(), (36.0 * s).round())
+            ((f.width - w - 14.0 * s0).round(), (36.0 * s0).round())
         } else {
-            ((f.width - w - 14.0 * s).round(), (10.0 * s).round())
+            ((f.width - w - 14.0 * s0).round(), (10.0 * s0).round())
         };
         let y0 = self.below_info(x0, x0 + w, y0, s).round();
         let gh = ((if detailed { GRAPH_H as f32 } else { 30.0 }) * s).round();

@@ -795,10 +795,7 @@ impl Settings {
                 "ui_scale_window" => s.ui_scale_window = b(v),
                 "notes" => s.notes = b(v),
                 "info_bar" => s.info_bar = b(v),
-                k if crate::ui::SIZE_KEYS.contains(&k) => {
-                    let at = crate::ui::SIZE_KEYS.iter().position(|key| *key == k).unwrap_or(0);
-                    s.hud_sizes[at] = crate::ui::window_size(v.parse::<f32>().unwrap_or(1.0));
-                }
+                k if let Some(at) = crate::ui::SIZE_KEYS.iter().position(|key| *key == k) => s.hud_sizes[at] = v.parse::<f32>().ok().filter(|x| x.is_finite()).map(crate::ui::window_size).unwrap_or(s.hud_sizes[at]),
                 "chat_size" => s.chat_size = v.parse::<f32>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.5, 3.0)).unwrap_or(s.chat_size),
                 "ui_scale" => s.ui_scale = v.parse::<f32>().ok().filter(|x| x.is_finite()).map(|x| x.clamp(0.5, 2.0)).unwrap_or(s.ui_scale),
                 "shadow_casters" => s.shadow_casters = if v.eq_ignore_ascii_case("omsi") { "omsi".into() } else { "all".into() },
