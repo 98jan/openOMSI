@@ -222,6 +222,7 @@ pub struct VehicleInstance {
     /// the passengers every frame and cleared after the scripts' frame (see
     /// `clear_pax_requests`).
     v_pax_req: Vec<omsi_script::VarId>,
+    v_cables: Vec<(omsi_script::VarId, omsi_script::VarId)>,
     v_accel: [Option<omsi_script::VarId>; 3],
     v_wheels: Vec<[[Option<omsi_script::VarId>; 5]; 2]>,
     v_springfactor: Vec<[Option<omsi_script::VarId>; 2]>,
