@@ -202,6 +202,7 @@ pub struct VehicleInstance {
     /// Variable names (lower case) to their slots; shared with the view's snapshot
     /// (`crate::view_events::CarLooks`), copied only when the vehicle gains a variable.
     var_index: std::sync::Arc<HashMap<String, omsi_script::VarId>>,
+    model_only_vars: Vec<String>,
     /// Where each mesh's material properties come from, resolved against `var_index`
     /// (rebuilt when the vehicle gains engine variables).
     props_plan: PropsPlan,

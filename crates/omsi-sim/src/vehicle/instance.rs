@@ -88,9 +88,13 @@ impl VehicleInstance {
             };
             state.vars[id as usize] = value;
         }
-        // Model conditions do not declare variables. In original OMSI 2 an unknown
-        // [visible] name leaves the mesh shown, while [matl_change] keeps its base
-        // material. Preserve the missing lookup instead of inventing a runtime slot.
+        let mut model_only_vars: Vec<String> = Vec::new();
+        for c in ty.model.meshes.iter().flat_map(|m| m.visible_groups()).flatten() {
+            let key = c.variable.to_ascii_lowercase();
+            if !var_index.contains_key(&key) && !model_only_vars.contains(&key) {
+                model_only_vars.push(key);
+            }
+        }
         // `Axle_Springfactor_*` (varlist_roadvehicle.txt): the engine's spring scale, which
         // air-suspension scripts overwrite with their bellows pressure; a steel-sprung bus
         // never writes it and must not ride on springs of zero
@@ -113,8 +117,14 @@ impl VehicleInstance {
         if let Some(scheme) = host.paint_scheme {
             let scheme = scheme.filter(|i| *i < ty.paint_schemes.len());
             let mut put = |name: &str, v: f32| {
-                if let Some(id) = var_index.get(&name.to_ascii_lowercase()) {
-                    state.vars[*id as usize] = v;
+                let key = name.to_ascii_lowercase();
+                match var_index.get(&key) {
+                    Some(id) => state.vars[*id as usize] = v,
+                    None if model_only_vars.contains(&key) => {
+                        var_index.insert(key, state.vars.len() as omsi_script::VarId);
+                        state.vars.push(v);
+                    }
+                    None => {}
                 }
             };
             put("Colorscheme", scheme.map(|i| i as f32).unwrap_or(-1.0));
@@ -264,6 +274,7 @@ impl VehicleInstance {
             ai_visuals_missed: 0.0,
             trailers_stepped: false,
             var_index: std::sync::Arc::new(var_index),
+            model_only_vars,
             props_plan: PropsPlan::default(),
             pax_vars: std::sync::OnceLock::new(),
             engine_ids: std::sync::OnceLock::new(),

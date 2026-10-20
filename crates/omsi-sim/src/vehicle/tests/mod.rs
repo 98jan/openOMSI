@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 mod articulation;
 mod fuel;
-mod scripts_props;
 mod model_variables;
+mod scripts_props;
 
 #[test]
 fn velocity_is_the_driven_wheels_speed() {

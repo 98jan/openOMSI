@@ -1,6 +1,13 @@
 use super::*;
 
 fn diagnostic_vehicle(reverse: bool) -> VehicleInstance {
+    VehicleInstance::new(
+        Arc::new(diagnostic_type(reverse)),
+        VehicleHost::new(Default::default()),
+    )
+}
+
+fn diagnostic_type(reverse: bool) -> VehicleType {
     let mut declared = vec!["unwritten", "selection", "initialised"];
     if reverse {
         declared.reverse();
@@ -70,7 +77,7 @@ fn diagnostic_vehicle(reverse: bool) -> VehicleInstance {
             keep_winding: false,
         })
         .collect();
-    VehicleInstance::new(Arc::new(ty), VehicleHost::new(Default::default()))
+    ty
 }
 
 /// Original OMSI 2 runtime diagnostic: distinct and shared missing names ignore
@@ -85,7 +92,6 @@ fn missing_visibility_names_are_distinct_from_declared_zero() {
         assert_eq!(v.var("initialised"), Some(1.0));
         for name in ["missing_0", "missing_1", "missing_2", "missing_shared"] {
             assert_eq!(v.var(name), None, "model must not register {name}");
-            assert!(!v.set_var(name, 1.0));
         }
         for (i, mesh) in v.ty.model.meshes.iter().enumerate() {
             let expected = if mesh.file.starts_with("declared") {
@@ -177,4 +183,33 @@ fn an_engine_variable_registered_later_rebinds_visibility_and_materials() {
     v.update_visuals(0.0);
     assert!(v.mesh_props[combined].visible);
     assert_eq!(v.mesh_props[monitor].slot_night, [1.0]);
+}
+
+#[test]
+fn a_setvar_on_a_model_only_name_switches_its_meshes() {
+    let shown = |v: &VehicleInstance| -> Vec<String> {
+        v.ty.model
+            .meshes
+            .iter()
+            .enumerate()
+            .filter(|(i, m)| m.file.starts_with("shared") && v.mesh_props[*i].visible)
+            .map(|(_, m)| m.file.clone())
+            .collect()
+    };
+    let mut v = diagnostic_vehicle(false);
+    assert!(v.set_var("MISSING_SHARED", 2.0));
+    v.update_visuals(0.0);
+    assert_eq!(shown(&v), ["shared2.o3d"]);
+    assert!(!v.set_var("not_in_the_model", 1.0));
+
+    let mut ty = diagnostic_type(false);
+    ty.paint_schemes = vec![PaintScheme {
+        set_vars: vec![("Missing_Shared".into(), 1.0)],
+        ..Default::default()
+    }];
+    let mut host = VehicleHost::new(Default::default());
+    host.paint_scheme = Some(Some(0));
+    let mut v = VehicleInstance::new(Arc::new(ty), host);
+    v.update_visuals(0.0);
+    assert_eq!(shown(&v), ["shared1.o3d"]);
 }
