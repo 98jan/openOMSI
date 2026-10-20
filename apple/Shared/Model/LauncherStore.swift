@@ -200,6 +200,7 @@ final class LauncherStore {
         let w = choice.weather
         if w.isEmpty { return weather?.name ?? "Natural weather" }
         if w == "cycle" { return String(localized: "Weather cycle") }
+        if w == "tomorrow" { return "Tomorrow.io" }
         if w.hasPrefix("metar:") { return "METAR \(w.dropFirst(6))" }
         if w.hasPrefix("custom:") { return String(localized: "Custom weather") }
         return weather?.name ?? (w as NSString).lastPathComponent.replacingOccurrences(of: ".owt", with: "")

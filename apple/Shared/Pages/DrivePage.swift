@@ -483,7 +483,8 @@ struct TimeCard: View {
     @Environment(LauncherStore.self) private var store
     @State private var time = ""
     @State private var date = ""
-    @State private var airport = ""
+    @State private var editing: String?
+    @State private var picking = false
 
     var body: some View {
         let c = store.choice
@@ -498,10 +499,15 @@ struct TimeCard: View {
                         .onChange(of: c.time) { _, _ in time = store.choice.hhmm }
                 }
                 Field("Date", help: realDate ? String(localized: "Today (Settings)") : nil) {
-                    InputField(prompt: "1989-05-30", text: $date, mono: true) { commitDate() }
-                        .disabled(realDate)
-                        .onAppear { date = c.date }
-                        .onChange(of: c.date) { _, v in date = v }
+                    HStack(spacing: 6) {
+                        InputField(prompt: "1989-05-30", text: $date, mono: true) { commitDate() }
+                            .disabled(realDate)
+                            .onAppear { date = c.date }
+                            .onChange(of: c.date) { _, v in date = v }
+                        Button { picking = true } label: { Image(systemName: "calendar") }
+                            .buttonStyle(.launcher(.ghost)).disabled(realDate).help("Choose a date")
+                            .popover(isPresented: $picking) { DateChooser { picking = false }.launcherSheet(store) }
+                    }
                 }
             }
             HStack(spacing: 6) {
@@ -519,42 +525,55 @@ struct TimeCard: View {
                 Segmented(items: [("early", "Early"), ("mid", "Mid"), ("late", "Late")], selection: c.phase, full: true) { store.act("phase", ["phase": $0]) }
             }
             Field("Weather", help: weatherHelp) {
-                SelectField(options: weatherOptions, selection: weatherValue, onChange: { store.act("weather", ["weather": $0]) })
+                SelectField(options: weatherOptions, selection: weatherValue, onChange: pickWeather)
             }
             if c.weather.hasPrefix("metar:") {
-                Field("Airport (ICAO)") {
-                    InputField(prompt: "Nearest", text: $airport) {
-                        let a = String(airport.uppercased().filter { $0.isLetter }.prefix(4))
-                        store.act("weather", ["weather": "metar:\(a)"])
-                    }
-                    .onAppear { airport = String(c.weather.dropFirst(6)) }
-                }
+                Field("Airport") { AirportField(code: WeatherChoice.metar(c)) }
             }
+            if WeatherChoice.editable(c.weather), !WeatherChoice.isCustom(c.weather) {
+                Button { editing = c.weather } label: { Label("Edit selected weather as custom", systemImage: "slider.horizontal.3") }
+                    .buttonStyle(.launcher(.ghost, small: true))
+            }
+        }
+        .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
+            WeatherEditor(from: editing ?? "custom:").launcherSheet(store)
         }
     }
 
     private var weatherValue: String {
         let w = store.choice.weather
-        return w.hasPrefix("metar:") ? "metar:" : w
+        return w.hasPrefix("metar:") ? "metar:" : WeatherChoice.isCustom(w) ? "custom:" : w
+    }
+
+    private func pickWeather(_ v: String) {
+        let w = store.choice.weather
+        switch v {
+        case "custom:": editing = WeatherChoice.isCustom(w) ? w : "custom:"
+        case "metar:": store.act("weather", ["weather": "metar:\(WeatherChoice.metar(store.choice))"])
+        default: store.act("weather", ["weather": v])
+        }
     }
 
     private var weatherOptions: [(value: String, label: String)] {
+        let w = store.choice.weather
         var o: [(value: String, label: String)] = [
             ("", String(localized: "Natural weather")),
-            ("metar:", String(localized: "Current weather")),
-            ("cycle", String(localized: "Weather cycle")),
+            ("custom:", String(localized: "Custom weather")),
         ]
+        if w.hasPrefix("metar:") || !WeatherChoice.metar(store.choice).isEmpty { o.append(("metar:", String(localized: "Current weather"))) }
+        o += [("cycle", String(localized: "Weather cycle")), ("tomorrow", "Tomorrow.io")]
         o += store.lists.weathers.filter(fits).map { (value: $0.file, label: $0.name) }
-        let w = store.choice.weather
-        if !w.isEmpty, !w.hasPrefix("metar:"), !o.contains(where: { $0.value == w }) { o.append((value: w, label: store.weatherTitle)) }
+        if !w.isEmpty, !w.hasPrefix("metar:"), !WeatherChoice.isCustom(w), !o.contains(where: { $0.value == w }) { o.append((value: w, label: store.weatherTitle)) }
         return o
     }
 
     private var weatherHelp: String {
         let w = store.choice.weather
         if w.isEmpty { return String(localized: "Develops by itself through the day and the season") }
-        if w.hasPrefix("metar:") { return String(localized: "METAR of the map's airport") }
-        if w == "cycle" { return String(localized: "Changes every 25-60 minutes") }
+        if WeatherChoice.isCustom(w) { return String(localized: "Set visibility, wind, clouds, rain, temperature and road state") }
+        if w.hasPrefix("metar:") { return WeatherChoice.metarText(WeatherChoice.metar(store.choice)) }
+        if w == "cycle" { return String(localized: "Changes every 25-60 minutes, as the month allows") }
+        if w == "tomorrow" { return String(localized: "Current weather") }
         if let x = store.weather {
             return x.description.isEmpty ? "\(Int(x.temp)) °C - \(x.precip.isEmpty ? "dry" : x.precip) - \(x.fog_m >= 10000 ? "clear air" : "\(Int(x.fog_m)) m")" : x.description
         }
@@ -598,7 +617,7 @@ struct ConditionsCard: View {
         let c = store.choice
         Card("On the road") {
             VStack(alignment: .leading, spacing: 6) {
-                SliderField(label: "Cars around", value: c.traffic, range: 0 ... 100, step: 1, format: { $0 < 0.5 ? String(localized: "None") : "\(Int($0))" }) {
+                SliderField(label: "Cars around", value: c.traffic, range: 0 ... 120, step: 1, format: { $0 < 0.5 ? String(localized: "None") : "\(Int($0))" }) {
                     store.act("traffic", ["value": $0])
                 }
                 ToggleRow(label: "Passengers", help: "People wait at the stops and ride along", isOn: c.passengers) { flag("passengers", $0) }
