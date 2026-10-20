@@ -21,12 +21,14 @@ struct Snapshot: Decodable {
     var root_ok = false
     var root_problem = ""
     var content_dir: String?
+    var data_dir = ""
     var profiles: [String] = []
     var profile: Profile?
     var settings: [String: JSON] = [:]
     var mods: ModsStatus?
     var jobs: [InstallJob] = []
     var mod_busy: String?
+    var mod_info: ModInfoReply?
     var instances: [Instance] = []
     var in_game = false
     var crash: Crash?
@@ -61,9 +63,9 @@ struct Snapshot: Decodable {
         counts = v("counts", Counts()); choice = v("choice", Choice()); default_hof = v("default_hof", "")
         season = v("season", "summer"); first_trip = v("first_trip", nil as Int?); picked_trip = v("picked_trip", nil as Int?)
         real_time = v("real_time", false); config = v("config", Config()); root_ok = v("root_ok", false)
-        root_problem = v("root_problem", ""); content_dir = v("content_dir", nil as String?); profiles = v("profiles", [])
+        root_problem = v("root_problem", ""); content_dir = v("content_dir", nil as String?); data_dir = v("data_dir", ""); profiles = v("profiles", [])
         profile = v("profile", nil as Profile?); settings = v("settings", [:]); mods = v("mods", nil as ModsStatus?)
-        jobs = v("jobs", []); mod_busy = v("mod_busy", nil as String?); instances = v("instances", [])
+        jobs = v("jobs", []); mod_busy = v("mod_busy", nil as String?); mod_info = v("mod_info", nil as ModInfoReply?); instances = v("instances", [])
         in_game = v("in_game", false); crash = v("crash", nil as Crash?); disconnected = v("disconnected", nil as String?)
         servers = v("servers", []); joined_server = v("joined_server", nil as String?); join = v("join", Join())
         saved = v("saved", []); save_pick = v("save_pick", 0); ibis = v("ibis", nil as IbisReply?)
@@ -263,6 +265,26 @@ struct ModsStatus: Decodable {
     var waiting: [String]
     var free_bytes: UInt64
     var installed: [ModEntry]
+    var archives: [[JSON]]?
+    var hof_warnings: [String]?
+}
+
+struct ModInfoReply: Decodable {
+    var ok: Bool
+    var info: ModSourceInfo?
+    var error: String?
+}
+
+struct ModSourceInfo: Decodable {
+    var is_archive: Bool
+    var files: UInt64
+    var unpacked_bytes: UInt64
+    var archive_bytes: UInt64
+    var needed_bytes: UInt64
+    var free_bytes: UInt64
+    var fits: Bool
+    var in_place: String
+    var in_place_ok: Bool
 }
 
 struct ModEntry: Decodable, Identifiable, Hashable {
@@ -304,6 +326,9 @@ struct Instance: Decodable, Identifiable, Hashable {
     var running: Bool?
     var ended: UInt64?
     var exit_code: Int?
+    var stopping: UInt64?
+    var lan_status: JSON?
+    var last_line: String?
     var id: UInt32 { pid }
 }
 
@@ -312,6 +337,7 @@ struct Server: Decodable, Identifiable, Hashable {
     var address: String
     var info: ServerInfo?
     var official: Bool?
+    var `protocol`: String?
     var id: String { address }
 }
 

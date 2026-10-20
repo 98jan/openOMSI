@@ -233,35 +233,54 @@ struct DriverChip: View {
 /// A crash of the last game, a server that sent the player away.
 struct Dialogs: View {
     @Environment(LauncherStore.self) private var store
+    @State private var bootCrash: CrashReport?
 
     var body: some View {
-        if let c = store.snapshot.crash {
-            dialog(title: "The last game ended on an error", text: c.why, detail: c.log) {
-                store.act("dismiss_crash")
+        Group {
+            if let c = store.snapshot.crash {
+                crashDialog(CrashReport(what: c.why, tail: c.log)) { store.act("dismiss_crash") }
+            } else if let c = bootCrash {
+                crashDialog(c) { bootCrash = nil }
+            } else if let d = store.snapshot.disconnected {
+                dialog(title: "Disconnected from the server", text: d, detail: nil) {
+                    store.act("dismiss_disconnected")
+                }
             }
-        } else if let d = store.snapshot.disconnected {
-            dialog(title: "Disconnected from the server", text: d, detail: nil) {
-                store.act("dismiss_disconnected")
-            }
+        }
+        .task(id: store.platform) {
+            guard store.platform == "ios", bootCrash == nil else { return }
+            bootCrash = (try? await offMain { try Bridge.api(BootCrash.self, "bootstrap") })?.crash
+        }
+    }
+
+    private func crashDialog(_ c: CrashReport, close: @escaping () -> Void) -> some View {
+        frame(title: c.silent ? "The game was closed by the system" : "The game closed on an error") {
+            CrashContent(crash: c)
+        } buttons: {
+            CrashButtons(crash: c, close: close)
+            Button("Close", action: close).buttonStyle(.secondary)
         }
     }
 
     private func dialog(title: LocalizedStringKey, text: String, detail: String?, close: @escaping () -> Void) -> some View {
+        frame(title: title) {
+            Text(text).font(.inter(14)).foregroundStyle(Theme.text2)
+            if let detail, !detail.isEmpty { LogBlock(text: detail).frame(maxHeight: 220) }
+        } buttons: {
+            Button("Close", action: close).buttonStyle(.primary)
+        }
+    }
+
+    private func frame<Content: View, Buttons: View>(title: LocalizedStringKey, @ViewBuilder content: () -> Content, @ViewBuilder buttons: () -> Buttons) -> some View {
         ZStack {
             Color(red: 8 / 255, green: 9 / 255, blue: 11 / 255).opacity(0.6).ignoresSafeArea()
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.inter(17, .semibold)).padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 10)
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(text).font(.inter(14)).foregroundStyle(Theme.text2)
-                    if let detail, !detail.isEmpty { LogBlock(text: detail).frame(maxHeight: 220) }
-                }
-                .padding(.horizontal, 20).padding(.vertical, 8)
-                HStack(spacing: 8) {
-                    Spacer()
-                    if detail != nil {
-                        Button("Report on GitHub") { Platform.openURL("https://github.com/openOMSI-org/openOMSI/issues/new") }.buttonStyle(.secondary)
-                    }
-                    Button("Close", action: close).buttonStyle(.primary)
+                VStack(alignment: .leading, spacing: 12) { content() }
+                    .padding(.horizontal, 20).padding(.vertical, 8)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { Spacer(); buttons() }
+                    VStack(alignment: .trailing, spacing: 8) { buttons() }.frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 18)
             }
