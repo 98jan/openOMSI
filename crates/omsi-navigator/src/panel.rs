@@ -373,7 +373,7 @@ impl Navigator {
                 let name = self.fonts.fit(&name, 14.5 * s, Weight::Bold, row1.w - line_w);
                 ui.text_in(&mut self.atlas, &self.fonts, &name, 14.5 * s, Weight::Bold, Rect::new(row1.x + line_w, row1.y, row1.w - line_w, row1.h), Align::Left, pal.card_text);
                 let mut parts = Vec::new();
-                if let Some(d) = self.next_dist {
+                if let Some((_, d)) = self.next_dist {
                     parts.push(units.distance(d));
                     let secs = d / (self.speed_avg.max(5.0) as f64) + if self.jam_cost > 0.0 { self.jam_cost as f64 } else { 0.0 };
                     parts.push(if secs < 60.0 { omsi_ui::tr("<1 min").into_owned() } else { format!("{:.0} {}", (secs / 60.0).round(), omsi_ui::tr("min")) });

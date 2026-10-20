@@ -174,8 +174,9 @@ can stand for two stops, the ID cannot), `at_stop` (`true` while the bus stands 
 stop), `previous_stop` and `previous_stop_id` (the last stop before the next one the trip
 calls at; none before the first), `next_stop_distance` and `previous_stop_distance` (metres
 in a straight line from the bus, where the stop's place is known). `next_stop_distance_nav`
-is the navigator's route-following distance in metres; it is `nil` until the navigator has
-computed one.
+is the navigator's route-following distance in metres; it is `nil` when navigator and the 
+route arrows are both off (pause menu included). If Navigator are "Recalculating Route", it
+will holds the last value until the route is recalculated.
 
 #### Saved data
 
