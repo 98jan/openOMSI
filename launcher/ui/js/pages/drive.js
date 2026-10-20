@@ -14,6 +14,9 @@ import { LayoutDrive } from './drive-layouts.js';
 /** HH:MM of seconds of the day (the timetables' unit). */
 export const hms = (s) => hhmm((s || 0) / 60);
 
+/** An entry point's name, or its number when the map gives it none. */
+export const entryName = (e) => e.name?.trim() || `${t('Entry point')} ${e.index + 1}`;
+
 export function tripLength(tour) {
   const runs = tour.trips.filter((x) => !depotRun(x)).map((x) => x.arrival - x.departure).sort((a, b) => a - b);
   if (!runs.length) return '';
