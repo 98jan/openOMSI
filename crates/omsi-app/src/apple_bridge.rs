@@ -144,7 +144,23 @@ fn call(cmd: &str, arg: &str) -> anyhow::Result<Value> {
                 omsi_cfg::copied_install::Look::Missing(m) => Ok(json!({ "found": false, "missing": m })),
             }
         }
+        "api" => {
+            let c = a.get("cmd").and_then(|v| v.as_str()).unwrap_or("");
+            omsi_launcher_api::call(c, a.get("args").unwrap_or(&json!({})), &Apple).map_err(anyhow::Error::msg)
+        }
         _ => with_state(|s| state_call(s, cmd, &a)),
+    }
+}
+
+struct Apple;
+
+impl omsi_launcher_api::Platform for Apple {
+    fn renderer(&self, _req: Value, _wait: std::time::Duration) -> Result<(Value, Vec<u8>), String> {
+        Err("the Apple launcher draws its pictures through openomsi_preview_frame".into())
+    }
+    #[cfg(target_os = "ios")]
+    fn previous_run_crash(&self) -> Option<(String, String)> {
+        crate::ios::previous_run_crash()
     }
 }
 
