@@ -221,6 +221,11 @@ struct JoinByCode: View {
 
 struct HostByCode: View {
     @Environment(LauncherStore.self) private var store
+    #if os(iOS)
+    private static let copyStep: LocalizedStringKey = "While driving, open the game menu and copy the server code there."
+    #else
+    private static let copyStep: LocalizedStringKey = "Return to Multiplayer to copy your running session code."
+    #endif
 
     var body: some View {
         let session = runningHost(store.snapshot.instances)
@@ -252,7 +257,7 @@ struct HostByCode: View {
                 }
                 .padding(20)
             }
-            FirstTimeHelp(steps: ["Choose your map, bus and duty, then start the game as host.", "Return to Multiplayer to copy your running session code.", "Send the complete code to your friends; they choose Join friends."])
+            FirstTimeHelp(steps: ["Choose your map, bus and duty, then start the game as host.", Self.copyStep, "Send the complete code to your friends; they choose Join friends."])
         }
     }
 
