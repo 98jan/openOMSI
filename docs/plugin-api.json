@@ -1165,7 +1165,7 @@
     {
       "name": "duty.tour",
       "group": "duty",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "The complete source tour of the selected duty, even when only one trip was selected. Same structure as `timetable.tour`; times align with the active duty's service day, with `time_offset` seconds applied to all trips and stops.",
       "params": [],
       "returns": "table or nil",
@@ -1689,7 +1689,7 @@
     {
       "name": "game.queries",
       "group": "data",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "Read-only game data getters: `{name, args = {{name, type}, ...}, result}`. Names and zero-based indices follow the M.V. getter names, but plugins read the game data directly without executing scripts. `rgba` means four results in the range 0–255.",
       "params": [],
       "returns": "list of tables",
@@ -1699,7 +1699,7 @@
     {
       "name": "game.query",
       "group": "data",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "Read a getter listed by `game.queries` from the player's vehicle's HOF, timetable, passengers, tickets, radio, fonts or textures. Arguments are an ordered list (empty by default). No script callback is invoked. `STReadPixel` returns RGBA without changing the bus's drawing colour. Supply a loaded scripted map object's id as `object` to read its data, including `GetArrBus*` on departure boards, without needing a player vehicle. Object ids can be found through `map.objects_near`. Without `object`, reads use the player's vehicle. Unknown names, mutating operations and invalid arguments raise an error; no vehicle returns nil and a reason.",
       "params": [
         {
@@ -2749,7 +2749,7 @@
     {
       "name": "process.exit_code",
       "group": "process",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "Nonblocking exit code lookup: `nil, \"running\"` while running; `code, \"exited\"` after normal exit. A nonzero code is retained. Signal termination returns `nil, \"exited\"`; inspect `process.status` for details. An unknown handle returns `nil` and a reason.",
       "params": [
         {
@@ -2765,7 +2765,7 @@
     {
       "name": "process.forget",
       "group": "process",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "Release a completed process handle and its retained exit code. A running process cannot be forgotten.",
       "params": [
         {
@@ -2781,7 +2781,7 @@
     {
       "name": "process.kill",
       "group": "process",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "Request termination of a plugin-owned direct child without waiting. Poll `process.status` for completion; descendants are not tracked.",
       "params": [
         {
@@ -2797,7 +2797,7 @@
     {
       "name": "process.start",
       "group": "process",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "Start a native program without waiting for it. `args` is a list of separate strings, passed literally without shell expansion. Options: `cwd` (working directory) and `env` (string-to-string environment overrides; other variables inherited). Use an absolute executable path when setting `cwd`; relative executable lookup follows the platform's rules. Standard streams are disconnected. At most 32 handles per plugin; use `process.forget` after completion. Direct children are terminated on plugin stop, disable or reload. This permission runs programs outside the plugin file sandbox; only grant it to trusted plugins.",
       "params": [
         {
@@ -2823,7 +2823,7 @@
     {
       "name": "process.status",
       "group": "process",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "Nonblocking status: `{pid, running, exited, code, success, signal}`. While running `code`, `success` and `signal` are nil. After exit `code` is the exit code (including nonzero); termination by a signal has no code, and `signal` is available on Unix. Results remain readable until forgotten.",
       "params": [
         {
@@ -2839,7 +2839,7 @@
     {
       "name": "process.wait",
       "group": "process",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "Lua: suspend this plugin until its direct child exits, then return `code, \"exited\"` (nonzero codes retained; nil code on signal exit). The game and other plugins keep running; no game-thread wait occurs. Works in the main chunk, start/frame/event handlers and timers. Queued callbacks resume afterwards (limit 256), and normal frames/timers pause during the wait. Stop/reload cancels the continuation and terminates the child. A nested `emit` callback or manually resumed coroutine cannot suspend. Other language bindings should poll `process.exit_code` instead.",
       "params": [
         {
@@ -3161,7 +3161,7 @@
     {
       "name": "timetable.tour",
       "group": "duty",
-      "since": "0.3.38",
+      "since": "0.3.40",
       "doc": "Read a full tour without taking it: `{line, number, ai_group, extra, today, time_offset, trips}`. Each trip has `number`, `source_number` (both from 1), `name`, `line`, `terminus`, `track`, `reverse`, `profile_index` (from 0), `profile` (`name`, `factor`), `departure`, `arrival`, and all `stops` (`id`, `name`, `arrival`, `departure`, `stops`, optional `x,y,z`). Times are seconds from service-day midnight and can exceed 86400; passing stops are retained. Unknown trip references are skipped, retaining their source numbers. No AI vehicle is reserved.",
       "params": [
         {

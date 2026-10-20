@@ -2,7 +2,7 @@
 use super::{def, o, p, rec};
 use crate::api::{ApiError, ApiFn, Value};
 use crate::data::{DataQuery, QueryType, QueryValue};
-const NEW: &str = "0.3.38";
+const NEW: &str = "0.3.40";
 
 fn ty(t: QueryType) -> &'static str {
     match t {

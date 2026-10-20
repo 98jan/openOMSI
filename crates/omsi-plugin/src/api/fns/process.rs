@@ -1,7 +1,7 @@
 //! Explicit native process permission, independent of Lua's disabled os/io libraries.
 use super::{def, o, p, rec};
 use crate::api::{ApiError, ApiFn, Value};
-const NEW: &str = "0.3.38";
+const NEW: &str = "0.3.40";
 fn reason(e: String) -> Value {
     Value::List(vec![Value::Nil, e.into()])
 }
