@@ -1049,8 +1049,10 @@ mod support_package_tests {
     #[test]
     fn returns_the_platforms_actual_export_path() {
         let actual = support_package(&PhoneFolder).unwrap();
-        let path = actual.as_str().unwrap();
-        assert!(path.starts_with("/storage/emulated/0/openOMSI/support-"), "{path}");
-        assert!(path.ends_with(".zip"));
+        let path = Path::new(actual.as_str().unwrap());
+        assert_eq!(path.parent(), Some(Path::new("/storage/emulated/0/openOMSI")));
+        let filename = path.file_name().unwrap().to_str().unwrap();
+        assert!(filename.starts_with("support-"), "{filename}");
+        assert!(filename.ends_with(".zip"), "{filename}");
     }
 }
