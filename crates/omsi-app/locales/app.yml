@@ -6839,7 +6839,7 @@ _version: 2
   ms: "Cermin"
   tl: "Mga salamin"
   sv: "Speglar"
-  sr: "Ogledala"
+  sr: "Retrovizori"
 "Low (128)":
   ca: "Baixa (128)"
   ru: "Низкое (128)"
@@ -11556,7 +11556,7 @@ _version: 2
   ms: "Simpan situasi"
   tl: "I-save ang sitwasyon"
   sv: "Spara situationen"
-  sr: "Spasite situaciju"
+  sr: "Sačuvajte situaciju"
 "Load the quicksave":
   ca: "Carrega el desament ràpid"
   ru: "Загрузить быстрое сохранение"
@@ -19260,7 +19260,7 @@ _version: 2
   hi: "इंजन बंद है  (E इलेक्ट्रिक्स, M स्टार्टर; इग्निशन की वाली मॉड बसें E से चालू होती हैं: फिर दबाकर रखें। Shift+U सब कर देता है)"
   zh-tw: "引擎已熄火（E 電源，M 啟動馬達；具點火鑰匙的模組車輛使用 E 發動：再次按下並按住。Shift+U 可一鍵完成）"
   sv: "Motorn är av (E elsystem, M startmotor; moddbussar med tändningsnyckel vrider den med E: tryck igen och håll. Shift+U gör allt)"
-  sr: "Motor je isključen (E elektrika, M starter; mod autobusi sa ključem za paljenje okreću ga sa E: pritisnite ponovo i držite. Shift+U radi sve)"
+  sr: "Motor je isključen (E elektronika, M starter; mod autobusi sa ključem za paljenje okreću ga sa E: pritisnite ponovo i držite. Shift+U radi sve)"
 "The gearbox is in N: press D (Shift+D when W A S D drive), or click it. Buses like the Citaro take D only with the brake held":
   ca: "El canvi és en N: prem D (Maj+D si condueixes amb W A S D) o clica-hi. En autobusos com el Citaro cal mantenir el fre premut per posar D"
   ru: "КПП в положении N: нажмите D (Shift+D, если едете на W A S D) или щёлкните по ней. Автобусы вроде Citaro включают D только при нажатом тормозе"
@@ -21796,7 +21796,7 @@ _version: 2
   ms: "Kadar segar semula cermin bas"
   tl: "Pag-refresh ng mga salamin ng bus"
   sv: "Uppdatering av busspeglar"
-  sr: "Osvežavanje ogledala autobusa"
+  sr: "Osvežavanje retrovizora autobusa"
 "Every frame":
   ca: "Cada fotograma"
   ru: "Каждый кадр"
@@ -21854,7 +21854,7 @@ _version: 2
   ms: "Kadar kemas kini dikongsi oleh semua cermin bas. Kadar yang lebih tinggi boleh mengurangkan FPS permainan."
   tl: "Ang dalas ng pag-update ay pinaghahatian ng lahat ng salamin ng bus. Mas mataas na dalas ay maaaring magpababa ng FPS ng laro."
   sv: "Frekvensen delas av alla busspeglar. Högre frekvenser kan minska spelets bildfrekvens."
-  sr: "Stopu dele sva ogledala autobusa. Više stope mogu smanjiti FPS u igri."
+  sr: "Stopu osvežavanja dele svi retrovizori autobusa. Veća učestalost može smanjiti broj frejmova u sekundi."
 "Show headset picture on monitor":
   ca: "Mostra la imatge del visor al monitor"
   ru: "Показывать изображение гарнитуры на мониторе"
@@ -22115,7 +22115,6 @@ _version: 2
   ms: "Paparan VR pada monitor dihidupkan"
   tl: "Naka-on ang VR sa monitor"
   sv: "VR-spegel på skrivbordet på"
-  sr: "Desktop VR ogledalo uključeno"
 "Desktop VR mirror off":
   ca: "Rèplica de RV al monitor desactivada"
   ru: "Показ VR на мониторе выключен"
@@ -22144,7 +22143,6 @@ _version: 2
   ms: "Paparan VR pada monitor dimatikan"
   tl: "Naka-off ang VR sa monitor"
   sv: "VR-spegel på skrivbordet av"
-  sr: "Desktop VR ogledalo isključeno"
 "Could not start VR":
   ca: "No s'ha pogut iniciar la RV"
   ru: "Не удалось запустить VR"
@@ -31456,7 +31454,7 @@ _version: 2
   sv: "Alla speglar har återställts till bussens ursprungliga inställningar"
   pt: "Todos os espelhos voltaram ao que o ônibus tem"
   ca: "Tots els retrovisors tornen a la configuració original de l'autobús"
-  sr: "Svako ogledalo se vratilo kao što ga ima autobus"
+  sr: "Svi retrovizori vraćeni su na podrazumevani položaj za ovaj autobus"
   ru: "Все зеркала возвращены в положение автобуса"
 
 "There is no vehicle to reload: you are on foot":
@@ -31546,7 +31544,7 @@ _version: 2
   sv: "Spegelpaneler på (Ctrl+M: av, Ctrl+Shift+M: redigera)"
   pt: "Painéis dos espelhos ligados (Ctrl+M: desligar, Ctrl+Shift+M: editar)"
   ca: "Panells dels retrovisors activats (Ctrl+M: desactiva, Ctrl+Maj+M: edita)"
-  sr: "Preslikavanje panela uključeno (Ctrl+M: isključeno, Ctrl+Shift+M: izmeni)"
+  sr: "Paneli retrovizora uključeni (Ctrl+M: isključi, Ctrl+Shift+M: uredi)"
   ru: "Панели зеркал включены (Ctrl+M: выключить, Ctrl+Shift+M: редактировать)"
 
 "Mirror panels off (Ctrl+M)":
@@ -31556,7 +31554,7 @@ _version: 2
   sv: "Spegelpaneler av (Ctrl+M)"
   pt: "Painéis dos espelhos desligados (Ctrl+M)"
   ca: "Panells dels retrovisors desactivats (Ctrl+M)"
-  sr: "Preslikavanje panela isključeno (Ctrl+M)"
+  sr: "Paneli retrovizora isključeni (Ctrl+M)"
   ru: "Панели зеркал выключены (Ctrl+M)"
 
 "Mirror editor off":
@@ -31566,7 +31564,7 @@ _version: 2
   sv: "Spegelredigeraren av"
   pt: "Editor de espelhos desligado"
   ca: "Editor de retrovisors desactivat"
-  sr: "Editor ogledala isključen"
+  sr: "Uređivač retrovizora je isključen"
   ru: "Редактор зеркал выключен"
 
 "This bus has no mirrors to show":
@@ -31576,7 +31574,7 @@ _version: 2
   sv: "Den här bussen saknar speglar att visa"
   pt: "Este ônibus não tem espelhos para mostrar"
   ca: "Aquest autobús no té cap retrovisor per mostrar"
-  sr: "Ovaj autobus nema ogledala"
+  sr: "Ovaj autobus nema retrovizore za prikaz"
   ru: "У этого автобуса нет зеркал для показа"
 
 "Mirror editor on: its keys are listed top left":
@@ -31586,7 +31584,7 @@ _version: 2
   sv: "Spegelredigeraren på: tangenterna visas uppe till vänster"
   pt: "Editor de espelhos ligado: as teclas dele estão no canto superior esquerdo"
   ca: "Editor de retrovisors activat: les tecles es mostren a dalt a l'esquerra"
-  sr: "Mirror editor uključen: njegovi tasteri su navedeni u gornjem levom uglu"
+  sr: "Uređivač retrovizora je uključen: prečice su navedene u gornjem levom uglu"
   ru: "Редактор зеркал включён: клавиши перечислены вверху слева"
 
 "Mirror editor (Ctrl+Shift+M or Esc: done)":
@@ -31596,7 +31594,7 @@ _version: 2
   sv: "Spegelredigerare (Ctrl+Shift+M eller Esc: klart)"
   pt: "Editor de espelhos (Ctrl+Shift+M ou Esc: concluir)"
   ca: "Editor de retrovisors (Ctrl+Maj+M o Esc: acaba)"
-  sr: "Editor ogledala (Ctrl+Shift+M ili Esc: gotovo)"
+  sr: "Uređivač retrovizora (Ctrl+Shift+M ili Esc: gotovo)"
   ru: "Редактор зеркал (Ctrl+Shift+M или Esc: готово)"
 
 "Not available on this system yet":
@@ -31708,7 +31706,7 @@ _version: 2
   sv: "Spegel {}: synfält {:.0}° (bussens {:.0}°)"
   pt: "Espelho {}: campo de visão {:.0}° (o do ônibus: {:.0}°)"
   ca: "Retrovisor {}: camp de visió {:.0}° (original de l'autobús: {:.0}°)"
-  sr: "Ogledalo {}: vidno polje {:.0}° (autobus {:.0}°)"
+  sr: "Retrovizor {}: ugao vidnog polja {:.0}° (u autobusu: {:.0}°)"
   ru: "Зеркало {}: угол обзора {:.0}° (у автобуса {:.0}°)"
 
 "Mirror {} shifted {:+.2} m across, {:+.2} m forward, {:+.2} m up":
@@ -31718,7 +31716,7 @@ _version: 2
   sv: "Spegel {} flyttad {:+.2} m i sidled, {:+.2} m framåt, {:+.2} m uppåt"
   pt: "Espelho {} deslocado {:+.2} m para o lado, {:+.2} m para frente, {:+.2} m para cima"
   ca: "S'ha desplaçat el retrovisor {} {:+.2} m lateralment, {:+.2} m endavant i {:+.2} m amunt"
-  sr: "Ogledalo {} pomereno {:+.2} m preko, {:+.2} m napred, {:+.2} m nagore"
+  sr: "Retrovizor {} pomeren {:+.2} m poprečno, {:+.2} m unapred, {:+.2} m nagore"
   ru: "Зеркало {} смещено на {:+.2} м вбок, {:+.2} м вперёд, {:+.2} м вверх"
 
 "Mirror {}: {:+.1}° across, {:+.1}° up":
@@ -31728,7 +31726,7 @@ _version: 2
   sv: "Spegel {}: {:+.1}° i sidled, {:+.1}° uppåt"
   pt: "Espelho {}: {:+.1}° para o lado, {:+.1}° para cima"
   ca: "Retrovisor {}: {:+.1}° lateralment, {:+.1}° amunt"
-  sr: "Ogledalo {}: {:+.1}° preko, {:+.1}° nagore"
+  sr: "Retrovizor {}: {:+.1}° poprečno, {:+.1}° nagore"
   ru: "Зеркало {}: {:+.1}° вбок, {:+.1}° вверх"
 
 "Mirror {}: {:+.1}° across, {:+.1}° up (Ctrl+Alt+arrows)":
@@ -31738,7 +31736,7 @@ _version: 2
   sv: "Spegel {}: {:+.1}° i sidled, {:+.1}° uppåt (Ctrl+Alt+piltangenter)"
   pt: "Espelho {}: {:+.1}° para o lado, {:+.1}° para cima (Ctrl+Alt+setas)"
   ca: "Retrovisor {}: {:+.1}° lateralment, {:+.1}° amunt (Ctrl+Alt+fletxes)"
-  sr: "Ogledalo {}: {:+.1}° preko, {:+.1}° nagore (Ctrl+Alt+strelice)"
+  sr: "Retrovizor {}: {:+.1}° poprečno, {:+.1}° nagore (Ctrl+Alt+strelice)"
   ru: "Зеркало {}: {:+.1}° вбок, {:+.1}° вверх (Ctrl+Alt+стрелки)"
 
 "The engine is off  ({e} electrics, {m} starter; mod buses with an ignition key turn it with {e}: press again and hold. Shift+U does it all)":
@@ -31749,7 +31747,7 @@ _version: 2
   pt: "O motor está desligado  ({e} elétrica, {m} partida; ônibus de mod com chave de ignição a giram com {e}: aperte de novo e segure. Shift+U faz tudo)"
   ca: "El motor està apagat  ({e} sistema elèctric, {m} arrencada; als autobusos de mods amb clau de contacte, gira-la amb {e}: torna a prémer i mantén la tecla. Maj+U ho fa tot)"
   de: "Der Motor ist aus ({e} Elektronik, {m} Anlasser; Mod-Busse mit einem Zündschlüssel, drehen mit {e}: nochmals drücken und halten. Umschalt+U macht alles)"
-  sr: "Motor je isključen ({e} elektrika, {m} starter; mod autobusi sa ključem za paljenje okreću ga sa {e}: pritisnite ponovo i držite. Shift+U radi sve)"
+  sr: "Motor je isključen ({e} elektronika, {m} starter; mod autobusi sa ključem za paljenje okreću ga sa {e}: pritisnite ponovo i držite. Shift+U radi sve)"
   ru: "Двигатель выключен  ({e} электрика, {m} стартер; мод-автобусы с ключом зажигания включаются через {e}: нажмите снова и удержите. Shift+U делает всё сразу)"
 
 "The gearbox is in N: press {d}, or click it. Buses like the Citaro take D only with the brake held":
@@ -31896,7 +31894,7 @@ _version: 2
   sv: "Spegel {} har återställts till bussens ursprungliga inställning (Shift+R: alla speglar)"
   pt: "O espelho {} voltou ao que o ônibus tem (Shift+R: todos os espelhos)"
   ca: "El retrovisor {} torna a la configuració original de l'autobús (Maj+R: tots els retrovisors)"
-  sr: "Ogledalo {} se vratilo kao što ga ima autobus (Shift+R: svako ogledalo)"
+  sr: "Retrovizor {} vraćen je na podrazumevani položaj za ovaj autobus (Shift+R: svi retrovizori)"
   ru: "Зеркало {} возвращено в положение автобуса (Shift+R: все зеркала)"
 
 "Saved {} tile(s) to the content folder ({})":
@@ -32130,7 +32128,7 @@ _version: 2
   sv: "Alla {n} speglar på denna buss har redan en panel"
   pt: "Os {n} espelhos deste ônibus já têm um painel"
   ca: "Els {n} retrovisors d'aquest autobús ja tenen un panell"
-  sr: "Sva {n} ogledala ovog autobusa već imaju panel"
+  sr: "Svih {n} retrovizora ovog autobusa već ima panel"
   ru: "У всех {n} зеркал этого автобуса уже есть панель"
 
 "Mirror panel added ({} in all)":
@@ -32140,7 +32138,7 @@ _version: 2
   sv: "Spegelpanel tillagd ({} totalt)"
   pt: "Painel de espelho adicionado ({} no total)"
   ca: "S'ha afegit un panell de retrovisor ({} en total)"
-  sr: "Dodato je ogledalo (ukupno {})"
+  sr: "Dodat je panel retrovizora (ukupno: {})"
   ru: "Панель зеркала добавлена (всего {})"
 
 "Mirror panel removed ({} left)":
@@ -32150,7 +32148,7 @@ _version: 2
   sv: "Spegelpanel borttagen ({} kvar)"
   pt: "Painel de espelho removido (restam {})"
   ca: "S'ha retirat un panell de retrovisor (en queden {})"
-  sr: "Uklonjena ploča ogledala ({} levo)"
+  sr: "Panel retrovizora je uklonjen (preostalo: {})"
   ru: "Панель зеркала удалена (осталось {})"
 
 "Panel shows mirror {} of {}":
@@ -32160,7 +32158,7 @@ _version: 2
   sv: "Panelen visar spegel {} av {}"
   pt: "O painel mostra o espelho {} de {}"
   ca: "El panell mostra el retrovisor {} de {}"
-  sr: "Panel prikazuje ogledalo {} od {}"
+  sr: "Panel prikazuje retrovizor {} od {}"
   ru: "Панель показывает зеркало {} из {}"
 
 "Downloading the translation model: {} %":
@@ -36739,7 +36737,7 @@ _version: 2
   hi: "दर्पण"
   ca: "Retrovisor"
   sv: "Spegel"
-  sr: "Ogledalo"
+  sr: "Retrovizor"
 
 "Save for this vehicle":
   de: "Für dieses Fahrzeug speichern"
@@ -36859,7 +36857,7 @@ _version: 2
   hi: "दृश्य और दर्पण संपादित करें"
   ca: "Edita la vista i els retrovisors"
   sv: "Redigera vyn och speglarna"
-  sr: "Uredite prikaz i ogledala"
+  sr: "Uredite prikaz i retrovizore"
 
 "A panel at the side of the driver's view: the eye, the direction, the field of view and each mirror, saved for this vehicle.":
   de: "Ein Bedienfeld neben der Fahreransicht: Auge, Blickrichtung, Sichtfeld und jeder Spiegel, gespeichert für dieses Fahrzeug."
@@ -36889,7 +36887,7 @@ _version: 2
   hi: "चालक दृश्य के बगल में एक पैनल: आँख, दिशा, दृष्टि क्षेत्र और हर दर्पण, इस वाहन के लिए सहेजा जाता है।"
   ca: "Un panell al costat de la vista del conductor: els ulls, la direcció, el camp de visió i cada retrovisor, desats per a aquest vehicle."
   sv: "En panel bredvid förarvyn: ögonposition, riktning, synfält och varje spegel, sparat för detta fordon."
-  sr: "Panel na bočnoj strani pogleda vozača: oko, pravac, vidno polje i svako ogledalo, sačuvano za ovo vozilo."
+  sr: "Panel sa strane vozačevog pogleda: položaj oka, smer, ugao vidnog polja i svaki retrovizor, sačuvan za ovo vozilo."
 
 "Running games":
   es: "Partidas en marcha"
@@ -38150,7 +38148,6 @@ _version: 2
   hi: "टूर की यात्राएँ"
   ca: "Trajectes del torn"
   sv: "Omloppets turer"
-  sr: "Izleti na turneji"
 
 "Click a trip to start with it":
   de: "Klicke eine Fahrt an, um mit ihr zu beginnen"
@@ -39354,7 +39351,7 @@ _version: 2
   id: "Panel spion setiap frame"
   ms: "Panel cermin setiap bingkai"
   tl: "Mga mirror panel bawat frame"
-  sr: "Ogledalo panele u svakom okviru"
+  sr: "Panele retrovizora iscrtavaj u svakom kadru"
 
 "Touch controls":
   es: "Controles táctiles"
@@ -40049,7 +40046,7 @@ _version: 2
   uk: "Shift+U готує автобус до роботи: електрика, двигун і світло разом"
   sv: "Shift+U gör bussen körklar: elsystem, motor och belysning på en gång"
   ca: "Maj+U posa l'autobús en servei: sistema elèctric, motor i llums alhora"
-  sr: "Shift+U stavlja autobus u funkciju: elektriku, motor i svetla u jednom potezu"
+  sr: "Shift+U stavlja autobus u funkciju: elektroniku, motor i svetla u jednom potezu"
 
 "F1 is the driver's seat, F2 the passengers' view, F3 outside the bus and F4 the free camera":
   fr: "F1 est le poste de conduite, F2 la vue passagers, F3 l'extérieur du bus et F4 la caméra libre"
@@ -40115,7 +40112,7 @@ _version: 2
   uk: "P ставить гру на паузу; Alt+S зберігає ситуацію"
   sv: "P pausar spelet; Alt+S sparar situationen"
   ca: "P posa el joc en pausa; Alt+S desa la situació"
-  sr: "P pauzira igru; Alt+S spasava situaciju"
+  sr: "P pauzira igru; Alt+S čuva situaciju"
 
 "Shift+Y shows the information bar: the time, the speed, the temperatures and the next stop":
   fr: "Maj+Y affiche la barre d'informations : l'heure, la vitesse, les températures et le prochain arrêt"
@@ -48352,7 +48349,7 @@ _version: 2
   hi: "नया टूर"
   ca: "Torn nou"
   sv: "Nytt omlopp"
-  sr: "Nova turneja"
+  sr: "Nova tura"
 
 "Copy +min":
   de: "Kopie +min"
@@ -49235,7 +49232,7 @@ _version: 2
   ms: "Kualiti cermin"
   tl: "Kalidad ng mga salamin"
   sv: "Spegelkvalitet"
-  sr: "Kvalitet ogledala"
+  sr: "Kvalitet retrovizora"
 
 "As the picture (Enhanced)":
   zh-tw: "與主畫面相同（增強）"
@@ -49433,7 +49430,6 @@ _version: 2
   pt: "Nenhuma escala tem uma viagem futura correspondente."
   ca: "Cap torn amb trajectes pendents coincideix."
   fr: "Aucun service n'a de voyage à venir qui correspond."
-  sr: "Nijedna turneja još ne predstoji putovanje koje se podudara."
   ru: "Нет подходящего рейса, который ещё предстоит выполнить."
 
 "No tour left at this time: show the ended tours, or start earlier.":
@@ -49876,7 +49872,7 @@ _version: 2
   ms: "Kekerapan cermin dilukis: setiap bingkai, jalan bergerak di dalamnya selancar melalui cermin depan"
   tl: "Gaano kadalas iginuguhit ang mga salamin: bawat frame, gumagalaw ang kalye sa mga ito nang kasingkinis ng sa windshield"
   sv: "Hur ofta speglarna ritas: varje bildruta rör sig gatan i dem lika jämnt som genom vindrutan"
-  sr: "Koliko često se ogledala crtaju: svaki okvir, ulica se kreće kroz njih glatko kao kroz vetrobran"
+  sr: "Koliko često se retrovizori iscrtavaju: pri svakom kadru saobraćaj kroz njih prolazi glatko kao kroz vetrobran"
 
 "In Enhanced and Enhanced+: the mirrors shaded as the picture is, with its light and its sky, instead of the plain light":
   zh-tw: "在 Enhanced 與 Enhanced+ 模式下，後視鏡使用與主畫面相同的光照與天空"
@@ -49906,7 +49902,7 @@ _version: 2
   ms: "Dalam Dipertingkat dan Dipertingkat+: cermin diterangi seperti gambar utama, dengan cahaya dan langitnya, bukan cahaya biasa"
   tl: "Sa Pinahusay at Pinahusay+: naiilawan ang mga salamin gaya ng larawan, kasama ang ilaw at langit nito, sa halip na simpleng ilaw"
   sv: "I Förbättrad och Förbättrad+: speglarna skuggas som bilden, med dess ljus och dess himmel, i stället för det enkla ljuset"
-  sr: "U Enhanced and Enhanced+: ogledala zasenčena kao što je slika, sa svojom svetlošću i nebom, umesto običnog svetla"
+  sr: "U režimima Enhanced i Enhanced+: retrovizori prikazuju senke, osvetljenje i nebo iz scene umesto običnog osvetljenja"
 
 "The mirror panels in the cab (Ctrl+M) are drawn every frame, as in ETS2, instead of taking turns with the other mirrors":
   zh-tw: "車內後視鏡面板（Ctrl+M）會如 ETS2 一樣每幀更新，不與其他後視鏡輪流更新"
@@ -49936,7 +49932,7 @@ _version: 2
   ms: "Panel cermin dalam kabin (Ctrl+M) dilukis setiap bingkai, seperti dalam ETS2, bukan bergilir dengan cermin lain"
   tl: "Iginuguhit bawat frame ang mga mirror panel sa cab (Ctrl+M), gaya sa ETS2, sa halip na magsalitan sa ibang salamin"
   sv: "Spegelpanelerna i hytten (Ctrl+M) ritas varje bildruta, som i ETS2, i stället för att turas om med de andra speglarna"
-  sr: "Paneli ogledala u kabini (Ctrl+M) se crtaju u svakom kadru, kao u ETS2, umesto da se smenjuju sa ostalim retrovizorima"
+  sr: "Paneli retrovizora u kabini (Ctrl+M) iscrtavaju se u svakom kadru, kao u ETS2, umesto da se smenjuju sa ostalim retrovizorima"
 
 "Plain":
   es: "Sencillo"
@@ -50779,7 +50775,7 @@ _version: 2
   hi: "रुकने का अनुरोध"
   ca: "Parada sol·licitada"
   sv: "Stoppsignal"
-  sr: "Zahtjev za zaustavljanje"
+  sr: "Zahtevano zaustavljanje"
 
 "Drive it on that day":
   de: "An diesem Tag fahren"
@@ -51019,7 +51015,7 @@ _version: 2
   hi: "समय-सारणी इस टूर को जो बसें देती है:"
   ca: "Autobusos que l'horari assigna a aquest servei:"
   sv: "Bussar som tidtabellen ger denna tur:"
-  sr: "Vozni red autobusa daje ovu turneju:"
+  sr: "Vozni red autobusa daje ovu turu:"
 
 "Add a note":
   de: "Notiz hinzufügen"
@@ -53854,7 +53850,7 @@ _version: 2
   es: "Este autobús no tiene espejos"
   pt: "Este ônibus não tem espelhos"
   ca: "Aquest autobús no té retrovisors"
-  sr: "Ovaj autobus nema ogledala"
+  sr: "Ovaj autobus nema retrovizore"
   ru: "У этого автобуса нет зеркал"
 
 "Copy the block":
@@ -60724,7 +60720,7 @@ _version: 2
 "Insert: new panel - Delete: remove it - C: show another mirror":
   zh-tw: "Insert：新增面板；Delete：移除面板；C：顯示其他後視鏡"
   fr: "Inser : nouveau panneau - Suppr : le retirer - C : afficher un autre rétroviseur"
-  sr: "Insert: dodaj novi panel — Delete: ukloni ga — C: prikaži drugo ogledalo"
+  sr: "Insert: dodaj novi panel — Delete: ukloni ga — C: prikaži drugi retrovizor"
   ru: "Insert: новая панель — Delete: удалить её — C: показать другое зеркало"
 "Interior lights":
   zh-tw: "車廂燈"
@@ -60829,7 +60825,7 @@ _version: 2
 "R: put the cursor on a mirror panel (Shift+R: every mirror)":
   zh-tw: "R：將游標移至後視鏡面板（Shift+R：切換所有後視鏡）"
   fr: "R : placer le curseur sur un panneau de rétroviseur (Maj+R : tous les rétroviseurs)"
-  sr: "R: postavite pokazivač na panel ogledala (Shift+R: sva ogledala)"
+  sr: "R: postavi pokazivač na panel retrovizora (Shift+R: svi retrovizori)"
   ru: "R: навести курсор на панель зеркала (Shift+R: все зеркала)"
 "Saloon lights on":
   fr: "Lumières allumées"
@@ -60962,55 +60958,80 @@ _version: 2
   ru: "Цикл погоды {}"
 "Online: {n} other players":
   zh-tw: "線上：另有 {n} 位玩家"
+  sr: "Onlajn: drugih {n} igrača"
 "Online: connecting ...":
   zh-tw: "線上：正在連線..."
+  sr: "Onlajn: povezivanje..."
 "Online: not connected: {reason} (chat /reconnect)":
   zh-tw: "線上：尚未連線：{reason}（在聊天室輸入 /reconnect）"
+  sr: "Onlajn: nije povezano: {reason} (u čet unesite /reconnect)"
 "Online: in {host}'s game, {others}":
   zh-tw: "線上：已加入 {host} 的遊戲，{others}"
+  sr: "Onlajn: u igri domaćina {host}, {others}"
 "Online: {warning}":
   zh-tw: "線上：{warning}"
+  sr: "Onlajn: {warning}"
 "nobody else yet":
   zh-tw: "尚無其他玩家"
+  sr: "Za sada nema drugih igrača"
 "1 other player":
   zh-tw: "另有 1 位玩家"
+  sr: "Još 1 igrač"
 "{n} other players":
   zh-tw: "另有 {n} 位玩家"
+  sr: "Još {n} igrača"
 
 "connected to {host}'s session ({players} player(s))":
   zh-tw: "已連線至 {host} 的遊戲（{players} 位玩家）"
+  sr: "Povezano sa sesijom domaćina {host} ({players} igrača)"
 "In this session: {players}":
   zh-tw: "本次連線的玩家：{players}"
+  sr: "U ovoj sesiji: {players}"
 "{name} (host, {vehicle})":
   zh-tw: "{name}（房主，{vehicle}）"
+  sr: "{name} (domaćin, {vehicle})"
 "{name} (host)":
   zh-tw: "{name}（房主）"
+  sr: "{name} (domaćin)"
 "{name} joined with {vehicle}":
   zh-tw: "{name} 已加入，駕駛 {vehicle}"
+  sr: "Igrač {name} se pridružio za volanom vozila {vehicle}"
 "{name} joined":
   zh-tw: "{name} 已加入"
+  sr: "Igrač {name} se pridružio"
 "{name} is back":
   zh-tw: "{name} 已重新加入"
+  sr: "Igrač {name} se vratio"
 "{name} left":
   zh-tw: "{name} 已離開"
+  sr: "Igrač {name} je napustio sesiju"
 "{name} lost the connection":
   zh-tw: "{name} 已中斷連線"
+  sr: "Igrač {name} je izgubio vezu"
 "{name} was sent away by the host":
   zh-tw: "{name} 已被房主移出遊戲"
+  sr: "Domaćin je izbacio igrača {name}"
 "the host turned us away: {reason}":
   zh-tw: "房主拒絕連線：{reason}"
+  sr: "Domaćin nas je odbio: {reason}"
 "the host sent you away: {reason}":
   zh-tw: "房主已將你移出遊戲：{reason}"
+  sr: "Domaćin vas je izbacio: {reason}"
 "reconnecting ...":
   zh-tw: "正在重新連線..."
+  sr: "Ponovno povezivanje..."
 "only a joined game can reconnect":
   zh-tw: "只有加入其他房間的遊戲才能重新連線"
+  sr: "Ponovno povezivanje je moguće samo ako ste se već pridružili igri"
 "asked the server for its administration":
   zh-tw: "已向伺服器申請管理權限"
+  sr: "Zatražen je administratorski pristup serveru"
 "the host ended the session":
   zh-tw: "房主已結束遊戲"
+  sr: "Domaćin je završio sesiju"
 "the host has gone quiet; trying to reach it again":
   zh-tw: "房主暫無回應；正在嘗試重新連線"
+  sr: "Domaćin ne odgovara; pokušaj ponovnog povezivanja"
 "Add a bus":
   ca: "Afegeix un autobús"
   ru: "Добавить автобус"
