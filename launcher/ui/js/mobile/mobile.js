@@ -11,7 +11,7 @@ import { Spinner, Toggle, Slider } from '../ui.js';
 import { BusPreview } from '../preview.js';
 import { RouteMap } from '../routemap.js';
 import { choose, curMap, curBus, curLine, curTour, pickedTrip, realTime, realDate, start, weatherName, weatherOfItsOwn, askJoined, noServerBus, mapName, serverBuses, busFile } from '../data.js';
-import { hms, mapPicture, tripAt, depotRun, pickTrip, lineMatches, findTours, chooseLine, chooseTour, setSeason, localNow, SEASONS, PHASES, TripEnds, entryName } from '../pages/drive.js';
+import { hms, mapPicture, tripAt, depotRun, pickTrip, lineMatches, findTours, chooseLine, chooseTour, setSeason, localNow, SEASONS, PHASES, TripEnds, weatherFacts, entryName } from '../pages/drive.js';
 import { MultiplayerPage } from '../pages/multiplayer.js';
 import { ProfilePage } from '../pages/profile.js';
 import { ModsPage } from '../pages/mods.js';
@@ -308,6 +308,6 @@ function WeatherSheet({ close }) {
   return html`<div>
     ${pick(!s.choice.weather, () => (choose({ weather: '' }), close()), html`<span class="m-pick-text"><b>${t('Natural weather')}</b><small>${t('Develops by itself through the day and the season')}</small></span>`)}
     ${weatherOfItsOwn(s.choice.weather) && pick(true, close, html`<span class="m-pick-text"><b>${weatherName(s.choice.weather)}</b></span>`)}
-    ${(s.weather || []).map((w) => pick(s.choice.weather === w.file, () => (choose({ weather: w.file }), close()), html`<span class="m-pick-text"><b>${w.name}</b><small>${Math.round(w.temp)} °C - ${w.precip} - ${w.fog_m >= 20000 ? t('clear air') : `${Math.round(w.fog_m)} m`}</small></span>`))}
+    ${(s.weather || []).map((w) => pick(s.choice.weather === w.file, () => (choose({ weather: w.file }), close()), html`<span class="m-pick-text"><b>${w.name}</b><small>${weatherFacts(w)}</small></span>`))}
   </div>`;
 }

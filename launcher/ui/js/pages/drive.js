@@ -2,7 +2,7 @@
 // start time and date, the weather and the traffic - and started.
 
 import { html, useState, useEffect, useRef } from '../../vendor/preact-htm.js';
-import { S, useStore } from '../store.js';
+import { S, useStore, toast } from '../store.js';
 import { t, hhmm, language } from '../i18n.js';
 import { call, contentUrl } from '../api.js';
 import { Button, Dialog } from '../ui.js';
@@ -218,17 +218,57 @@ export function pickTrip(x) {
 }
 
 export const SEASONS = [['auto', 'By date'], ['spring', 'Spring'], ['summer', 'Summer'], ['autumn', 'Autumn'], ['winter', 'Winter']];
+
+/** The season the chosen date (or the season chosen instead) means. */
+export function seasonOf(c) {
+  if (c.season && c.season !== 'auto') return c.season;
+  const m = Number((c.date || '').slice(5, 7)) || 5;
+  return m === 12 || m <= 2 ? 'winter' : m <= 5 ? 'spring' : m <= 8 ? 'summer' : 'autumn';
+}
+
+/** A weather preset that makes sense in the season (no summer shower in the snow), as the
+ *  game's own launcher chose them. */
+export function weatherFits(w, season) {
+  const rain = (w.precip || '').startsWith('rain');
+  if (season === 'winter') return w.snow || (rain ? w.temp <= 10 : w.temp <= 16);
+  if (w.snow || w.temp <= 0) return false;
+  return season !== 'summer' || w.temp >= 8;
+}
+
+/** What a weather file says about itself, short: "15 °C - rain 68% - 200 m". */
+export const weatherFacts = (w) => `${Math.round(w.temp)} °C - ${w.precip} - ${w.fog_m >= 20000 ? t('clear air') : `${Math.round(w.fog_m)} m`}`;
+
+/** The icon a weather file deserves. */
+export function weatherIcon(w) {
+  const clouds = (w.clouds || '').toLowerCase();
+  if (w.snow || (w.precip || '').startsWith('snow')) return 'snow';
+  if ((w.precip || '').startsWith('rain')) return 'rain';
+  if (w.fog_m < 1500) return 'fog';
+  if (clouds.includes('overcast')) return 'cloud';
+  if (clouds.includes('cumulus')) return 'partly';
+  return 'sun';
+}
 export const PHASES = [['early', 'Early'], ['mid', 'Mid'], ['late', 'Late']];
 
 export async function setSeason(season, phase) {
   const c = S.choice;
   if (season === 'auto') {
-    choose({ season, date: c.own_date || c.date, own_date: null });
+    const date = c.own_date || c.date;
+    choose({ season, date, own_date: null, ...unfit(c, seasonOf({ season, date })) });
     return;
   }
   const own = c.season === 'auto' ? c.date : c.own_date;
   const r = await call('season_date', { season, phase, date: c.date, map: c.map, keep: false }).catch(() => null);
-  choose({ season, phase, own_date: own, ...(r?.date ? { date: r.date } : {}) });
+  choose({ season, phase, own_date: own, ...(r?.date ? { date: r.date } : {}), ...unfit(c, season) });
+}
+
+/** A weather preset chosen that does not fit the new season goes, natural weather instead
+ *  (said once): what to choose for it. */
+function unfit(c, season) {
+  const w = (S.weather || []).find((x) => x.file === c.weather);
+  if (!w || weatherFits(w, season)) return {};
+  toast(t('{name} does not fit the season: natural weather instead', { name: w.name }));
+  return { weather: '' };
 }
 
 export function localNow() {
