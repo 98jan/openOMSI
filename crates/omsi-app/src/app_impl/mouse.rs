@@ -430,8 +430,9 @@ impl App {
             }
         }
         if pressed && self.menus.game_menu.is_none() {
-            if let Some((k, w0)) = self.ui.as_ref().and_then(|u| u.grip_at(x, y)) {
-                self.menus.hud_resize = Some((k, self.settings.hud_sizes[k], [x, y], w0));
+            if let Some((k, w0, shown)) = self.ui.as_ref().and_then(|u| u.grip_at(x, y)) {
+                self.settings.hud_sizes[k] = shown;
+                self.menus.hud_resize = Some((k, shown, [x, y], w0));
                 return;
             }
         }

@@ -196,11 +196,12 @@ impl Ui {
         }
         let graph = self.perf_graph(r, scene, o, dt);
         let s0 = s;
-        let s = s * f.sizes[2];
+        let size = self.shown_size(2, f.sizes[2]);
+        let s = s * size;
         let detailed = f.perf_detailed;
-        if self.perf.detailed != detailed || self.perf.size != f.sizes[2] {
+        if self.perf.detailed != detailed || self.perf.size != size {
             self.perf.detailed = detailed;
-            self.perf.size = f.sizes[2];
+            self.perf.size = size;
             self.perf.width = 0.0;
         }
         let px = ((if detailed { 12.0 } else { 11.0 }) * s).round() as u32;
@@ -309,7 +310,7 @@ impl Ui {
             put(scene, l, x0 + pad, y);
             y += lh;
         }
-        self.hud_grip(r, scene, 2, [x0, y0, x0 + w, y0 + h], f.vr, s);
+        self.hud_grip(r, scene, 2, [x0, y0, x0 + w, y0 + h], size, f, s);
     }
 
     fn perf_graph(

@@ -18,6 +18,12 @@ pub(crate) fn window_size(size: f32) -> f32 {
     if size.is_finite() { size.clamp(0.6, 2.0) } else { 1.0 }
 }
 
+pub(super) fn fit_cap(used: f32, rect: [f32; 4], room: [f32; 4]) -> f32 {
+    let (w, h) = ((rect[2] - rect[0]).max(1.0), (rect[3] - rect[1]).max(1.0));
+    let ratio = ((room[3] - rect[1]) / h).min((room[2] - room[0]) / w);
+    (used * ratio).max(0.3)
+}
+
 fn grip_pixels(n: u32, s: f32, c: [u8; 4]) -> Vec<u8> {
     let mut rgba = vec![0u8; (n * n * 4) as usize];
     for py in 0..n {
@@ -81,8 +87,16 @@ pub(super) fn delay_color(seconds: f32) -> [u8; 4] {
 }
 
 impl Ui {
-    pub(super) fn hud_grip(&mut self, r: &Renderer, scene: &mut Scene, k: usize, rect: [f32; 4], vr: bool, s: f32) {
-        if vr || crate::platform::touch_controls() {
+    pub(super) fn shown_size(&self, k: usize, size: f32) -> f32 {
+        size.min(self.caps[k])
+    }
+
+    pub(super) fn hud_grip(&mut self, r: &Renderer, scene: &mut Scene, k: usize, rect: [f32; 4], used: f32, f: &super::Frame, s: f32) {
+        let cap = fit_cap(used, rect, [0.0, 0.0, f.width, f.height - 8.0 * s]);
+        if (cap - self.caps[k]).abs() > cap.min(self.caps[k]) * 0.02 {
+            self.caps[k] = cap;
+        }
+        if f.vr || crate::platform::touch_controls() {
             return;
         }
         let n = (13.0 * s).round().max(8.0) as u32;
@@ -90,13 +104,13 @@ impl Ui {
         let tex = self.text.cached(r, scene, ("\u{0}grip".to_string(), n, dim), (n, n), || grip_pixels(n, n as f32 / 13.0, dim));
         let (x1, y1) = ((rect[2] - 4.0 * s).round(), (rect[3] - 4.0 * s).round());
         scene.overlays.push((tex, [x1 - n as f32, y1 - n as f32, x1, y1]));
-        self.grips[k] = Some((rect, 24.0 * s));
+        self.grips[k] = Some((rect, 24.0 * s, used));
     }
 
-    pub fn grip_at(&self, x: f32, y: f32) -> Option<(usize, f32)> {
+    pub fn grip_at(&self, x: f32, y: f32) -> Option<(usize, f32, f32)> {
         self.grips.iter().enumerate().find_map(|(k, g)| {
-            let (r, zone) = (*g)?;
-            (x > r[2] - zone && x <= r[2] && y > r[3] - zone && y <= r[3]).then_some((k, (r[2] - r[0]).max(100.0)))
+            let (r, zone, used) = (*g)?;
+            (x > r[2] - zone && x <= r[2] && y > r[3] - zone && y <= r[3]).then_some((k, (r[2] - r[0]).max(100.0), used))
         })
     }
 
@@ -145,5 +159,20 @@ mod tests {
         assert!(alpha(12, 12) == 0 && alpha(0, 0) == 0);
         assert!(alpha(12, 10) > 100 && alpha(12, 6) > 100 && alpha(12, 2) > 100);
         assert_eq!(alpha(12, 8), 0);
+    }
+
+    #[test]
+    fn a_window_too_tall_for_a_short_screen_is_shrunk_until_its_grip_is_on_it() {
+        let screen = [0.0, 0.0, 1280.0, 712.0];
+        let below_large_bar = 170.0;
+        let tall = [600.0, below_large_bar, 1400.0, below_large_bar + 714.0];
+        let cap = fit_cap(2.0, tall, screen);
+        assert!(cap < 2.0 && cap >= 0.6);
+        let h = 714.0 * cap / 2.0;
+        let w = 800.0 * cap / 2.0;
+        assert!(below_large_bar + h <= screen[3] + 0.5 && w <= screen[2]);
+        let roomy = [600.0, 60.0, 900.0, 300.0];
+        assert!(fit_cap(1.0, roomy, screen) > 2.0);
+        assert!(fit_cap(2.0, [0.0, 700.0, 100.0, 900.0], screen) >= 0.3);
     }
 }

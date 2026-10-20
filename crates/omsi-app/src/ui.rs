@@ -447,7 +447,8 @@ pub struct Ui {
     pub info_rect: Option<[f32; 4]>,
     perf: perf_panel::PerfPanel,
     hud: hud::Hud,
-    grips: [Option<([f32; 4], f32)>; 3],
+    grips: [Option<([f32; 4], f32, f32)>; 3],
+    caps: [f32; 3],
 }
 
 impl Ui {
@@ -501,7 +502,7 @@ impl Ui {
         self.chat.rect[2] += x;
     }
     pub fn new() -> Option<Ui> {
-        Some(Ui { origin_x: 0.0, text: TextCache::new()?, chat: ChatWidget::default(), menu_rects: Vec::new(), menu_arrows: Vec::new(), menu_scroll_thumb: None, menu_scroll_track: None, menu_ctl: Vec::new(), dd_rects: Vec::new(), dd_top: 0, dd_rows: 8, dd_scroll: None, menu_side: Vec::new(), menu_pane: Vec::new(), menu_pane_start: 0, menu_pane_go: None, menu_pane_box: None, menu_pane_scroll: None, menu_time: Vec::new(), anim: Default::default(), anim_dt: 0.0, menu_overlay_range: 0..0, vr_cursor_overlay: None, vr_tooltip_overlay: None, menu_start: 0, menu_rows: 0, menu_row_h: 1.0, images: Default::default(), info_rect: None, perf: Default::default(), hud: hud::Hud::new(false), grips: [None; 3] })
+        Some(Ui { origin_x: 0.0, text: TextCache::new()?, chat: ChatWidget::default(), menu_rects: Vec::new(), menu_arrows: Vec::new(), menu_scroll_thumb: None, menu_scroll_track: None, menu_ctl: Vec::new(), dd_rects: Vec::new(), dd_top: 0, dd_rows: 8, dd_scroll: None, menu_side: Vec::new(), menu_pane: Vec::new(), menu_pane_start: 0, menu_pane_go: None, menu_pane_box: None, menu_pane_scroll: None, menu_time: Vec::new(), anim: Default::default(), anim_dt: 0.0, menu_overlay_range: 0..0, vr_cursor_overlay: None, vr_tooltip_overlay: None, menu_start: 0, menu_rows: 0, menu_row_h: 1.0, images: Default::default(), info_rect: None, perf: Default::default(), hud: hud::Hud::new(false), grips: [None; 3], caps: [f32::MAX; 3] })
     }
 
     /// Draw the frame's interface: its overlays go after the HUD's in `scene.overlays`.
@@ -789,7 +790,8 @@ impl Ui {
     /// on a soft band of the route's colour with a bar at its left; the next trip at the end.
     #[allow(clippy::too_many_arguments)]
     fn draw_timetable(&mut self, r: &Renderer, scene: &mut Scene, f: &Frame, t: &TimetableView, top: f32, beside: f32, s: f32) {
-        let s = s * f.sizes[1];
+        let size = self.shown_size(1, f.sizes[1]);
+        let s = s * size;
         let ink_1 = hud::text(self.hud.ink);
         let ink_2 = hud::text(self.hud.dim);
         let muted = hud::text(self.hud.muted);
@@ -897,7 +899,7 @@ impl Ui {
             let ly = (cy - l.h as f32 * 0.5).round();
             scene.overlays.push((l.tex, [col_stop.round(), ly, col_stop.round() + l.w as f32, ly + l.h as f32]));
         }
-        self.hud_grip(r, scene, 1, [x, top, x + w, top + h], f.vr, s);
+        self.hud_grip(r, scene, 1, [x, top, x + w, top + h], size, f, s);
     }
 
     /// The notifications as the navigator's cards: no edge, a soft shadow, the kind's icon in

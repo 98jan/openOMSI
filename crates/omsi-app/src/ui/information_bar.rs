@@ -568,7 +568,8 @@ impl Ui {
     }
 
     pub(super) fn draw_info_bar(&mut self, r: &Renderer, scene: &mut Scene, f: &Frame, s: f32) {
-        let s = s * f.sizes[0];
+        let size = self.shown_size(0, f.sizes[0]);
+        let s = s * size;
         // --- the information bar: driving details first, vehicle data beneath
         self.info_rect = None;
         // (not under the pause menu's rail, from under which it stood out)
@@ -724,7 +725,7 @@ impl Ui {
                     }
                 }
                 self.info_rect = Some([x, y, x + w, y + h]);
-                self.hud_grip(r, scene, 0, [x, y, x + w, y + h], f.vr, s);
+                self.hud_grip(r, scene, 0, [x, y, x + w, y + h], size, f, s);
             }
         }
     }
