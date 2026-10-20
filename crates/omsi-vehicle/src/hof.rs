@@ -355,7 +355,7 @@ pub fn depot_like(dir: &Path, hints: &[&str]) -> Option<Hof> {
     closest_name(&refs, hints).and_then(|i| Hof::load(&files[i]).ok())
 }
 
-/// The depot file called `name` in the shared `HOFs/` folder or any vehicle folder of any content root (`Vehicles/*/`).
+/// The depot file called `name` in the shared `HOFs/` folder, any vehicle folder of any content root (`Vehicles/*/`), else any map folder (`maps/*/`).
 ///
 /// A depot file belongs to a map, not to a bus model: it lists the map's termini, stops and
 /// IBIS codes. A mod bus brings only the depot of the map it was made on (the O530 Citaro
@@ -381,9 +381,11 @@ pub fn depot_anywhere(name: &str) -> Option<Hof> {
     if let Some(path) = known {
         return path.and_then(|p| Hof::load(&p).ok());
     }
-    // every vehicle folder once over all roots (depot_in looks at each root's copy)
     let mut dirs: Vec<PathBuf> = omsi_cfg::read_dir_merged("Vehicles").into_iter().filter(|d| omsi_cfg::vfs::is_dir(d)).collect();
     dirs.sort_by_key(|d| d.file_name().unwrap_or_default().to_string_lossy().to_ascii_lowercase());
+    let mut maps: Vec<PathBuf> = omsi_cfg::read_dir_merged("maps").into_iter().filter(|d| omsi_cfg::vfs::is_dir(d)).collect();
+    maps.sort_by_key(|d| d.file_name().unwrap_or_default().to_string_lossy().to_ascii_lowercase());
+    dirs.extend(maps);
     let h = dirs.iter().find_map(|d| depot_in(d, name));
     found.lock().unwrap_or_else(|e| e.into_inner()).1.insert(key, h.as_ref().map(|h| h.path.clone()));
     h
@@ -469,6 +471,21 @@ mod tests {
 
         omsi_cfg::remove_content_root(&root);
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_depot_kept_in_its_map_folder_is_found() {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("openomsi-map-hof-{stamp}"));
+        let map = root.join("maps/Moulon");
+        std::fs::create_dir_all(&map).unwrap();
+        std::fs::write(map.join(format!("company-{stamp}.hof")), format!("[name]\nCompany {stamp}\n")).unwrap();
+
+        omsi_cfg::add_content_root(root.clone());
+        let found = depot_anywhere(&format!("Company {stamp}")).map(|h| h.path);
+        omsi_cfg::remove_content_root(&root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(found, Some(map.join(format!("company-{stamp}.hof"))));
     }
 
     #[test]

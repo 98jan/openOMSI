@@ -316,6 +316,10 @@ pub fn default_hof(map: Option<&MapInfo>, bus: Option<&VehicleInfo>, date: &str,
         (Some(line), false) => depot_has_line(&want, line) == Some(true),
         _ => false,
     };
+    let with_line = match (line, map, root()) {
+        (Some(line), Some(m), Ok(r)) if with_line.is_empty() && !map_depot_has_line => depot_names_with_line(&r, &m.file, line),
+        _ => with_line,
+    };
     if !with_line.is_empty() && !map_depot_has_line && !with_line.iter().any(|h| h.eq_ignore_ascii_case(&want)) {
         let names: Vec<&str> = with_line.iter().map(|h| h.as_str()).collect();
         let hints: Vec<&str> = std::iter::once(want.as_str()).chain(map_hints.iter().copied()).collect();
@@ -537,7 +541,6 @@ pub struct ModsStatus {
     pub cleaned: Vec<String>,
     pub jobs: Vec<install::Progress>,
     pub hof_warnings: Vec<String>,
-    /// Maps whose depot files could be shared with every bus, on the player's word.
     pub hof_offers: Vec<MapHofOffer>,
     /// Every mod, one by one (see `mods`).
     pub installed: Vec<mods::Mod>,
@@ -1053,8 +1056,8 @@ pub fn list_vehicles() -> Result<Vec<VehicleInfo>> {
     list_vehicles_progress(|_, _, _| {})
 }
 
-/// The depot files (by `[name]`) beside bus `bus` (relative to `root`) whose IBIS trips carry
-/// line `line`, the fullest first, read once per bus and line.
+/// The depot files (by `[name]`) beside bus or map file `bus` (relative to `root`) whose IBIS
+/// trips carry line `line`, the fullest first, read once per file and line.
 pub fn depot_names_with_line(root: &Path, bus: &str, line: &str) -> Vec<String> {
     type Cache = std::collections::HashMap<(PathBuf, String, String), Vec<String>>;
     static CACHE: std::sync::LazyLock<std::sync::Mutex<Cache>> = std::sync::LazyLock::new(Default::default);

@@ -133,9 +133,6 @@ fn file_name(p: &Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
 }
 
-/// The maps whose depot files are missing from the shared `HOFs/` folder, offered to the
-/// player rather than copied: a map with one depot per company or bus (Grand Paris Moulon)
-/// gave every bus depots its IBIS did not match.
 pub(super) fn offers() -> (Vec<MapHofOffer>, Vec<String>) {
     let Some((content, original)) = writable_content() else { return Default::default() };
     let mut last = last_scan().lock().unwrap_or_else(|e| e.into_inner());
