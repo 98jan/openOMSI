@@ -148,6 +148,17 @@ fn mirror_refresh_survives_the_launcher() {
 }
 
 #[test]
+fn mirror_hud_survives_the_launcher() {
+    assert_eq!(settings_from_text(None)["mirror_hud"], 0);
+    for (word, kept) in [("0", 0), ("3", 3), ("7", 7), ("9", 7), ("x", 0)] {
+        let v = settings_from_text(Some(&format!("mirror_hud={word}\n")));
+        assert_eq!(v["mirror_hud"], kept, "{word}");
+        let text = settings_to_text(&v, Some("mirror_hud=1\n"));
+        assert_eq!(text.lines().filter(|l| l.starts_with("mirror_hud=")).collect::<Vec<_>>(), [format!("mirror_hud={kept}")], "{text}");
+    }
+}
+
+#[test]
 fn mirror_hud_every_frame_survives_the_launcher() {
     assert_eq!(settings_from_text(None)["mirror_hud_every_frame"], false);
     for (word, on) in [("1", true), ("0", false)] {

@@ -259,7 +259,7 @@ pub struct Settings {
     /// How the mirrors are shaded in the Enhanced pictures: `standard` with the plain light
     /// (the cost of a small picture), `enhanced` as the window's picture is.
     pub mirror_quality: String,
-    /// Copies of the main side mirrors in the corners of the window while in the cab: 0 off, 1 the right one, 2 the left, 3 both.
+    /// Copies of the main side mirrors in the corners of the window while in the cab: 0 off, 1 the right one, 2 the left, 3 both, + 4 the front one.
     pub mirror_hud: u8,
     /// The mirror panels (Ctrl+M) drawn every frame, as ETS2 draws its screen mirrors, rather than
     /// in turn with the other mirrors within `mirror_refresh`.
@@ -680,7 +680,7 @@ impl Settings {
                 "radio_hiss" => s.radio_fx.hiss = v.parse::<f32>().map(|x| x.clamp(0.0, 1.0)).unwrap_or(s.radio_fx.hiss),
                 "radio_dropouts" => s.radio_fx.dropouts = v.parse::<f32>().map(|x| x.clamp(0.0, 1.0)).unwrap_or(s.radio_fx.dropouts),
                 "doppler" | "sound_doppler" => s.doppler = b(v),
-                "mirror_hud" => s.mirror_hud = v.parse::<u8>().map(|x| x.min(3)).unwrap_or(s.mirror_hud),
+                "mirror_hud" => s.mirror_hud = v.parse::<u8>().map(|x| x.min(7)).unwrap_or(s.mirror_hud),
                 "mirror_hud_every_frame" => s.mirror_hud_every_frame = b(v),
                 "mirror_size" => s.mirror_size = v.parse::<u32>().map(|x| if x == 0 { 0 } else { x.clamp(64, 2048).next_power_of_two() }).unwrap_or(s.mirror_size),
                 "mirror_refresh" | "performance_realreflexions" => s.mirror_refresh = match v.trim().to_ascii_lowercase().as_str() {
