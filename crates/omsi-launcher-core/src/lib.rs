@@ -18,7 +18,7 @@ mod hof_sync;
 mod file_dialog;
 
 pub use file_dialog::{pick_file, pick_folder, pick_hofs, pick_mod};
-pub use hof_sync::add_shared_hofs;
+pub use hof_sync::{add_shared_hofs, share_map_hofs, MapHofOffer};
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -316,6 +316,10 @@ pub fn default_hof(map: Option<&MapInfo>, bus: Option<&VehicleInfo>, date: &str,
         (Some(line), false) => depot_has_line(&want, line) == Some(true),
         _ => false,
     };
+    let with_line = match (line, map, root()) {
+        (Some(line), Some(m), Ok(r)) if with_line.is_empty() && !map_depot_has_line => depot_names_with_line(&r, &m.file, line),
+        _ => with_line,
+    };
     if !with_line.is_empty() && !map_depot_has_line && !with_line.iter().any(|h| h.eq_ignore_ascii_case(&want)) {
         let names: Vec<&str> = with_line.iter().map(|h| h.as_str()).collect();
         let hints: Vec<&str> = std::iter::once(want.as_str()).chain(map_hints.iter().copied()).collect();
@@ -537,6 +541,7 @@ pub struct ModsStatus {
     pub cleaned: Vec<String>,
     pub jobs: Vec<install::Progress>,
     pub hof_warnings: Vec<String>,
+    pub hof_offers: Vec<MapHofOffer>,
     /// Every mod, one by one (see `mods`).
     pub installed: Vec<mods::Mod>,
 }
@@ -686,8 +691,7 @@ pub fn install_inbox_blocking() -> Vec<install::Progress> {
 pub fn mods_status() -> Result<ModsStatus> {
     let content = content_dir().ok_or_else(|| anyhow!("no game binary configured, so no content folder"))?;
     let cleaned = install::cleanup_stale(&data_dir(), Some(&content));
-    hof_sync::sync_map_hofs();
-    let hof_warnings = hof_sync::warnings();
+    let (hof_offers, hof_warnings) = hof_sync::offers();
     let folders = omsi_cfg::CONTENT_FOLDERS
         .iter()
         .map(|f| {
@@ -712,6 +716,7 @@ pub fn mods_status() -> Result<ModsStatus> {
         cleaned,
         jobs: install::jobs(),
         hof_warnings,
+        hof_offers,
         installed: mods::list(&content),
     })
 }
@@ -826,7 +831,6 @@ pub struct EntryInfo {
 
 pub fn list_maps() -> Result<Vec<MapInfo>> {
     root()?;
-    hof_sync::sync_map_hofs();
     let lang = content_language();
     let mut out = Vec::new();
     let mut keys = Vec::new();
@@ -1056,8 +1060,8 @@ pub fn list_vehicles() -> Result<Vec<VehicleInfo>> {
     list_vehicles_progress(|_, _, _| {})
 }
 
-/// The depot files (by `[name]`) beside bus `bus` (relative to `root`) whose IBIS trips carry
-/// line `line`, the fullest first, read once per bus and line.
+/// The depot files (by `[name]`) beside bus or map file `bus` (relative to `root`) whose IBIS
+/// trips carry line `line`, the fullest first, read once per file and line.
 pub fn depot_names_with_line(root: &Path, bus: &str, line: &str) -> Vec<String> {
     type Cache = std::collections::HashMap<(PathBuf, String, String), Vec<String>>;
     static CACHE: std::sync::LazyLock<std::sync::Mutex<Cache>> = std::sync::LazyLock::new(Default::default);
