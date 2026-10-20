@@ -14,6 +14,9 @@ import { LayoutDrive } from './drive-layouts.js';
 /** HH:MM of seconds of the day (the timetables' unit). */
 export const hms = (s) => hhmm((s || 0) / 60);
 
+/** An entry point's name, or its number when the map gives it none. */
+export const entryName = (e) => e.name?.trim() || `${t('Entry point')} ${e.index + 1}`;
+
 /** A length of time in seconds as the player's language writes it, short: "22 min", "1 hr 5 min"
  *  (a narrow column breaks it between the hours and the minutes, never inside "5 min"). */
 export function duration(seconds) {

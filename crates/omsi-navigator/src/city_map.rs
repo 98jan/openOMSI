@@ -715,7 +715,7 @@ impl Navigator {
         ui.text_in(&mut self.atlas, &self.fonts, &title, 15.0 * s, Weight::Bold, Rect::new(x, head.y + 8.0 * s, head.right() - x - 12.0 * s, 24.0 * s), Align::Left, pal.card_text);
         let sub = match f.stops.first() {
             Some(st) => {
-                let d = self.next_dist.map(|d| omsi_ui::units::Units::now().distance(d)).unwrap_or_default();
+                let d = self.next_dist.map(|(_, d)| omsi_ui::units::Units::now().distance(d)).unwrap_or_default();
                 format!("{}  ·  {}  ·  {:02}:{:02}", st.name.trim(), d, (st.arrival / 3600.0) as i32 % 24, ((st.arrival % 3600.0) / 60.0) as i32)
             }
             None => self.street_here.clone().unwrap_or_default(),

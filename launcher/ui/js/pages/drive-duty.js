@@ -7,7 +7,7 @@ import { choose, curMap, curLine, curTour, pickedTrip, mapName, duty, busFile, r
 import { call } from '../api.js';
 import { RouteMap } from '../routemap.js';
 import { MapPicker } from './map-picker.js';
-import { hms, mapPicture, depotRun, tripAt, lineMatches, findTours, tourRoute, chooseLine, chooseTour, pickTrip, Notes, tripLength, tripTime, TripEnds } from './drive.js';
+import { hms, mapPicture, depotRun, tripAt, lineMatches, findTours, tourRoute, chooseLine, chooseTour, pickTrip, Notes, tripLength, tripTime, TripEnds, entryName } from './drive.js';
 
 export function MapRow() {
   const s = useStore();
@@ -167,7 +167,7 @@ export function DutyStep() {
   const lines = (s.lines.list || []).filter((l) => l.user_allowed && l.tours.length);
   const line = curLine();
   const tour = curTour();
-  const entries = m ? [[-1, c.free ? 'Automatic (the map\'s first)' : 'Automatic (nearest to the first stop)'], ...m.entry_points.map((e, i) => [i, e.name])] : [];
+  const entries = m ? [[-1, c.free ? 'Automatic (the map\'s first)' : 'Automatic (nearest to the first stop)'], ...m.entry_points.map((e, i) => [i, entryName(e)])] : [];
   let body;
   if (c.free) body = html`<p class="muted">${t('Free driving: the bus starts where you chose, with the traffic and the timetable\'s buses around it, but no line of your own.')}</p>`;
   else if (s.lines.loading && !s.lines.list) body = html`<div class="row muted"><${Spinner} /> ${t('Reading the timetable…')}</div>`;
