@@ -143,9 +143,10 @@ struct Sidebar: View {
             .frame(maxWidth: .infinity, alignment: railOnly ? .center : .leading)
             .padding(.horizontal, railOnly ? 0 : 8)
             .padding(.bottom, 18)
-            ForEach(Page.main) { p in SidebarItem(page: p, railOnly: railOnly) }
-            Spacer().frame(height: 10)
-            ForEach(Page.more) { p in SidebarItem(page: p, railOnly: railOnly) }
+            ViewThatFits(in: .vertical) {
+                pages
+                ScrollView { pages }.scrollIndicators(.never)
+            }
             Spacer()
             DriverChip(railOnly: railOnly)
         }
@@ -155,6 +156,14 @@ struct Sidebar: View {
         .frame(width: railOnly ? 72 : Theme.sidebarWidth)
         .frame(maxHeight: .infinity)
         .background(Theme.sidebar.ignoresSafeArea())
+    }
+
+    private var pages: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Page.main) { p in SidebarItem(page: p, railOnly: railOnly) }
+            Spacer().frame(height: 10)
+            ForEach(Page.more) { p in SidebarItem(page: p, railOnly: railOnly) }
+        }
     }
 }
 

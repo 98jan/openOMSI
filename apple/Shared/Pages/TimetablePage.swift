@@ -79,6 +79,8 @@ final class TimetableEditor {
     var line: String?
     var tour = 0
     var dirty: [String] = []
+    var ver: [String: Int] = [:]
+    var busy = false
     var drafts: [String: String] = [:]
     var offset = "20"
     var until = "22:00"
@@ -95,40 +97,51 @@ final class TimetableEditor {
         line = nil
         tour = 0
         dirty = []
+        ver = [:]
         drafts = [:]
         armed = false
         level = 0
-        do {
-            let d = try Bridge.api(TTData.self, "timetable", ["map": m])
-            data = d
-            line = d.lines.first?.name
-        } catch {
-            self.error = error.localizedDescription
+        Task { @MainActor in
+            do {
+                let d = try await offMain { try Bridge.api(TTData.self, "timetable", ["map": m]) }
+                guard map == m else { return }
+                data = d
+                line = d.lines.first?.name
+            } catch {
+                if map == m { self.error = error.localizedDescription }
+            }
         }
     }
 
     func touch(_ name: String) {
+        ver[name, default: 0] += 1
         if !dirty.contains(name) { dirty.append(name) }
     }
 
-    @discardableResult
-    func saveAll(_ store: LauncherStore) -> Bool {
-        guard let m = map, let d = data else { return false }
+    func saveAll(_ store: LauncherStore) async -> Bool {
+        guard !busy, let m = map, let d = data else { return false }
         if drafts.values.contains(where: { ttParse($0) == nil }) {
             store.say(String(localized: "A departure is not a time (h:mm)."), error: true)
             return false
         }
         let lines = d.lines.filter { dirty.contains($0.name) }
+        let sent = ver
+        busy = true
+        defer { busy = false }
         do {
-            let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(lines))
-            let r = try JSONSerialization.jsonObject(with: Bridge.api("timetable_save", ["map": m, "lines": json])) as? [String: Any] ?? [:]
+            let body = try JSONEncoder().encode(lines)
+            let reply = try await offMain { try Bridge.api("timetable_save", ["map": m, "lines": JSONSerialization.jsonObject(with: body)]) }
+            let r = try JSONSerialization.jsonObject(with: reply) as? [String: Any] ?? [:]
             let saved = r["saved"] as? [String] ?? []
-            for i in data!.lines.indices where saved.contains(data!.lines[i].name) {
-                for k in data!.lines[i].tours.indices { data!.lines[i].tours[k].trips.sort { $0.departure < $1.departure } }
+            let done = { (n: String) in saved.contains(n) && self.ver[n] == sent[n] }
+            if map == m, data != nil {
+                for i in data!.lines.indices where done(data!.lines[i].name) {
+                    for k in data!.lines[i].tours.indices { data!.lines[i].tours[k].trips.sort { $0.departure < $1.departure } }
+                }
+                if lines.allSatisfy({ ver[$0.name] == sent[$0.name] }) { drafts = [:] }
+                dirty.removeAll(where: done)
             }
-            dirty.removeAll { saved.contains($0) }
-            drafts = [:]
-            if !saved.isEmpty { store.act("reload") }
+            if !saved.isEmpty { store.act("lines") }
             if let e = r["error"] as? String {
                 store.say(tr("Not saved: {e}", ["e": e]), error: true)
                 return false
@@ -142,34 +155,43 @@ final class TimetableEditor {
     }
 
     func switchMap(_ m: String, _ store: LauncherStore) {
-        if !dirty.isEmpty && !saveAll(store) { return }
-        read(m)
+        guard !busy else { return }
+        Task { @MainActor in
+            if !dirty.isEmpty, !(await saveAll(store)) { return }
+            read(m)
+        }
     }
 
     func reset(_ store: LauncherStore) {
-        guard let m = map else { return }
+        guard !busy, let m = map else { return }
         if !armed {
             armed = true
             store.say(String(localized: "Press \"Reset timetable\" again to put the map's own timetable back (the changes made here are lost)"), error: false)
             return
         }
         armed = false
-        do {
-            let r = try JSONSerialization.jsonObject(with: Bridge.api("timetable_reset", ["map": m])) as? [String: Any] ?? [:]
-            let folder = r["folder"] as? String ?? ""
-            let restored = r["restored"] as? Int ?? 0
-            if r["removed"] as? Bool == true {
-                store.say(tr("The timetable of {map_folder} is the map's own again (the edited copy was removed)", ["map_folder": folder]), error: false)
-            } else if restored > 0 {
-                store.say(tr("{n} line(s) of {map_folder} put back as they were", ["n": "\(restored)", "map_folder": folder]), error: false)
-            } else {
-                store.say(tr("The timetable of {map_folder} has not been changed here", ["map_folder": folder]), error: true)
-                return
+        busy = true
+        Task { @MainActor in
+            do {
+                let reply = try await offMain { try Bridge.api("timetable_reset", ["map": m]) }
+                busy = false
+                let r = try JSONSerialization.jsonObject(with: reply) as? [String: Any] ?? [:]
+                let folder = r["folder"] as? String ?? ""
+                let restored = r["restored"] as? Int ?? 0
+                if r["removed"] as? Bool == true {
+                    store.say(tr("The timetable of {map_folder} is the map's own again (the edited copy was removed)", ["map_folder": folder]), error: false)
+                } else if restored > 0 {
+                    store.say(tr("{n} line(s) of {map_folder} put back as they were", ["n": "\(restored)", "map_folder": folder]), error: false)
+                } else {
+                    store.say(tr("The timetable of {map_folder} has not been changed here", ["map_folder": folder]), error: true)
+                    return
+                }
+                store.act("lines")
+                if map == m { read(m) }
+            } catch {
+                busy = false
+                store.say(error.localizedDescription, error: true)
             }
-            store.act("reload")
-            read(m)
-        } catch {
-            store.say(error.localizedDescription, error: true)
         }
     }
 
@@ -203,7 +225,7 @@ final class TimetableEditor {
     }
 
     func editLine(_ f: (inout TTLine) -> Void) {
-        guard let i = lineIndex else { return }
+        guard let i = lineIndex, data!.lines.indices.contains(i) else { return }
         f(&data!.lines[i])
         touch(data!.lines[i].name)
     }
@@ -225,10 +247,10 @@ struct TimetablePage: View {
         PageScroll("Timetable", subtitle: "A map's lines: their tours and when each trip leaves. Saved as the line's .ttl (in the content folder; OMSI 2's own files stay as they are).") {
             if tt.data != nil {
                 let n = tt.dirty.count
-                Button { tt.saveAll(store) } label: {
+                Button { Task { await tt.saveAll(store) } } label: {
                     Label(n == 0 ? String(localized: "Saved") : n == 1 ? String(localized: "Save") : tr("Save all ({n} lines)", ["n": "\(n)"]), systemImage: "square.and.arrow.down")
                 }
-                .buttonStyle(n > 0 ? .primary : .secondary).disabled(n == 0)
+                .buttonStyle(n > 0 ? .primary : .secondary).disabled(n == 0 || tt.busy)
             }
         } content: {
             if maps.isEmpty {
@@ -271,7 +293,7 @@ struct TimetablePage: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             }
         }
-        .task {
+        .task(id: maps.map(\.file)) {
             let want = tt.map.flatMap { m in !tt.dirty.isEmpty || maps.contains { $0.file == m } ? m : nil }
                 ?? maps.first { $0.file == store.choice.map }?.file ?? maps.first?.file
             if let want, want != tt.map || (tt.data == nil && tt.error == nil) { tt.read(want) }
@@ -302,7 +324,7 @@ private struct LinesCard: View {
         @Bindable var tt = tt
         Card("Lines") {
             Field("Map") {
-                SelectField(options: maps.map { (value: $0.file, label: $0.title) }, selection: tt.map ?? "", onChange: { tt.switchMap($0, store) })
+                SelectField(options: maps.map { (value: $0.file, label: $0.title) }, selection: tt.map ?? "", onChange: { tt.switchMap($0, store) }).disabled(tt.busy)
             }
             if let e = tt.error { Notice(text: e, kind: .danger) }
             if let d = tt.data {
@@ -329,7 +351,7 @@ private struct LinesCard: View {
                     Label(tt.armed ? "Press again to reset" : "Reset timetable", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.launcher(tt.armed ? .danger : .plain, wide: true))
-            } else if tt.error == nil {
+            } else if tt.error == nil && tt.map != nil {
                 ProgressView().controlSize(.small).tint(Theme.accent)
             }
         }
@@ -345,7 +367,7 @@ private struct ToursCard: View {
 
     var body: some View {
         @Bindable var tt = tt
-        let off = Double(tt.offset.trimmingCharacters(in: .whitespaces))
+        let off = Double(tt.offset.trimmingCharacters(in: .whitespaces)).flatMap { $0.isFinite ? $0 : nil }
         let until = ttParse(tt.until)
         let base = line.tours.indices.contains(tour) ? line.tours[tour] : nil
         Card {
@@ -416,7 +438,7 @@ private struct ToursCard: View {
 
     private func remove() {
         let i = tour
-        tt.editLine { $0.tours.remove(at: i) }
+        tt.editLine { if $0.tours.indices.contains(i) { $0.tours.remove(at: i) } }
         tt.pickTour(max(0, i - 1))
     }
 }
@@ -440,9 +462,9 @@ private struct TripsCard: View {
             VStack(spacing: 8) {
                 ForEach(Array(t.trips.enumerated()), id: \.offset) { i, x in
                     TripRow(trip: x, key: "\(line.name)|\(tour)|\(i)", choices: choices, info: tt.data?.trips.first { ttSame($0.name, x.trip) }) { f in
-                        tt.editLine { f(&$0.tours[tour].trips[i]) }
+                        tt.editLine { if $0.tours.indices.contains(tour), $0.tours[tour].trips.indices.contains(i) { f(&$0.tours[tour].trips[i]) } }
                     } remove: {
-                        tt.editLine { $0.tours[tour].trips.remove(at: i) }
+                        tt.editLine { if $0.tours.indices.contains(tour), $0.tours[tour].trips.indices.contains(i) { $0.tours[tour].trips.remove(at: i) } }
                         tt.drafts = [:]
                     }
                 }
@@ -452,6 +474,7 @@ private struct TripsCard: View {
 
     private func addTrip(_ choices: [String]) {
         tt.editLine { l in
+            guard l.tours.indices.contains(tour) else { return }
             let trips = l.tours[tour].trips
             let n = trips.count
             let x: TTTrip
@@ -464,6 +487,7 @@ private struct TripsCard: View {
 
     private func shift(_ d: Double) {
         tt.editLine { l in
+            guard l.tours.indices.contains(tour) else { return }
             for k in l.tours[tour].trips.indices { l.tours[tour].trips[k].departure = max(0, l.tours[tour].trips[k].departure + d) }
         }
         tt.drafts = [:]

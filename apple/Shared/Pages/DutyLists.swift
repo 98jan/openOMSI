@@ -151,7 +151,7 @@ struct LineList: View {
         if l.name != store.choice.line {
             store.act("line", ["line": l.name])
             let now = Double(store.choice.time * 60)
-            if let t = findTours(l, now: now, q: "", showEnded: false, keep: nil).shown.first?.tour ?? l.tours.first(where: \.runs) ?? l.tours.first {
+            if let t = findTours(l, now: now, q: "", showEnded: false, keep: nil).shown.first?.tour ?? l.tours.first(where: \.runs) ?? l.tours.first, t.runs {
                 store.act("tour", ["tour": t.number])
             }
         }

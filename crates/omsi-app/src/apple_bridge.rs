@@ -522,6 +522,12 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
             omsi_cfg::content_changed();
             s.load_content();
         }
+        "lines" => s.load_lines(),
+        "delete_situation" => {
+            let deleted = core::delete_situation(&s.choice.map, std::path::Path::new(&st("file")))?;
+            s.last_sit = None;
+            return Ok(json!(deleted));
+        }
         "server_add" => {
             let address = st("address").trim().to_string();
             if address.is_empty() {

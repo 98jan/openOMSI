@@ -33,6 +33,8 @@ extension LauncherStore {
     }
 
     var noServerBus: Bool { serverBuses != nil && !lists.vehicles.isEmpty && offeredVehicles.isEmpty }
+
+    var busOffered: Bool { serverBuses?.contains(busFile(choice.bus)) ?? true }
 }
 
 @MainActor
@@ -49,8 +51,10 @@ final class DriveData {
     func load() {
         guard !loaded else { return }
         loaded = true
-        if let b = try? Bridge.api(Boot.self, "bootstrap") { favourites = b.favourites ?? [] }
-        if let n = try? Bridge.api([String: String].self, "notes_get") { notes = n }
+        Task { @MainActor in
+            if let b = try? await offMain({ try Bridge.api(Boot.self, "bootstrap") }) { favourites = b.favourites ?? [] }
+            if let n = try? await offMain({ try Bridge.api([String: String].self, "notes_get") }) { notes = n }
+        }
     }
 
     func starred(_ file: String) -> Bool { favourites.contains(favKey(file)) }
@@ -101,8 +105,9 @@ struct NotesBox: View {
                     .buttonStyle(.launcher(.ghost, small: true))
             }
         }
-        .onAppear { data.load() }
-        .onChange(of: key) { open = false }
+        .onAppear { data.load(); open = !text.isEmpty }
+        .onChange(of: key) { open = !(data.notes[key] ?? "").isEmpty }
+        .onChange(of: text.isEmpty) { _, empty in if !empty { open = true } }
     }
 }
 
@@ -125,12 +130,13 @@ struct StarButton: View {
 
 struct MultiplayerDutyNotice: View {
     @Environment(LauncherStore.self) private var store
+    @Environment(\.compactLayout) private var compact
 
     var body: some View {
         let c = store.choice
         if c.lan_mode == "host" || c.lan_mode == "join" {
             let host = c.lan_mode == "host"
-            HStack(alignment: .center, spacing: 12) {
+            let info = HStack(alignment: .center, spacing: 12) {
                 Image(systemName: "person.2.fill").font(.system(size: 15)).foregroundStyle(Theme.accent)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(LocalizedStringKey(host ? "Host my next duty" : "Choose a bus and start")).font(.inter(14, .semibold))
@@ -138,10 +144,22 @@ struct MultiplayerDutyNotice: View {
                         .font(.inter(13)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            let buttons = Group {
                 Button("Multiplayer") { store.page = .multiplayer; store.phoneTab = "multiplayer" }
                     .buttonStyle(.launcher(.plain, small: true))
                 Button("Cancel") { store.act("lan", ["mode": "off", "addr": ""]) }
                     .buttonStyle(.launcher(.ghost, small: true))
+            }
+            Group {
+                if compact {
+                    VStack(alignment: .leading, spacing: 10) {
+                        info
+                        HStack(spacing: 8) { buttons }
+                    }
+                } else {
+                    HStack(alignment: .center, spacing: 12) { info; buttons }
+                }
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
             .background(Theme.surface2, in: RoundedRectangle(cornerRadius: Theme.radiusSm, style: .continuous))
@@ -157,7 +175,7 @@ struct SaveDelete: ViewModifier {
         content.confirmationDialog("Delete the save", isPresented: Binding(get: { item != nil }, set: { if !$0 { item = nil } }), presenting: item) { x in
             Button("Delete", role: .destructive) {
                 do {
-                    _ = try Bridge.api("delete_situation", ["map": store.choice.map, "file": x.file])
+                    if try !JSONDecoder().decode(Bool.self, from: Bridge.call("act", ["do": "delete_situation", "file": x.file])) { store.say(String(localized: "Nothing found"), error: true) }
                 } catch {
                     store.say(error.localizedDescription, error: true)
                 }

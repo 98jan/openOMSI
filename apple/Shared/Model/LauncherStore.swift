@@ -161,6 +161,7 @@ final class LauncherStore {
         if linesChanged || (lines.isEmpty && s.counts.lines > 0), let l = try? Bridge.get(LinesReply.self, "lines") {
             lines = l.lines
         }
+        if !busOffered, let v = offeredVehicles.first { Bridge.act("select_bus", ["file": v.file]) }
         if starting && !s.in_game && s.status.error { starting = false }
         refreshOverviewIfNeeded()
     }

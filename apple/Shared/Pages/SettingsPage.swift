@@ -144,7 +144,7 @@ struct SettingsPage: View {
                 SettingToggle(label: "V-sync", key: "vsync", fallback: true)
             }
             SettingToggle(label: "Simulation on its own thread", key: "sim_thread")
-            SettingSelect(label: "Frame limit", key: "max_fps", options: phone ? [("0", "Screen refresh rate"), ("30", "30 fps"), ("45", "45 fps"), ("60", "60 fps"), ("120", "120 fps (ProMotion)")] : [("0", "Screen refresh rate"), ("30", "30 fps"), ("45", "45 fps"), ("60", "60 fps"), ("120", "120 fps"), ("144", "144 fps"), ("1000", "Unlimited")])
+            SettingSelect(label: "Frame limit", key: "max_fps", options: phone ? [("0", "Screen refresh rate"), ("30", "30 fps"), ("45", "45 fps"), ("60", "60 fps"), ("120", "120 fps (ProMotion)")] : Choices.maxFps)
             SectionTitle("World & memory").padding(.top, 8)
             SettingSelect(label: "View distance", key: "view_distance", options: Choices.viewDistance, heavy: { (Double($0) ?? 0) >= 2000 })
             SettingSelect(label: "Object distance", key: "max_obj_dist", options: Choices.objectDistance, heavy: { (Double($0) ?? 0) >= 1500 })
@@ -415,7 +415,7 @@ struct SettingsPage: View {
             SettingToggle(label: "3D buildings on the map", key: "nav_3d", fallback: true)
             SettingToggle(label: "Navigator as a widget (drag it anywhere, size it at its corner)", key: "nav_widget", fallback: true)
             SettingSlider(label: "Navigator size", key: "nav_size", range: 0.6 ... 2, step: 0.05, fallback: 1) { String(format: "%.0f %%", $0 * 100) }
-            CornerRow(fallback: phone ? "top-center" : "bottom-left")
+            CornerRow(fallback: phone ? "top-center" : "bottom-left", phone: phone)
         }
     }
 
@@ -485,6 +485,7 @@ private func pedal(_ v: Double) -> String {
 private func vibration(_ v: Double) -> String { v < 0.01 ? off : abs(v - 1) < 0.01 ? String(localized: "Normal") : pct(v) }
 
 enum Choices {
+    static let maxFps = [("0", "Screen refresh rate"), ("30", "30 fps"), ("45", "45 fps"), ("60", "60 fps"), ("120", "120 fps"), ("144", "144 fps"), ("1000", "Unlimited")]
     static let msaa = [("1", "Off"), ("2", "2x MSAA"), ("4", "4x MSAA"), ("8", "8x MSAA")]
     static let renderScale = [("auto", "Auto"), ("1", "100%"), ("0.85", "85%"), ("0.75", "75%"), ("0.67", "67%"), ("0.5", "50%")]
     static let shadowSize = [("1024", "1024"), ("2048", "2048"), ("4096", "4096")]
@@ -497,7 +498,7 @@ enum Choices {
     static let mirrorRefresh = [("off", "None (frozen picture)"), ("eco", "Economical"), ("full", "Full"), ("every", "Every frame (smoothest)")]
 
     static let rows: [String: (label: String, options: [(String, String)])] = [
-        "msaa": ("Anti-aliasing", msaa), "render_scale": ("Render scale", renderScale), "shadow_size": ("Shadow map", shadowSize),
+        "max_fps": ("Frame limit", maxFps), "msaa": ("Anti-aliasing", msaa), "render_scale": ("Render scale", renderScale), "shadow_size": ("Shadow map", shadowSize),
         "cloud_quality": ("Cloud quality", cloudQuality), "rain_quality": ("Rain quality", rainQuality), "view_distance": ("View distance", viewDistance),
         "max_obj_dist": ("Object distance", objectDistance), "min_obj_size": ("Small objects", smallObjects), "mirror_size": ("Mirrors", mirrorSize),
         "mirror_refresh": ("Bus mirror refresh", mirrorRefresh), "ssao": ("Ambient occlusion", []), "shadows": ("Sun shadows", []),
@@ -508,6 +509,7 @@ enum Choices {
 struct CornerRow: View {
     @Environment(LauncherStore.self) private var store
     var fallback: String
+    var phone = false
 
     var body: some View {
         let cur = store.setting("navigator_corner")?.string ?? fallback
@@ -515,11 +517,16 @@ struct CornerRow: View {
             HStack {
                 Spacer(minLength: 0)
                 Grid(horizontalSpacing: 6, verticalSpacing: 6) {
-                    GridRow { corner("top-left", "Top left", cur); corner("top-right", "Top right", cur) }
-                    GridRow { corner("bottom-left", "Bottom left", cur); corner("bottom-right", "Bottom right", cur) }
+                    if phone {
+                        GridRow { corner("top-left", "Top left", cur); corner("top-center", "Centre", cur); corner("top-right", "Top right", cur) }
+                        GridRow { corner("bottom-left", "Bottom left", cur); Color.clear; corner("bottom-right", "Bottom right", cur) }
+                    } else {
+                        GridRow { corner("top-left", "Top left", cur); corner("top-right", "Top right", cur) }
+                        GridRow { corner("bottom-left", "Bottom left", cur); corner("bottom-right", "Bottom right", cur) }
+                    }
                 }
                 .padding(5)
-                .frame(width: 110, height: 64)
+                .frame(width: phone ? 150 : 110, height: 64)
                 .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
         }

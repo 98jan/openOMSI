@@ -235,11 +235,16 @@ struct VehicleFields: View {
             if let numbers = bus.numbers, !numbers.isEmpty {
                 Field("Fleet number") {
                     VStack(spacing: 6) {
-                        SelectField(options: numbers.compactMap { n in n.first.map { (value: $0, label: n.count > 1 && !n[1].isEmpty ? "\($0) - \(n[1])" : $0) } },
-                                    selection: c.number.isEmpty ? (numbers.first?.first ?? "") : c.number, onChange: { store.act("number", ["number": $0]) })
+                        SelectField(options: [(value: "", label: "\(String(localized: "Automatic")) (\(numbers.first?.first ?? ""))")] + numbers.compactMap { n in n.first.map { (value: $0, label: n.count > 1 && !n[1].isEmpty ? "\($0) - \(n[1])" : $0) } },
+                                    selection: c.number, onChange: { store.act("number", ["number": $0]) })
                         InputField(prompt: "Custom", text: $number) { store.act("number", ["number": number.trimmingCharacters(in: .whitespaces)]) }
                             .onAppear { number = custom(c.number, numbers) }
                             .onChange(of: c.number) { _, v in number = custom(v, numbers) }
+                            .task(id: number) {
+                                try? await Task.sleep(nanoseconds: 500_000_000)
+                                let n = number.trimmingCharacters(in: .whitespaces)
+                                if !Task.isCancelled && n != custom(store.choice.number, numbers) { store.act("number", ["number": n]) }
+                            }
                     }
                 }
             }
@@ -773,7 +778,7 @@ struct StartButton: View {
 
     var body: some View {
         let c = store.choice
-        let ready = store.map != nil && store.bus != nil && (c.free || (store.line != nil && store.tour != nil)) && !store.noServerBus
+        let ready = store.map != nil && store.bus != nil && (c.free || (store.line != nil && store.tour != nil)) && !store.noServerBus && store.busOffered
         Button { store.start() } label: {
             Label(store.starting ? String(localized: "Starting…") : c.lan_mode == "join" ? String(localized: "Join and drive") : c.free ? String(localized: "Start driving") : String(localized: "Start the duty"),
                   systemImage: "play.fill")

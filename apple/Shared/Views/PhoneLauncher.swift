@@ -184,7 +184,7 @@ struct PhoneDrive: View {
         return ZStack {
             Color(hex: 0x1A1A1A)
             if store.bus != nil && store.phoneSheet == nil {
-                BusPreview()
+                BusPreview(buttonsTop: true)
             }
         }
         .overlay(alignment: .topLeading) {
@@ -317,7 +317,7 @@ struct PhoneStartButton: View {
     var body: some View {
         let c = store.choice
         let ready = store.map != nil && store.bus != nil && (c.free || (store.line != nil && store.tour != nil))
-        let enabled = ready && !store.snapshot.in_game && !store.starting && !store.noServerBus
+        let enabled = ready && !store.snapshot.in_game && !store.starting && !store.noServerBus && store.busOffered
         Button { store.start() } label: {
             HStack(spacing: 10) {
                 Image(systemName: "play.fill").font(.system(size: 20, weight: .bold))

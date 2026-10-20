@@ -61,6 +61,7 @@ struct BusPreview: View {
     @State private var lastDrag: CGSize = .zero
     @State private var lastZoom: CGFloat = 1
     @Environment(\.displayScale) private var scale
+    var buttonsTop = false
 
     static let views: [(id: String, label: LocalizedStringKey, icon: String)] = [
         ("outside", "Outside view", "bus.fill"),
@@ -113,7 +114,7 @@ struct BusPreview: View {
                     }
                     .onEnded { _ in lastZoom = 1 }
             )
-            .overlay(alignment: .bottomTrailing) { viewButtons }
+            .overlay(alignment: buttonsTop ? .topTrailing : .bottomTrailing) { viewButtons.padding(.top, buttonsTop ? 44 : 0) }
             .onAppear { model.run(id, width: Int(geo.size.width * scale), height: Int(geo.size.height * scale)) }
             .onChange(of: geo.size) { _, s in model.run(id, width: Int(s.width * scale), height: Int(s.height * scale)) }
             .onChange(of: store.snapshot.preview.error, initial: true) { _, error in

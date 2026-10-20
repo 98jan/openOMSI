@@ -195,7 +195,7 @@ struct SelectField: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Text(options.first { $0.value == selection }?.label ?? (selection.isEmpty ? placeholder : selection))
+                Text(options.first { $0.value == selection }?.label ?? (selection.isEmpty ? String(localized: String.LocalizationValue(placeholder)) : selection))
                     .font(.inter(14))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
