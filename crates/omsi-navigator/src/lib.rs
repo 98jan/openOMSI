@@ -367,7 +367,7 @@ pub struct Navigator {
     cam_heading: f64,
     time: f32,
     /// Distance along the route to the next stop (m), refreshed now and then.
-    next_dist: Option<f64>,
+    next_dist: Option<(i64, f64)>,
     dist_t: f32,
     /// The next turn on the route: direction (-1 left, 1 right, 2 back), how sharp
     /// (degrees), how far (m) and the street it turns into.
@@ -708,6 +708,19 @@ impl Navigator {
     /// The whole map's network, once read.
     pub fn map_net(&self) -> Option<&Network> {
         self.global.as_deref()
+    }
+
+    /// The route-following distance to its stop, refreshed during navigator frames.
+    pub fn next_stop_distance(&self) -> Option<f64> {
+        self.next_dist.map(|(_, distance)| distance)
+    }
+
+    pub fn next_stop_distance_for(&self, object_id: i64) -> Option<f64> {
+        self.next_dist.filter(|(id, _)| *id == object_id).map(|(_, distance)| distance)
+    }
+
+    fn invalidate_next_stop_distance(&mut self) {
+        self.next_dist = None;
     }
 
     /// The map's lanes, for a session without a traffic system (added as tiles stream in).
@@ -1155,6 +1168,7 @@ impl Navigator {
         self.board = None;
         // (with the navigator off the route is still followed for OMSI 2's arrows)
         if !self.enabled && !self.city.open && !self.arrows && self.shown < 0.01 {
+            self.invalidate_next_stop_distance();
             return;
         }
         let target = if self.enabled { 1.0 } else { 0.0 };
@@ -1226,8 +1240,8 @@ impl Navigator {
             let global = self.global.clone();
             let net = global.as_deref().or(f.traffic.map(|t| &t.net));
             self.next_dist = match (f.stops.first(), net) {
-                (Some(s), Some(n)) if !self.route.lanes.is_empty() => self.route_distance(n, s.position).or_else(|| Some((s.position - f.bus).truncate().length())),
-                (Some(s), _) => Some((s.position - f.bus).truncate().length()),
+                (Some(s), Some(n)) if !self.route.lanes.is_empty() => self.route_distance(n, s.position).or_else(|| Some((s.position - f.bus).truncate().length())).map(|d| (s.object_id, d)),
+                (Some(s), _) => Some((s.object_id, (s.position - f.bus).truncate().length())),
                 _ => None,
             };
             self.next_turn = net.and_then(|n| self.turn_ahead(n));
@@ -1372,5 +1386,4 @@ pub use city_map::*;
 use lines_panel::*;
 #[cfg(test)]
 mod tests;
-
 

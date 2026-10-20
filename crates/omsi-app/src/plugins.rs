@@ -318,6 +318,11 @@ pub(crate) fn game_info(app: &crate::App) -> Vec<(&'static str, InfoValue)> {
             v.push(("trip_done", Bool(d.trip_done())));
             let bus = app.player.as_ref().map(|p| p.vehicle.position);
             stop_info(&mut v, &trip.stops, d.next_stop, d.at_stop(), bus);
+            if let Some(stop) = trip.stops.get(d.next_stop) {
+                if let Some(distance) = app.menus.navigator.as_ref().and_then(|n| n.next_stop_distance_for(stop.object_id)) {
+                    v.push(("next_stop_distance_nav", Num(distance)));
+                }
+            }
         }
     }
     v
