@@ -661,7 +661,9 @@ struct PhoneMore: View {
                         PhoneRow(icon: Page.setup.icon, label: "Setup", value: store.snapshot.root_ok ? "" : String(localized: "OMSI 2 not found"), divider: true) { store.phoneMore = .setup }
                     }
                     PhoneGroup {
-                        PhoneRow(icon: Page.controls.icon, label: "Controls") { store.phoneMore = .controls }
+                        PhoneRow(icon: Page.depot.icon, label: "Depot") { store.phoneMore = .depot }
+                        PhoneRow(icon: Page.timetable.icon, label: "Timetable", divider: true) { store.phoneMore = .timetable }
+                        PhoneRow(icon: Page.controls.icon, label: "Controls", divider: true) { store.phoneMore = .controls }
                         PhoneRow(icon: Page.profile.icon, label: "Profile", value: store.snapshot.config.profile, divider: true) { store.phoneTab = "profile" }
                     }
                     Text("openOMSI \(store.version)").font(.inter(12)).foregroundStyle(Theme.muted).padding(.horizontal, 4).padding(.top, 4)

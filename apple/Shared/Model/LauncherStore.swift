@@ -5,18 +5,20 @@ import SwiftUI
 /// The launcher's pages, in the desktop launcher's order (`launcher/ui/js/app.js`): the
 /// main ones, then after a gap the running games, the tutorials and the setup.
 enum Page: String, CaseIterable, Identifiable {
-    case drive, multiplayer, profile, mods, settings, controls, games, tutorials, setup
+    case drive, depot, multiplayer, profile, mods, timetable, settings, controls, games, tutorials, setup
     var id: String { rawValue }
 
-    static let main: [Page] = [.drive, .multiplayer, .profile, .mods, .settings, .controls]
+    static let main: [Page] = [.drive, .depot, .multiplayer, .profile, .mods, .timetable, .settings, .controls]
     static let more: [Page] = [.games, .tutorials, .setup]
 
     var title: LocalizedStringKey {
         switch self {
         case .drive: "Drive"
+        case .depot: "Depot"
         case .multiplayer: "Multiplayer"
         case .profile: "Profile"
         case .mods: "Mods"
+        case .timetable: "Timetable"
         case .settings: "Settings"
         case .controls: "Controls"
         case .games: "Running games"
@@ -29,9 +31,11 @@ enum Page: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .drive: "bus.fill"
+        case .depot: "door.garage.closed"
         case .multiplayer: "person.2.fill"
         case .profile: "person.fill"
         case .mods: "puzzlepiece.extension.fill"
+        case .timetable: "clock.fill"
         case .settings: "slider.horizontal.3"
         case .controls: "keyboard.fill"
         case .games: "gamecontroller.fill"

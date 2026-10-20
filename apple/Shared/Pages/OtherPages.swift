@@ -1,3 +1,4 @@
+import GameController
 import SwiftUI
 
 // The launcher's other pages, as the desktop launcher has them (`launcher/ui/js/pages/*.js`).
@@ -285,9 +286,11 @@ struct ProfilePage: View {
 
 struct ControlsPage: View {
     @Environment(LauncherStore.self) private var store
+    @State private var keyboard = GCKeyboard.coalesced != nil
 
     var body: some View {
         let touch = store.platform == "ios"
+        let keys = !touch || keyboard
         PageScroll("Controls", subtitle: touch ? "Touch, tilt and game controllers." : "Keys, wheels and gamepads.") {
             TwoColumns {
                 if touch {
@@ -297,8 +300,10 @@ struct ControlsPage: View {
                     }
                 }
                 Card("Key bindings") {
-                    Notice(text: String(localized: "The keys of the game are OMSI's Inputs/keyboard.cfg: the openOMSI launcher of Windows and Linux sets them on its Controls page, which reads and writes the same file."))
-                    SettingSelect(label: "Driving keys", key: "drive_keys", options: [("omsi", "Custom controls"), ("simple", "W A S D + arrows"), ("wasd", "W A S D only"), ("arrows", "Arrow keys only")])
+                    if !keys {
+                        Notice(text: String(localized: "The keys of the game are OMSI's Inputs/keyboard.cfg: the openOMSI launcher of Windows and Linux sets them on its Controls page, which reads and writes the same file."))
+                    }
+                    SettingSelect(label: "Driving keys", key: "drive_keys", options: [("omsi", "Custom controls (Controls page)"), ("simple", "W A S D + arrows"), ("wasd", "W A S D only"), ("arrows", "Arrow keys only")])
                 }
             } right: {
                 Card("Game controllers") {
@@ -307,7 +312,12 @@ struct ControlsPage: View {
                     SettingToggle(label: "Force feedback and vibration", key: "ff_enabled", fallback: true)
                 }
             }
+            if keys {
+                KeyEditor()
+            }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidConnect)) { _ in keyboard = true }
+        .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidDisconnect)) { _ in keyboard = GCKeyboard.coalesced != nil }
     }
 }
 

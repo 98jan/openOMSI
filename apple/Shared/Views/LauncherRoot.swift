@@ -108,9 +108,11 @@ struct PageView: View {
     var body: some View {
         switch page {
         case .drive: DrivePage()
+        case .depot: DepotPage()
         case .multiplayer: MultiplayerPage()
         case .profile: ProfilePage()
         case .mods: ModsPage()
+        case .timetable: TimetablePage()
         case .settings: SettingsPage()
         case .controls: ControlsPage()
         case .games: GamesPage()
