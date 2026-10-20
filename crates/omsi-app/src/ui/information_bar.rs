@@ -1,4 +1,4 @@
-use super::{wrap_rows, Frame, Label, MenuKind, Renderer, Scene, TextureId, Ui, BOLD};
+use super::{hud, wrap_rows, Frame, Label, MenuKind, Renderer, Scene, TextureId, Ui, BOLD};
 
 /// A translated label and its live value on the information bar.
 #[derive(Clone, Debug, PartialEq)]
@@ -56,6 +56,7 @@ struct InfoItemLabels {
     icon: Option<(TextureId, f32)>,
     progress: Option<f32>,
     style: InfoItemStyle,
+    tint: Option<[u8; 4]>,
     width: f32,
     height: f32,
 }
@@ -146,6 +147,17 @@ fn info_row_offsets(widths: &[f32], gap: f32, room: f32) -> Vec<f32> {
         .collect()
 }
 
+fn delay_seconds(value: &str) -> f32 {
+    let (sign, rest) = match value.strip_prefix('-') {
+        Some(rest) => (-1.0, rest),
+        None => (1.0, value.trim_start_matches('+')),
+    };
+    let mut parts = rest.split(':').map(|part| part.trim().parse::<f32>().unwrap_or(0.0));
+    let minutes = parts.next().unwrap_or(0.0);
+    let seconds = parts.next().unwrap_or(0.0);
+    sign * (minutes * 60.0 + seconds)
+}
+
 fn info_bar_width(available_width: f32, content_width: f32, padding: f32, max_width: f32) -> f32 {
     (content_width + padding * 2.0).min(available_width.min(max_width))
 }
@@ -176,14 +188,14 @@ impl Ui {
             scene,
             [x, y, x + 44.0 * s, y + 5.0 * s],
             2.5 * s,
-            [71, 84, 80, 255],
+            hud::tint(self.hud.ink, 40),
         );
         self.text.rounded(
             r,
             scene,
             [x, y, x + 44.0 * s * progress.clamp(0.0, 1.0), y + 5.0 * s],
             2.5 * s,
-            [110, 194, 151, 255],
+            hud::ON_TIME,
         );
     }
 
@@ -200,6 +212,7 @@ impl Ui {
         badge_pad_x: f32,
         badge_pad_y: f32,
     ) -> Vec<InfoItemLabels> {
+        let look = self.hud;
         let ui = self;
         items
             .iter()
@@ -218,16 +231,16 @@ impl Ui {
                     InfoItemStyle::Normal => 13.0,
                 };
                 let value_px = (value_px * s).round().max(1.0) as u32;
-                let (label_color, value_color) = match item.style {
-                    InfoItemStyle::Speed => ([155, 165, 174, 0], [232, 160, 48, 0]),
-                    InfoItemStyle::SpeedLimit => ([155, 165, 174, 0], [31, 43, 43, 0]),
-                    InfoItemStyle::NextStop => ([155, 165, 174, 0], [244, 201, 118, 0]),
-                    InfoItemStyle::Delay => ([155, 165, 174, 0], [244, 201, 118, 0]),
-                    InfoItemStyle::Status => ([244, 201, 118, 0], [244, 201, 118, 0]),
-                    InfoItemStyle::Detail => ([143, 153, 162, 0], [215, 219, 222, 0]),
-                    InfoItemStyle::Fuel => ([143, 153, 162, 0], [215, 219, 222, 0]),
-                    _ if secondary => ([143, 153, 162, 0], [215, 219, 222, 0]),
-                    _ => ([155, 165, 174, 0], [246, 247, 248, 0]),
+                let value_weight = if !secondary && matches!(item.style, InfoItemStyle::Clock | InfoItemStyle::Speed | InfoItemStyle::SpeedLimit) { BOLD } else { 0 };
+                let tint = match item.style {
+                    InfoItemStyle::Status => Some(hud::WARN),
+                    InfoItemStyle::Delay => Some(hud::delay_color(delay_seconds(&item.value))),
+                    _ => None,
+                };
+                let label_color = hud::text(tint.unwrap_or(look.dim));
+                let value_color = match item.style {
+                    InfoItemStyle::SpeedLimit => [15, 15, 15, 0],
+                    _ => hud::text(tint.unwrap_or(look.ink)),
                 };
                 let badge_room = item.badge.as_deref().map(|badge| {
                     ui.text.width_raw(badge, value_px as f32) + badge_pad_x * 2.0 + stack_gap
@@ -239,11 +252,11 @@ impl Ui {
                         InfoItemStyle::Clock => Some("schedule"),
                         InfoItemStyle::NextStop => Some("location_on"),
                         InfoItemStyle::Delay => Some("timer"),
-                        InfoItemStyle::Status => Some("stop_circle"),
+                        InfoItemStyle::Status => Some("directions_bus"),
                         _ => None,
                     }
                 };
-                let icon_size = 16.0 * s;
+                let icon_size = if item.style == InfoItemStyle::Status { 18.0 } else { 16.0 } * s;
                 let icon_room = icon_name.map_or(0.0, |_| icon_size + stack_gap);
                 let prefix_room = if icon_room > 0.0 {
                     icon_room
@@ -287,17 +300,13 @@ impl Ui {
                 let values: Vec<Label> = text
                     .values
                     .iter()
-                    .map(|line| ui.text.label_op(r, scene, line, value_px, value_color, 1.0))
+                    .map(|line| ui.text.label_op(r, scene, line, value_px | value_weight, value_color, 1.0))
                     .collect();
                 let badge = item.badge.as_deref().map(|text| {
                     ui.text
-                        .label_op(r, scene, text, value_px | BOLD, [31, 43, 43, 0], 1.0)
+                        .label_op(r, scene, text, value_px | BOLD, [255, 255, 255, 0], 1.0)
                 });
-                let icon_color = match item.style {
-                    InfoItemStyle::Clock | InfoItemStyle::NextStop => [110, 190, 183, 255],
-                    InfoItemStyle::Delay | InfoItemStyle::Status => [244, 201, 118, 255],
-                    _ => [value_color[0], value_color[1], value_color[2], 255],
-                };
+                let icon_color = tint.unwrap_or(look.accent);
                 let icon = icon_name.and_then(|name| {
                     ui.text
                         .icon(r, scene, name, icon_size.round() as u32, icon_color)
@@ -314,7 +323,7 @@ impl Ui {
                     .as_ref()
                     .map_or(0.0, |badge| badge.w as f32 + badge_pad_x * 2.0);
                 let progress_width = item.progress.map_or(0.0, |_| 44.0 * s + stack_gap);
-                let status = item.style == InfoItemStyle::Status;
+                let status = tint.is_some();
                 let labels_height = labels.iter().map(|label| label.h as f32).sum::<f32>()
                     + stack_gap * labels.len().saturating_sub(1) as f32;
                 let value_height = values.iter().map(|value| value.h as f32).sum::<f32>()
@@ -371,6 +380,7 @@ impl Ui {
                     icon: icon.map(|icon| (icon, icon_size)),
                     progress: item.progress,
                     style: item.style,
+                    tint,
                     width,
                     height,
                 }
@@ -391,7 +401,7 @@ impl Ui {
         badge_pad_y: f32,
         s: f32,
     ) {
-        let status = item.style == InfoItemStyle::Status;
+        let status = item.tint.is_some();
         let labels_height = item.labels.iter().map(|label| label.h as f32).sum::<f32>()
             + stack_gap * item.labels.len().saturating_sub(1) as f32;
         let values_height = item.values.iter().map(|value| value.h as f32).sum::<f32>()
@@ -401,13 +411,13 @@ impl Ui {
             .iter()
             .map(|value| value.w as f32)
             .fold(0.0, f32::max);
-        if status {
+        if let Some(tint) = item.tint {
             self.text.rounded(
                 r,
                 scene,
                 [item_x, item_y, item_x + item.width, item_y + item.height],
-                5.0 * s,
-                [232, 160, 48, 34],
+                hud::RADIUS * s,
+                hud::tint(tint, 41),
             );
         }
         if primary && item.style == InfoItemStyle::SpeedLimit {
@@ -419,9 +429,9 @@ impl Ui {
                 scene,
                 [sign_x, sign_y, sign_x + diameter, sign_y + diameter],
                 diameter * 0.5,
-                [239, 83, 80, 255],
+                [214, 38, 38, 255],
             );
-            let inset = 2.5 * s;
+            let inset = diameter * 0.11;
             self.text.rounded(
                 r,
                 scene,
@@ -432,7 +442,7 @@ impl Ui {
                     sign_y + diameter - inset,
                 ],
                 diameter * 0.5 - inset,
-                [248, 248, 245, 255],
+                [255, 255, 255, 255],
             );
             if let Some(value) = item.values.first() {
                 let value_x = sign_x + (diameter - value.w as f32) * 0.5;
@@ -478,7 +488,7 @@ impl Ui {
                         badge_y + badge_height,
                     ],
                     4.0 * s,
-                    [230, 235, 226, 255],
+                    hud::LINE,
                 );
                 scene.overlays.push((
                     badge.tex,
@@ -558,6 +568,8 @@ impl Ui {
     }
 
     pub(super) fn draw_info_bar(&mut self, r: &Renderer, scene: &mut Scene, f: &Frame, s: f32) {
+        let size = self.shown_size(0, f.sizes[0]);
+        let s = s * size;
         // --- the information bar: driving details first, vehicle data beneath
         self.info_rect = None;
         // (not under the pause menu's rail, from under which it stood out)
@@ -648,32 +660,10 @@ impl Ui {
                 let (w, h) = quantize_info_bar_dimensions(w, h, available_width, 8.0 * s);
                 let x = (x0 + x1 - w) * 0.5;
                 let opacity = self.text.backdrop.clamp(0.0, 1.0);
-                self.text.shadow(
-                    r,
-                    scene,
-                    [x, y, x + w, y + h],
-                    10.0 * s,
-                    4.0 * s,
-                    2.0 * s,
-                    (48.0 * opacity).round() as u8,
-                );
-                self.text.rounded(
-                    r,
-                    scene,
-                    [x, y, x + w, y + h],
-                    10.0 * s,
-                    [255, 255, 255, (30.0 * opacity).round() as u8],
-                );
-                self.text.rounded(
-                    r,
-                    scene,
-                    [x + s, y + s, x + w - s, y + h - s],
-                    9.0 * s,
-                    [28, 28, 28, (238.0 * self.text.backdrop.min(1.0)) as u8],
-                );
-                let divider =
-                    self.text
-                        .solid(r, scene, [255, 255, 255, (34.0 * opacity).round() as u8]);
+                self.hud_card(r, scene, [x, y, x + w, y + h], hud::RADIUS * s, opacity, s);
+                let divider = self
+                    .text
+                    .solid(r, scene, hud::tint(self.hud.ink, (30.0 * opacity).round() as u8));
                 let mut row_y = y + pad_y;
                 for (row_at, (primary, indexes, row_width, row_height)) in rows.iter().enumerate() {
                     let labels = if *primary {
@@ -735,6 +725,7 @@ impl Ui {
                     }
                 }
                 self.info_rect = Some([x, y, x + w, y + h]);
+                self.hud_grip(r, scene, 0, [x, y, x + w, y + h], size, f, s);
             }
         }
     }
@@ -743,6 +734,13 @@ impl Ui {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_delay_reads_back_from_its_text() {
+        assert_eq!(delay_seconds("+6:52"), 412.0);
+        assert_eq!(delay_seconds("-1:05"), -65.0);
+        assert_eq!(delay_seconds("+0:30"), 30.0);
+    }
+
     #[test]
     fn the_information_bar_wraps_labelled_items_without_reordering_or_dropping_them() {
         let info = InfoBar {

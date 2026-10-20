@@ -486,6 +486,8 @@ impl App {
                 scale,
                 ui_scale: ui::size_factor(h, scale, self.settings.ui_scale, self.settings.ui_scale_window),
                 opacity: ui::backdrop(self.settings.ui_opacity),
+                light: self.settings.nav_light,
+                sizes: self.settings.hud_sizes,
                 width: w,
                 height: h,
                 cursor: (self.input.cursor.0 - hud[0], self.input.cursor.1),
