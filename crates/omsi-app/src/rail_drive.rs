@@ -56,7 +56,7 @@ const NEAR_TRACK: f64 = 100.0;
 /// two apart, so the nearest one is as often the one going the opposite way, and the whole
 /// consist is then laid out along it facing back the way it came.
 pub(crate) fn attach(p: &mut Player, net: &Network, reach: f64) -> Option<RailDrive> {
-    let pos = p.vehicle.position;
+    let pos = DVec3::new(p.vehicle.position.x, p.vehicle.position.y, p.rail_spawn_z);
     let heading = p.vehicle.heading;
     let (lane, s, dist) = track_for(net, pos, heading, reach)?;
     let (_, h) = net.lanes[lane].at(s);
