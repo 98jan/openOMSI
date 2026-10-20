@@ -442,6 +442,9 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
         }
         "settings" => {
             if let Some(o) = a.get("values").and_then(|v| v.as_object()) {
+                if a.get("replace").and_then(|v| v.as_bool()) == Some(true) {
+                    s.settings = json!({});
+                }
                 for (k, v) in o {
                     s.settings[k.as_str()] = v.clone();
                 }
