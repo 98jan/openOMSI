@@ -222,7 +222,8 @@ fn tick(s: &mut State, dt: f32) {
 fn snapshot(s: &mut State) -> Value {
     let preview = {
         let p = PREVIEW_STATE.lock().unwrap_or_else(|e| e.into_inner());
-        json!({ "busy": p.0, "error": p.1 })
+        let v = PREVIEW_VIEWS.lock().unwrap_or_else(|e| e.into_inner());
+        json!({ "busy": p.0, "error": p.1, "view": v.0, "views": v.1 })
     };
     let root_ok = omsi_cfg::missing_original_essentials(std::path::Path::new(&s.config.root)).is_empty();
     let saved: Vec<Value> = s.saved_situations().iter().map(|x| json!({ "file": x.file.to_string_lossy(), "name": x.name, "saved": x.saved })).collect();
@@ -282,6 +283,7 @@ fn snapshot(s: &mut State) -> Value {
         "ibis": ibis,
         "cmdline": s.cmdline,
         "fresh": s.fresh.keys().collect::<Vec<_>>(),
+        "host_vehicles": s.host_vehicles(),
         "preview": preview,
     })
 }
@@ -578,6 +580,7 @@ enum PreviewMsg {
     Want(crate::launcher::showroom::Look),
     Orbit(f32, f32),
     Zoom(f32),
+    View(crate::launcher::showroom::PreviewView),
     Frame { w: u32, h: u32, reply: std::sync::mpsc::Sender<Option<(u32, u32, Vec<u8>)>> },
     Release,
 }
@@ -587,6 +590,8 @@ static PREVIEW: Mutex<Option<std::sync::mpsc::Sender<PreviewMsg>>> = Mutex::new(
 /// What the preview is doing, for the Swift side to show: a bus being read, or why there is
 /// no picture (no graphics device, a bus that cannot be read).
 static PREVIEW_STATE: Mutex<(bool, Option<String>)> = Mutex::new((false, None));
+
+static PREVIEW_VIEWS: Mutex<(&'static str, Vec<&'static str>)> = Mutex::new(("outside", Vec::new()));
 
 fn preview_state(busy: bool, error: Option<String>) {
     *PREVIEW_STATE.lock().unwrap_or_else(|e| e.into_inner()) = (busy, error);
@@ -637,6 +642,7 @@ fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
             }
             PreviewMsg::Orbit(dx, dy) => showroom.orbit(dx, dy),
             PreviewMsg::Zoom(k) => showroom.zoom_by(k),
+            PreviewMsg::View(v) => showroom.set_view(v),
             PreviewMsg::Release => return,
             PreviewMsg::Frame { w, h, reply } => {
                 // (asked again after a pause: a preview that came back on the screen gets the
@@ -664,6 +670,7 @@ fn preview_thread(rx: std::sync::mpsc::Receiver<PreviewMsg>) {
                 last = Instant::now();
                 showroom.update(r, dt);
                 preview_state(showroom.busy, showroom.error.clone());
+                *PREVIEW_VIEWS.lock().unwrap_or_else(|e| e.into_inner()) = (showroom.view.name(), showroom.views());
                 let picture = showroom.preview(r, w, h).filter(|_| showroom.has_picture());
                 if picture.is_none() || showroom.drawn == delivered {
                     let _ = reply.send(None);
@@ -727,4 +734,11 @@ pub extern "C" fn openomsi_preview_orbit(dx: f32, dy: f32) {
 #[no_mangle]
 pub extern "C" fn openomsi_preview_zoom(k: f32) {
     preview_send(PreviewMsg::Zoom(k.clamp(0.5, 2.0)));
+}
+
+#[no_mangle]
+pub extern "C" fn openomsi_preview_view(view: u32) {
+    if let Some(v) = crate::launcher::showroom::PreviewView::ALL.get(view as usize) {
+        preview_send(PreviewMsg::View(*v));
+    }
 }

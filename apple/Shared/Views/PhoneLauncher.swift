@@ -167,6 +167,7 @@ struct PhoneSegmented: View {
 
 struct PhoneDrive: View {
     @Environment(LauncherStore.self) private var store
+    @State private var deleting: SavedSituation?
 
     var body: some View {
         GeometryReader { geo in
@@ -226,6 +227,10 @@ struct PhoneDrive: View {
         let open = { (s: PhoneSheet) in { store.phoneSheet = s } }
         return Scroll {
             VStack(spacing: 12) {
+                MultiplayerDutyNotice()
+                if store.noServerBus {
+                    Notice(text: String(localized: "The server offers none of the vehicles installed here"), kind: .danger)
+                }
                 PhoneGroup {
                     PhoneRow(icon: "map.fill", label: "Map", value: store.map?.title ?? "-", action: open(.map))
                     PhoneRow(icon: "bus.fill", label: "Bus", value: store.bus?.name ?? "-", divider: true, action: open(.bus))
@@ -238,7 +243,7 @@ struct PhoneDrive: View {
                     if !c.free {
                         PhoneRow(icon: "point.topleft.down.to.point.bottomright.curvepath.fill", label: "Line", value: store.line?.name ?? (store.snapshot.loading_lines ? "…" : "-"), action: open(.line))
                         PhoneRow(icon: "calendar", label: "Tour", value: store.tour.map { "\($0.number) - \($0.days)" } ?? "-", divider: true, action: open(.tour))
-                        PhoneRow(icon: "clock.arrow.circlepath", label: "First trip", value: store.startTrip.map { "\(hhmm($0.departure)) \($0.from)" } ?? "-", divider: true, action: open(.trip))
+                        PhoneRow(icon: "clock.arrow.circlepath", label: "First trip", value: store.startTrip.map { "\(hhmm($0.departure)) \($0.from)" } ?? "-", sub: store.startTrip.flatMap { $0.km > 0 ? String(format: "%.1f km", $0.km) : nil }, divider: true, action: open(.trip))
                     }
                     PhoneRow(icon: "mappin.and.ellipse", label: "Start at", value: c.entry < 0 ? String(localized: "Automatic") : (store.map?.entry_points.first { $0.index == c.entry }?.name ?? "-"), divider: !c.free, action: open(.entry))
                 }
@@ -258,11 +263,16 @@ struct PhoneDrive: View {
                 if !store.snapshot.saved.isEmpty {
                     PhoneGroup {
                         ForEach(Array(store.snapshot.saved.prefix(3).enumerated()), id: \.offset) { i, s in
-                            PhoneRow(icon: "clock.arrow.circlepath", label: LocalizedStringKey(s.name), value: Date(timeIntervalSince1970: TimeInterval(s.saved)).formatted(date: .abbreviated, time: .shortened), trailing: "play.fill", divider: i > 0) {
-                                if !store.starting { store.continueLast(pick: i) }
+                            HStack(spacing: 0) {
+                                PhoneRow(icon: "clock.arrow.circlepath", label: LocalizedStringKey(s.name), value: Date(timeIntervalSince1970: TimeInterval(s.saved)).formatted(date: .abbreviated, time: .shortened), trailing: "play.fill") {
+                                    if !store.starting { store.continueLast(pick: i) }
+                                }
+                                if c.lan_mode != "join" { DeleteSaveButton { deleting = s }.padding(.trailing, 6) }
                             }
+                            .overlay(alignment: .top) { if i > 0 { Rectangle().fill(Color.white.opacity(0.04)).frame(height: 1) } }
                         }
                     }
+                    .modifier(SaveDelete(item: $deleting))
                 }
             }
             .padding(.horizontal, 14)
@@ -307,7 +317,7 @@ struct PhoneStartButton: View {
     var body: some View {
         let c = store.choice
         let ready = store.map != nil && store.bus != nil && (c.free || (store.line != nil && store.tour != nil))
-        let enabled = ready && !store.snapshot.in_game && !store.starting
+        let enabled = ready && !store.snapshot.in_game && !store.starting && !store.noServerBus
         Button { store.start() } label: {
             HStack(spacing: 10) {
                 Image(systemName: "play.fill").font(.system(size: 20, weight: .bold))
@@ -352,6 +362,8 @@ struct PhoneSheetView: View {
     var sheet: PhoneSheet
     @State private var search = ""
     @State private var editing: String?
+    @State private var show = "all"
+    @State private var data = DriveData.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -440,8 +452,9 @@ struct PhoneSheetView: View {
         }
     }
 
-    // maps as picture tiles
+    @ViewBuilder
     private var mapTiles: some View {
+        if let m = store.map, store.choice.lan_mode != "join" { NotesBox(kind: "map", file: m.file).padding(.bottom, 6) }
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 12)], spacing: 12) {
             ForEach(store.lists.maps) { m in
                 let on = m.file == store.choice.map
@@ -480,14 +493,17 @@ struct PhoneSheetView: View {
         .padding(.horizontal, 14).frame(height: 46)
         .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .padding(.bottom, 4)
-        let buses = store.lists.vehicles
-            .filter { search.isEmpty || "\($0.name) \($0.manufacturer)".localizedCaseInsensitiveContains(search) }
-            .sorted { ($0.manufacturer, $0.name) < ($1.manufacturer, $1.name) }
-        ForEach(buses) { v in
-            pick(v.file == store.choice.bus, { store.act("select_bus", ["file": v.file]); close() }) {
-                text(v.name, [v.manufacturer, v.paints.isEmpty ? "" : String(localized: "\(v.paints.count + 1) paints")].filter { !$0.isEmpty }.joined(separator: " - "))
-                if let m = v.missing_packs, !m.isEmpty { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warn) }
-            }
+        PhoneSegmented(items: [("all", "All"), ("fav", "Starred"), ("mods", "Mods")], selection: show) { show = $0 }
+            .padding(.bottom, 4)
+        let buses = filterBuses(store.offeredVehicles, search: search, show: show, starred: data.starred)
+        if store.noServerBus {
+            Notice(text: String(localized: "The server offers none of the vehicles installed here"), kind: .danger)
+        } else if buses.isEmpty {
+            if show == "fav" { EmptyState(icon: "star", title: "No starred bus", text: "Star a bus to find it here.") } else { EmptyState(icon: "bus", title: "No bus found") }
+        }
+        BusTree(list: buses, searching: !search.isEmpty, big: true) { v in
+            store.act("select_bus", ["file": v.file])
+            close()
         }
     }
 
@@ -495,29 +511,31 @@ struct PhoneSheetView: View {
     private var paints: some View {
         if let v = store.bus {
             let standard = v.default_paint?.isEmpty == false ? "\(String(localized: "Standard")) (\(v.default_paint!))" : String(localized: "Standard")
-            ForEach([("", standard)] + v.paints.map { ($0, $0) }, id: \.0) { p in
-                pick(store.choice.paint == p.0, { store.act("paint", ["paint": p.0]); close() }) { text(p.1) }
+            let all = [("", standard)] + v.paints.map { ($0, $0) }
+            ForEach(Array(all.enumerated()), id: \.element.0) { i, p in
+                pick(store.choice.paint == p.0, { store.act("paint", ["paint": p.0]); close() }) {
+                    text(p.1)
+                    Spacer(minLength: 4)
+                    Text("\(i + 1) / \(all.count)").font(.inter(12.5).monospacedDigit()).foregroundStyle(Theme.muted)
+                }
             }
+            NotesBox(kind: "bus", file: v.file).padding(.top, 6)
         }
     }
 
+    @ViewBuilder
     private var lines: some View {
-        ForEach(store.lines.filter { $0.user_allowed && !$0.tours.isEmpty }) { l in
-            pick(l.name == store.choice.line, { store.act("line", ["line": l.name]); close() }) {
-                LineBadge(line: l.name)
-                text(l.termini.joined(separator: " - "), String(localized: "\(l.tours.count) tours"))
-            }
-        }
+        let all = store.lines.filter { $0.user_allowed && !$0.tours.isEmpty }
+        NextDepartures(lines: all, big: true) { close() }
+            .padding(.bottom, 6)
+        LineList(lines: all, big: true) { close() }
     }
 
     @ViewBuilder
     private var tours: some View {
         if let line = store.line {
-            ForEach(line.tours) { t in
-                pick(t.number == store.choice.tour, dim: !t.runs, { store.act("tour", ["tour": t.number]); close() }) {
-                    text("\(String(localized: "Tour")) \(t.number)", "\(t.days) - \(t.trips.count) \(String(localized: "trips"))\(t.trips.isEmpty ? "" : " - \(hhmm(t.first))-\(hhmm(t.last))")\(t.runs ? "" : " - \(String(localized: "not on this day"))")")
-                }
-            }
+            if let t = store.tour { TourBuses(tour: t).padding(.bottom, 6) }
+            TourList(line: line, big: true) { close() }
         }
     }
 
@@ -545,7 +563,7 @@ struct PhoneSheetView: View {
             text(String(localized: "Automatic"), c.free ? String(localized: "Automatic (the map's first)") : String(localized: "Automatic (nearest to the first stop)"))
         }
         ForEach(store.map?.entry_points ?? [], id: \.index) { e in
-            pick(c.entry == e.index, { store.act("entry", ["entry": e.index]); close() }) { text(e.name) }
+            pick(c.entry == e.index, { store.act("entry", ["entry": e.index]); close() }) { text(entryName(e)) }
         }
     }
 
