@@ -33,10 +33,11 @@ pub trait Platform: Send + Sync {
         None
     }
     fn before_update(&self) {}
-    /// Writes the support package to `out` in this process, where there is no game program to
+    /// Writes the support package in this process, returning its actual path. `out` suggests
+    /// a filename; a platform may choose a user-accessible folder. There is no game program to
     /// start for it (Android: the game is a library of the app). None: not here, the game
     /// program writes it.
-    fn support_package(&self, _out: &Path) -> Option<Result<(), String>> {
+    fn support_package(&self, _out: &Path) -> Option<Result<std::path::PathBuf, String>> {
         None
     }
     fn quit(&self) {}
@@ -702,8 +703,7 @@ fn controllers(p: &dyn Platform, op: &str, mut req: Value, wait: u64) -> Answer 
 fn support_package(p: &dyn Platform) -> Answer {
     let out = core::data_dir().join(format!("support-{}.zip", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)));
     if let Some(done) = p.support_package(&out) {
-        done?;
-        return Ok(json!(out.to_string_lossy()));
+        return Ok(json!(done?.to_string_lossy()));
     }
     let game = core::game_binary().ok_or("the game program was not found")?;
     let status = std::process::Command::new(game).arg("--export-diagnostics").arg(&out).status().map_err(err)?;
@@ -1016,4 +1016,27 @@ fn content_check(path: String, deep: bool) -> Answer {
         format!("the game gave no answer ({})", last.lines().last().unwrap_or("").trim())
     })?;
     serde_json::from_str(line).map_err(err)
+}
+
+#[cfg(test)]
+mod support_package_tests {
+    use super::*;
+
+    struct PhoneFolder;
+    impl Platform for PhoneFolder {
+        fn emit(&self, _: &str, _: Value) {}
+        fn launched(&self) {}
+        fn renderer(&self, _: Value, _: Duration) -> Result<(Value, Vec<u8>), String> { unreachable!() }
+        fn support_package(&self, suggested: &Path) -> Option<Result<std::path::PathBuf, String>> {
+            Some(Ok(Path::new("/storage/emulated/0/openOMSI").join(suggested.file_name().unwrap())))
+        }
+    }
+
+    #[test]
+    fn returns_the_platforms_actual_export_path() {
+        let actual = support_package(&PhoneFolder).unwrap();
+        let path = actual.as_str().unwrap();
+        assert!(path.starts_with("/storage/emulated/0/openOMSI/support-"), "{path}");
+        assert!(path.ends_with(".zip"));
+    }
 }
