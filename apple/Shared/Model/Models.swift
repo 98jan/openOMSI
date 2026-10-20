@@ -41,13 +41,14 @@ struct Snapshot: Decodable {
     var fresh: [String] = []
     /// The bus preview: a bus being read, or why there is no picture.
     var preview: PreviewStatus = PreviewStatus()
+    var host_vehicles: [String]?
 
     struct Status: Decodable { var text = ""; var error = false; var age: Double = 0 }
     struct Counts: Decodable { var maps = 0; var vehicles = 0; var weathers = 0; var lines = 0 }
     struct Config: Decodable { var root = ""; var profile = ""; var game = "" }
     struct Crash: Decodable { var why = ""; var log = "" }
     struct Join: Decodable { var ok = true; var text = "" }
-    struct PreviewStatus: Decodable { var busy = false; var error: String? }
+    struct PreviewStatus: Decodable { var busy = false; var error: String?; var view: String?; var views: [String]? }
 
     init() {}
 
@@ -67,6 +68,7 @@ struct Snapshot: Decodable {
         servers = v("servers", []); joined_server = v("joined_server", nil as String?); join = v("join", Join())
         saved = v("saved", []); save_pick = v("save_pick", 0); ibis = v("ibis", nil as IbisReply?)
         cmdline = v("cmdline", ""); fresh = v("fresh", []); preview = v("preview", PreviewStatus())
+        host_vehicles = v("host_vehicles", nil as [String]?)
     }
 }
 
@@ -343,6 +345,7 @@ struct IbisInfo: Decodable {
     var hof: String
     var line_code: String
     var routes: [IbisRoute]
+    var trip_route: String?
 }
 
 struct IbisRoute: Decodable, Hashable {
