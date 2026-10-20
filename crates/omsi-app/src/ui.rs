@@ -710,7 +710,7 @@ impl Ui {
         // --- the mouse-over name, right of the cursor
         self.vr_tooltip_overlay = None;
         if let Some(t) = f.tooltip.as_ref().filter(|t| !t.is_empty()) {
-            let l = self.text.label_op(r, scene, &omsi_ui::tr(t), (13.0 * s).round() as u32, [237, 237, 237, 0], 1.0);
+            let l = self.text.label_op(r, scene, &tooltip_label(t), (13.0 * s).round() as u32, [237, 237, 237, 0], 1.0);
             let mut x = f.cursor.0.clamp(0.0, f.width) + 16.0 * s;
             let mut y = f.cursor.1 + 2.0 * s;
             if f.tooltip_above {
@@ -1385,8 +1385,84 @@ fn vr_settings_sidebar_step(available: f32, pages: usize, scale: f32) -> f32 {
     (available.max(0.0) / pages.max(1) as f32).min(42.0 * scale)
 }
 
+/// Mouse variants append suffixes to an official control label. Those cannot be
+/// catalogue templates (they have no leading text), so translate the base separately.
+fn tooltip_label(label: &str) -> std::borrow::Cow<'_, str> {
+    let translated = omsi_ui::tr(label);
+    if translated != label {
+        return translated;
+    }
+    for suffix in [" (outside)", " 2"] {
+        if let Some(base) = label.strip_suffix(suffix) {
+            return format!("{}{}", omsi_ui::tr(base), omsi_ui::tr(suffix)).into();
+        }
+    }
+    translated
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cockpit_tooltips_use_complete_catalogue_labels_and_mouse_suffixes() {
+        let names = omsi_input::describe::ControlNames::from_table(
+            "ENG",
+            &[
+                ("parking_brake_toggle", "Parking Brake On/Off"),
+                ("bus_doorfront0", "Front Door, 1st Wing Open/Close"),
+            ],
+        );
+        crate::with_test_language("pt", || {
+            for (event, expected) in [
+                (
+                    "parking_brake_mouse",
+                    "Freio de estacionamento: ligar/desligar",
+                ),
+                (
+                    "parking_brake_2",
+                    "Freio de estacionamento: ligar/desligar 2",
+                ),
+                (
+                    "bus_doorfront0_external",
+                    "Porta dianteira, primeira folha: abrir/fechar (externo)",
+                ),
+                (
+                    "cp_heizregler_temp",
+                    "Controle de temperatura do aquecimento",
+                ),
+            ] {
+                assert_eq!(tooltip_label(&names.control(event)), expected, "{event}");
+            }
+            // A numbered full label takes precedence over the mouse suffix fallback.
+            assert_eq!(
+                tooltip_label("Ticket Printer: Select Ticket 2"),
+                "Impressora de bilhetes: selecionar bilhete 2"
+            );
+            for event in ["ALMEX_Funktion", "Zahltisch_Wechsler_0_05"] {
+                let label = names.control(event);
+                assert_eq!(tooltip_label(&label), label, "untranslated mod: {event}");
+            }
+        });
+        crate::with_test_language("ENG", || {
+            for event in [
+                "parking_brake_mouse",
+                "parking_brake_2",
+                "bus_doorfront0_external",
+            ] {
+                let label = names.control(event);
+                assert_eq!(tooltip_label(&label), label);
+            }
+        });
+    }
+
+    #[test]
+    fn cockpit_mouse_suffixes_use_the_selected_catalogue_language() {
+        // An existing Spanish text also works as a mod's control label.
+        let names = omsi_input::describe::ControlNames::from_table("ENG", &[("mod_toggle", "on")]);
+        crate::with_test_language("es", || {
+            assert_eq!(tooltip_label(&names.control("mod_2")), "activado 2");
+        });
+    }
+
     /// The steering cross: white arms with a dark edge, open in the middle, nothing in the
     /// corners - the same in all four directions.
     #[test]
