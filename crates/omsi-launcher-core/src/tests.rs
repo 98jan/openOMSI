@@ -284,6 +284,12 @@ fn interface_size_round_trip() {
     let text = settings_to_text(&v, None);
     assert_eq!(text.lines().filter(|l| l.starts_with("chat_size=")).collect::<Vec<_>>(), ["chat_size=2.2"], "{text}");
     assert_eq!(settings_from_text(Some(&text))["chat_size"], json!(2.2));
+    v["timetable_size"] = json!(1.4);
+    let text = settings_to_text(&v, None);
+    assert_eq!(text.lines().filter(|l| l.starts_with("timetable_size=")).collect::<Vec<_>>(), ["timetable_size=1.4"], "{text}");
+    assert_eq!(settings_from_text(Some(&text))["timetable_size"], json!(1.4));
+    assert_eq!(settings_from_text(Some("perf_size=9\n"))["perf_size"], json!(2.0));
+    assert_eq!(settings_from_text(None)["info_size"], json!(1.0));
     assert_eq!(settings_from_text(Some("ui_scale=9\n"))["ui_scale"], json!(2.0));
     assert_eq!(settings_from_text(Some("ui_scale=0.1\n"))["ui_scale"], json!(0.5));
     assert_eq!(settings_from_text(Some("ui_scale=big\n"))["ui_scale"], json!(1.0));
