@@ -234,7 +234,7 @@ fn snapshot(s: &mut State) -> Value {
                 Ok(i) => json!({ "ok": true, "name": i.name, "motd": i.motd, "map": i.map, "players": i.players, "max_players": i.max_players, "version": i.version, "time": i.time, "weather": i.weather, "password": i.password, "vehicles": i.vehicles.len() }),
                 Err(e) => json!({ "ok": false, "error": e }),
             });
-            json!({ "name": e.name, "address": e.address, "info": info, "official": omsi_net::official::is_alias(&e.address) })
+            json!({ "name": e.name, "address": e.address, "protocol": e.protocol, "info": info, "official": omsi_net::official::is_alias(&e.address) })
         })
         .collect();
     let mod_info = s.mod_info.as_ref().map(|r| match r {
@@ -263,6 +263,7 @@ fn snapshot(s: &mut State) -> Value {
         "root_ok": root_ok,
         "root_problem": if root_ok { String::new() } else { crate::launcher::state::root_problem(&s.config.root) },
         "content_dir": core::content_dir().map(|p| p.to_string_lossy().to_string()),
+        "data_dir": core::data_dir().to_string_lossy(),
         "profiles": s.profiles,
         "profile": s.profile,
         "settings": s.settings,
@@ -524,6 +525,14 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
             let address = st("address");
             s.servers.retain(|e| e.address != address);
             s.save_servers();
+        }
+        "server_protocol" => {
+            let address = st("address");
+            let protocol = serde_json::from_value(json!(st("proto"))).unwrap_or_default();
+            if let Some(e) = s.servers.iter_mut().find(|e| e.address == address) {
+                e.protocol = protocol;
+                s.save_servers();
+            }
         }
         "server_ask" => s.ask_server(&st("address"), a.get("every").and_then(|v| v.as_f64()).unwrap_or(10.0) as f32),
         "server_join" => {
