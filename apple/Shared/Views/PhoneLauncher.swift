@@ -247,7 +247,7 @@ struct PhoneDrive: View {
                     PhoneRow(icon: "cloud.sun.fill", label: "Weather", value: store.weatherTitle, divider: true, action: open(.weather))
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    SliderField(label: "Cars around", value: c.traffic, range: 0 ... 100, step: 1, format: { $0 < 0.5 ? String(localized: "None") : "\(Int($0))" }) { store.act("traffic", ["value": $0]) }
+                    SliderField(label: "Cars around", value: c.traffic, range: 0 ... 120, step: 1, format: { $0 < 0.5 ? String(localized: "None") : "\(Int($0))" }) { store.act("traffic", ["value": $0]) }
                     toggle("Passengers", "passengers", c.passengers)
                     toggle("Timetable buses", "schedule", c.schedule)
                     toggle("Bus ready to go", "autostart", c.autostart)
@@ -351,6 +351,7 @@ struct PhoneSheetView: View {
     @Environment(LauncherStore.self) private var store
     var sheet: PhoneSheet
     @State private var search = ""
+    @State private var editing: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -385,7 +386,11 @@ struct PhoneSheetView: View {
         case .trip: split { trips } map: { RouteMapPanel() }
         case .entry: split { entries } map: { RouteMapPanel() }
         case .time: list { PhoneTimeSheet() }
-        case .weather: list { weathers }
+        case .weather:
+            list { weathers }
+                .sheet(isPresented: Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })) {
+                    WeatherEditor(from: editing ?? "custom:").launcherSheet(store)
+                }
         }
     }
 
@@ -548,8 +553,21 @@ struct PhoneSheetView: View {
     private var weathers: some View {
         let w = store.choice.weather
         pick(w.isEmpty, { store.act("weather", ["weather": ""]); close() }) { text(String(localized: "Natural weather"), String(localized: "Develops by itself through the day and the season")) }
-        pick(w.hasPrefix("metar:"), { store.act("weather", ["weather": "metar:"]); close() }) { text(String(localized: "Current weather"), String(localized: "METAR of the map's airport")) }
-        pick(w == "cycle", { store.act("weather", ["weather": "cycle"]); close() }) { text(String(localized: "Weather cycle"), String(localized: "Changes every 25-60 minutes")) }
+        let custom = WeatherChoice.isCustom(w)
+        let metar = WeatherChoice.metar(store.choice)
+        pick(custom, { editing = custom ? w : "custom:" }) { text(String(localized: "Custom weather"), String(localized: "Set visibility, wind, clouds, rain, temperature and road state")) }
+        if !metar.isEmpty || w.hasPrefix("metar:") {
+            pick(w.hasPrefix("metar:"), { store.act("weather", ["weather": "metar:\(metar)"]) }) { text(String(localized: "Current weather"), WeatherChoice.metarText(metar)) }
+        }
+        if w.hasPrefix("metar:") {
+            Field("Airport") { AirportField(code: metar) }.padding(.horizontal, 14).padding(.vertical, 4)
+        }
+        pick(w == "cycle", { store.act("weather", ["weather": "cycle"]); close() }) { text(String(localized: "Weather cycle"), String(localized: "Changes every 25-60 minutes, as the month allows")) }
+        pick(w == "tomorrow", { store.act("weather", ["weather": "tomorrow"]); close() }) { text("Tomorrow.io", String(localized: "Current weather")) }
+        if WeatherChoice.editable(w), !custom {
+            Button { editing = w } label: { Label("Edit selected weather as custom", systemImage: "slider.horizontal.3") }
+                .buttonStyle(.launcher(.ghost)).frame(maxWidth: .infinity, alignment: .leading)
+        }
         ForEach(store.lists.weathers) { x in
             pick(w == x.file, { store.act("weather", ["weather": x.file]); close() }) {
                 text(x.name, "\(Int(x.temp.rounded())) °C - \(x.precip.isEmpty ? String(localized: "dry") : x.precip) - \(x.fog_m >= 10000 ? String(localized: "clear air") : "\(Int(x.fog_m)) m")")
@@ -568,6 +586,7 @@ struct RouteMapPanel: View {
 /// The time and the date by steps (a finger needs no keyboard), and the season.
 struct PhoneTimeSheet: View {
     @Environment(LauncherStore.self) private var store
+    @State private var picking = false
 
     var body: some View {
         let c = store.choice
@@ -587,6 +606,10 @@ struct PhoneTimeSheet: View {
             HStack(spacing: 8) {
                 Button { store.act("now", ["time": true]) } label: { Label("Current time", systemImage: "clock") }.buttonStyle(.launcher(.ghost)).disabled(rt)
                 Button { store.act("now", ["time": false, "date": true]) } label: { Label("Today", systemImage: "calendar") }.buttonStyle(.launcher(.ghost)).disabled(rd)
+                Button { picking = true } label: { Label("Choose a date", systemImage: "calendar.badge.plus") }.buttonStyle(.launcher(.ghost)).disabled(rd)
+            }
+            .sheet(isPresented: $picking) {
+                Scroll { DateChooser { picking = false } }.background(Theme.surface.ignoresSafeArea()).launcherSheet(store)
             }
             if rt || rd {
                 Text("Follows the clock (Settings)").font(.inter(13)).foregroundStyle(Theme.muted)

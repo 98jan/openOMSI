@@ -309,7 +309,14 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
     let what = st("do");
     match what.as_str() {
         "select_bus" => s.select_bus(&st("file")),
-        "select_map" => s.select_map(&st("file")),
+        "select_map" => {
+            let file = st("file");
+            if s.choice.map != file {
+                let span = s.maps.iter().find(|m| m.file == file).and_then(|m| m.year_span);
+                s.choice.date = core::fit_date_to_years(&s.choice.date, span);
+            }
+            s.select_map(&file);
+        }
         "paint" => {
             s.choice.paint = st("paint");
             s.touched();
@@ -404,7 +411,7 @@ fn act(s: &mut State, a: &Value) -> anyhow::Result<Value> {
             s.touched();
         }
         "traffic" => {
-            s.choice.traffic = a.get("value").and_then(|v| v.as_f64()).unwrap_or(30.0).clamp(0.0, 100.0) as f32;
+            s.choice.traffic = a.get("value").and_then(|v| v.as_f64()).unwrap_or(30.0).clamp(0.0, 120.0) as f32;
             s.touched();
         }
         "flag" => {
