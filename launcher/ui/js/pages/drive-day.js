@@ -3,7 +3,7 @@ import { useStore } from '../store.js';
 import { t } from '../i18n.js';
 import { call } from '../api.js';
 import { Icon } from '../icons.js';
-import { Button, Field, Select, Toggle, Segmented, Slider } from '../ui.js';
+import { Button, Field, Input, Select, Toggle, Segmented, Slider } from '../ui.js';
 import { choose, realTime, realDate, weatherName, weatherOfItsOwn } from '../data.js';
 import { WeatherEditor, isCustomWeather, editableWeather } from './weather-editor.js';
 import { SEASONS, PHASES, setSeason, localNow, TimeInput, DateInput, DatePicker, seasonOf, weatherFits, weatherFacts, weatherIcon } from './drive.js';
@@ -52,8 +52,15 @@ function Weather() {
       ${fitting.map((x) => html`<${WeatherTile} on=${c.weather === x.file} icon=${weatherIcon(x)} name=${x.name} sub=${weatherFacts(x)} title=${x.description} onClick=${() => pick(x.file)} />`)}
     </div>
     ${unfitting > 0 && html`<${Toggle} checked=${allSeasons} onChange=${setAllSeasons} label=${t('Show the {n} that do not fit the season', { n: unfitting })} />`}
-    ${metarOn && airports.length > 0 && html`<${Field} label="Airport">
-      <${Select} raw value=${metar} options=${airports} onChange=${(code) => choose({ weather: `metar:${code}` })} />
+    ${metarOn && html`<${Field} label="Airport">
+      <div class="row" style="gap:8px">
+        <div style="width:96px"><${Input} key=${metar} value=${metar} placeholder="ICAO" maxLength="4" onInput=${(v) => {
+          // any airport by its four letters, as the game's own launcher took them
+          const code = v.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          if (code.length === 4) choose({ weather: `metar:${code}` });
+        }} /></div>
+        ${airports.length > 0 && html`<div class="grow"><${Select} raw value=${metar} options=${airports.some(([k]) => k === metar) ? airports : [[metar, metar], ...airports]} onChange=${(code) => choose({ weather: `metar:${code}` })} /></div>`}
+      </div>
     </${Field}>`}
     ${editableWeather(c.weather) && !custom && html`<div><${Button} small icon="sliders" label="Edit selected weather as custom" onClick=${() => setEditing(c.weather)} /></div>`}
     ${editing != null && html`<${WeatherEditor} from=${editing} onClose=${() => setEditing(null)} />`}
