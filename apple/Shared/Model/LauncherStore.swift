@@ -67,6 +67,7 @@ final class LauncherStore {
     var build = ""
     var platform = ""
     var inProcess = false
+    var storeBuild = false
     var page: Page = .drive
     /// The phone launcher's tab (drive, multiplayer, profile, mods, settings, more), the page
     /// opened from More, and the full-screen sheet open over Drive.
@@ -97,6 +98,7 @@ final class LauncherStore {
             build = info["build"] as? String ?? ""
             platform = info["platform"] as? String ?? ""
             inProcess = info["in_process"] as? Bool ?? false
+            storeBuild = info["store"] as? Bool ?? false
             ready = true
         } catch {
             say(error.localizedDescription, error: true)
