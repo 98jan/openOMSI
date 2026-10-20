@@ -305,6 +305,14 @@ impl App {
             }
             // (the game's own panels, by name for the plugins and the input script)
             "view_editor" => crate::game_panels::view_editor::open(self),
+            "mirror_hud_edit" => {
+                self.close_game_menu();
+                self.view = "driver".into();
+                if let Some(p) = self.player.as_ref() {
+                    let msg = self.gfx.mirror_hud.start_edit(p);
+                    self.service_msg = Some((msg, 6.0));
+                }
+            }
             "dest_form" => crate::game_panels::open_dest_form(self),
             "quick_menu" => crate::game_panels::quick_menu::toggle(self),
             "driver" => self.open_list(crate::game_lists::ListKind::Drivers),

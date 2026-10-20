@@ -233,6 +233,7 @@ const camera = {
         { type: 'toggle', key: 'driverview_smooth', label: 'Camera glides between viewpoints' },
         { type: 'toggle', key: 'hands_in_cab', label: "Driver's hands in the cab view" },
         { type: 'toggle', key: 'alt_view', label: 'Right mouse button turns the view, Shift+right zooms (off: right zooms as in OMSI, the wheel button turns)' },
+        { type: 'select', key: 'mirror_hud', label: 'Mirror panels on the screen', options: [['0', 'Off'], ['2', 'Left mirror'], ['1', 'Right mirror'], ['3', 'Left and right'], ['7', 'Left, right and front']] },
         { type: 'toggle', key: 'precision_zoom', label: 'Precision mouse zoom (FOV curve instead of the linear way)' },
       ],
     },
