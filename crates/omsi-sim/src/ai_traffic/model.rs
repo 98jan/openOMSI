@@ -528,8 +528,8 @@ pub const AIRCRAFT_KMH: f32 = 280.0;
 /// and Bicycle names compatible, including the generic bike.ovh filename.
 pub fn is_bicycle(def: &omsi_vehicle::Vehicle) -> bool {
     let path = def.path.to_string_lossy().to_ascii_lowercase();
-    path.split(['/', '\\']).any(|part| {
-        part.contains("fahrrad") || part.contains("bicycle") || matches!(part, "bike" | "bike.ovh")
+    path.rsplit(['/', '\\']).take(2).any(|part| {
+        part.contains("fahrrad") || part.contains("bicycle") || part.contains("bicicleta") || matches!(part, "bike" | "bike.ovh")
     })
 }
 
@@ -544,6 +544,7 @@ mod bicycle_tests {
             "Vehicles/HC_Fahrrad/HC_Fahrrad.ovh",
             "Vehicles/HH20_Fahrrad/fahrrad.ovh",
             "Vehicles/Bicycle/bike.ovh",
+            "Vehicles/Bicicleta/bicicleta.ovh",
             "Vehicles\\Bicycle\\bike.ovh",
         ] {
             let def = Vehicle { path: path.into(), mass: 0.3, ..Default::default() };
@@ -558,6 +559,9 @@ mod bicycle_tests {
             ("Vehicles/Motorcycles/Road_Bike_125.ovh", 0.15),
             ("Vehicles/Motorcycles/Scooter.ovh", 0.3),
             ("Vehicles/Sedan/sedan.ovh", 0.95),
+            ("/home/Bike/OMSI/Vehicles/Sedan/sedan.ovh", 0.95),
+            ("C:\\Bicycle\\OMSI\\Vehicles\\Motorcycles\\scooter.ovh", 0.125),
+            ("/games/Fahrrad/OMSI/Vehicles/Sedan/sedan.ovh", 0.95),
         ] {
             let def = Vehicle { path: path.into(), mass, ..Default::default() };
             assert!(!is_bicycle(&def), "{path} ({mass} t)");
