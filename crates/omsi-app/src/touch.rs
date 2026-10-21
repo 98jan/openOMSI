@@ -59,12 +59,28 @@ enum Btn {
     CloseMenu,
     /// On foot: down on the knees and up again (C).
     Kneel,
+    /// The voice chat's talk keys, held: nearby, and the radio.
+    VoiceNearby,
+    VoiceRadio,
+    /// Into the free camera (F4) from the cab panel, and back to the driver's seat.
+    FreeCam,
+    /// The free camera rises and sinks while held (E, Q).
+    FlyUp,
+    FlyDown,
+    /// The free camera's speed halved or doubled.
+    FlySlower,
+    FlyFaster,
+    /// The photo mode's: leave, the settings sheet, the panel hidden, the shutter.
+    PhotoExit,
+    PhotoPanel,
+    PhotoHide,
+    PhotoShutter,
 }
 
 impl Btn {
     /// Held down while the finger stays (a push button), rather than a tap.
     fn held(self) -> bool {
-        matches!(self, Btn::Door(_) | Btn::DirectDoor(_) | Btn::Horn | Btn::Engine | Btn::Announce)
+        matches!(self, Btn::Door(_) | Btn::DirectDoor(_) | Btn::Horn | Btn::Engine | Btn::Announce | Btn::VoiceNearby | Btn::VoiceRadio | Btn::FlyUp | Btn::FlyDown)
     }
 }
 
@@ -120,6 +136,8 @@ enum Role {
     /// The game menu's (or the chooser's) list: a drag scrolls it, a tap picks a line.
     Menu,
     MenuSlider,
+    /// The photo mode's picture: a drag turns the camera, a tap focuses, two fingers zoom.
+    Photo,
     /// The small navigator: a tap opens the city map, a drag moves it (as the mouse does,
     /// #940), where it then stays - out of the middle of the screen, which it covered on a
     /// phone (#1138).
@@ -149,6 +167,8 @@ pub struct Touch {
     /// A finger has the wheel (it stays where it is put; let go, it comes back).
     steering: bool,
     tilt: bool,
+    /// The voice chat's talk buttons held down on the screen: nearby, radio.
+    pub(crate) voice_held: [bool; 2],
     panel: bool,
     hidden: bool,
     /// The two fingers of a pinch: their last distance.
@@ -196,6 +216,7 @@ impl Touch {
             brake: 0.0,
             steering: false,
             tilt: false,
+            voice_held: [false; 2],
             panel: false,
             hidden: false,
             pinch: None,
@@ -235,6 +256,15 @@ impl Touch {
         })
     }
 
+    /// How far the stick on the screen is pushed (x right, y down, 0 .. 1 at the edge); nothing
+    /// when no finger is on it or it is not shown.
+    pub fn stick_analog(&self) -> Vec2 {
+        match self.stick_at {
+            Some((_, d)) if self.enabled && self.stick_r > 0.0 => (d / self.stick_r).clamp_length_max(1.0),
+            _ => Vec2::ZERO,
+        }
+    }
+
     /// A finger holds a switch of the cockpit.
     pub fn on_switch(&self) -> bool {
         self.fingers.iter().any(|f| f.role == Role::Cockpit)
@@ -263,6 +293,25 @@ fn info_room(w: f32, pad: f32, left: f32, right: f32, bottom: f32, u: f32) -> [f
     } else {
         [pad, w - pad, bottom + 8.0 * u]
     }
+}
+
+/// The cab panel's `n` buttons in a grid over the middle of a screen `w` x `h`: four across
+/// where they fit (a tablet, a phone on its side), fewer and wider on a narrow screen. `r` is
+/// the radius of the buttons along the top.
+fn panel_rects(n: usize, w: f32, h: f32, pad: f32, r: f32, u: f32) -> Vec<Rect> {
+    let gap = 8.0 * u;
+    let mut cw = 150.0 * u;
+    let ch = 64.0 * u;
+    let room = (w - 2.0 * pad).max(cw.min(w));
+    let cols = (((room + gap) / (cw + gap)).floor() as usize).clamp(1, 4);
+    // (the columns share the width the screen leaves, a little wider than their own size at most)
+    cw = ((room - (cols - 1) as f32 * gap) / cols as f32).min(cw * 1.3);
+    let rows = n.div_ceil(cols).max(1);
+    let pw = cols as f32 * cw + (cols - 1) as f32 * gap;
+    let ph = rows as f32 * ch + (rows - 1) as f32 * gap;
+    let x0 = (w - pw) * 0.5;
+    let y0 = (pad + r * 2.0 + 16.0 * u).max((h - ph) * 0.42).min((h - ph - pad).max(pad));
+    (0..n).map(|k| Rect::new(x0 + (k % cols) as f32 * (cw + gap), y0 + (k / cols) as f32 * (ch + gap), cw, ch)).collect()
 }
 
 impl App {
@@ -313,7 +362,10 @@ impl App {
         // 744 points) the clutch pedal ran under the speed and the horn.
         let clutch = self.player.as_ref().is_some_and(|p| p.vehicle.ty.program.manual_gearbox()) && !self.settings.auto_clutch;
         let side = if clutch { 300.0 } else { 238.0 };
-        u = u.min(w / (2.0 * (side + 67.0) + 28.0)).max(dpi * 0.7);
+        // (only where that row is: the free camera and walking have a stick and a few buttons)
+        if self.player.is_some() && self.photo.is_none() && matches!(self.view.as_str(), "driver" | "outside" | "pax") {
+            u = u.min(w / (2.0 * (side + 67.0) + 28.0)).max(dpi * 0.7);
+        }
         let pad = 14.0 * u;
         let t = &mut self.input.touch;
         t.u = u;
@@ -325,6 +377,40 @@ impl App {
         };
         let menu_mode = self.menus.game_menu.is_some() || self.menus.chooser.is_some() || self.menus.navigator.as_ref().is_some_and(|n| n.map_open());
         t.top_gap = None;
+        if let Some(ph) = self.photo.as_ref() {
+            // the photo mode: the camera's own buttons, and its settings in a sheet the
+            // button opens (the driving controls are not shown)
+            let (open, hide, busy, fast) = (ph.touch_panel, ph.hide_ui, ph.render.capture, ph.touch_fast);
+            let r = 24.0 * u;
+            let step = r * 2.0 + 10.0 * u;
+            t.stick_r = 0.0;
+            t.info_room = None;
+            let (lt, lb) = (pad + r, pad + r);
+            if hide {
+                push(&mut b, Btn::PhotoHide, rb(lt, lb, r), "visibility", "", true, true);
+            } else {
+                push(&mut b, Btn::PhotoExit, rb(lt, lb, r), "close", "", false, true);
+                push(&mut b, Btn::PhotoPanel, rb(lt + step, lb, r), "tune", "", open, true);
+                push(&mut b, Btn::PhotoHide, rb(lt + step * 2.0, lb, r), "visibility", "", false, true);
+            }
+            if !open {
+                let sr = 38.0 * u;
+                let fr = 26.0 * u;
+                let x1 = w - pad - fr;
+                if !hide {
+                    let y0 = h - pad - fr;
+                    push(&mut b, Btn::FlyDown, rb(x1, y0, fr), "keyboard_arrow_down", "", false, true);
+                    push(&mut b, Btn::FlyUp, rb(x1, y0 - fr * 2.0 - 12.0 * u, fr), "keyboard_arrow_up", "", false, true);
+                    push(&mut b, Btn::FlyFaster, rb(x1, y0 - (fr * 2.0 + 12.0 * u) * 2.0, fr), "speed", "", fast, true);
+                    t.stick_r = 62.0 * u;
+                    t.stick_c = Vec2::new(pad + t.stick_r + 10.0 * u, h - pad - t.stick_r - 10.0 * u);
+                }
+                let sx = if hide { w - pad - sr } else { x1 - fr - 14.0 * u - sr };
+                push(&mut b, Btn::PhotoShutter, rb(sx, h - pad - sr, sr), "photo_camera", "", busy, true);
+            }
+            t.buttons = b;
+            return;
+        }
         if menu_mode {
             // only the way out: the menu is worked with the fingers as a mouse
             let r = 24.0 * u;
@@ -338,9 +424,13 @@ impl App {
             return;
         }
         // --- the top bar
-        let r = 21.0 * u;
+        // (the buttons shrink to fit the screen's width: on a narrow phone the two groups ran
+        // into each other where the free camera and walking, with a larger `u`, had them)
+        let count = 4.0 + if t.hidden { 1.0 } else if self.session.duty.is_some() { 5.0 } else { 4.0 };
+        let fit = ((w - 2.0 * pad - 8.0 * u) / (count * 52.0 * u)).clamp(0.72, 1.0);
+        let r = 21.0 * u * fit;
         let y = pad + r;
-        let step = r * 2.0 + 10.0 * u;
+        let step = r * 2.0 + 10.0 * u * fit;
         let mut x = pad + r;
         for (btn, icon) in [(Btn::Menu, "menu"), (Btn::Pause, if self.paused { "play_arrow" } else { "pause" }), (Btn::Camera, "videocam"), (Btn::LookReset, "360")] {
             push(&mut b, btn, rb(x, y, r), icon, "", btn == Btn::Pause && self.paused, true);
@@ -350,7 +440,14 @@ impl App {
         let mut x = w - pad - r;
         let hidden = t.hidden;
         push(&mut b, Btn::Hide, rb(x, y, r), if hidden { "visibility" } else { "visibility" }, "", hidden, true);
+        // (the free camera's way back stays when the controls are hidden: nothing else of the
+        // screen is a button then)
+        let free = self.view == "free";
         if hidden {
+            t.stick_r = 0.0;
+            if free {
+                push(&mut b, Btn::FreeCam, Rect::new(w - pad - 178.0 * u, h * 0.5 - 22.0 * u, 178.0 * u, 44.0 * u), "close", "Exit free camera", false, false);
+            }
             t.info_room = Some(info_room(w, pad, left_end, x - r, pad + r * 2.0, u));
             t.buttons = b;
             return;
@@ -376,6 +473,23 @@ impl App {
             if let Some(f) = self.session.on_foot.as_ref().filter(|f| f.cam == crate::on_foot::FootCam::First && f.seat.is_none()) {
                 let kr = 26.0 * u;
                 push(&mut b, Btn::Kneel, rb(w - pad - kr, h - pad - kr, kr), "keyboard_arrow_down", "", f.kneel, true);
+            }
+            if free {
+                // the free camera: the stick moves it, a drag looks, a pinch zooms; up and
+                // down and the speed beside them in the corner, the way back at the side
+                // (what the walk of `cam.ego` has no use for: it keeps to the ground)
+                if !t.panel {
+                    push(&mut b, Btn::FreeCam, Rect::new(w - pad - 178.0 * u, h * 0.5 - 22.0 * u, 178.0 * u, 44.0 * u), "close", "Exit free camera", false, false);
+                }
+                if !self.cam.ego {
+                    let fr = 26.0 * u;
+                    let (x1, y0) = (w - pad - fr, h - pad - fr);
+                    let (x0, y1) = (x1 - fr * 2.0 - 12.0 * u, y0 - fr * 2.0 - 12.0 * u);
+                    push(&mut b, Btn::FlyDown, rb(x1, y0, fr), "keyboard_arrow_down", "", false, true);
+                    push(&mut b, Btn::FlyUp, rb(x1, y1, fr), "keyboard_arrow_up", "", false, true);
+                    push(&mut b, Btn::FlySlower, rb(x0, y0, fr), "remove", "", false, true);
+                    push(&mut b, Btn::FlyFaster, rb(x0, y1, fr), "add", "", false, true);
+                }
             }
         } else {
             t.stick_r = 0.0;
@@ -506,24 +620,34 @@ impl App {
                     (Btn::SaloonLights, "highlight", "Saloon lights", false),
                     (Btn::Ticket, "confirmation_number", "Sell ticket", false),
                     (Btn::Announce, "campaign", "Announcement (Q)", false),
+                    (Btn::VoiceNearby, "record_voice_over", "Voice: nearby (hold)", t.voice_held[0]),
+                    (Btn::VoiceRadio, "settings_voice", "Voice: radio (hold)", t.voice_held[1]),
                     (Btn::InteriorCam, "airline_seat_recline_normal", "Next seat view", false),
+                    (Btn::FreeCam, "videocam", "Free camera", false),
                     (Btn::Navigator, "navigation", "Navigator", self.menus.navigator.as_ref().is_some_and(|n| n.enabled)),
                     (Btn::Info, "info", "Information bar", self.menus.info_bar),
                     (Btn::Tilt, "screen_rotation", "Tilt steering", t.tilt),
                 ];
-                let cols = 4;
-                let cw = 150.0 * u;
-                let ch = 64.0 * u;
-                let gap = 8.0 * u;
-                let rows = items.len().div_ceil(cols);
-                let pw = cols as f32 * cw + (cols - 1) as f32 * gap;
-                let ph = rows as f32 * ch + (rows - 1) as f32 * gap;
-                let x0 = (w - pw) * 0.5;
-                let y0 = (pad + r * 2.0 + 16.0 * u).max((h - ph) * 0.42);
-                for (k, (btn, icon, label, on)) in items.into_iter().enumerate() {
-                    let rect = Rect::new(x0 + (k % cols) as f32 * (cw + gap), y0 + (k / cols) as f32 * (ch + gap), cw, ch);
+                // (the talk buttons only where voice chat is on, in a session)
+                let voice_on = self.settings.voice_enabled && self.net.lan.is_some();
+                let items: Vec<_> = items.into_iter().filter(|i| voice_on || !matches!(i.0, Btn::VoiceNearby | Btn::VoiceRadio)).collect();
+                for (rect, (btn, icon, label, on)) in panel_rects(items.len(), w, h, pad, r, u).into_iter().zip(items) {
                     push(&mut b, btn, rect, icon, label, on, false);
                 }
+            }
+        }
+        // the free camera's own panel: the way back, the speed, what the cab panel has of the
+        // screen's furniture
+        if free && t.panel && !driving {
+            let items: Vec<(Btn, &'static str, &str, bool)> = vec![
+                (Btn::FreeCam, "close", "Exit free camera", false),
+                (Btn::FlySlower, "remove", "Slower", false),
+                (Btn::FlyFaster, "add", "Faster", false),
+                (Btn::Navigator, "navigation", "Navigator", self.menus.navigator.as_ref().is_some_and(|n| n.enabled)),
+                (Btn::Info, "info", "Information bar", self.menus.info_bar),
+            ];
+            for (rect, (btn, icon, label, on)) in panel_rects(items.len(), w, h, pad, r, u).into_iter().zip(items) {
+                push(&mut b, btn, rect, icon, label, on, false);
             }
         }
         t.buttons = b;
@@ -549,6 +673,15 @@ impl App {
         let t = &self.input.touch;
         let role = if let Some(k) = t.button_at(p) {
             Role::Button(k, t.buttons[k].btn)
+        } else if let Some(ph) = self.photo.as_ref() {
+            let in_sheet = ph.touch_panel && !ph.hide_ui && ph.panel_rect.is_some_and(|r| p.x >= r[0] && p.x <= r[0] + r[2] && p.y >= r[1] && p.y <= r[1] + r[3]);
+            if in_sheet {
+                Role::Menu
+            } else if t.stick_r > 0.0 && p.distance(t.stick_c) <= t.stick_r * 1.3 {
+                Role::Stick
+            } else {
+                Role::Photo
+            }
         } else if self.menus.game_menu.is_some() || self.menus.chooser.is_some() {
             Role::Menu
         } else if menu_mode {
@@ -601,7 +734,7 @@ impl App {
         self.input.touch.fingers.push(Touched { id, start: p, pos: p, role, moved, since: Instant::now() });
         self.input.touch_pedals(p, self.settings.touch_pedal_deadzone);
         // two fingers on the picture: a pinch
-        let looks: Vec<Vec2> = self.input.touch.fingers.iter().filter(|f| matches!(f.role, Role::Look | Role::Mouse)).map(|f| f.pos).collect();
+        let looks: Vec<Vec2> = self.input.touch.fingers.iter().filter(|f| matches!(f.role, Role::Look | Role::Mouse | Role::Photo)).map(|f| f.pos).collect();
         if looks.len() == 2 {
             self.input.touch.pinch = Some(looks[0].distance(looks[1]).max(1.0));
         }
@@ -655,7 +788,10 @@ impl App {
             Role::Stick => {
                 let d = p - self.input.touch.stick_c;
                 self.input.touch.stick_at = Some((self.input.touch.stick_c, d.clamp_length_max(self.input.touch.stick_r)));
-                self.stick_keys(d / self.input.touch.stick_r);
+                // (the free camera flies by how far the stick is pushed, see `Touch::stick_analog`;
+                // walking is by the keys' steps)
+                let flying = self.view == "free" && !self.cam.ego;
+                self.stick_keys(if flying { Vec2::ZERO } else { d / self.input.touch.stick_r });
             }
             // (only a finger that has gone a way drags it: one wavering on a tap still opens
             // the city map)
@@ -701,6 +837,14 @@ impl App {
                     self.on_cursor(p.x, p.y);
                 }
             }
+            Role::Photo => {
+                if self.input.touch.pinch.is_some() {
+                    return self.touch_pinch();
+                }
+                if self.input.touch.fingers[k].moved {
+                    self.photo_look_touch(p.x - last.x, p.y - last.y);
+                }
+            }
             Role::Look => {
                 if self.input.touch.pinch.is_some() {
                     return self.touch_pinch();
@@ -718,7 +862,7 @@ impl App {
     }
 
     fn touch_pinch(&mut self) {
-        let looks: Vec<Vec2> = self.input.touch.fingers.iter().filter(|f| matches!(f.role, Role::Look | Role::Mouse)).map(|f| f.pos).collect();
+        let looks: Vec<Vec2> = self.input.touch.fingers.iter().filter(|f| matches!(f.role, Role::Look | Role::Mouse | Role::Photo)).map(|f| f.pos).collect();
         if looks.len() < 2 {
             return;
         }
@@ -726,7 +870,11 @@ impl App {
         if let Some(d0) = self.input.touch.pinch {
             let amount = (d - d0) / (28.0 * self.input.touch.u);
             if amount.abs() > 0.05 {
-                self.wheel(amount);
+                if let Some(ph) = self.photo.as_mut() {
+                    ph.zoom(amount);
+                } else {
+                    self.wheel(amount);
+                }
                 self.input.touch.pinch = Some(d);
             }
         }
@@ -735,7 +883,7 @@ impl App {
     pub(crate) fn finger_up(&mut self, event_loop: &ActiveEventLoop, id: u64, p: Vec2, cancelled: bool) {
         let Some(k) = self.input.touch.fingers.iter().position(|f| f.id == id) else { return };
         let f = self.input.touch.fingers.remove(k);
-        if self.input.touch.fingers.iter().filter(|f| matches!(f.role, Role::Look | Role::Mouse)).count() < 2 {
+        if self.input.touch.fingers.iter().filter(|f| matches!(f.role, Role::Look | Role::Mouse | Role::Photo)).count() < 2 {
             self.input.touch.pinch = None;
         }
         match f.role {
@@ -787,6 +935,12 @@ impl App {
                     // Only the legacy menu scrolls by whole rows; the shell's
                     // scroll areas retain their own smooth pixel positions.
                     self.menus.menu_top = self.menus.menu_top.map(f32::round);
+                }
+            }
+            Role::Photo => {
+                if !f.moved && !cancelled && f.since.elapsed().as_secs_f32() < 0.45 && self.input.touch.fingers.is_empty() {
+                    let (w, h) = self.input.touch.size;
+                    self.photo_request(crate::photo::Request::FocusAt(p.x / w.max(1.0), p.y / h.max(1.0)));
                 }
             }
             Role::Look => {
@@ -852,6 +1006,17 @@ impl App {
         }
     }
 
+    /// Back from the free camera to the driver's seat (F1): the fingers' keys let go.
+    fn leave_free_camera(&mut self) {
+        self.game_action("view_set_driver");
+        self.stick_keys(Vec2::ZERO);
+        self.input.touch.stick_at = None;
+        for key in [KeyCode::KeyE, KeyCode::KeyQ] {
+            self.input.keys.remove(&key);
+        }
+        self.touch_note("Driver's view");
+    }
+
     fn touch_note(&mut self, text: &str) {
         self.input.touch.note = Some((text.to_string(), 1.6));
     }
@@ -874,6 +1039,53 @@ impl App {
             }
             Btn::Pause => self.toggle_pause(),
             Btn::Kneel => self.kneel(),
+            Btn::FreeCam => {
+                self.input.touch.panel = false;
+                if self.view == "free" {
+                    self.leave_free_camera();
+                } else if self.player.is_some() {
+                    self.game_action("view_set_map");
+                    self.touch_note("Free camera: the stick moves, a drag looks, two fingers zoom");
+                }
+            }
+            Btn::PhotoExit => self.photo_request(crate::photo::Request::Exit),
+            Btn::PhotoHide => self.photo_request(crate::photo::Request::HideUi),
+            Btn::PhotoShutter => {
+                if self.photo.as_ref().is_some_and(|p| !p.render.capture) {
+                    self.photo_request(crate::photo::Request::Take);
+                }
+            }
+            Btn::PhotoPanel => {
+                if let Some(ph) = self.photo.as_mut() {
+                    ph.touch_panel = !ph.touch_panel;
+                }
+            }
+            Btn::FlyUp | Btn::FlyDown if self.photo.is_some() => {
+                let z = if b == Btn::FlyUp { 1.0 } else { -1.0 };
+                if let Some(ph) = self.photo.as_mut() {
+                    ph.touch_z = if down { z } else { 0.0 };
+                }
+            }
+            Btn::FlyFaster if self.photo.is_some() => {
+                if let Some(ph) = self.photo.as_mut() {
+                    ph.touch_fast = !ph.touch_fast;
+                }
+            }
+            Btn::FlyUp | Btn::FlyDown => {
+                let key = if b == Btn::FlyUp { KeyCode::KeyE } else { KeyCode::KeyQ };
+                if down {
+                    self.input.keys.insert(key);
+                } else {
+                    self.input.keys.remove(&key);
+                }
+            }
+            Btn::FlySlower | Btn::FlyFaster => {
+                let k = if b == Btn::FlyFaster { 2.0 } else { 0.5 };
+                self.cam.speed = (self.cam.speed * k).clamp(2.0, 480.0);
+                let note = format!("Free camera speed {:.0} m/s", self.cam.speed);
+                self.touch_note(&note);
+            }
+            Btn::Camera if self.view == "free" => self.leave_free_camera(),
             Btn::Camera => {
                 // driver → outside → passenger → driver (on foot: back to the bus)
                 self.view = match self.view.as_str() {
@@ -970,6 +1182,8 @@ impl App {
                 self.vehicle_action("ticket_give", false);
             }
             Btn::Announce => self.tap_key(event_loop, KeyCode::KeyQ, false, down),
+            Btn::VoiceNearby => self.input.touch.voice_held[0] = down,
+            Btn::VoiceRadio => self.input.touch.voice_held[1] = down,
             Btn::InteriorCam => {
                 self.game_action("view_interiorcam_plus");
             }
@@ -1113,8 +1327,10 @@ impl App {
         }
         if t.panel && !t.hidden {
             let rs: Vec<Rect> = t.buttons.iter().filter(|b| !b.round && !matches!(b.btn, Btn::Gear(..))).map(|b| b.rect).collect();
-            if let (Some(a), Some(b)) = (rs.first(), rs.last()) {
-                let all = Rect::new(a.x - 10.0 * u, a.y - 10.0 * u, b.right() - a.x + 20.0 * u, b.bottom() - a.y + 20.0 * u);
+            if let Some(first) = rs.first() {
+                // (the grid is wider than one row: every button is inside)
+                let (x0, y0, x1, y1) = rs.iter().fold((first.x, first.y, first.right(), first.bottom()), |a, r| (a.0.min(r.x), a.1.min(r.y), a.2.max(r.right()), a.3.max(r.bottom())));
+                let all = Rect::new(x0 - 10.0 * u, y0 - 10.0 * u, x1 - x0 + 20.0 * u, y1 - y0 + 20.0 * u);
                 pt.rounded(all, 16.0 * u, Color::rgba(10, 12, 16, 0.78));
             }
         }
@@ -1290,6 +1506,23 @@ mod tests {
     }
 
     use crate::settings::Settings;
+
+    /// The cab panel's buttons stay on the screen, whatever its size: four across on a wide
+    /// one, fewer and wider on a phone held upright (they ran off both sides of it).
+    #[test]
+    fn the_panels_buttons_fit_the_screen() {
+        for (w, h, u) in [(360.0, 800.0, 0.9), (412.0, 915.0, 1.03), (820.0, 1180.0, 1.35), (800.0, 360.0, 0.9), (320.0, 568.0, 0.85)] {
+            let rects = super::panel_rects(14, w, h, 14.0 * u, 21.0 * u, u);
+            assert_eq!(rects.len(), 14);
+            for r in &rects {
+                assert!(r.x >= 0.0 && r.right() <= w + 0.5, "{w}x{h}: {r:?} is out sideways");
+                assert!(r.y >= 0.0 && r.bottom() <= h + 0.5, "{w}x{h}: {r:?} is out up or down");
+            }
+        }
+        let portrait = super::panel_rects(14, 360.0, 800.0, 12.6, 18.9, 0.9);
+        let wide = super::panel_rects(14, 820.0, 1180.0, 18.9, 28.35, 1.35);
+        assert!(portrait.iter().filter(|r| r.y == portrait[0].y).count() < wide.iter().filter(|r| r.y == wide[0].y).count());
+    }
 
     /// The information bar keeps to the gap between the buttons along the top (it lay under
     /// them, its ends hidden, #1164), or goes under them where the gap is narrow.

@@ -39,6 +39,8 @@ pub mod puddles;
 pub mod rain;
 pub mod route_arrows;
 pub mod threads;
+pub mod trolley_derive;
+pub mod trolley_view;
 pub mod wheel_surface;
 pub mod window_wipers;
 
@@ -59,6 +61,7 @@ mod scripted;
 pub use scripted::DayKind;
 mod vehicle_materials;
 mod vehicle_types;
+mod pane_uv;
 mod vehicles;
 mod lanes;
 mod season_looks;

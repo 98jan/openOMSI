@@ -29,6 +29,21 @@ impl Drop for SurfaceState<'_> {
     }
 }
 
+/// The present mode for the window's vsync setting. Vsync is `Fifo`, the same on every API:
+/// `AutoVsync` chose `FifoRelaxed` where the surface has it (Vulkan drivers mostly do), which
+/// tears whenever a frame comes late - vsync that "did not work" on Vulkan while Direct3D 12
+/// was clean (#2838). `OMSI_PRESENT_MODE` picks another one for an A/B run.
+pub(crate) fn present_mode(vsync: bool) -> wgpu::PresentMode {
+    match omsi_cfg::flags::OMSI_PRESENT_MODE.var().map(|v| v.trim().to_ascii_lowercase()).as_deref() {
+        Some("fifo") => wgpu::PresentMode::Fifo,
+        Some("fifo_relaxed") | Some("relaxed") => wgpu::PresentMode::FifoRelaxed,
+        Some("mailbox") => wgpu::PresentMode::Mailbox,
+        Some("immediate") => wgpu::PresentMode::Immediate,
+        Some("auto") => if vsync { wgpu::PresentMode::AutoVsync } else { wgpu::PresentMode::AutoNoVsync },
+        _ => if vsync { wgpu::PresentMode::Fifo } else { wgpu::PresentMode::AutoNoVsync },
+    }
+}
+
 impl<'w> SurfaceState<'w> {
     pub fn new(
         instance: &wgpu::Instance,
@@ -56,11 +71,7 @@ impl<'w> SurfaceState<'w> {
             format: encode.as_ref().map_or(renderer.format(), |e| e.window_format()),
             width: width.max(1),
             height: height.max(1),
-            present_mode: if vsync {
-                wgpu::PresentMode::AutoVsync
-            } else {
-                wgpu::PresentMode::AutoNoVsync
-            },
+            present_mode: present_mode(vsync),
             // (two frames in flight keep the graphics chip busy while the next frame is
             // recorded: with one, the whole loop serialized behind the vsync'd drawable -
             // on Apple silicon a frame cost GPU + CPU instead of the larger of the two,
@@ -86,7 +97,7 @@ impl<'w> SurfaceState<'w> {
             format,
             width: width.max(1),
             height: height.max(1),
-            present_mode: if vsync { wgpu::PresentMode::AutoVsync } else { wgpu::PresentMode::AutoNoVsync },
+            present_mode: present_mode(vsync),
             // (two frames in flight: see `new_with`)
             desired_maximum_frame_latency: 2,
             alpha_mode: wgpu::CompositeAlphaMode::Auto,
@@ -147,7 +158,7 @@ impl<'w> SurfaceState<'w> {
     }
 
     pub fn set_vsync(&mut self, renderer: &Renderer, enabled: bool) {
-        let mode = if enabled { wgpu::PresentMode::AutoVsync } else { wgpu::PresentMode::AutoNoVsync };
+        let mode = present_mode(enabled);
         if self.config.present_mode == mode || renderer.device_lost().is_some() {
             return;
         }

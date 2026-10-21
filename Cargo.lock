@@ -3490,8 +3490,10 @@ dependencies = [
  "omsi-srcscan",
  "omsi-texture",
  "omsi-timetable",
+ "omsi-trolley",
  "omsi-ui",
  "omsi-vehicle",
+ "omsi-voice",
  "omsi-weather",
  "omsi-world",
  "omsi-xr",
@@ -3673,6 +3675,7 @@ dependencies = [
  "omsi-net",
  "omsi-o3d",
  "omsi-script",
+ "omsi-serverlist",
  "omsi-sim",
  "omsi-texture",
  "omsi-vehicle",
@@ -3697,6 +3700,7 @@ dependencies = [
  "omsi-launcher-core",
  "omsi-net",
  "omsi-platform",
+ "omsi-serverlist",
  "omsi-timetable",
  "omsi-weather",
  "serde",
@@ -3939,6 +3943,7 @@ dependencies = [
  "omsi-sim",
  "omsi-soundscape",
  "omsi-texture",
+ "omsi-trolley",
  "omsi-ui",
  "omsi-vehicle",
  "omsi-weather",
@@ -3972,6 +3977,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "omsi-serverlist"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "log",
+ "rustrict",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ureq",
+]
+
+[[package]]
 name = "omsi-sim"
 version = "0.1.0"
 dependencies = [
@@ -3991,6 +4010,7 @@ dependencies = [
  "omsi-script",
  "omsi-texture",
  "omsi-timetable",
+ "omsi-trolley",
  "omsi-vehicle",
  "omsi-world",
  "parking_lot",
@@ -4044,6 +4064,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "omsi-trolley"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "hashbrown 0.17.1",
+ "log",
+ "omsi-cfg",
+]
+
+[[package]]
 name = "omsi-ui"
 version = "0.1.0"
 dependencies = [
@@ -4067,6 +4097,22 @@ version = "0.1.0"
 dependencies = [
  "log",
  "omsi-cfg",
+ "omsi-trolley",
+]
+
+[[package]]
+name = "omsi-voice"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "env_logger",
+ "glam",
+ "log",
+ "omsi-audio",
+ "omsi-cfg",
+ "omsi-net",
+ "parking_lot",
+ "unsafe-libopus",
 ]
 
 [[package]]
@@ -6052,6 +6098,17 @@ dependencies = [
  "unicode-normalization",
  "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "unsafe-libopus"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c757408e7256c910343c7b215c8c8b878948630eecc774baabcca0972376eb73"
+dependencies = [
+ "arrayref",
+ "num-complex",
+ "num-traits",
 ]
 
 [[package]]

@@ -42,6 +42,19 @@ impl ProgramIds {
 }
 
 impl VehicleInstance {
+    /// The bus's own cabin air when its scripts keep it (`heizung.osc` and its descendants):
+    /// the temperature (degC), the absolute humidity (g/m3) and, while its front heater's
+    /// fan runs, the temperature of the air that heater blows (degC).
+    pub fn scripted_cabin_air(&self) -> Option<(f32, f32, Option<f32>)> {
+        if !self.program_ids().owns_cabin_temp {
+            return None;
+        }
+        let t = self.ev(Ev::CabinTemp).filter(|t| t.is_finite() && *t > -100.0)?;
+        let hum = self.ev(Ev::CabinAbsHum).filter(|h| h.is_finite() && *h >= 0.0)?;
+        let jet = self.var("fanheater_t_target").filter(|j| j.is_finite() && self.var("cabinair_Vrate_fanheater").is_some_and(|f| f > 1e-3));
+        Some((t, hum, jet))
+    }
+
     pub(super) fn program_ids(&self) -> &ProgramIds {
         self.program_ids.get_or_init(|| ProgramIds::of(&self.ty.program))
     }

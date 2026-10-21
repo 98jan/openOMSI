@@ -57,6 +57,7 @@ fn fog_phase(c: f32) -> f32 {
     return 0.9 * hg_phase(c, 0.85) + 0.1 * hg_phase(c, -0.5);
 }
 const AIRLIGHT_CELLS: u32 = 16u;
+
 fn lamp_airlight(c: vec3<f32>, d: vec3<f32>, start: f32, len: f32, jitter: f32) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
     let sigma0 = enh.fog.x;
@@ -132,6 +133,7 @@ fn lamp_airlight(c: vec3<f32>, d: vec3<f32>, start: f32, len: f32, jitter: f32) 
                     // out as a coarse checker in the fog round every headlamp.)
                     let pa = atan((ta - t0) / hh);
                     let dphi = (atan((tb - t0) / hh) - pa) / 16.0;
+                    let tile_k = beam_tile(li, l);
                     for (var q = 0u; q < 16u; q = q + 1u) {
                         let tq = t0 + hh * tan(pa + (f32(q) + jitter) * dphi);
                         let to = l.pos.xyz - (c + d * tq);
@@ -142,7 +144,7 @@ fn lamp_airlight(c: vec3<f32>, d: vec3<f32>, start: f32, len: f32, jitter: f32) 
                         } else {
                             beam = smoothstep(l.dir.w, l.extra.x, dot(-ld, l.dir.xyz));
                         }
-                        acc = acc + beam * fog_phase(dot(ld, d)) * dphi;
+                        acc = acc + beam * beam_reaches(tile_k, c + d * tq) * fog_phase(dot(ld, d)) * dphi;
                     }
                     half = 1.0;
                 } else {
