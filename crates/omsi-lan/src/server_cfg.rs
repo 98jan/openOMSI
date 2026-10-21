@@ -324,7 +324,7 @@ fn voice_policy(kv: &std::collections::HashMap<String, String>) -> omsi_net::Voi
         log::info!("server.cfg: voice_server_uid, voice_channel and voice_channel_password are ignored: voice chat is built in now (voice, voice_radio, voice_range)");
     }
     let range = kv.get("voice_range").and_then(|v| v.parse::<f32>().ok()).unwrap_or(omsi_net::voice_net::DEFAULT_RANGE);
-    omsi_net::VoicePolicy { enabled: flag("voice", true), radio: flag("voice_radio", true), range: 0.0 }.with_range(range)
+    omsi_net::VoicePolicy { enabled: flag("voice", false), radio: flag("voice_radio", false), range: 0.0 }.with_range(range)
 }
 
 /// `admin_web`: none (a `server.cfg` from before the web panel) or a wrong word is off - an
@@ -560,13 +560,17 @@ mod cfg_tests {
         assert!(!load(DEFAULT_CFG).share_maps);
         assert!(!load("share_maps = 0\n").share_maps);
     }
-    /// Voice chat is on in an old file and a new one; the keys of the earlier outside voice
-    /// server do nothing; a wrong range is cut to what the relay takes.
+    /// Voice chat is on in a new file and stays off in an old one that does not name it (an
+    /// update opens nothing); the keys of the earlier outside voice server do nothing; a wrong
+    /// range is cut to what the relay takes.
     #[test]
     fn voice_keys() {
         let old = load("voice_server_uid = AbC=\nvoice_channel = 5\nvoice_range = 20\nvoice_radio = 0\n").voice;
-        assert_eq!((old.enabled, old.radio, old.range), (true, false, 20.0));
-        assert_eq!(load("name = old server\n").voice, omsi_net::VoicePolicy::default());
+        assert_eq!((old.enabled, old.radio, old.range), (false, false, 20.0));
+        let kept = load("name = old server\n").voice;
+        assert!(!kept.enabled && !kept.radio);
+        let on = load("voice = 1\nvoice_radio = 0\n").voice;
+        assert!(on.enabled && !on.radio);
         assert_eq!(load(DEFAULT_CFG).voice, omsi_net::VoicePolicy::default());
         let v = load("voice = 0\nvoice_range = 99999\n").voice;
         assert!(!v.enabled && v.range == omsi_net::voice_net::MAX_RANGE);

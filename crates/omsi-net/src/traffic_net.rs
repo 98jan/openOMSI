@@ -6,6 +6,9 @@ use super::*;
 use traffic_table::wire::{self, Ack};
 use traffic_table::{ClientSync, ClientTable, TrafficTable};
 
+/// Answers a player may send the host (a second's worth is a few dozen; a burst allowed).
+pub(super) const TACK_RATE: (f32, f32) = (40.0, 80.0);
+
 #[derive(Default)]
 pub(super) struct TrafficNet {
     /// Per player (host): what it is told and what it is known to hold.
@@ -121,6 +124,10 @@ impl LanSession {
             return;
         }
         let Some(id) = self.peers.iter().find(|(_, p)| p.addr == Some(from)).map(|(id, _)| *id) else { return };
+        // (a player's answers come at the rate of the datagrams they answer, not faster)
+        if self.checked_peer(id, from, TACK_RATE, PeerTraffic::Tack).is_none() {
+            return;
+        }
         let Some(ack) = wire::decode_ack(data, PROTOCOL as u8) else { return };
         if let Some(sync) = self.traffic.host.get_mut(&id) {
             sync.on_ack(&ack);

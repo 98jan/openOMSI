@@ -298,6 +298,7 @@ pub fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut Ser
         // a joining game asks what the session allows of voice chat (`omsi_net::voice_net`)
         "voice?" => {
             let policy = lan.voice_policy().command();
+            lan.set_voice_listener(from);
             lan.command(from, &policy)
         }
         "auth?" => {

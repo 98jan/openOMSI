@@ -352,7 +352,6 @@ pub fn sync(lan: &mut omsi_net::LanSession, seen: &mut u64) -> bool {
     true
 }
 
-static APPLIED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static REQUIRED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// A host that turns away players whose game sends no hardware identifier
@@ -367,9 +366,11 @@ pub fn sync_host(lan: &mut omsi_net::LanSession) {
         return;
     }
     lan.require_hardware_id(REQUIRED.load(std::sync::atomic::Ordering::Relaxed));
-    let mut seen = APPLIED.load(std::sync::atomic::Ordering::Relaxed);
+    // (what this session has been given is the session's own: a game that hosts a second time
+    // in the same run starts it again with the lists)
+    let mut seen = lan.hw_ban_revision;
     if sync(lan, &mut seen) {
-        APPLIED.store(seen, std::sync::atomic::Ordering::Relaxed);
+        lan.hw_ban_revision = seen;
     }
 }
 

@@ -95,6 +95,9 @@ pub struct TrolleyView {
     particles: Vec<Particle>,
     flashes: Vec<Flash>,
     rng: u64,
+    /// What this view put in the scene itself (frogs, insulators, poles and ropes): taken out
+    /// again by `release`. The wires lie in the scene once for all the buses of a map.
+    owned: Vec<usize>,
     /// Sparks the view has taken from the bus's rig since it began (for logs and tests).
     pub sparks_seen: u32,
 }
@@ -108,7 +111,15 @@ impl TrolleyView {
             cells.entry(((mid.x / CHUNK).floor() as i32, (mid.y / CHUNK).floor() as i32)).or_default().push(i);
         }
         let mut chunk_count = 0usize;
-        for (_, spans) in cells.into_iter().filter(|_| !net.drawn_by_map) {
+        // (the wires are the map's, not the bus's: drawn by the first bus of the map, left in the
+        // scene for the others and for after it has gone)
+        let key = Arc::as_ptr(&net) as usize;
+        let drawn = scene.trolley_wire_drawn.contains(&key);
+        if !drawn && !net.drawn_by_map {
+            scene.trolley_wire_drawn.push(key);
+        }
+        let mut owned: Vec<usize> = Vec::new();
+        for (_, spans) in cells.into_iter().filter(|_| !net.drawn_by_map && !drawn) {
             let centre = net.spans[spans[0]].pts[0];
             let mut m = new_mesh();
             for si in spans {
@@ -150,12 +161,13 @@ impl TrolleyView {
             tube(&mut body, &[Vec3::new(f.y as f32, -f.x as f32, 0.0) * -0.3 + Vec3::Z * 0.35, Vec3::new(f.y as f32, -f.x as f32, 0.0) * 0.3 + Vec3::Z * 0.35], 0.03, 6);
             renderer.begin_object(scene);
             let bm = renderer.add_mesh(scene, &body);
-            renderer.add_instance(scene, bm, node.pos, Mat4::IDENTITY, vec![mat_body]);
+            owned.push(renderer.add_instance(scene, bm, node.pos, Mat4::IDENTITY, vec![mat_body]));
             let mut tg = new_mesh();
             tube(&mut tg, &[Vec3::ZERO, Vec3::Y * 1.8], 0.022, 6);
             renderer.begin_object(scene);
             let tm = renderer.add_mesh(scene, &tg);
             let tongue = renderer.add_instance(scene, tm, node.pos + DVec3::Z * 0.2, Mat4::IDENTITY, vec![mat_tongue]);
+            owned.push(tongue);
             frogs.push(FrogDraw { tongue, pos: node.pos, straight: straight.as_vec3(), branch: branch.as_vec3(), branch_set: !net.switch_branch(frogs.len()) });
         }
         for node in net.nodes.iter().filter(|n| n.insulator > 0.0 && n.switch.is_none()) {
@@ -170,10 +182,22 @@ impl TrolleyView {
             }
             renderer.begin_object(scene);
             let im = renderer.add_mesh(scene, &m);
-            renderer.add_instance(scene, im, node.pos, Mat4::IDENTITY, vec![mat_ins]);
+            owned.push(renderer.add_instance(scene, im, node.pos, Mat4::IDENTITY, vec![mat_ins]));
         }
         log::info!("trolley wires: {} spans in {} chunks, {} frogs", net.spans.len(), chunk_count, frogs.len());
-        TrolleyView { net, chunk_count, frogs, poles: Vec::new(), mat_pole: None, mat_rope: None, boom_meshes: Vec::new(), unit_rope: None, particles: Vec::new(), flashes: Vec::new(), rng: 0x2545_f491_4f6c_dd1d, sparks_seen: 0 }
+        TrolleyView { net, chunk_count, frogs, poles: Vec::new(), mat_pole: None, mat_rope: None, boom_meshes: Vec::new(), unit_rope: None, particles: Vec::new(), flashes: Vec::new(), rng: 0x2545_f491_4f6c_dd1d, owned, sparks_seen: 0 }
+    }
+
+    /// The bus is gone: its poles, ropes, frogs and insulators leave the scene (the wires of
+    /// the map stay: they are the map's).
+    pub fn release(&mut self, renderer: &Renderer, scene: &mut Scene) {
+        for i in self.owned.drain(..) {
+            renderer.remove_instance(scene, i);
+        }
+        self.poles.clear();
+        self.frogs.clear();
+        self.particles.clear();
+        self.flashes.clear();
     }
 
     pub fn net(&self) -> &Arc<WireNet> {
@@ -213,6 +237,7 @@ impl TrolleyView {
             scene.instances[boom].visible = draw;
             scene.instances[ropei].visible = draw;
             scene.instances[boom].casts_shadow = true;
+            self.owned.extend([boom, ropei]);
             self.poles.push(PoleDraw { boom, rope: ropei });
         }
     }

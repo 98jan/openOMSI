@@ -144,7 +144,13 @@ fn lamp_airlight(c: vec3<f32>, d: vec3<f32>, start: f32, len: f32, jitter: f32) 
                         } else {
                             beam = smoothstep(l.dir.w, l.extra.x, dot(-ld, l.dir.xyz));
                         }
-                        acc = acc + beam * beam_reaches(tile_k, c + d * tq) * fog_phase(dot(ld, d)) * dphi;
+                        // (the map is looked at only where the beam shines at all, and only for
+                        // the few lamps that have a tile: no shadows, no tile, no tap)
+                        var reach = 1.0;
+                        if (beam > 0.002 && tile_k < 4u) {
+                            reach = beam_reaches(tile_k, c + d * tq);
+                        }
+                        acc = acc + beam * reach * fog_phase(dot(ld, d)) * dphi;
                     }
                     half = 1.0;
                 } else {

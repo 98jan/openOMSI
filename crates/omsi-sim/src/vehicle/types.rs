@@ -968,6 +968,11 @@ fn legacy_trolley(model: &omsi_model::Model, meshes: &[VehicleMesh], boxes: &[(V
         let base = Vec3::new((lo.x + hi.x) * 0.5, hi.y, lo.z);
         let tip = Vec3::new((lo.x + hi.x) * 0.5, lo.y, hi.z);
         let boom = tip - base;
+        // (a pole is long and thin: a short or a wide mesh whose visibility variable has "pole" in
+        // its name - an antenna, a flag - is no trolley pole)
+        if boom.length() < 3.0 || hi.x - lo.x > 1.2 {
+            continue;
+        }
         let length = boom.length().clamp(3.0, 12.0);
         poles.push(PoleDef {
             side,

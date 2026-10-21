@@ -134,6 +134,7 @@ impl App {
                 if let Some(l) = self.net.lan.as_mut().filter(|l| l.role == omsi_net::Role::Host) {
                     let policy = l.voice_policy().with_range(range);
                     l.set_voice_policy(policy);
+                    l.set_voice_listener(from);
                     l.command(from, &policy.command());
                 }
             }

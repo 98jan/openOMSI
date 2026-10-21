@@ -1,7 +1,7 @@
 // node --test services/serverlist
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cleanText, tunnelAddress, listingAddress, checkRegistration, checkIcon, statusProves, Limiter } from "./logic.js";
+import { cleanText, tunnelAddress, listingAddress, checkRegistration, checkIcon, statusProves, sourceKey, Limiter } from "./logic.js";
 
 test("texts: folded, cut, and refused when they carry hidden characters, addresses or blocked words", () => {
   assert.equal(cleanText("  Berlin   24/7  ", 48), "Berlin 24/7");
@@ -74,6 +74,13 @@ test("a status page proves a listing only with the challenge and the name", () =
   assert.ok(!statusProves({ list_challenge: "abc", name: "Other" }, "abc", "N"));
   assert.ok(!statusProves(null, "abc", "N"));
   assert.ok(!statusProves("abc", "abc", "N"));
+  // (the page says the name as server.cfg has it: folded and cut like the listing's)
+  assert.ok(statusProves({ list_challenge: "abc", name: "My   server " }, "abc", "My server"));
+  assert.ok(statusProves({ list_challenge: "abc", name: "x".repeat(60) }, "abc", "x".repeat(48)));
+  // an IPv6 sender counts by its /64
+  assert.equal(sourceKey("2001:db8:1:2:aaaa::1"), sourceKey("2001:DB8:1:2:0:0:0:ffff"));
+  assert.notEqual(sourceKey("2001:db8:1:3::1"), sourceKey("2001:db8:1:2::1"));
+  assert.equal(sourceKey("203.0.113.9"), "203.0.113.9");
 });
 
 test("a source may register only so often", () => {

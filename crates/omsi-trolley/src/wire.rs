@@ -409,12 +409,24 @@ impl WireNet {
     fn build_nodes(&mut self, raw_switches: &[RawSwitch], insulators: &[(DVec3, f32)]) {
         // ends joined by position
         let mut nodes: Vec<Node> = Vec::new();
+        // (a grid of the nodes so far, cells of the joining distance: a map's wire has thousands
+        // of span ends, and a search through all of them for each was a pause at the spawn)
+        let cell = |p: DVec3| ((p.x / JOIN).floor() as i64, (p.y / JOIN).floor() as i64);
+        let mut grid: std::collections::HashMap<(i64, i64), Vec<usize>> = std::collections::HashMap::new();
         for si in 0..self.spans.len() {
             for end in 0..2u8 {
                 let p = if end == 0 { self.spans[si].pts[0] } else { *self.spans[si].pts.last().unwrap() };
-                let found = nodes.iter().position(|n| n.pos.distance(p) <= JOIN);
+                let (cx, cy) = cell(p);
+                let found = (-1..=1)
+                    .flat_map(|dx| (-1..=1).map(move |dy| (cx + dx, cy + dy)))
+                    .filter_map(|c| grid.get(&c))
+                    .flatten()
+                    .copied()
+                    .filter(|i| nodes[*i].pos.distance(p) <= JOIN)
+                    .min();
                 let ni = found.unwrap_or_else(|| {
                     nodes.push(Node { pos: p, ends: Vec::new(), insulator: 0.0, switch: None });
+                    grid.entry((cx, cy)).or_default().push(nodes.len() - 1);
                     nodes.len() - 1
                 });
                 nodes[ni].ends.push((si as u32, end));
@@ -832,9 +844,16 @@ impl WireNet {
         let mut out = Vec::new();
         for si in self.near(q, radius) {
             let sp = &self.spans[si as usize];
+            // (a span has up to six hundred points and this is asked of a free pole every
+            // step: the segments far from the point are passed over by their ends alone)
+            let m = radius + sp.spacing as f64 + 0.5;
             for side in 0..2u8 {
                 let mut best: Option<(f64, f64)> = None;
                 for i in 0..sp.pts.len() - 1 {
+                    let (p0, p1) = (sp.pts[i], sp.pts[i + 1]);
+                    if q.x < p0.x.min(p1.x) - m || q.x > p0.x.max(p1.x) + m || q.y < p0.y.min(p1.y) - m || q.y > p0.y.max(p1.y) + m {
+                        continue;
+                    }
                     let (a, b) = sp.wire_segment(i, side);
                     let ab = b - a;
                     let l2 = ab.length_squared().max(1e-12);

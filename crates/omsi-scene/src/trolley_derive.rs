@@ -118,11 +118,25 @@ pub fn derive_text(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs: &[Pa
     }
     let mut used = vec![false; ends.len()];
     let mut n_frogs = 0;
+    // (the ends in a grid of 30 cm cells: a search through all of them for each end is
+    // quadratic in a map's thousands)
+    let cell = |p: &[f64; 3]| ((p[0] / 0.3).floor() as i64, (p[1] / 0.3).floor() as i64);
+    let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+    for (j, e) in ends.iter().enumerate() {
+        grid.entry(cell(e)).or_default().push(j);
+    }
     for i in 0..ends.len() {
         if used[i] {
             continue;
         }
-        let near: Vec<usize> = (0..ends.len()).filter(|j| (ends[*j][0] - ends[i][0]).hypot(ends[*j][1] - ends[i][1]) < 0.3).collect();
+        let (cx, cy) = cell(&ends[i]);
+        let near: Vec<usize> = (-1..=1)
+            .flat_map(|dx| (-1..=1).map(move |dy| (cx + dx, cy + dy)))
+            .filter_map(|c| grid.get(&c))
+            .flatten()
+            .copied()
+            .filter(|j| (ends[*j][0] - ends[i][0]).hypot(ends[*j][1] - ends[i][1]) < 0.3)
+            .collect();
         for j in &near {
             used[*j] = true;
         }

@@ -267,6 +267,7 @@ impl Offscreen<'_> {
             let rail = player.as_ref().and_then(|p| p.rail.as_ref()).map(|r| (r.lane, r.along));
             let capture = self.lan_off.as_ref().is_some_and(|lan| lan.role == omsi_net::Role::Host);
             for c in &mut t.sim.cars { c.vehicle.host.capture_sound_triggers = capture; }
+            t.table_on = capture;
             steps::traffic_tick(t, world, scenery, dt, false, player.as_ref(), remotes_off, &[], rail);
             steps::traffic_boxes(t, player.as_mut(), settings.collision_vehicles);
         }

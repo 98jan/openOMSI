@@ -182,6 +182,14 @@ impl LanSession {
         }
     }
 
+    /// Host: player `id` asked for the session's voice rules, so it has voice chat on and is
+    /// passed the frames (a game with it off is not, whatever it is near).
+    pub fn set_voice_listener(&mut self, id: u32) {
+        if self.peers.contains_key(&id) {
+            self.voice_listeners.insert(id);
+        }
+    }
+
     pub fn voice_muted(&self, id: u32) -> bool {
         self.voice_muted.contains(&id)
     }
@@ -250,7 +258,7 @@ impl LanSession {
         let others: Vec<(u32, Option<Place>)> = self
             .peers
             .iter()
-            .filter(|(id, p)| **id != speaker && p.has_pose)
+            .filter(|(id, p)| **id != speaker && p.has_pose && self.voice_listeners.contains(id))
             .map(|(id, p)| (*id, place_of(&p.pose)))
             .collect();
         for id in recipients(&self.voice_policy, channel, at, &others) {
@@ -264,6 +272,10 @@ impl LanSession {
     /// Per tick: forget the mutes of players who left, remember our own place.
     pub(super) fn voice_tick(&mut self, mine: &Pose) {
         self.own_place = place_of(mine);
+        if !self.voice_listeners.is_empty() {
+            let peers = &self.peers;
+            self.voice_listeners.retain(|id| peers.contains_key(id));
+        }
         if !self.voice_muted.is_empty() {
             let peers = &self.peers;
             let me = self.my_id;

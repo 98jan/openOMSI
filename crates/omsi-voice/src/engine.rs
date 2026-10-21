@@ -531,6 +531,9 @@ fn worker(shared: Arc<Shared>) {
     let mut mic_error: Option<String> = None;
     let mut mic_wanted_until = Instant::now();
     let mut mic_device = String::new();
+    // (the device the settings asked for when it was opened: a card that is gone gives the
+    // default one, whose own name is not the setting - that is no reason to open it again)
+    let mut mic_asked = String::new();
     let mut probe_until: Option<Instant> = None;
     let mut buf: Vec<f32> = Vec::new();
     let mut last_error_try = Instant::now() - Duration::from_secs(10);
@@ -573,6 +576,7 @@ fn worker(shared: Arc<Shared>) {
                 None => match Capture::open(&settings.input_device) {
                     Ok(c) => {
                         mic_device = c.device.clone();
+                        mic_asked = settings.input_device.clone();
                         mic_error = None;
                         mic = Some(Mic::Device(c));
                     }
@@ -588,7 +592,7 @@ fn worker(shared: Arc<Shared>) {
             log::info!("voice: microphone closed");
         }
         // an input device changed in the settings
-        if let (Some(Mic::Device(_)), true) = (&mic, tone.is_none() && !settings.input_device.is_empty() && settings.input_device != mic_device) {
+        if let (Some(Mic::Device(_)), true) = (&mic, tone.is_none() && !settings.input_device.is_empty() && settings.input_device != mic_asked) {
             mic = None;
         }
         buf.clear();

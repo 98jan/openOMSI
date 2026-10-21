@@ -40,6 +40,10 @@ pub struct TrolleyGear {
     /// wire the hand was aimed at for this many seconds, as it does when the cab raises it.
     assist: Vec<f32>,
     names: Names,
+    /// The variables of the poles and of the gear as the model reads them: their slots, and
+    /// the values of the step (kept to be written again, no allocation).
+    var_ids: Vec<omsi_script::VarId>,
+    var_values: Vec<f32>,
 }
 
 struct Names {
@@ -81,6 +85,8 @@ impl TrolleyGear {
             grab_was: None,
             assist: vec![0.0; def.poles.len()],
             names: Names { pole },
+            var_ids: Vec::new(),
+            var_values: Vec::new(),
         }))
     }
 }
@@ -255,26 +261,39 @@ impl VehicleInstance {
         });
         g.torque = has_drive.then_some(out.wheel_force * radius);
         g.gate = g.rig.script_gate;
-        // the pole variables a model animates by
-        let mut vars: Vec<(String, f32)> = Vec::new();
-        for (k, p) in g.rig.poles.iter().enumerate() {
-            let n = &g.names.pole[k];
-            vars.push((n[0].clone(), p.theta.to_degrees() as f32));
-            vars.push((n[1].clone(), p.psi.to_degrees() as f32));
-            vars.push((n[2].clone(), p.state_code()));
-            vars.push((n[3].clone(), if p.closed { 1.0 } else { 0.0 }));
-            vars.push((n[4].clone(), p.force as f32));
+        // the pole variables a model animates by (written by slot once they have been made: a
+        // physics step of a trolleybus looked up some twenty names by their text before)
+        const GLOBAL: [&str; 7] = ["Trolley_Volts", "Trolley_Amps", "Trolley_Powered", "Trolley_Notch", "Trolley_Arc", "Trolley_Hiss", "Trolley_Battery"];
+        let mut vals = std::mem::take(&mut g.var_values);
+        vals.clear();
+        for p in &g.rig.poles {
+            vals.extend_from_slice(&[p.theta.to_degrees() as f32, p.psi.to_degrees() as f32, p.state_code(), if p.closed { 1.0 } else { 0.0 }, p.force as f32]);
         }
-        vars.push(("Trolley_Volts".into(), g.rig.volts));
-        vars.push(("Trolley_Amps".into(), g.rig.amps));
-        vars.push(("Trolley_Powered".into(), if g.rig.circuit { 1.0 } else { 0.0 }));
-        vars.push(("Trolley_Notch".into(), out.notch));
-        vars.push(("Trolley_Arc".into(), g.rig.arc));
-        vars.push(("Trolley_Hiss".into(), g.rig.hiss));
-        vars.push(("Trolley_Battery".into(), out.battery_soc));
-        vars.extend(legacy_write);
-        for (n, v) in vars {
+        vals.extend_from_slice(&[g.rig.volts, g.rig.amps, if g.rig.circuit { 1.0 } else { 0.0 }, out.notch, g.rig.arc, g.rig.hiss, out.battery_soc]);
+        let mut ids = std::mem::take(&mut g.var_ids);
+        let names: Option<Vec<String>> = (ids.len() != vals.len()).then(|| g.names.pole.iter().flatten().cloned().chain(GLOBAL.iter().map(|s| s.to_string())).collect());
+        if let Some(names) = names {
+            ids.clear();
+            for (n, v) in names.iter().zip(&vals) {
+                self.set_engine_var(n, *v);
+                if let Some(id) = omsi_script::compile::with_lower(n, |k| self.var_index.get(k).copied()) {
+                    ids.push(id);
+                }
+            }
+            if ids.len() != vals.len() {
+                ids.clear();
+            }
+        } else {
+            for (id, v) in ids.iter().zip(&vals) {
+                self.state.vars[*id as usize] = *v;
+            }
+        }
+        for (n, v) in legacy_write {
             self.set_engine_var(&n, v);
+        }
+        if let Some(g) = self.trolley.as_mut() {
+            g.var_values = vals;
+            g.var_ids = ids;
         }
         if has_drive {
             // the drive's own force replaces the script's torque, and its mechanical brakes

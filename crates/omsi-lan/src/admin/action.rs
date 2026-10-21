@@ -77,13 +77,13 @@ pub enum Action {
 
 /// `12h` or `3d` as hours (1 .. a year), else None.
 fn ban_hours(word: &str) -> Option<u32> {
-    let (n, unit) = word.split_at(word.len().checked_sub(1)?);
-    let n: u32 = n.parse().ok()?;
-    let h = match unit {
-        "h" => n,
-        "d" => n.checked_mul(24)?,
+    let (n, days) = match (word.strip_suffix('h'), word.strip_suffix('d')) {
+        (Some(n), _) => (n, false),
+        (_, Some(n)) => (n, true),
         _ => return None,
     };
+    let n: u32 = n.parse().ok()?;
+    let h = if days { n.checked_mul(24)? } else { n };
     (1..=omsi_admin::MAX_BAN_HOURS).contains(&h).then_some(h)
 }
 
@@ -270,6 +270,16 @@ pub fn act_on_session(lan: &mut LanSession, action: &Action, admin: &Admin) -> D
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A duration is `<n>h` or `<n>d`; a last character of several bytes is no unit (and no panic).
+    #[test]
+    fn a_ban_length_with_a_wide_last_character_is_none() {
+        assert_eq!(ban_hours("12h"), Some(12));
+        assert_eq!(ban_hours("3d"), Some(72));
+        for bad in ["3é", "é", "", "3", "h", "3x", "日"] {
+            assert_eq!(ban_hours(bad), None, "{bad}");
+        }
+    }
 
     /// Every line of the menu reads as the action it names; numbers held to their ranges, and
     /// a line that is not one is no action.

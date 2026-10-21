@@ -2164,8 +2164,8 @@ pub fn settings_from_text_on(text: Option<&str>, phone: bool) -> Value {
     v["windy_trees"] = json!(true);
     v["sim_thread"] = json!(false); // (switched in the game's Display menu, saved through this writer)
     v["mirror_hud_every_frame"] = json!(false);
-    v["mirror_shadows"] = json!(true);
-    v["mirror_particles"] = json!(true);
+    v["mirror_shadows"] = json!(false);
+    v["mirror_particles"] = json!(false);
     v["mirror_hud"] = json!(0);
     // an early timetable bus waits only at the stops the timetable times (off: at every
     // stop, as in OMSI; #1773)
@@ -2698,7 +2698,7 @@ pub fn settings_to_text(v: &Value, old: Option<&str>) -> String {
     text.push_str(&format!("windy_trees={}\n", b("windy_trees", true)));
     text.push_str(&format!("sim_thread={}\n", b("sim_thread", false)));
     text.push_str(&format!("mirror_hud_every_frame={}\n", b("mirror_hud_every_frame", false)));
-    text.push_str(&format!("mirror_shadows={}\nmirror_particles={}\n", b("mirror_shadows", true), b("mirror_particles", true)));
+    text.push_str(&format!("mirror_shadows={}\nmirror_particles={}\n", b("mirror_shadows", false), b("mirror_particles", false)));
     text.push_str(&format!("mirror_hud={}\n", n("mirror_hud", 0).clamp(0, 7)));
     text.push_str(&format!("standing_chance={}\n", n("standing_chance", 5).clamp(0, 100)));
     text.push_str(&format!("ambient={}\nvol_ambient={}\n", b("ambient", true), f("vol_ambient", 0.8).clamp(0.0, 1.0)));

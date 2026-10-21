@@ -23,7 +23,22 @@ fn candidates(args: &crate::Args) -> Vec<PathBuf> {
     v
 }
 
+/// The wire of each map read so far in this run (including "none": a map without wire is not
+/// searched again at every trolleybus placed): reading the map's tiles for its wire splines is
+/// seconds on a big map. The buses of a map share one network, as they share one wire.
+static READ: std::sync::Mutex<Vec<(PathBuf, Option<Arc<WireNet>>)>> = std::sync::Mutex::new(Vec::new());
+
 pub(crate) fn load(args: &crate::Args, world: &omsi_scene::World) -> Option<Arc<WireNet>> {
+    let key = omsi_cfg::resolve_path(&args.root, &args.map);
+    if let Some((_, net)) = READ.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(k, _)| *k == key) {
+        return net.clone();
+    }
+    let net = read(args, world);
+    READ.lock().unwrap_or_else(|e| e.into_inner()).push((key, net.clone()));
+    net
+}
+
+fn read(args: &crate::Args, world: &omsi_scene::World) -> Option<Arc<WireNet>> {
     let (net, path) = match candidates(args).into_iter().find(|p| p.is_file()) {
         Some(path) => {
             let bytes = std::fs::read(&path).map_err(|e| log::warn!("{}: {e}", path.display())).ok()?;

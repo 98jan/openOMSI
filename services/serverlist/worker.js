@@ -13,7 +13,7 @@
 //   GET  /v1/servers/<id>/icon.png
 
 import { DurableObject } from "cloudflare:workers";
-import { TTL_MS, MIN_BEAT_MS, REVERIFY_MS, MAX_LISTINGS, MAX_PER_SOURCE, REGISTERS_PER_HOUR, MAX_BODY, Limiter, checkRegistration, checkIcon, statusProves, hex } from "./logic.js";
+import { TTL_MS, MIN_BEAT_MS, REVERIFY_MS, MAX_LISTINGS, MAX_PER_SOURCE, REGISTERS_PER_HOUR, MAX_BODY, Limiter, checkRegistration, checkIcon, statusProves, sourceKey, hex } from "./logic.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -49,7 +49,7 @@ export class List extends DurableObject {
   async register(body, ip) {
     const now = Date.now();
     this.forget(now);
-    const source = await sha256("src" + ip);
+    const source = await sha256("src" + sourceKey(ip));
     if (!this.registers.allow(source, now)) return { status: 429, body: { error: "too many registrations from this address: try again later" } };
     const checked = checkRegistration(body, ip, this.env);
     if (checked.error) return { status: 400, body: { error: checked.error } };
@@ -59,8 +59,15 @@ export class List extends DurableObject {
       icon = checkIcon(body.icon);
       if (!icon) return { status: 400, body: { error: "the icon is not a PNG of 64x64 or less and 16 KB" } };
     }
-    // the same address again (a restart): the old listing goes, the new one takes its place
-    for (const [id, o] of this.listings) if (o.address === l.address) this.listings.delete(id);
+    // the same address again (a restart): the old listing goes, the new one takes its place -
+    // when it comes from the same sender, or the old one never proved itself; an address
+    // somebody else's listing holds is not taken over by a registration (it would be unlisted
+    // by anyone who knew the address)
+    for (const [id, o] of this.listings) {
+      if (o.address !== l.address) continue;
+      if (o.source !== source && o.verified) return { status: 409, body: { error: "this address is listed already" } };
+      this.listings.delete(id);
+    }
     const mine = [...this.listings.values()].filter((o) => o.source === source).length;
     if (mine >= MAX_PER_SOURCE) return { status: 429, body: { error: `at most ${MAX_PER_SOURCE} servers per address` } };
     if (this.listings.size >= MAX_LISTINGS) return { status: 503, body: { error: "the list is full" } };

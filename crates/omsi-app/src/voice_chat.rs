@@ -95,6 +95,9 @@ pub(crate) struct VoiceChat {
     /// What the session allows: the host's own, or what it told us.
     pub policy: VoicePolicy,
     policy_known: bool,
+    /// The host knows we take voice (it answered our `voice?`): until then it is asked again.
+    listening: bool,
+    asked: bool,
     ask_in: f32,
     voices: HashMap<u32, VoiceId>,
     cue: Option<VoiceId>,
@@ -116,6 +119,8 @@ impl VoiceChat {
             engine,
             policy: VoicePolicy::default(),
             policy_known: false,
+            listening: false,
+            asked: false,
             ask_in: 0.0,
             voices: HashMap::new(),
             cue: None,
@@ -129,6 +134,7 @@ impl VoiceChat {
     pub fn set_policy(&mut self, p: VoicePolicy) {
         self.policy = p;
         self.policy_known = true;
+        self.listening |= self.asked;
     }
 
     /// Whether the session carries voice chat on `channel`.
@@ -197,16 +203,19 @@ impl VoiceChat {
                 lan.set_voice_policy(p);
             }
             self.set_policy(p);
-        } else if !self.policy_known {
+        } else if !self.listening && s.voice_enabled {
             self.ask_in -= dt;
             if self.ask_in <= 0.0 && lan.connected {
                 self.ask_in = ASK_EVERY;
+                self.asked = true;
                 lan.command(1, "voice?");
             }
         }
         self.engine.set_settings(&omsi_voice::Settings {
             enabled: s.voice_enabled && lan.connected,
-            mode: if s.voice_mode == "open" { Mode::Open } else { Mode::PushToTalk },
+            // (an open microphone sends nothing where an administrator silenced us or the
+            // session has no voice on the nearby channel)
+            mode: if s.voice_mode == "open" && !self.server_muted && self.allows(Channel::Nearby) { Mode::Open } else { Mode::PushToTalk },
             open_channel: Channel::Nearby,
             mic_gain: s.voice_mic_gain,
             gate_db: s.voice_threshold_db,

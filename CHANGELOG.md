@@ -8,6 +8,8 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 ### New
 
+- **LAN protocol 15**: a game of this version cannot join a session of an older one, nor the
+  other way round (the AI traffic goes as a table, see below). Update the game on both sides.
 - **Shadows in the headlamps' beams** (Enhanced): the light the fog, rain or snow scatters
   from a headlamp or a street lamp's beam is cut where a pole, a car or a wall stands in
   the beam, as the sun's shafts are cut by the shadow maps: the beam looks up the lamp's
@@ -213,6 +215,21 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 
 ### Fixes
 
+- Review of the round: `hwban 3 session é` (a multi-byte last character of a duration) no longer
+  stops a dedicated server; the hardware bans are given to every session a game hosts, not only
+  the first of a run; the host passes voice frames only to players that have voice chat on
+  (they ask `voice?`), the TACKs of the traffic table are rate limited and a player's open
+  microphone sends nothing while an administrator has silenced them; a `server.cfg` without
+  `voice` has voice chat off (the new file says `voice = 1`); the table of the AI traffic is
+  written only while the game hosts, and a bus's sign in it once a second; the seated people's
+  seat-back shift is worked out when the pose changes; the wire of a trolleybus map is read
+  once per map, drawn once per scene, and a bus's poles and frogs leave the scene with it; a
+  microphone that is gone is not opened again every few milliseconds; the beam shadows look up
+  their map only where a beam shines; a plain bus is a trolleybus only if its "pole" meshes are
+  long and thin; the server list does not let a registration take over another server's
+  address, counts an IPv6 sender by its /64, and compares a status page's name as the listing
+  has it; the glass of a dented body keeps the snow's coordinates; new texts in the options and
+  the player list have translations.
 - **Trolleybus poles stay on the wire over bumps and joints**: a shoe that a bump lifts for
   a moment no longer comes off (it has to stay out of its groove for 0.15 s, or leave it by
   more than three groove depths), the groove is deeper and bends are taken faster.
@@ -245,7 +262,8 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
 - The mirrors show the sun's shadows and the smoke and spray again
   ([#3051](https://github.com/openOMSI-org/openOMSI/issues/3051)): they look up the shadow
   maps the window last drew instead of drawing their own, and draw the particles the window
-  has. Settings `mirror_shadows` and `mirror_particles` (both on) turn them off for a slower
+  has. Settings `mirror_shadows` and `mirror_particles` (both off until switched on: they cost a
+  little in every frame, most in snow) turn them on for a slower
   machine, as OMSI 2's "No PS in reflections" did.
 - Rain on the glass follows the rain: a drizzle leaves small beads, a downpour full drops,
   and the runners of a downpour are heavier, wider and quicker, with wider cleared tracks;
@@ -267,10 +285,10 @@ promoted to stable releases (see [docs/VERSIONING.md](docs/VERSIONING.md)); the 
   with the tile like the lengths and the rows' start distances were, so the first object of
   a row - and the whole row after it - stood off by that difference on tiles away from the
   map's middle row ([#3080](https://github.com/openOMSI-org/openOMSI/issues/3080)).
-- Vsync is `Fifo` on every graphics API. `AutoVsync` picked `FifoRelaxed` where the driver
-  has it - Vulkan mostly - which tears when a frame is late, so vsync "did not work" on
-  Vulkan only ([#2838](https://github.com/openOMSI-org/openOMSI/issues/2838)).
-  `OMSI_PRESENT_MODE=fifo|fifo_relaxed|mailbox|immediate|auto` picks another one for a test.
+- `OMSI_PRESENT_MODE=fifo|fifo_relaxed|mailbox|immediate|auto` picks the swapchain's present mode
+  for a test, when the surface has it (vsync stays `AutoVsync`, so a game just under the
+  refresh rate does not drop to half of it): Vulkan reports of vsync that tears
+  ([#2838](https://github.com/openOMSI-org/openOMSI/issues/2838)) can try `fifo`.
 
 - Passengers drawn with the high quality avatars no longer sit with their backs through the
   seat back (robes and long hair on women's avatars): a seated avatar is moved forward on

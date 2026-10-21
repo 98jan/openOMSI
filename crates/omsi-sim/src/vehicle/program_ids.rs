@@ -18,6 +18,9 @@ pub(crate) struct ProgramIds {
     /// `update_engine_vars`).
     pub(super) owns_cabin_temp: bool,
     pub(super) owns_cabin_rel_hum: bool,
+    /// `fanheater_t_target` and `cabinair_Vrate_fanheater` (see `scripted_cabin_air`).
+    pub(super) fan_jet_target: Option<VarId>,
+    pub(super) fan_heater_rate: Option<VarId>,
     /// The radio's strings (see `show_radio_text`).
     pub(super) snd_radio_text: Option<StrVarId>,
     pub(super) magnitola: Option<StrVarId>,
@@ -33,6 +36,8 @@ impl ProgramIds {
             driver_seat: p.var("Driver_Seat_VertTransl"),
             owns_cabin_temp: owns("Cabinair_Temp"),
             owns_cabin_rel_hum: owns("Cabinair_relHum"),
+            fan_jet_target: p.var("fanheater_t_target"),
+            fan_heater_rate: p.var("cabinair_Vrate_fanheater"),
             snd_radio_text: p.str_var("Snd_Radio_Text"),
             magnitola: p.str_var("magnitola_1"),
             mp3_freq: p.str_var("mp3_freq"),
@@ -51,7 +56,9 @@ impl VehicleInstance {
         }
         let t = self.ev(Ev::CabinTemp).filter(|t| t.is_finite() && *t > -100.0)?;
         let hum = self.ev(Ev::CabinAbsHum).filter(|h| h.is_finite() && *h >= 0.0)?;
-        let jet = self.var("fanheater_t_target").filter(|j| j.is_finite() && self.var("cabinair_Vrate_fanheater").is_some_and(|f| f > 1e-3));
+        let ids = self.program_ids();
+        let at = |id: Option<VarId>| id.map(|i| self.state.vars[i as usize]);
+        let jet = at(ids.fan_jet_target).filter(|j| j.is_finite() && at(ids.fan_heater_rate).is_some_and(|f| f > 1e-3));
         Some((t, hum, jet))
     }
 

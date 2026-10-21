@@ -92,9 +92,27 @@ export function checkIcon(b64) {
   return b64;
 }
 
-// What the status page of a server must say for it to be listed: the challenge, and the name.
+// A text as a listing keeps it: spaces folded, cut to size (what `cleanText` does before it
+// looks for anything else).
+export function foldText(v, max) {
+  return typeof v === "string" ? v.split(/\s+/).filter(Boolean).join(" ").slice(0, max) : "";
+}
+
+// What the status page of a server must say for it to be listed: the challenge, and the name
+// (as the listing has it: the page says it as `server.cfg` does, long or with double spaces).
 export function statusProves(status, challenge, name) {
-  return !!status && typeof status === "object" && status.list_challenge === challenge && status.name === name;
+  return !!status && typeof status === "object" && status.list_challenge === challenge && foldText(status.name, 48) === name;
+}
+
+// Whom a sender counts as for the limits: the address, and for IPv6 the /64 it belongs to (one
+// customer holds a whole /64, and a limit per /128 is no limit).
+export function sourceKey(ip) {
+  if (typeof ip !== "string" || !ip.includes(":")) return String(ip);
+  const [head, tail = ""] = ip.toLowerCase().split("::");
+  const a = head ? head.split(":") : [];
+  const b = ip.includes("::") && tail ? tail.split(":") : [];
+  const groups = ip.includes("::") ? [...a, ...Array(Math.max(0, 8 - a.length - b.length)).fill("0"), ...b] : a;
+  return groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, "")).join(":") + "::/64";
 }
 
 // A sliding window of events per key, in memory.

@@ -80,6 +80,10 @@ pub struct Traffic {
     pub(crate) table: omsi_net::traffic_table::TrafficTable,
     /// The content folder the table names vehicle files by.
     pub(crate) table_root: std::path::PathBuf,
+    /// Whether the table is written: only a LAN host reads it (set each frame by the caller).
+    pub(crate) table_on: bool,
+    /// The traffic time the buses' line and destination were last written to the table.
+    pub(crate) table_meta_t: f32,
 }
 
 impl std::ops::Deref for Traffic {
@@ -115,6 +119,8 @@ impl Traffic {
             lamp_owed: HashMap::new(),
             table: Default::default(),
             table_root: root.to_path_buf(),
+            table_on: false,
+            table_meta_t: f32::NEG_INFINITY,
         }
     }
 

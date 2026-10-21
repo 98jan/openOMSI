@@ -1,6 +1,7 @@
 //! The traffic table the simulation writes (see `omsi_net::traffic_table`): after each step of
 //! the traffic, every car as one row. The LAN host's clients are told from it
-//! (`lan_world`); nothing in the simulation reads it.
+//! (`lan_world`); nothing in the simulation reads it, so it is only written while the game
+//! hosts a LAN session.
 
 use super::*;
 use omsi_net::traffic_table::{Kind, Look, Meta, Row};
@@ -9,7 +10,7 @@ impl Traffic {
     /// Write every car of the simulation into the table; the cars no longer there are over.
     /// Not for a client, whose cars are the host's rows (`lan_world`).
     pub(crate) fn write_table(&mut self) {
-        if self.sim.mirror {
+        if self.sim.mirror || !self.table_on {
             if !self.table.is_empty() {
                 self.table.clear();
             }
@@ -17,6 +18,11 @@ impl Traffic {
         }
         let root = &self.table_root;
         let night = self.sim.night;
+        // (a bus's sign changes once in a while: the table's copy is looked at once a second)
+        let refresh = self.sim.time - self.table_meta_t >= 1.0;
+        if refresh {
+            self.table_meta_t = self.sim.time;
+        }
         self.table.begin(self.sim.time as f64);
         for c in &self.sim.cars {
             let v = &c.vehicle;
@@ -62,7 +68,7 @@ impl Traffic {
                 }
             };
             let Some(id) = self.table.upsert(c.id, kind, look, meta, row) else { continue };
-            if c.is_bus() {
+            if c.is_bus() && refresh {
                 let (line, destination) = crate::lan_world::car_display(v);
                 self.table.set_meta(id, &Meta { line, destination });
             }

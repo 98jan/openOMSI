@@ -1121,6 +1121,7 @@ enum PeerTraffic {
     Textures,
     Sounds,
     Voice,
+    Tack,
     Message,
 }
 
@@ -1171,6 +1172,7 @@ pub struct Peer {
     textures: Bucket,
     sounds: Bucket,
     voice: Bucket,
+    tacks: Bucket,
     messages: Bucket,
     chat: Bucket,
     /// Datagrams of this player the host threw away (too many at once).
@@ -1214,6 +1216,7 @@ impl Peer {
             textures: Bucket::new(TEXTURE_RATE.1),
             sounds: Bucket::new(SOUND_RATE.1),
             voice: Bucket::new(VOICE_RATE.1),
+            tacks: Bucket::new(traffic_net::TACK_RATE.1),
             messages: Bucket::new(MESSAGE_RATE.1),
             chat: Bucket::new(CHAT_RATE.1),
             dropped: 0,
@@ -1356,6 +1359,9 @@ pub struct LanSession {
     /// silenced (host), the frames that came in, and where we are.
     voice_policy: VoicePolicy,
     voice_muted: std::collections::HashSet<u32>,
+    /// The players that asked what the session allows of voice (`voice?`): the ones with voice
+    /// chat on, the only ones the host passes frames on to.
+    voice_listeners: std::collections::HashSet<u32>,
     voice_in: Vec<VoiceIn>,
     own_place: Option<[f64; 3]>,
     descs: Vec<world::Desc>,
@@ -1391,6 +1397,8 @@ pub struct LanSession {
     hw_bans: Vec<(String, String)>,
     /// Without a hardware identifier a hello is turned away (host; `require_hardware_id`).
     hw_required: bool,
+    /// The revision of the ban lists this session was last given (kept by `omsi-lan`'s `bans`).
+    pub hw_ban_revision: u64,
     /// This game's hardware identifier, sent in its hellos (`set_hardware_id`).
     pub hardware_id: Option<String>,
     /// Commands for this game (`command`): (from, text).
@@ -1484,6 +1492,7 @@ impl LanSession {
             sounds: sounds::Sync::default(),
             voice_policy: VoicePolicy::default(),
             voice_muted: Default::default(),
+            voice_listeners: Default::default(),
             voice_in: Vec::new(),
             own_place: None,
             vars_in: Vec::new(),
@@ -1506,6 +1515,7 @@ impl LanSession {
             banned: Vec::new(),
             hw_bans: Vec::new(),
             hw_required: false,
+            hw_ban_revision: 0,
             hardware_id: HARDWARE_ID.get().cloned(),
             commands: Vec::new(),
             clock_speed: 1.0,
@@ -2812,6 +2822,7 @@ impl LanSession {
             PeerTraffic::Textures => peer.textures.take(rate),
             PeerTraffic::Sounds => peer.sounds.take(rate),
             PeerTraffic::Voice => peer.voice.take(rate),
+            PeerTraffic::Tack => peer.tacks.take(rate),
             PeerTraffic::Message => peer.messages.take(rate),
         };
         if !ok {
@@ -3083,7 +3094,7 @@ impl LanSession {
                 return;
             }
             None if self.hw_required && hwid.is_none() => {
-                self.reject(from, "this session needs the game's hardware identifier: update the game and keep \"hardware_id\" on in its settings");
+                self.reject(from, "this session needs the game's hardware identifier: update the game");
                 return;
             }
             None if hwid.as_deref().is_some_and(|h| self.hw_bans.iter().any(|b| b.0 == h)) => {

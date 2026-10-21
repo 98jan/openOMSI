@@ -199,14 +199,10 @@ impl ClientSync {
         if ack.epoch != self.epoch {
             return;
         }
-        let mut k = 0;
-        while k < self.inflight.len() {
-            if ack.covers(self.inflight[k].seq) {
-                let sent = self.inflight.remove(k).unwrap();
-                self.confirm(sent);
-            } else {
-                k += 1;
-            }
+        let (done, keep): (VecDeque<Sent>, VecDeque<Sent>) = std::mem::take(&mut self.inflight).into_iter().partition(|s| ack.covers(s.seq));
+        self.inflight = keep;
+        for sent in done {
+            self.confirm(sent);
         }
         for (id, t) in &ack.troubles {
             let Some(e) = self.entries.get_mut(id) else { continue };

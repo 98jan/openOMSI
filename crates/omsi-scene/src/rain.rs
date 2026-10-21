@@ -144,6 +144,12 @@ impl Rain {
 /// small tilt windows - so that all the glass of a bus holds the same snow. The tile joins
 /// its own edges: the cells of its noise are a whole number to the metre and wrap.
 pub fn snow_on_glass(_root: &std::path::Path) -> omsi_texture::Image {
+    // (made once: the same picture at every reload of a vehicle or a scene)
+    static MADE: std::sync::OnceLock<omsi_texture::Image> = std::sync::OnceLock::new();
+    MADE.get_or_init(make_snow_on_glass).clone()
+}
+
+fn make_snow_on_glass() -> omsi_texture::Image {
     const SIDE: usize = 512;
     // (the shader's hash, on the integer cell: `rain_hash` in 08_rain_glass.wgsl)
     let hash = |x: i32, y: i32| -> [f32; 2] {

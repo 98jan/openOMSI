@@ -422,6 +422,8 @@ pub(crate) struct PersonView {
     pose_changed: bool,
     /// How far a seated person is moved forward off the seat back (m, eased).
     seat_shift: f32,
+    /// How far the pose asks the person to be moved (m): worked out when the pose changes.
+    seat_want: f32,
     /// Whether this person has ever been posed (an unposed model is the file's T-pose).
     skinned: bool,
     /// Frames since the last pose and where the person stood then (the
@@ -671,6 +673,13 @@ impl PeopleView {
             if go {
                 if st.pose_changed || !st.skinned {
                     let ty = st.avatar.as_ref().unwrap_or(&p.ty);
+                    // (the scan of the skin's vertices is for a new pose only)
+                    st.seat_want = match (p.facts.activity, st.skins.first()) {
+                        (omsi_sim::human::Activity::Sit, Some((pos, _))) => {
+                            seat_back_shift(pos, ty.rig.hip[1].z, if st.avatar.is_some() { AVATAR_SEAT_DEPTH } else { CONTENT_SEAT_DEPTH })
+                        }
+                        _ => 0.0,
+                    };
                     for (k, (id, _)) in st.meshes.iter().enumerate() {
                         if let (Some((pos, nrm)), Some(m)) = (st.skins.get(k), ty.meshes.get(k)) {
                             renderer.update_mesh(scene, *id, pos, nrm, &m.data.uvs);
@@ -697,13 +706,7 @@ impl PeopleView {
             // a seated person's back stays clear of the seat back: whoever sits deeper
             // than the seats were made for (a long robe, hair, a leaning trunk) is
             // moved forward on the seat, eased
-            let want = match (p.facts.activity, st.skins.first()) {
-                (omsi_sim::human::Activity::Sit, Some((pos, _))) => {
-                    let ty = st.avatar.as_ref().unwrap_or(&p.ty);
-                    seat_back_shift(pos, ty.rig.hip[1].z, if st.avatar.is_some() { AVATAR_SEAT_DEPTH } else { CONTENT_SEAT_DEPTH })
-                }
-                _ => 0.0,
-            };
+            let want = st.seat_want;
             st.seat_shift += (want - st.seat_shift).clamp(-0.4 * sdt, 0.4 * sdt);
             if st.seat_shift > 0.0 {
                 let fwd = Mat4::from_rotation_z((-heading).to_radians() as f32).transform_vector3(Vec3::new(0.0, st.seat_shift, 0.0));

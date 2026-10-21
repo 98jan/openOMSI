@@ -11,6 +11,9 @@ fn voice_session() -> (LanSession, LanSession, LanSession, [Pose; 3]) {
         s[1].connected && s[2].connected && s[0].peers().filter(|p| p.has_pose).count() == 2
     });
     assert!(a.connected && b.connected);
+    // (both have voice chat on: they asked the host for its rules)
+    host.set_voice_listener(a.my_id);
+    host.set_voice_listener(b.my_id);
     (host, a, b, poses)
 }
 
@@ -82,4 +85,15 @@ fn voice_policy_mutes_and_limits_are_enforced_by_the_host() {
     }
     let got = host.take_voice().len() + b.take_voice().len();
     assert!(got > 0 && got <= 2 * 200, "{got} frames got through");
+}
+
+#[test]
+fn a_player_with_voice_chat_off_is_not_passed_the_frames() {
+    let (mut host, mut a, mut b, poses) = voice_session();
+    // (b never asked: its game has voice chat off)
+    host.voice_listeners.remove(&b.my_id);
+    a.voice_send(voice_net::RADIO, false, 1, &[1, 2, 3]);
+    voice_round(&mut host, &mut a, &mut b, &poses);
+    assert!(b.take_voice().is_empty());
+    assert_eq!(host.take_voice().len(), 1);
 }
