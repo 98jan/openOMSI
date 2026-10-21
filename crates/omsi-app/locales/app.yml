@@ -22115,6 +22115,7 @@ _version: 2
   ms: "Paparan VR pada monitor dihidupkan"
   tl: "Naka-on ang VR sa monitor"
   sv: "VR-spegel på skrivbordet på"
+  sr: "Uključi prikaz VR-a na monitoru"
 "Desktop VR mirror off":
   ca: "Rèplica de RV al monitor desactivada"
   ru: "Показ VR на мониторе выключен"
@@ -22143,6 +22144,7 @@ _version: 2
   ms: "Paparan VR pada monitor dimatikan"
   tl: "Naka-off ang VR sa monitor"
   sv: "VR-spegel på skrivbordet av"
+  sr: "Isključi prikaz VR-a na monitoru"
 "Could not start VR":
   ca: "No s'ha pogut iniciar la RV"
   ru: "Не удалось запустить VR"
@@ -38239,6 +38241,7 @@ _version: 2
   hi: "टूर की यात्राएँ"
   ca: "Trajectes del torn"
   sv: "Omloppets turer"
+  sr: "Vožnje u okviru ture"
 
 "Click a trip to start with it":
   de: "Klicke eine Fahrt an, um mit ihr zu beginnen"
@@ -49769,6 +49772,7 @@ _version: 2
   ca: "Cap torn amb trajectes pendents coincideix."
   fr: "Aucun service n'a de voyage à venir qui correspond."
   ru: "Нет подходящего рейса, который ещё предстоит выполнить."
+  sr: "Nijedna tura nema predstojeću vožnju koja odgovara zadatim kriterijumima."
 
 "No tour left at this time: show the ended tours, or start earlier.":
   es: "No quedan turnos a esta hora: muestra los que ya han terminado o empieza antes."
@@ -62715,423 +62719,563 @@ _version: 2
 
 "Heating control temperature":
   pt: "Controle de temperatura do aquecimento"
+  sr: "Podešavanje temperature grejanja"
 
 "Heating control footwell":
   pt: "Controle de aquecimento da área dos pés"
+  sr: "Grejanje prostora za noge"
 
 "Mirror heating on/off":
   pt: "Aquecimento dos espelhos: ligar/desligar"
+  sr: "Grejanje retrovizora: uključi/isključi"
 
 "Lift down switch on/off":
   pt: "Interruptor de descida do elevador: ligar/desligar"
+  sr: "Prekidač za spuštanje podizne platforme: uključi/isključi"
 
 "Driver's door":
   pt: "Porta do motorista"
+  sr: "Vrata vozača"
 
 "Left driver's door":
   pt: "Porta esquerda do motorista"
+  sr: "Leva vrata vozača"
 
 "Right driver's door":
   pt: "Porta direita do motorista"
+  sr: "Desna vrata vozača"
 
 "Ignition key":
   pt: "Chave de ignição"
+  sr: "Ključ za pokretanje motora"
 
 "Door lock":
   pt: "Trava da porta"
+  sr: "Brava na vratima"
 
 "Parking Brake On/Off":
   pt: "Freio de estacionamento: ligar/desligar"
+  sr: "Parkirna kočnica: uključi/isključi"
 
 "Parking Brake Set":
   pt: "Acionar freio de estacionamento"
+  sr: "Zategni parkirnu kočnicu"
 
 "Parking Brake Release":
   pt: "Liberar freio de estacionamento"
+  sr: "Otpusti parkirnu kočnicu"
 
 "Electricity On/Off":
   pt: "Alimentação elétrica: ligar/desligar"
+  sr: "Električno napajanje: uključi/isključi"
 
 "Front Door, 1st Wing Open/Close":
   pt: "Porta dianteira, primeira folha: abrir/fechar"
+  sr: "Prednja vrata, prvo krilo: otvori/zatvori"
 
 "Front Door, 2nd Wing Open/Close":
   pt: "Porta dianteira, segunda folha: abrir/fechar"
+  sr: "Prednja vrata, drugo krilo: otvori/zatvori"
 
 "Stop Request Button":
   pt: "Botão de solicitação de parada"
+  sr: "Dugme za najavu zaustavljanja"
 
 "Buggy Request Button":
   pt: "Botão de solicitação para carrinho de bebê"
+  sr: "Dugme za najavu ulaska sa dečjim kolicima"
 
 "Buggy Switch (Open Rear Door Manually)":
   pt: "Interruptor para carrinho de bebê (abrir porta traseira manualmente)"
+  sr: "Prekidač za ručno otvaranje zadnjih vrata za putnike sa dečjim kolicima"
 
 "Cabin Light Lower Deck On/Off":
   pt: "Iluminação do andar inferior: ligar/desligar"
+  sr: "Svetlo u donjem delu autobusa: uključi/isključi"
 
 "Cabin Light Upper Deck On/Off":
   pt: "Iluminação do andar superior: ligar/desligar"
+  sr: "Svetlo u gornjem delu autobusa: uključi/isključi"
 
 "Cabin Light Lower Deck, First on the Right On/Off":
   pt: "Primeira luz à direita do andar inferior: ligar/desligar"
+  sr: "Prvo svetlo zdesna u donjem delu autobusa: uključi/isključi"
 
 "Driver's Light On/Off":
   pt: "Luz do motorista: ligar/desligar"
+  sr: "Osvetljenje za vozača: uključi/isključi"
 
 "Driving Slip Regulation System On/Off":
   pt: "Controle de tração: ligar/desligar"
+  sr: "Sistem protiv proklizavanja: uključi/isključi"
 
 "Dimmed Headlights On/Off":
   pt: "Farol baixo: ligar/desligar"
+  sr: "Oborena svetla: uključi/isključi"
 
 "Full Beam On/Off / Flash Light":
   pt: "Farol alto: ligar/desligar / lampejar"
+  sr: "Duga svetla: uključi/isključi / ablenduj"
 
 "Engine On/Off":
   pt: "Motor: ligar/desligar"
+  sr: "Motor: pokreni/ugasi"
 
 "Engine Shut Down":
   pt: "Desligar motor"
+  sr: "Ugasi motor"
 
 "Engine Cooling On/Off":
   pt: "Arrefecimento do motor: ligar/desligar"
+  sr: "Hlađenje motora: uključi/isključi"
 
 "Heater Blower On/Off":
   pt: "Ventilador do aquecedor: ligar/desligar"
+  sr: "Ventilator grejanja: uključi/isključi"
 
 "Microphone Switch (Announcements)":
   pt: "Interruptor do microfone (anúncios)"
+  sr: "Prekidač mikrofona (najave)"
 
 "Parking Light On/Off":
   pt: "Luz de posição: ligar/desligar"
+  sr: "Poziciona svetla: uključi/isključi"
 
 "Park Heating On/Off":
   pt: "Aquecedor auxiliar: ligar/desligar"
+  sr: "Grejanje autobusa dok je parkiran: uključi/isključi"
 
 "Rear Fog Light On/Off":
   pt: "Luz de neblina traseira: ligar/desligar"
+  sr: "Zadnje svetlo za maglu: uključi/isključi"
 
 "Retarder Direct Mode On/Off":
   pt: "Modo direto do retardador: ligar/desligar"
+  sr: "Direktni režim retardera: uključi/isključi"
 
 "Retarder On/Off":
   pt: "Retardador: ligar/desligar"
+  sr: "Retarder: uključi/isključi"
 
 "Station Brake & Door Release On/Off":
   pt: "Freio de parada e liberação das portas: ligar/desligar"
+  sr: "Stajališna kočnica i otključavanje vrata: uključi/isključi"
 
 "Only Station Brake (20h switch) On/Off":
   pt: "Freio de parada (interruptor 20h): ligar/desligar"
+  sr: "Samo kočnica za stajalište (prekidač 20h): uključi/isključi"
 
 "Warning Lights On/Off":
   pt: "Pisca-alerta: ligar/desligar"
+  sr: "Upozoravajuća svetla: uključi/isključi"
 
 "Set Blinker Left":
   pt: "Acionar seta esquerda"
+  sr: "Uključi levi pokazivač pravca"
 
 "Set Blinker Right":
   pt: "Acionar seta direita"
+  sr: "Uključi desni pokazivač pravca"
 
 "Set Blinker Off":
   pt: "Desligar setas"
+  sr: "Isključi pokazivače pravca"
 
 "Blinker Left via Off":
   pt: "Seta esquerda passando pela posição desligada"
+  sr: "Levi pokazivač pravca, preko isključenog položaja"
 
 "Blinker Right via Off":
   pt: "Seta direita passando pela posição desligada"
+  sr: "Desni pokazivač pravca, preko isključenog položaja"
 
 "Steering Left":
   pt: "Virar à esquerda"
+  sr: "Skretanje ulevo"
 
 "Steering Right":
   pt: "Virar à direita"
+  sr: "Skretanje udesno"
 
 "Steering Neutral":
   pt: "Centralizar direção"
+  sr: "Postavi upravljač u neutralni položaj"
 
 "Throttle Boost/Brake release":
   pt: "Reforço do acelerador / liberar freio"
+  sr: "Pojačaj gas / otpusti kočnicu"
 
 "Give Ticket":
   pt: "Entregar bilhete"
+  sr: "Izdaj kartu"
 
 "Give Change":
   pt: "Entregar troco"
+  sr: "Vrati kusur"
 
 "Take the change":
   pt: "Pegar troco"
+  sr: "Uzmi kusur"
 
 "Wiper On/Off":
   pt: "Limpador do para-brisa: ligar/desligar"
+  sr: "Brisači: uključi/isključi"
 
 "Wiper Fast On/Off":
   pt: "Limpador rápido: ligar/desligar"
+  sr: "Brzi brisači: uključi/isključi"
 
 "Wiper Intermittent On/Off":
   pt: "Limpador intermitente: ligar/desligar"
+  sr: "Brisači sa intervalnim radom: uključi/isključi"
 
 "Wiper: Washer":
   pt: "Limpador: lavador do para-brisa"
+  sr: "Brisači: uključi pranje vetrobranskog stakla"
 
 "Cassette Recorder Play":
   pt: "Reproduzir fita"
+  sr: "Pusti kasetu"
 
 "Cassette Recorder Stop":
   pt: "Parar fita"
+  sr: "Zaustavi kasetu"
 
 "Release Curtain":
   pt: "Soltar cortina"
+  sr: "Otpusti zavesu"
 
 "Move Rollsign To Next Notch":
   pt: "Avançar letreiro de lona uma posição"
+  sr: "Pomeri odredišnu rolnu za jedno polje unapred"
 
 "Move Rollsign To Previous Notch":
   pt: "Recuar letreiro de lona uma posição"
+  sr: "Pomeri odredišnu rolnu za jedno polje unazad"
 
 "Wind Rollsign Down":
   pt: "Rolar letreiro de lona para baixo"
+  sr: "Pomeri odredišnu rolnu nadole"
 
 "Wind Rollsign Up":
   pt: "Rolar letreiro de lona para cima"
+  sr: "Pomeri odredišnu rolnu nagore"
 
 "Select Terminus Rollsign":
   pt: "Selecionar destino do letreiro de lona"
+  sr: "Izaberi krajnje odredište na odredišnoj rolni"
 
 "IBIS: Back":
   pt: "IBIS: voltar"
+  sr: "IBIS: nazad"
 
 "IBIS: Delete":
   pt: "IBIS: apagar"
+  sr: "IBIS: obriši"
 
 "IBIS: Enter":
   pt: "IBIS: confirmar"
+  sr: "IBIS: potvrdi"
 
 "IBIS: Forward":
   pt: "IBIS: avançar"
+  sr: "IBIS: napred"
 
 "IBIS: Forward (Mute)":
   pt: "IBIS: avançar (sem anúncio)"
+  sr: "IBIS: sledeće (bez zvučnog signala)"
 
 "IBIS: Line/Course":
   pt: "IBIS: linha / serviço"
+  sr: "IBIS: linija/vožnja"
 
 "IBIS: Route":
   pt: "IBIS: itinerário"
+  sr: "IBIS: trasa"
 
 "IBIS: Terminus":
   pt: "IBIS: destino final"
+  sr: "IBIS: krajnje odredište"
 
 "Ticket Printer: Cancel":
   pt: "Impressora de bilhetes: cancelar"
+  sr: "Štampač karata: otkaži"
 
 "Ticket Printer: Enter":
   pt: "Impressora de bilhetes: confirmar"
+  sr: "Štampač karata: potvrdi"
 
 "Manuel Gearbox: Reverse Gear":
   pt: "Câmbio manual: marcha à ré"
+  sr: "Ručni menjač: brzina za vožnju unazad"
 
 "Manuel Gearbox: No Gear":
   pt: "Câmbio manual: ponto morto"
+  sr: "Ručni menjač: neutralni položaj"
 
 "Manuel Gearbox: Next Gear":
   pt: "Câmbio manual: próxima marcha"
+  sr: "Ručni menjač: sledeća brzina"
 
 "Manuel Gearbox: Prev. Gear":
   pt: "Câmbio manual: marcha anterior"
+  sr: "Ručni menjač: prethodna brzina"
 
 "Switch Steering Visible/Invisible":
   pt: "Mostrar / ocultar volante"
+  sr: "Prikaži/sakrij volan"
 
 "Automatic Gearbox: 1":
   pt: "Câmbio automático: 1"
+  sr: "Automatski menjač: 1"
 
 "Automatic Gearbox: 2":
   pt: "Câmbio automático: 2"
+  sr: "Automatski menjač: 2"
 
 "Automatic Gearbox: D":
   pt: "Câmbio automático: D"
+  sr: "Automatski menjač: D"
 
 "Automatic Gearbox: N":
   pt: "Câmbio automático: N"
+  sr: "Automatski menjač: N"
 
 "Automatic Gearbox: R":
   pt: "Câmbio automático: R"
+  sr: "Automatski menjač: R"
 
 "Manuel Gearbox: 1st Gear":
   pt: "Câmbio manual: 1ª marcha"
+  sr: "Ručni menjač: 1. brzina"
 
 "Manual Gearbox: 1st Gear (only while gamectrler button is pressed)":
   pt: "Câmbio manual: 1ª marcha (enquanto o botão do controle estiver pressionado)"
+  sr: "Ručni menjač: 1. brzina (samo dok je dugme na kontroleru pritisnuto)"
 
 "Manuel Gearbox: 2nd Gear":
   pt: "Câmbio manual: 2ª marcha"
+  sr: "Ručni menjač: 2. brzina"
 
 "Manual Gearbox: 2nd Gear (only while gamectrler button is pressed)":
   pt: "Câmbio manual: 2ª marcha (enquanto o botão do controle estiver pressionado)"
+  sr: "Ručni menjač: 2. brzina (samo dok je dugme na kontroleru pritisnuto)"
 
 "Manuel Gearbox: 3rd Gear":
   pt: "Câmbio manual: 3ª marcha"
+  sr: "Ručni menjač: 3. brzina"
 
 "Manual Gearbox: 3rd Gear (only while gamectrler button is pressed)":
   pt: "Câmbio manual: 3ª marcha (enquanto o botão do controle estiver pressionado)"
+  sr: "Ručni menjač: 3. brzina (samo dok je dugme na kontroleru pritisnuto)"
 
 "Manuel Gearbox: 4th Gear":
   pt: "Câmbio manual: 4ª marcha"
+  sr: "Ručni menjač: 4. brzina"
 
 "Manual Gearbox: 4th Gear (only while gamectrler button is pressed)":
   pt: "Câmbio manual: 4ª marcha (enquanto o botão do controle estiver pressionado)"
+  sr: "Ručni menjač: 4. brzina (samo dok je dugme na kontroleru pritisnuto)"
 
 "Manuel Gearbox: 5th Gear":
   pt: "Câmbio manual: 5ª marcha"
+  sr: "Ručni menjač: 5. brzina"
 
 "Manual Gearbox: 5th Gear (only while gamectrler button is pressed)":
   pt: "Câmbio manual: 5ª marcha (enquanto o botão do controle estiver pressionado)"
+  sr: "Ručni menjač: 5. brzina (samo dok je dugme na kontroleru pritisnuto)"
 
 "Manuel Gearbox: 6th Gear":
   pt: "Câmbio manual: 6ª marcha"
+  sr: "Ručni menjač: 6. brzina"
 
 "Manual Gearbox: 6th Gear (only while gamectrler button is pressed)":
   pt: "Câmbio manual: 6ª marcha (enquanto o botão do controle estiver pressionado)"
+  sr: "Ručni menjač: 6. brzina (samo dok je dugme na kontroleru pritisnuto)"
 
 "Manual Gearbox: Reverse Gear (only while gamectrler button is pressed)":
   pt: "Câmbio manual: marcha à ré (enquanto o botão do controle estiver pressionado)"
+  sr: "Ručni menjač: hod unazad (samo dok je dugme na kontroleru pritisnuto)"
 
 "IBIS: 0":
   pt: "IBIS: 0"
+  sr: "IBIS: 0"
 
 "IBIS: 1":
   pt: "IBIS: 1"
+  sr: "IBIS: 1"
 
 "IBIS: 2":
   pt: "IBIS: 2"
+  sr: "IBIS: 2"
 
 "IBIS: 3":
   pt: "IBIS: 3"
+  sr: "IBIS: 3"
 
 "IBIS: 4":
   pt: "IBIS: 4"
+  sr: "IBIS: 4"
 
 "IBIS: 5":
   pt: "IBIS: 5"
+  sr: "IBIS: 5"
 
 "IBIS: 6":
   pt: "IBIS: 6"
+  sr: "IBIS: 6"
 
 "IBIS: 7":
   pt: "IBIS: 7"
+  sr: "IBIS: 7"
 
 "IBIS: 8":
   pt: "IBIS: 8"
+  sr: "IBIS: 8"
 
 "IBIS: 9":
   pt: "IBIS: 9"
+  sr: "IBIS: 9"
 
 "Ticket Printer: Select Ticket 1":
   pt: "Impressora de bilhetes: selecionar bilhete 1"
+  sr: "Štampač karata: izaberi kartu 1"
 
 "Ticket Printer: Select Ticket 2":
   pt: "Impressora de bilhetes: selecionar bilhete 2"
+  sr: "Štampač karata: izaberi kartu 2"
 
 "Ticket Printer: Select Ticket 3":
   pt: "Impressora de bilhetes: selecionar bilhete 3"
+  sr: "Štampač karata: izaberi kartu 3"
 
 "Ticket Printer: Select Ticket 4":
   pt: "Impressora de bilhetes: selecionar bilhete 4"
+  sr: "Štampač karata: izaberi kartu 4"
 
 "Ticket Printer: Select Ticket 5":
   pt: "Impressora de bilhetes: selecionar bilhete 5"
+  sr: "Štampač karata: izaberi kartu 5"
 
 "Select Line Rollsign 1":
   pt: "Selecionar linha do letreiro de lona 1"
+  sr: "Izaberi liniju na rolo-displeju 1"
 
 "Select Line Rollsign 2":
   pt: "Selecionar linha do letreiro de lona 2"
+  sr: "Izaberi liniju na rolo-displeju 2"
 
 "Select Line Rollsign 3":
   pt: "Selecionar linha do letreiro de lona 3"
+  sr: "Izaberi liniju na rolo-displeju 3"
 
 "Cashdesk: give 0.05":
   pt: "Mesa de cobrança: entregar 0,05"
+  sr: "Blagajna: daj 0,05"
 
 "Cashdesk: give 0.10":
   pt: "Mesa de cobrança: entregar 0,10"
+  sr: "Blagajna: daj 0,10"
 
 "Cashdesk: give 0.15":
   pt: "Mesa de cobrança: entregar 0,15"
+  sr: "Blagajna: daj 0,15"
 
 "Cashdesk: give 0.30":
   pt: "Mesa de cobrança: entregar 0,30"
+  sr: "Blagajna: daj 0,30"
 
 "Cashdesk: give 0.50":
   pt: "Mesa de cobrança: entregar 0,50"
+  sr: "Blagajna: daj 0,50"
 
 "Cashdesk: give 1.00":
   pt: "Mesa de cobrança: entregar 1,00"
+  sr: "Blagajna: daj 1,00"
 
 "Cashdesk: give 1.50":
   pt: "Mesa de cobrança: entregar 1,50"
+  sr: "Blagajna: daj 1,50"
 
 "Cashdesk: give 2.00":
   pt: "Mesa de cobrança: entregar 2,00"
+  sr: "Blagajna: daj 2,00"
 
 "Cashdesk: give 4.00":
   pt: "Mesa de cobrança: entregar 4,00"
+  sr: "Blagajna: daj 4,00"
 
 "Cashdesk: give 5.00":
   pt: "Mesa de cobrança: entregar 5,00"
+  sr: "Blagajna: daj 5,00"
 
 "Cashdesk: give 8.00":
   pt: "Mesa de cobrança: entregar 8,00"
+  sr: "Blagajna: daj 8,00"
 
 "Cashdesk: give 15.00":
   pt: "Mesa de cobrança: entregar 15,00"
+  sr: "Blagajna: daj 15,00"
 
 "SD83: Rollsign Line Start":
   pt: "SD83: iniciar letreiro de linha"
+  sr: "SD83: pokreni rolo-displej linije"
 
 "SD83: Rollsign Line Select 100s +":
   pt: "SD83: aumentar centenas do letreiro de linha"
+  sr: "SD83: povećaj stotine na rolo-displeju linije"
 
 "SD83: Rollsign Line Select 100s -":
   pt: "SD83: diminuir centenas do letreiro de linha"
+  sr: "SD83: smanji stotine na rolo-displeju linije"
 
 "SD83: Rollsign Line Select 10s +":
   pt: "SD83: aumentar dezenas do letreiro de linha"
+  sr: "SD83: povećaj desetice na rolo-displeju linije"
 
 "SD83: Rollsign Line Select 10s -":
   pt: "SD83: diminuir dezenas do letreiro de linha"
+  sr: "SD83: smanji desetice na rolo-displeju linije"
 
 "SD83: Rollsign Line Select 1s +":
   pt: "SD83: aumentar unidades do letreiro de linha"
+  sr: "SD83: povećaj jedinice na rolo-displeju linije"
 
 "SD83: Rollsign Line Select 1s -":
   pt: "SD83: diminuir unidades do letreiro de linha"
+  sr: "SD83: smanji jedinice na rolo-displeju linije"
 
 "SD83: Rollsign Terminus Start":
   pt: "SD83: iniciar letreiro de destino final"
+  sr: "SD83: pokreni odredišnu rolnu"
 
 "SD83: Rollsign Terminus Select 100s +":
   pt: "SD83: aumentar centenas do letreiro de destino final"
+  sr: "SD83: povećaj stotine na odredišnoj rolni"
 
 "SD83: Rollsign Terminus Select 100s -":
   pt: "SD83: diminuir centenas do letreiro de destino final"
+  sr: "SD83: smanji stotine na odredišnoj rolni"
 
 "SD83: Rollsign Terminus Select 10s +":
   pt: "SD83: aumentar dezenas do letreiro de destino final"
+  sr: "SD83: povećaj desetice na odredišnoj rolni"
 
 "SD83: Rollsign Terminus Select 10s -":
   pt: "SD83: diminuir dezenas do letreiro de destino final"
+  sr: "SD83: smanji desetice na odredišnoj rolni"
 
 "SD83: Rollsign Terminus Select 1s +":
   pt: "SD83: aumentar unidades do letreiro de destino final"
+  sr: "SD83: povećaj jedinice na odredišnoj rolni"
 
 "SD83: Rollsign Terminus Select 1s -":
   pt: "SD83: diminuir unidades do letreiro de destino final"
+  sr: "SD83: smanji jedinice na odredišnoj rolni"
 
 " (outside)":
   pt: " (externo)"
+  sr: " (spolja)"
 "Mirror panels on the screen":
   de: "Spiegelpanels auf dem Bildschirm"
   fr: "Rétroviseurs à l'écran"
@@ -63492,6 +63636,7 @@ _version: 2
   zh-tw: "我的所有工作階段"
   ja: "自分のすべてのセッション"
   ko: "내 모든 세션"
+  sr: "Sve moje sesije"
 "Allow their voice chat again":
   es: "Permitir de nuevo su chat de voz"
   ca: "Permet de nou el seu xat de veu"
@@ -63504,6 +63649,7 @@ _version: 2
   zh-tw: "重新允許他們的語音聊天"
   ja: "ボイスチャットを再び許可"
   ko: "음성 채팅 다시 허용"
+  sr: "Ponovo dozvoli njihov glasovni čet"
 "Allow voice chat again":
   es: "Permitir de nuevo el chat de voz"
   ca: "Permet de nou el xat de veu"
@@ -63516,6 +63662,7 @@ _version: 2
   zh-tw: "重新允許語音聊天"
   ja: "ボイスチャットを再び許可"
   ko: "음성 채팅 다시 허용"
+  sr: "Ponovo dozvoli glasovni čet"
 "Ban the machine of":
   es: "Vetar el equipo de"
   ca: "Veta l'equip de"
@@ -63528,6 +63675,7 @@ _version: 2
   zh-tw: "封鎖該玩家的裝置："
   ja: "次のプレイヤーの端末をBANする:"
   ko: "다음 플레이어의 기기 차단:"
+  sr: "Blokiraj uređaj igrača"
 "Ban this machine...":
   es: "Vetar este equipo..."
   ca: "Veta aquest equip..."
@@ -63540,6 +63688,7 @@ _version: 2
   zh-tw: "封鎖此裝置..."
   ja: "この端末をBANする..."
   ko: "이 기기 차단..."
+  sr: "Blokiraj ovaj uređaj..."
 "Banned machines":
   es: "Equipos vetados"
   ca: "Equips vetats"
@@ -63552,6 +63701,7 @@ _version: 2
   zh-tw: "已封鎖的裝置"
   ja: "BANされた端末"
   ko: "차단된 기기"
+  sr: "Blokirani uređaji"
 "Banned machines (a ban holds the machine, not the name)":
   es: "Equipos vetados (el veto es del equipo, no del nombre)"
   ca: "Equips vetats (el veto és de l'equip, no del nom)"
@@ -63564,6 +63714,7 @@ _version: 2
   zh-tw: "已封鎖的裝置（封鎖針對裝置，而非名稱）"
   ja: "BANされた端末（名前ではなく端末が対象）"
   ko: "차단된 기기 (이름이 아니라 기기를 차단)"
+  sr: "Blokirani uređaji (blokada se odnosi na uređaj, a ne na ime)"
 "Lift:":
   es: "Levantar:"
   ca: "Aixeca:"
@@ -63576,6 +63727,7 @@ _version: 2
   zh-tw: "解除："
   ja: "解除:"
   ko: "해제:"
+  sr: "Ukloni zabranu:"
 "Nobody is banned":
   es: "Nadie está vetado"
   ca: "Ningú no està vetat"
@@ -63588,6 +63740,7 @@ _version: 2
   zh-tw: "沒有被封鎖的人"
   ja: "BANされた人はいません"
   ko: "차단된 사람이 없습니다"
+  sr: "Niko nije blokiran"
 "Only for this run (by name and address, not the machine)":
   es: "Solo en esta ejecución (por nombre y dirección, no por equipo)"
   ca: "Només en aquesta execució (per nom i adreça, no per equip)"
@@ -63600,6 +63753,7 @@ _version: 2
   zh-tw: "僅限本次執行（依名稱與位址，而非裝置）"
   ja: "今回の起動中のみ（端末ではなく名前とアドレスで）"
   ko: "이번 실행에서만 (기기가 아닌 이름과 주소 기준)"
+  sr: "Samo za ovo pokretanje (prema imenu i adresi, a ne uređaju)"
 "Only the host and the server's admins can send players away":
   es: "Solo el anfitrión y los administradores del servidor pueden expulsar jugadores"
   ca: "Només l'amfitrió i els administradors del servidor poden expulsar jugadors"
@@ -63612,6 +63766,7 @@ _version: 2
   zh-tw: "只有主機和伺服器管理員可以請出玩家"
   ja: "プレイヤーを退出させられるのはホストとサーバー管理者のみです"
   ko: "호스트와 서버 관리자만 플레이어를 내보낼 수 있습니다"
+  sr: "Samo domaćin i administratori servera mogu da izbace igrače"
 "Player list":
   es: "Lista de jugadores"
   ca: "Llista de jugadors"
@@ -63624,6 +63779,7 @@ _version: 2
   zh-tw: "玩家列表"
   ja: "プレイヤー一覧"
   ko: "플레이어 목록"
+  sr: "Spisak igrača"
 "Players in this session":
   es: "Jugadores en esta sesión"
   ca: "Jugadors d'aquesta sessió"
@@ -63636,6 +63792,7 @@ _version: 2
   zh-tw: "此工作階段中的玩家"
   ja: "このセッションのプレイヤー"
   ko: "이 세션의 플레이어"
+  sr: "Igrači u ovoj sesiji"
 "Reason":
   es: "Motivo"
   ca: "Motiu"
@@ -63648,6 +63805,7 @@ _version: 2
   zh-tw: "原因"
   ja: "理由"
   ko: "사유"
+  sr: "Razlog"
 "Send away":
   es: "Expulsar"
   ca: "Expulsa"
@@ -63660,6 +63818,7 @@ _version: 2
   zh-tw: "請出"
   ja: "退出させる"
   ko: "내보내기"
+  sr: "Izbaci"
 "Send away now":
   es: "Expulsar ahora"
   ca: "Expulsa ara"
@@ -63672,6 +63831,7 @@ _version: 2
   zh-tw: "立即請出"
   ja: "今すぐ退出させる"
   ko: "지금 내보내기"
+  sr: "Izbaci odmah"
 "Silence their voice chat for everybody":
   es: "Silenciar su chat de voz para todos"
   ca: "Silencia el seu xat de veu per a tothom"
@@ -63684,6 +63844,7 @@ _version: 2
   zh-tw: "對所有人靜音其語音聊天"
   ja: "全員に対してボイスチャットをミュート"
   ko: "모두에게 음성 채팅 음소거"
+  sr: "Isključi njihov glasovni čet za sve"
 "Silence voice chat":
   es: "Silenciar el chat de voz"
   ca: "Silencia el xat de veu"
@@ -63696,6 +63857,7 @@ _version: 2
   zh-tw: "靜音語音聊天"
   ja: "ボイスチャットをミュート"
   ko: "음성 채팅 음소거"
+  sr: "Isključi glasovni čet"
 "That player is no longer here: pick them again":
   es: "Ese jugador ya no está aquí: elígelo de nuevo"
   ca: "Aquest jugador ja no és aquí: tria'l de nou"
@@ -63708,6 +63870,7 @@ _version: 2
   zh-tw: "該玩家已不在：請重新選擇"
   ja: "そのプレイヤーはもういません。選び直してください"
   ko: "해당 플레이어가 더 이상 없습니다. 다시 선택하세요"
+  sr: "Taj igrač više nije tu: izaberi ga ponovo"
 "This session":
   es: "Esta sesión"
   ca: "Aquesta sessió"
@@ -63720,6 +63883,7 @@ _version: 2
   zh-tw: "此工作階段"
   ja: "このセッション"
   ko: "이 세션"
+  sr: "Ova sesija"
 "Voice chat of everybody else":
   es: "Chat de voz de los demás"
   ca: "Xat de veu dels altres"
@@ -63732,6 +63896,7 @@ _version: 2
   zh-tw: "其他所有人的語音聊天"
   ja: "他の全員のボイスチャット"
   ko: "다른 모든 사람의 음성 채팅"
+  sr: "Glasovni čet svih ostalih"
 "Voice chat: audible. Mute them":
   es: "Chat de voz: se oye. Silenciar"
   ca: "Xat de veu: s'escolta. Silencia'l"
@@ -63744,6 +63909,7 @@ _version: 2
   zh-tw: "語音聊天：可聽見。點擊靜音"
   ja: "ボイスチャット: 聞こえます。ミュートする"
   ko: "음성 채팅: 들림. 음소거"
+  sr: "Glasovni čet: igrač se čuje. Utišaj ga"
 "Voice chat: muted. Hear them again":
   es: "Chat de voz: silenciado. Volver a oírlo"
   ca: "Xat de veu: silenciat. Torna'l a escoltar"
@@ -63756,6 +63922,7 @@ _version: 2
   zh-tw: "語音聊天：已靜音。點擊取消靜音"
   ja: "ボイスチャット: ミュート中。再び聞く"
   ko: "음성 채팅: 음소거됨. 다시 듣기"
+  sr: "Glasovni čet: utišan. Ponovo uključi zvuk"
 "Voice: an admin has silenced your voice chat":
   es: "Voz: un administrador ha silenciado tu chat de voz"
   ca: "Veu: un administrador ha silenciat el teu xat de veu"
@@ -63768,6 +63935,7 @@ _version: 2
   zh-tw: "語音：管理員已將你的語音聊天靜音"
   ja: "音声: 管理者があなたのボイスチャットをミュートしました"
   ko: "음성: 관리자가 내 음성 채팅을 음소거했습니다"
+  sr: "Glas: administrator ti je isključio glasovni čet"
 "Voice: the microphone cannot be used":
   es: "Voz: no se puede usar el micrófono"
   ca: "Veu: no es pot fer servir el micròfon"
@@ -63780,6 +63948,7 @@ _version: 2
   zh-tw: "語音：無法使用麥克風"
   ja: "音声: マイクを使用できません"
   ko: "음성: 마이크를 사용할 수 없습니다"
+  sr: "Glas: mikrofon ne može da se koristi"
 "Voice: this session has no voice chat":
   es: "Voz: esta sesión no tiene chat de voz"
   ca: "Veu: aquesta sessió no té xat de veu"
@@ -63792,6 +63961,7 @@ _version: 2
   zh-tw: "語音：此工作階段沒有語音聊天"
   ja: "音声: このセッションにはボイスチャットがありません"
   ko: "음성: 이 세션에는 음성 채팅이 없습니다"
+  sr: "Glas: u ovoj sesiji nema glasovnog četa"
 "Voice: you are talking on the radio":
   es: "Voz: hablas por la radio"
   ca: "Veu: parles per ràdio"
@@ -63804,6 +63974,7 @@ _version: 2
   zh-tw: "語音：你正在透過無線電說話"
   ja: "音声: 無線で話しています"
   ko: "음성: 무전으로 말하는 중"
+  sr: "Glas: govoriš preko radio-veze"
 "Voice: you are talking to the players nearby":
   es: "Voz: hablas con los jugadores cercanos"
   ca: "Veu: parles amb els jugadors propers"
@@ -63816,6 +63987,7 @@ _version: 2
   zh-tw: "語音：你正在與附近的玩家說話"
   ja: "音声: 近くのプレイヤーに話しています"
   ko: "음성: 주변 플레이어에게 말하는 중"
+  sr: "Glas: razgovaraš sa igračima u blizini"
 "all sessions":
   es: "todas las sesiones"
   ca: "totes les sessions"
@@ -63828,6 +64000,7 @@ _version: 2
   zh-tw: "所有工作階段"
   ja: "すべてのセッション"
   ko: "모든 세션"
+  sr: "sve sesije"
 "ends in":
   es: "termina en"
   ca: "acaba en"
@@ -63840,6 +64013,7 @@ _version: 2
   zh-tw: "剩餘"
   ja: "残り"
   ko: "남은 시간"
+  sr: "ističe za"
 "for a day":
   es: "por un día"
   ca: "per un dia"
@@ -63852,6 +64026,7 @@ _version: 2
   zh-tw: "一天"
   ja: "1日間"
   ko: "하루 동안"
+  sr: "na jedan dan"
 "for a week":
   es: "por una semana"
   ca: "per una setmana"
@@ -63864,6 +64039,7 @@ _version: 2
   zh-tw: "一週"
   ja: "1週間"
   ko: "일주일 동안"
+  sr: "na jednu nedelju"
 "for good":
   es: "para siempre"
   ca: "per sempre"
@@ -63876,6 +64052,7 @@ _version: 2
   zh-tw: "永久"
   ja: "永久に"
   ko: "영구히"
+  sr: "zauvek"
 "host":
   es: "anfitrión"
   ca: "amfitrió"
@@ -63888,6 +64065,7 @@ _version: 2
   zh-tw: "主機"
   ja: "ホスト"
   ko: "호스트"
+  sr: "domaćin"
 "muted":
   es: "silenciado"
   ca: "silenciat"
@@ -63900,6 +64078,7 @@ _version: 2
   zh-tw: "已靜音"
   ja: "ミュート中"
   ko: "음소거됨"
+  sr: "utišan"
 "nearby":
   es: "cerca"
   ca: "a prop"
@@ -63912,6 +64091,7 @@ _version: 2
   zh-tw: "附近"
   ja: "近く"
   ko: "근처"
+  sr: "u blizini"
 "on the radio":
   es: "por la radio"
   ca: "per ràdio"
@@ -63924,6 +64104,7 @@ _version: 2
   zh-tw: "透過無線電"
   ja: "無線で"
   ko: "무전으로"
+  sr: "preko radio-veze"
 "aboard a bus":
   es: "a bordo de un autobús"
   ca: "a bord d'un autobús"
@@ -63936,6 +64117,7 @@ _version: 2
   zh-tw: "在公車上"
   ja: "バスに乗車中"
   ko: "버스 탑승 중"
+  sr: "u autobusu"
 "this session":
   es: "esta sesión"
   ca: "aquesta sessió"
@@ -63948,6 +64130,7 @@ _version: 2
   zh-tw: "此工作階段"
   ja: "このセッション"
   ko: "이 세션"
+  sr: "ova sesija"
 "unknown name":
   es: "nombre desconocido"
   ca: "nom desconegut"
@@ -63960,6 +64143,7 @@ _version: 2
   zh-tw: "未知名稱"
   ja: "不明な名前"
   ko: "알 수 없는 이름"
+  sr: "nepoznato ime"
 "you":
   es: "tú"
   ca: "tu"
@@ -63972,6 +64156,7 @@ _version: 2
   zh-tw: "你"
   ja: "あなた"
   ko: "나"
+  sr: "ti"
 "Shadows in the mirrors":
   es: "Sombras en los espejos"
   ca: "Ombres als miralls"
@@ -63984,6 +64169,7 @@ _version: 2
   zh-tw: "後視鏡中的陰影"
   ja: "ミラーの影"
   ko: "거울의 그림자"
+  sr: "Senke u retrovizorima"
 "The mirrors show the sun's shadows (they look up the picture's shadow maps; no pass of their own)":
   es: "Los espejos muestran las sombras del sol (usan los mapas de sombras de la imagen; sin pasada propia)"
   ca: "Els miralls mostren les ombres del sol (fan servir els mapes d'ombres de la imatge; sense passada pròpia)"
@@ -63996,6 +64182,7 @@ _version: 2
   zh-tw: "後視鏡顯示太陽的陰影（讀取畫面的陰影貼圖，無需額外繪製）"
   ja: "ミラーに太陽の影を映します（画面のシャドウマップを参照し、専用のパスはありません）"
   ko: "거울에 태양의 그림자를 표시합니다 (화면의 그림자 맵을 참조하며 별도 패스는 없음)"
+  sr: "Retrovizori prikazuju senke koje baca sunce (koriste mape senki glavnog prikaza; ne renderuju ih zasebno)"
 "Smoke and spray in the mirrors":
   es: "Humo y salpicaduras en los espejos"
   ca: "Fum i esquitxos als miralls"
@@ -64008,6 +64195,7 @@ _version: 2
   zh-tw: "後視鏡中的煙霧和水花"
   ja: "ミラーの煙としぶき"
   ko: "거울의 연기와 물보라"
+  sr: "Dim i voda koju točkovi prskaju, vidljivi u retrovizorima"
 "The mirrors show exhaust and the spray of the wheels, as OMSI 2 does without its \"No PS in reflections\"":
   es: "Los espejos muestran el escape y las salpicaduras de las ruedas, como OMSI 2 sin su opción «No PS in reflections»"
   ca: "Els miralls mostren l'escapament i els esquitxos de les rodes, com OMSI 2 sense l'opció «No PS in reflections»"
@@ -64020,6 +64208,7 @@ _version: 2
   zh-tw: "後視鏡顯示排氣和車輪濺起的水花，與未開啟「No PS in reflections」的 OMSI 2 相同"
   ja: "ミラーに排気と車輪のしぶきを映します（OMSI 2 の「No PS in reflections」をオフにした状態と同じ）"
   ko: "거울에 배기가스와 바퀴의 물보라를 표시합니다 (OMSI 2에서 \"No PS in reflections\"를 끈 상태와 동일)"
+  sr: "Retrovizori prikazuju izduvne gasove i vodu koju podižu točkovi, kao u OMSI 2 kada opcija „No PS in reflections“ nije uključena"
 "Voice chat in multiplayer":
   es: "Chat de voz en multijugador"
   ca: "Xat de veu en multijugador"
@@ -64032,6 +64221,7 @@ _version: 2
   zh-tw: "多人遊戲語音聊天"
   ja: "マルチプレイのボイスチャット"
   ko: "멀티플레이 음성 채팅"
+  sr: "Glasovni čet u igri za više igrača"
 "Hold the nearby (V) or radio (B) key to talk. The microphone is used only while a key is held; nothing is recorded":
   es: "Mantén la tecla de cercanía (V) o de radio (B) para hablar. El micrófono solo se usa mientras se mantiene una tecla; no se graba nada"
   ca: "Mantén la tecla de proximitat (V) o de ràdio (B) per parlar. El micròfon només s'usa mentre es manté una tecla; no s'enregistra res"
@@ -64044,6 +64234,7 @@ _version: 2
   zh-tw: "按住附近（V）或無線電（B）鍵說話。僅在按住按鍵時使用麥克風，不會錄音"
   ja: "近く（V）または無線（B）キーを押している間だけ話せます。マイクはキーを押している間のみ使用され、録音はされません"
   ko: "근처(V) 또는 무전(B) 키를 누르고 있는 동안 말합니다. 마이크는 키를 누르는 동안에만 사용되며 아무것도 녹음되지 않습니다"
+  sr: "Drži pritisnut taster za razgovor sa igračima u blizini (V) ili preko radio-veze (B). Mikrofon se koristi samo dok držiš taster; ništa se ne snima"
 "Everybody else's voice chat off":
   es: "Chat de voz de los demás desactivado"
   ca: "Xat de veu dels altres desactivat"
@@ -64056,6 +64247,7 @@ _version: 2
   zh-tw: "關閉其他所有人的語音聊天"
   ja: "他の全員のボイスチャットをオフ"
   ko: "다른 모든 사람의 음성 채팅 끄기"
+  sr: "Glasovni čet svih ostalih je isključen"
 "Single players are muted in the player list":
   es: "Los jugadores se silencian uno a uno en la lista de jugadores"
   ca: "Els jugadors es silencien un a un a la llista de jugadors"
@@ -64068,6 +64260,7 @@ _version: 2
   zh-tw: "可在玩家列表中單獨靜音玩家"
   ja: "個々のプレイヤーはプレイヤー一覧でミュートできます"
   ko: "개별 플레이어는 플레이어 목록에서 음소거합니다"
+  sr: "Igrače možeš pojedinačno da utišaš na spisku igrača"
 "Show who is talking":
   es: "Mostrar quién habla"
   ca: "Mostra qui parla"
@@ -64080,6 +64273,7 @@ _version: 2
   zh-tw: "顯示誰在說話"
   ja: "話している人を表示"
   ko: "말하는 사람 표시"
+  sr: "Prikaži ko govori"
 "A line for each player you hear":
   es: "Una línea por cada jugador al que oyes"
   ca: "Una línia per cada jugador que sents"
@@ -64092,6 +64286,7 @@ _version: 2
   zh-tw: "為每位你能聽到的玩家顯示一行"
   ja: "聞こえるプレイヤーごとに1行表示"
   ko: "들리는 플레이어마다 한 줄 표시"
+  sr: "Prikaži poseban red za svakog igrača čiji glas čuješ"
 
 
 "Calculating route":
