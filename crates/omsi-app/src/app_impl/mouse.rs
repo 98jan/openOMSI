@@ -420,6 +420,10 @@ impl App {
         if self.menus.game_menu.is_none() && self.editor_mouse(pressed) {
             return;
         }
+        // a trolleybus's pole in the mouse's hand: let go, or taken (see `trolley_mouse`)
+        if pressed && self.menus.game_menu.is_none() && self.trolley_mouse_click() {
+            return;
+        }
         // the city map: a click on the navigator opens it; while it is open the mouse is
         // the map's (a click outside closes it)
         let (x, y) = self.input.cursor;
@@ -741,6 +745,17 @@ const HTML_OBJECT_REACH: f32 = 4.0;
 
 /// Degrees the view turns per (logical) pixel of the cursor's way while looking round:
 /// Omsi.exe's fov / 78.75 (TForm_main.Panel1MouseMove 0x82c5f8).
+impl App {
+    /// A finger dragged over the photo (physical pixels): the photo camera turns.
+    pub(crate) fn photo_look_touch(&mut self, dx: f32, dy: f32) {
+        let scale = self.window.as_ref().map(|w| w.scale_factor() as f32).unwrap_or(1.0).max(0.1);
+        let k = self.photo.as_ref().map(|ph| look_deg_per_px(ph.cam.fov_deg)).unwrap_or(0.0) * self.settings.look_sens * 1.6;
+        if let Some(ph) = self.photo.as_mut() {
+            ph.look(dx / scale * k, dy / scale * k);
+        }
+    }
+}
+
 fn look_deg_per_px(fov_deg: f32) -> f32 {
     fov_deg / 78.75
 }
