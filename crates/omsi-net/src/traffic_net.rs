@@ -93,6 +93,17 @@ impl LanSession {
         s
     }
 
+    /// A datagram of the traffic table or of the voice chat: handled here when it is one.
+    pub(super) fn on_table_or_voice(&mut self, data: &[u8], from: SocketAddr) -> bool {
+        match data[0] {
+            wire::MAGIC => self.on_traffic_packet(data),
+            wire::ACK_MAGIC => self.on_traffic_ack(data, from),
+            voice_net::MAGIC => self.on_voice(data, from),
+            _ => return false,
+        }
+        true
+    }
+
     /// A datagram of the host's table (client).
     pub(super) fn on_traffic_packet(&mut self, data: &[u8]) {
         if self.role != Role::Client || !self.connected {

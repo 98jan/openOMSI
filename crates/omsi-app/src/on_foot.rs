@@ -232,6 +232,32 @@ fn too_steep_to_climb(g: f64, gradient: f64, footing: f64) -> bool {
     gradient > MAX_WALK_GRADIENT && g > footing + STEP
 }
 
+/// The view turns with the bus the walker rides in, by what the bus turned since the last
+/// look; the walker's own look stays an offset from the bus's heading.
+fn turn_with_bus(f: &mut OnFoot, heading: Option<(BusId, f64)>) {
+    if let (Some((b, h)), Some((was, h0))) = (heading, f.bus_turn) {
+        if b == was {
+            let d = wrap(h - h0) as f32;
+            f.yaw = (f.yaw + d).rem_euclid(360.0);
+            f.eye_yaw = (f.eye_yaw + d).rem_euclid(360.0);
+        }
+    }
+    f.bus_turn = heading;
+}
+
+/// What the eyes' glide is still behind by (`behind`) is kept while it lasts and let go of
+/// after.
+fn keep_lag(f: &mut OnFoot, settling: bool, behind: DVec3, dt: f64) {
+    if settling {
+        f.lag = behind;
+    } else {
+        f.lag *= (-dt * 9.0).exp();
+        if f.lag.length() < 0.001 {
+            f.lag = DVec3::ZERO;
+        }
+    }
+}
+
 /// The walker's velocity a step nearer `want`: at a limited acceleration (the steps a person
 /// takes to get going and to stop, the same in any direction, so that a turn is a curve
 /// and not a snap), less steering still in the air.
@@ -1284,15 +1310,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
     // walker's own look stays an offset from the bus's heading)
     let riding = f.seat.map(|s| s.0).or(f.inside.map(|i| i.0));
     let bus_heading = riding.and_then(|b| cx.people.humans.as_ref().and_then(|h| h.bus_heading(b)).map(|h| (b, h)));
-    match (bus_heading, f.bus_turn) {
-        (Some((b, h)), Some((was, h0))) if b == was => {
-            let d = wrap(h - h0) as f32;
-            f.yaw = (f.yaw + d).rem_euclid(360.0);
-            f.eye_yaw = (f.eye_yaw + d).rem_euclid(360.0);
-        }
-        _ => {}
-    }
-    f.bus_turn = bus_heading;
+    turn_with_bus(&mut f, bus_heading);
     // the camera, out of the eyes (the free camera moves by itself)
     if let (Some(cam), false) = (cx.view.camera.as_mut(), free) {
         let eye = body.map(|b| b.2).unwrap_or(f.pos + DVec3::new(0.0, 0.0, 1.62 + f.lift)) + f.eye_drop();
@@ -1321,14 +1339,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
         // (what the glide is still behind by is kept while it lasts and let go of after:
         // `foot_after_humans` puts the eyes on the head from then on, and without this
         // the last bit of the way was one jump)
-        if settling {
-            f.lag = at - want;
-        } else {
-            f.lag *= (-dt64 * 9.0).exp();
-            if f.lag.length() < 0.001 {
-                f.lag = DVec3::ZERO;
-            }
-        }
+        keep_lag(&mut f, settling, at - want, dt64);
         let dy = ((want_yaw - f.eye_yaw + 540.0).rem_euclid(360.0)) - 180.0;
         f.eye_yaw = (f.eye_yaw + dy * k as f32).rem_euclid(360.0);
         cam.position = at;

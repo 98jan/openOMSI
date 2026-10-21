@@ -16,6 +16,10 @@ use omsi_ui::paint::Align;
 use omsi_ui::{Atlas, Color, Draw, Fonts, Gpu, Layer, Painter, Rect, Weight};
 use winit::event::{Touch as Finger, TouchPhase};
 
+mod paint;
+#[cfg(test)]
+mod tests;
+
 /// What a control does.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Btn {
@@ -367,6 +371,10 @@ impl App {
             u = u.min(w / (2.0 * (side + 67.0) + 28.0)).max(dpi * 0.7);
         }
         let pad = 14.0 * u;
+        if self.photo.is_some() {
+            self.touch_photo_layout(w, h, pad, u);
+            return;
+        }
         let t = &mut self.input.touch;
         t.u = u;
         t.size = (w, h);
@@ -377,40 +385,6 @@ impl App {
         };
         let menu_mode = self.menus.game_menu.is_some() || self.menus.chooser.is_some() || self.menus.navigator.as_ref().is_some_and(|n| n.map_open());
         t.top_gap = None;
-        if let Some(ph) = self.photo.as_ref() {
-            // the photo mode: the camera's own buttons, and its settings in a sheet the
-            // button opens (the driving controls are not shown)
-            let (open, hide, busy, fast) = (ph.touch_panel, ph.hide_ui, ph.render.capture, ph.touch_fast);
-            let r = 24.0 * u;
-            let step = r * 2.0 + 10.0 * u;
-            t.stick_r = 0.0;
-            t.info_room = None;
-            let (lt, lb) = (pad + r, pad + r);
-            if hide {
-                push(&mut b, Btn::PhotoHide, rb(lt, lb, r), "visibility", "", true, true);
-            } else {
-                push(&mut b, Btn::PhotoExit, rb(lt, lb, r), "close", "", false, true);
-                push(&mut b, Btn::PhotoPanel, rb(lt + step, lb, r), "tune", "", open, true);
-                push(&mut b, Btn::PhotoHide, rb(lt + step * 2.0, lb, r), "visibility", "", false, true);
-            }
-            if !open {
-                let sr = 38.0 * u;
-                let fr = 26.0 * u;
-                let x1 = w - pad - fr;
-                if !hide {
-                    let y0 = h - pad - fr;
-                    push(&mut b, Btn::FlyDown, rb(x1, y0, fr), "keyboard_arrow_down", "", false, true);
-                    push(&mut b, Btn::FlyUp, rb(x1, y0 - fr * 2.0 - 12.0 * u, fr), "keyboard_arrow_up", "", false, true);
-                    push(&mut b, Btn::FlyFaster, rb(x1, y0 - (fr * 2.0 + 12.0 * u) * 2.0, fr), "speed", "", fast, true);
-                    t.stick_r = 62.0 * u;
-                    t.stick_c = Vec2::new(pad + t.stick_r + 10.0 * u, h - pad - t.stick_r - 10.0 * u);
-                }
-                let sx = if hide { w - pad - sr } else { x1 - fr - 14.0 * u - sr };
-                push(&mut b, Btn::PhotoShutter, rb(sx, h - pad - sr, sr), "photo_camera", "", busy, true);
-            }
-            t.buttons = b;
-            return;
-        }
         if menu_mode {
             // only the way out: the menu is worked with the fingers as a mouse
             let r = 24.0 * u;
@@ -1248,132 +1222,6 @@ impl App {
         }
     }
 
-    /// Paint the controls into `painter` (physical pixels).
-    fn touch_paint(&mut self) {
-        let speed = self.player.as_ref().map(|p| p.vehicle.physics.velocity_kmh().abs());
-        let lock_angle = touch_lock_angle(&self.settings);
-        // (the buttons' backgrounds follow the interface's opacity; their icons stay solid)
-        let panel_bg = PANEL_BG.alpha(crate::ui::backdrop(self.settings.ui_opacity));
-        let (w, h) = self.input.touch.size;
-        let t = &mut self.input.touch;
-        let u = t.u;
-        let fonts = t.fonts.get_or_insert_with(Fonts::new);
-        let pt = &mut t.painter;
-        pt.clear();
-        t.atlas.begin_frame();
-        let atlas = &mut t.atlas;
-        // the wheel, the stick and the pedals
-        let driving = !t.buttons.is_empty() && t.stick_r == 0.0 && !t.hidden && t.throttle_r.w > 0.0 && t.buttons.iter().any(|b| matches!(b.btn, Btn::Gear(..)));
-        if driving {
-            if !t.tilt {
-                let c = t.wheel_c;
-                let r = t.wheel_r;
-                // every part is drawn once, side by side, never one see-through shape over
-                // another (that showed as darker patches where they crossed)
-                use std::f32::consts::{FRAC_PI_2, PI, TAU};
-                let (rim_in, hub) = (r - 12.0 * u, 16.0 * u);
-                let part = Color::rgba(230, 230, 230, if t.steering { 0.95 } else { 0.8 });
-                pt.circle(c, rim_in, panel_bg);
-                // the spokes turn with the wheel (to the settings' lock, see `touch_lock_angle`)
-                let a0 = t.steer * lock_angle;
-                let half = 3.5 * u;
-                for k in 0..3 {
-                    let a = a0 + FRAC_PI_2 + k as f32 * TAU / 3.0 + PI;
-                    let d = Vec2::new(a.cos(), a.sin());
-                    let n = Vec2::new(-d.y, d.x) * half;
-                    // from the hub's edge to the rim's inner edge
-                    let (p0, p1) = (c + d * hub, c + d * (rim_in * rim_in - half * half).max(0.0).sqrt());
-                    pt.convex(&[p0 + n, p1 + n, p1 - n, p0 - n], part);
-                }
-                pt.circle(c, hub, part);
-                // the rim, with the top mark in its gap
-                let top = a0 - FRAC_PI_2;
-                pt.arc(c, rim_in, r, top + 0.12, top + TAU - 0.12, part);
-                pt.arc(c, rim_in, r, top - 0.12, top + 0.12, PANEL_ON);
-            } else {
-                pt.text(atlas, fonts, "TILT", 14.0 * u, Weight::Bold, t.wheel_c, Align::Center, DIM);
-            }
-            for (r, v, name) in [(t.clutch_r, t.clutch, "CLUTCH"), (t.brake_r, t.brake, "BRAKE"), (t.throttle_r, t.throttle, "GAS")] {
-                if r.w <= 0.0 {
-                    continue;
-                }
-                pt.rounded(r, 12.0 * u, panel_bg);
-                if v > 0.0 {
-                    let fill = Rect::new(r.x, r.bottom() - r.h * v, r.w, r.h * v);
-                    pt.rounded(fill, 12.0 * u, match name { "GAS" => Color::rgba(104, 190, 118, 0.75), "CLUTCH" => Color::rgba(90, 150, 230, 0.75), _ => Color::rgba(222, 78, 68, 0.75) });
-                }
-                pt.rounded_border(r, 12.0 * u, 2.0 * u, Color::rgba(230, 230, 230, 0.35));
-                // the pedal's ribs
-                for k in 1..5 {
-                    let y = r.y + r.h * k as f32 / 5.0;
-                    pt.line(Vec2::new(r.x + 12.0 * u, y), Vec2::new(r.right() - 12.0 * u, y), 2.0 * u, Color::rgba(230, 230, 230, 0.18));
-                }
-                pt.text(atlas, fonts, name, 11.0 * u, Weight::Bold, Vec2::new(r.center().x, r.bottom() - 10.0 * u), Align::Center, DIM);
-            }
-            if let Some(v) = speed {
-                let at = Vec2::new(w * 0.5, h - 22.0 * u);
-                let s = crate::units::Units::now().speed_text(v);
-                let tw = fonts.width(&s, 20.0 * u, Weight::Bold);
-                pt.rounded(Rect::new(at.x - tw * 0.5 - 12.0 * u, at.y - 24.0 * u, tw + 24.0 * u, 34.0 * u), 10.0 * u, panel_bg);
-                pt.text(atlas, fonts, &s, 20.0 * u, Weight::Bold, at, Align::Center, TEXT);
-            }
-        }
-        if t.stick_r > 0.0 && !t.hidden {
-            pt.circle(t.stick_c, t.stick_r, panel_bg);
-            pt.arc(t.stick_c, t.stick_r - 3.0 * u, t.stick_r, 0.0, std::f32::consts::TAU, Color::rgba(230, 230, 230, 0.35));
-            let knob = t.stick_at.map(|(c, d)| c + d).unwrap_or(t.stick_c);
-            pt.circle(knob, 24.0 * u, Color::rgba(230, 230, 230, 0.8));
-            pt.icon(atlas, "open_with", knob, 26.0 * u, Color::rgba(20, 20, 20, 0.9));
-        }
-        if t.panel && !t.hidden {
-            let rs: Vec<Rect> = t.buttons.iter().filter(|b| !b.round && !matches!(b.btn, Btn::Gear(..))).map(|b| b.rect).collect();
-            if let Some(first) = rs.first() {
-                // (the grid is wider than one row: every button is inside)
-                let (x0, y0, x1, y1) = rs.iter().fold((first.x, first.y, first.right(), first.bottom()), |a, r| (a.0.min(r.x), a.1.min(r.y), a.2.max(r.right()), a.3.max(r.bottom())));
-                let all = Rect::new(x0 - 10.0 * u, y0 - 10.0 * u, x1 - x0 + 20.0 * u, y1 - y0 + 20.0 * u);
-                pt.rounded(all, 16.0 * u, Color::rgba(10, 12, 16, 0.78));
-            }
-        }
-        // the buttons
-        let held: Vec<Btn> = t.fingers.iter().filter_map(|f| if let Role::Button(_, b) = f.role { Some(b) } else { None }).collect();
-        for b in t.buttons.iter() {
-            let pressed = held.contains(&b.btn);
-            let bg = if b.on { PANEL_ON } else if pressed { Color::rgba(90, 94, 100, 0.85) } else { panel_bg };
-            let fg = if b.on { Color::rgba(20, 20, 20, 1.0) } else { TEXT };
-            if b.round {
-                let c = b.rect.center();
-                let r = b.rect.w * 0.5 * if pressed { 0.94 } else { 1.0 };
-                pt.circle(c, r, bg);
-                pt.arc(c, r - 1.5 * u, r, 0.0, std::f32::consts::TAU, Color::rgba(255, 255, 255, 0.16));
-                pt.icon(atlas, b.icon, c, r * 1.15, fg);
-                if !b.label.is_empty() {
-                    // (the door's number)
-                    let at = c + Vec2::new(r * 0.62, r * 0.62);
-                    pt.circle(at, 9.0 * u, Color::rgba(20, 20, 20, 0.9));
-                    pt.text(atlas, fonts, &b.label, 11.0 * u, Weight::Bold, at + Vec2::new(0.0, 4.0 * u), Align::Center, TEXT);
-                }
-            } else {
-                pt.rounded(b.rect, 10.0 * u, bg);
-                if b.icon.is_empty() {
-                    pt.text_in(atlas, fonts, &b.label, 17.0 * u, Weight::Bold, b.rect, Align::Center, fg);
-                } else {
-                    pt.icon(atlas, b.icon, Vec2::new(b.rect.x + 24.0 * u, b.rect.center().y), 24.0 * u, fg);
-                    let tr = Rect::new(b.rect.x + 44.0 * u, b.rect.y, b.rect.w - 50.0 * u, b.rect.h);
-                    let text = fonts.fit(&omsi_ui::tr(&b.label), 12.5 * u, Weight::Medium, tr.w);
-                    pt.text_in(atlas, fonts, &text, 12.5 * u, Weight::Medium, tr, Align::Left, fg);
-                }
-            }
-        }
-        if let Some((note, left)) = t.note.clone() {
-            let a = left.clamp(0.0, 0.4) / 0.4;
-            let s = omsi_ui::tr(&note).to_string();
-            let tw = fonts.width(&s, 15.0 * u, Weight::Medium);
-            let at = Vec2::new(w * 0.5, h * 0.42);
-            pt.rounded(Rect::new(at.x - tw * 0.5 - 16.0 * u, at.y - 24.0 * u, tw + 32.0 * u, 36.0 * u), 12.0 * u, Color::rgba(10, 12, 16, 0.8 * a));
-            pt.text(atlas, fonts, &s, 15.0 * u, Weight::Medium, at, Align::Center, TEXT.alpha(a));
-        }
-    }
-
     /// Lay the controls out for a frame of `w` x `h` and paint them (drawn by
     /// `Touch::render` once the game's picture is in the frame).
     pub(crate) fn touch_prepare(&mut self, w: u32, h: u32) {
@@ -1486,83 +1334,6 @@ fn touch_menu_scroll_lines(delta_y: f32, scale: f32) -> f32 {
 /// faster as the finger went on round).
 fn steer_curve(s: f32) -> f32 {
     s
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{direct_door_buttons, touch_lock_angle, DIRECT_DOOR_GROUPS};
-
-    #[test]
-    fn direct_door_buttons_are_independent_zero_one_and_combined_two_three() {
-        assert_eq!(DIRECT_DOOR_GROUPS, [
-            &["bus_doorfront0"][..],
-            &["bus_doorfront1"][..],
-            &["bus_doorfront2", "bus_doorfront3"][..],
-        ]);
-        assert_eq!(direct_door_buttons(["bus_doorfront0", "bus_doorfront1", "bus_doorfront2", "bus_doorfront3", "bus_doorfront4"]), vec![0, 1, 2]);
-        assert_eq!(direct_door_buttons(["bus_doorfront3", "bus_doorfront1", "bus_doorfront4"]), vec![1, 2]);
-        assert_eq!(direct_door_buttons(["BUS_DOORFRONT0", "bus_doorfront2", "bus_dooraft"]), vec![0, 2]);
-        assert!(direct_door_buttons(["bus_doorfront4", "bus_doorfront5", "bus_doorfrontX", "bus_doorfront01"]).is_empty());
-    }
-
-    use crate::settings::Settings;
-
-    /// The cab panel's buttons stay on the screen, whatever its size: four across on a wide
-    /// one, fewer and wider on a phone held upright (they ran off both sides of it).
-    #[test]
-    fn the_panels_buttons_fit_the_screen() {
-        for (w, h, u) in [(360.0, 800.0, 0.9), (412.0, 915.0, 1.03), (820.0, 1180.0, 1.35), (800.0, 360.0, 0.9), (320.0, 568.0, 0.85)] {
-            let rects = super::panel_rects(14, w, h, 14.0 * u, 21.0 * u, u);
-            assert_eq!(rects.len(), 14);
-            for r in &rects {
-                assert!(r.x >= 0.0 && r.right() <= w + 0.5, "{w}x{h}: {r:?} is out sideways");
-                assert!(r.y >= 0.0 && r.bottom() <= h + 0.5, "{w}x{h}: {r:?} is out up or down");
-            }
-        }
-        let portrait = super::panel_rects(14, 360.0, 800.0, 12.6, 18.9, 0.9);
-        let wide = super::panel_rects(14, 820.0, 1180.0, 18.9, 28.35, 1.35);
-        assert!(portrait.iter().filter(|r| r.y == portrait[0].y).count() < wide.iter().filter(|r| r.y == wide[0].y).count());
-    }
-
-    /// The information bar keeps to the gap between the buttons along the top (it lay under
-    /// them, its ends hidden, #1164), or goes under them where the gap is narrow.
-    #[test]
-    fn the_information_bar_keeps_clear_of_the_buttons_along_the_top() {
-        assert_eq!(super::info_room(1280.0, 14.0, 278.0, 914.0, 56.0, 1.0), [286.0, 906.0, 14.0]);
-        assert_eq!(super::info_room(720.0, 14.0, 278.0, 470.0, 56.0, 1.0), [14.0, 706.0, 64.0]);
-    }
-
-    #[test]
-    fn a_drag_scrolls_the_shell_in_pixels_at_any_screen_density() {
-        // Finger up => negative wheel => the menu moves down.
-        assert_eq!(super::touch_menu_scroll_lines(-84.0, 1.0), -2.0);
-        assert_eq!(super::touch_menu_scroll_lines(84.0, 1.0), 2.0);
-        // Twice the physical displacement at twice the scale is identical.
-        assert_eq!(super::touch_menu_scroll_lines(-168.0, 2.0), -2.0);
-        assert_eq!(super::touch_menu_scroll_lines(0.0, 2.0), 0.0);
-    }
-
-    #[test]
-    fn a_finger_resting_at_the_foot_of_a_pedal_presses_nothing() {
-        assert_eq!(super::pedal_press(0.0, 0.15), 0.0);
-        assert_eq!(super::pedal_press(0.14, 0.15), 0.0);
-        assert!(super::pedal_press(0.3, 0.15) < 0.1);
-        assert!(super::pedal_press(0.6, 0.15) > 0.3 && super::pedal_press(0.6, 0.15) < 0.6);
-        assert_eq!(super::pedal_press(1.0, 0.15), 1.0);
-        // no rest zone: from the foot up
-        assert_eq!(super::pedal_press(0.0, 0.0), 0.0);
-        assert!(super::pedal_press(0.05, 0.0) > 0.0);
-    }
-
-    #[test]
-    fn the_screen_wheel_turns_as_the_wheel_settings_say() {
-        let deg = |s: &Settings| touch_lock_angle(s).to_degrees().round();
-        // "Full lock at: OMSI": the wheel's whole rotation is the lock, half of it each way
-        assert_eq!(deg(&Settings { wheel_range: 900.0, wheel_lock: 0.0, ..Default::default() }), 450.0);
-        assert_eq!(deg(&Settings { wheel_range: 1800.0, wheel_lock: 0.0, ..Default::default() }), 900.0);
-        // a lock set of its own wins
-        assert_eq!(deg(&Settings { wheel_range: 900.0, wheel_lock: 540.0, ..Default::default() }), 270.0);
-    }
 }
 
 /// How far a screen pedal is pressed with a finger at `at` of its height (0 its foot, 1 its
