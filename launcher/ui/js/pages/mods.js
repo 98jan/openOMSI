@@ -2,7 +2,7 @@
 // OMSI 2 folder is never written to), the installs under way, and the installed mods.
 
 import { html, useState, useEffect } from '../../vendor/preact-htm.js';
-import { useStore, set, toast } from '../store.js';
+import { useStore, set, toast, remembered, remember } from '../store.js';
 import { t, bytes, ago } from '../i18n.js';
 import { call, onPhone } from '../api.js';
 import { Icon } from '../icons.js';
@@ -61,6 +61,23 @@ export function ModsPage() {
     read();
     loadContent();
   };
+  const [declined, setDeclined] = useState(() => remembered('hofDeclined', '').split('\n').filter(Boolean));
+  const decline = (map) => {
+    const next = [...declined, map];
+    remember('hofDeclined', next.join('\n'));
+    setDeclined(next);
+  };
+  const shareHofs = async (map) => {
+    try {
+      const added = await call('share_map_hofs', { map });
+      toast(added > 0 ? t('HOF files added for every bus.') : t('These HOF files were already there.'), 'ok');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+    read();
+    loadContent();
+  };
+  const offers = (status?.hof_offers || []).filter((o) => !declined.includes(o.map));
   const jobs = s.poll.jobs || [];
   const all = status?.installed || [];
   const counts = { all: all.length, bus: 0, map: 0, archive: 0, other: 0, off: 0 };
@@ -155,6 +172,7 @@ export function ModsPage() {
         ${status?.waiting?.length > 0 && html`<${Card} title="Waiting for their bus" hint="Packs installed before the bus they belong to: they go in once it is there.">
           <div class="row wrap">${status.waiting.map((w) => html`<${Tag}>${w}</${Tag}>`)}</div>
         </${Card}>`}
+        ${offers.map((o) => html`<${Notice} key=${o.map}><b>${t('Share the HOF files of {map} with every bus?', { map: o.map })}</b><div class="small selectable">${o.files.join(', ')}</div><div>${t("Every bus can then show this map's lines and destinations. Some maps have one HOF file per company or bus: sharing them can give buses with their own IBIS wrong destinations.")}</div><div class="row wrap" style="gap:8px;margin-top:6px"><${Button} small kind="primary" label="Share with every bus" onClick=${() => shareHofs(o.map)} /><${Button} small label="Not for this map" onClick=${() => decline(o.map)} /></div></${Notice}>`)}
         ${status?.hof_warnings?.length > 0 && html`<${Notice} kind="warn"><b>${t('Map HOF issue')}</b><div>${t('Some map HOF files could not be added. Check launcher.log for details.')}</div><ul class="small selectable" style="margin:4px 0 0;padding-left:18px">${status.hof_warnings.slice(0, 10).map((warning) => html`<li>${warning}</li>`)}</ul></${Notice}>`}
         ${status?.archives?.length > 0 && html`<${Card} title="Archives" hint="Read in place by the game, without unpacking.">
           <table class="table"><tbody>${status.archives.map(([n, b]) => html`<tr><td>${n}</td><td class="num muted" style="text-align:right">${bytes(b)}</td></tr>`)}</tbody></table>

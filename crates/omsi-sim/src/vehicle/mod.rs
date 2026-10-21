@@ -204,6 +204,7 @@ pub struct VehicleInstance {
     /// Variable names (lower case) to their slots; shared with the view's snapshot
     /// (`crate::view_events::CarLooks`), copied only when the vehicle gains a variable.
     var_index: std::sync::Arc<HashMap<String, omsi_script::VarId>>,
+    model_only_vars: Vec<String>,
     /// Where each mesh's material properties come from, resolved against `var_index`
     /// (rebuilt when the vehicle gains engine variables).
     props_plan: PropsPlan,
@@ -222,6 +223,7 @@ pub struct VehicleInstance {
     /// the passengers every frame and cleared after the scripts' frame (see
     /// `clear_pax_requests`).
     v_pax_req: Vec<omsi_script::VarId>,
+    v_cables: Vec<(omsi_script::VarId, omsi_script::VarId)>,
     v_accel: [Option<omsi_script::VarId>; 3],
     v_wheels: Vec<[[Option<omsi_script::VarId>; 5]; 2]>,
     v_springfactor: Vec<[Option<omsi_script::VarId>; 2]>,
