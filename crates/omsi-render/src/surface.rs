@@ -53,6 +53,12 @@ pub(crate) fn present_mode(vsync: bool, supported: Option<&[wgpu::PresentMode]>)
     }
 }
 
+/// The surface's present modes, asked of the driver only for `OMSI_PRESENT_MODE` (`set_vsync` runs every frame).
+fn listed_modes(surface: &wgpu::Surface<'_>, renderer: &Renderer) -> Option<Vec<wgpu::PresentMode>> {
+    omsi_cfg::flags::OMSI_PRESENT_MODE.var()?;
+    renderer.adapter.as_ref().map(|a| surface.get_capabilities(a).present_modes)
+}
+
 impl<'w> SurfaceState<'w> {
     pub fn new(
         instance: &wgpu::Instance,
@@ -75,7 +81,7 @@ impl<'w> SurfaceState<'w> {
     ) -> Result<Self> {
         let surface = instance.create_surface(window).context("create_surface")?;
         let encode = srgb_encode::SrgbEncode::wanted(renderer, renderer.format());
-        let modes = renderer.adapter.as_ref().map(|a| surface.get_capabilities(a).present_modes);
+        let modes = listed_modes(&surface, renderer);
         let mut config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: encode.as_ref().map_or(renderer.format(), |e| e.window_format()),
@@ -168,7 +174,7 @@ impl<'w> SurfaceState<'w> {
     }
 
     pub fn set_vsync(&mut self, renderer: &Renderer, enabled: bool) {
-        let modes = renderer.adapter.as_ref().map(|a| self.surface.get_capabilities(a).present_modes);
+        let modes = listed_modes(&self.surface, renderer);
         let mode = present_mode(enabled, modes.as_deref());
         if self.config.present_mode == mode || renderer.device_lost().is_some() {
             return;

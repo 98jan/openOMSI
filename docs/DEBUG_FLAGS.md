@@ -365,7 +365,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_PARKED_PULL_OUT` | num | 0.035 | use | app | Chance per step a parked car pulls out. |
 | `OMSI_PARK_IN` | num | 0.04 | use | app | Chance per step a car parks. |
 | `OMSI_PAX_ANIMATION` | text | settings | use | app | Override the passenger animation for a game session: original (OMSI) or enhanced (procedural IK). |
-| `OMSI_PRESENT_MODE` | text | fifo | use | render | How frames reach the screen: fifo (vsync), fifo_relaxed, mailbox, immediate or auto. Vsync is `fifo` on every API; a mode the surface lacks falls back to fifo. |
+| `OMSI_PRESENT_MODE` | text | auto | use | render | How frames reach the screen: fifo (vsync), fifo_relaxed, mailbox, immediate or auto. Vsync is `auto` (AutoVsync); a mode the surface lacks falls back to auto. |
 | `OMSI_PUDDLE_F0` | num | 0.08 | use | render | Puddle reflectance at normal incidence (0.02 to 0.2). |
 | `OMSI_PUDDLE_THICKNESS` | num | 0.12 | use | render | Puddle water film thickness. |
 | `OMSI_RUNNER_CHANCE` | num | 0.05 | use | sim | Chance a late passenger runs for a bus standing at a stop (0: never, 1: every bus). |
