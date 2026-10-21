@@ -1473,7 +1473,11 @@ fn the_rain_and_snow_shaders_translate_to_glsl_with_a_float_roof_map() {
         }
         Ok(())
     };
-    for src in [rain_shader_source(), snow_shader_source(), lean_rain(rain_shader_source())] {
+    let depth = |src: String| {
+        src.replace("var roof_map: texture_2d<f32>;", "var roof_map: texture_depth_2d;")
+            .replace("return textureLoad(roof_map, t, 0).x; }", "return textureLoad(roof_map, t, 0); }")
+    };
+    for src in [rain_shader_source(), snow_shader_source(), lean_rain(rain_shader_source())].map(depth) {
         assert!(glsl_of(&src).is_err_and(|e| e.contains("epth")), "{:?}", glsl_of(&src));
         glsl_of(&roof_as_float(src)).unwrap();
     }
