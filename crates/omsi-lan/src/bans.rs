@@ -166,7 +166,7 @@ pub struct BanStore {
     owner_path: Option<PathBuf>,
     session: Vec<Ban>,
     owner: Vec<Ban>,
-    owner_stamp: Option<std::time::SystemTime>,
+    owner_stamp: Option<(std::time::SystemTime, u64)>,
     /// Counted up at every change (and when the owner's file changed under us), for the host
     /// loop to pass the lists on to the session only when they differ.
     pub revision: u64,
@@ -296,8 +296,11 @@ impl BanStore {
     }
 }
 
-fn stamp(p: &Path) -> Option<std::time::SystemTime> {
-    std::fs::metadata(p).and_then(|m| m.modified()).ok()
+/// When a file was written and how long it is (a file system's clock can be too coarse to
+/// tell two writes in a row apart; the length mostly can).
+fn stamp(p: &Path) -> Option<(std::time::SystemTime, u64)> {
+    let m = std::fs::metadata(p).ok()?;
+    Some((m.modified().ok()?, m.len()))
 }
 
 fn read(path: Option<&Path>) -> Vec<Ban> {
