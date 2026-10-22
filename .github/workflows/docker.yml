@@ -64,7 +64,7 @@ jobs:
           platforms: |
             linux/amd64
             linux/arm64
-          context: docker/server
+          context: .
           file: docker/server/Dockerfile
           load: false
           push: true
