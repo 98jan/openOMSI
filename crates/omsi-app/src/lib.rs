@@ -13,6 +13,7 @@
 
 mod admin;
 mod admin_panel;
+mod auto_announce;
 mod player_list;
 mod voice_chat;
 use omsi_scene::check;
